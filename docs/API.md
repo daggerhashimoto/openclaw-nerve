@@ -19,7 +19,8 @@ Nerve exposes a REST + SSE API served by [Hono](https://hono.dev/) on the config
 - [Memories](#memories)
 - [Agent Log](#agent-log)
 - [Gateway](#gateway)
-- [Git Info](#git-info)
+- [API Keys](#api-keys)
+- [Voice Phrases](#voice-phrases)
 - [Workspace Files](#workspace-files)
 - [Cron Jobs](#cron-jobs)
 - [Skills](#skills)
@@ -588,50 +589,71 @@ Changes the model and/or thinking level for a session. HTTP fallback when WebSoc
 
 ---
 
-## Git Info
+## API Keys
 
-### `GET /api/git-info`
+### `GET /api/keys`
 
-Returns the current git branch and dirty status.
+Returns which API keys are currently configured.
 
 **Rate Limit:** General (60/min)
-
-**Query Parameters:**
-
-| Param | Description |
-|-------|-------------|
-| `sessionKey` | Use a registered session-specific working directory |
 
 **Response:**
 
 ```json
-{ "branch": "main", "dirty": true }
+{ "openaiKeySet": true, "replicateKeySet": false }
 ```
 
-Returns `{ "branch": null, "dirty": false }` if not in a git repo.
+### `PUT /api/keys`
 
-### `POST /api/git-info/workdir`
-
-Registers a working directory for a session, so `GET /api/git-info?sessionKey=...` resolves to the correct repo.
+Updates API keys in the `.env` file.
 
 **Request Body:**
 
 ```json
-{ "sessionKey": "agent:main:subagent:abc123", "workdir": "/home/user/project" }
+{ "openaiKey": "sk-...", "replicateKey": "r8_..." }
 ```
 
-The workdir must be within the allowed base directory (derived from `WORKSPACE_ROOT` env var, git worktree list, or the parent of `process.cwd()`). Returns 403 if the path is outside the allowed base.
+Both fields are optional — only provided keys are updated.
 
-Session workdir entries expire after 1 hour. Max 100 entries.
-
-### `DELETE /api/git-info/workdir`
-
-Unregisters a session's working directory.
-
-**Request Body:**
+**Response:**
 
 ```json
-{ "sessionKey": "agent:main:subagent:abc123" }
+{ "ok": true }
+```
+
+---
+
+## Voice Phrases
+
+### `GET /api/voice-phrases`
+
+Returns the configured voice stop and cancel phrase settings.
+
+**Rate Limit:** General (60/min)
+
+**Response:**
+
+```json
+{
+  "stopPhrases": ["stop", "shut up", "be quiet"],
+  "cancelPhrases": ["cancel", "never mind"]
+}
+```
+
+---
+
+## Sessions
+
+### `GET /api/sessions/:id/model`
+
+Returns the actual model used in a session, determined from the session transcript.
+
+**Rate Limit:** General (60/min)
+
+**Response:**
+
+```json
+{ "model": "anthropic/claude-sonnet-4-20250514" }
 ```
 
 ---
@@ -789,19 +811,23 @@ Returns the workspace directory tree. Excludes `node_modules`, `.git`, `dist`, `
 
 **Response:**
 ```json
-[
-  {
-    "name": "MEMORY.md",
-    "path": "MEMORY.md",
-    "type": "file"
-  },
-  {
-    "name": "memory",
-    "path": "memory",
-    "type": "directory",
-    "children": [...]
-  }
-]
+{
+  "ok": true,
+  "root": "/home/user/.openclaw/workspace",
+  "entries": [
+    {
+      "name": "MEMORY.md",
+      "path": "MEMORY.md",
+      "type": "file"
+    },
+    {
+      "name": "memory",
+      "path": "memory",
+      "type": "directory",
+      "children": [...]
+    }
+  ]
+}
 ```
 
 ### `GET /api/files/read`
@@ -817,7 +843,9 @@ Read a file's contents with its modification time (for conflict detection on sav
 **Response:**
 ```json
 {
+  "ok": true,
   "content": "# MEMORY.md\n...",
+  "size": 1234,
   "mtime": 1771355007542
 }
 ```
@@ -826,10 +854,12 @@ Read a file's contents with its modification time (for conflict detection on sav
 
 | Status | Condition |
 |--------|-----------|
-| 400 | Missing `path`, path traversal detected, or binary file |
+| 400 | Missing `path` parameter |
+| 403 | Path traversal detected or invalid path |
 | 404 | File not found |
+| 415 | Binary file (not a text file) |
 
-### `POST /api/files/write`
+### `PUT /api/files/write`
 
 Write file contents with optimistic concurrency via mtime comparison. If the file was modified since it was last read, returns 409 Conflict.
 
@@ -838,7 +868,7 @@ Write file contents with optimistic concurrency via mtime comparison. If the fil
 {
   "path": "MEMORY.md",
   "content": "# Updated content\n...",
-  "mtime": 1771355007542
+  "expectedMtime": 1771355007542
 }
 ```
 
@@ -856,6 +886,26 @@ Write file contents with optimistic concurrency via mtime comparison. If the fil
 |--------|-----------|
 | 400 | Missing fields or path traversal |
 | 409 | File modified since last read (mtime mismatch) |
+
+### `GET /api/files/raw`
+
+Serves raw image files from the workspace directory. Useful for displaying images referenced in workspace files.
+
+**Query Parameters:**
+
+| Param | Description |
+|-------|-------------|
+| `path` | Relative path within the workspace |
+
+**Response:** Raw image binary with appropriate `Content-Type` header.
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | Missing `path` parameter |
+| 403 | Path traversal or not an allowed file type |
+| 404 | File not found |
 
 ---
 

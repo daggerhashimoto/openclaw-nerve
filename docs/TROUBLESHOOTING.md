@@ -213,10 +213,19 @@ WS_ALLOWED_HOSTS=mygateway.local npm start
 
 **Symptom:** Voice input records but transcription returns error.
 
-**Cause:** Transcription uses OpenAI Whisper API (requires `OPENAI_API_KEY`).
+**Cause:** Transcription uses the configured STT provider. The default is `local` (whisper.cpp via `@fugood/whisper.node`). If `STT_PROVIDER=openai`, it uses the OpenAI Whisper API instead.
 
-**Fix:**
+**Fix (local — default):**
+- Local STT requires `ffmpeg` for audio conversion — the installer handles this, but verify: `ffmpeg -version`
+- The whisper model auto-downloads on first use from HuggingFace. Check `WHISPER_MODEL_DIR` (default `~/.nerve/models/`) for the model file
+- Default model is `tiny.en` (75 MB). Configure via `WHISPER_MODEL` env var
+- Check server logs for whisper initialization errors
+
+**Fix (OpenAI):**
+- Ensure `STT_PROVIDER=openai` is set in `.env`
 - Ensure `OPENAI_API_KEY` is set in `.env` or environment
+
+**Common to both providers:**
 - Check file size: max 12 MB (configurable in `config.limits.transcribe`)
 - Check MIME type: must be one of: `audio/webm`, `audio/mp3`, `audio/mpeg`, `audio/mp4`, `audio/m4a`, `audio/wav`, `audio/ogg`, `audio/flac`
 
@@ -271,7 +280,7 @@ MEMORY_PATH=/path/to/.openclaw/workspace/MEMORY.md
 
 **Symptom:** Session list is empty or shows only the main session.
 
-**Cause:** Sessions are fetched via gateway RPC `sessions.list` with `activeMinutes: 120` filter.
+**Cause:** Sessions are fetched via gateway RPC `sessions_list` with `activeMinutes: 120` filter.
 
 **Fix:**
 - Sessions inactive for >2 hours won't appear — this is by design
@@ -282,7 +291,7 @@ MEMORY_PATH=/path/to/.openclaw/workspace/MEMORY.md
 
 **Symptom:** "Timed out waiting for subagent to spawn" error.
 
-**Cause:** Spawning uses a polling approach — sends a `[spawn-subagent]` chat message to the main session, then polls `sessions.list` every 2s for up to 30s waiting for a new subagent session to appear.
+**Cause:** Spawning uses a polling approach — sends a `[spawn-subagent]` chat message to the main session, then polls `sessions_list` every 2s for up to 30s waiting for a new subagent session to appear.
 
 **Fix:**
 - The main agent must be running and able to process the spawn request
@@ -411,6 +420,43 @@ test: {
   exclude: ['node_modules/**', 'server-dist/**'],
 }
 ```
+
+---
+
+## Native Build Issues
+
+### node-pty build fails
+
+**Symptom:** `npm install` fails with errors about `node-pty`, `node-gyp`, or missing build tools.
+
+**Cause:** `node-pty` is a native Node.js addon that requires a C++ compiler and Python to build.
+
+**Fix:**
+```bash
+# On Ubuntu/Debian
+sudo apt-get install -y build-essential python3
+
+# On macOS
+xcode-select --install
+
+# On Alpine Linux
+apk add build-base python3
+```
+
+If the build still fails, check that your Node.js version matches the native addon requirements (Node.js ≥22).
+
+### Whisper model download fails
+
+**Symptom:** First voice transcription hangs or errors with network/download issues.
+
+**Cause:** Local whisper models are downloaded from HuggingFace on first use. Network issues, firewalls, or disk space can prevent this.
+
+**Fix:**
+- Check network connectivity to `huggingface.co`
+- Ensure sufficient disk space in `WHISPER_MODEL_DIR` (default `~/.nerve/models/`): `tiny.en` is ~75 MB, `base.en` ~142 MB, `small.en` ~466 MB
+- Check server logs for download progress or errors
+- If behind a corporate proxy, set `HTTPS_PROXY` environment variable
+- As a workaround, manually download the model `.bin` file and place it in the models directory
 
 ---
 

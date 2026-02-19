@@ -83,11 +83,11 @@ CORS is enforced on all requests via Hono's CORS middleware.
 ALLOWED_ORIGINS=http://100.64.0.5:3080,https://my-server.tailnet.ts.net:3443
 ```
 
-**Allowed methods:** `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`  
+**Allowed methods:** `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`  
 **Allowed headers:** `Content-Type`, `Authorization`  
 **Credentials:** Enabled (`credentials: true`)
 
-Requests with no `Origin` header (same-origin, non-browser) are allowed through.
+Requests with no `Origin` header (same-origin, non-browser) are allowed through when `HOST` is `127.0.0.1` (default). **When `HOST=0.0.0.0`**, no-origin requests are **rejected** as a security precaution against non-browser clients on exposed networks.
 
 ---
 
@@ -101,7 +101,7 @@ Applied to **every response** via the `securityHeaders` middleware:
 | `X-Frame-Options` | `DENY` | Prevent clickjacking |
 | `X-Content-Type-Options` | `nosniff` | Prevent MIME type sniffing |
 | `X-XSS-Protection` | `1; mode=block` | Legacy XSS filter for older browsers |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Enforce HTTPS for 1 year |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Enforce HTTPS for 1 year (production mode only) |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` | Control referrer leakage |
 | `Cache-Control` | `no-store` | Default for all responses (overridden by cache middleware for assets) |
 
@@ -188,8 +188,6 @@ All POST/PUT endpoints validate request bodies with [Zod](https://zod.dev/) sche
 | `PUT /api/memories/section` | `title` (1–200), `content` (≤50000), `date` (YYYY-MM-DD regex) |
 | `DELETE /api/memories` | `query` (1–1000), `type` (enum), `date` (YYYY-MM-DD regex) |
 | `PUT /api/workspace/:key` | `content` (string, ≤100 KB), `key` checked against strict allowlist |
-| `POST /api/git-info/workdir` | `sessionKey` (non-empty), `workdir` (non-empty, validated against allowed base) |
-
 Validation errors return **HTTP 400** with the first Zod issue message as plain text or JSON.
 
 ---
@@ -212,6 +210,8 @@ Only image files are served:
 | `.avif` | `image/avif` |
 
 Non-image file types return **403 Not an allowed file type**.
+
+SVG files are served with `Content-Disposition: attachment` to prevent stored XSS — browsers will download SVGs rather than rendering them inline, blocking any embedded `<script>` execution.
 
 ### 2. Directory Prefix Allowlist
 
@@ -254,6 +254,8 @@ WS_ALLOWED_HOSTS=my-server.tailnet.ts.net,100.64.0.5
 
 This prevents the proxy from being used to connect to arbitrary external hosts.
 
+**Pending message buffer:** While the upstream gateway connection is opening, client messages are buffered up to **100 messages** or **1 MB** total. If either limit is exceeded, the client WebSocket is closed with an error. This prevents memory exhaustion from misbehaving or malicious clients.
+
 ---
 
 ## Body Size Limits
@@ -282,7 +284,7 @@ Multiple layers prevent directory traversal attacks:
 | `/api/files` | `path.resolve()` + prefix allowlist + symlink resolution + re-check |
 | `/api/memories` (date params) | Regex validation: `/^\d{4}-\d{2}-\d{2}$/` — prevents injection in file paths |
 | `/api/workspace/:key` | Strict key→filename allowlist (`soul`→`SOUL.md`, etc.) — no user-controlled paths |
-| `/api/git-info/workdir` | Resolved path checked against allowed base directory (derived from git worktrees or `WORKSPACE_ROOT`). Exact match or child-path check with separator guard |
+| `/api/files/tree`, `/api/files/read`, `/api/files/write` | Resolved path checked against workspace base directory with separator guard |
 
 ---
 
@@ -295,7 +297,7 @@ certs/cert.pem    # X.509 certificate
 certs/key.pem     # RSA/EC private key
 ```
 
-HSTS is always sent (`max-age=31536000; includeSubDomains`), even over HTTP. Browsers that have previously visited over HTTPS will refuse HTTP connections for 1 year.
+HSTS is sent in production mode only (`NODE_ENV=production`). When active, it sets `max-age=31536000; includeSubDomains`, causing browsers that have previously visited over HTTPS to refuse HTTP connections for 1 year.
 
 > **Microphone access** requires a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts). On `localhost` HTTP works, but network access requires HTTPS.
 

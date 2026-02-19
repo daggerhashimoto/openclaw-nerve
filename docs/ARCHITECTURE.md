@@ -256,7 +256,6 @@ Cmd+K command palette.
 | `useInputHistory` | `hooks/useInputHistory.ts` | Up/down arrow input history |
 | `useTabCompletion` | `hooks/useTabCompletion.ts` | Tab completion for slash commands |
 | `useKeyboardShortcuts` | `hooks/useKeyboardShortcuts.ts` | Global keyboard shortcut registration |
-| `useGitInfo` | `hooks/useGitInfo.ts` | Git branch/status display |
 
 ### Libraries
 
@@ -293,7 +292,7 @@ Applied in order in `app.ts`:
 |------------|------|---------|
 | Error handler | `middleware/error-handler.ts` | Catches unhandled errors, returns consistent JSON. Shows stack in dev |
 | Logger | Hono built-in | Request logging |
-| CORS | Hono built-in + custom | Whitelist of localhost origins + `ALLOWED_ORIGINS` env var. Validates via `URL` constructor. Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS |
+| CORS | Hono built-in + custom | Whitelist of localhost origins + `ALLOWED_ORIGINS` env var. Validates via `URL` constructor. Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS. No-origin requests rejected when HOST=0.0.0.0 |
 | Security headers | `middleware/security-headers.ts` | Standard security headers (CSP, X-Frame-Options, etc.) |
 | Body limit | Hono built-in | Configurable max body size (from `config.limits.maxBodyBytes`) |
 | Compression | Hono built-in | gzip/brotli on all routes **except** SSE (`/api/events`) |
@@ -319,7 +318,9 @@ Applied in order in `app.ts`:
 | `/api/gateway/session-patch` | `routes/gateway.ts` | POST | Change model/effort for a session |
 | `/api/server-info` | `routes/server-info.ts` | GET | Server time, gateway uptime, agent name |
 | `/api/version` | `routes/version.ts` | GET | Package version from `package.json` |
-| `/api/git-info` | `routes/git-info.ts` | GET, POST, DELETE | Git branch/status. Session workdir registration |
+| `/api/keys` | `routes/api-keys.ts` | GET, PUT | Check/update API keys (OpenAI, Replicate) in `.env` |
+| `/api/sessions/:id/model` | `routes/sessions.ts` | GET | Actual model from session transcript |
+| `/api/voice-phrases` | `routes/voice-phrases.ts` | GET | Voice stop/cancel phrase configuration |
 | `/api/workspace/:key` | `routes/workspace.ts` | GET, PUT | Read/write workspace files (strict key→file allowlist: soul, tools, identity, user, agents, heartbeat) |
 | `/api/crons` | `routes/crons.ts` | GET, POST, PATCH, DELETE | Cron job CRUD via gateway tool invocation |
 | `/api/crons/:id/toggle` | `routes/crons.ts` | POST | Toggle cron enabled/disabled |
@@ -329,7 +330,8 @@ Applied in order in `app.ts`:
 | `/api/files` | `routes/files.ts` | GET | Serve local image files (MIME-type restricted, directory traversal blocked) |
 | `/api/files/tree` | `routes/file-browser.ts` | GET | Workspace directory tree (excludes node_modules, .git, etc.) |
 | `/api/files/read` | `routes/file-browser.ts` | GET | Read file contents with mtime for conflict detection |
-| `/api/files/write` | `routes/file-browser.ts` | POST | Write file with mtime-based optimistic concurrency (409 on conflict) |
+| `/api/files/write` | `routes/file-browser.ts` | PUT | Write file with mtime-based optimistic concurrency (409 on conflict) |
+| `/api/files/raw` | `routes/file-browser.ts` | GET | Serve raw image files from workspace |
 | `/api/claude-code-limits` | `routes/claude-code-limits.ts` | GET | Claude Code rate limits via PTY + CLI parsing |
 | `/api/codex-limits` | `routes/codex-limits.ts` | GET | Codex rate limits via OpenAI API with local file fallback |
 

@@ -39,6 +39,8 @@ Nerve speaks: "The weather in Istanbul is 22 degrees and sunny."
 - Only the **first** `[tts:...]` marker is used for audio; all markers are stripped from display
 - Never send **only** a TTS marker — the response must be readable as text too
 - TTS markers are only expected when the user sends a voice message (indicated by `[voice]` prefix)
+- **Parser caveat:** The `]` character inside TTS text will break the bracket-balanced parser — it will be treated as the closing bracket. Avoid literal `]` in spoken text
+- **Whitespace note:** The space after `[tts:` is captured as part of the spoken text. Use `[tts:Text]` (no space) if leading whitespace is undesirable
 
 ### Implementation
 
@@ -142,6 +144,22 @@ Agents that have the chart syntax in their `TOOLS.md` will naturally include `[c
 - **TradingView**: `src/features/charts/TradingViewWidget.tsx` — official script injection embed
 - **Lightweight Charts**: `src/features/charts/LightweightChart.tsx` — line/area/candle with dark theme
 - **Recharts**: Lazy-loaded for bar/pie (bundled in `InlineChart.tsx`)
+
+---
+
+## Image Markers
+
+Nerve extracts inline image content blocks from agent responses and renders them as viewable images in the chat UI.
+
+### How It Works
+
+When an agent response contains image content blocks (e.g., from tool results that include screenshots, generated images, or file references), the `extractImages.ts` module identifies these blocks and converts them into renderable image elements. These are displayed inline within the message bubble and can be opened in the full-screen image lightbox.
+
+### Implementation
+
+- **Extraction**: `src/features/chat/extractImages.ts` — identifies image content blocks from message data
+- **Rendering**: `src/features/chat/MessageBubble.tsx` — displays extracted images inline
+- **Lightbox**: `src/features/chat/ImageLightbox.tsx` — full-screen image viewer on click
 
 ---
 

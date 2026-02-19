@@ -114,7 +114,9 @@ AGENT_NAME=Friday
 | Variable | Description |
 |----------|-------------|
 | `OPENAI_API_KEY` | Enables OpenAI TTS (multiple voices) and Whisper audio transcription |
+| `OPENAI_BASE_URL` | Custom base URL for OpenAI-compatible API endpoints |
 | `REPLICATE_API_TOKEN` | Enables Replicate-hosted TTS models (e.g. Qwen TTS). Requires `ffmpeg` for WAV→MP3 |
+| `REPLICATE_BASE_URL` | Custom base URL for Replicate API |
 
 ```env
 OPENAI_API_KEY=sk-...
@@ -130,7 +132,7 @@ TTS provider fallback chain (when no explicit provider is requested):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `STT_PROVIDER` | `openai` | STT provider: `openai` (requires `OPENAI_API_KEY`) or `local` (whisper.cpp, no API key needed) |
+| `STT_PROVIDER` | `local` | STT provider: `openai` (requires `OPENAI_API_KEY`) or `local` (whisper.cpp, no API key needed) |
 | `WHISPER_MODEL` | `tiny.en` | Local whisper model: `tiny.en` (75 MB), `base.en` (142 MB), or `small.en` (466 MB) |
 | `WHISPER_MODEL_DIR` | `~/.nerve/models/` | Directory for downloaded whisper model files |
 
@@ -149,7 +151,7 @@ Local STT requires `ffmpeg` for audio format conversion (webm/ogg → 16kHz mono
 | `ALLOWED_ORIGINS` | *(localhost only)* | Additional CORS origins, comma-separated. Normalised via `URL` constructor; `"null"` origins are rejected |
 | `CSP_CONNECT_EXTRA` | *(none)* | Additional CSP `connect-src` entries, space-separated. Only `http://`, `https://`, `ws://`, `wss://` schemes accepted. Semicolons and newlines are stripped to prevent directive injection |
 | `WS_ALLOWED_HOSTS` | `localhost,127.0.0.1,::1` | Additional WebSocket proxy allowed hostnames, comma-separated |
-| `TRUSTED_PROXIES` | `127.0.0.1,::1,::ffff:127.0.0.1` | IP addresses trusted to set `X-Forwarded-For` / `X-Real-IP` headers, comma-separated |
+| ~~`TRUSTED_PROXIES`~~ | — | *Currently unused.* Rate-limit middleware that would use this is not currently mounted. Reserved for future use |
 
 ```env
 # Tailscale example
@@ -157,8 +159,6 @@ ALLOWED_ORIGINS=http://100.64.0.5:3080
 CSP_CONNECT_EXTRA=http://100.64.0.5:3080 ws://100.64.0.5:3080
 WS_ALLOWED_HOSTS=100.64.0.5
 
-# Behind nginx reverse proxy
-TRUSTED_PROXIES=127.0.0.1,::1,10.0.0.1
 ```
 
 ### File Paths
@@ -169,7 +169,9 @@ TRUSTED_PROXIES=127.0.0.1,::1,10.0.0.1
 | `MEMORY_DIR` | `~/.openclaw/workspace/memory/` | Directory for daily memory files (`YYYY-MM-DD.md`) |
 | `SESSIONS_DIR` | `~/.openclaw/agents/main/sessions/` | Session transcript directory (scanned for token usage) |
 | `USAGE_FILE` | `~/.openclaw/token-usage.json` | Persistent cumulative token usage data |
-| `WORKSPACE_ROOT` | *(auto-detected)* | Allowed base directory for git workdir registration. Auto-derived from `git worktree list` or parent of `process.cwd()` |
+| `CODEX_DIR` | `~/.codex` | Directory containing Codex auth and session files |
+| `NERVE_DATA_DIR` | `~/.nerve` | Directory for Nerve data (device identity, whisper models) |
+| `OPENCLAW_BIN` | *(auto-detected)* | Explicit path to the `openclaw` binary. Auto-detected from env, sibling of node, common paths, or PATH |
 
 ```env
 MEMORY_PATH=/custom/path/MEMORY.md

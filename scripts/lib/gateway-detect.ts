@@ -170,6 +170,34 @@ export function fixGatewayDeviceScopes(): { ok: boolean; message: string; needsR
     }
 
     writeFileSync(pairedPath, JSON.stringify(paired, null, 2) + '\n');
+
+    // Also fix the CLI's own identity file — without this the gateway sees a
+    // scope mismatch (token claims operator.read, paired.json says full set)
+    // and triggers a scope-upgrade request that requires approval scopes to
+    // approve, creating another deadlock.
+    const identityPath = join(HOME, '.openclaw', 'identity', 'device-auth.json');
+    if (existsSync(identityPath)) {
+      try {
+        const idRaw = readFileSync(identityPath, 'utf-8');
+        const identity = JSON.parse(idRaw) as {
+          tokens?: Record<string, { scopes?: string[] }>;
+        };
+        let idFixed = false;
+        for (const [, tok] of Object.entries(identity.tokens || {})) {
+          const missing = FULL_OPERATOR_SCOPES.filter(s => !(tok.scopes || []).includes(s));
+          if (missing.length > 0) {
+            tok.scopes = FULL_OPERATOR_SCOPES;
+            idFixed = true;
+          }
+        }
+        if (idFixed) {
+          writeFileSync(identityPath, JSON.stringify(identity, null, 2) + '\n');
+        }
+      } catch {
+        // Non-fatal — paired.json fix is the critical one
+      }
+    }
+
     return { ok: true, message: 'Upgraded gateway device scopes', needsRestart: true };
   } catch (err) {
     return {

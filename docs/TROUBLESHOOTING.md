@@ -188,6 +188,33 @@ rm ~/.nerve/device-identity.json
 WS_ALLOWED_HOSTS=mygateway.local npm start
 ```
 
+### "device token mismatch" on WebSocket connect
+
+**Symptom:** Server logs show `[ws-proxy] Gateway closed: code=1008, reason=unauthorized: device token mismatch`.
+
+**Causes:**
+1. **Stale browser token.** The browser caches the gateway token in `sessionStorage`. If the token changes (e.g., after re-running setup or restarting the gateway), the browser still sends the old one.
+2. **Token mismatch across config files.** OpenClaw 2026.2.19 has a known bug where `openclaw onboard` writes different tokens to the systemd service file and `openclaw.json`. The gateway uses the systemd env var; Nerve reads from `.env`.
+
+**Fix (stale browser):**
+Close the tab completely and open a fresh one (or use incognito). `sessionStorage` is cleared on tab close.
+
+**Fix (token mismatch):**
+Re-run the setup wizard — it reads the real token from the systemd service file and aligns everything:
+```bash
+npm run setup
+```
+
+If you need to check manually:
+```bash
+# The gateway's actual token (source of truth)
+grep OPENCLAW_GATEWAY_TOKEN ~/.config/systemd/user/openclaw-gateway.service
+
+# These must all match:
+grep gateway.auth.token ~/.openclaw/openclaw.json     # CLI config
+grep GATEWAY_TOKEN .env                                 # Nerve config
+```
+
 ### "Missing scope" errors after connecting
 
 **Symptom:** Chat sends but responses fail with "missing scope" or tool calls are rejected.
@@ -196,7 +223,7 @@ WS_ALLOWED_HOSTS=mygateway.local npm start
 1. The device hasn't been approved yet (first connection)
 2. The device was rejected or the gateway was reset
 
-**Fix:**
+**Fix:** Re-run `npm run setup` — it bootstraps device scopes automatically. If that doesn't work:
 ```bash
 # Check pending devices
 openclaw devices list

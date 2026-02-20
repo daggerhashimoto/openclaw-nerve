@@ -127,6 +127,87 @@ const FULL_OPERATOR_SCOPES = [
 ];
 
 /**
+ * Bootstrap paired.json from scratch on a fresh install.
+ * Reads the gateway's own device identity and creates the paired file
+ * with full operator scopes + a device-auth.json for the CLI.
+ */
+function bootstrapPairedJson(): { ok: boolean; message: string; needsRestart: boolean } {
+  const deviceJsonPath = join(HOME, '.openclaw', 'identity', 'device.json');
+  const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
+  const deviceAuthPath = join(HOME, '.openclaw', 'identity', 'device-auth.json');
+
+  if (!existsSync(deviceJsonPath)) {
+    return { ok: false, message: 'No gateway device identity found', needsRestart: false };
+  }
+
+  try {
+    const device = JSON.parse(readFileSync(deviceJsonPath, 'utf-8'));
+    const deviceId = device.deviceId;
+    // Extract raw public key from PEM
+    const pubPem = device.publicKeyPem as string;
+    const pubDer = crypto.createPublicKey(pubPem).export({ type: 'spki', format: 'der' });
+    const rawPub = pubDer.slice(-32);
+    const publicKeyB64url = rawPub.toString('base64url');
+
+    const now = Date.now();
+    const token = crypto.randomBytes(32).toString('base64url');
+
+    // Create paired.json
+    const paired: Record<string, unknown> = {
+      [deviceId]: {
+        deviceId,
+        publicKey: publicKeyB64url,
+        platform: process.platform,
+        clientId: 'gateway-client',
+        clientMode: 'backend',
+        role: 'operator',
+        roles: ['operator'],
+        scopes: FULL_OPERATOR_SCOPES,
+        tokens: {
+          operator: {
+            token,
+            role: 'operator',
+            scopes: FULL_OPERATOR_SCOPES,
+            createdAtMs: now,
+          },
+        },
+        createdAtMs: now,
+        approvedAtMs: now,
+      },
+    };
+
+    const devicesDir = join(HOME, '.openclaw', 'devices');
+    if (!existsSync(devicesDir)) {
+      mkdirSync(devicesDir, { recursive: true, mode: 0o700 });
+    }
+    writeFileSync(pairedPath, JSON.stringify(paired, null, 2) + '\n', { mode: 0o600 });
+
+    // Create matching device-auth.json so the CLI can connect
+    const deviceAuth = {
+      version: 1,
+      deviceId,
+      tokens: {
+        operator: {
+          token,
+          role: 'operator',
+          scopes: FULL_OPERATOR_SCOPES,
+          updatedAtMs: now,
+        },
+      },
+    };
+    writeFileSync(deviceAuthPath, JSON.stringify(deviceAuth, null, 2) + '\n', { mode: 0o600 });
+
+    return { ok: true, message: 'Bootstrapped gateway device with full scopes', needsRestart: true };
+  } catch (err) {
+    return {
+      ok: false,
+      message: `Bootstrap failed: ${err instanceof Error ? err.message : String(err)}`,
+      needsRestart: false,
+    };
+  }
+}
+
+/**
  * Workaround for OpenClaw 2026.2.19 bootstrap bug.
  *
  * On fresh install, the gateway creates its own device identity with only
@@ -141,7 +222,9 @@ export function fixGatewayDeviceScopes(): { ok: boolean; message: string; needsR
   const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
 
   if (!existsSync(pairedPath)) {
-    return { ok: false, message: 'No paired devices file found', needsRestart: false };
+    // Fresh install — no paired.json yet. Bootstrap by creating it with the
+    // gateway's own device identity (from identity/device.json) fully scoped.
+    return bootstrapPairedJson();
   }
 
   try {
@@ -265,7 +348,8 @@ export function prePairNerveDevice(gatewayToken?: string): { ok: boolean; messag
   const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
 
   if (!existsSync(pairedPath)) {
-    return { ok: false, message: 'No paired devices file — gateway not initialized', needsRestart: false };
+    // fixGatewayDeviceScopes should have created this — but handle gracefully
+    return { ok: false, message: 'No paired devices file — run fixGatewayDeviceScopes first', needsRestart: false };
   }
 
   try {
@@ -301,8 +385,19 @@ export function prePairNerveDevice(gatewayToken?: string): { ok: boolean; messag
     // Register in paired.json
     const paired = JSON.parse(readFileSync(pairedPath, 'utf-8')) as Record<string, unknown>;
 
+    // Update token if device exists but token doesn't match
     if (paired[deviceId]) {
-      return { ok: true, message: 'Nerve device already paired', needsRestart: false };
+      const existing = paired[deviceId] as { tokens?: Record<string, { token?: string }> };
+      const existingToken = existing.tokens?.operator?.token;
+      if (existingToken === token) {
+        return { ok: true, message: 'Nerve device already paired', needsRestart: false };
+      }
+      // Token mismatch — update it
+      if (existing.tokens?.operator) {
+        existing.tokens.operator.token = token;
+        writeFileSync(pairedPath, JSON.stringify(paired, null, 2) + '\n');
+        return { ok: true, message: `Updated Nerve device token ${deviceId.substring(0, 12)}…`, needsRestart: true };
+      }
     }
 
     const now = Date.now();

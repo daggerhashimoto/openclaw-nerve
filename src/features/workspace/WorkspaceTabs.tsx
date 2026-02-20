@@ -25,12 +25,10 @@ interface WorkspaceTabsProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
   cronCount?: number;
-  /** Action buttons rendered right-aligned in the tab bar */
-  actions?: React.ReactNode;
 }
 
 /** Horizontal tab bar for workspace sections (Memory, Crons, Skills, Config). */
-export function WorkspaceTabs({ activeTab, onTabChange, cronCount, actions }: WorkspaceTabsProps) {
+export function WorkspaceTabs({ activeTab, onTabChange, cronCount }: WorkspaceTabsProps) {
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const currentIndex = TABS.findIndex(t => t.id === activeTab);
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
@@ -83,11 +81,6 @@ export function WorkspaceTabs({ activeTab, onTabChange, cronCount, actions }: Wo
         );
       })}
       </div>
-      {actions && (
-        <div className="flex items-center gap-1 ml-auto flex-shrink-0">
-          {actions}
-        </div>
-      )}
     </div>
   );
 }

@@ -88,8 +88,8 @@ export function ConfigTab() {
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="flex items-center gap-1 px-2 py-1 border-b border-border/40">
-        <div className="flex items-center gap-1 ml-auto">
+      <div className="flex items-center border-b border-border/40">
+        <div className="flex-1 px-2 py-1">
           <InlineSelect
             value={selectedKey}
             onChange={(v) => {
@@ -103,16 +103,16 @@ export function ConfigTab() {
             options={FILE_OPTIONS.map(f => ({ value: f.key, label: f.label }))}
             ariaLabel="Select config file"
           />
-          <button
-            onClick={() => load(selectedKey)}
-            disabled={isLoading}
-            className="bg-transparent border border-border/60 text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-muted-foreground disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-            title="Refresh"
-            aria-label="Refresh file"
-          >
-            <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
-          </button>
         </div>
+        <button
+          onClick={() => load(selectedKey)}
+          disabled={isLoading}
+          className="shrink-0 px-2 py-1.5 bg-transparent border-0 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+          title="Refresh"
+          aria-label="Refresh file"
+        >
+          <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
+        </button>
       </div>
 
       {/* Feedback toast */}

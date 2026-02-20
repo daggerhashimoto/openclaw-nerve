@@ -88,104 +88,150 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
     const scheme = isEncrypted ? 'https' : 'http';
     const clientOrigin = req.headers.origin || `${scheme}://${req.headers.host}`;
 
-    const gwWs = new WebSocket(targetUrl.toString(), {
-      headers: { Origin: clientOrigin },
-    });
+    // Delegate to the relay function (supports retry without device identity)
+    relayToGateway(clientWs, targetUrl, clientOrigin, /* useDeviceIdentity */ true);
+  });
+}
 
-    // State machine for connect handshake interception
-    let challengeNonce: string | null = null;
-    let handshakeComplete = false;
+/**
+ * Relay a client WebSocket connection to the gateway.
+ *
+ * On the first attempt, injects device identity for full operator scopes.
+ * If the gateway rejects with `device_token_mismatch` (device not paired),
+ * automatically retries without device identity — falling back to plain
+ * token auth. This ensures fresh installs work without manual pairing.
+ */
+function relayToGateway(
+  clientWs: WebSocket,
+  targetUrl: URL,
+  clientOrigin: string,
+  useDeviceIdentity: boolean,
+): void {
+  const gwWs = new WebSocket(targetUrl.toString(), {
+    headers: { Origin: clientOrigin },
+  });
 
-    // Buffer client messages until gateway connection is open (with cap)
-    const MAX_PENDING_MESSAGES = 100;
-    const MAX_PENDING_BYTES = 1024 * 1024; // 1 MB
-    const pendingMessages: { data: Buffer | string; isBinary: boolean }[] = [];
-    let pendingBytes = 0;
+  // State machine for connect handshake interception
+  let challengeNonce: string | null = null;
+  let handshakeComplete = false;
 
-    clientWs.on('message', (data: Buffer | string, isBinary: boolean) => {
-      if (gwWs.readyState !== WebSocket.OPEN) {
-        const size = typeof data === 'string' ? Buffer.byteLength(data) : data.length;
-        if (pendingMessages.length >= MAX_PENDING_MESSAGES || pendingBytes + size > MAX_PENDING_BYTES) {
-          clientWs.close(1008, 'Too many pending messages');
-          return;
-        }
-        pendingBytes += size;
-        pendingMessages.push({ data, isBinary });
+  // Track whether we're retrying (to avoid infinite loops)
+  let retrying = false;
+
+  // Store the original connect message for retry
+  let savedConnectMsg: Record<string, unknown> | null = null;
+
+  // Buffer client messages until gateway connection is open (with cap)
+  const MAX_PENDING_MESSAGES = 100;
+  const MAX_PENDING_BYTES = 1024 * 1024; // 1 MB
+  const pendingMessages: { data: Buffer | string; isBinary: boolean }[] = [];
+  let pendingBytes = 0;
+
+  clientWs.on('message', (data: Buffer | string, isBinary: boolean) => {
+    if (gwWs.readyState !== WebSocket.OPEN) {
+      const size = typeof data === 'string' ? Buffer.byteLength(data) : data.length;
+      if (pendingMessages.length >= MAX_PENDING_MESSAGES || pendingBytes + size > MAX_PENDING_BYTES) {
+        clientWs.close(1008, 'Too many pending messages');
         return;
       }
+      pendingBytes += size;
+      pendingMessages.push({ data, isBinary });
+      return;
+    }
 
-      // Intercept connect request to inject device identity
-      if (!handshakeComplete && !isBinary && challengeNonce) {
+    // Intercept connect request to inject device identity
+    if (!handshakeComplete && !isBinary && challengeNonce) {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === 'req' && msg.method === 'connect' && msg.params) {
+          // Save original connect message for potential retry
+          savedConnectMsg = msg;
+          const modified = useDeviceIdentity ? injectDeviceIdentity(msg, challengeNonce) : msg;
+          gwWs.send(JSON.stringify(modified));
+          handshakeComplete = true;
+          return;
+        }
+      } catch {
+        // Not JSON or parse error — pass through
+      }
+    }
+
+    gwWs.send(isBinary ? data : data.toString());
+  });
+
+  // Register gateway→client relay IMMEDIATELY (before open) to avoid
+  // dropping messages that arrive between readyState=OPEN and the 'open' callback.
+  gwWs.on('message', (data: Buffer | string, isBinary: boolean) => {
+    // Intercept connect.challenge to capture nonce
+    if (!handshakeComplete && !isBinary) {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === 'event' && msg.event === 'connect.challenge' && msg.payload?.nonce) {
+          challengeNonce = msg.payload.nonce;
+        }
+      } catch { /* ignore */ }
+    }
+
+    if (clientWs.readyState === WebSocket.OPEN) {
+      clientWs.send(isBinary ? data : data.toString());
+    }
+  });
+
+  gwWs.on('open', () => {
+    // Flush buffered messages
+    for (const msg of pendingMessages) {
+      // Check for connect request in buffered messages too
+      if (!handshakeComplete && !msg.isBinary && challengeNonce) {
         try {
-          const msg = JSON.parse(data.toString());
-          if (msg.type === 'req' && msg.method === 'connect' && msg.params) {
-            const modified = injectDeviceIdentity(msg, challengeNonce);
+          const parsed = JSON.parse(msg.data.toString());
+          if (parsed.type === 'req' && parsed.method === 'connect' && parsed.params) {
+            savedConnectMsg = parsed;
+            const modified = useDeviceIdentity ? injectDeviceIdentity(parsed, challengeNonce) : parsed;
             gwWs.send(JSON.stringify(modified));
-            handshakeComplete = true; // Only intercept the first connect
-            return;
+            handshakeComplete = true;
+            continue;
           }
-        } catch {
-          // Not JSON or parse error — pass through
-        }
+        } catch { /* pass through */ }
       }
+      gwWs.send(msg.isBinary ? msg.data : msg.data.toString());
+    }
+    pendingMessages.length = 0;
+  });
 
-      gwWs.send(isBinary ? data : data.toString());
-    });
+  gwWs.on('error', (err) => {
+    console.error('[ws-proxy] Gateway error:', err.message);
+    if (!retrying) clientWs.close();
+  });
 
-    // Register gateway→client relay IMMEDIATELY (before open) to avoid
-    // dropping messages that arrive between readyState=OPEN and the 'open' callback.
-    gwWs.on('message', (data: Buffer | string, isBinary: boolean) => {
-      // Intercept connect.challenge to capture nonce
-      if (!handshakeComplete && !isBinary) {
-        try {
-          const msg = JSON.parse(data.toString());
-          if (msg.type === 'event' && msg.event === 'connect.challenge' && msg.payload?.nonce) {
-            challengeNonce = msg.payload.nonce;
-          }
-        } catch { /* ignore */ }
-      }
+  gwWs.on('close', (code, reason) => {
+    const reasonStr = reason?.toString() || '';
+    console.log(`[ws-proxy] Gateway closed: code=${code}, reason=${reasonStr}`);
 
-      if (clientWs.readyState === WebSocket.OPEN) {
-        clientWs.send(isBinary ? data : data.toString());
-      }
-    });
+    // If rejected for device_token_mismatch and we haven't retried yet,
+    // reconnect without device identity (plain token auth fallback)
+    if (
+      useDeviceIdentity &&
+      !retrying &&
+      code === 1008 &&
+      reasonStr.includes('device token mismatch') &&
+      clientWs.readyState === WebSocket.OPEN
+    ) {
+      retrying = true;
+      console.log('[ws-proxy] Device not paired — retrying without device identity (plain token auth)');
+      relayToGateway(clientWs, targetUrl, clientOrigin, /* useDeviceIdentity */ false);
+      return;
+    }
 
-    gwWs.on('open', () => {
-      // Flush buffered messages
-      for (const msg of pendingMessages) {
-        // Check for connect request in buffered messages too
-        if (!handshakeComplete && !msg.isBinary && challengeNonce) {
-          try {
-            const parsed = JSON.parse(msg.data.toString());
-            if (parsed.type === 'req' && parsed.method === 'connect' && parsed.params) {
-              const modified = injectDeviceIdentity(parsed, challengeNonce);
-              gwWs.send(JSON.stringify(modified));
-              handshakeComplete = true;
-              continue;
-            }
-          } catch { /* pass through */ }
-        }
-        gwWs.send(msg.isBinary ? msg.data : msg.data.toString());
-      }
-      pendingMessages.length = 0;
-    });
+    clientWs.close();
+  });
 
-    gwWs.on('error', (err) => {
-      console.error('[ws-proxy] Gateway error:', err.message);
-      clientWs.close();
-    });
-    gwWs.on('close', (code, reason) => {
-      console.log(`[ws-proxy] Gateway closed: code=${code}, reason=${reason?.toString()}`);
-      clientWs.close();
-    });
-    clientWs.on('close', (code, reason) => {
-      console.log(`[ws-proxy] Client closed: code=${code}, reason=${reason?.toString()}`);
-      gwWs.close();
-    });
-    clientWs.on('error', (err) => {
-      console.error('[ws-proxy] Client error:', err.message);
-      gwWs.close();
-    });
+  clientWs.on('close', (code, reason) => {
+    console.log(`[ws-proxy] Client closed: code=${code}, reason=${reason?.toString()}`);
+    gwWs.close();
+  });
+  clientWs.on('error', (err) => {
+    console.error('[ws-proxy] Client error:', err.message);
+    gwWs.close();
   });
 }
 

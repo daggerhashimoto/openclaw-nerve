@@ -34,7 +34,7 @@ import {
   type EnvConfig,
 } from './lib/env-writer.js';
 import { generateSelfSignedCert } from './lib/cert-gen.js';
-import { detectGatewayConfig, getEnvGatewayToken, patchGatewayAllowedOrigins, patchGatewayBind, restartGateway } from './lib/gateway-detect.js';
+import { detectGatewayConfig, getEnvGatewayToken, patchGatewayAllowedOrigins, patchGatewayBind, pairNerveDevice, restartGateway } from './lib/gateway-detect.js';
 
 const PROJECT_ROOT = resolve(process.cwd());
 const ENV_PATH = resolve(PROJECT_ROOT, '.env');
@@ -542,6 +542,18 @@ async function collectInteractive(
           warn(httpsResult.message);
         }
       }
+      // Pair Nerve's device identity with the gateway
+      const gwToken = config.GATEWAY_TOKEN || '';
+      if (gwToken) {
+        const pairResult = pairNerveDevice(gwToken);
+        if (pairResult.ok) {
+          success(pairResult.message);
+        } else {
+          warn(pairResult.message);
+          dim('Nerve will fall back to plain token auth (reduced scopes).');
+        }
+      }
+
       // Auto-restart gateway to apply changes
       const restartResult = restartGateway();
       if (restartResult.ok) {

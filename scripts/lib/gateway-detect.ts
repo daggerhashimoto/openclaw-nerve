@@ -49,8 +49,13 @@ export function detectGatewayConfig(): DetectedGateway {
     const raw = readFileSync(OPENCLAW_CONFIG, 'utf-8');
     const config = JSON.parse(raw) as OpenClawConfig;
 
-    // Extract token
-    if (config.gateway?.auth?.token) {
+    // Extract token — systemd env var takes priority over config file because
+    // the gateway process uses the env var when both exist (known 2026.2.19 bug:
+    // onboard writes different tokens to the service file and openclaw.json).
+    const systemdToken = readSystemdGatewayToken();
+    if (systemdToken) {
+      result.token = systemdToken;
+    } else if (config.gateway?.auth?.token) {
       result.token = config.gateway.auth.token;
     }
 
@@ -62,6 +67,26 @@ export function detectGatewayConfig(): DetectedGateway {
   }
 
   return result;
+}
+
+/**
+ * Read the gateway token from the systemd service file.
+ * The gateway process uses this env var over the config file value.
+ */
+function readSystemdGatewayToken(): string | null {
+  const servicePaths = [
+    join(HOME, '.config', 'systemd', 'user', 'openclaw-gateway.service'),
+    '/etc/systemd/system/openclaw-gateway.service',
+  ];
+  for (const p of servicePaths) {
+    if (!existsSync(p)) continue;
+    try {
+      const content = readFileSync(p, 'utf-8');
+      const match = content.match(/OPENCLAW_GATEWAY_TOKEN=(\S+)/);
+      if (match?.[1]) return match[1];
+    } catch { /* skip */ }
+  }
+  return null;
 }
 
 /**

@@ -53,7 +53,7 @@ Built with **React 19**, **TypeScript**, **Vite**, and **Tailwind CSS v4**.
 
 | File | Purpose |
 |------|---------|
-| `src/main.tsx` | Mounts the React tree with the provider hierarchy: `ErrorBoundary → StrictMode → GatewayProvider → SettingsProvider → SessionProvider → ChatProvider → App` |
+| `src/main.tsx` | Mounts the React tree: `ErrorBoundary → StrictMode → AuthGate`. The auth gate checks session status before rendering the app |
 | `src/App.tsx` | Root layout — wires contexts to lazy-loaded panels, manages keyboard shortcuts and command palette |
 
 ### Context Providers (State Management)
@@ -72,6 +72,16 @@ All global state flows through four React contexts, nested in dependency order:
 ### Feature Modules
 
 Each feature lives in `src/features/<name>/` with its own components, hooks, types, and operations.
+
+#### `features/auth/`
+Authentication gate and login UI.
+
+| File | Purpose |
+|------|---------|
+| `AuthGate.tsx` | Top-level component — shows loading spinner, login page, or the full app depending on auth state |
+| `LoginPage.tsx` | Full-screen password form matching Nerve's dark theme. Auto-focus, Enter-to-submit, gateway token hint |
+| `useAuth.ts` | Auth state via `useSyncExternalStore`. Module-level fetch checks `/api/auth/status` once on load. Exposes `login`/`logout` callbacks |
+| `index.ts` | Barrel export |
 
 #### `features/chat/`
 The main chat interface.
@@ -147,7 +157,7 @@ Settings drawer with tabbed sections.
 
 | File | Purpose |
 |------|---------|
-| `SettingsDrawer.tsx` | Slide-out drawer container |
+| `SettingsDrawer.tsx` | Slide-out drawer container. Includes logout button when auth is enabled |
 | `ConnectionSettings.tsx` | Gateway URL/token, reconnect |
 | `AudioSettings.tsx` | TTS provider, model, voice, wake word |
 | `AppearanceSettings.tsx` | Theme, font selection |
@@ -296,6 +306,7 @@ Applied in order in `app.ts`:
 | CORS | Hono built-in + custom | Whitelist of localhost origins + `ALLOWED_ORIGINS` env var. Validates via `URL` constructor. Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS |
 | Security headers | `middleware/security-headers.ts` | Standard security headers (CSP, X-Frame-Options, etc.) |
 | Body limit | Hono built-in | Configurable max body size (from `config.limits.maxBodyBytes`) |
+| Auth | `middleware/auth.ts` | When `NERVE_AUTH=true`, requires a valid signed session cookie on `/api/*` routes (except auth endpoints and health). WebSocket upgrades checked separately in `ws-proxy.ts` |
 | Compression | Hono built-in | gzip/brotli on all routes **except** SSE (`/api/events`) |
 | Cache headers | `middleware/cache-headers.ts` | Hashed assets → immutable, API → no-cache, non-hashed static → must-revalidate |
 | Rate limiting | `middleware/rate-limit.ts` | Per-IP sliding window. Separate limits for general API vs TTS/transcribe. Client ID from socket or custom header |
@@ -305,6 +316,9 @@ Applied in order in `app.ts`:
 | Route | File | Methods | Purpose |
 |-------|------|---------|---------|
 | `/health` | `routes/health.ts` | GET | Health check with gateway connectivity probe |
+| `/api/auth/status` | `routes/auth.ts` | GET | Check whether auth is enabled and current session validity |
+| `/api/auth/login` | `routes/auth.ts` | POST | Authenticate with password, set signed session cookie |
+| `/api/auth/logout` | `routes/auth.ts` | POST | Clear session cookie |
 | `/api/connect-defaults` | `routes/connect-defaults.ts` | GET | Pre-fill gateway URL/token for browser. Token only returned for loopback clients |
 | `/api/events` | `routes/events.ts` | GET, POST | SSE stream for real-time push (memory.changed, tokens.updated, status.changed, ping). POST for test events |
 | `/api/tts` | `routes/tts.ts` | POST | Text-to-speech with provider auto-selection (OpenAI → Replicate → Edge). LRU cache with TTL |
@@ -337,9 +351,10 @@ Applied in order in `app.ts`:
 
 | File | Purpose |
 |------|---------|
-| `lib/config.ts` | Centralized configuration from env vars — ports, keys, paths, limits. Validated at startup |
-| `lib/ws-proxy.ts` | WebSocket proxy — client→gateway with device identity injection (Ed25519 challenge-response) |
-| `lib/device-identity.ts` | Ed25519 keypair generation/persistence for gateway auth. Stored in `~/.nerve/device-identity.json` |
+| `lib/config.ts` | Centralized configuration from env vars — ports, keys, paths, limits, auth settings. Validated at startup |
+| `lib/session.ts` | Session token creation/verification (HMAC-SHA256), password hashing (scrypt), cookie parsing for WS upgrade requests |
+| `lib/ws-proxy.ts` | WebSocket proxy — client→gateway with session cookie auth on upgrade and Ed25519 device identity injection |
+| `lib/device-identity.ts` | Ed25519 keypair generation/persistence (`~/.nerve/device-identity.json`). Builds signed connect blocks for gateway auth |
 | `lib/gateway-client.ts` | HTTP client for gateway tool invocation API (`/tools/invoke`) |
 | `lib/file-watcher.ts` | Watches MEMORY.md, `memory/`, and workspace directory (recursive). Broadcasts `file.changed` SSE events for real-time sync |
 | `lib/file-utils.ts` | File browser utilities — path validation, directory exclusions, binary file detection |
@@ -373,11 +388,13 @@ Browser WS → /ws?target=ws://gateway:18789/ws → ws-proxy.ts → OpenClaw Gat
 ```
 
 1. Client connects to `/ws` endpoint on Nerve server
-2. Proxy validates target URL against `WS_ALLOWED_HOSTS` allowlist
-3. Proxy opens upstream WebSocket to the gateway
-4. On `connect.challenge` event, proxy intercepts the client's `connect` request and injects Ed25519 device identity (`device` block with signed nonce)
-5. After handshake, all messages are transparently forwarded bidirectionally
-6. Pending messages are buffered (capped at 100 messages / 1 MB) while upstream connects
+2. When auth is enabled, the session cookie is verified on the HTTP upgrade request (rejects with 401 if invalid)
+3. Proxy validates target URL against `WS_ALLOWED_HOSTS` allowlist
+4. Proxy opens upstream WebSocket to the gateway
+5. On `connect.challenge` event, proxy intercepts the client's `connect` request and injects Ed25519 device identity (`device` block with signed nonce)
+6. If the gateway rejects the device (close code 1008), proxy retries without device identity (reduced scopes)
+7. After handshake, all messages are transparently forwarded bidirectionally
+8. Pending messages are buffered (capped at 100 messages / 1 MB) while upstream connects
 
 ### Server-Sent Events (SSE)
 

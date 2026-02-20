@@ -225,8 +225,11 @@ const fetchLimits = createCachedFetch(
 
 ### Security
 
+- **Authentication:** Session-cookie auth via `middleware/auth.ts`. When enabled, all `/api/*` routes (except auth/health) require a valid HMAC-SHA256 signed cookie. WebSocket upgrades checked in `ws-proxy.ts`
+- **Session tokens:** Stateless signed cookies (`HttpOnly`, `SameSite=Strict`). Password hashing via scrypt. Gateway token accepted as fallback password
 - **CORS:** Strict origin allowlist — only localhost variants and explicitly configured origins
 - **Token exposure:** Gateway token only returned to loopback clients (`/api/connect-defaults`)
+- **Device identity:** Ed25519 keypair for gateway WS auth (`~/.nerve/device-identity.json`). Required for operator scopes on OpenClaw 2026.2.19+
 - **File serving:** MIME-type allowlist + directory traversal prevention + allowed prefix check
 - **Body limits:** Configurable per-route (general API vs transcribe uploads)
 - **Rate limiting:** Per-IP sliding window with separate limits for expensive operations

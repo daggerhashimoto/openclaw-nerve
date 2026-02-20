@@ -26,7 +26,11 @@ Connects Nerve to your OpenClaw gateway. The wizard auto-detects the gateway tok
 2. Environment variable `OPENCLAW_GATEWAY_TOKEN`
 3. `~/.openclaw/openclaw.json` (auto-detected)
 
-Tests the connection before proceeding. If the gateway is unreachable, you can continue anyway. On OpenClaw 2026.2.19+, the wizard also auto-fixes a known device scope bootstrap issue and approves pending device pairing requests.
+Tests the connection before proceeding. If the gateway is unreachable, you can continue anyway. On OpenClaw 2026.2.19+, the wizard also:
+- Reads the real gateway token from the systemd service file (works around a known bug where `openclaw onboard` writes different tokens to systemd and `openclaw.json`)
+- Bootstraps `paired.json` and `device-auth.json` with full operator scopes if they don't exist yet
+- Pre-registers Nerve's device identity so it can connect without manual `openclaw devices approve`
+- Restarts the gateway to apply changes
 
 #### 2. Agent Identity
 
@@ -91,7 +95,7 @@ HOST=127.0.0.1
 
 | Variable | Default | Required | Description |
 |----------|---------|----------|-------------|
-| `GATEWAY_TOKEN` | — | **Yes** | Authentication token for the OpenClaw gateway. Found in `~/.openclaw/openclaw.json` or via `openclaw gateway status` |
+| `GATEWAY_TOKEN` | — | **Yes** | Authentication token for the OpenClaw gateway. The setup wizard auto-detects this. See note below |
 | `GATEWAY_URL` | `http://127.0.0.1:18789` | No | Gateway HTTP endpoint URL |
 
 ```env
@@ -100,6 +104,8 @@ GATEWAY_URL=http://127.0.0.1:18789
 ```
 
 > **Note:** `OPENCLAW_GATEWAY_TOKEN` is also accepted as a fallback for `GATEWAY_TOKEN`.
+>
+> **Token detection order:** The setup wizard finds the gateway token from: (1) systemd service file (`OPENCLAW_GATEWAY_TOKEN` env var in the unit), (2) `~/.openclaw/openclaw.json`, (3) `OPENCLAW_GATEWAY_TOKEN` shell env var. The systemd source takes priority because the gateway process reads the env var over the config file — a known issue where `openclaw onboard` writes different tokens to each location.
 
 ### Agent Identity
 

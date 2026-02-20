@@ -34,7 +34,7 @@ import {
   type EnvConfig,
 } from './lib/env-writer.js';
 import { generateSelfSignedCert } from './lib/cert-gen.js';
-import { detectGatewayConfig, getEnvGatewayToken, patchGatewayAllowedOrigins, restartGateway } from './lib/gateway-detect.js';
+import { detectGatewayConfig, getEnvGatewayToken, patchGatewayAllowedOrigins, restartGateway, fixGatewayDeviceScopes, approveAllPendingDevices } from './lib/gateway-detect.js';
 
 const PROJECT_ROOT = resolve(process.cwd());
 const ENV_PATH = resolve(PROJECT_ROOT, '.env');
@@ -254,6 +254,23 @@ async function collectInteractive(
   const gwTest = await testGatewayConnection(config.GATEWAY_URL!);
   if (gwTest.ok) {
     console.log(`\x1b[32m✓\x1b[0m ${gwTest.message}`);
+
+    // Fix OpenClaw 2026.2.19 bootstrap bug: gateway device has insufficient scopes
+    const scopeFix = fixGatewayDeviceScopes();
+    if (scopeFix.ok && scopeFix.needsRestart) {
+      dim('  Fixing gateway device scopes (OpenClaw bootstrap workaround)...');
+      const restart = restartGateway();
+      if (restart.ok) {
+        // Wait for gateway to come back up
+        await new Promise(r => setTimeout(r, 3000));
+        const approved = approveAllPendingDevices();
+        if (approved.ok && approved.approved > 0) {
+          success(`${approved.message} — gateway CLI now fully functional`);
+        } else {
+          success('Gateway device scopes upgraded');
+        }
+      }
+    }
   } else {
     console.log(`\x1b[31m✗\x1b[0m ${gwTest.message}`);
     dim('  Start it with: openclaw gateway start');

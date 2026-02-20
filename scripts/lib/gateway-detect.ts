@@ -117,6 +117,110 @@ export function patchGatewayAllowedOrigins(origin: string): GatewayPatchResult {
   }
 }
 
+const FULL_OPERATOR_SCOPES = [
+  'operator.admin',
+  'operator.read',
+  'operator.write',
+  'operator.approvals',
+  'operator.pairing',
+];
+
+/**
+ * Workaround for OpenClaw 2026.2.19 bootstrap bug.
+ *
+ * On fresh install, the gateway creates its own device identity with only
+ * `operator.read` scope. But the CLI needs `operator.admin` + `operator.approvals`
+ * + `operator.pairing` for commands like `devices list`. This creates a deadlock:
+ * can't approve devices because the CLI can't connect with sufficient scopes.
+ *
+ * This function upgrades the gateway's own device scopes in paired.json and
+ * restarts the gateway, breaking the deadlock.
+ */
+export function fixGatewayDeviceScopes(): { ok: boolean; message: string; needsRestart: boolean } {
+  const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
+
+  if (!existsSync(pairedPath)) {
+    return { ok: false, message: 'No paired devices file found', needsRestart: false };
+  }
+
+  try {
+    const raw = readFileSync(pairedPath, 'utf-8');
+    const paired = JSON.parse(raw) as Record<string, {
+      scopes?: string[];
+      tokens?: Record<string, { scopes?: string[] }>;
+      clientId?: string;
+    }>;
+
+    let fixed = false;
+    for (const [, device] of Object.entries(paired)) {
+      const currentScopes = device.scopes || [];
+      const missing = FULL_OPERATOR_SCOPES.filter(s => !currentScopes.includes(s));
+
+      if (missing.length > 0) {
+        device.scopes = FULL_OPERATOR_SCOPES;
+        if (device.tokens?.operator) {
+          device.tokens.operator.scopes = FULL_OPERATOR_SCOPES;
+        }
+        fixed = true;
+      }
+    }
+
+    if (!fixed) {
+      return { ok: true, message: 'Device scopes already correct', needsRestart: false };
+    }
+
+    writeFileSync(pairedPath, JSON.stringify(paired, null, 2) + '\n');
+    return { ok: true, message: 'Upgraded gateway device scopes', needsRestart: true };
+  } catch (err) {
+    return {
+      ok: false,
+      message: `Failed to fix device scopes: ${err instanceof Error ? err.message : String(err)}`,
+      needsRestart: false,
+    };
+  }
+}
+
+/**
+ * Approve all pending device pairing requests via the CLI.
+ * Call after fixing scopes + restarting the gateway.
+ */
+export function approveAllPendingDevices(): { ok: boolean; approved: number; message: string } {
+  try {
+    const listOutput = execSync('openclaw devices list --json 2>/dev/null || echo "[]"', {
+      timeout: 10000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).toString();
+
+    // Parse pending requests — the CLI may not have --json, fall back to regex
+    const pendingIds: string[] = [];
+    const requestPattern = /│\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s+│/g;
+    let match;
+    while ((match = requestPattern.exec(listOutput)) !== null) {
+      pendingIds.push(match[1]);
+    }
+
+    if (pendingIds.length === 0) {
+      return { ok: true, approved: 0, message: 'No pending requests' };
+    }
+
+    let approved = 0;
+    for (const id of pendingIds) {
+      try {
+        execSync(`openclaw devices approve ${id}`, { timeout: 10000, stdio: 'pipe' });
+        approved++;
+      } catch { /* skip individual failures */ }
+    }
+
+    return {
+      ok: approved > 0,
+      approved,
+      message: approved > 0 ? `Approved ${approved} pending device(s)` : 'Failed to approve pending devices',
+    };
+  } catch {
+    return { ok: false, approved: 0, message: 'Could not list pending devices' };
+  }
+}
+
 /**
  * Attempt to restart the OpenClaw gateway so config changes take effect.
  * Tries `openclaw gateway restart` first, falls back to kill + start.

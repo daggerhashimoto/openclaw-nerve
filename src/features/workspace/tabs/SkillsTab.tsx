@@ -2,7 +2,7 @@
  * SkillsTab — Browse installed skills and their status.
  */
 
-import { useState, useCallback, useEffect, type ReactNode } from 'react';
+import { useState, useCallback } from 'react';
 import { RefreshCw, Circle, ExternalLink, ChevronDown, ChevronRight, Puzzle } from 'lucide-react';
 import { useSkills, type Skill, type SkillMissing } from '../hooks/useSkills';
 
@@ -111,12 +111,8 @@ function SkillRow({ skill }: { skill: Skill }) {
   );
 }
 
-interface SkillsTabProps {
-  onActions?: (actions: ReactNode) => void;
-}
-
 /** Workspace tab listing installed skills and flagging missing dependencies. */
-export function SkillsTab({ onActions }: SkillsTabProps) {
+export function SkillsTab() {
   const { skills, isLoading, error, refresh } = useSkills();
   const [showUnavailable, setShowUnavailable] = useState(false);
 
@@ -125,32 +121,36 @@ export function SkillsTab({ onActions }: SkillsTabProps) {
   const eligibleCount = eligibleSkills.length;
   const totalCount = skills.length;
 
-  // Register action buttons with parent tab bar
-  useEffect(() => {
-    onActions?.(
-      <>
-        {totalCount > 0 && (
-          <span className="text-[10px] text-muted-foreground tabular-nums mr-1">
-            {eligibleCount}/{totalCount}
-          </span>
-        )}
-        <button
-          onClick={refresh}
-          disabled={isLoading}
-          className="bg-transparent border border-border/60 text-muted-foreground text-sm w-6 h-6 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-muted-foreground disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-          title="Refresh skills"
-          aria-label="Refresh skills"
-        >
-          <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
-        </button>
-      </>
-    );
-  }, [isLoading, eligibleCount, totalCount, refresh, onActions]);
-
   return (
     <div className="h-full flex flex-col min-h-0">
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
+        {/* Skills count + Refresh row */}
+        {!isLoading && skills.length > 0 && (
+          <div className="flex items-center border-b border-border/40">
+            <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] flex-1">
+              <span className="shrink-0 text-muted-foreground">
+                <Puzzle size={12} />
+              </span>
+              <span className="text-muted-foreground">
+                {eligibleCount} active
+                {unavailableSkills.length > 0 && (
+                  <span className="text-muted-foreground/50"> / {totalCount} total</span>
+                )}
+              </span>
+            </div>
+            <button
+              onClick={refresh}
+              disabled={isLoading}
+              className="shrink-0 px-2 py-1.5 bg-transparent border-0 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+              title="Refresh skills"
+              aria-label="Refresh skills"
+            >
+              <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+        )}
+
         {/* Error */}
         <div aria-live="polite" aria-atomic="true">
           {error && (

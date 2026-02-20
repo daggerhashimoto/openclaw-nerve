@@ -5,7 +5,7 @@
  * Tab action buttons (add, refresh) render in the tab bar header.
  */
 
-import { useState, useCallback, type ReactNode } from 'react';
+import { useState, useCallback } from 'react';
 import { WorkspaceTabs, type TabId } from './WorkspaceTabs';
 import { MemoryTab, CronsTab, ConfigTab, SkillsTab } from './tabs';
 import { useCrons } from './hooks/useCrons';
@@ -35,18 +35,6 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading }:
 
   const [visitedTabs, setVisitedTabs] = useState<Set<TabId>>(() => new Set([activeTab]));
 
-  // Per-tab action buttons rendered in the tab bar
-  const [tabActions, setTabActions] = useState<Partial<Record<TabId, ReactNode>>>({});
-  const registerMemoryActions = useCallback((actions: ReactNode) => {
-    setTabActions(prev => ({ ...prev, memory: actions }));
-  }, []);
-  const registerCronsActions = useCallback((actions: ReactNode) => {
-    setTabActions(prev => ({ ...prev, crons: actions }));
-  }, []);
-  const registerSkillsActions = useCallback((actions: ReactNode) => {
-    setTabActions(prev => ({ ...prev, skills: actions }));
-  }, []);
-
   const handleTabChange = useCallback((tab: TabId) => {
     setActiveTab(tab);
     setVisitedTabs(prev => {
@@ -66,7 +54,6 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading }:
         activeTab={activeTab}
         onTabChange={handleTabChange}
         cronCount={activeCount || undefined}
-        actions={tabActions[activeTab]}
       />
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className={activeTab === 'memory' ? 'h-full' : 'hidden'} hidden={activeTab !== 'memory'} role="tabpanel" id="workspace-tabpanel-memory" aria-labelledby="workspace-tab-memory">
@@ -75,18 +62,17 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading }:
               memories={memories}
               onRefresh={onRefreshMemories}
               isLoading={memoriesLoading}
-              onActions={registerMemoryActions}
             />
           )}
         </div>
         <div className={activeTab === 'crons' ? 'h-full' : 'hidden'} hidden={activeTab !== 'crons'} role="tabpanel" id="workspace-tabpanel-crons" aria-labelledby="workspace-tab-crons">
           {visitedTabs.has('crons') && (
-            <CronsTab onActions={registerCronsActions} />
+            <CronsTab />
           )}
         </div>
         <div className={activeTab === 'skills' ? 'h-full' : 'hidden'} hidden={activeTab !== 'skills'} role="tabpanel" id="workspace-tabpanel-skills" aria-labelledby="workspace-tab-skills">
           {visitedTabs.has('skills') && (
-            <SkillsTab onActions={registerSkillsActions} />
+            <SkillsTab />
           )}
         </div>
         <div className={activeTab === 'config' ? 'h-full' : 'hidden'} hidden={activeTab !== 'config'} role="tabpanel" id="workspace-tabpanel-config" aria-labelledby="workspace-tab-config">

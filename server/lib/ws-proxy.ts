@@ -256,7 +256,10 @@ interface ConnectParams {
 function injectDeviceIdentity(msg: Record<string, unknown>, nonce: string): Record<string, unknown> {
   const params = (msg.params || {}) as ConnectParams;
   const clientId = params.client?.id || 'nerve-ui';
-  const clientMode = params.client?.mode || 'webchat';
+  // Force 'ui' mode — the gateway restricts webchat clients from
+  // sessions.patch / sessions.delete / sessions.reset. Nerve needs full
+  // control-UI-level access for session management.
+  const clientMode = 'ui';
   const role = params.role || 'operator';
   const scopes = params.scopes || ['operator.admin', 'operator.read', 'operator.write'];
   const token = params.auth?.token || '';

@@ -413,6 +413,12 @@ export function prePairNerveDevice(gatewayToken?: string): { ok: boolean; messag
     // Register in paired.json
     const paired = JSON.parse(readFileSync(pairedPath, 'utf-8')) as Record<string, unknown>;
 
+    // Use the gateway auth token — Nerve's WS proxy forwards the browser's
+    // connect request which includes this token. The gateway validates that
+    // the token in the connect request matches the device's stored token.
+    const now = Date.now();
+    const token = gatewayToken || detectGatewayConfig().token || crypto.randomBytes(32).toString('base64url');
+
     // Update token if device exists but token doesn't match
     if (paired[deviceId]) {
       const existing = paired[deviceId] as { tokens?: Record<string, { token?: string }> };
@@ -427,12 +433,6 @@ export function prePairNerveDevice(gatewayToken?: string): { ok: boolean; messag
         return { ok: true, message: `Updated Nerve device token ${deviceId.substring(0, 12)}…`, needsRestart: true };
       }
     }
-
-    const now = Date.now();
-    // Use the gateway auth token — Nerve's WS proxy forwards the browser's
-    // connect request which includes this token. The gateway validates that
-    // the token in the connect request matches the device's stored token.
-    const token = gatewayToken || detectGatewayConfig().token || crypto.randomBytes(32).toString('base64url');
 
     paired[deviceId] = {
       deviceId,

@@ -52,9 +52,19 @@ function stripAnsi(s: string): string {
 }
 
 function resolveClaudeBin(): string {
-  const local = join(homedir(), '.local', 'bin', 'claude');
-  if (existsSync(local)) return local;
-  return 'claude';
+  // Check common Claude CLI install locations in priority order.
+  // The server process (especially under systemd/launchd) often has a
+  // minimal PATH that doesn't include these directories.
+  const candidates = [
+    join(homedir(), '.local', 'bin', 'claude'),           // Linux native install
+    join(homedir(), '.claude', 'local', 'claude'),         // macOS native install
+    '/usr/local/bin/claude',                               // Homebrew / manual
+    '/opt/homebrew/bin/claude',                            // Homebrew ARM macOS
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return 'claude'; // fall back to PATH lookup
 }
 
 function sleep(ms: number): Promise<void> {
@@ -103,12 +113,21 @@ export async function getClaudeUsage(): Promise<RawClaudeLimits> {
   let buffer = '';
 
   try {
+    // Ensure ~/.local/bin is in PATH — under systemd the default PATH is
+    // minimal and Claude CLI prints a "not in PATH" warning instead of
+    // starting the interactive REPL.
+    const spawnEnv = { ...process.env } as Record<string, string>;
+    const localBin = join(homedir(), '.local', 'bin');
+    if (spawnEnv.PATH && !spawnEnv.PATH.split(':').includes(localBin)) {
+      spawnEnv.PATH = `${localBin}:${spawnEnv.PATH}`;
+    }
+
     pty = nodePty.spawn(claudeBin, [], {
       name: 'xterm-256color',
       cols: 200,
       rows: 50,
       cwd: tmpdir(),
-      env: process.env as Record<string, string>,
+      env: spawnEnv,
     });
 
     pty.onData((data: string) => {

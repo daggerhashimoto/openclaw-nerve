@@ -260,7 +260,7 @@ async function collectInteractive(
     let needsGatewayRestart = scopeFix.ok && scopeFix.needsRestart;
 
     // Pre-pair Nerve's device identity so it can connect without manual approval
-    const pairResult = prePairNerveDevice();
+    const pairResult = prePairNerveDevice(config.GATEWAY_TOKEN);
     if (pairResult.ok && pairResult.needsRestart) {
       needsGatewayRestart = true;
       dim(`  ${pairResult.message}`);

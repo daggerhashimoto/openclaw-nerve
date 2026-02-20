@@ -258,7 +258,7 @@ export function approveAllPendingDevices(): { ok: boolean; approved: number; mes
  * This means Nerve can connect to the gateway immediately on first start
  * without any manual `openclaw devices approve` step.
  */
-export function prePairNerveDevice(): { ok: boolean; message: string; needsRestart: boolean } {
+export function prePairNerveDevice(gatewayToken?: string): { ok: boolean; message: string; needsRestart: boolean } {
   const nerveDir = process.env.NERVE_DATA_DIR
     || join(process.env.HOME || HOME, '.nerve');
   const identityPath = join(nerveDir, 'device-identity.json');
@@ -306,7 +306,10 @@ export function prePairNerveDevice(): { ok: boolean; message: string; needsResta
     }
 
     const now = Date.now();
-    const token = crypto.randomBytes(32).toString('base64url');
+    // Use the gateway auth token — Nerve's WS proxy forwards the browser's
+    // connect request which includes this token. The gateway validates that
+    // the token in the connect request matches the device's stored token.
+    const token = gatewayToken || detectGatewayConfig().token || crypto.randomBytes(32).toString('base64url');
 
     paired[deviceId] = {
       deviceId,

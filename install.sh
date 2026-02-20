@@ -67,6 +67,36 @@ run_with_dots() {
   return $RWD_EXIT
 }
 
+# Read the real gateway token. Systemd service file takes priority because
+# the gateway process uses its env var over openclaw.json (known 2026.2.19 bug).
+detect_gateway_token() {
+  local token=""
+  # 1. Check systemd service file (source of truth when present)
+  local svc_files=(
+    "${HOME}/.config/systemd/user/openclaw-gateway.service"
+    "/etc/systemd/system/openclaw-gateway.service"
+  )
+  for svc in "${svc_files[@]}"; do
+    if [[ -f "$svc" ]]; then
+      token=$(grep -oP 'OPENCLAW_GATEWAY_TOKEN=\K\S+' "$svc" 2>/dev/null || true)
+      if [[ -n "$token" ]]; then
+        echo "$token"
+        return 0
+      fi
+    fi
+  done
+  # 2. Fall back to openclaw.json
+  local config_file="${HOME}/.openclaw/openclaw.json"
+  if [[ -f "$config_file" ]]; then
+    token=$(node -e "try{const c=JSON.parse(require('fs').readFileSync('$config_file','utf8'));console.log(c.gateway?.auth?.token??'')}catch{}" 2>/dev/null || echo "")
+    if [[ -n "$token" ]]; then
+      echo "$token"
+      return 0
+    fi
+  fi
+  echo ""
+}
+
 STAGE_CURRENT=0
 STAGE_TOTAL=5
 stage() {
@@ -344,8 +374,8 @@ check_gateway() {
 
   # Verify auth token exists (needed for .env generation and service connectivity)
   local gw_token="${GATEWAY_TOKEN:-}"
-  if [[ -z "$gw_token" && -f "$config_file" ]]; then
-    gw_token=$(node -e "try{const c=JSON.parse(require('fs').readFileSync('$config_file','utf8'));console.log(c.gateway?.auth?.token??'')}catch{}" 2>/dev/null || echo "")
+  if [[ -z "$gw_token" ]]; then
+    gw_token=$(detect_gateway_token)
   fi
   if [[ -n "$gw_token" ]]; then
     ok "Gateway auth token present"
@@ -540,9 +570,11 @@ generate_env_from_gateway() {
   local gw_port="18789"
   local config_file="${HOME}/.openclaw/openclaw.json"
 
-  # Read from openclaw.json if no --gateway-token was passed
-  if [[ -z "$gw_token" && -f "$config_file" ]]; then
-    gw_token=$(node -e "try{const c=JSON.parse(require('fs').readFileSync('$config_file','utf8'));console.log(c.gateway?.auth?.token??'')}catch{}" 2>/dev/null || echo "")
+  # Read token from systemd/config if no --gateway-token was passed
+  if [[ -z "$gw_token" ]]; then
+    gw_token=$(detect_gateway_token)
+  fi
+  if [[ -f "$config_file" ]]; then
     gw_port=$(node -e "try{const c=JSON.parse(require('fs').readFileSync('$config_file','utf8'));console.log(c.gateway?.port??18789)}catch{console.log(18789)}" 2>/dev/null || echo "18789")
   fi
 

@@ -24,6 +24,11 @@ export interface EnvConfig {
   TTS_CACHE_TTL_MS?: string;
   TTS_CACHE_MAX?: string;
   VITE_PORT?: string;
+  // Authentication
+  NERVE_AUTH?: string;
+  NERVE_PASSWORD_HASH?: string;
+  NERVE_SESSION_SECRET?: string;
+  NERVE_SESSION_TTL?: string;
 }
 
 /** Default values (matching server/lib/config.ts). */
@@ -85,6 +90,18 @@ export function generateEnvContent(config: EnvConfig): string {
   if (keyLines.length > 0) {
     lines.push('# API Keys');
     lines.push(...keyLines);
+    lines.push('');
+  }
+
+  // Authentication
+  if (config.NERVE_AUTH === 'true' || config.NERVE_PASSWORD_HASH || config.NERVE_SESSION_SECRET) {
+    const authLines: string[] = [];
+    authLines.push(`NERVE_AUTH=${config.NERVE_AUTH || 'false'}`);
+    if (config.NERVE_PASSWORD_HASH) authLines.push(`NERVE_PASSWORD_HASH=${config.NERVE_PASSWORD_HASH}`);
+    if (config.NERVE_SESSION_SECRET) authLines.push(`NERVE_SESSION_SECRET=${config.NERVE_SESSION_SECRET}`);
+    if (config.NERVE_SESSION_TTL) authLines.push(`NERVE_SESSION_TTL=${config.NERVE_SESSION_TTL}`);
+    lines.push('# Authentication');
+    lines.push(...authLines);
     lines.push('');
   }
 

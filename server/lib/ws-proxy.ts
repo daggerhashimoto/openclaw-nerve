@@ -3,9 +3,13 @@
  *
  * Clients connect to `ws(s)://host:port/ws?target=<gateway-ws-url>` and this
  * module opens a corresponding connection to the gateway, relaying messages
- * bidirectionally. During the initial handshake it intercepts the
- * `connect.challenge` event and injects an Ed25519-signed device identity
- * block so the gateway grants `operator.read` / `operator.write` scopes.
+ * bidirectionally. During the connect handshake, injects Nerve's Ed25519-signed
+ * device identity so the gateway grants operator.read/write scopes.
+ *
+ * On the first ever connection the gateway creates a pending pairing request.
+ * The user must approve it once via `openclaw devices approve <requestId>`.
+ * If the device is rejected for any reason, the proxy retries without device
+ * identity — the browser still connects but with reduced (token-only) scopes.
  * @module
  */
 
@@ -14,7 +18,8 @@ import type { Server as HttpServer } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { WS_ALLOWED_HOSTS } from './config.js';
+import { config, WS_ALLOWED_HOSTS, SESSION_COOKIE_NAME } from './config.js';
+import { verifySession, parseSessionCookie } from './session.js';
 import { createDeviceBlock, getDeviceIdentity } from './device-identity.js';
 
 /** Active WSS instances — used for graceful shutdown */
@@ -42,6 +47,15 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
 
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     if (req.url?.startsWith('/ws')) {
+      // Auth check for WebSocket connections
+      if (config.auth) {
+        const token = parseSessionCookie(req.headers.cookie, SESSION_COOKIE_NAME);
+        if (!token || !verifySession(token, config.sessionSecret)) {
+          socket.write('HTTP/1.1 401 Unauthorized\r\nContent-Type: text/plain\r\n\r\nAuthentication required');
+          socket.destroy();
+          return;
+        }
+      }
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
     } else {
       socket.destroy();
@@ -78,54 +92,47 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
     const scheme = isEncrypted ? 'https' : 'http';
     const clientOrigin = req.headers.origin || `${scheme}://${req.headers.host}`;
 
-    const gwWs = new WebSocket(targetUrl.toString(), {
+    createGatewayRelay(clientWs, targetUrl, clientOrigin);
+  });
+}
+
+/**
+ * Create a relay between a browser WebSocket and the gateway.
+ *
+ * Injects Nerve's device identity into the connect handshake for full
+ * operator scopes. If the gateway rejects the device (pairing required,
+ * token mismatch), transparently retries without device identity.
+ */
+function createGatewayRelay(
+  clientWs: WebSocket,
+  targetUrl: URL,
+  clientOrigin: string,
+): void {
+  let gwWs: WebSocket;
+  let challengeNonce: string | null = null;
+  let handshakeComplete = false;
+  let useDeviceIdentity = true;
+  let hasRetried = false;
+  /** Saved connect message for replay on retry */
+  let savedConnectMsg: Record<string, unknown> | null = null;
+
+  // Buffer client messages until gateway connection is open (with cap)
+  const MAX_PENDING = 100;
+  const MAX_BYTES = 1024 * 1024; // 1 MB
+  let pending: { data: Buffer | string; isBinary: boolean }[] = [];
+  let pendingBytes = 0;
+
+  function openGateway(): void {
+    challengeNonce = null;
+    handshakeComplete = false;
+
+    gwWs = new WebSocket(targetUrl.toString(), {
       headers: { Origin: clientOrigin },
     });
 
-    // State machine for connect handshake interception
-    let challengeNonce: string | null = null;
-    let handshakeComplete = false;
-
-    // Buffer client messages until gateway connection is open (with cap)
-    const MAX_PENDING_MESSAGES = 100;
-    const MAX_PENDING_BYTES = 1024 * 1024; // 1 MB
-    const pendingMessages: { data: Buffer | string; isBinary: boolean }[] = [];
-    let pendingBytes = 0;
-
-    clientWs.on('message', (data: Buffer | string, isBinary: boolean) => {
-      if (gwWs.readyState !== WebSocket.OPEN) {
-        const size = typeof data === 'string' ? Buffer.byteLength(data) : data.length;
-        if (pendingMessages.length >= MAX_PENDING_MESSAGES || pendingBytes + size > MAX_PENDING_BYTES) {
-          clientWs.close(1008, 'Too many pending messages');
-          return;
-        }
-        pendingBytes += size;
-        pendingMessages.push({ data, isBinary });
-        return;
-      }
-
-      // Intercept connect request to inject device identity
-      if (!handshakeComplete && !isBinary && challengeNonce) {
-        try {
-          const msg = JSON.parse(data.toString());
-          if (msg.type === 'req' && msg.method === 'connect' && msg.params) {
-            const modified = injectDeviceIdentity(msg, challengeNonce);
-            gwWs.send(JSON.stringify(modified));
-            handshakeComplete = true; // Only intercept the first connect
-            return;
-          }
-        } catch {
-          // Not JSON or parse error — pass through
-        }
-      }
-
-      gwWs.send(isBinary ? data : data.toString());
-    });
-
-    // Register gateway→client relay IMMEDIATELY (before open) to avoid
-    // dropping messages that arrive between readyState=OPEN and the 'open' callback.
+    // Gateway → Client
     gwWs.on('message', (data: Buffer | string, isBinary: boolean) => {
-      // Intercept connect.challenge to capture nonce
+      // Capture challenge nonce before handshake completes
       if (!handshakeComplete && !isBinary) {
         try {
           const msg = JSON.parse(data.toString());
@@ -142,13 +149,13 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
 
     gwWs.on('open', () => {
       // Flush buffered messages
-      for (const msg of pendingMessages) {
-        // Check for connect request in buffered messages too
+      for (const msg of pending) {
         if (!handshakeComplete && !msg.isBinary && challengeNonce) {
           try {
             const parsed = JSON.parse(msg.data.toString());
             if (parsed.type === 'req' && parsed.method === 'connect' && parsed.params) {
-              const modified = injectDeviceIdentity(parsed, challengeNonce);
+              savedConnectMsg = parsed;
+              const modified = useDeviceIdentity ? injectDeviceIdentity(parsed, challengeNonce) : parsed;
               gwWs.send(JSON.stringify(modified));
               handshakeComplete = true;
               continue;
@@ -157,32 +164,87 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
         }
         gwWs.send(msg.isBinary ? msg.data : msg.data.toString());
       }
-      pendingMessages.length = 0;
+      pending = [];
+      pendingBytes = 0;
+
+      // On retry, replay the saved connect message without device identity
+      if (hasRetried && savedConnectMsg && challengeNonce) {
+        gwWs.send(JSON.stringify(savedConnectMsg));
+        handshakeComplete = true;
+      }
     });
 
     gwWs.on('error', (err) => {
       console.error('[ws-proxy] Gateway error:', err.message);
-      clientWs.close();
+      if (!hasRetried || handshakeComplete) clientWs.close();
     });
+
     gwWs.on('close', (code, reason) => {
-      console.log(`[ws-proxy] Gateway closed: code=${code}, reason=${reason?.toString()}`);
+      const reasonStr = reason?.toString() || '';
+      console.log(`[ws-proxy] Gateway closed: code=${code}, reason=${reasonStr}`);
+
+      // Device auth rejected — retry without device identity
+      const isDeviceRejection = code === 1008 && (
+        reasonStr.includes('device token mismatch') ||
+        reasonStr.includes('pairing required')
+      );
+
+      if (useDeviceIdentity && !hasRetried && isDeviceRejection && clientWs.readyState === WebSocket.OPEN) {
+        console.log(`[ws-proxy] Device rejected (${reasonStr}) — retrying without device identity`);
+        useDeviceIdentity = false;
+        hasRetried = true;
+        openGateway();
+        return;
+      }
+
       clientWs.close();
     });
-    clientWs.on('close', (code, reason) => {
-      console.log(`[ws-proxy] Client closed: code=${code}, reason=${reason?.toString()}`);
-      gwWs.close();
-    });
-    clientWs.on('error', (err) => {
-      console.error('[ws-proxy] Client error:', err.message);
-      gwWs.close();
-    });
+  }
+
+  // Client → Gateway (attached once, references mutable gwWs)
+  clientWs.on('message', (data: Buffer | string, isBinary: boolean) => {
+    if (!gwWs || gwWs.readyState !== WebSocket.OPEN) {
+      const size = typeof data === 'string' ? Buffer.byteLength(data) : data.length;
+      if (pending.length >= MAX_PENDING || pendingBytes + size > MAX_BYTES) {
+        clientWs.close(1008, 'Too many pending messages');
+        return;
+      }
+      pendingBytes += size;
+      pending.push({ data, isBinary });
+      return;
+    }
+
+    // Intercept connect request to inject device identity
+    if (!handshakeComplete && !isBinary && challengeNonce) {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === 'req' && msg.method === 'connect' && msg.params) {
+          savedConnectMsg = msg;
+          const modified = useDeviceIdentity ? injectDeviceIdentity(msg, challengeNonce) : msg;
+          gwWs.send(JSON.stringify(modified));
+          handshakeComplete = true;
+          return;
+        }
+      } catch { /* pass through */ }
+    }
+
+    gwWs.send(isBinary ? data : data.toString());
   });
+
+  clientWs.on('close', (code, reason) => {
+    console.log(`[ws-proxy] Client closed: code=${code}, reason=${reason?.toString()}`);
+    if (gwWs) gwWs.close();
+  });
+  clientWs.on('error', (err) => {
+    console.error('[ws-proxy] Client error:', err.message);
+    if (gwWs) gwWs.close();
+  });
+
+  openGateway();
 }
 
 /**
  * Inject Nerve's device identity into a connect request.
- * This adds the `device` block with Ed25519 signature so the gateway
- * grants operator.read/operator.write scopes.
  */
 interface ConnectParams {
   client?: { id?: string; mode?: string };
@@ -193,13 +255,12 @@ interface ConnectParams {
 
 function injectDeviceIdentity(msg: Record<string, unknown>, nonce: string): Record<string, unknown> {
   const params = (msg.params || {}) as ConnectParams;
-  const clientId = params.client?.id || 'webchat-ui';
+  const clientId = params.client?.id || 'nerve-ui';
   const clientMode = params.client?.mode || 'webchat';
   const role = params.role || 'operator';
   const scopes = params.scopes || ['operator.admin', 'operator.read', 'operator.write'];
   const token = params.auth?.token || '';
 
-  // Ensure scopes include read/write
   const scopeSet = new Set(scopes);
   scopeSet.add('operator.read');
   scopeSet.add('operator.write');

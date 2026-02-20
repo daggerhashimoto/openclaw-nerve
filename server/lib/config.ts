@@ -11,6 +11,7 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_GATEWAY_URL, DEFAULT_PORT, DEFAULT_SSL_PORT, DEFAULT_HOST, WHISPER_MODEL_FILES } from './constants.js';
 
@@ -68,7 +69,16 @@ export const config = {
   // TTS cache
   ttsCacheTtlMs: Number(process.env.TTS_CACHE_TTL_MS || 3_600_000), // 1 hour
   ttsCacheMax: Number(process.env.TTS_CACHE_MAX || 200),
+
+  // Authentication
+  auth: (process.env.NERVE_AUTH || 'false').toLowerCase() === 'true',
+  passwordHash: process.env.NERVE_PASSWORD_HASH || '',
+  sessionSecret: process.env.NERVE_SESSION_SECRET || '',
+  sessionTtlMs: Number(process.env.NERVE_SESSION_TTL || 30 * 24 * 60 * 60 * 1000), // 30 days
 } as const;
+
+/** Session cookie name — suffixed with port to avoid collisions when running multiple instances. */
+export const SESSION_COOKIE_NAME = `nerve_session_${config.port}`;
 
 /** WebSocket proxy allowed hostnames (extend via WS_ALLOWED_HOSTS env var, comma-separated) */
 export const WS_ALLOWED_HOSTS = new Set([
@@ -95,6 +105,9 @@ export function printStartupBanner(version: string): void {
   console.log(`\n  \x1b[33m⚡ Nerve v${version}\x1b[0m`);
   console.log(`  Agent: ${config.agentName} | TTS: ${ttsProviderLabel()} | STT: ${sttProviderLabel()}`);
   console.log(`  Gateway: ${config.gatewayUrl}`);
+  if (config.auth) {
+    console.log('  \x1b[32m🔒 Authentication enabled\x1b[0m');
+  }
 }
 
 /** Non-blocking gateway health check at startup. */
@@ -124,6 +137,29 @@ export function validateConfig(): void {
     );
   }
 
+  // ── Auth validation ──────────────────────────────────────────────
+  if (config.auth && !config.passwordHash && !config.gatewayToken) {
+    console.error(
+      '\n  \x1b[31m✗ NERVE_AUTH is enabled but no password or gateway token is configured.\x1b[0m\n' +
+      '  Run \x1b[36mnpm run setup\x1b[0m to set a password, or set GATEWAY_TOKEN as a fallback.\n',
+    );
+  }
+
+  if (config.auth && !config.sessionSecret) {
+    // Auto-generate session secret if missing
+    const secret = crypto.randomBytes(32).toString('hex');
+    console.warn('[config] ⚠ NERVE_SESSION_SECRET not set — generated ephemeral secret (sessions won\'t survive restarts)');
+    (config as Record<string, unknown>).sessionSecret = secret;
+  }
+
+  if (config.host === '0.0.0.0' && !config.auth) {
+    console.warn(
+      '\n  \x1b[33m⚠ Server binds to 0.0.0.0 with authentication DISABLED.\x1b[0m\n' +
+      '  All API endpoints are accessible from the network without a password.\n' +
+      '  Run \x1b[36mnpm run setup\x1b[0m to enable authentication.\n',
+    );
+  }
+
   // Informational warnings
   if (!config.openaiApiKey) {
     console.warn('[config] ⚠ OPENAI_API_KEY not set — OpenAI TTS/Whisper unavailable (Edge TTS still works)');
@@ -131,9 +167,14 @@ export function validateConfig(): void {
   if (!config.replicateApiToken) {
     console.warn('[config] ⚠ REPLICATE_API_TOKEN not set — Qwen TTS unavailable');
   }
-  if (config.host === '0.0.0.0') {
+  if (config.host === '0.0.0.0' && config.auth) {
+    // Only warn about network binding when auth IS enabled (the loud warning above covers the no-auth case)
+    console.warn('[config] ⚠ Server binds to 0.0.0.0 — API is accessible from the network (auth enabled).');
+  } else if (config.host === '0.0.0.0' && !config.auth) {
+    // Already warned above with the loud message — skip the generic one
+  } else if (config.host !== '127.0.0.1' && config.host !== 'localhost' && config.host !== '::1') {
     console.warn(
-      '[config] ⚠ Server binds to 0.0.0.0 — API is accessible from the network.\n' +
+      '[config] ⚠ Server binds to ' + config.host + ' — API may be accessible from the network.\n' +
       '         Set HOST=127.0.0.1 for local-only access.',
     );
   }

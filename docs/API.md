@@ -2,12 +2,13 @@
 
 Nerve exposes a REST + SSE API served by [Hono](https://hono.dev/) on the configured `PORT` (default **3080**). All API routes are prefixed with `/api/` except the health endpoint. Responses are JSON unless otherwise noted.
 
-> **Authentication:** Nerve does not implement its own auth layer — it relies on network-level access control (localhost binding, CORS allowlist). The gateway token is only exposed to loopback clients via `/api/connect-defaults`. See [SECURITY.md](./SECURITY.md) for details.
+> **Authentication:** When `NERVE_AUTH=true`, all API endpoints (except `/api/auth/*` and `/health`) require a valid session cookie. Obtain one via `POST /api/auth/login`. When `NERVE_AUTH=false` (default for localhost), no authentication is required. See [SECURITY.md](./SECURITY.md) for details.
 
 ---
 
 ## Table of Contents
 
+- [Authentication](#authentication)
 - [Health](#health)
 - [Server Info](#server-info)
 - [Version](#version)
@@ -28,6 +29,75 @@ Nerve exposes a REST + SSE API served by [Hono](https://hono.dev/) on the config
 - [Claude Code Limits](#claude-code-limits)
 - [Error Handling](#error-handling)
 - [Rate Limiting](#rate-limiting)
+
+---
+
+## Authentication
+
+### `GET /api/auth/status`
+
+Check whether authentication is enabled and whether the current request is authenticated.
+
+**Rate Limit:** None (public endpoint)
+
+**Response:**
+
+```json
+{
+  "authEnabled": true,
+  "authenticated": false
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `authEnabled` | `boolean` | Whether `NERVE_AUTH` is enabled on the server |
+| `authenticated` | `boolean` | Whether the current request has a valid session cookie. Always `true` when auth is disabled. |
+
+### `POST /api/auth/login`
+
+Authenticate with a password and receive a session cookie.
+
+**Rate Limit:** General (60/min)
+
+**Request Body:**
+
+```json
+{
+  "password": "your-password"
+}
+```
+
+**Success Response (200):**
+
+```json
+{ "ok": true }
+```
+
+Sets an `HttpOnly` session cookie (`nerve_session_{PORT}`) on success.
+
+**Error Responses:**
+
+| Status | Body | Description |
+|--------|------|-------------|
+| 400 | `{ "error": "Password required" }` | Empty or missing password |
+| 401 | `{ "error": "Invalid password" }` | Wrong password |
+
+**Notes:**
+- When auth is disabled, always returns `{ "ok": true }` without checking password.
+- Accepts the gateway token as a fallback password when no password hash is configured.
+
+### `POST /api/auth/logout`
+
+Clear the session cookie.
+
+**Rate Limit:** None (public endpoint)
+
+**Response:**
+
+```json
+{ "ok": true }
+```
 
 ---
 

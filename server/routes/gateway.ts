@@ -246,7 +246,7 @@ app.get('/api/gateway/session-info', rateLimitGeneral, async (c) => {
   }
 
   // Fallback: try global status tools (less accurate — returns global defaults, not per-session)
-  const toolsToTry = ['gateway_status', 'status', 'session_status'];
+  const toolsToTry = ['session_status'];
   for (const tool of toolsToTry) {
     try {
       const result = await invokeGatewayTool(tool, {}, GATEWAY_TIMEOUT_MS);

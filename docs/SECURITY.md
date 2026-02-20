@@ -45,7 +45,7 @@ Nerve is designed as a **local-first** web UI for an AI agent. Its security mode
 
 ### Out of Scope
 
-- **Multi-user authentication** — Nerve has no user accounts or login system. Access is controlled at the network level (localhost binding, firewall, VPN).
+- **Multi-user authentication** — Nerve supports single-user password authentication. Multi-user accounts with roles are not yet implemented.
 - **End-to-end encryption** — TLS covers transport; at-rest encryption of memory files or session data is not provided.
 - **DDoS protection** — The in-memory rate limiter handles casual abuse but is not designed for sustained attacks. Use a reverse proxy (nginx, Cloudflare) for production exposure.
 
@@ -53,17 +53,56 @@ Nerve is designed as a **local-first** web UI for an AI agent. Its security mode
 
 ## Authentication & Access Control
 
-Nerve does **not** implement its own auth layer. Security is enforced through:
+Nerve includes a built-in session-cookie-based authentication layer that can be enabled via the `NERVE_AUTH` environment variable.
+
+### When Auth is Disabled (default for localhost)
+
+Security is enforced through network-level controls:
 
 1. **Localhost binding** — The server binds to `127.0.0.1` by default. Only local processes can connect.
 2. **CORS allowlist** — Browsers enforce the Origin check. Only configured origins receive CORS headers.
 3. **Gateway token isolation** — The sensitive `GATEWAY_TOKEN` is only exposed to loopback clients via `/api/connect-defaults`.
 4. **Session storage** — The frontend stores the gateway token in `sessionStorage` (cleared when the tab closes), not `localStorage`.
 
-When exposing Nerve to a network (`HOST=0.0.0.0`), consider:
-- Using a VPN (Tailscale, WireGuard) — the setup wizard has first-class Tailscale support
-- Placing Nerve behind a reverse proxy with authentication (nginx + basic auth, OAuth proxy, etc.)
-- Restricting access with firewall rules
+### When Auth is Enabled
+
+All API endpoints (except `/api/auth/*` and `/health`) require a valid session cookie. WebSocket upgrade requests are also checked.
+
+**How it works:**
+
+1. User submits a password via `POST /api/auth/login`
+2. The server verifies the password against a stored scrypt hash (or accepts the gateway token as a fallback)
+3. On success, a signed `HttpOnly` session cookie is set
+4. All subsequent requests include the cookie automatically
+5. The session token is a stateless HMAC-SHA256 signed payload containing only an expiry timestamp
+
+**Session cookie security:**
+
+| Property | Value | Purpose |
+|----------|-------|---------|
+| `HttpOnly` | `true` | Not accessible via JavaScript (XSS-proof) |
+| `SameSite` | `Strict` | Not sent on cross-origin requests (CSRF-proof) |
+| `Secure` | auto | Only sent over HTTPS when HTTPS is active |
+| Signed | HMAC-SHA256 | Tamper-proof — requires `NERVE_SESSION_SECRET` |
+| Cookie name | `nerve_session_{PORT}` | Port-suffixed to avoid collisions across instances |
+
+**Password storage:**
+
+- Passwords are hashed with scrypt (32-byte random salt, 64-byte derived key)
+- Timing-safe comparison prevents timing attacks
+- Passwords are never stored in plaintext or logged
+
+**Gateway token fallback:**
+
+Users who haven't set a dedicated password can authenticate using their existing `GATEWAY_TOKEN`. This provides zero-config authentication when upgrading to network access.
+
+### Recommendations for Network Access
+
+When exposing Nerve to a network (`HOST=0.0.0.0`):
+- **Enable authentication** — the setup wizard prompts for this automatically
+- Using a VPN (Tailscale, WireGuard) adds an additional layer of security
+- Placing Nerve behind a reverse proxy with HTTPS is recommended for production
+- The gateway token can serve as an immediate fallback password
 
 ---
 
@@ -253,6 +292,23 @@ WS_ALLOWED_HOSTS=my-server.tailnet.ts.net,100.64.0.5
 ```
 
 This prevents the proxy from being used to connect to arbitrary external hosts.
+
+### Device Identity & Gateway Scopes
+
+OpenClaw 2026.2.19+ requires a signed device identity (Ed25519 keypair) for WebSocket connections to receive `operator.read` / `operator.write` scopes. Plain token authentication alone grants zero scopes.
+
+Nerve generates a persistent device identity on first start (stored at `~/.nerve/device-identity.json`) and injects it into the connect handshake. The gateway always stays on loopback (`127.0.0.1`) — Nerve proxies all external connections through its WS proxy.
+
+**First-time pairing (required once):**
+
+1. Start Nerve and open the UI in a browser
+2. The first connection creates a pending pairing request on the gateway
+3. Approve it: `openclaw devices list` → `openclaw devices approve <requestId>`
+4. All subsequent connections are automatically authenticated
+
+If the device is rejected (e.g. after a gateway reset), the proxy falls back to token-only auth. The connection succeeds but with reduced scopes — chat and tool calls may fail with "missing scope" errors. Re-approve the device to restore full functionality.
+
+**Architecture:** `Browser (remote) → Nerve (0.0.0.0:3080) → WS proxy → Gateway (127.0.0.1:18789)`. The gateway never needs to bind to LAN or be directly network-accessible.
 
 ---
 

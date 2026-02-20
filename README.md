@@ -102,6 +102,17 @@ Nerve proxies WebSocket traffic to your gateway and adds its own REST layer for 
 **Frontend:** React 19 · Tailwind CSS 4 · shadcn/ui · Vite 7
 **Backend:** Hono 4 on Node.js
 
+## Security
+
+Nerve binds to `localhost` by default — only you can access it. When you expose it to the network (`HOST=0.0.0.0`), built-in password authentication protects all endpoints. The setup wizard auto-prompts for a password when network access is configured.
+
+- **Session cookies** — `HttpOnly`, `SameSite=Strict`, HMAC-SHA256 signed
+- **Password storage** — scrypt with 32-byte salt
+- **WebSocket auth** — cookie verified on upgrade
+- **Gateway token fallback** — works as a password with zero config
+
+See [Security](docs/SECURITY.md) for the full threat model.
+
 ## Docs
 
 | | |

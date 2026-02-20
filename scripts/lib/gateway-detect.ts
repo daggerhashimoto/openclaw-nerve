@@ -5,9 +5,8 @@
  * This avoids requiring users to manually copy-paste the token during setup.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import crypto from 'node:crypto';
 import { join } from 'node:path';
 import os from 'node:os';
 
@@ -142,95 +141,6 @@ export function patchGatewayAllowedOrigins(origin: string): GatewayPatchResult {
     return result;
   } catch (err) {
     result.message = `Failed to patch config: ${err instanceof Error ? err.message : String(err)}`;
-    return result;
-  }
-}
-
-/**
- * Pair Nerve's device identity with the OpenClaw gateway.
- *
- * Reads the device identity from ~/.nerve/device-identity.json (generating
- * one if it doesn't exist) and writes an entry to ~/.openclaw/devices/paired.json.
- * This grants Nerve full operator scopes on the gateway WebSocket connection.
- */
-export function pairNerveDevice(gatewayToken: string): GatewayPatchResult {
-  const result: GatewayPatchResult = { ok: false, message: '', configPath: '' };
-
-  const devicesDir = join(HOME, '.openclaw', 'devices');
-  const pairedPath = join(devicesDir, 'paired.json');
-  const nerveDir = join(HOME, '.nerve');
-  const identityPath = join(nerveDir, 'device-identity.json');
-  result.configPath = pairedPath;
-
-  try {
-    // Ensure Nerve device identity exists (generate if needed)
-    let nerveIdentity: { deviceId: string; publicKeyB64url: string; privateKeyPem: string };
-
-    if (existsSync(identityPath)) {
-      nerveIdentity = JSON.parse(readFileSync(identityPath, 'utf-8'));
-    } else {
-      // Generate new Ed25519 keypair
-      const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
-      const pubDer = publicKey.export({ type: 'spki', format: 'der' });
-      const rawPub = pubDer.slice(-32);
-      const pubB64url = rawPub.toString('base64url');
-      const deviceId = crypto.createHash('sha256').update(rawPub).digest('hex');
-      const privateKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
-
-      nerveIdentity = { deviceId, publicKeyB64url: pubB64url, privateKeyPem };
-
-      // Write identity file
-      mkdirSync(nerveDir, { recursive: true, mode: 0o700 });
-      writeFileSync(identityPath, JSON.stringify({
-        ...nerveIdentity,
-        createdAt: new Date().toISOString(),
-      }, null, 2) + '\n', { mode: 0o600 });
-    }
-
-    // Load existing paired.json or start fresh
-    let paired: Record<string, unknown> = {};
-    if (existsSync(pairedPath)) {
-      try {
-        paired = JSON.parse(readFileSync(pairedPath, 'utf-8'));
-      } catch { /* start fresh */ }
-    }
-
-    // Check if already paired
-    if (paired[nerveIdentity.deviceId]) {
-      result.ok = true;
-      result.message = 'Nerve device already paired with gateway';
-      return result;
-    }
-
-    const nowMs = Date.now();
-
-    // Add Nerve device entry
-    paired[nerveIdentity.deviceId] = {
-      id: nerveIdentity.deviceId,
-      publicKey: nerveIdentity.publicKeyB64url,
-      displayName: 'nerve-ui',
-      roles: ['operator'],
-      pairedAtMs: nowMs,
-      tokens: {
-        operator: {
-          token: gatewayToken,
-          role: 'operator',
-          scopes: ['operator.admin', 'operator.read', 'operator.write'],
-          createdAtMs: nowMs,
-          rotatedAtMs: nowMs,
-        },
-      },
-    };
-
-    // Write paired.json
-    mkdirSync(devicesDir, { recursive: true });
-    writeFileSync(pairedPath, JSON.stringify(paired, null, 2) + '\n');
-
-    result.ok = true;
-    result.message = 'Paired Nerve device with gateway';
-    return result;
-  } catch (err) {
-    result.message = `Failed to pair device: ${err instanceof Error ? err.message : String(err)}`;
     return result;
   }
 }

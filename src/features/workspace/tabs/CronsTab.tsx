@@ -2,7 +2,7 @@
  * CronsTab — Visual cron job management.
  */
 
-import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { RefreshCw, Play, Plus, Trash2, Pencil, ChevronDown, ChevronRight, CheckCircle, XCircle, Circle, Loader2 } from 'lucide-react';
 import { useCrons, type CronJob, type CronRun } from '../hooks/useCrons';
 import { CronDialog } from './CronDialog';
@@ -219,12 +219,8 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   );
 }
 
-interface CronsTabProps {
-  onActions?: (actions: ReactNode) => void;
-}
-
 /** Workspace tab listing cron jobs with create/edit/delete/toggle controls. */
-export function CronsTab({ onActions }: CronsTabProps) {
+export function CronsTab() {
   const { jobs, isLoading, error, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
@@ -249,31 +245,6 @@ export function CronsTab({ onActions }: CronsTabProps) {
     return addJob(jobData);
   }, [dialogMode, editingJob, addJob, updateJob]);
 
-  // Register action buttons with parent tab bar
-  useEffect(() => {
-    onActions?.(
-      <>
-        <button
-          onClick={handleAdd}
-          className="bg-transparent border border-border/60 text-muted-foreground text-sm w-6 h-6 cursor-pointer flex items-center justify-center hover:text-purple hover:border-purple transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-          title="Add cron job"
-          aria-label="Add cron job"
-        >
-          <Plus size={12} />
-        </button>
-        <button
-          onClick={fetchJobs}
-          disabled={isLoading}
-          className="bg-transparent border border-border/60 text-muted-foreground text-sm w-6 h-6 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-muted-foreground disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-          title="Refresh crons"
-          aria-label="Refresh crons"
-        >
-          <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
-        </button>
-      </>
-    );
-  }, [isLoading, handleAdd, fetchJobs, onActions]);
-
   return (
     <div className="h-full flex flex-col min-h-0">
       <div className="flex-1 overflow-y-auto">
@@ -293,16 +264,37 @@ export function CronsTab({ onActions }: CronsTabProps) {
           </div>
         )}
 
-        {/* Empty state */}
-        {!isLoading && !jobs.length && !error && (
-          <div className="text-muted-foreground px-3 py-8 text-center flex flex-col items-center gap-2">
-            <Plus size={20} className="text-muted-foreground/50" />
+        {/* Add + Refresh row */}
+        {!isLoading && (
+          <div className="flex items-center border-b border-border/40">
             <button
               onClick={handleAdd}
-              className="text-[11px] text-purple hover:underline bg-transparent border-0 cursor-pointer"
+              className="group flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-foreground/[0.02] transition-colors cursor-pointer flex-1 bg-transparent border-0 text-left focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+              aria-label="Add cron job"
             >
-              Create your first scheduled task
+              <span className="shrink-0 text-muted-foreground group-hover:text-purple transition-colors">
+                <Plus size={12} />
+              </span>
+              <span className="text-muted-foreground group-hover:text-purple transition-colors">
+                Add cron
+              </span>
             </button>
+            <button
+              onClick={fetchJobs}
+              disabled={isLoading}
+              className="shrink-0 px-2 py-1.5 bg-transparent border-0 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+              title="Refresh crons"
+              aria-label="Refresh crons"
+            >
+              <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!isLoading && !jobs.length && !error && (
+          <div className="text-muted-foreground px-3 py-6 text-center text-[11px]">
+            No scheduled tasks yet
           </div>
         )}
         {jobs.map(job => (

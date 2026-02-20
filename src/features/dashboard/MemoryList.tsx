@@ -5,7 +5,7 @@
  * add new memories, edit sections inline, and delete via the OpenClaw gateway.
  */
 
-import { useState, useMemo, useCallback, useRef, useEffect, type ReactNode } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Plus, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
 import { MemoryItem, AddMemoryDialog, ConfirmDeleteDialog, MemoryEditor, useMemories } from '@/features/memory';
 import { MemorySkeletonGroup } from '@/components/skeletons';
@@ -16,12 +16,10 @@ interface MemoryListProps {
   onRefresh: (signal?: AbortSignal) => void | Promise<void>;
   isLoading?: boolean;
   hideHeader?: boolean;
-  /** When set, action buttons are passed to parent instead of rendered inline */
-  onActions?: (actions: ReactNode) => void;
 }
 
 /** Searchable, editable list of agent memories with add/delete support. */
-export function MemoryList({ memories: initialMemories, onRefresh, isLoading: initialLoading, hideHeader, onActions }: MemoryListProps) {
+export function MemoryList({ memories: initialMemories, onRefresh, isLoading: initialLoading, hideHeader }: MemoryListProps) {
   // useMemories provides optimistic state that reflects pending operations
   const { memories, addMemory, deleteMemory, error, clearError, isLoading } = useMemories(initialMemories);
   
@@ -161,12 +159,6 @@ export function MemoryList({ memories: initialMemories, onRefresh, isLoading: in
     setMemoryToDelete(null);
   }, [memoryToDelete, deleteMemory, showFeedback, onRefresh]);
 
-  // Handle refresh with loading state
-  const handleRefresh = useCallback(() => {
-    clearError();
-    onRefresh();
-  }, [clearError, onRefresh]);
-
   // Handle edit click - opens the editor
   const handleEditClick = useCallback((text: string, type: Memory['type'], date?: string) => {
     if (type === 'section' || type === 'daily') {
@@ -186,31 +178,7 @@ export function MemoryList({ memories: initialMemories, onRefresh, isLoading: in
     setEditingMemory(null);
   }, []);
 
-  // Register action buttons with parent (for tab bar rendering)
   const openAddDialog = useCallback(() => setAddDialogOpen(true), []);
-  useEffect(() => {
-    onActions?.(
-      <>
-        <button
-          onClick={openAddDialog}
-          className="bg-transparent border border-border/60 text-muted-foreground text-sm w-6 h-6 cursor-pointer flex items-center justify-center hover:text-purple hover:border-purple transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-          title="Add memory"
-          aria-label="Add new memory"
-        >
-          <Plus size={12} aria-hidden="true" />
-        </button>
-        <button
-          onClick={handleRefresh}
-          disabled={isLoading}
-          className="bg-transparent border border-border/60 text-muted-foreground text-sm w-6 h-6 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-muted-foreground disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-          title="Refresh memories"
-          aria-label="Refresh memories"
-        >
-          <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} aria-hidden="true" />
-        </button>
-      </>
-    );
-  }, [isLoading, openAddDialog, handleRefresh, onActions]);
 
   // If editing, show the editor instead of the list
   if (editingMemory) {
@@ -226,34 +194,13 @@ export function MemoryList({ memories: initialMemories, onRefresh, isLoading: in
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      {/* Header with actions — only when not lifted to tab bar */}
-      {!onActions && (
-        <div className={hideHeader ? "flex items-center gap-1 px-2 py-1 border-b border-border/40" : "panel-header border-l-[3px] border-l-purple"}>
-          {!hideHeader && (
-            <span className="panel-label text-purple">
-              <span className="panel-diamond">◆</span>
-              MEMORY
-            </span>
-          )}
-          <div className="flex items-center gap-1 ml-auto">
-            <button
-              onClick={openAddDialog}
-              className="bg-transparent border border-border/60 text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-purple hover:border-purple transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-              title="Add memory"
-              aria-label="Add new memory"
-            >
-              <Plus size={14} aria-hidden="true" />
-            </button>
-            <button
-              onClick={handleRefresh}
-              disabled={isLoading}
-              className="bg-transparent border border-border/60 text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-muted-foreground disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-              title="Refresh memories"
-              aria-label="Refresh memories"
-            >
-              <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} aria-hidden="true" />
-            </button>
-          </div>
+      {/* Header — only when used standalone (not in workspace tabs) */}
+      {!hideHeader && (
+        <div className="panel-header border-l-[3px] border-l-purple">
+          <span className="panel-label text-purple">
+            <span className="panel-diamond">◆</span>
+            MEMORY
+          </span>
         </div>
       )}
 
@@ -307,7 +254,31 @@ export function MemoryList({ memories: initialMemories, onRefresh, isLoading: in
             </button>
           </div>
         ) : (
-          visibleMemories.map((m, i) => (
+          <>
+          <div className="flex items-center border-b border-border/40">
+            <button
+              onClick={openAddDialog}
+              className="group flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-foreground/[0.02] transition-colors cursor-pointer flex-1 bg-transparent border-0 text-left focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+              aria-label="Add new memory"
+            >
+              <span className="shrink-0 text-muted-foreground group-hover:text-purple transition-colors">
+                <Plus size={12} />
+              </span>
+              <span className="text-muted-foreground group-hover:text-purple transition-colors">
+                Add memory
+              </span>
+            </button>
+            <button
+              onClick={() => { clearError(); onRefresh(); }}
+              disabled={isLoading}
+              className="shrink-0 px-2 py-1.5 bg-transparent border-0 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+              title="Refresh memories"
+              aria-label="Refresh memories"
+            >
+              <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+          {visibleMemories.map((m, i) => (
             <MemoryItem
               key={m.tempId || `${m.type}-${m.text.slice(0, 20)}-${i}`}
               memory={m}
@@ -319,7 +290,8 @@ export function MemoryList({ memories: initialMemories, onRefresh, isLoading: in
                 itemCount: sectionItemCounts[m.text] || 0,
               } : {})}
             />
-          ))
+          ))}
+          </>
         )}
       </div>
 

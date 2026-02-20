@@ -506,12 +506,12 @@ async function collectInteractive(
     dim('Without this, the gateway will reject WebSocket connections from Nerve.');
     console.log('');
     dim('  This will:');
-    dim(`  1. Set gateway.bind to "lan" (listen on all interfaces)`);
-    dim(`  2. Add ${nerveOrigin} to gateway.controlUi.allowedOrigins`);
+    dim(`  1. Add ${nerveOrigin} to gateway.controlUi.allowedOrigins`);
     if (nerveHttpsOrigin) {
-      dim(`  3. Add ${nerveHttpsOrigin} to gateway.controlUi.allowedOrigins`);
+      dim(`  2. Add ${nerveHttpsOrigin} to gateway.controlUi.allowedOrigins`);
     }
     dim(`  Config file: ~/.openclaw/openclaw.json`);
+    dim('  Note: The gateway stays on loopback — Nerve proxies all connections.');
     console.log('');
 
     const patchGateway = await confirm({
@@ -777,6 +777,13 @@ function printNextSteps(config: EnvConfig): void {
   console.log(`    Production:    \x1b[36mnpm run prod\x1b[0m`);
   console.log('');
   console.log(`  Open \x1b[36mhttp://localhost:${port}\x1b[0m in your browser.`);
+  console.log('');
+  console.log('  \x1b[1mFirst-time device pairing:\x1b[0m');
+  console.log('    On the first connection, OpenClaw creates a pending pairing request.');
+  console.log('    Approve it once with:');
+  console.log('');
+  console.log('      \x1b[36mopenclaw devices list\x1b[0m        \x1b[2m# find the pending request ID\x1b[0m');
+  console.log('      \x1b[36mopenclaw devices approve <id>\x1b[0m \x1b[2m# approve it — only needed once\x1b[0m');
   console.log('');
 }
 

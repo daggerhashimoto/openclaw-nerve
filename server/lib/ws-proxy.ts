@@ -6,7 +6,8 @@
  * bidirectionally. During the connect handshake, injects Nerve's Ed25519-signed
  * device identity so the gateway grants operator.read/write scopes.
  *
- * On the first ever connection the gateway auto-approves the device (loopback).
+ * On the first ever connection the gateway creates a pending pairing request.
+ * The user must approve it once via `openclaw devices approve <requestId>`.
  * If the device is rejected for any reason, the proxy retries without device
  * identity — the browser still connects but with reduced (token-only) scopes.
  * @module

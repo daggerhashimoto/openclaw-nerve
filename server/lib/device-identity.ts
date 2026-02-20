@@ -22,28 +22,6 @@ interface DeviceIdentity {
 
 let cached: DeviceIdentity | null = null;
 
-/**
- * Check if Nerve's device identity has a corresponding entry in the
- * gateway's paired devices file. If not, device identity injection
- * will be skipped to avoid a wasted connection attempt.
- */
-export function isDevicePaired(): boolean {
-  const identity = getDeviceIdentity();
-  const pairedPath = path.join(
-    process.env.HOME || process.cwd(),
-    '.openclaw', 'devices', 'paired.json',
-  );
-
-  if (!fs.existsSync(pairedPath)) return false;
-
-  try {
-    const paired = JSON.parse(fs.readFileSync(pairedPath, 'utf-8'));
-    return !!paired[identity.deviceId];
-  } catch {
-    return false;
-  }
-}
-
 /** Path to the identity file (next to the running process) */
 function identityPath(): string {
   // Store in the .nerve directory under the user's home, or fallback to cwd

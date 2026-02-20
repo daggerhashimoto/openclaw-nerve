@@ -71,34 +71,6 @@ export function getEnvGatewayToken(): string | null {
   return process.env.OPENCLAW_GATEWAY_TOKEN || null;
 }
 
-/**
- * Patch gateway.bind to the given value (e.g. 'lan' for 0.0.0.0).
- */
-export function patchGatewayBind(bind: string): GatewayPatchResult {
-  const result: GatewayPatchResult = { ok: false, message: '', configPath: OPENCLAW_CONFIG };
-
-  if (!existsSync(OPENCLAW_CONFIG)) {
-    result.message = `Config not found: ${OPENCLAW_CONFIG}`;
-    return result;
-  }
-
-  try {
-    const raw = readFileSync(OPENCLAW_CONFIG, 'utf-8');
-    const config = JSON.parse(raw) as OpenClawConfig;
-
-    config.gateway = config.gateway || {};
-    config.gateway.bind = bind;
-
-    writeFileSync(OPENCLAW_CONFIG, JSON.stringify(config, null, 2) + '\n');
-    result.ok = true;
-    result.message = `Set gateway.bind to "${bind}"`;
-    return result;
-  } catch (err) {
-    result.message = `Failed to patch config: ${err instanceof Error ? err.message : String(err)}`;
-    return result;
-  }
-}
-
 export interface GatewayPatchResult {
   ok: boolean;
   message: string;

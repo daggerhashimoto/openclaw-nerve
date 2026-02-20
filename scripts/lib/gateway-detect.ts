@@ -5,8 +5,9 @@
  * This avoids requiring users to manually copy-paste the token during setup.
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import { join } from 'node:path';
 import os from 'node:os';
 
@@ -169,7 +170,6 @@ export function pairNerveDevice(gatewayToken: string): GatewayPatchResult {
       nerveIdentity = JSON.parse(readFileSync(identityPath, 'utf-8'));
     } else {
       // Generate new Ed25519 keypair
-      const crypto = require('node:crypto');
       const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
       const pubDer = publicKey.export({ type: 'spki', format: 'der' });
       const rawPub = pubDer.slice(-32);
@@ -180,7 +180,6 @@ export function pairNerveDevice(gatewayToken: string): GatewayPatchResult {
       nerveIdentity = { deviceId, publicKeyB64url: pubB64url, privateKeyPem };
 
       // Write identity file
-      const { mkdirSync } = require('node:fs');
       mkdirSync(nerveDir, { recursive: true, mode: 0o700 });
       writeFileSync(identityPath, JSON.stringify({
         ...nerveIdentity,
@@ -224,7 +223,6 @@ export function pairNerveDevice(gatewayToken: string): GatewayPatchResult {
     };
 
     // Write paired.json
-    const { mkdirSync } = require('node:fs');
     mkdirSync(devicesDir, { recursive: true });
     writeFileSync(pairedPath, JSON.stringify(paired, null, 2) + '\n');
 

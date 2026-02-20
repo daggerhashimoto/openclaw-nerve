@@ -57,11 +57,13 @@ Thanks for wanting to help! This guide covers everything you need to start contr
 nerve/
 ├── src/                        # Frontend (React + TypeScript)
 │   ├── features/               # Feature modules (co-located)
+│   │   ├── auth/               # Login page, auth gate, session hook
 │   │   ├── chat/               # Chat panel, messages, input, search
 │   │   ├── voice/              # Push-to-talk, wake word, audio feedback
 │   │   ├── tts/                # Text-to-speech playback
 │   │   ├── sessions/           # Session list, tree, spawn dialog
 │   │   ├── workspace/          # Tabbed panel: memory, crons, skills, config
+│   │   ├── file-browser/       # Workspace file browser with tabbed editor
 │   │   ├── settings/           # Settings drawer (appearance, audio, connection)
 │   │   ├── command-palette/    # ⌘K command palette
 │   │   ├── markdown/           # Markdown renderer, code block actions
@@ -82,7 +84,7 @@ nerve/
 │   ├── routes/                 # API route handlers
 │   ├── services/               # TTS engines, Whisper, usage tracking
 │   ├── lib/                    # Utilities (config, WS proxy, file watcher, etc.)
-│   ├── middleware/             # Rate limiting
+│   ├── middleware/             # Auth, rate limiting, security headers, caching
 │   └── app.ts                  # Hono app assembly
 ├── config/                     # TypeScript configs for server build
 ├── scripts/                    # Setup wizard and utilities

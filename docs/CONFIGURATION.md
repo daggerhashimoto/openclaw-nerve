@@ -26,7 +26,7 @@ Connects Nerve to your OpenClaw gateway. The wizard auto-detects the gateway tok
 2. Environment variable `OPENCLAW_GATEWAY_TOKEN`
 3. `~/.openclaw/openclaw.json` (auto-detected)
 
-Tests the connection before proceeding. If the gateway is unreachable, you can continue anyway.
+Tests the connection before proceeding. If the gateway is unreachable, you can continue anyway. On OpenClaw 2026.2.19+, the wizard also auto-fixes a known device scope bootstrap issue and approves pending device pairing requests.
 
 #### 2. Agent Identity
 
@@ -77,7 +77,9 @@ The wizard backs up existing `.env` files (e.g. `.env.bak.1708100000000`) before
 |----------|---------|-------------|
 | `PORT` | `3080` | HTTP server port |
 | `SSL_PORT` | `3443` | HTTPS server port (requires certificates at `certs/cert.pem` and `certs/key.pem`) |
-| `HOST` | `127.0.0.1` | Bind address. Set to `0.0.0.0` for network access. **Warning:** exposes the API to the network |
+| `HOST` | `127.0.0.1` | Bind address. Set to `0.0.0.0` for network access — see warning below |
+
+> **⚠️ Network exposure:** Setting `HOST=0.0.0.0` exposes all endpoints to the network. Enable authentication (`NERVE_AUTH=true`) and set a password via the setup wizard before binding to a non-loopback address. Without auth, anyone with network access can read/write agent memory, modify config files, and control sessions. See [Security](SECURITY.md) for the full threat model.
 
 ```env
 PORT=3080
@@ -130,7 +132,7 @@ TTS provider fallback chain (when no explicit provider is requested):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `STT_PROVIDER` | `openai` | STT provider: `openai` (requires `OPENAI_API_KEY`) or `local` (whisper.cpp, no API key needed) |
+| `STT_PROVIDER` | `local` | STT provider: `local` (whisper.cpp, no API key needed) or `openai` (requires `OPENAI_API_KEY`) |
 | `WHISPER_MODEL` | `tiny.en` | Local whisper model: `tiny.en` (75 MB), `base.en` (142 MB), or `small.en` (466 MB) |
 | `WHISPER_MODEL_DIR` | `~/.nerve/models/` | Directory for downloaded whisper model files |
 

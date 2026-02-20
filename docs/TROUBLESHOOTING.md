@@ -4,6 +4,56 @@ Common issues and solutions for Nerve.
 
 ---
 
+## Authentication
+
+### Login page won't accept password
+
+**Symptom:** Entering the correct password returns "Invalid password".
+
+**Causes:**
+1. The password hash in `.env` doesn't match the password you're entering
+2. You're trying the gateway token but `GATEWAY_TOKEN` isn't set in `.env`
+
+**Fix:**
+- Re-run `npm run setup` to set a new password
+- Or set `NERVE_AUTH=true` with a valid `GATEWAY_TOKEN` — the gateway token works as a fallback password without needing a password hash
+
+### Session expired / redirected to login
+
+**Symptom:** You were logged in but got redirected to the login page.
+
+**Cause:** The session cookie expired (default TTL: 30 days) or the `NERVE_SESSION_SECRET` changed (e.g., server restart without a persisted secret).
+
+**Fix:**
+- Log in again with your password
+- If sessions don't survive restarts, ensure `NERVE_SESSION_SECRET` is set in `.env` (the setup wizard generates one). Without it, an ephemeral secret is created on each startup
+
+### API returns 401 but auth is disabled
+
+**Symptom:** API calls fail with "Authentication required" even though `NERVE_AUTH` isn't set.
+
+**Cause:** Check that `NERVE_AUTH` isn't set to `true` somewhere unexpected (e.g., exported in your shell profile).
+
+**Fix:**
+```bash
+# Check the env var
+grep NERVE_AUTH .env
+echo $NERVE_AUTH
+
+# Explicitly disable
+echo "NERVE_AUTH=false" >> .env
+```
+
+### WebSocket connects but immediately closes with 401
+
+**Symptom:** Browser console shows WebSocket upgrade failed with 401.
+
+**Cause:** When auth is enabled, WebSocket upgrade requests are also authenticated via the session cookie. If the cookie is missing or expired, the upgrade is rejected.
+
+**Fix:** Refresh the page and log in again. The session cookie is sent automatically with WebSocket upgrade requests.
+
+---
+
 ## Build Errors
 
 ### `tsc -b` fails with path alias errors
@@ -138,6 +188,25 @@ rm ~/.nerve/device-identity.json
 WS_ALLOWED_HOSTS=mygateway.local npm start
 ```
 
+### "Missing scope" errors after connecting
+
+**Symptom:** Chat sends but responses fail with "missing scope" or tool calls are rejected.
+
+**Cause:** The gateway didn't grant `operator.read`/`operator.write` scopes. This happens when:
+1. The device hasn't been approved yet (first connection)
+2. The device was rejected or the gateway was reset
+
+**Fix:**
+```bash
+# Check pending devices
+openclaw devices list
+
+# Approve the Nerve device
+openclaw devices approve <requestId>
+```
+
+After approval, reconnect from the browser (refresh the page or click reconnect).
+
 ### Messages buffered indefinitely
 
 **Symptom:** Messages sent immediately after connecting are lost.
@@ -213,12 +282,21 @@ WS_ALLOWED_HOSTS=mygateway.local npm start
 
 **Symptom:** Voice input records but transcription returns error.
 
-**Cause:** Transcription uses OpenAI Whisper API (requires `OPENAI_API_KEY`).
+**Causes:**
+- **Local STT** (default): The whisper model hasn't been downloaded yet, or `ffmpeg` is missing
+- **OpenAI STT**: `OPENAI_API_KEY` not set
 
-**Fix:**
-- Ensure `OPENAI_API_KEY` is set in `.env` or environment
-- Check file size: max 12 MB (configurable in `config.limits.transcribe`)
-- Check MIME type: must be one of: `audio/webm`, `audio/mp3`, `audio/mpeg`, `audio/mp4`, `audio/m4a`, `audio/wav`, `audio/ogg`, `audio/flac`
+**Fix (local STT):**
+- Models auto-download on first use. Check server logs for download progress or errors
+- Ensure `ffmpeg` is installed (the installer handles this): `ffmpeg -version`
+- Check model file exists: `ls ~/.nerve/models/ggml-tiny.en.bin`
+
+**Fix (OpenAI STT):**
+- Set `STT_PROVIDER=openai` and `OPENAI_API_KEY` in `.env`
+
+**Both providers:**
+- Max file size: 12 MB
+- Accepted formats: `audio/webm`, `audio/mp3`, `audio/mpeg`, `audio/mp4`, `audio/m4a`, `audio/wav`, `audio/ogg`, `audio/flac`
 
 ### Wake word doesn't trigger
 

@@ -34,7 +34,7 @@ import {
   type EnvConfig,
 } from './lib/env-writer.js';
 import { generateSelfSignedCert } from './lib/cert-gen.js';
-import { detectGatewayConfig, getEnvGatewayToken, patchGatewayAllowedOrigins, patchGatewayBind, restartGateway } from './lib/gateway-detect.js';
+import { detectGatewayConfig, getEnvGatewayToken, patchGatewayAllowedOrigins, restartGateway } from './lib/gateway-detect.js';
 
 const PROJECT_ROOT = resolve(process.cwd());
 const ENV_PATH = resolve(PROJECT_ROOT, '.env');
@@ -521,12 +521,6 @@ async function collectInteractive(
     });
 
     if (patchGateway) {
-      const bindResult = patchGatewayBind('lan');
-      if (bindResult.ok) {
-        success(bindResult.message);
-      } else {
-        warn(bindResult.message);
-      }
       const httpResult = patchGatewayAllowedOrigins(nerveOrigin);
       if (httpResult.ok) {
         success(httpResult.message);

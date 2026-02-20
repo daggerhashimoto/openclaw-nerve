@@ -77,7 +77,9 @@ The wizard backs up existing `.env` files (e.g. `.env.bak.1708100000000`) before
 |----------|---------|-------------|
 | `PORT` | `3080` | HTTP server port |
 | `SSL_PORT` | `3443` | HTTPS server port (requires certificates at `certs/cert.pem` and `certs/key.pem`) |
-| `HOST` | `127.0.0.1` | Bind address. Set to `0.0.0.0` for network access. **Warning:** exposes the API to the network |
+| `HOST` | `127.0.0.1` | Bind address. Set to `0.0.0.0` for network access — see warning below |
+
+> **⚠️ Security Warning:** Nerve has no built-in authentication. Setting `HOST=0.0.0.0` exposes **all API endpoints** to the network without any access control. Anyone with network access can read/write agent memory, modify config files, inject API keys, and control sessions. Only bind to `0.0.0.0` behind a VPN (Tailscale, WireGuard), reverse proxy with authentication, or a trusted private network. See [Security](SECURITY.md) for details.
 
 ```env
 PORT=3080

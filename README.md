@@ -102,6 +102,19 @@ Nerve proxies WebSocket traffic to your gateway and adds its own REST layer for 
 **Frontend:** React 19 · Tailwind CSS 4 · shadcn/ui · Vite 7
 **Backend:** Hono 4 on Node.js
 
+## ⚠️ Security
+
+**Nerve has no built-in authentication.** All API endpoints are open by design — it's meant to run on localhost or behind a user-controlled access layer.
+
+**Do not expose Nerve directly to the public internet.** Anyone with network access can read/write your agent's memory, modify config files, inject API keys, and control sessions.
+
+Safe ways to access Nerve remotely:
+- **SSH tunnel** — `ssh -L 3080:localhost:3080 your-server` (recommended)
+- **Tailscale / WireGuard** — access over your private network
+- **Reverse proxy with auth** — nginx + basic auth, Cloudflare Access, OAuth proxy
+
+See **[Security](docs/SECURITY.md)** for the full threat model and details.
+
 ## Docs
 
 | | |

@@ -485,7 +485,7 @@ async function collectInteractive(
     const nervePort = config.PORT || DEFAULTS.PORT;
     // Extract the real IP — 0.0.0.0 isn't a valid origin for browsers
     let accessIp = config.HOST === '0.0.0.0'
-      ? (config.ALLOWED_ORIGINS?.split(',')[0]?.replace(/^https?:\/\//, '').replace(/:\d+$/, '') || 'localhost')
+      ? (config.ALLOWED_ORIGINS?.split(',')[0]?.replace(/^https?:\/\//, '').replace(/:\d+$/, '') || '0.0.0.0')
       : (config.HOST || 'localhost');
     if (accessIp === '0.0.0.0') {
       // Detect actual LAN IP as fallback

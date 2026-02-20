@@ -795,13 +795,6 @@ function printNextSteps(config: EnvConfig): void {
   console.log('');
   console.log(`  Open \x1b[36mhttp://localhost:${port}\x1b[0m in your browser.`);
   console.log('');
-  console.log('  \x1b[1mFirst-time device pairing:\x1b[0m');
-  console.log('    On the first connection, OpenClaw creates a pending pairing request.');
-  console.log('    Approve it once with:');
-  console.log('');
-  console.log('      \x1b[36mopenclaw devices list\x1b[0m        \x1b[2m# find the pending request ID\x1b[0m');
-  console.log('      \x1b[36mopenclaw devices approve <id>\x1b[0m \x1b[2m# approve it — only needed once\x1b[0m');
-  console.log('');
 }
 
 // ── --check mode ─────────────────────────────────────────────────────

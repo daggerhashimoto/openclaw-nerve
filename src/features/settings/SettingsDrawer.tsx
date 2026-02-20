@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { X, Settings } from 'lucide-react';
+import { X, Settings, LogOut } from 'lucide-react';
 import { ConnectionSettings } from './ConnectionSettings';
 import { AudioSettings } from './AudioSettings';
 import { AppearanceSettings } from './AppearanceSettings';
@@ -31,6 +31,8 @@ interface SettingsDrawerProps {
   onToggleWakeWord: () => void;
   // Agent identity
   agentName?: string;
+  // Auth
+  onLogout?: () => void;
 }
 
 /** Slide-in drawer containing connection, audio, and appearance settings. */
@@ -56,6 +58,7 @@ export function SettingsDrawer({
   wakeWordEnabled,
   onToggleWakeWord,
   agentName,
+  onLogout,
 }: SettingsDrawerProps) {
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -171,7 +174,16 @@ export function SettingsDrawer({
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-border bg-card shrink-0">
+        <div className="px-4 py-3 border-t border-border bg-card shrink-0 space-y-2">
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-[11px] font-mono text-muted-foreground hover:text-red-400 hover:bg-red-400/10 border border-border hover:border-red-400/30 rounded-sm transition-colors uppercase tracking-wider"
+            >
+              <LogOut size={12} aria-hidden="true" />
+              Sign Out
+            </button>
+          )}
           <div className="text-center text-muted-foreground/40 text-[10px] font-mono tracking-wide">
             NERVE v{__APP_VERSION__}
           </div>

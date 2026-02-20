@@ -17,9 +17,11 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { cacheHeaders } from './middleware/cache-headers.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { securityHeaders } from './middleware/security-headers.js';
+import { authMiddleware } from './middleware/auth.js';
 import { config } from './lib/config.js';
 
 import healthRoutes from './routes/health.js';
+import authRoutes from './routes/auth.js';
 import ttsRoutes from './routes/tts.js';
 import transcribeRoutes from './routes/transcribe.js';
 import agentLogRoutes from './routes/agent-log.js';
@@ -97,6 +99,8 @@ app.use(
     onError: (c) => c.text('Request body too large', 413),
   }),
 );
+// Authentication — after bodyLimit (reject oversized before auth), before compress/routes
+app.use('*', authMiddleware);
 // Apply compression to all routes except SSE (compression buffers chunks and breaks streaming)
 app.use('*', async (c, next) => {
   if (c.req.path === '/api/events') return next();
@@ -107,7 +111,7 @@ app.use('*', cacheHeaders);
 // ── API routes ───────────────────────────────────────────────────────
 
 const routes = [
-  healthRoutes, ttsRoutes, transcribeRoutes, agentLogRoutes,
+  healthRoutes, authRoutes, ttsRoutes, transcribeRoutes, agentLogRoutes,
   tokensRoutes, memoriesRoutes, eventsRoutes, serverInfoRoutes,
   codexLimitsRoutes, claudeCodeLimitsRoutes, versionRoutes,
   gatewayRoutes, connectDefaultsRoutes,

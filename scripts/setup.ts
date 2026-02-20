@@ -13,6 +13,7 @@
 
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { input, password, confirm, select } from '@inquirer/prompts';
 import { printBanner, section, success, warn, fail, info, dim, promptTheme } from './lib/banner.js';
@@ -37,7 +38,7 @@ import { detectGatewayConfig, getEnvGatewayToken, patchGatewayAllowedOrigins, pa
 
 const PROJECT_ROOT = resolve(process.cwd());
 const ENV_PATH = resolve(PROJECT_ROOT, '.env');
-const TOTAL_SECTIONS = 5;
+const TOTAL_SECTIONS = 6;
 
 const args = process.argv.slice(2);
 const isHelp = args.includes('--help') || args.includes('-h');
@@ -554,9 +555,81 @@ async function collectInteractive(
     }
   }
 
-  // ── 4/5: TTS ─────────────────────────────────────────────────────
+  // ── 4/6: Authentication ───────────────────────────────────────────
 
-  section(4, TOTAL_SECTIONS, 'Text-to-Speech (optional)');
+  // Always generate a session secret if not already set
+  if (!config.NERVE_SESSION_SECRET) {
+    config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
+  }
+
+  const isNetworkExposed = config.HOST === '0.0.0.0';
+
+  if (isNetworkExposed) {
+    section(4, TOTAL_SECTIONS, 'Authentication');
+    warn('Your access mode exposes Nerve to the network.');
+    dim('Without a password, anyone on your network can access all endpoints.');
+    console.log('');
+
+    const setPassword = await confirm({
+      theme: promptTheme,
+      message: 'Set a password for Nerve access? (recommended)',
+      default: true,
+    });
+
+    if (setPassword) {
+      const pw = await password({
+        theme: promptTheme,
+        message: 'Enter a password',
+        validate: (val) => {
+          if (!val || val.trim().length < 4) return 'Password must be at least 4 characters';
+          return true;
+        },
+      });
+
+      const pwConfirm = await password({
+        theme: promptTheme,
+        message: 'Confirm password',
+        validate: (val) => {
+          if (val !== pw) return 'Passwords do not match';
+          return true;
+        },
+      });
+
+      if (pw === pwConfirm) {
+        // Hash the password using scrypt (inline to avoid importing server code)
+        const { scrypt } = await import('node:crypto');
+        const salt = randomBytes(32);
+        const hash = await new Promise<string>((resolve, reject) => {
+          scrypt(pw, salt, 64, (err, derivedKey) => {
+            if (err) return reject(err);
+            resolve(`${salt.toString('hex')}:${derivedKey.toString('hex')}`);
+          });
+        });
+        config.NERVE_PASSWORD_HASH = hash;
+        config.NERVE_AUTH = 'true';
+        success('Password set. Authentication will be enabled.');
+      }
+    } else {
+      // No password, but still enable auth if gateway token exists
+      if (config.GATEWAY_TOKEN) {
+        config.NERVE_AUTH = 'true';
+        success('Authentication enabled — your gateway token can be used as a password.');
+      } else {
+        warn('No password set and no gateway token. Authentication disabled.');
+        dim('Run `npm run setup` again to set a password.');
+      }
+    }
+  } else {
+    // Localhost — skip auth setup, but preserve existing auth config
+    if (existing.NERVE_AUTH) config.NERVE_AUTH = existing.NERVE_AUTH;
+    if (existing.NERVE_PASSWORD_HASH) config.NERVE_PASSWORD_HASH = existing.NERVE_PASSWORD_HASH;
+    if (existing.NERVE_SESSION_SECRET) config.NERVE_SESSION_SECRET = existing.NERVE_SESSION_SECRET;
+    if (existing.NERVE_SESSION_TTL) config.NERVE_SESSION_TTL = existing.NERVE_SESSION_TTL;
+  }
+
+  // ── 5/6: TTS ─────────────────────────────────────────────────────
+
+  section(5, TOTAL_SECTIONS, 'Text-to-Speech (optional)');
   dim('Edge TTS is always available (free, no API key needed).');
   dim('Add API keys below for higher-quality alternatives.');
   console.log('');
@@ -608,9 +681,9 @@ async function collectInteractive(
     }
   }
 
-  // ── 5/5: Advanced Settings ────────────────────────────────────────
+  // ── 6/6: Advanced Settings ────────────────────────────────────────
 
-  section(5, TOTAL_SECTIONS, 'Advanced Settings (optional)');
+  section(6, TOTAL_SECTIONS, 'Advanced Settings (optional)');
 
   const configureAdvanced = await confirm({
     theme: promptTheme,
@@ -670,6 +743,7 @@ function printSummary(config: EnvConfig): void {
   }
 
   const hostLabel = host === '127.0.0.1' ? '127.0.0.1 (local only)' : `${host} (network)`;
+  const authLabel = config.NERVE_AUTH === 'true' ? '🔒 Enabled' : 'Disabled';
 
   if (process.env.NERVE_INSTALLER) {
     // Rail-style summary — stays inside the installer's visual flow
@@ -683,6 +757,7 @@ function printSummary(config: EnvConfig): void {
     }
     console.log(`${r}  \x1b[2mTTS${' '.repeat(8)}\x1b[0m${ttsProvider}`);
     console.log(`${r}  \x1b[2mHost${' '.repeat(7)}\x1b[0m${hostLabel}`);
+    console.log(`${r}  \x1b[2mAuth${' '.repeat(7)}\x1b[0m${authLabel}`);
   } else {
     // Standalone mode — boxed summary
     console.log('');
@@ -695,6 +770,7 @@ function printSummary(config: EnvConfig): void {
     }
     console.log(`  \x1b[2m│\x1b[0m  TTS        ${ttsProvider.padEnd(28)}\x1b[2m│\x1b[0m`);
     console.log(`  \x1b[2m│\x1b[0m  Host       ${hostLabel.padEnd(28)}\x1b[2m│\x1b[0m`);
+    console.log(`  \x1b[2m│\x1b[0m  Auth       ${authLabel.padEnd(28)}\x1b[2m│\x1b[0m`);
     console.log('  \x1b[2m└─────────────────────────────────────────┘\x1b[0m');
   }
 }
@@ -775,6 +851,29 @@ async function runCheck(config: EnvConfig): Promise<void> {
     success(`HOST: ${host}`);
   }
 
+  // Auth
+  if (config.NERVE_AUTH === 'true') {
+    success('Authentication is enabled');
+    if (config.NERVE_PASSWORD_HASH) {
+      success('Password hash is set');
+    } else if (config.GATEWAY_TOKEN) {
+      info('No password hash — gateway token will be used as fallback');
+    } else {
+      fail('Auth is enabled but no password hash or gateway token is configured');
+      errors++;
+    }
+    if (config.NERVE_SESSION_SECRET) {
+      success('Session secret is set');
+    } else {
+      warn('NERVE_SESSION_SECRET not set — will be auto-generated (sessions won\'t survive restarts)');
+    }
+  } else if (host === '0.0.0.0') {
+    warn('Authentication is DISABLED while server is network-exposed');
+    dim('Run `npm run setup` to enable authentication');
+  } else {
+    info('Authentication disabled (localhost-only — OK)');
+  }
+
   // HTTPS certs
   if (existsSync(resolve(PROJECT_ROOT, 'certs', 'cert.pem'))) {
     success('HTTPS certificates found at certs/');
@@ -823,6 +922,19 @@ async function runDefaults(existing: EnvConfig): Promise<void> {
   if (!config.AGENT_NAME) config.AGENT_NAME = DEFAULTS.AGENT_NAME;
   if (!config.PORT) config.PORT = DEFAULTS.PORT;
   if (!config.HOST) config.HOST = DEFAULTS.HOST;
+
+  // Auth: auto-enable when network-exposed with gateway token, generate session secret
+  if (!config.NERVE_SESSION_SECRET) {
+    config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
+  }
+  if (config.HOST === '0.0.0.0' && !config.NERVE_AUTH) {
+    if (config.GATEWAY_TOKEN) {
+      config.NERVE_AUTH = 'true';
+      success('Authentication auto-enabled (gateway token can be used as password)');
+    } else {
+      warn('Network-exposed without authentication — consider running interactive setup');
+    }
+  }
 
   // Write
   if (existsSync(ENV_PATH)) {

@@ -14,7 +14,8 @@ import type { Server as HttpServer } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { WS_ALLOWED_HOSTS } from './config.js';
+import { config, WS_ALLOWED_HOSTS, SESSION_COOKIE_NAME } from './config.js';
+import { verifySession, parseSessionCookie } from './session.js';
 import { createDeviceBlock, getDeviceIdentity } from './device-identity.js';
 
 /** Active WSS instances — used for graceful shutdown */
@@ -42,6 +43,15 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
 
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     if (req.url?.startsWith('/ws')) {
+      // Auth check for WebSocket connections
+      if (config.auth) {
+        const token = parseSessionCookie(req.headers.cookie, SESSION_COOKIE_NAME);
+        if (!token || !verifySession(token, config.sessionSecret)) {
+          socket.write('HTTP/1.1 401 Unauthorized\r\nContent-Type: text/plain\r\n\r\nAuthentication required');
+          socket.destroy();
+          return;
+        }
+      }
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
     } else {
       socket.destroy();

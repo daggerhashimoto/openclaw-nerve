@@ -35,7 +35,11 @@ const CommandPalette = lazy(() => import('@/features/command-palette/CommandPale
 const SessionList = lazy(() => import('@/features/sessions/SessionList').then(m => ({ default: m.SessionList })));
 const WorkspacePanel = lazy(() => import('@/features/workspace/WorkspacePanel').then(m => ({ default: m.WorkspacePanel })));
 
-export default function App() {
+interface AppProps {
+  onLogout?: () => void;
+}
+
+export default function App({ onLogout }: AppProps) {
   // Gateway state
   const {
     connectionState, connectError, reconnectAttempt, model, sparkline,
@@ -310,6 +314,7 @@ export default function App() {
             wakeWordEnabled={wakeWordEnabled}
             onToggleWakeWord={handleToggleWakeWord}
             agentName={agentName}
+            onLogout={onLogout}
           />
         </Suspense>
       </PanelErrorBoundary>

@@ -150,7 +150,10 @@ function bootstrapPairedJson(): { ok: boolean; message: string; needsRestart: bo
     const publicKeyB64url = rawPub.toString('base64url');
 
     const now = Date.now();
-    const token = crypto.randomBytes(32).toString('base64url');
+    // Use the gateway auth token — the CLI sends this token in connect requests,
+    // so the device's stored token must match it.
+    const detected = detectGatewayConfig();
+    const token = detected.token || crypto.randomBytes(32).toString('base64url');
 
     // Create paired.json
     const paired: Record<string, unknown> = {

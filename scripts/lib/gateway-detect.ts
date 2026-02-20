@@ -5,9 +5,10 @@
  * This avoids requiring users to manually copy-paste the token during setup.
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
+import crypto from 'node:crypto';
 import os from 'node:os';
 
 const HOME = process.env.HOME || os.homedir();
@@ -258,7 +259,6 @@ export function approveAllPendingDevices(): { ok: boolean; approved: number; mes
  * without any manual `openclaw devices approve` step.
  */
 export function prePairNerveDevice(): { ok: boolean; message: string; needsRestart: boolean } {
-  const crypto = require('node:crypto') as typeof import('node:crypto');
   const nerveDir = process.env.NERVE_DATA_DIR
     || join(process.env.HOME || HOME, '.nerve');
   const identityPath = join(nerveDir, 'device-identity.json');
@@ -288,7 +288,6 @@ export function prePairNerveDevice(): { ok: boolean; message: string; needsResta
 
       // Persist identity
       if (!existsSync(nerveDir)) {
-        const { mkdirSync } = require('node:fs') as typeof import('node:fs');
         mkdirSync(nerveDir, { recursive: true, mode: 0o700 });
       }
       writeFileSync(identityPath, JSON.stringify({

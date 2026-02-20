@@ -250,6 +250,98 @@ export function approveAllPendingDevices(): { ok: boolean; approved: number; mes
 }
 
 /**
+ * Pre-pair Nerve's device identity in the gateway's paired.json.
+ *
+ * Generates the Nerve device identity (Ed25519 keypair) if it doesn't exist,
+ * then registers it directly in paired.json with full operator scopes.
+ * This means Nerve can connect to the gateway immediately on first start
+ * without any manual `openclaw devices approve` step.
+ */
+export function prePairNerveDevice(): { ok: boolean; message: string; needsRestart: boolean } {
+  const crypto = require('node:crypto') as typeof import('node:crypto');
+  const nerveDir = process.env.NERVE_DATA_DIR
+    || join(process.env.HOME || HOME, '.nerve');
+  const identityPath = join(nerveDir, 'device-identity.json');
+  const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
+
+  if (!existsSync(pairedPath)) {
+    return { ok: false, message: 'No paired devices file — gateway not initialized', needsRestart: false };
+  }
+
+  try {
+    // Load or generate Nerve device identity
+    let deviceId: string;
+    let publicKeyB64url: string;
+
+    if (existsSync(identityPath)) {
+      const stored = JSON.parse(readFileSync(identityPath, 'utf-8'));
+      deviceId = stored.deviceId;
+      publicKeyB64url = stored.publicKeyB64url;
+    } else {
+      // Generate new Ed25519 keypair (same logic as server/lib/device-identity.ts)
+      const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+      const pubDer = publicKey.export({ type: 'spki', format: 'der' }) as Buffer;
+      const rawPub = pubDer.slice(-32);
+      publicKeyB64url = rawPub.toString('base64url');
+      deviceId = crypto.createHash('sha256').update(rawPub).digest('hex');
+      const privateKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+
+      // Persist identity
+      if (!existsSync(nerveDir)) {
+        const { mkdirSync } = require('node:fs') as typeof import('node:fs');
+        mkdirSync(nerveDir, { recursive: true, mode: 0o700 });
+      }
+      writeFileSync(identityPath, JSON.stringify({
+        deviceId,
+        publicKeyB64url,
+        privateKeyPem,
+        createdAt: new Date().toISOString(),
+      }, null, 2) + '\n', { mode: 0o600 });
+    }
+
+    // Register in paired.json
+    const paired = JSON.parse(readFileSync(pairedPath, 'utf-8')) as Record<string, unknown>;
+
+    if (paired[deviceId]) {
+      return { ok: true, message: 'Nerve device already paired', needsRestart: false };
+    }
+
+    const now = Date.now();
+    const token = crypto.randomBytes(32).toString('base64url');
+
+    paired[deviceId] = {
+      deviceId,
+      publicKey: publicKeyB64url,
+      platform: process.platform,
+      clientId: 'nerve',
+      clientMode: 'backend',
+      role: 'operator',
+      roles: ['operator'],
+      scopes: FULL_OPERATOR_SCOPES,
+      tokens: {
+        operator: {
+          token,
+          role: 'operator',
+          scopes: FULL_OPERATOR_SCOPES,
+          createdAtMs: now,
+        },
+      },
+      createdAtMs: now,
+      approvedAtMs: now,
+    };
+
+    writeFileSync(pairedPath, JSON.stringify(paired, null, 2) + '\n');
+    return { ok: true, message: `Pre-paired Nerve device ${deviceId.substring(0, 12)}…`, needsRestart: true };
+  } catch (err) {
+    return {
+      ok: false,
+      message: `Failed to pre-pair: ${err instanceof Error ? err.message : String(err)}`,
+      needsRestart: false,
+    };
+  }
+}
+
+/**
  * Attempt to restart the OpenClaw gateway so config changes take effect.
  * Tries `openclaw gateway restart` first, falls back to kill + start.
  */

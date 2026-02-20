@@ -34,7 +34,7 @@ import {
   type EnvConfig,
 } from './lib/env-writer.js';
 import { generateSelfSignedCert } from './lib/cert-gen.js';
-import { detectGatewayConfig, getEnvGatewayToken, patchGatewayAllowedOrigins, restartGateway, fixGatewayDeviceScopes, approveAllPendingDevices } from './lib/gateway-detect.js';
+import { detectGatewayConfig, getEnvGatewayToken, patchGatewayAllowedOrigins, restartGateway, fixGatewayDeviceScopes, approveAllPendingDevices, prePairNerveDevice } from './lib/gateway-detect.js';
 
 const PROJECT_ROOT = resolve(process.cwd());
 const ENV_PATH = resolve(PROJECT_ROOT, '.env');
@@ -257,18 +257,26 @@ async function collectInteractive(
 
     // Fix OpenClaw 2026.2.19 bootstrap bug: gateway device has insufficient scopes
     const scopeFix = fixGatewayDeviceScopes();
-    if (scopeFix.ok && scopeFix.needsRestart) {
-      dim('  Fixing gateway device scopes (OpenClaw bootstrap workaround)...');
+    let needsGatewayRestart = scopeFix.ok && scopeFix.needsRestart;
+
+    // Pre-pair Nerve's device identity so it can connect without manual approval
+    const pairResult = prePairNerveDevice();
+    if (pairResult.ok && pairResult.needsRestart) {
+      needsGatewayRestart = true;
+      dim(`  ${pairResult.message}`);
+    }
+
+    if (needsGatewayRestart) {
+      dim('  Restarting gateway to apply device changes...');
       const restart = restartGateway();
       if (restart.ok) {
         // Wait for gateway to come back up
         await new Promise(r => setTimeout(r, 3000));
         const approved = approveAllPendingDevices();
         if (approved.ok && approved.approved > 0) {
-          success(`${approved.message} — gateway CLI now fully functional`);
-        } else {
-          success('Gateway device scopes upgraded');
+          success(`${approved.message}`);
         }
+        success('Gateway device configuration updated — Nerve will connect automatically');
       }
     }
   } else {

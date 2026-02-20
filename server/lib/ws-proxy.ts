@@ -207,17 +207,18 @@ function relayToGateway(
     const reasonStr = reason?.toString() || '';
     console.log(`[ws-proxy] Gateway closed: code=${code}, reason=${reasonStr}`);
 
-    // If rejected for device_token_mismatch and we haven't retried yet,
-    // reconnect without device identity (plain token auth fallback)
+    // If rejected for device-related auth issues and we haven't retried yet,
+    // reconnect without device identity (plain token auth fallback).
+    // Handles: "device token mismatch", "pairing required", and other device auth failures.
     if (
       useDeviceIdentity &&
       !retrying &&
       code === 1008 &&
-      reasonStr.includes('device token mismatch') &&
+      (reasonStr.includes('device token mismatch') || reasonStr.includes('pairing required')) &&
       clientWs.readyState === WebSocket.OPEN
     ) {
       retrying = true;
-      console.log('[ws-proxy] Device not paired — retrying without device identity (plain token auth)');
+      console.log(`[ws-proxy] Device auth failed (${reasonStr}) — retrying without device identity`);
       relayToGateway(clientWs, targetUrl, clientOrigin, /* useDeviceIdentity */ false);
       return;
     }

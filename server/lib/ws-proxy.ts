@@ -18,9 +18,43 @@ import type { Server as HttpServer } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
+import { execFile } from 'node:child_process';
 import { config, WS_ALLOWED_HOSTS, SESSION_COOKIE_NAME } from './config.js';
 import { verifySession, parseSessionCookie } from './session.js';
 import { createDeviceBlock, getDeviceIdentity } from './device-identity.js';
+import { resolveOpenclawBin } from './openclaw-bin.js';
+
+/**
+ * Methods the gateway restricts for webchat clients.
+ * We intercept these and proxy via `openclaw gateway call` (full CLI scopes).
+ */
+const RESTRICTED_METHODS = new Set([
+  'sessions.patch',
+  'sessions.delete',
+  'sessions.reset',
+  'sessions.compact',
+]);
+
+/**
+ * Execute a gateway RPC call via the CLI, bypassing webchat restrictions.
+ */
+function gatewayCall(method: string, params: Record<string, unknown>): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const bin = resolveOpenclawBin();
+    const args = ['gateway', 'call', method, '--params', JSON.stringify(params)];
+    execFile(bin, args, { timeout: 10_000, maxBuffer: 1024 * 1024, env: process.env }, (err, stdout, stderr) => {
+      if (err) {
+        reject(new Error(stderr?.trim() || err.message));
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        resolve({ ok: true, raw: stdout.trim() });
+      }
+    });
+  });
+}
 
 /** Active WSS instances — used for graceful shutdown */
 const activeWssInstances: WebSocketServer[] = [];
@@ -186,6 +220,8 @@ function createGatewayRelay(
       // Device auth rejected — retry without device identity
       const isDeviceRejection = code === 1008 && (
         reasonStr.includes('device token mismatch') ||
+        reasonStr.includes('device signature invalid') ||
+        reasonStr.includes('unknown device') ||
         reasonStr.includes('pairing required')
       );
 
@@ -214,15 +250,37 @@ function createGatewayRelay(
       return;
     }
 
-    // Intercept connect request to inject device identity
-    if (!handshakeComplete && !isBinary && challengeNonce) {
+    // Parse message for interception (connect handshake + restricted methods)
+    if (!isBinary) {
       try {
         const msg = JSON.parse(data.toString());
-        if (msg.type === 'req' && msg.method === 'connect' && msg.params) {
+
+        // Intercept connect request to inject device identity
+        if (!handshakeComplete && challengeNonce && msg.type === 'req' && msg.method === 'connect' && msg.params) {
           savedConnectMsg = msg;
           const modified = useDeviceIdentity ? injectDeviceIdentity(msg, challengeNonce) : msg;
           gwWs.send(JSON.stringify(modified));
           handshakeComplete = true;
+          return;
+        }
+
+        // Intercept restricted RPC methods — proxy via CLI (full scopes)
+        if (msg.type === 'req' && RESTRICTED_METHODS.has(msg.method)) {
+          const reqId = msg.id;
+          gatewayCall(msg.method, msg.params || {})
+            .then((result) => {
+              if (clientWs.readyState === WebSocket.OPEN) {
+                clientWs.send(JSON.stringify({ type: 'res', id: reqId, result }));
+              }
+            })
+            .catch((err) => {
+              if (clientWs.readyState === WebSocket.OPEN) {
+                clientWs.send(JSON.stringify({
+                  type: 'res', id: reqId,
+                  error: { code: -32000, message: (err as Error).message },
+                }));
+              }
+            });
           return;
         }
       } catch { /* pass through */ }
@@ -256,10 +314,7 @@ interface ConnectParams {
 function injectDeviceIdentity(msg: Record<string, unknown>, nonce: string): Record<string, unknown> {
   const params = (msg.params || {}) as ConnectParams;
   const clientId = params.client?.id || 'nerve-ui';
-  // Force 'ui' mode — the gateway restricts webchat clients from
-  // sessions.patch / sessions.delete / sessions.reset. Nerve needs full
-  // control-UI-level access for session management.
-  const clientMode = 'ui';
+  const clientMode = params.client?.mode || 'webchat';
   const role = params.role || 'operator';
   const scopes = params.scopes || ['operator.admin', 'operator.read', 'operator.write'];
   const token = params.auth?.token || '';

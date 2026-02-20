@@ -1,7 +1,7 @@
 /**
  * Device identity for OpenClaw gateway WebSocket authentication.
  *
- * OpenClaw 2026.2.14+ requires device identity (Ed25519 keypair + signed challenge)
+ * OpenClaw 2026.2.19+ requires device identity (Ed25519 keypair + signed challenge)
  * for WS connections to receive `operator.read` / `operator.write` scopes.
  *
  * The keypair is generated once and persisted to `~/.nerve/device-identity.json`.

@@ -32,6 +32,7 @@ import { synthesizeCustom } from '../services/custom-provider.js';
 import { rateLimitTTS, rateLimitGeneral } from '../middleware/rate-limit.js';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { CustomProviderConfig } from '../lib/provider-interfaces.js';
+import { getActiveVoiceConfig } from '../lib/voice-config.js';
 
 const app = new Hono();
 
@@ -76,24 +77,31 @@ app.post(
       // Voice is passed through — each provider resolves its own default from config
       const voice = rawVoice;
 
-      // Resolve effective provider: explicit > deepgram (if key) > openai (if key) > replicate (if key) > edge
-      const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
-      const useDeepgram =
-        provider === 'deepgram' ||
-        (!provider && !!deepgramApiKey);
-      const useReplicate =
-        provider === 'replicate' ||
-        (!provider && !deepgramApiKey && !config.openaiApiKey && !!config.replicateApiToken);
-      const useCustom = provider === 'custom';
-      const useEdge =
-        provider === 'edge' ||
-        (!provider && !deepgramApiKey && !config.openaiApiKey && !config.replicateApiToken);
+      // Get runtime voice config
+      const voiceConfig = getActiveVoiceConfig();
       
-      let effectiveProvider = 'openai';
-      if (useEdge) effectiveProvider = 'edge';
-      else if (useReplicate) effectiveProvider = 'replicate';
-      else if (useDeepgram) effectiveProvider = 'deepgram';
-      else if (useCustom) effectiveProvider = 'custom';
+      // Resolve effective provider: explicit > runtime config > env var auto-detection
+      let effectiveProvider: string;
+      
+      if (provider) {
+        // Explicit provider choice from request
+        effectiveProvider = provider;
+      } else {
+        // Use runtime config provider, or fall back to auto-detection
+        effectiveProvider = voiceConfig.tts.provider;
+        
+        // Auto-detection fallback if config is set to 'auto'
+        if (effectiveProvider === 'auto' || !effectiveProvider) {
+          const deepgramApiKey = process.env.DEEPGRAM_API_KEY || voiceConfig.tts.deepgram?.apiKey;
+          const openaiApiKey = config.openaiApiKey || voiceConfig.tts.openai?.apiKey;
+          const replicateApiKey = config.replicateApiToken || voiceConfig.tts.replicate?.apiKey;
+          
+          if (deepgramApiKey) effectiveProvider = 'deepgram';
+          else if (openaiApiKey) effectiveProvider = 'openai';
+          else if (replicateApiKey) effectiveProvider = 'replicate';
+          else effectiveProvider = 'edge'; // Free fallback
+        }
+      }
       
       console.log(`[tts] provider=${effectiveProvider} voice=${voice} text="${text.slice(0, 50)}..."`);
 
@@ -112,14 +120,18 @@ app.post(
 
       let result;
       if (effectiveProvider === 'edge') {
-        result = await synthesizeEdge(text, voice);
+        const edgeVoice = voice || voiceConfig.tts.edge?.voice;
+        result = await synthesizeEdge(text, edgeVoice);
       } else if (effectiveProvider === 'replicate') {
-        result = await synthesizeReplicate(text, { model, voice });
+        const replicateModel = model || voiceConfig.tts.replicate?.model;
+        // Note: Replicate uses config.replicateApiToken, not passed in options
+        result = await synthesizeReplicate(text, { model: replicateModel, voice });
       } else if (effectiveProvider === 'deepgram') {
-        result = await synthesizeDeepgram(text, { voice, model });
+        const deepgramModel = voice || model || voiceConfig.tts.deepgram?.model || 'aura-2-iris-en';
+        const deepgramApiKey = voiceConfig.tts.deepgram?.apiKey || process.env.DEEPGRAM_API_KEY;
+        result = await synthesizeDeepgram(text, { voice: deepgramModel, apiKey: deepgramApiKey });
       } else if (effectiveProvider === 'custom') {
-        // TODO: Load custom config from voice-providers.json
-        const customConfig: CustomProviderConfig = {
+        const customConfig = voiceConfig.tts.custom || {
           name: 'custom',
           endpoint: process.env.CUSTOM_TTS_ENDPOINT || '',
           apiKey: process.env.CUSTOM_TTS_API_KEY,
@@ -128,7 +140,10 @@ app.post(
         };
         result = await synthesizeCustom(text, customConfig, { voice, model });
       } else {
-        result = await synthesizeOpenAI(text, voice, model);
+        // OpenAI (default)
+        const openaiVoice = voice || voiceConfig.tts.openai?.voice || 'nova';
+        const openaiModel = model || voiceConfig.tts.openai?.model || 'tts-1';
+        result = await synthesizeOpenAI(text, openaiVoice, openaiModel);
       }
 
       if (!result.ok) {

@@ -17,6 +17,7 @@ import { releaseWhisperContext } from './services/whisper-local.js';
 import { config, validateConfig, printStartupBanner, probeGateway } from './lib/config.js';
 import { setupWebSocketProxy, closeAllWebSockets } from './lib/ws-proxy.js';
 import { startFileWatcher, stopFileWatcher } from './lib/file-watcher.js';
+import { loadVoiceConfig } from './lib/voice-config.js';
 
 // ── Startup banner + validation ──────────────────────────────────────
 
@@ -26,6 +27,10 @@ const pkgVersion: string = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version
 
 printStartupBanner(pkgVersion);
 validateConfig();
+
+// ── Load voice provider configuration ────────────────────────────────
+
+loadVoiceConfig(); // Creates default config if missing, caches for hot-reload
 
 // ── Start file watchers ──────────────────────────────────────────────
 

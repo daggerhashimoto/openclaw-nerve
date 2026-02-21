@@ -2,7 +2,6 @@ import { useEffect, useCallback, useRef } from 'react';
 import { X, Settings, LogOut } from 'lucide-react';
 import { ConnectionSettings } from './ConnectionSettings';
 import { AudioSettings } from './AudioSettings';
-import { VoiceProvidersSettings } from './VoiceProvidersSettings';
 import { AppearanceSettings } from './AppearanceSettings';
 import type { TTSProvider } from '@/features/tts/useTTS';
 import type { STTProvider } from '@/contexts/SettingsContext';
@@ -168,10 +167,6 @@ export function SettingsDrawer({
             onToggleWakeWord={onToggleWakeWord}
             agentName={agentName}
           />
-
-          <hr className="border-border/40" />
-
-          <VoiceProvidersSettings />
 
           <hr className="border-border/40" />
 

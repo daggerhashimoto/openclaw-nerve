@@ -29,7 +29,7 @@ if (typeof document !== 'undefined') {
   events.forEach(e => document.addEventListener(e, handler, { capture: true, once: false }));
 }
 
-export type TTSProvider = 'openai' | 'replicate' | 'edge';
+export type TTSProvider = 'openai' | 'replicate' | 'edge' | 'deepgram' | 'custom';
 
 /** @deprecated Use 'replicate' instead. Kept for migration. */
 export type LegacyTTSProvider = 'qwen';

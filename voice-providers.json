@@ -2,7 +2,7 @@
   "tts": {
     "provider": "deepgram",
     "deepgram": {
-      "model": "aura-2-iris-en"
+      "model": "aura-2-amalthea-en"
     },
     "openai": {
       "model": "tts-1",

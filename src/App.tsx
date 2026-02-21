@@ -9,7 +9,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } fro
 import { useGateway, loadConfig } from '@/contexts/GatewayContext';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { useChat } from '@/contexts/ChatContext';
-import { useSettings } from '@/contexts/SettingsContext';
+import { useSettings, type STTProvider } from '@/contexts/SettingsContext';
 import { getSessionKey } from '@/types';
 import { useConnectionManager } from '@/hooks/useConnectionManager';
 import { useDashboardData } from '@/hooks/useDashboardData';
@@ -242,7 +242,7 @@ export default function App({ onLogout }: AppProps) {
     setTtsModel(model);
   }, [setTtsModel]);
 
-  const handleSttProviderChange = useCallback((provider: 'local' | 'openai') => {
+  const handleSttProviderChange = useCallback((provider: STTProvider) => {
     setSttProvider(provider);
   }, [setSttProvider]);
 

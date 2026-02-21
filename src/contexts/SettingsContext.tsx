@@ -4,7 +4,7 @@ import { useTTS, migrateTTSProvider, type TTSProvider } from '@/features/tts/use
 import { type ThemeName, applyTheme, themeNames } from '@/lib/themes';
 import { type FontName, applyFont, fontNames } from '@/lib/fonts';
 
-export type STTProvider = 'local' | 'openai';
+export type STTProvider = 'local' | 'openai' | 'deepgram' | 'custom';
 
 interface SettingsContextValue {
   soundEnabled: boolean;

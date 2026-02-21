@@ -396,23 +396,29 @@ export function useVoiceInput(onTranscription: (text: string) => void, agentName
   useEffect(() => {
     let shiftDownAlone = false;
     const keydownHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Shift' && e.location === 1) {
+      // Accept BOTH left (1) and right (2) Shift keys
+      if (e.key === 'Shift' && (e.location === 1 || e.location === 2)) {
         shiftDownAlone = true;
+        console.debug('[VOICE] Shift down detected, location:', e.location);
       } else {
         shiftDownAlone = false;
       }
     };
     const keyupHandler = (e: KeyboardEvent) => {
-      if (e.key !== 'Shift' || e.location !== 1 || !shiftDownAlone) return;
+      // Accept BOTH left (1) and right (2) Shift keys
+      if (e.key !== 'Shift' || (e.location !== 1 && e.location !== 2) || !shiftDownAlone) return;
       shiftDownAlone = false;
       const now = Date.now();
       const isDouble = (now - lastCapsTimeRef.current) < 300;
+      console.debug('[VOICE] Shift up, delta:', now - lastCapsTimeRef.current, 'ms, isDouble:', isDouble, 'state:', stateRef.current);
       lastCapsTimeRef.current = now;
 
       if (isDouble) {
+        console.log('[VOICE] Double-shift detected! State:', stateRef.current);
         if (stateRef.current === 'recording') {
           discardRef.current();
         } else if (stateRef.current === 'idle' || stateRef.current === 'listening') {
+          console.log('[VOICE] Starting recording from double-shift');
           startRef.current();
         }
       } else {

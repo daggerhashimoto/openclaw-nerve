@@ -27,7 +27,7 @@ Messaging channels are great for chatting. But you can't watch charts render in 
 
 <div align="center">
 
-![Screenshot](docs/screenshot.png)
+![Nerve Demo](docs/demo.gif)
 
 </div>
 

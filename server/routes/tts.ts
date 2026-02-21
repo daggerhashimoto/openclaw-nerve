@@ -1,7 +1,7 @@
 /**
  * POST /api/tts — Text-to-speech synthesis.
  *
- * Supports OpenAI TTS, Replicate (Qwen, etc.), and Edge TTS (free, zero-config).
+ * Supports OpenAI TTS, Replicate (Qwen, etc.), Deepgram, Edge TTS, and Custom providers.
  * Body: { text: string, provider?: string, model?: string, voice?: string }
  * Response: audio/mpeg binary
  *
@@ -9,8 +9,10 @@
  *  - Explicit provider choice is always honoured
  *  - "openai" → OpenAI TTS (requires OPENAI_API_KEY)
  *  - "replicate" → Replicate-hosted models (requires REPLICATE_API_TOKEN)
+ *  - "deepgram" → Deepgram Aura 2 models (requires DEEPGRAM_API_KEY)
+ *  - "custom" → User-configured custom HTTP endpoint
  *  - "edge" → Microsoft Edge Read-Aloud TTS (free, no key needed)
- *  - Auto fallback: openai (if key) → replicate (if key) → edge (always available)
+ *  - Auto fallback: deepgram (if key) → openai (if key) → replicate (if key) → edge (always available)
  *
  * Backward compat: provider "qwen" is treated as replicate + model "qwen-tts".
  */
@@ -25,8 +27,11 @@ import { getTtsCache, setTtsCache } from '../services/tts-cache.js';
 import { synthesizeOpenAI } from '../services/openai-tts.js';
 import { synthesizeReplicate } from '../services/replicate-tts.js';
 import { synthesizeEdge } from '../services/edge-tts.js';
+import { synthesizeDeepgram } from '../services/deepgram-tts.js';
+import { synthesizeCustom } from '../services/custom-provider.js';
 import { rateLimitTTS, rateLimitGeneral } from '../middleware/rate-limit.js';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { CustomProviderConfig } from '../lib/provider-interfaces.js';
 
 const app = new Hono();
 
@@ -39,8 +44,8 @@ const ttsSchema = z.object({
     .max(MAX_TEXT_LENGTH, `Text too long (max ${MAX_TEXT_LENGTH} chars)`)
     .refine((s) => s.trim().length > 0, 'Text cannot be empty or whitespace'),
   voice: z.string().optional(),
-  // Accept both old ("qwen") and new ("replicate") values
-  provider: z.enum(['openai', 'replicate', 'qwen', 'edge']).optional(),
+  // Accept all provider values including new ones
+  provider: z.enum(['openai', 'replicate', 'qwen', 'edge', 'deepgram', 'custom']).optional(),
   model: z.string().optional(),
 });
 
@@ -71,14 +76,25 @@ app.post(
       // Voice is passed through — each provider resolves its own default from config
       const voice = rawVoice;
 
-      // Resolve effective provider: explicit > openai (if key) > replicate (if key) > edge
+      // Resolve effective provider: explicit > deepgram (if key) > openai (if key) > replicate (if key) > edge
+      const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
+      const useDeepgram =
+        provider === 'deepgram' ||
+        (!provider && !!deepgramApiKey);
       const useReplicate =
         provider === 'replicate' ||
-        (!provider && !config.openaiApiKey && !!config.replicateApiToken);
+        (!provider && !deepgramApiKey && !config.openaiApiKey && !!config.replicateApiToken);
+      const useCustom = provider === 'custom';
       const useEdge =
         provider === 'edge' ||
-        (!provider && !config.openaiApiKey && !config.replicateApiToken);
-      const effectiveProvider = useEdge ? 'edge' : useReplicate ? 'replicate' : 'openai';
+        (!provider && !deepgramApiKey && !config.openaiApiKey && !config.replicateApiToken);
+      
+      let effectiveProvider = 'openai';
+      if (useEdge) effectiveProvider = 'edge';
+      else if (useReplicate) effectiveProvider = 'replicate';
+      else if (useDeepgram) effectiveProvider = 'deepgram';
+      else if (useCustom) effectiveProvider = 'custom';
+      
       console.log(`[tts] provider=${effectiveProvider} voice=${voice} text="${text.slice(0, 50)}..."`);
 
       // Cache key includes provider + model + voice for proper isolation
@@ -99,12 +115,28 @@ app.post(
         result = await synthesizeEdge(text, voice);
       } else if (effectiveProvider === 'replicate') {
         result = await synthesizeReplicate(text, { model, voice });
+      } else if (effectiveProvider === 'deepgram') {
+        result = await synthesizeDeepgram(text, { voice, model });
+      } else if (effectiveProvider === 'custom') {
+        // TODO: Load custom config from voice-providers.json
+        const customConfig: CustomProviderConfig = {
+          name: 'custom',
+          endpoint: process.env.CUSTOM_TTS_ENDPOINT || '',
+          apiKey: process.env.CUSTOM_TTS_API_KEY,
+          requestTemplate: process.env.CUSTOM_TTS_REQUEST_TEMPLATE || '{"text":"{{text}}"}',
+          responseParser: process.env.CUSTOM_TTS_RESPONSE_PATH || '$.audio',
+        };
+        result = await synthesizeCustom(text, customConfig, { voice, model });
       } else {
         result = await synthesizeOpenAI(text, voice, model);
       }
 
       if (!result.ok) {
-        return c.text(result.message, result.status as ContentfulStatusCode);
+        return c.text(result.message || 'TTS failed', result.status as ContentfulStatusCode);
+      }
+
+      if (!result.buf) {
+        return c.text('TTS generated no audio', 500);
       }
 
       const ct = 'contentType' in result ? (result as { contentType: string }).contentType : 'audio/mpeg';

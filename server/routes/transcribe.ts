@@ -11,7 +11,7 @@ import { config } from '../lib/config.js';
 import { transcribe as transcribeOpenAI } from '../services/openai-whisper.js';
 import { transcribeLocal, isModelAvailable, getActiveModel, setWhisperModel, getDownloadProgress, getSystemInfo } from '../services/whisper-local.js';
 import { rateLimitTranscribe } from '../middleware/rate-limit.js';
-import { getActiveVoiceConfig } from '../lib/voice-config.js';
+import { getActiveVoiceConfig, saveVoiceConfig, reloadVoiceConfig } from '../lib/voice-config.js';
 import { transcribeDeepgram } from '../services/deepgram-stt.js';
 import { transcribeCustom } from '../services/custom-provider.js';
 
@@ -57,6 +57,8 @@ app.post('/api/transcribe', rateLimitTranscribe, async (c) => {
     // Route to configured STT provider (check voice config first, fall back to env)
     const voiceConfig = getActiveVoiceConfig();
     const sttProvider = voiceConfig.stt.provider || config.sttProvider;
+    
+    console.log(`[transcribe] Using STT provider: ${sttProvider} (from voice config: ${voiceConfig.stt.provider})`);
 
     let result;
     
@@ -173,6 +175,12 @@ app.put('/api/transcribe/config', async (c) => {
         messages.push(`OpenAI STT model set to ${body.model}`);
       }
     }
+
+    // Save updated config to disk
+    saveVoiceConfig(voiceConfig);
+    
+    // Reload cache so next requests use updated config
+    reloadVoiceConfig();
 
     // Get active model for response
     let activeModel: string;

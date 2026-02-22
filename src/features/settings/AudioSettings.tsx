@@ -365,16 +365,6 @@ export function AudioSettings({
         <span className="text-[10px] text-muted-foreground uppercase tracking-[1px]">TTS Provider</span>
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={() => onTtsProviderChange('deepgram')}
-            className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
-              ttsProvider === 'deepgram'
-                ? 'bg-purple/20 border-purple text-purple'
-                : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground'
-            }`}
-          >
-            Deepgram
-          </button>
-          <button
             onClick={() => onTtsProviderChange('openai')}
             className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
               ttsProvider === 'openai'
@@ -405,14 +395,14 @@ export function AudioSettings({
             Edge (Free)
           </button>
           <button
-            onClick={() => onTtsProviderChange('custom')}
-            className={`col-span-2 px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
-              ttsProvider === 'custom'
-                ? 'bg-orange/20 border-orange text-orange'
+            onClick={() => onTtsProviderChange('deepgram')}
+            className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
+              ttsProvider === 'deepgram'
+                ? 'bg-purple/20 border-purple text-purple'
                 : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground'
             }`}
           >
-            Custom Endpoint
+            Deepgram
           </button>
         </div>
       </div>
@@ -543,16 +533,6 @@ export function AudioSettings({
         <span className="text-[10px] text-muted-foreground uppercase tracking-[1px]">STT Provider</span>
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={() => onSttProviderChange('deepgram')}
-            className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
-              sttProvider === 'deepgram'
-                ? 'bg-purple/20 border-purple text-purple'
-                : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground'
-            }`}
-          >
-            Deepgram
-          </button>
-          <button
             onClick={() => onSttProviderChange('local')}
             className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
               sttProvider === 'local'
@@ -573,14 +553,14 @@ export function AudioSettings({
             OpenAI
           </button>
           <button
-            onClick={() => onSttProviderChange('custom')}
+            onClick={() => onSttProviderChange('deepgram')}
             className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
-              sttProvider === 'custom'
-                ? 'bg-orange/20 border-orange text-orange'
+              sttProvider === 'deepgram'
+                ? 'bg-purple/20 border-purple text-purple'
                 : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground'
             }`}
           >
-            Custom
+            Deepgram
           </button>
         </div>
         <span className="text-[10px] text-muted-foreground">
@@ -590,7 +570,7 @@ export function AudioSettings({
               ? 'Using built-in Whisper model — no API key needed'
               : sttProvider === 'openai'
                 ? apiKeys.openai ? 'Using OpenAI Whisper API' : 'OpenAI Whisper API — enter your API key below'
-                : 'Custom STT endpoint configured'}
+                : 'Using selected STT provider'}
         </span>
       </div>
 

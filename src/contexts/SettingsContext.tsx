@@ -90,11 +90,26 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const changeTtsProvider = useCallback((provider: TTSProvider) => {
     setTtsProvider(provider);
     localStorage.setItem('oc-tts-provider', provider);
-    // Update voice-providers.json
+    
+    // Set default model for the new provider
+    const defaults: Record<TTSProvider, { deepgram?: { model: string }; openai?: { model: string; voice: string }; edge?: { voice: string }; replicate?: { model: string } }> = {
+      deepgram: { deepgram: { model: 'aura-2-iris-en' } },
+      openai: { openai: { model: 'tts-1', voice: 'nova' } },
+      edge: { edge: { voice: 'en-US-AriaNeural' } },
+      replicate: { replicate: { model: 'qwen-tts' } },
+      custom: {},
+    };
+    
+    // Update voice-providers.json with provider and its default config
     fetch('/api/voice-providers', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tts: { provider } }),
+      body: JSON.stringify({ 
+        tts: {
+          provider,
+          ...defaults[provider],
+        }
+      }),
     }).catch(() => {});
   }, []);
 
@@ -140,11 +155,25 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const changeSttProvider = useCallback((provider: STTProvider) => {
     setSttProviderState(provider);
     localStorage.setItem('oc-stt-provider', provider);
-    // Update voice-providers.json (primary source of truth)
+    
+    // Set default model for the new provider
+    const defaults: Record<STTProvider, { deepgram?: { model: string; keywords?: string[] }; openai?: { model: string }; local?: { model: string } }> = {
+      deepgram: { deepgram: { model: 'nova-2', keywords: ['Kora:3', 'Erapor:3', 'Philomena:2'] } },
+      openai: { openai: { model: 'whisper-1' } },
+      local: { local: { model: 'tiny.en' } },
+      custom: {},
+    };
+    
+    // Update voice-providers.json (primary source of truth) with provider and its default config
     fetch('/api/voice-providers', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stt: { provider } }),
+      body: JSON.stringify({ 
+        stt: {
+          provider,
+          ...defaults[provider],
+        }
+      }),
     }).catch(() => {});
     // Also update transcribe config for backward compatibility
     fetch('/api/transcribe/config', {

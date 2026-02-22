@@ -90,20 +90,49 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const changeTtsProvider = useCallback((provider: TTSProvider) => {
     setTtsProvider(provider);
     localStorage.setItem('oc-tts-provider', provider);
+    // Update voice-providers.json
+    fetch('/api/voice-providers', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tts: { provider } }),
+    }).catch(() => {});
   }, []);
 
-  const changeTtsModel = useCallback((model: string) => {
+  const changeTtsModel = useCallback((model: string, provider?: TTSProvider) => {
     setTtsModelState(model);
     localStorage.setItem('oc-tts-model', model);
-  }, []);
+    // Update voice-providers.json with the model
+    const currentProvider = provider || ttsProvider;
+    const updates: Record<string, unknown> = { provider: currentProvider };
+    
+    if (currentProvider === 'deepgram') {
+      updates.deepgram = { model };
+    } else if (currentProvider === 'openai') {
+      const voice = model.split(':')[1] || 'nova';
+      const modelName = model.split(':')[0] || 'tts-1';
+      updates.openai = { model: modelName, voice };
+    } else if (currentProvider === 'edge') {
+      updates.edge = { voice: model };
+    }
+    
+    fetch('/api/voice-providers', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tts: updates }),
+    }).catch(() => {});
+  }, [ttsProvider]);
 
-  // Sync STT provider to server on mount (in case server restarted)
+  // Sync providers to server on mount (in case server restarted)
   useEffect(() => {
-    if (sttProvider) {
-      fetch('/api/transcribe/config', {
+    if (sttProvider || ttsProvider) {
+      const updates: { tts?: { provider: string }; stt?: { provider: string } } = {};
+      if (ttsProvider) updates.tts = { provider: ttsProvider };
+      if (sttProvider) updates.stt = { provider: sttProvider };
+      
+      fetch('/api/voice-providers', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: sttProvider }),
+        body: JSON.stringify(updates),
       }).catch(() => {});
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -111,7 +140,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const changeSttProvider = useCallback((provider: STTProvider) => {
     setSttProviderState(provider);
     localStorage.setItem('oc-stt-provider', provider);
-    // Notify server to switch provider
+    // Update voice-providers.json (primary source of truth)
+    fetch('/api/voice-providers', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stt: { provider } }),
+    }).catch(() => {});
+    // Also update transcribe config for backward compatibility
     fetch('/api/transcribe/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -119,16 +154,33 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }).catch(() => {});
   }, []);
 
-  const changeSttModel = useCallback((model: string) => {
+  const changeSttModel = useCallback((model: string, provider?: STTProvider) => {
     setSttModelState(model);
     localStorage.setItem('oc-stt-model', model);
-    // Notify server to switch model
+    // Update voice-providers.json with the model
+    const currentProvider = provider || sttProvider;
+    const updates: Record<string, unknown> = { provider: currentProvider };
+    
+    if (currentProvider === 'deepgram') {
+      updates.deepgram = { model };
+    } else if (currentProvider === 'openai') {
+      updates.openai = { model };
+    } else if (currentProvider === 'local') {
+      updates.local = { model };
+    }
+    
+    fetch('/api/voice-providers', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stt: updates }),
+    }).catch(() => {});
+    // Also update transcribe config for backward compatibility
     fetch('/api/transcribe/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model }),
-    }).catch(() => {}); // Best-effort — server will use new model on next request
-  }, []);
+    }).catch(() => {});
+  }, [sttProvider]);
 
   const toggleTtsProvider = useCallback(() => {
     setTtsProvider(prev => {

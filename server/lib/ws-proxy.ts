@@ -42,7 +42,10 @@ function gatewayCall(method: string, params: Record<string, unknown>): Promise<u
   return new Promise((resolve, reject) => {
     const bin = resolveOpenclawBin();
     const args = ['gateway', 'call', method, '--params', JSON.stringify(params)];
-    execFile(bin, args, { timeout: 10_000, maxBuffer: 1024 * 1024, env: process.env }, (err, stdout, stderr) => {
+    // Ensure nvm/fnm/volta node is in PATH for #!/usr/bin/env node shebangs
+    const nodeBinDir = process.execPath.replace(/\/node$/, '');
+    const env = { ...process.env, PATH: `${nodeBinDir}:${process.env.PATH || ''}` };
+    execFile(bin, args, { timeout: 10_000, maxBuffer: 1024 * 1024, env }, (err, stdout, stderr) => {
       if (err) {
         reject(new Error(stderr?.trim() || err.message));
         return;

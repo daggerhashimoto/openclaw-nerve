@@ -19,6 +19,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { execFile } from 'node:child_process';
+import { dirname } from 'node:path';
 import { config, WS_ALLOWED_HOSTS, SESSION_COOKIE_NAME } from './config.js';
 import { verifySession, parseSessionCookie } from './session.js';
 import { createDeviceBlock, getDeviceIdentity } from './device-identity.js';
@@ -43,8 +44,9 @@ function gatewayCall(method: string, params: Record<string, unknown>): Promise<u
     const bin = resolveOpenclawBin();
     const args = ['gateway', 'call', method, '--params', JSON.stringify(params)];
     // Ensure nvm/fnm/volta node is in PATH for #!/usr/bin/env node shebangs
-    const nodeBinDir = process.execPath.replace(/\/node$/, '');
-    const env = { ...process.env, PATH: `${nodeBinDir}:${process.env.PATH || ''}` };
+    const nodeBinDir = dirname(process.execPath);
+    const existingPath = process.env.PATH;
+    const env = { ...process.env, PATH: existingPath ? `${nodeBinDir}:${existingPath}` : nodeBinDir };
     execFile(bin, args, { timeout: 10_000, maxBuffer: 1024 * 1024, env }, (err, stdout, stderr) => {
       if (err) {
         reject(new Error(stderr?.trim() || err.message));

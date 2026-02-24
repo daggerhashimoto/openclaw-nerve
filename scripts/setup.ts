@@ -34,7 +34,7 @@ import {
   type EnvConfig,
 } from './lib/env-writer.js';
 import { generateSelfSignedCert } from './lib/cert-gen.js';
-import { detectGatewayConfig, getEnvGatewayToken, patchGatewayAllowedOrigins, restartGateway, fixGatewayDeviceScopes, approveAllPendingDevices, prePairNerveDevice } from './lib/gateway-detect.js';
+import { detectGatewayConfig, getEnvGatewayToken, restartGateway, approveAllPendingDevices, detectNeededConfigChanges, type ConfigChange } from './lib/gateway-detect.js';
 
 const PROJECT_ROOT = resolve(process.cwd());
 const ENV_PATH = resolve(PROJECT_ROOT, '.env');
@@ -44,6 +44,98 @@ const args = process.argv.slice(2);
 const isHelp = args.includes('--help') || args.includes('-h');
 const isCheck = args.includes('--check');
 const isDefaults = args.includes('--defaults');
+
+function detectPrimaryIpv4(): string | null {
+  const nets = networkInterfaces();
+  for (const addrs of Object.values(nets)) {
+    for (const addr of addrs ?? []) {
+      if (!addr.internal && addr.family === 'IPv4') return addr.address;
+    }
+  }
+  return null;
+}
+
+/** Check whether a host string is a loopback address (IPv4, IPv6, or localhost). */
+function isLoopback(host: string): boolean {
+  return !host || host === '127.0.0.1' || host === 'localhost' || host === '::1';
+}
+
+function computeGatewayOrigins(config: EnvConfig, accessMode: string): {
+  nerveOrigin?: string;
+  nerveHttpsOrigin?: string;
+} {
+  if (accessMode === 'local') return {};
+
+  const nervePort = config.PORT || DEFAULTS.PORT;
+  let accessIp = config.HOST === '0.0.0.0'
+    ? (config.ALLOWED_ORIGINS?.split(',')[0]?.trim()?.replace(/^https?:\/\//, '').replace(/:\d+$/, '') || '0.0.0.0')
+    : (config.HOST || 'localhost');
+
+  if (accessIp === '0.0.0.0') {
+    accessIp = detectPrimaryIpv4() || '';
+  }
+
+  // If we couldn't resolve a usable IP, skip origin generation
+  if (!accessIp || accessIp === '0.0.0.0') {
+    return {};
+  }
+
+  const nerveOrigin = `http://${accessIp}:${nervePort}`;
+  const sslPort = config.SSL_PORT;
+  const nerveHttpsOrigin = sslPort ? `https://${accessIp}:${sslPort}` : undefined;
+
+  return { nerveOrigin, nerveHttpsOrigin };
+}
+
+/**
+ * Apply a list of config changes, restart gateway if needed, and optionally approve pending devices.
+ * Shared between interactive and defaults flows to avoid duplication.
+ */
+async function applyConfigChanges(changes: ConfigChange[]): Promise<void> {
+  let needsRestart = false;
+  let deviceScopeFixFailed = false;
+  let shouldApprovePending = false;
+
+  for (const change of changes) {
+    if (change.id === 'pre-pair' && deviceScopeFixFailed) {
+      warn('Skipping pre-pair because device scope fix failed');
+      continue;
+    }
+
+    const result = change.apply();
+    if (result.ok) {
+      success(result.message);
+      if (result.needsRestart) needsRestart = true;
+      if (change.id === 'device-scopes' || change.id === 'pre-pair') {
+        shouldApprovePending = true;
+      }
+    } else {
+      warn(result.message);
+      if (change.id === 'device-scopes') {
+        deviceScopeFixFailed = true;
+      }
+    }
+  }
+
+  if (needsRestart) {
+    dim('Restarting gateway to apply changes...');
+    const restart = restartGateway();
+    if (restart.ok) {
+      await new Promise(r => setTimeout(r, 3000));
+      if (shouldApprovePending) {
+        const approved = approveAllPendingDevices();
+        if (approved.ok && approved.approved > 0) {
+          success(approved.message);
+        } else if (!approved.ok) {
+          warn(approved.message);
+        }
+      }
+      success('Gateway configuration updated');
+    } else {
+      warn(restart.message);
+    }
+  }
+}
 
 // ── Ctrl+C handler ───────────────────────────────────────────────────
 
@@ -65,12 +157,13 @@ async function main(): Promise<void> {
     --defaults   Non-interactive setup using auto-detected values
     --help, -h   Show this help message
 
-  The setup wizard guides you through 5 steps:
+  The setup wizard guides you through 6 steps:
     1. Gateway Connection — connect to your OpenClaw gateway
     2. Agent Identity     — set your agent's display name
     3. Access Mode        — local, Tailscale, LAN, or custom
-    4. TTS Configuration  — optional text-to-speech API keys
-    5. Advanced Settings  — custom file paths (most users skip this)
+    4. Authentication     — password protection (network mode)
+    5. TTS Configuration  — optional text-to-speech API keys
+    6. Advanced Settings  — custom file paths (most users skip this)
 
   Examples:
     npm run setup               # Interactive setup
@@ -254,31 +347,6 @@ async function collectInteractive(
   const gwTest = await testGatewayConnection(config.GATEWAY_URL!);
   if (gwTest.ok) {
     console.log(`\x1b[32m✓\x1b[0m ${gwTest.message}`);
-
-    // Fix OpenClaw 2026.2.19 bootstrap bug: gateway device has insufficient scopes
-    const scopeFix = fixGatewayDeviceScopes();
-    let needsGatewayRestart = scopeFix.ok && scopeFix.needsRestart;
-
-    // Pre-pair Nerve's device identity so it can connect without manual approval
-    const pairResult = prePairNerveDevice(config.GATEWAY_TOKEN);
-    if (pairResult.ok && pairResult.needsRestart) {
-      needsGatewayRestart = true;
-      dim(`  ${pairResult.message}`);
-    }
-
-    if (needsGatewayRestart) {
-      dim('  Restarting gateway to apply device changes...');
-      const restart = restartGateway();
-      if (restart.ok) {
-        // Wait for gateway to come back up
-        await new Promise(r => setTimeout(r, 3000));
-        const approved = approveAllPendingDevices();
-        if (approved.ok && approved.approved > 0) {
-          success(`${approved.message}`);
-        }
-        success('Gateway device configuration updated — Nerve will connect automatically');
-      }
-    }
   } else {
     console.log(`\x1b[31m✗\x1b[0m ${gwTest.message}`);
     dim('  Start it with: openclaw gateway start');
@@ -402,15 +470,7 @@ async function collectInteractive(
   } else if (accessMode === 'network') {
     config.HOST = '0.0.0.0';
     // Auto-detect LAN IP
-    const detectedIp = (() => {
-      const nets = networkInterfaces();
-      for (const addrs of Object.values(nets)) {
-        for (const addr of addrs ?? []) {
-          if (!addr.internal && addr.family === 'IPv4') return addr.address;
-        }
-      }
-      return null;
-    })();
+    const detectedIp = detectPrimaryIpv4();
     const lanIp = await input({
     theme: promptTheme,
       message: 'Your LAN IP address',
@@ -504,73 +564,52 @@ async function collectInteractive(
     }
   }
 
-  // ── Patch gateway for external access ─────────────────────────────
+  // ── Gateway config updates ─────────────────────────────────────────
 
-  if (accessMode !== 'local') {
-    const nervePort = config.PORT || DEFAULTS.PORT;
-    // Extract the real IP — 0.0.0.0 isn't a valid origin for browsers
-    let accessIp = config.HOST === '0.0.0.0'
-      ? (config.ALLOWED_ORIGINS?.split(',')[0]?.replace(/^https?:\/\//, '').replace(/:\d+$/, '') || '0.0.0.0')
-      : (config.HOST || 'localhost');
-    if (accessIp === '0.0.0.0') {
-      // Detect actual LAN IP as fallback
-      const nets = networkInterfaces();
-      for (const addrs of Object.values(nets)) {
-        for (const addr of addrs ?? []) {
-          if (!addr.internal && addr.family === 'IPv4') { accessIp = addr.address; break; }
-        }
-        if (accessIp !== '0.0.0.0') break;
-      }
-    }
-    const nerveOrigin = `http://${accessIp}:${nervePort}`;
-    const sslPort = config.SSL_PORT;
-    const nerveHttpsOrigin = sslPort ? `https://${accessIp}:${sslPort}` : null;
+  const { nerveOrigin, nerveHttpsOrigin } = computeGatewayOrigins(config, accessMode);
 
+  const neededChanges = detectNeededConfigChanges({
+    nerveOrigin,
+    nerveHttpsOrigin,
+    gatewayToken: config.GATEWAY_TOKEN,
+  });
+
+  if (neededChanges.length > 0) {
     console.log('');
-    warn('External access requires updating the OpenClaw gateway config.');
-    dim('Without this, the gateway will reject WebSocket connections from Nerve.');
+    warn('Nerve needs to update your OpenClaw gateway config.');
+    dim('OpenClaw config files will be updated.');
     console.log('');
-    dim('  This will:');
-    dim(`  1. Add ${nerveOrigin} to gateway.controlUi.allowedOrigins`);
-    if (nerveHttpsOrigin) {
-      dim(`  2. Add ${nerveHttpsOrigin} to gateway.controlUi.allowedOrigins`);
-    }
-    dim(`  Config file: ~/.openclaw/openclaw.json`);
-    dim('  Note: The gateway stays on loopback — Nerve proxies all connections.');
+    dim('The following changes are needed:');
+    neededChanges.forEach((change, i) => {
+      dim(`  ${i + 1}. ${change.description}`);
+    });
     console.log('');
 
-    const patchGateway = await confirm({
+    const applyChanges = await confirm({
       theme: promptTheme,
-      message: 'Update OpenClaw gateway config to allow Nerve connections?',
+      message: 'Apply these changes?',
       default: true,
     });
 
-    if (patchGateway) {
-      const httpResult = patchGatewayAllowedOrigins(nerveOrigin);
-      if (httpResult.ok) {
-        success(httpResult.message);
-      } else {
-        warn(httpResult.message);
-        dim('You can manually add the origin to gateway.controlUi.allowedOrigins in ~/.openclaw/openclaw.json');
-      }
-      if (nerveHttpsOrigin) {
-        const httpsResult = patchGatewayAllowedOrigins(nerveHttpsOrigin);
-        if (httpsResult.ok) {
-          success(httpsResult.message);
-        } else {
-          warn(httpsResult.message);
+    if (applyChanges) {
+      await applyConfigChanges(neededChanges);
+    } else {
+      warn('Skipped gateway config changes. Some features may not work:');
+      for (const change of neededChanges) {
+        if (change.id === 'device-scopes') {
+          dim('  • Device scopes: manually fix scopes in ~/.openclaw/devices/paired.json');
+        } else if (change.id === 'pre-pair') {
+          dim('  • Pre-pair: run `openclaw devices approve` after starting Nerve');
+        } else if (change.id === 'tools-allow') {
+          dim('  • Cron tools: add "cron" to gateway.tools.allow in ~/.openclaw/openclaw.json');
+        } else if (change.id === 'allowed-origins' && nerveOrigin) {
+          dim(`  • Origins: add ${nerveOrigin} to gateway.controlUi.allowedOrigins in ~/.openclaw/openclaw.json`);
+        } else if (change.id === 'allowed-origins-https' && nerveHttpsOrigin) {
+          dim(`  • Origins: add ${nerveHttpsOrigin} to gateway.controlUi.allowedOrigins in ~/.openclaw/openclaw.json`);
+        } else if (change.id.startsWith('allowed-origins')) {
+          dim('  • Origins: add the required origin(s) to gateway.controlUi.allowedOrigins in ~/.openclaw/openclaw.json');
         }
       }
-      // Auto-restart gateway to apply changes
-      const restartResult = restartGateway();
-      if (restartResult.ok) {
-        success(restartResult.message);
-      } else {
-        warn(restartResult.message);
-      }
-    } else {
-      warn('Skipped — you may see "origin not allowed" errors in Nerve.');
-      dim('To fix later, add the origin to gateway.controlUi.allowedOrigins in ~/.openclaw/openclaw.json');
     }
   }
 
@@ -964,6 +1003,21 @@ async function runDefaults(existing: EnvConfig): Promise<void> {
 
   success('Configuration written to .env');
   printSummary(config);
+
+  // Apply all gateway config patches silently (non-interactive = implicit consent)
+  const defaultsAccessMode = isLoopback(config.HOST || '') ? 'local' : 'network';
+  const { nerveOrigin, nerveHttpsOrigin } = computeGatewayOrigins(config, defaultsAccessMode);
+
+  const changes = detectNeededConfigChanges({
+    nerveOrigin,
+    nerveHttpsOrigin,
+    gatewayToken: config.GATEWAY_TOKEN,
+  });
+
+  if (changes.length > 0) {
+    await applyConfigChanges(changes);
+  }
+
   console.log('');
 }
 

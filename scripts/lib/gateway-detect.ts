@@ -25,6 +25,9 @@ interface OpenClawConfig {
     controlUi?: {
       allowedOrigins?: string[];
     };
+    tools?: {
+      allow?: string[];
+    };
   };
   [key: string]: unknown;
 }
@@ -136,6 +139,46 @@ export function patchGatewayAllowedOrigins(origin: string): GatewayPatchResult {
     writeFileSync(OPENCLAW_CONFIG, JSON.stringify(config, null, 2) + '\n');
     result.ok = true;
     result.message = `Added ${origin} to gateway.controlUi.allowedOrigins`;
+    return result;
+  } catch (err) {
+    result.message = `Failed to patch config: ${err instanceof Error ? err.message : String(err)}`;
+    return result;
+  }
+}
+
+/**
+ * Patch the OpenClaw gateway config to allow the cron tool.
+ * Adds 'cron' to gateway.tools.allow (deduped).
+ * Returns a result indicating success/failure.
+ */
+export function patchGatewayToolsAllow(): GatewayPatchResult {
+  const result: GatewayPatchResult = { ok: false, message: '', configPath: OPENCLAW_CONFIG };
+
+  if (!existsSync(OPENCLAW_CONFIG)) {
+    result.message = `Config not found: ${OPENCLAW_CONFIG}`;
+    return result;
+  }
+
+  try {
+    const raw = readFileSync(OPENCLAW_CONFIG, 'utf-8');
+    const config = JSON.parse(raw) as OpenClawConfig;
+
+    config.gateway = config.gateway || {};
+    config.gateway.tools = config.gateway.tools || {};
+    const allow = Array.isArray(config.gateway.tools.allow) ? config.gateway.tools.allow : [];
+
+    if (allow.includes('cron')) {
+      result.ok = true;
+      result.message = 'cron already in gateway.tools.allow';
+      return result;
+    }
+
+    allow.push('cron');
+    config.gateway.tools.allow = allow;
+
+    writeFileSync(OPENCLAW_CONFIG, JSON.stringify(config, null, 2) + '\n');
+    result.ok = true;
+    result.message = 'Added cron to gateway.tools.allow';
     return result;
   } catch (err) {
     result.message = `Failed to patch config: ${err instanceof Error ? err.message : String(err)}`;
@@ -331,12 +374,23 @@ export function approveAllPendingDevices(): { ok: boolean; approved: number; mes
       stdio: ['pipe', 'pipe', 'pipe'],
     }).toString();
 
-    // Parse pending requests — the CLI may not have --json, fall back to regex
+    // Parse pending requests — try JSON first, fall back to box-drawing table regex
     const pendingIds: string[] = [];
-    const requestPattern = /│\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s+│/g;
-    let match;
-    while ((match = requestPattern.exec(listOutput)) !== null) {
-      pendingIds.push(match[1]);
+    try {
+      const parsed = JSON.parse(listOutput);
+      const items = Array.isArray(parsed?.pending) ? parsed.pending : [];
+      for (const item of items) {
+        if (item.requestId && typeof item.requestId === 'string') {
+          pendingIds.push(item.requestId);
+        }
+      }
+    } catch {
+      // Not valid JSON — fall back to table regex
+      const requestPattern = /│\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s+│/g;
+      let match;
+      while ((match = requestPattern.exec(listOutput)) !== null) {
+        pendingIds.push(match[1]);
+      }
     }
 
     if (pendingIds.length === 0) {
@@ -464,6 +518,173 @@ export function prePairNerveDevice(gatewayToken?: string): { ok: boolean; messag
       needsRestart: false,
     };
   }
+}
+
+// ── Detection layer ──────────────────────────────────────────────────
+
+export interface ConfigChange {
+  id: string;
+  description: string;
+  apply: () => { ok: boolean; message: string; needsRestart: boolean };
+}
+
+/**
+ * Detect whether gateway-side operator scopes need repair/bootstrap.
+ */
+function needsDeviceScopeFix(): boolean {
+  const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
+
+  if (!existsSync(pairedPath)) {
+    // Fresh install — needs bootstrap if the gateway identity exists
+    const deviceJsonPath = join(HOME, '.openclaw', 'identity', 'device.json');
+    return existsSync(deviceJsonPath);
+  }
+
+  try {
+    const raw = readFileSync(pairedPath, 'utf-8');
+    const paired = JSON.parse(raw) as Record<string, { scopes?: string[] }>;
+
+    for (const [, device] of Object.entries(paired)) {
+      const currentScopes = device.scopes || [];
+      const missing = FULL_OPERATOR_SCOPES.filter(s => !currentScopes.includes(s));
+      if (missing.length > 0) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detect whether Nerve device pre-pairing is needed.
+ * Returns false when paired.json is absent; device-scope bootstrap will create it first.
+ */
+function needsPrePair(gatewayToken?: string): boolean {
+  const nerveDir = process.env.NERVE_DATA_DIR || join(process.env.HOME || HOME, '.nerve');
+  const identityPath = join(nerveDir, 'device-identity.json');
+  const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
+
+  if (!existsSync(pairedPath)) return false;
+
+  try {
+    const paired = JSON.parse(readFileSync(pairedPath, 'utf-8')) as Record<string, unknown>;
+
+    if (!existsSync(identityPath)) return true; // No Nerve identity yet
+
+    const stored = JSON.parse(readFileSync(identityPath, 'utf-8'));
+    const deviceId = stored.deviceId;
+
+    if (!paired[deviceId]) return true; // Nerve not registered
+
+    // Check token match — if no token is available, assume mismatch (apply will generate one)
+    const token = gatewayToken || detectGatewayConfig().token;
+    if (!token) return true;
+    const existing = paired[deviceId] as { tokens?: Record<string, { token?: string }> };
+    if (existing.tokens?.operator?.token !== token) return true;
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detect whether gateway.tools.allow is missing the cron tool.
+ */
+function needsToolsAllow(): boolean {
+  if (!existsSync(OPENCLAW_CONFIG)) return false;
+
+  try {
+    const raw = readFileSync(OPENCLAW_CONFIG, 'utf-8');
+    const config = JSON.parse(raw) as OpenClawConfig;
+    const allow = config.gateway?.tools?.allow || [];
+    return !allow.includes('cron');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detect whether a specific origin is missing from gateway.controlUi.allowedOrigins.
+ */
+function needsOriginPatch(origin: string): boolean {
+  if (!existsSync(OPENCLAW_CONFIG)) return false;
+
+  try {
+    const raw = readFileSync(OPENCLAW_CONFIG, 'utf-8');
+    const config = JSON.parse(raw) as OpenClawConfig;
+    const origins = config.gateway?.controlUi?.allowedOrigins || [];
+    return !origins.includes(origin);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detect which gateway config changes are needed without applying them.
+ * Returns an array of pending changes with descriptions and apply functions.
+ */
+export function detectNeededConfigChanges(opts: {
+  nerveOrigin?: string;
+  nerveHttpsOrigin?: string;
+  gatewayToken?: string;
+}): ConfigChange[] {
+  const changes: ConfigChange[] = [];
+
+  const deviceScopeFixNeeded = needsDeviceScopeFix();
+
+  if (deviceScopeFixNeeded) {
+    changes.push({
+      id: 'device-scopes',
+      description: 'Fix gateway device scopes (required for Nerve to connect)',
+      apply: () => fixGatewayDeviceScopes(),
+    });
+  }
+
+  // If device-scopes will bootstrap paired.json, always include pre-pair
+  // (paired.json won't exist yet for detection, but will after device-scopes runs)
+  if (deviceScopeFixNeeded || needsPrePair(opts.gatewayToken)) {
+    changes.push({
+      id: 'pre-pair',
+      description: 'Pre-pair Nerve device identity (skip manual approval step)',
+      apply: () => prePairNerveDevice(opts.gatewayToken),
+    });
+  }
+
+  if (needsToolsAllow()) {
+    changes.push({
+      id: 'tools-allow',
+      description: 'Allow cron tool on /tools/invoke (needed for cron management)',
+      apply: () => {
+        const r = patchGatewayToolsAllow();
+        return { ok: r.ok, message: r.message, needsRestart: r.ok };
+      },
+    });
+  }
+
+  if (opts.nerveOrigin && needsOriginPatch(opts.nerveOrigin)) {
+    changes.push({
+      id: 'allowed-origins',
+      description: `Add ${opts.nerveOrigin} to allowed origins (needed for WebSocket)`,
+      apply: () => {
+        const r = patchGatewayAllowedOrigins(opts.nerveOrigin!);
+        return { ok: r.ok, message: r.message, needsRestart: r.ok };
+      },
+    });
+  }
+
+  if (opts.nerveHttpsOrigin && needsOriginPatch(opts.nerveHttpsOrigin)) {
+    changes.push({
+      id: 'allowed-origins-https',
+      description: `Add ${opts.nerveHttpsOrigin} to allowed origins (needed for HTTPS WebSocket)`,
+      apply: () => {
+        const r = patchGatewayAllowedOrigins(opts.nerveHttpsOrigin!);
+        return { ok: r.ok, message: r.message, needsRestart: r.ok };
+      },
+    });
+  }
+
+  return changes;
 }
 
 /**

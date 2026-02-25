@@ -43,7 +43,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [ttsModel, setTtsModelState] = useState(() => localStorage.getItem('oc-tts-model') || '');
   const [sttProvider, setSttProviderState] = useState<STTProvider>(() => {
     const saved = localStorage.getItem('oc-stt-provider') as STTProvider | null;
-    return saved === 'openai' ? 'openai' : 'local';
+    // Return saved value if valid, otherwise default to 'local'
+    if (saved === 'openai' || saved === 'deepgram' || saved === 'custom') return saved;
+    return 'local';
   });
   const [sttModel, setSttModelState] = useState(() => localStorage.getItem('oc-stt-model') || 'tiny.en');
   const [wakeWordEnabled, setWakeWordEnabled] = useState(false);

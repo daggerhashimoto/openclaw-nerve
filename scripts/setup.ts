@@ -347,31 +347,6 @@ async function collectInteractive(
   const gwTest = await testGatewayConnection(config.GATEWAY_URL!);
   if (gwTest.ok) {
     console.log(`\x1b[32m✓\x1b[0m ${gwTest.message}`);
-
-    // Fix OpenClaw 2026.2.19 bootstrap bug: gateway device has insufficient scopes
-    const scopeFix = fixGatewayDeviceScopes();
-    let needsGatewayRestart = scopeFix.ok && scopeFix.needsRestart;
-
-    // Pre-pair Nerve's device identity so it can connect without manual approval
-    const pairResult = prePairNerveDevice(config.GATEWAY_TOKEN);
-    if (pairResult.ok && pairResult.needsRestart) {
-      needsGatewayRestart = true;
-      dim(`  ${pairResult.message}`);
-    }
-
-    if (needsGatewayRestart) {
-      dim('  Restarting gateway to apply device changes...');
-      const restart = restartGateway();
-      if (restart.ok) {
-        // Wait for gateway to come back up
-        await new Promise(r => setTimeout(r, 3000));
-        const approved = approveAllPendingDevices();
-        if (approved.ok && approved.approved > 0) {
-          success(`${approved.message}`);
-        }
-        success('Gateway device configuration updated — Nerve will connect automatically');
-      }
-    }
   } else {
     console.log(`\x1b[31m✗\x1b[0m ${gwTest.message}`);
     dim('  Start it with: openclaw gateway start');

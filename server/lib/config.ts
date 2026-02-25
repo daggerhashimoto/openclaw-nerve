@@ -80,9 +80,15 @@ export const config = {
 /** Session cookie name — suffixed with port to avoid collisions when running multiple instances. */
 export const SESSION_COOKIE_NAME = `nerve_session_${config.port}`;
 
+/** Hostname extracted from GATEWAY_URL so the WS proxy can connect to remote gateways. */
+const gatewayHostname = (() => {
+  try { return new URL(config.gatewayUrl).hostname; } catch { return null; }
+})();
+
 /** WebSocket proxy allowed hostnames (extend via WS_ALLOWED_HOSTS env var, comma-separated) */
 export const WS_ALLOWED_HOSTS = new Set([
   'localhost', '127.0.0.1', '::1',
+  ...(gatewayHostname ? [gatewayHostname] : []),
   ...(process.env.WS_ALLOWED_HOSTS?.split(',').map(h => h.trim()).filter(Boolean) ?? []),
 ]);
 
@@ -157,6 +163,14 @@ export function validateConfig(): void {
       '\n  \x1b[33m⚠ Server binds to 0.0.0.0 with authentication DISABLED.\x1b[0m\n' +
       '  All API endpoints are accessible from the network without a password.\n' +
       '  Run \x1b[36mnpm run setup\x1b[0m to enable authentication.\n',
+    );
+  }
+
+  // Remote gateway warning
+  if (gatewayHostname && gatewayHostname !== 'localhost' && gatewayHostname !== '127.0.0.1' && gatewayHostname !== '::1') {
+    console.warn(
+      '[config] \u26a0 Remote gateway detected \u2014 workspace/memory panels will show local files only.\n' +
+      '         Workspace files live on the gateway host. Use SSHFS or wait for remote workspace support.',
     );
   }
 

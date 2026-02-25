@@ -362,6 +362,21 @@ async function collectInteractive(
     }
   }
 
+  // Auto-add WS_ALLOWED_HOSTS for remote gateways
+  try {
+    const gwHostname = new URL(config.GATEWAY_URL!).hostname;
+    if (!isLoopback(gwHostname)) {
+      config.WS_ALLOWED_HOSTS = config.WS_ALLOWED_HOSTS
+        ? (config.WS_ALLOWED_HOSTS.includes(gwHostname) ? config.WS_ALLOWED_HOSTS : `${config.WS_ALLOWED_HOSTS},${gwHostname}`)
+        : gwHostname;
+      success(`Added ${gwHostname} to WS_ALLOWED_HOSTS`);
+      console.log('');
+      warn('Remote gateway detected. On the gateway host, ensure Nerve\'s origin is in');
+      dim('  gateway.controlUi.allowedOrigins in your OpenClaw config (~/.openclaw/openclaw.json).');
+      console.log('');
+    }
+  } catch { /* invalid URL — already validated above */ }
+
   // ── 2/5: Agent Identity ──────────────────────────────────────────
 
   section(2, TOTAL_SECTIONS, 'Agent Identity');
@@ -980,6 +995,18 @@ async function runDefaults(existing: EnvConfig): Promise<void> {
   if (!config.AGENT_NAME) config.AGENT_NAME = DEFAULTS.AGENT_NAME;
   if (!config.PORT) config.PORT = DEFAULTS.PORT;
   if (!config.HOST) config.HOST = DEFAULTS.HOST;
+
+  // Auto-add WS_ALLOWED_HOSTS for remote gateways
+  try {
+    const gwHostname = new URL(config.GATEWAY_URL).hostname;
+    if (!isLoopback(gwHostname)) {
+      config.WS_ALLOWED_HOSTS = config.WS_ALLOWED_HOSTS
+        ? (config.WS_ALLOWED_HOSTS.includes(gwHostname) ? config.WS_ALLOWED_HOSTS : `${config.WS_ALLOWED_HOSTS},${gwHostname}`)
+        : gwHostname;
+      success(`Added ${gwHostname} to WS_ALLOWED_HOSTS`);
+      warn('Remote gateway: ensure Nerve\'s origin is in gateway.controlUi.allowedOrigins on the gateway host.');
+    }
+  } catch { /* invalid URL — will fail later at connection test */ }
 
   // Auth: auto-enable when network-exposed with gateway token, generate session secret
   if (!config.NERVE_SESSION_SECRET) {

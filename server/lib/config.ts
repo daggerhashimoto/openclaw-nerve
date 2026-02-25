@@ -29,11 +29,28 @@ export const config = {
 
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   replicateApiToken: process.env.REPLICATE_API_TOKEN || '',
+  deepgramApiKey: process.env.DEEPGRAM_API_KEY || '',
 
   // Speech-to-text
-  sttProvider: (process.env.STT_PROVIDER || 'local') as 'local' | 'openai',
+  sttProvider: (process.env.STT_PROVIDER || 'local') as 'local' | 'openai' | 'deepgram' | 'custom',
   whisperModel: process.env.WHISPER_MODEL || 'tiny.en',
   whisperModelDir: process.env.WHISPER_MODEL_DIR || path.join(HOME, '.nerve', 'models'),
+  
+  // TTS/STT provider selection
+  ttsProvider: (process.env.TTS_PROVIDER || 'auto') as 'openai' | 'edge' | 'replicate' | 'deepgram' | 'custom' | 'auto',
+  deepgramTtsModel: process.env.DEEPGRAM_TTS_MODEL || 'aura-2-iris-en',
+  deepgramSttModel: process.env.DEEPGRAM_STT_MODEL || 'nova-2',
+  
+  // Custom provider configuration
+  customTtsEndpoint: process.env.CUSTOM_TTS_ENDPOINT || '',
+  customTtsApiKey: process.env.CUSTOM_TTS_API_KEY || '',
+  customTtsRequestTemplate: process.env.CUSTOM_TTS_REQUEST_TEMPLATE || '{"text":"{{text}}"}',
+  customTtsResponsePath: process.env.CUSTOM_TTS_RESPONSE_PATH || '$.audio',
+  
+  customSttEndpoint: process.env.CUSTOM_STT_ENDPOINT || '',
+  customSttApiKey: process.env.CUSTOM_STT_API_KEY || '',
+  customSttRequestTemplate: process.env.CUSTOM_STT_REQUEST_TEMPLATE || '{"audio":"{{audio_base64}}"}',
+  customSttResponsePath: process.env.CUSTOM_STT_RESPONSE_PATH || '$.text',
 
   // Gateway connection
   gatewayUrl: process.env.GATEWAY_URL || DEFAULT_GATEWAY_URL,

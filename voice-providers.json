@@ -1,0 +1,51 @@
+{
+  "tts": {
+    "provider": "deepgram",
+    "deepgram": {
+      "model": "aura-2-iris-en"
+    },
+    "openai": {
+      "model": "tts-1",
+      "voice": "nova"
+    },
+    "edge": {
+      "voice": "en-US-AriaNeural"
+    },
+    "replicate": {
+      "model": "qwen-tts"
+    },
+    "custom": {
+      "name": "custom",
+      "endpoint": "",
+      "apiKey": "",
+      "headers": {},
+      "requestTemplate": "{\"text\":\"{{text}}\",\"voice\":\"{{voice}}\"}",
+      "responseParser": "$.audio"
+    }
+  },
+  "stt": {
+    "provider": "deepgram",
+    "deepgram": {
+      "model": "nova-2",
+      "keywords": [
+        "Kora:3",
+        "Erapor:3",
+        "Philomena:2"
+      ]
+    },
+    "openai": {
+      "model": "whisper-1"
+    },
+    "local": {
+      "model": "tiny.en"
+    },
+    "custom": {
+      "name": "custom",
+      "endpoint": "",
+      "apiKey": "",
+      "headers": {},
+      "requestTemplate": "{\"audio\":\"{{audio_base64}}\"}",
+      "responseParser": "$.text"
+    }
+  }
+}

@@ -272,7 +272,16 @@ const PROVIDER_MODELS: Record<TTSProvider, { value: string; label: string }[]> =
   replicate: [
     { value: '', label: 'qwen-tts (default)' },
   ],
+  deepgram: [
+    { value: 'aura-2-iris-en', label: '⭐ Iris (Cheerful, Energetic)' },
+    { value: 'aura-2-amalthea-en', label: '⭐ Amalthea (Natural, Filipino EN)' },
+    { value: 'aura-2-cordelia-en', label: 'Cordelia (Warm, Polite)' },
+    { value: 'aura-2-janus-en', label: 'Janus (Southern, Smooth)' },
+    { value: 'aura-2-luna-en', label: 'Luna (Professional)' },
+    { value: 'aura-2-stella-en', label: 'Stella (Friendly)' },
+  ],
   edge: [],
+  custom: [],
 };
 
 /** Settings section for notification sounds, TTS provider/model, and wake-word toggle. */
@@ -354,10 +363,10 @@ export function AudioSettings({
       {/* TTS Provider */}
       <div className="flex flex-col gap-1.5">
         <span className="text-[10px] text-muted-foreground uppercase tracking-[1px]">TTS Provider</span>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => onTtsProviderChange('openai')}
-            className={`flex-1 px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
+            className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
               ttsProvider === 'openai'
                 ? 'bg-primary/20 border-primary text-primary'
                 : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground'
@@ -367,7 +376,7 @@ export function AudioSettings({
           </button>
           <button
             onClick={() => onTtsProviderChange('replicate')}
-            className={`flex-1 px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
+            className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
               ttsProvider === 'replicate'
                 ? 'bg-orange/20 border-orange text-orange'
                 : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground'
@@ -377,13 +386,23 @@ export function AudioSettings({
           </button>
           <button
             onClick={() => onTtsProviderChange('edge')}
-            className={`flex-1 px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
+            className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
               ttsProvider === 'edge'
                 ? 'bg-green/20 border-green text-green'
                 : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground'
             }`}
           >
             Edge (Free)
+          </button>
+          <button
+            onClick={() => onTtsProviderChange('deepgram')}
+            className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
+              ttsProvider === 'deepgram'
+                ? 'bg-purple/20 border-purple text-purple'
+                : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground'
+            }`}
+          >
+            Deepgram
           </button>
         </div>
       </div>
@@ -415,6 +434,20 @@ export function AudioSettings({
         <div className="space-y-2">
           {saved && (
             <span className="text-[10px] text-green font-mono animate-pulse">Saved ✓</span>
+          )}
+
+          {ttsProvider === 'deepgram' && models.length > 0 && (
+            <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
+              <span className="text-[12px]">Voice</span>
+              <InlineSelect
+                value={ttsModel}
+                onChange={onTtsModelChange}
+                options={models}
+                ariaLabel="Deepgram Voice"
+                menuClassName="min-w-[280px]"
+                dropUp
+              />
+            </div>
           )}
 
           {ttsProvider === 'openai' && (
@@ -498,10 +531,10 @@ export function AudioSettings({
 
       <div className="flex flex-col gap-1.5">
         <span className="text-[10px] text-muted-foreground uppercase tracking-[1px]">STT Provider</span>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => onSttProviderChange('local')}
-            className={`flex-1 px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
+            className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
               sttProvider === 'local'
                 ? 'bg-green/20 border-green text-green'
                 : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground'
@@ -511,7 +544,7 @@ export function AudioSettings({
           </button>
           <button
             onClick={() => onSttProviderChange('openai')}
-            className={`flex-1 px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
+            className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
               sttProvider === 'openai'
                 ? 'bg-primary/20 border-primary text-primary'
                 : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground'
@@ -519,19 +552,57 @@ export function AudioSettings({
           >
             OpenAI
           </button>
+          <button
+            onClick={() => onSttProviderChange('deepgram')}
+            className={`px-3 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
+              sttProvider === 'deepgram'
+                ? 'bg-purple/20 border-purple text-purple'
+                : 'bg-background border-border/60 text-muted-foreground hover:border-muted-foreground'
+            }`}
+          >
+            Deepgram
+          </button>
         </div>
         <span className="text-[10px] text-muted-foreground">
-          {sttProvider === 'local'
-            ? 'Using built-in Whisper model — no API key needed'
-            : apiKeys.openai
-              ? 'Using OpenAI Whisper API'
-              : 'OpenAI Whisper API — enter your API key below'}
+          {sttProvider === 'deepgram'
+            ? 'Using Deepgram Nova-2 — keywords auto-configured'
+            : sttProvider === 'local'
+              ? 'Using built-in Whisper model — no API key needed'
+              : sttProvider === 'openai'
+                ? apiKeys.openai ? 'Using OpenAI Whisper API' : 'OpenAI Whisper API — enter your API key below'
+                : 'Using selected STT provider'}
         </span>
       </div>
 
       {/* STT API key input */}
       {sttProvider === 'openai' && !apiKeys.openai && (
         <ApiKeyInput keyName="OPENAI_API_KEY" provider="OpenAI Whisper" fieldName="openaiKey" onSaved={() => setApiKeys(k => ({ ...k, openai: true }))} />
+      )}
+
+      {/* STT Model selector for Deepgram */}
+      {sttProvider === 'deepgram' && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
+            <span className="text-[12px]">Model</span>
+            <InlineSelect
+              value={sttModel}
+              onChange={onSttModelChange}
+              options={[
+                { value: 'nova-2', label: '⭐ Nova-2 (Best Quality)' },
+                { value: 'nova', label: 'Nova (Balanced)' },
+                { value: 'base', label: 'Base (Fast, Lower Cost)' },
+              ]}
+              ariaLabel="Deepgram STT Model"
+              menuClassName="min-w-[220px]"
+              dropUp
+            />
+          </div>
+          <div className="px-3 py-2 bg-purple/5 border border-purple/20">
+            <span className="text-[10px] text-purple/80">
+              Keywords: Kora:3, Erapor:3, Philomena:2 (auto-configured)
+            </span>
+          </div>
+        </div>
       )}
 
       {/* STT Model selector (only for local provider) */}

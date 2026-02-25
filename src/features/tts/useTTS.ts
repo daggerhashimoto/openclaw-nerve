@@ -29,7 +29,7 @@ if (typeof document !== 'undefined') {
   events.forEach(e => document.addEventListener(e, handler, { capture: true, once: false }));
 }
 
-export type TTSProvider = 'openai' | 'replicate' | 'edge';
+export type TTSProvider = 'openai' | 'replicate' | 'edge' | 'deepgram' | 'custom';
 
 /** @deprecated Use 'replicate' instead. Kept for migration. */
 export type LegacyTTSProvider = 'qwen';
@@ -37,7 +37,7 @@ export type LegacyTTSProvider = 'qwen';
 /** Migrate legacy provider names to current ones. */
 export function migrateTTSProvider(provider: string): TTSProvider {
   if (provider === 'qwen') return 'replicate';
-  if (provider === 'openai' || provider === 'replicate' || provider === 'edge') return provider;
+  if (provider === 'openai' || provider === 'replicate' || provider === 'edge' || provider === 'deepgram' || provider === 'custom') return provider as TTSProvider;
   return 'openai';
 }
 

@@ -3,6 +3,7 @@
  *
  * Extracted from ChatContext.handleSend. No React hooks, setState, or refs.
  */
+import { generateMsgId } from '@/features/chat/types';
 import type { ChatMsg, ImageAttachment } from '@/features/chat/types';
 import { renderMarkdown, renderToolResults } from '@/utils/helpers';
 
@@ -19,6 +20,13 @@ export function applyVoiceTTSHint(text: string): string {
 // ─── RPC type alias ────────────────────────────────────────────────────────────
 type RpcFn = (method: string, params: Record<string, unknown>) => Promise<unknown>;
 
+export type ChatSendStatus = 'started' | 'in_flight' | 'ok';
+
+export interface ChatSendAck {
+  runId?: string;
+  status?: ChatSendStatus;
+}
+
 // ─── Build optimistic user message ─────────────────────────────────────────────
 
 /**
@@ -33,6 +41,7 @@ export function buildUserMessage(params: {
   const tempId = crypto.randomUUID ? crypto.randomUUID() : 'temp-' + Date.now();
 
   const msg: ChatMsg = {
+    msgId: generateMsgId(),
     role: 'user',
     html: renderToolResults(renderMarkdown(text)),
     rawText: text,
@@ -61,7 +70,7 @@ export async function sendChatMessage(params: {
   text: string;
   images?: ImageAttachment[];
   idempotencyKey: string;
-}): Promise<void> {
+}): Promise<ChatSendAck> {
   const { rpc, sessionKey, text, images, idempotencyKey } = params;
 
   const rpcParams: Record<string, unknown> = {
@@ -78,5 +87,15 @@ export async function sendChatMessage(params: {
     }));
   }
 
-  await rpc('chat.send', rpcParams);
+  const ackRaw = await rpc('chat.send', rpcParams);
+  const ack = (ackRaw || {}) as { runId?: unknown; status?: unknown };
+
+  const status = typeof ack.status === 'string' && ['started', 'in_flight', 'ok'].includes(ack.status)
+    ? (ack.status as ChatSendStatus)
+    : undefined;
+
+  return {
+    runId: typeof ack.runId === 'string' ? ack.runId : undefined,
+    status,
+  };
 }

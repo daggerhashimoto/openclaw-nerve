@@ -51,10 +51,8 @@ const DEFAULTS: TTSVoiceConfig = {
     mode: 'voice_design',
     language: 'English',
     speaker: 'Serena',
-    voiceDescription:
-      'Female native English speaker in her mid-20s with a bright, warm voice. Clear American accent, pleasant mid-range pitch, friendly and personable.',
-    styleInstruction:
-      'Speak in a natural, conversational tone with a light touch of warmth. Not too serious, not too bubbly — just genuinely friendly.',
+    voiceDescription: '',
+    styleInstruction: '',
   },
   openai: {
     model: 'gpt-4o-mini-tts',

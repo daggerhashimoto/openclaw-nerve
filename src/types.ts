@@ -146,6 +146,8 @@ export interface GatewayEvent {
   type: 'event';
   event: string;
   payload?: unknown;
+  seq?: number;
+  stateVersion?: { presence: number; health: number };
 }
 
 export interface GatewayRequest {
@@ -170,11 +172,15 @@ export interface EventPayload {
   sessionKey?: string;
   state?: string;
   agentState?: string;
+  runId?: string;
+  seq?: number;
   message?: ChatMessage | string;
   messages?: ChatMessage[];
   content?: ContentBlock[];
   name?: string;
   error?: string;
+  errorMessage?: string;
+  stopReason?: string;
 }
 
 // ─── Typed event payloads ────────────────────────────────────────────
@@ -183,10 +189,14 @@ export interface EventPayload {
 export interface ChatEventPayload {
   sessionKey?: string;
   state?: string;
+  runId?: string;
+  seq?: number;
   message?: ChatMessage | string;
   messages?: ChatMessage[];
   content?: ContentBlock[];
   error?: string;
+  errorMessage?: string;
+  stopReason?: string;
 }
 
 /** Payload for 'agent' events (state changes + tool streaming) */

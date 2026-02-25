@@ -34,19 +34,5 @@ agent-log.json
 .env.backup.*
 tsconfig.server.tsbuildinfo
 server-dist/
-
-# Brand assets (local only)
-brand/
-docs/brand/
-
-# Internal docs (local only)
-docs/AUDIT.md
-docs/CODEBASE_ISSUES_VERIFIED.md
-docs/CODEBASE_REVIEW_AND_IDEAS.md
-docs/IMPROVEMENTS.md
-docs/OPENSOURCE_PLAN.md
-coverage/
-tts-config.json
-scripts-dist/
 .nerve/
-start.sh
+tts-config.json

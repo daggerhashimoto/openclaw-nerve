@@ -28,7 +28,15 @@ export interface ToolGroupEntry {
 
 import type { ChartData } from '@/features/charts/extractCharts';
 
+let _msgIdCounter = 0;
+/** Generate a stable, unique ID for a ChatMsg (monotonic counter + timestamp). */
+export function generateMsgId(): string {
+  return `m-${Date.now()}-${++_msgIdCounter}`;
+}
+
 export interface ChatMsg {
+  /** Stable unique ID for React keying — assigned once at creation, never changes. */
+  msgId?: string;
   role: ChatMsgRole;
   html: string;
   rawText: string;

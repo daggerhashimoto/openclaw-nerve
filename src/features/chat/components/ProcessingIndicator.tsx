@@ -11,6 +11,8 @@ interface ProcessingIndicatorProps {
   lastEventTimestamp: number;
   currentToolDescription: string | null;
   activityLog: ActivityLogEntry[];
+  isRecovering?: boolean;
+  recoveryReason?: string | null;
 }
 
 /**
@@ -29,6 +31,8 @@ export function ProcessingIndicator({
   lastEventTimestamp,
   currentToolDescription,
   activityLog,
+  isRecovering = false,
+  recoveryReason = null,
 }: ProcessingIndicatorProps) {
   // Local timer for stale detection (1s resolution)
   // Lazy initializer avoids impure Date.now() call during render
@@ -97,6 +101,19 @@ export function ProcessingIndicator({
       {activityLog.length > 0 && (
         <div style={{ paddingLeft: '2rem' }}>
           <ActivityLog entries={activityLog} />
+        </div>
+      )}
+
+      {/* Recovery status */}
+      {isRecovering && (
+        <div
+          className="text-primary"
+          style={{
+            fontSize: '10px',
+            paddingLeft: '2rem',
+          }}
+        >
+          Resyncing transcript…{recoveryReason ? ` ${recoveryReason}` : ''}
         </div>
       )}
 

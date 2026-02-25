@@ -1,9 +1,18 @@
-export { loadChatHistory, filterMessage, splitToolCallMessage, groupToolMessages, tagIntermediateMessages } from './loadHistory';
+export {
+  loadChatHistory,
+  processChatMessages,
+  filterMessage,
+  splitToolCallMessage,
+  groupToolMessages,
+  tagIntermediateMessages,
+} from './loadHistory';
 export { buildUserMessage, sendChatMessage } from './sendMessage';
+export type { ChatSendAck, ChatSendStatus } from './sendMessage';
 export {
   classifyStreamEvent,
   extractStreamDelta,
   extractFinalMessage,
+  extractFinalMessages,
   buildActivityLogEntry,
   markToolCompleted,
   appendActivityEntry,
@@ -11,3 +20,13 @@ export {
   isActiveAgentState,
 } from './streamEventHandler';
 export type { ClassifiedEvent, StreamEventType, FinalMessageData } from './streamEventHandler';
+export { mergeRecoveredTail } from './mergeRecoveredTail';
+export {
+  createFallbackRunId,
+  getOrCreateRunState,
+  hasSeqGap,
+  pruneRunRegistry,
+  resolveRunId,
+  updateHighestSeq,
+} from './realtimeState';
+export type { RunState, RecoveryReason } from './realtimeState';

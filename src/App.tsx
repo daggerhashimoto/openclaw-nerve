@@ -55,7 +55,7 @@ export default function App({ onLogout }: AppProps) {
 
   // Chat state
   const {
-    messages, isGenerating, streamingHtml, processingStage,
+    messages, isGenerating, stream, processingStage,
     lastEventTimestamp, activityLog, currentToolDescription,
     handleSend, handleAbort, handleReset, loadHistory,
     loadMore, hasMore,
@@ -354,7 +354,7 @@ export default function App({ onLogout }: AppProps) {
                     onSend={handleSend}
                     onAbort={handleAbort}
                     isGenerating={isGenerating}
-                    streamingHtml={streamingHtml}
+                    stream={stream}
                     processingStage={processingStage}
                     lastEventTimestamp={lastEventTimestamp}
                     currentToolDescription={currentToolDescription}

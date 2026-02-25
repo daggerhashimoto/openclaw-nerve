@@ -4,6 +4,7 @@
  * Extracted from ChatContext to keep the context a thin state-management wrapper.
  * All functions here are pure (no React hooks, setState, or refs).
  */
+import { generateMsgId } from '@/features/chat/types';
 import type { ChatMsg, ChatMsgRole, ToolGroupEntry } from '@/features/chat/types';
 import type { ChatMessage, ContentBlock, ChatHistoryResponse } from '@/types';
 import { extractText, describeToolUse, renderMarkdown, renderToolResults } from '@/utils/helpers';
@@ -396,6 +397,27 @@ export function tagIntermediateMessages(msgs: ChatMsg[]): ChatMsg[] {
 // ─── Full pipeline ─────────────────────────────────────────────────────────────
 
 /**
+ * Run an arbitrary ChatMessage[] through the same transcript processing pipeline
+ * used by chat.history:
+ *
+ * filter → split → group → tag
+ */
+export function processChatMessages(messages: ChatMessage[]): ChatMsg[] {
+  const chatMsgs: ChatMsg[] = messages
+    .filter(filterMessage)
+    .flatMap(splitToolCallMessage);
+
+  const grouped = groupToolMessages(chatMsgs);
+  const tagged = tagIntermediateMessages(grouped);
+
+  // Assign stable IDs to any message missing one (for React keying).
+  for (const msg of tagged) {
+    if (!msg.msgId) msg.msgId = generateMsgId();
+  }
+  return tagged;
+}
+
+/**
  * Load chat history from the gateway, returning fully processed ChatMsg[].
  *
  * Pipeline: fetch → filter → split → group → tag
@@ -412,12 +434,5 @@ export async function loadChatHistory(params: {
   const res = await rpc('chat.history', { sessionKey, limit }) as ChatHistoryResponse;
   const msgs = res?.messages || [];
 
-  const chatMsgs: ChatMsg[] = msgs
-    .filter(filterMessage)
-    .flatMap(splitToolCallMessage);
-
-  const grouped = groupToolMessages(chatMsgs);
-  const tagged = tagIntermediateMessages(grouped);
-
-  return tagged;
+  return processChatMessages(msgs);
 }

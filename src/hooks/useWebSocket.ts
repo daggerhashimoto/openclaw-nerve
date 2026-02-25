@@ -21,6 +21,26 @@ interface UseWebSocketReturn {
 const RECONNECT_BASE_DELAY = 1000;
 const RECONNECT_MAX_DELAY = 30000;
 const RECONNECT_MAX_ATTEMPTS = 50; // Give up after ~10 minutes of trying
+const INSTANCE_ID_STORAGE_KEY = 'oc-webchat-instance-id';
+
+function generateInstanceId(): string {
+  return crypto.randomUUID ? crypto.randomUUID() : `inst-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getOrCreateInstanceId(): string {
+  const fallback = generateInstanceId();
+  if (typeof window === 'undefined') return fallback;
+
+  try {
+    const existing = window.sessionStorage.getItem(INSTANCE_ID_STORAGE_KEY);
+    if (existing) return existing;
+
+    window.sessionStorage.setItem(INSTANCE_ID_STORAGE_KEY, fallback);
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 /**
  * Low-level WebSocket hook for the OpenClaw gateway protocol.
@@ -52,6 +72,7 @@ export function useWebSocket(): UseWebSocketReturn {
   const intentionalDisconnectRef = useRef(false);
   const hasConnectedRef = useRef(false);
   const doConnectRef = useRef<((url: string, token: string, isReconnect: boolean) => Promise<void>) | null>(null);
+  const instanceIdRef = useRef(getOrCreateInstanceId());
 
   const rejectPending = useCallback((reason: Error) => {
     const pending = pendingRef.current;
@@ -139,7 +160,13 @@ export function useWebSocket(): UseWebSocketReturn {
             type: 'req', id, method: 'connect',
             params: {
               minProtocol: 3, maxProtocol: 3,
-              client: { id: 'webchat-ui', version: '0.1.0', platform: 'web', mode: 'webchat' },
+              client: {
+                id: 'webchat-ui',
+                version: '0.1.0',
+                platform: 'web',
+                mode: 'webchat',
+                instanceId: instanceIdRef.current,
+              },
               role: 'operator',
               scopes: ['operator.admin', 'operator.read', 'operator.write', 'operator.approvals', 'operator.pairing'],
               auth: { token },

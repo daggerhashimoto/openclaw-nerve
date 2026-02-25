@@ -8,6 +8,7 @@
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Node 22+](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
+[![Discord](https://img.shields.io/discord/1474924531683688478?color=5865F2&logo=discord&logoColor=white&label=Discord)](https://discord.gg/Sh9ZGtctva)
 
 </div>
 
@@ -19,11 +20,11 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
 
 You can already chat with your OpenClaw agent through webchat, Telegram, WhatsApp, Discord. Nerve is what you open when chatting isn't enough.
 
-Nerve is a self-hosted cockpit for [OpenClaw](https://github.com/openclaw/openclaw) agents. Voice conversations, live workspace editing, inline charts, cron scheduling, and full token-level visibility. One install script. Running in 30 seconds.
+Nerve is a self-hosted web UI for [OpenClaw](https://github.com/openclaw/openclaw) AI agents. Voice conversations, live workspace editing, inline charts, cron scheduling, and full token-level visibility. One install script. Running in 30 seconds.
 
 ## Why Nerve?
 
-Messaging channels are great for chatting. But you can't watch charts render in real-time, edit your agent's workspace mid-conversation, browse its files, or monitor token spend from a Telegram window. Nerve gives you the full picture.
+Messaging channels are great for chatting. But you can't watch charts render in real-time, edit your agent's workspace mid-conversation, browse its files, or monitor token spend from a Telegram window. Nerve is the dashboard that gives you the full picture.
 
 <div align="center">
 
@@ -34,13 +35,13 @@ Messaging channels are great for chatting. But you can't watch charts render in 
 ## What makes it different
 
 ### Voice that actually works
-Talk to your agent. It talks back. Wake-word activation, local Whisper transcription (no API key needed), multi-provider TTS with Edge, OpenAI, and Replicate. Not a gimmick, a daily driver.
+Talk to your agent. It talks back. Wake-word activation, on-device Whisper transcription with model selection (tiny, base, small) and GPU detection. No API key needed. Multi-provider TTS with Edge, OpenAI, and Replicate.
+
+### Full workspace visibility
+Your sub-agent sessions, workspace files, memory, config, tools. All visible, all editable, all live. No file hunting, no guessing what it remembers.
 
 ### Live charts from a chat message
 Your agent can drop interactive TradingView charts, candlestick plots, and data visualizations directly into the conversation. Say "show me gold this year" and get a real chart, not a code block.
-
-### Full workspace visibility
-Your agent's memory, personality, tools, daily logs. All visible, all editable, all live. Change SOUL.md while it's mid-conversation. No restarts, no file hunting, no guessing what it remembers.
 
 ### Cron and scheduling from the UI
 Create recurring jobs and one-shot reminders. Every scheduled run shows up as its own session in the sidebar. You can watch it execute live, read the full transcript, and see exactly what it did.
@@ -56,6 +57,11 @@ Create recurring jobs and one-shot reminders. Every scheduled run shows up as it
 | **Monitoring** | Token usage, context window meter, cost tracking, activity logs |
 | **Command palette** | Cmd+K to search, switch sessions, change models. Keyboard-first |
 | **Search** | Full-text search across all messages in the current session |
+| **Images** | Paste from clipboard, drag & drop files, full-screen lightbox with download |
+| **Skills browser** | Browse installed skills, check status and requirements from the workspace panel |
+| **Local STT** | On-device Whisper — tiny, base, or small models with GPU detection and auto-download. No API key needed |
+| **Code actions** | Copy or save-to-file buttons on every code block |
+| **API key management** | Add provider keys from settings — writes to .env and hot-reloads, no restart needed |
 | **14 themes** | Dark, light, and everything in between. Resizable panels, custom fonts |
 
 ## Get Started
@@ -97,7 +103,7 @@ Browser ─── Nerve (:3080) ─── OpenClaw Gateway (:18789)
   └─ REST ────┘  files, memories, TTS, models
 ```
 
-Nerve proxies WebSocket traffic to your gateway and adds its own REST layer for voice, memory, and monitoring.
+Nerve proxies WebSocket traffic to your gateway and adds its own REST layer.
 
 **Frontend:** React 19 · Tailwind CSS 4 · shadcn/ui · Vite 7
 **Backend:** Hono 4 on Node.js
@@ -124,6 +130,10 @@ See [Security](docs/SECURITY.md) for the full threat model.
 | **[API](docs/API.md)** | REST and WebSocket endpoints |
 | **[Contributing](CONTRIBUTING.md)** | Dev setup, code style, PRs |
 | **[Troubleshooting](docs/TROUBLESHOOTING.md)** | Common issues and fixes |
+
+## Community
+
+Join the [Nerve Discord](https://discord.gg/Sh9ZGtctva) — get help, share your setup, report bugs, and follow development.
 
 ## License
 

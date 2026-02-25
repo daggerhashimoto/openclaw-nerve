@@ -3,8 +3,14 @@
  *
  * Extracted from ChatContext's subscribe callback. No React hooks, setState, or refs.
  */
-import type { GatewayEvent, ChatEventPayload, AgentEventPayload, ChatMessage } from '@/types';
-import type { ActivityLogEntry } from '@/contexts/ChatContext';
+import type {
+  GatewayEvent,
+  ChatEventPayload,
+  AgentEventPayload,
+  ChatMessage,
+  ContentBlock,
+} from '@/types';
+import type { ActivityLogEntry, ProcessingStage } from '@/contexts/ChatContext';
 import { extractText, describeToolUse } from '@/utils/helpers';
 import { extractTTSMarkers } from '@/features/tts/useTTS';
 import { extractChartMarkers } from '@/features/charts/extractCharts';
@@ -33,6 +39,7 @@ export type StreamEventType =
   | 'chat_delta'
   | 'chat_final'
   | 'chat_error'
+  | 'chat_aborted'
   | 'ignore';
 
 export interface ClassifiedEvent {
@@ -41,6 +48,12 @@ export interface ClassifiedEvent {
   source: 'agent' | 'chat';
   /** Session key from the payload */
   sessionKey?: string;
+  /** Chat/agent run id (if present) */
+  runId?: string;
+  /** Chat payload sequence (if present) */
+  chatSeq?: number;
+  /** Gateway frame sequence (if present) */
+  frameSeq?: number;
   /** Agent payload (when source === 'agent') */
   agentPayload?: AgentEventPayload;
   /** Chat payload (when source === 'chat') */
@@ -56,7 +69,21 @@ export function classifyStreamEvent(event: GatewayEvent): ClassifiedEvent | null
 
   if (evt === 'agent') {
     const ap = (event.payload || {}) as AgentEventPayload;
-    const base = { source: 'agent' as const, sessionKey: ap.sessionKey, agentPayload: ap };
+    const runId = typeof (ap as { runId?: unknown }).runId === 'string'
+      ? (ap as { runId: string }).runId
+      : undefined;
+    const chatSeq = typeof (ap as { seq?: unknown }).seq === 'number'
+      ? (ap as { seq: number }).seq
+      : undefined;
+
+    const base = {
+      source: 'agent' as const,
+      sessionKey: ap.sessionKey,
+      runId,
+      chatSeq,
+      frameSeq: event.seq,
+      agentPayload: ap,
+    };
 
     // Lifecycle events from CLI agents (Codex, Claude Code CLI)
     if (ap.stream === 'lifecycle') {
@@ -95,13 +122,21 @@ export function classifyStreamEvent(event: GatewayEvent): ClassifiedEvent | null
 
   if (evt === 'chat') {
     const cp = (event.payload || {}) as ChatEventPayload;
-    const base = { source: 'chat' as const, sessionKey: cp.sessionKey, chatPayload: cp };
+    const base = {
+      source: 'chat' as const,
+      sessionKey: cp.sessionKey,
+      runId: cp.runId,
+      chatSeq: cp.seq,
+      frameSeq: event.seq,
+      chatPayload: cp,
+    };
     const state = cp.state;
 
     if (state === 'started') return { ...base, type: 'chat_started' };
     if (state === 'delta') return { ...base, type: 'chat_delta' };
     if (state === 'final') return { ...base, type: 'chat_final' };
-    if (state === 'error' || state === 'aborted') return { ...base, type: 'chat_error' };
+    if (state === 'aborted') return { ...base, type: 'chat_aborted' };
+    if (state === 'error') return { ...base, type: 'chat_error' };
 
     return { ...base, type: 'ignore' };
   }
@@ -138,18 +173,50 @@ export interface FinalMessageData {
   charts: ChartData[];
 }
 
+function createSyntheticAssistantMessage(content: string | ContentBlock[]): ChatMessage {
+  return {
+    role: 'assistant',
+    content,
+    timestamp: Date.now(),
+  };
+}
+
 /**
- * Extract the final message and TTS text from a chat 'final' event.
- * Returns null if no message is present.
+ * Extract all final messages from a chat 'final' event.
+ * Supports payload.messages[], payload.message, and payload.content.
+ */
+export function extractFinalMessages(chatPayload: ChatEventPayload): ChatMessage[] {
+  if (Array.isArray(chatPayload.messages) && chatPayload.messages.length > 0) {
+    return chatPayload.messages;
+  }
+
+  if (chatPayload.message) {
+    if (typeof chatPayload.message === 'string') {
+      return [createSyntheticAssistantMessage(chatPayload.message)];
+    }
+    return [chatPayload.message];
+  }
+
+  if (Array.isArray(chatPayload.content) && chatPayload.content.length > 0) {
+    return [createSyntheticAssistantMessage(chatPayload.content)];
+  }
+
+  return [];
+}
+
+/**
+ * Extract a representative final assistant message and TTS text from a chat 'final' event.
+ * Returns null if no renderable message is present.
  */
 export function extractFinalMessage(chatPayload: ChatEventPayload): FinalMessageData | null {
-  const msg = chatPayload.message;
-  if (!msg || typeof msg === 'string') return null;
+  const messages = extractFinalMessages(chatPayload);
+  if (messages.length === 0) return null;
 
-  const text = extractText(msg);
-  const { ttsText } = extractTTSMarkers(text || '');
-  const { charts } = extractChartMarkers(text || '');
-  return { message: msg, text: text || '', ttsText, charts };
+  const representative = [...messages].reverse().find(m => m.role === 'assistant') || messages[messages.length - 1];
+  const text = extractText(representative) || '';
+  const { ttsText } = extractTTSMarkers(text);
+  const { charts } = extractChartMarkers(text);
+  return { message: representative, text, ttsText, charts };
 }
 
 // ─── Activity log helpers ──────────────────────────────────────────────────────
@@ -200,8 +267,6 @@ export function appendActivityEntry(
 }
 
 // ─── Processing stage derivation ───────────────────────────────────────────────
-
-import type { ProcessingStage } from '@/contexts/ChatContext';
 
 /**
  * Derive the processing stage from an agent state string.

@@ -43,12 +43,27 @@ class MockWebSocket {
   }
 }
 
+function getConnectRequest(ws: MockWebSocket): Record<string, unknown> | null {
+  const connectReq = ws.sentMessages.find(m => {
+    try {
+      const parsed = JSON.parse(m) as Record<string, unknown>;
+      return parsed.method === 'connect';
+    } catch {
+      return false;
+    }
+  });
+
+  if (!connectReq) return null;
+  return JSON.parse(connectReq) as Record<string, unknown>;
+}
+
 describe('useWebSocket', () => {
   let originalWebSocket: typeof WebSocket;
 
   beforeEach(() => {
     originalWebSocket = (globalThis as unknown as { WebSocket: typeof WebSocket }).WebSocket;
     (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket = MockWebSocket;
+    window.sessionStorage.clear();
     vi.useFakeTimers();
   });
 
@@ -94,6 +109,103 @@ describe('useWebSocket', () => {
       });
 
       expect(result.current.connectionState).toBe('disconnected');
+    });
+  });
+
+  describe('Connect handshake payload', () => {
+    it('should include a stable per-tab client.instanceId in connect params', async () => {
+      const wsInstances: MockWebSocket[] = [];
+      const OriginalMockWS = MockWebSocket;
+      (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket = class extends OriginalMockWS {
+        constructor(url: string) {
+          super(url);
+          wsInstances.push(this);
+        }
+      };
+
+      const { result } = renderHook(() => useWebSocket());
+
+      act(() => {
+        result.current.connect('ws://localhost:8080', 'test-token');
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      const ws = wsInstances[0];
+      act(() => {
+        ws.simulateMessage({ type: 'event', event: 'connect.challenge', payload: { nonce: 'n1' } });
+      });
+
+      const connectReq = getConnectRequest(ws);
+      expect(connectReq).toBeTruthy();
+
+      const params = connectReq?.params as { client?: { instanceId?: string } } | undefined;
+      expect(params?.client?.instanceId).toBeTruthy();
+      expect(typeof params?.client?.instanceId).toBe('string');
+    });
+
+    it('should reuse the same instanceId across reconnects in the same tab', async () => {
+      const wsInstances: MockWebSocket[] = [];
+      const OriginalMockWS = MockWebSocket;
+      (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket = class extends OriginalMockWS {
+        constructor(url: string) {
+          super(url);
+          wsInstances.push(this);
+        }
+      };
+
+      const { result } = renderHook(() => useWebSocket());
+
+      act(() => {
+        result.current.connect('ws://localhost:8080', 'test-token');
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      const firstWs = wsInstances[0];
+      act(() => {
+        firstWs.simulateMessage({ type: 'event', event: 'connect.challenge', payload: { nonce: 'first' } });
+      });
+
+      const firstConnectReq = getConnectRequest(firstWs);
+      expect(firstConnectReq).toBeTruthy();
+
+      const firstInstanceId = (firstConnectReq?.params as { client?: { instanceId?: string } } | undefined)
+        ?.client?.instanceId;
+      expect(firstInstanceId).toBeTruthy();
+
+      // complete auth so reconnect is enabled
+      const firstReqId = firstConnectReq?.id as string | undefined;
+      expect(firstReqId).toBeTruthy();
+      act(() => {
+        firstWs.simulateMessage({ type: 'res', id: firstReqId, ok: true, payload: {} });
+      });
+
+      // unexpected close triggers reconnect
+      act(() => {
+        firstWs.close();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(wsInstances.length).toBeGreaterThanOrEqual(2);
+      const secondWs = wsInstances[1];
+
+      act(() => {
+        secondWs.simulateMessage({ type: 'event', event: 'connect.challenge', payload: { nonce: 'second' } });
+      });
+
+      const secondConnectReq = getConnectRequest(secondWs);
+      const secondInstanceId = (secondConnectReq?.params as { client?: { instanceId?: string } } | undefined)
+        ?.client?.instanceId;
+
+      expect(secondInstanceId).toBe(firstInstanceId);
     });
   });
 

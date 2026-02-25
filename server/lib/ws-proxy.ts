@@ -19,6 +19,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { execFile } from 'node:child_process';
+import { dirname } from 'node:path';
 import { config, WS_ALLOWED_HOSTS, SESSION_COOKIE_NAME } from './config.js';
 import { verifySession, parseSessionCookie } from './session.js';
 import { createDeviceBlock, getDeviceIdentity } from './device-identity.js';
@@ -42,7 +43,11 @@ function gatewayCall(method: string, params: Record<string, unknown>): Promise<u
   return new Promise((resolve, reject) => {
     const bin = resolveOpenclawBin();
     const args = ['gateway', 'call', method, '--params', JSON.stringify(params)];
-    execFile(bin, args, { timeout: 10_000, maxBuffer: 1024 * 1024, env: process.env }, (err, stdout, stderr) => {
+    // Ensure nvm/fnm/volta node is in PATH for #!/usr/bin/env node shebangs
+    const nodeBinDir = dirname(process.execPath);
+    const existingPath = process.env.PATH;
+    const env = { ...process.env, PATH: existingPath ? `${nodeBinDir}:${existingPath}` : nodeBinDir };
+    execFile(bin, args, { timeout: 10_000, maxBuffer: 1024 * 1024, env }, (err, stdout, stderr) => {
       if (err) {
         reject(new Error(stderr?.trim() || err.message));
         return;
@@ -270,13 +275,15 @@ function createGatewayRelay(
           gatewayCall(msg.method, msg.params || {})
             .then((result) => {
               if (clientWs.readyState === WebSocket.OPEN) {
-                clientWs.send(JSON.stringify({ type: 'res', id: reqId, result }));
+                clientWs.send(JSON.stringify({ type: 'res', id: reqId, ok: true, payload: result }));
               }
             })
             .catch((err) => {
               if (clientWs.readyState === WebSocket.OPEN) {
                 clientWs.send(JSON.stringify({
-                  type: 'res', id: reqId,
+                  type: 'res',
+                  id: reqId,
+                  ok: false,
                   error: { code: -32000, message: (err as Error).message },
                 }));
               }
@@ -305,7 +312,7 @@ function createGatewayRelay(
  * Inject Nerve's device identity into a connect request.
  */
 interface ConnectParams {
-  client?: { id?: string; mode?: string };
+  client?: { id?: string; mode?: string; instanceId?: string; [key: string]: unknown };
   role?: string;
   scopes?: string[];
   auth?: { token?: string };

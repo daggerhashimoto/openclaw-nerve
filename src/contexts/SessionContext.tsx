@@ -49,6 +49,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const logStateRef = useRef<Record<string, boolean>>({});
   const toolSeenRef = useRef<Map<string, number>>(new Map());
   const doneTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const delayedRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Derive busyState from agentStatus for backward compatibility
   const busyState = useMemo(() => {
@@ -415,6 +416,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return updates;
   }, []);
 
+  const scheduleDelayedRefresh = useCallback(() => {
+    if (delayedRefreshTimeoutRef.current) {
+      clearTimeout(delayedRefreshTimeoutRef.current);
+    }
+    delayedRefreshTimeoutRef.current = setTimeout(() => {
+      delayedRefreshTimeoutRef.current = null;
+      refreshSessions();
+    }, 1500);
+  }, [refreshSessions]);
+
   // Subscribe to gateway events for granular status tracking + session state sync + agent log + event log
   useEffect(() => {
     const unsub = subscribe((msg: GatewayEvent) => {
@@ -441,6 +452,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             } else if (phase === 'end') {
               setGranularStatus(sk, { status: 'DONE', since: Date.now() });
               refreshSessions();
+              scheduleDelayedRefresh();
             } else if (phase === 'error') {
               setGranularStatus(sk, { status: 'ERROR', since: Date.now() });
               refreshSessions();
@@ -474,6 +486,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           } else if (state === 'final') {
             setGranularStatus(sk, { status: 'DONE', since: Date.now() });
             refreshSessions();
+            // Delayed refresh to catch token counts that may not be available immediately.
+            scheduleDelayedRefresh();
           } else if (state === 'error') {
             setGranularStatus(sk, { status: 'ERROR', since: Date.now() });
           } else if (state === 'aborted') {
@@ -520,8 +534,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         clearTimeout(doneTimeoutsRef.current[key]);
       }
       doneTimeoutsRef.current = {};
+      if (delayedRefreshTimeoutRef.current) {
+        clearTimeout(delayedRefreshTimeoutRef.current);
+        delayedRefreshTimeoutRef.current = null;
+      }
     };
-  }, [subscribe, addEvent, setGranularStatus, feedAgentLog, updateSessionFromEvent, extractSessionUpdates, refreshSessions]);
+  }, [subscribe, addEvent, setGranularStatus, feedAgentLog, updateSessionFromEvent, extractSessionUpdates, refreshSessions, scheduleDelayedRefresh]);
 
   // Poll sessions when connected (reduced to 30s - WebSocket events provide real-time updates)
   useEffect(() => {

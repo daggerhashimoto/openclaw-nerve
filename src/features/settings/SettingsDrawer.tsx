@@ -179,68 +179,66 @@ export function SettingsDrawer({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden">
-          <div className="h-full grid grid-rows-[auto_1fr] sm:grid-rows-1 sm:grid-cols-[160px_1fr]">
-            <aside className="border-b sm:border-b-0 sm:border-r border-border/50 bg-background/30 p-2">
-              <div className="flex sm:flex-col gap-1 overflow-x-auto sm:overflow-visible" role="tablist" aria-label="Settings categories">
-                {SETTINGS_CATEGORIES.map((category) => {
-                  const Icon = category.icon;
-                  const isActive = currentCategory === category.key;
-                  const disabled = !isConnected && category.key !== 'advanced';
-                  return (
-                    <button
-                      key={category.key}
-                      role="tab"
-                      aria-selected={isActive}
-                      disabled={disabled}
-                      onClick={() => setActiveCategory(category.key)}
-                      className={`min-w-[110px] sm:min-w-0 w-full flex items-center gap-2 px-2.5 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors ${
-                        isActive
-                          ? 'bg-primary/20 border-primary text-primary'
-                          : 'bg-card border-border/60 text-muted-foreground hover:border-muted-foreground hover:text-foreground'
-                      } ${disabled ? 'opacity-50 cursor-not-allowed hover:border-border/60 hover:text-muted-foreground' : ''}`}
-                    >
-                      <Icon size={12} aria-hidden="true" />
-                      <span>{category.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </aside>
-
-            <div className="overflow-y-auto p-4">
-              {currentCategory === 'audio' && (
-                <AudioSettings
-                  section="all"
-                  soundEnabled={soundEnabled}
-                  onToggleSound={onToggleSound}
-                  ttsProvider={ttsProvider}
-                  ttsModel={ttsModel}
-                  onTtsProviderChange={onTtsProviderChange}
-                  onTtsModelChange={onTtsModelChange}
-                  sttProvider={sttProvider}
-                  sttModel={sttModel}
-                  onSttProviderChange={onSttProviderChange}
-                  onSttModelChange={onSttModelChange}
-                  wakeWordEnabled={wakeWordEnabled}
-                  onToggleWakeWord={onToggleWakeWord}
-                  agentName={agentName}
-                />
-              )}
-
-              {currentCategory === 'appearance' && <AppearanceSettings />}
-
-              {currentCategory === 'advanced' && (
-                <ConnectionSettings
-                  url={gatewayUrl}
-                  token={gatewayToken}
-                  onUrlChange={onUrlChange}
-                  onTokenChange={onTokenChange}
-                  onReconnect={onReconnect}
-                  connectionState={connectionState}
-                />
-              )}
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="border-b border-border/50 bg-background/30 p-2 shrink-0">
+            <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Settings categories">
+              {SETTINGS_CATEGORIES.map((category) => {
+                const Icon = category.icon;
+                const isActive = currentCategory === category.key;
+                const disabled = !isConnected && category.key !== 'advanced';
+                return (
+                  <button
+                    key={category.key}
+                    role="tab"
+                    aria-selected={isActive}
+                    disabled={disabled}
+                    onClick={() => setActiveCategory(category.key)}
+                    className={`shrink-0 flex items-center gap-2 px-2.5 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors whitespace-nowrap ${
+                      isActive
+                        ? 'bg-primary/20 border-primary text-primary'
+                        : 'bg-card border-border/60 text-muted-foreground hover:border-muted-foreground hover:text-foreground'
+                    } ${disabled ? 'opacity-50 cursor-not-allowed hover:border-border/60 hover:text-muted-foreground' : ''}`}
+                  >
+                    <Icon size={12} aria-hidden="true" />
+                    <span>{category.label}</span>
+                  </button>
+                );
+              })}
             </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            {currentCategory === 'audio' && (
+              <AudioSettings
+                section="all"
+                soundEnabled={soundEnabled}
+                onToggleSound={onToggleSound}
+                ttsProvider={ttsProvider}
+                ttsModel={ttsModel}
+                onTtsProviderChange={onTtsProviderChange}
+                onTtsModelChange={onTtsModelChange}
+                sttProvider={sttProvider}
+                sttModel={sttModel}
+                onSttProviderChange={onSttProviderChange}
+                onSttModelChange={onSttModelChange}
+                wakeWordEnabled={wakeWordEnabled}
+                onToggleWakeWord={onToggleWakeWord}
+                agentName={agentName}
+              />
+            )}
+
+            {currentCategory === 'appearance' && <AppearanceSettings />}
+
+            {currentCategory === 'advanced' && (
+              <ConnectionSettings
+                url={gatewayUrl}
+                token={gatewayToken}
+                onUrlChange={onUrlChange}
+                onTokenChange={onTokenChange}
+                onReconnect={onReconnect}
+                connectionState={connectionState}
+              />
+            )}
           </div>
         </div>
 

@@ -10,6 +10,45 @@ const TokenUsage = lazy(() => import('@/features/dashboard/TokenUsage').then(m =
 /** Identifies which dropdown panel is currently open, or `null` for none. */
 type PanelId = 'agent-log' | 'usage' | 'events' | 'sessions' | 'workspace' | null;
 
+type PanelConfig = {
+  boxClass: string;
+  heightClass: string;
+  contentClass: string;
+};
+
+const PANEL_CONFIG: Record<Exclude<PanelId, null> | 'default', PanelConfig> = {
+  sessions: {
+    boxClass: 'w-[420px] max-w-[calc(100vw-1rem)]',
+    heightClass: 'max-h-[70vh] opacity-100',
+    contentClass: 'max-h-[65vh] overflow-y-auto',
+  },
+  workspace: {
+    boxClass: 'w-[560px] max-w-[calc(100vw-1rem)]',
+    heightClass: 'max-h-[75vh] opacity-100',
+    contentClass: 'h-[70vh] max-h-[70vh] overflow-hidden',
+  },
+  'agent-log': {
+    boxClass: 'w-[480px] max-w-[calc(100vw-1rem)]',
+    heightClass: 'max-h-[400px] opacity-100',
+    contentClass: 'max-h-[400px] overflow-y-auto',
+  },
+  usage: {
+    boxClass: 'w-[480px] max-w-[calc(100vw-1rem)]',
+    heightClass: 'max-h-[400px] opacity-100',
+    contentClass: 'max-h-[400px] overflow-y-auto',
+  },
+  events: {
+    boxClass: 'w-[480px] max-w-[calc(100vw-1rem)]',
+    heightClass: 'max-h-[400px] opacity-100',
+    contentClass: 'max-h-[400px] overflow-y-auto',
+  },
+  default: {
+    boxClass: 'w-[480px] max-w-[calc(100vw-1rem)]',
+    heightClass: 'max-h-[400px] opacity-100',
+    contentClass: 'max-h-[400px] overflow-y-auto',
+  },
+};
+
 /** Props for {@link TopBar}. */
 interface TopBarProps {
   /** Callback to open the settings modal. */
@@ -61,32 +100,30 @@ export function TopBar({
     setActivePanel(prev => prev === panel ? null : panel);
   }, []);
 
-  // Close active panel if its visibility source is turned off / unavailable
+  const isPanelAvailable = useCallback((panel: PanelId) => {
+    if (!panel) return true;
+    if (panel === 'events') return eventsVisible;
+    if (panel === 'agent-log') return logVisible;
+    if (panel === 'sessions') return mobilePanelButtonsVisible && Boolean(sessionsPanel);
+    if (panel === 'workspace') return mobilePanelButtonsVisible && Boolean(workspacePanel);
+    return true;
+  }, [eventsVisible, logVisible, mobilePanelButtonsVisible, sessionsPanel, workspacePanel]);
+
+  const visiblePanel = useMemo<PanelId>(() => {
+    if (!activePanel) return null;
+    return isPanelAvailable(activePanel) ? activePanel : null;
+  }, [activePanel, isPanelAvailable]);
+
+  // Clear stale panel state asynchronously when panel availability changes.
   useEffect(() => {
-    if (activePanel === 'events' && !eventsVisible) {
-      setActivePanel(null);
-      return;
-    }
-    if (activePanel === 'agent-log' && !logVisible) {
-      setActivePanel(null);
-      return;
-    }
-    if ((activePanel === 'sessions' || activePanel === 'workspace') && !mobilePanelButtonsVisible) {
-      setActivePanel(null);
-      return;
-    }
-    if (activePanel === 'sessions' && !sessionsPanel) {
-      setActivePanel(null);
-      return;
-    }
-    if (activePanel === 'workspace' && !workspacePanel) {
-      setActivePanel(null);
-    }
-  }, [activePanel, eventsVisible, logVisible, mobilePanelButtonsVisible, sessionsPanel, workspacePanel]);
+    if (!activePanel || visiblePanel) return;
+    const timer = window.setTimeout(() => setActivePanel(null), 0);
+    return () => window.clearTimeout(timer);
+  }, [activePanel, visiblePanel]);
 
   // Click outside to close
   useEffect(() => {
-    if (!activePanel) return;
+    if (!visiblePanel) return;
     function handleClick(e: MouseEvent) {
       const targetNode = e.target as Node;
       if (panelRef.current?.contains(targetNode) || buttonsRef.current?.contains(targetNode)) return;
@@ -102,17 +139,17 @@ export function TopBar({
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [activePanel]);
+  }, [visiblePanel]);
 
   // Escape to close
   useEffect(() => {
-    if (!activePanel) return;
+    if (!visiblePanel) return;
     function handleKey(e: KeyboardEvent) {
       if (e.key === 'Escape') setActivePanel(null);
     }
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, [activePanel]);
+  }, [visiblePanel]);
 
   const totalCost = useMemo(() => {
     if (!tokenData) return null;
@@ -120,39 +157,14 @@ export function TopBar({
     return '$' + cost.toFixed(2);
   }, [tokenData]);
 
-  const panelBoxClass = useMemo(() => {
-    switch (activePanel) {
-      case 'sessions':
-        return 'w-[420px] max-w-[calc(100vw-1rem)]';
-      case 'workspace':
-        return 'w-[560px] max-w-[calc(100vw-1rem)]';
-      default:
-        return 'w-[480px] max-w-[calc(100vw-1rem)]';
-    }
-  }, [activePanel]);
+  const panelConfig = useMemo(() => {
+    if (!visiblePanel) return PANEL_CONFIG.default;
+    return PANEL_CONFIG[visiblePanel] ?? PANEL_CONFIG.default;
+  }, [visiblePanel]);
 
-  const panelHeightClass = useMemo(() => {
-    if (!activePanel) return 'max-h-0 opacity-0 pointer-events-none';
-    switch (activePanel) {
-      case 'sessions':
-        return 'max-h-[70vh] opacity-100';
-      case 'workspace':
-        return 'max-h-[75vh] opacity-100';
-      default:
-        return 'max-h-[400px] opacity-100';
-    }
-  }, [activePanel]);
-
-  const panelContentClass = useMemo(() => {
-    switch (activePanel) {
-      case 'sessions':
-        return 'max-h-[65vh] overflow-y-auto';
-      case 'workspace':
-        return 'h-[70vh] max-h-[70vh] overflow-hidden';
-      default:
-        return 'max-h-[400px] overflow-y-auto';
-    }
-  }, [activePanel]);
+  const panelBoxClass = panelConfig.boxClass;
+  const panelHeightClass = visiblePanel ? panelConfig.heightClass : 'max-h-0 opacity-0 pointer-events-none';
+  const panelContentClass = panelConfig.contentClass;
 
   const buttonBase = 'bg-transparent border border-border/60 text-muted-foreground text-sm h-7 px-1.5 sm:px-2 cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 hover:text-foreground hover:border-muted-foreground transition-colors';
   const buttonActive = 'text-primary border-primary/60 hover:text-primary';
@@ -173,10 +185,10 @@ export function TopBar({
               onClick={() => togglePanel('sessions')}
               title="Sessions"
               aria-label="Toggle sessions panel"
-              aria-expanded={activePanel === 'sessions'}
+              aria-expanded={visiblePanel === 'sessions'}
               aria-haspopup="true"
               aria-controls="topbar-panel"
-              className={`${buttonBase} ${activePanel === 'sessions' ? buttonActive : ''}`}
+              className={`${buttonBase} ${visiblePanel === 'sessions' ? buttonActive : ''}`}
             >
               <Users size={14} aria-hidden="true" />
               <span className="text-[10px] hidden sm:inline">Sessions</span>
@@ -188,10 +200,10 @@ export function TopBar({
               onClick={() => togglePanel('workspace')}
               title="Workspace"
               aria-label="Toggle workspace panel"
-              aria-expanded={activePanel === 'workspace'}
+              aria-expanded={visiblePanel === 'workspace'}
               aria-haspopup="true"
               aria-controls="topbar-panel"
-              className={`${buttonBase} ${activePanel === 'workspace' ? buttonActive : ''}`}
+              className={`${buttonBase} ${visiblePanel === 'workspace' ? buttonActive : ''}`}
             >
               <Brain size={14} aria-hidden="true" />
               <span className="text-[10px] hidden sm:inline">Workspace</span>
@@ -204,10 +216,10 @@ export function TopBar({
               onClick={() => togglePanel('agent-log')}
               title="Agent Log"
               aria-label="Toggle agent log panel"
-              aria-expanded={activePanel === 'agent-log'}
+              aria-expanded={visiblePanel === 'agent-log'}
               aria-haspopup="true"
               aria-controls="topbar-panel"
-              className={`${buttonBase} ${activePanel === 'agent-log' ? buttonActive : ''}`}
+              className={`${buttonBase} ${visiblePanel === 'agent-log' ? buttonActive : ''}`}
             >
               <Activity size={14} className={logGlow ? 'text-green' : ''} aria-hidden="true" />
               <span className="text-[10px] hidden sm:inline">Log</span>
@@ -223,10 +235,10 @@ export function TopBar({
               onClick={() => togglePanel('events')}
               title="Events"
               aria-label="Toggle events panel"
-              aria-expanded={activePanel === 'events'}
+              aria-expanded={visiblePanel === 'events'}
               aria-haspopup="true"
               aria-controls="topbar-panel"
-              className={`${buttonBase} ${activePanel === 'events' ? buttonActive : ''}`}
+              className={`${buttonBase} ${visiblePanel === 'events' ? buttonActive : ''}`}
             >
               <Radio size={14} aria-hidden="true" />
               <span className="text-[10px] hidden sm:inline">Events</span>
@@ -241,10 +253,10 @@ export function TopBar({
             onClick={() => togglePanel('usage')}
             title="Token Usage"
             aria-label="Toggle usage panel"
-            aria-expanded={activePanel === 'usage'}
+            aria-expanded={visiblePanel === 'usage'}
             aria-haspopup="true"
             aria-controls="topbar-panel"
-            className={`${buttonBase} ${activePanel === 'usage' ? buttonActive : ''}`}
+            className={`${buttonBase} ${visiblePanel === 'usage' ? buttonActive : ''}`}
           >
             <BarChart3 size={14} aria-hidden="true" />
             <span className="text-[10px] hidden sm:inline">Usage</span>
@@ -270,18 +282,18 @@ export function TopBar({
         ref={panelRef}
         id="topbar-panel"
         role="region"
-        aria-label={activePanel ? `${activePanel} panel` : undefined}
-        hidden={!activePanel}
+        aria-label={visiblePanel ? `${visiblePanel} panel` : undefined}
+        hidden={!visiblePanel}
         className={`absolute right-2 bg-card border border-border rounded-b-lg shadow-lg overflow-hidden transition-all duration-200 ease-out ${panelBoxClass} ${panelHeightClass}`}
         style={{ top: '100%' }}
       >
         <div className={panelContentClass}>
           <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading…</div>}>
-            {activePanel === 'agent-log' && <AgentLog entries={agentLogEntries} glow={logGlow} />}
-            {activePanel === 'events' && <EventLog entries={eventEntries} />}
-            {activePanel === 'usage' && <TokenUsage data={tokenData} />}
-            {activePanel === 'sessions' && sessionsPanel}
-            {activePanel === 'workspace' && workspacePanel}
+            {visiblePanel === 'agent-log' && <AgentLog entries={agentLogEntries} glow={logGlow} />}
+            {visiblePanel === 'events' && <EventLog entries={eventEntries} />}
+            {visiblePanel === 'usage' && <TokenUsage data={tokenData} />}
+            {visiblePanel === 'sessions' && sessionsPanel}
+            {visiblePanel === 'workspace' && workspacePanel}
           </Suspense>
         </div>
       </div>

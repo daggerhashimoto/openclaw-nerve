@@ -243,7 +243,6 @@ export default function App({ onLogout }: AppProps) {
       setIsCompactLayout(event.matches);
     };
 
-    setIsCompactLayout(mq.matches);
     if (mq.addEventListener) {
       mq.addEventListener('change', onChange);
       return () => mq.removeEventListener('change', onChange);

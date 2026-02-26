@@ -157,7 +157,7 @@ export function SettingsDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
-        className="fixed right-0 top-0 h-full w-full sm:w-[640px] sm:max-w-[96vw] bg-card border-l border-border z-50 overflow-hidden flex flex-col animate-slide-in-right"
+        className="fixed right-0 top-0 h-full w-full sm:w-[560px] sm:max-w-[94vw] bg-card border-l border-border z-50 overflow-hidden flex flex-col animate-slide-in-right"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">

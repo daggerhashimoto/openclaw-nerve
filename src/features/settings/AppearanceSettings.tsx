@@ -1,12 +1,12 @@
-import { Monitor, Eye, ChevronDown, Type } from 'lucide-react';
+import { Monitor, Eye, ChevronDown, Type, Activity } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { useSettings } from '@/contexts/SettingsContext';
 import { themes, themeNames, type ThemeName } from '@/lib/themes';
 import { fonts, fontNames, type FontName } from '@/lib/fonts';
 
-/** Settings section for theme, font, and event-panel visibility. */
+/** Settings section for theme, font, and panel visibility. */
 export function AppearanceSettings() {
-  const { eventsVisible, toggleEvents, theme, setTheme, font, setFont } = useSettings();
+  const { eventsVisible, toggleEvents, logVisible, toggleLog, theme, setTheme, font, setFont } = useSettings();
 
   const handleThemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setTheme(e.target.value as ThemeName);
@@ -85,6 +85,22 @@ export function AppearanceSettings() {
           checked={eventsVisible}
           onCheckedChange={toggleEvents}
           aria-label="Toggle events panel visibility"
+        />
+      </div>
+
+      {/* Log Panel Visibility */}
+      <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
+        <div className="flex items-center gap-3">
+          <Activity size={14} className={logVisible ? 'text-green' : 'text-muted-foreground'} aria-hidden="true" />
+          <div className="flex flex-col">
+            <span className="text-[12px]" id="log-label">Display Log</span>
+            <span className="text-[10px] text-muted-foreground">Show agent activity log in top bar</span>
+          </div>
+        </div>
+        <Switch
+          checked={logVisible}
+          onCheckedChange={toggleLog}
+          aria-label="Toggle log panel visibility"
         />
       </div>
 

@@ -69,8 +69,8 @@ export default function App({ onLogout }: AppProps) {
     sttProvider, setSttProvider, sttModel, setSttModel,
     wakeWordEnabled, handleToggleWakeWord, handleWakeWordState,
     panelRatio, setPanelRatio,
-    eventsVisible,
-    toggleEvents, toggleTelemetry,
+    eventsVisible, logVisible,
+    toggleEvents, toggleLog, toggleTelemetry,
     setTheme, setFont,
   } = useSettings();
 
@@ -123,6 +123,12 @@ export default function App({ onLogout }: AppProps) {
   const prevLogCount = useRef(0);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
+  // Responsive layout state (chat-first on smaller viewports)
+  const [isCompactLayout, setIsCompactLayout] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 900px)').matches;
+  });
+
   // Command palette state
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -149,12 +155,13 @@ export default function App({ onLogout }: AppProps) {
     onTtsProviderChange: setTtsProvider,
     onToggleWakeWord: handleToggleWakeWord,
     onToggleEvents: toggleEvents,
+    onToggleLog: toggleLog,
     onToggleTelemetry: toggleTelemetry,
     onOpenSettings: openSettings,
     onRefreshSessions: refreshSessions,
     onRefreshMemory: refreshMemories,
   }), [openSpawnDialog, handleReset, toggleSound, handleAbort, openSettings, openSearch,
-    setTheme, setFont, setTtsProvider, handleToggleWakeWord, toggleEvents, toggleTelemetry,
+    setTheme, setFont, setTtsProvider, handleToggleWakeWord, toggleEvents, toggleLog, toggleTelemetry,
     refreshSessions, refreshMemories]);
 
   // Keyboard shortcut handlers with useCallback
@@ -227,6 +234,26 @@ export default function App({ onLogout }: AppProps) {
     prevLogCount.current = currentCount;
   }, [agentLogEntries.length]);
 
+  // Responsive mode: switch to chat-first layout on smaller screens
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mq = window.matchMedia('(max-width: 900px)');
+    const onChange = (event: MediaQueryListEvent) => {
+      setIsCompactLayout(event.matches);
+    };
+
+    setIsCompactLayout(mq.matches);
+    if (mq.addEventListener) {
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    }
+
+    // Safari fallback
+    mq.addListener(onChange);
+    return () => mq.removeListener(onChange);
+  }, []);
+
   // Handler for session changes
   const handleSessionChange = useCallback(async (key: string) => {
     setCurrentSession(key);
@@ -252,6 +279,108 @@ export default function App({ onLogout }: AppProps) {
 
   const savedConfig = useMemo(() => loadConfig(), []);
   const defaultUrl = savedConfig.url || DEFAULT_GATEWAY_WS;
+
+  const chatContent = (
+    <TabbedContentArea
+      activeTab={activeTab}
+      openFiles={openFiles}
+      onSelectTab={setActiveTab}
+      onCloseTab={closeFile}
+      onContentChange={updateContent}
+      onSaveFile={handleSaveFile}
+      saveToast={saveToast}
+      onDismissToast={() => setSaveToast(null)}
+      onReloadFile={reloadFile}
+      onRetryFile={reloadFile}
+      chatPanel={
+        <PanelErrorBoundary name="Chat">
+          <ChatPanel
+            ref={chatPanelRef}
+            id="main-chat"
+            messages={messages}
+            onSend={handleSend}
+            onAbort={handleAbort}
+            isGenerating={isGenerating}
+            stream={stream}
+            processingStage={processingStage}
+            lastEventTimestamp={lastEventTimestamp}
+            currentToolDescription={currentToolDescription}
+            activityLog={activityLog}
+            onWakeWordState={handleWakeWordState}
+            onReset={handleReset}
+            searchOpen={searchOpen}
+            onSearchClose={closeSearch}
+            agentName={currentSessionDisplayName}
+            loadMore={loadMore}
+            hasMore={hasMore}
+          />
+        </PanelErrorBoundary>
+      }
+    />
+  );
+
+  const renderRightPanels = (onSelect: (key: string) => Promise<void> | void) => (
+    <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
+      {/* Sessions + Memory stacked vertically */}
+      <div className="flex-1 flex flex-col gap-px min-h-0">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-background">
+          <PanelErrorBoundary name="Sessions">
+            <SessionList
+              sessions={sessions}
+              currentSession={currentSession}
+              busyState={busyState}
+              agentStatus={agentStatus}
+              unreadSessions={unreadSessions}
+              onSelect={onSelect}
+              onRefresh={refreshSessions}
+              onDelete={deleteSession}
+              onSpawn={spawnAgent}
+              onRename={renameSession}
+              onAbort={abortSession}
+              isLoading={sessionsLoading}
+              agentName={agentName}
+            />
+          </PanelErrorBoundary>
+        </div>
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-background">
+          <PanelErrorBoundary name="Workspace">
+            <WorkspacePanel memories={memories} onRefreshMemories={refreshMemories} memoriesLoading={memoriesLoading} />
+          </PanelErrorBoundary>
+        </div>
+      </div>
+    </Suspense>
+  );
+
+  const compactSessionsPanel = (
+    <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading sessions…</div>}>
+      <PanelErrorBoundary name="Sessions">
+        <SessionList
+          sessions={sessions}
+          currentSession={currentSession}
+          busyState={busyState}
+          agentStatus={agentStatus}
+          unreadSessions={unreadSessions}
+          onSelect={handleSessionChange}
+          onRefresh={refreshSessions}
+          onDelete={deleteSession}
+          onSpawn={spawnAgent}
+          onRename={renameSession}
+          onAbort={abortSession}
+          isLoading={sessionsLoading}
+          agentName={agentName}
+          compact
+        />
+      </PanelErrorBoundary>
+    </Suspense>
+  );
+
+  const compactWorkspacePanel = (
+    <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading workspace…</div>}>
+      <PanelErrorBoundary name="Workspace">
+        <WorkspacePanel memories={memories} onRefreshMemories={refreshMemories} memoriesLoading={memoriesLoading} compact />
+      </PanelErrorBoundary>
+    </Suspense>
+  );
 
   return (
     <div className="h-screen flex flex-col overflow-hidden scan-lines" data-booted={booted}>
@@ -288,6 +417,10 @@ export default function App({ onLogout }: AppProps) {
         logGlow={logGlow}
         eventEntries={eventEntries}
         eventsVisible={eventsVisible}
+        logVisible={logVisible}
+        mobilePanelButtonsVisible={isCompactLayout}
+        sessionsPanel={compactSessionsPanel}
+        workspacePanel={compactWorkspacePanel}
       />
       
       <PanelErrorBoundary name="Settings">
@@ -325,86 +458,25 @@ export default function App({ onLogout }: AppProps) {
           <FileTreePanel onOpenFile={openFile} lastChangedPath={lastChangedPath} />
         </PanelErrorBoundary>
 
-        {/* Main resizable area */}
-        <ResizablePanels
-          leftPercent={panelRatio}
-          onResize={setPanelRatio}
-          minLeftPercent={30}
-          maxLeftPercent={75}
-          leftClassName="boot-panel"
-          rightClassName="boot-panel flex flex-col gap-px bg-border"
-          left={
-            <TabbedContentArea
-              activeTab={activeTab}
-              openFiles={openFiles}
-              onSelectTab={setActiveTab}
-              onCloseTab={closeFile}
-              onContentChange={updateContent}
-              onSaveFile={handleSaveFile}
-              saveToast={saveToast}
-              onDismissToast={() => setSaveToast(null)}
-              onReloadFile={reloadFile}
-              onRetryFile={reloadFile}
-              chatPanel={
-                <PanelErrorBoundary name="Chat">
-                  <ChatPanel
-                    ref={chatPanelRef}
-                    id="main-chat"
-                    messages={messages}
-                    onSend={handleSend}
-                    onAbort={handleAbort}
-                    isGenerating={isGenerating}
-                    stream={stream}
-                    processingStage={processingStage}
-                    lastEventTimestamp={lastEventTimestamp}
-                    currentToolDescription={currentToolDescription}
-                    activityLog={activityLog}
-                    onWakeWordState={handleWakeWordState}
-                    onReset={handleReset}
-                    searchOpen={searchOpen}
-                    onSearchClose={closeSearch}
-                    agentName={currentSessionDisplayName}
-                    loadMore={loadMore}
-                    hasMore={hasMore}
-                  />
-                </PanelErrorBoundary>
-              }
-            />
-          }
-          right={
-          <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
-            {/* Sessions + Memory stacked vertically */}
-            <div className="flex-1 flex flex-col gap-px min-h-0">
-              <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-background">
-                <PanelErrorBoundary name="Sessions">
-                  <SessionList
-                    sessions={sessions}
-                    currentSession={currentSession}
-                    busyState={busyState}
-                    agentStatus={agentStatus}
-                    unreadSessions={unreadSessions}
-                    onSelect={handleSessionChange}
-                    onRefresh={refreshSessions}
-                    onDelete={deleteSession}
-                    onSpawn={spawnAgent}
-                    onRename={renameSession}
-                    onAbort={abortSession}
-                    isLoading={sessionsLoading}
-                    agentName={agentName}
-                  />
-                </PanelErrorBoundary>
-              </div>
-              <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-background">
-                <PanelErrorBoundary name="Workspace">
-                  <WorkspacePanel memories={memories} onRefreshMemories={refreshMemories} memoriesLoading={memoriesLoading} />
-                </PanelErrorBoundary>
-              </div>
-            </div>
-          </Suspense>
-        }
-      />
+        {/* Main area: desktop split, mobile chat-first */}
+        {isCompactLayout ? (
+          <div className="flex-1 min-w-0 min-h-0 boot-panel">
+            {chatContent}
+          </div>
+        ) : (
+          <ResizablePanels
+            leftPercent={panelRatio}
+            onResize={setPanelRatio}
+            minLeftPercent={30}
+            maxLeftPercent={75}
+            leftClassName="boot-panel"
+            rightClassName="boot-panel flex flex-col gap-px bg-border"
+            left={chatContent}
+            right={renderRightPanels(handleSessionChange)}
+          />
+        )}
       </div>
-      
+
       {/* Status Bar */}
       <div className="boot-panel" style={{ transitionDelay: '200ms' }}>
         <StatusBar

@@ -27,9 +27,11 @@ interface WorkspacePanelProps {
   memories: Memory[];
   onRefreshMemories: (signal?: AbortSignal) => void | Promise<void>;
   memoriesLoading?: boolean;
+  /** Render in compact dropdown mode (chat-first topbar panel). */
+  compact?: boolean;
 }
 
-export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading }: WorkspacePanelProps) {
+export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, compact = false }: WorkspacePanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>(getInitialTab);
   const { activeCount } = useCrons();
 
@@ -49,7 +51,7 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading }:
   }, []);
 
   return (
-    <div className="h-full flex flex-col min-h-0">
+    <div className={compact ? 'h-[70vh] max-h-[70vh] flex flex-col min-h-0' : 'h-full flex flex-col min-h-0'}>
       <WorkspaceTabs
         activeTab={activeTab}
         onTabChange={handleTabChange}

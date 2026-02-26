@@ -15,6 +15,7 @@ export interface CommandActions {
   onTtsProviderChange: (provider: TTSProvider) => void;
   onToggleWakeWord: () => void;
   onToggleEvents: () => void;
+  onToggleLog: () => void;
   onToggleTelemetry: () => void;
   onOpenSettings: () => void;
   onRefreshSessions: () => void;
@@ -113,6 +114,13 @@ export function createCommands(actions: CommandActions): Command[] {
       action: actions.onToggleEvents,
       category: 'navigation',
       keywords: ['events', 'log', 'panel'],
+    },
+    {
+      id: 'toggle-log',
+      label: 'Toggle Log Panel',
+      action: actions.onToggleLog,
+      category: 'navigation',
+      keywords: ['activity', 'log', 'panel'],
     },
     {
       id: 'toggle-telemetry',

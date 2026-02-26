@@ -31,10 +31,12 @@ interface SessionListProps {
   onAbort?: (sessionKey: string) => Promise<void>;
   isLoading?: boolean;
   agentName?: string;
+  /** Render in compact dropdown mode (chat-first topbar panel). */
+  compact?: boolean;
 }
 
 /** Sidebar list of agent sessions with tree structure and context menus. */
-export function SessionList({ sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent' }: SessionListProps) {
+export function SessionList({ sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
@@ -123,7 +125,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
   const flatNodes = useMemo(() => flattenTree(tree, expandedState), [tree, expandedState]);
 
   return (
-    <div className="h-full flex flex-col min-h-0">
+    <div className={compact ? 'flex flex-col max-h-[65vh]' : 'h-full flex flex-col min-h-0'}>
       <div className="panel-header border-l-[3px] border-l-info">
         <span className="panel-label text-info">
           <span className="panel-diamond">◆</span>
@@ -152,7 +154,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className={compact ? 'overflow-y-auto' : 'flex-1 overflow-y-auto'}>
         {isLoading && !sessions.length ? (
           <SessionSkeletonGroup count={4} />
         ) : !sessions.length ? (

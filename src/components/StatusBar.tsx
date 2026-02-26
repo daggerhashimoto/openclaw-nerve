@@ -113,52 +113,52 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
     : null;
 
   return (
-    <div className="h-6 bg-secondary border-t border-border flex items-center px-3 text-[10px] font-mono uppercase tracking-wide text-muted-foreground shrink-0 select-none">
-      <div className="flex items-center gap-0 flex-1 min-w-0">
+    <div className="h-6 bg-secondary border-t border-border flex items-center px-2 sm:px-3 text-[10px] font-mono uppercase tracking-wide text-muted-foreground shrink-0 select-none">
+      <div className="flex items-center gap-0 flex-1 min-w-0 overflow-hidden whitespace-nowrap">
         {/* Connection status */}
         <span
           key={flashKey}
           role="status"
           aria-live="polite"
           aria-atomic="true"
-          className={`flex items-center gap-1.5 ${statusColor} animate-status-flash`}
+          className={`flex items-center gap-1.5 ${statusColor} animate-status-flash shrink-0`}
         >
           <span className="text-[8px]" aria-hidden="true">●</span>
           <span>{statusLabel}</span>
         </span>
 
-        <span className="text-border mx-2">│</span>
-
-        {/* Server time */}
+        {/* Server time (hidden on narrow screens) */}
+        <span className="text-border mx-2 hidden md:inline">│</span>
         {serverTime ? (
-          <span className="text-foreground/70 tabular-nums">{formatServerTime(serverTime)}</span>
+          <span className="text-foreground/70 tabular-nums hidden md:inline">{formatServerTime(serverTime)}</span>
         ) : (
-          <span className="text-muted-foreground/40">--:--:--</span>
+          <span className="text-muted-foreground/40 hidden md:inline">--:--:--</span>
         )}
 
         <span className="text-border mx-2">│</span>
 
         {/* Session count */}
-        <span className="text-foreground/70">{sessionCount} SESSIONS</span>
+        <span className="text-foreground/70 shrink-0">{sessionCount} SESSIONS</span>
 
-        <span className="text-border mx-2">│</span>
-
-        {/* Gateway uptime */}
-        <span className="text-foreground/70 tabular-nums">
+        {/* Gateway uptime (hidden on narrow/medium screens) */}
+        <span className="text-border mx-2 hidden lg:inline">│</span>
+        <span className="text-foreground/70 tabular-nums hidden lg:inline">
           UP {gatewayUptimeSecs !== null ? formatUptime(gatewayUptimeSecs) : '--:--:--'}
         </span>
 
-        {/* Context Meter - only show when data available */}
+        {/* Context Meter (always visible when available) */}
         {contextTokens != null && contextLimit != null && contextLimit > 0 && (
           <>
             <span className="text-border mx-2">│</span>
-            <ContextMeter used={contextTokens} limit={contextLimit} />
+            <span className="inline-flex shrink-0">
+              <ContextMeter used={contextTokens} limit={contextLimit} />
+            </span>
           </>
         )}
       </div>
 
-      {/* Right side: sparkline + cursor + version */}
-      <div className="flex items-center shrink-0 ml-3">
+      {/* Right side telemetry (hidden on smaller screens) */}
+      <div className="hidden lg:flex items-center shrink-0 ml-3">
         <span className="text-muted-foreground text-[10px] tracking-[-1px]">{sparkline}</span>
         <span className="text-primary font-bold animate-alive ml-0.5">_</span>
         <span className="text-muted-foreground/40 text-[9px] tracking-wide ml-2">v{__APP_VERSION__}</span>

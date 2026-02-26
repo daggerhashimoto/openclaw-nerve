@@ -29,6 +29,8 @@ interface SettingsContextValue {
   toggleTelemetry: () => void;
   eventsVisible: boolean;
   toggleEvents: () => void;
+  logVisible: boolean;
+  toggleLog: () => void;
   theme: ThemeName;
   setTheme: (theme: ThemeName) => void;
   font: FontName;
@@ -57,6 +59,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   });
   const [eventsVisible, setEventsVisible] = useState(() => {
     return localStorage.getItem('nerve:showEvents') === 'true'; // Default to false (hidden)
+  });
+  const [logVisible, setLogVisible] = useState(() => {
+    return localStorage.getItem('nerve:showLog') === 'true'; // Default to false (hidden)
   });
   const [theme, setThemeState] = useState<ThemeName>(() => {
     const saved = localStorage.getItem('oc-theme') as ThemeName | null;
@@ -169,6 +174,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const toggleLog = useCallback(() => {
+    setLogVisible(prev => {
+      const next = !prev;
+      localStorage.setItem('nerve:showLog', String(next));
+      return next;
+    });
+  }, []);
+
   const setTheme = useCallback((newTheme: ThemeName) => {
     setThemeState(newTheme);
     localStorage.setItem('oc-theme', newTheme);
@@ -202,6 +215,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     toggleTelemetry,
     eventsVisible,
     toggleEvents,
+    logVisible,
+    toggleLog,
     theme,
     setTheme,
     font,
@@ -211,7 +226,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     sttProvider, changeSttProvider, sttModel, changeSttModel,
     wakeWordEnabled, handleToggleWakeWord, handleWakeWordState,
     speak, panelRatio, setPanelRatio, telemetryVisible, toggleTelemetry,
-    eventsVisible, toggleEvents, theme, setTheme, font, setFont,
+    eventsVisible, toggleEvents, logVisible, toggleLog, theme, setTheme, font, setFont,
   ]);
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

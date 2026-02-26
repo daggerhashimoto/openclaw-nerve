@@ -16,10 +16,12 @@ interface MemoryListProps {
   onRefresh: (signal?: AbortSignal) => void | Promise<void>;
   isLoading?: boolean;
   hideHeader?: boolean;
+  /** Compact mode for mobile/topbar dropdown; uses kebab actions for rows. */
+  compact?: boolean;
 }
 
 /** Searchable, editable list of agent memories with add/delete support. */
-export function MemoryList({ memories: initialMemories, onRefresh, isLoading: initialLoading, hideHeader }: MemoryListProps) {
+export function MemoryList({ memories: initialMemories, onRefresh, isLoading: initialLoading, hideHeader, compact = false }: MemoryListProps) {
   // useMemories provides optimistic state that reflects pending operations
   const { memories, addMemory, deleteMemory, error, clearError, isLoading } = useMemories(initialMemories);
   
@@ -289,6 +291,7 @@ export function MemoryList({ memories: initialMemories, onRefresh, isLoading: in
                 onToggleExpand: () => toggleSection(m.text),
                 itemCount: sectionItemCounts[m.text] || 0,
               } : {})}
+              compact={compact}
             />
           ))}
           </>

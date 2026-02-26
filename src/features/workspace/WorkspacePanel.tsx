@@ -64,6 +64,7 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, c
               memories={memories}
               onRefresh={onRefreshMemories}
               isLoading={memoriesLoading}
+              compact={compact}
             />
           )}
         </div>

@@ -11,8 +11,8 @@
  * - deleting: Fade out animation
  */
 
-import { memo } from 'react';
-import { Calendar, Trash2, Pencil, Loader2, AlertCircle, ChevronRight } from 'lucide-react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Calendar, Trash2, Pencil, Loader2, AlertCircle, ChevronRight, EllipsisVertical } from 'lucide-react';
 import type { Memory } from '@/types';
 
 interface MemoryItemProps {
@@ -25,24 +25,26 @@ interface MemoryItemProps {
   onToggleExpand?: () => void;
   /** For sections: number of items under this section */
   itemCount?: number;
+  /** Compact mode for mobile/topbar dropdown; uses kebab actions instead of hover actions. */
+  compact?: boolean;
 }
 
-function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand, itemCount }: MemoryItemProps) {
-  const handleDelete = (e: React.MouseEvent) => {
+function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand, itemCount, compact = false }: MemoryItemProps) {
+  const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     if (memory.pending || memory.deleting) return;
     onDelete(memory.text, memory.type, memory.date);
-  };
+  }, [memory.pending, memory.deleting, memory.text, memory.type, memory.date, onDelete]);
 
-  const handleEdit = (e: React.MouseEvent) => {
+  const handleEdit = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     if (memory.pending || memory.deleting) return;
     if ((memory.type === 'section' || memory.type === 'daily') && onEdit) {
       onEdit(memory.text, memory.type, memory.date);
     }
-  };
+  }, [memory.pending, memory.deleting, memory.text, memory.type, memory.date, onEdit]);
 
-  const handleClick = () => {
+  const handleClick = useCallback(() => {
     if (memory.pending || memory.deleting) return;
     // Sections toggle collapse on click
     if (memory.type === 'section' && onToggleExpand) {
@@ -53,13 +55,44 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
     if (memory.type === 'daily' && onEdit) {
       onEdit(memory.text, memory.type, memory.date);
     }
-  };
+  }, [memory.pending, memory.deleting, memory.type, memory.text, memory.date, onToggleExpand, onEdit]);
 
   const isClickable =
     (memory.type === 'section' && onToggleExpand) ||
     (memory.type === 'daily' && onEdit);
 
   const isEditable = (memory.type === 'section' || memory.type === 'daily') && onEdit;
+
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!compact || !actionsOpen) return;
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (actionsRef.current?.contains(target)) return;
+      setActionsOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [compact, actionsOpen]);
+
+  const handleKebabToggle = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActionsOpen(prev => !prev);
+  }, []);
+
+  const handleEditFromMenu = useCallback((e: React.MouseEvent) => {
+    handleEdit(e);
+    setActionsOpen(false);
+  }, [handleEdit]);
+
+  const handleDeleteFromMenu = useCallback((e: React.MouseEvent) => {
+    handleDelete(e);
+    setActionsOpen(false);
+  }, [handleDelete]);
 
   // Optimistic state styling
   const stateClasses = memory.deleting
@@ -72,7 +105,7 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
 
   return (
     <div
-      className={`group flex items-center gap-2 px-3 py-1.5 border-b border-border/40 text-[11px] hover:bg-foreground/[0.02] transition-colors ${
+      className={`group relative flex items-center gap-2 px-3 py-1.5 border-b border-border/40 text-[11px] hover:bg-foreground/[0.02] transition-colors ${
         isClickable && !memory.pending && !memory.deleting ? 'cursor-pointer' : ''
       } ${stateClasses}`}
       onClick={handleClick}
@@ -129,25 +162,64 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
         </span>
       )}
 
-      {/* Edit button — visible on hover for editable items */}
-      {isEditable && !memory.pending && !memory.deleting && (
-        <button
-          onClick={handleEdit}
-          className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-purple transition-all shrink-0"
-          title="Edit section"
-        >
-          <Pencil size={12} />
-        </button>
-      )}
-      {/* Delete button — visible on hover (not when pending/deleting) */}
       {!memory.pending && !memory.deleting && (
-        <button
-          onClick={handleDelete}
-          className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-red transition-all shrink-0"
-          title="Delete memory"
-        >
-          <Trash2 size={12} />
-        </button>
+        compact ? (
+          <div ref={actionsRef} className="relative shrink-0">
+            <button
+              onClick={handleKebabToggle}
+              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+              title="Memory actions"
+              aria-label="Memory actions"
+              aria-expanded={actionsOpen}
+            >
+              <EllipsisVertical size={13} />
+            </button>
+
+            {actionsOpen && (
+              <div className="absolute right-0 top-full mt-1 flex items-center gap-0.5 bg-card border border-border/70 shadow-lg p-0.5 z-20">
+                {isEditable && (
+                  <button
+                    onClick={handleEditFromMenu}
+                    className="p-1 text-muted-foreground hover:text-purple transition-colors"
+                    title="Edit section"
+                    aria-label="Edit memory"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                )}
+                <button
+                  onClick={handleDeleteFromMenu}
+                  className="p-1 text-muted-foreground hover:text-red transition-colors"
+                  title="Delete memory"
+                  aria-label="Delete memory"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Edit button — visible on hover for editable items */}
+            {isEditable && (
+              <button
+                onClick={handleEdit}
+                className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-purple transition-all shrink-0"
+                title="Edit section"
+              >
+                <Pencil size={12} />
+              </button>
+            )}
+            {/* Delete button — visible on hover (not when pending/deleting) */}
+            <button
+              onClick={handleDelete}
+              className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-red transition-all shrink-0"
+              title="Delete memory"
+            >
+              <Trash2 size={12} />
+            </button>
+          </>
+        )
       )}
     </div>
   );
@@ -161,5 +233,6 @@ export const MemoryItem = memo(MemoryItemInner, (prev, next) =>
   prev.memory.failed === next.memory.failed &&
   prev.memory.deleting === next.memory.deleting &&
   prev.isExpanded === next.isExpanded &&
-  prev.itemCount === next.itemCount
+  prev.itemCount === next.itemCount &&
+  prev.compact === next.compact
 );

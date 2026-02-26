@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { TreeNode } from './sessionTree';
 import type { GranularAgentState } from '@/types';
 import { fmtK } from '@/lib/formatting';
@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { PROGRESS_BAR_TRANSITION } from '@/lib/progress-colors';
 import { getStatusBadgeText, getStatusBadgeClasses } from './statusUtils';
-import { ChevronRight, ChevronDown, PenLine } from 'lucide-react';
+import { ChevronRight, ChevronDown, EllipsisVertical, PenLine } from 'lucide-react';
 import { SessionInfoPanel } from './SessionInfoPanel';
 
 // Pre-defined color configs to avoid object creation during render
@@ -54,6 +54,8 @@ interface SessionNodeProps {
   onRenameChange: (value: string) => void;
   onRenameCommit: () => void;
   onRenameCancel: () => void;
+  /** Compact mode for mobile/topbar dropdown; uses kebab actions instead of hover actions. */
+  compact?: boolean;
 }
 
 function arePropsEqual(prev: SessionNodeProps, next: SessionNodeProps): boolean {
@@ -74,7 +76,8 @@ function arePropsEqual(prev: SessionNodeProps, next: SessionNodeProps): boolean 
     prev.isUnread === next.isUnread &&
     prev.isRenaming === next.isRenaming &&
     prev.renameValue === next.renameValue &&
-    prev.granularStatus === next.granularStatus
+    prev.granularStatus === next.granularStatus &&
+    prev.compact === next.compact
   );
 }
 
@@ -104,6 +107,7 @@ export const SessionNode = memo(function SessionNode({
   onRenameChange,
   onRenameCommit,
   onRenameCancel,
+  compact = false,
 }: SessionNodeProps) {
   const { session, key: sessionKey, depth } = node;
   const max = session.contextTokens || 200000;
@@ -133,6 +137,48 @@ export const SessionNode = memo(function SessionNode({
     e.stopPropagation();
     onAbort?.(sessionKey);
   }, [onAbort, sessionKey]);
+
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
+
+  const canRenameDelete = isSubagent || isCron || isCronRun;
+  const hasAbortAction = Boolean(onAbort && running);
+  const hasRenameAction = Boolean(canRenameDelete && onStartRename && !isRenaming);
+  const hasDeleteAction = Boolean(canRenameDelete && onDelete);
+  const hasActions = hasAbortAction || hasRenameAction || hasDeleteAction;
+
+  useEffect(() => {
+    if (!compact || !actionsOpen) return;
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (actionsRef.current?.contains(target)) return;
+      setActionsOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [compact, actionsOpen]);
+
+  const handleKebabToggle = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActionsOpen(prev => !prev);
+  }, []);
+
+  const handleAbortFromMenu = useCallback((e: React.MouseEvent) => {
+    handleAbortClick(e);
+    setActionsOpen(false);
+  }, [handleAbortClick]);
+
+  const handleRenameFromMenu = useCallback((e: React.MouseEvent) => {
+    handleRenameClick(e);
+    setActionsOpen(false);
+  }, [handleRenameClick]);
+
+  const handleDeleteFromMenu = useCallback((e: React.MouseEvent) => {
+    handleDeleteClick(e);
+    setActionsOpen(false);
+  }, [handleDeleteClick]);
 
   // Compute badge text and classes from granular status or fall back to binary
   const badgeText = (isCron || isCronRun)
@@ -168,7 +214,10 @@ export const SessionNode = memo(function SessionNode({
         type="button"
         onClick={handleSelect}
         aria-current={isActive ? 'true' : undefined}
-        className="flex-1 min-w-0 flex items-center gap-2 bg-transparent border-0 text-left cursor-pointer py-2 pr-3"
+        className={cn(
+          'flex-1 min-w-0 flex items-center gap-2 bg-transparent border-0 text-left cursor-pointer py-2',
+          compact ? 'pr-1' : 'pr-3'
+        )}
         style={{ paddingLeft: `${indent + 8}px` }}
       >
         {/* Collapse/expand chevron for nodes with children */}
@@ -245,43 +294,95 @@ export const SessionNode = memo(function SessionNode({
         </span>
       </button>
 
-      {/* Hover actions — abort is available for all running sessions */}
-      <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity z-10">
-        {onAbort && running && (
-          <button
-            type="button"
-            onClick={handleAbortClick}
-            title="Abort session"
-            className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
-          >
-            ⏹
-          </button>
-        )}
-        {(isSubagent || isCron || isCronRun) && (
-          <>
-            {onStartRename && !isRenaming && (
-              <button
-                type="button"
-                onClick={handleRenameClick}
-                title="Rename session"
-                className="bg-card/90 border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
-              >
-                <PenLine size={10} />
-              </button>
+      {compact ? (
+        hasActions && (
+          <div ref={actionsRef} className="flex items-center gap-0.5 shrink-0 pr-1">
+            {actionsOpen && (
+              <>
+                {hasAbortAction && (
+                  <button
+                    type="button"
+                    onClick={handleAbortFromMenu}
+                    title="Abort session"
+                    className="bg-card border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
+                  >
+                    ⏹
+                  </button>
+                )}
+                {hasRenameAction && (
+                  <button
+                    type="button"
+                    onClick={handleRenameFromMenu}
+                    title="Rename session"
+                    className="bg-card border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
+                  >
+                    <PenLine size={10} />
+                  </button>
+                )}
+                {hasDeleteAction && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteFromMenu}
+                    title="Delete session"
+                    className="bg-card border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
+                  >
+                    ✕
+                  </button>
+                )}
+              </>
             )}
-            {onDelete && (
-              <button
-                type="button"
-                onClick={handleDeleteClick}
-                title="Delete session"
-                className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
-              >
-                ✕
-              </button>
-            )}
-          </>
-        )}
-      </div>
+
+            <button
+              type="button"
+              onClick={handleKebabToggle}
+              title="Session actions"
+              aria-label="Session actions"
+              aria-expanded={actionsOpen}
+              className="bg-transparent border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[10px] w-6 h-6 flex items-center justify-center"
+            >
+              <EllipsisVertical size={12} />
+            </button>
+          </div>
+        )
+      ) : (
+        /* Hover actions — abort is available for all running sessions */
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity z-10">
+          {hasAbortAction && (
+            <button
+              type="button"
+              onClick={handleAbortClick}
+              title="Abort session"
+              className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
+            >
+              ⏹
+            </button>
+          )}
+          {canRenameDelete && (
+            <>
+              {hasRenameAction && (
+                <button
+                  type="button"
+                  onClick={handleRenameClick}
+                  title="Rename session"
+                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
+                >
+                  <PenLine size={10} />
+                </button>
+              )}
+              {hasDeleteAction && (
+                <button
+                  type="button"
+                  onClick={handleDeleteClick}
+                  title="Delete session"
+                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
+                >
+                  ✕
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }, arePropsEqual);

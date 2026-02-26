@@ -207,6 +207,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
               onRenameChange={handleRenameChange}
               onRenameCommit={commitRename}
               onRenameCancel={cancelRename}
+              compact={compact}
             />
           );
         })}

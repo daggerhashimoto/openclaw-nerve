@@ -37,11 +37,14 @@ const createMemorySchema = z.object({
   importance: z.number().min(0).max(1).optional(),
 });
 
+/** Safe filename pattern: alphanumeric, hyphens, underscores, dots. No slashes, no `..` */
+const SAFE_FILENAME = /^[a-zA-Z0-9._-]+$/;
+
 /** Validation schema for deleting a memory */
 const deleteMemorySchema = z.object({
   query: z.string().min(1, 'Query is required').max(1000, 'Query too long'),
   type: z.enum(['section', 'item', 'daily']).optional(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  date: z.string().max(100).optional(),
 });
 
 /**
@@ -130,6 +133,11 @@ interface DeleteOptions {
  */
 async function deleteMemory(opts: DeleteOptions): Promise<{ deleted: boolean; file?: string }> {
   const { text, type, date } = opts;
+
+  // Validate filename to prevent path traversal
+  if (date && (!SAFE_FILENAME.test(date) || date.includes('..'))) {
+    return { deleted: false };
+  }
 
   try {
     // Determine which file to edit
@@ -302,9 +310,9 @@ app.get('/api/memories/section', rateLimitGeneral, async (c) => {
     return c.json({ ok: false, error: 'Missing title parameter' }, 400);
   }
 
-  // Validate date format to prevent path traversal
-  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return c.json({ ok: false, error: 'Invalid date format (expected YYYY-MM-DD)' }, 400);
+  // Validate filename to prevent path traversal
+  if (date && (!SAFE_FILENAME.test(date) || date.includes('..'))) {
+    return c.json({ ok: false, error: 'Invalid filename' }, 400);
   }
 
   try {
@@ -412,7 +420,7 @@ app.post(
 const updateSectionSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
   content: z.string().max(50000, 'Content too long'),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  date: z.string().max(100).optional(),
 });
 
 app.put(
@@ -427,6 +435,11 @@ app.put(
   async (c) => {
     try {
       const { title, content, date } = c.req.valid('json');
+
+      // Validate filename to prevent path traversal
+      if (date && (!SAFE_FILENAME.test(date) || date.includes('..'))) {
+        return c.json({ ok: false, error: 'Invalid filename' }, 400);
+      }
 
       // Determine which file to edit
       let filePath: string;

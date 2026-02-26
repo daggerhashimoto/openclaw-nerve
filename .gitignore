@@ -37,3 +37,6 @@ server-dist/
 .nerve/
 tts-config.json
 voice-phrases.json
+coverage/
+bin-dist/
+.test-tasks/

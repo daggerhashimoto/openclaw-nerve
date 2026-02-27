@@ -148,6 +148,13 @@ export function patchGatewayAllowedOrigins(origin: string): GatewayPatchResult {
 
 const REQUIRED_HTTP_TOOLS = ['cron', 'gateway'] as const;
 
+// Must match the connect metadata sent by Nerve's browser WS client
+// (src/hooks/useWebSocket.ts) to avoid OpenClaw 2026.2.26+ metadata-repair prompts.
+const NERVE_PAIRED_PLATFORM = 'web';
+const NERVE_PAIRED_CLIENT_ID = 'webchat-ui';
+const NERVE_PAIRED_CLIENT_MODE = 'webchat';
+const NERVE_PAIRED_DISPLAY_NAME = 'Nerve UI';
+
 /**
  * Patch the OpenClaw gateway config to allow required HTTP tools.
  * Adds missing entries in `gateway.tools.allow` (deduped).
@@ -475,27 +482,87 @@ export function prePairNerveDevice(gatewayToken?: string): { ok: boolean; messag
     const now = Date.now();
     const token = gatewayToken || detectGatewayConfig().token || crypto.randomBytes(32).toString('base64url');
 
-    // Update token if device exists but token doesn't match
+    // Update metadata/token if device already exists
     if (paired[deviceId]) {
-      const existing = paired[deviceId] as { tokens?: Record<string, { token?: string }> };
-      const existingToken = existing.tokens?.operator?.token;
-      if (existingToken === token) {
+      const existing = paired[deviceId] as {
+        displayName?: string;
+        platform?: string;
+        clientId?: string;
+        clientMode?: string;
+        tokens?: Record<string, {
+          token?: string;
+          role?: string;
+          scopes?: string[];
+          createdAtMs?: number;
+        }>;
+      };
+
+      let changed = false;
+      const changedFields: string[] = [];
+
+      // Keep token aligned with gateway auth token used by Nerve
+      if (!existing.tokens) {
+        existing.tokens = {};
+        changed = true;
+      }
+      if (!existing.tokens.operator) {
+        existing.tokens.operator = {
+          token,
+          role: 'operator',
+          scopes: FULL_OPERATOR_SCOPES,
+          createdAtMs: now,
+        };
+        changed = true;
+        changedFields.push('token');
+      } else if (existing.tokens.operator.token !== token) {
+        existing.tokens.operator.token = token;
+        changed = true;
+        changedFields.push('token');
+      }
+
+      // OpenClaw 2026.2.26+ pins platform/device metadata on paired devices.
+      // These must match the browser connect metadata Nerve sends.
+      if (existing.platform !== NERVE_PAIRED_PLATFORM) {
+        existing.platform = NERVE_PAIRED_PLATFORM;
+        changed = true;
+        changedFields.push('platform');
+      }
+      if (existing.clientId !== NERVE_PAIRED_CLIENT_ID) {
+        existing.clientId = NERVE_PAIRED_CLIENT_ID;
+        changed = true;
+        changedFields.push('clientId');
+      }
+      if (existing.clientMode !== NERVE_PAIRED_CLIENT_MODE) {
+        existing.clientMode = NERVE_PAIRED_CLIENT_MODE;
+        changed = true;
+        changedFields.push('clientMode');
+      }
+      if (existing.displayName !== NERVE_PAIRED_DISPLAY_NAME) {
+        existing.displayName = NERVE_PAIRED_DISPLAY_NAME;
+        changed = true;
+        changedFields.push('displayName');
+      }
+
+      if (!changed) {
         return { ok: true, message: 'Nerve device already paired', needsRestart: false };
       }
-      // Token mismatch — update it
-      if (existing.tokens?.operator) {
-        existing.tokens.operator.token = token;
-        writeFileSync(pairedPath, JSON.stringify(paired, null, 2) + '\n');
-        return { ok: true, message: `Updated Nerve device token ${deviceId.substring(0, 12)}…`, needsRestart: true };
-      }
+
+      writeFileSync(pairedPath, JSON.stringify(paired, null, 2) + '\n');
+      const fieldsLabel = changedFields.length > 0 ? ` (${changedFields.join(', ')})` : '';
+      return {
+        ok: true,
+        message: `Updated Nerve paired device ${deviceId.substring(0, 12)}…${fieldsLabel}`,
+        needsRestart: true,
+      };
     }
 
     paired[deviceId] = {
       deviceId,
       publicKey: publicKeyB64url,
-      platform: process.platform,
-      clientId: 'nerve',
-      clientMode: 'backend',
+      displayName: NERVE_PAIRED_DISPLAY_NAME,
+      platform: NERVE_PAIRED_PLATFORM,
+      clientId: NERVE_PAIRED_CLIENT_ID,
+      clientMode: NERVE_PAIRED_CLIENT_MODE,
       role: 'operator',
       roles: ['operator'],
       scopes: FULL_OPERATOR_SCOPES,
@@ -578,11 +645,24 @@ function needsPrePair(gatewayToken?: string): boolean {
 
     if (!paired[deviceId]) return true; // Nerve not registered
 
+    const existing = paired[deviceId] as {
+      displayName?: string;
+      platform?: string;
+      clientId?: string;
+      clientMode?: string;
+      tokens?: Record<string, { token?: string }>;
+    };
+
     // Check token match — if no token is available, assume mismatch (apply will generate one)
     const token = gatewayToken || detectGatewayConfig().token;
     if (!token) return true;
-    const existing = paired[deviceId] as { tokens?: Record<string, { token?: string }> };
     if (existing.tokens?.operator?.token !== token) return true;
+
+    // OpenClaw 2026.2.26+ metadata pinning requires these to match runtime connect metadata.
+    if (existing.platform !== NERVE_PAIRED_PLATFORM) return true;
+    if (existing.clientId !== NERVE_PAIRED_CLIENT_ID) return true;
+    if (existing.clientMode !== NERVE_PAIRED_CLIENT_MODE) return true;
+    if (existing.displayName !== NERVE_PAIRED_DISPLAY_NAME) return true;
 
     return false;
   } catch {

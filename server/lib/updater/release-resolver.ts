@@ -1,21 +1,27 @@
 /**
  * Resolve the target version for an update.
- * Reads tags from the git remote and picks the latest semver tag,
- * or accepts an explicit --version flag.
+ *
+ * Priority when no explicit version is provided:
+ *   1) Latest published GitHub release
+ *   2) Latest semver tag (fallback)
  */
 
-import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  listAvailableSemverVersions,
+  normalizeSemverTag,
+  resolveLatestVersion,
+} from '../release-source.js';
 import { EXIT_CODES, UpdateError } from './types.js';
 import type { ResolvedVersion } from './types.js';
 
 /**
  * Resolve the target update version.
- * If `explicitVersion` is given, validates it exists as a remote tag.
- * Otherwise, finds the latest semver tag via `git ls-remote --tags`.
+ * If `explicitVersion` is given, validates that the corresponding semver tag exists.
+ * Otherwise, resolves latest published release and falls back to latest semver tag.
  */
-export function resolveVersion(cwd: string, explicitVersion?: string): ResolvedVersion {
+export async function resolveVersion(cwd: string, explicitVersion?: string): Promise<ResolvedVersion> {
   const pkgPath = join(cwd, 'package.json');
   let current: string;
   try {
@@ -31,30 +37,43 @@ export function resolveVersion(cwd: string, explicitVersion?: string): ResolvedV
 
   let tag: string;
   let version: string;
+  let source: ResolvedVersion['source'];
 
   if (explicitVersion) {
-    tag = explicitVersion.startsWith('v') ? explicitVersion : `v${explicitVersion}`;
-    version = tag.slice(1);
-    // Validate tag exists on remote/local
-    const available = fetchRemoteTags(cwd);
-    if (!available.includes(version)) {
+    const normalized = normalizeSemverTag(explicitVersion);
+    if (!normalized) {
       throw new UpdateError(
-        `Tag ${tag} not found (available: ${available.map(v => `v${v}`).join(', ') || 'none'})`,
+        `Invalid version ${explicitVersion} (expected vX.Y.Z)` ,
         'resolve',
         EXIT_CODES.VERSION_RESOLUTION,
       );
     }
-  } else {
-    const tags = fetchRemoteTags(cwd);
-    if (tags.length === 0) {
+
+    const available = listAvailableSemverVersions(cwd);
+    if (!available.includes(normalized)) {
       throw new UpdateError(
-        'No semver tags found on remote',
+        `Tag v${normalized} not found (available: ${available.map(v => `v${v}`).join(', ') || 'none'})`,
         'resolve',
         EXIT_CODES.VERSION_RESOLUTION,
       );
     }
-    version = tags[tags.length - 1];
+
+    version = normalized;
     tag = `v${version}`;
+    source = 'explicit';
+  } else {
+    const latest = await resolveLatestVersion(cwd);
+    if (!latest) {
+      throw new UpdateError(
+        'No published release or semver tags found',
+        'resolve',
+        EXIT_CODES.VERSION_RESOLUTION,
+      );
+    }
+
+    version = latest.version;
+    tag = `v${version}`;
+    source = latest.source;
   }
 
   return {
@@ -62,62 +81,6 @@ export function resolveVersion(cwd: string, explicitVersion?: string): ResolvedV
     version,
     current,
     isUpToDate: version === current,
+    source,
   };
-}
-
-/**
- * Fetch all semver tags from the remote, sorted ascending.
- * Falls back to local tags if remote returns nothing (e.g. tags not pushed).
- */
-function fetchRemoteTags(cwd: string): string[] {
-  // Try remote first, fall back to local tags on failure or empty result
-  let versions: string[] = [];
-  try {
-    versions = fetchTagsFromSource(cwd, 'git ls-remote --tags origin');
-  } catch {
-    // Remote unreachable — fall through to local
-  }
-
-  if (versions.length === 0) {
-    versions = fetchTagsFromSource(cwd, 'git tag -l');
-  }
-
-  return versions;
-}
-
-function fetchTagsFromSource(cwd: string, command: string): string[] {
-  let output: string;
-  try {
-    output = execSync(command, { cwd, stdio: 'pipe' }).toString();
-  } catch {
-    throw new UpdateError(
-      `Failed to fetch tags (${command})`,
-      'resolve',
-      EXIT_CODES.VERSION_RESOLUTION,
-    );
-  }
-
-  // Match only clean semver (no prerelease suffix like -beta.1)
-  const semverRegex = /v?(\d+\.\d+\.\d+)$/;
-  const versions: string[] = [];
-
-  for (const line of output.split('\n')) {
-    const match = semverRegex.exec(line.trim());
-    if (match) {
-      if (!versions.includes(match[1])) {
-        versions.push(match[1]);
-      }
-    }
-  }
-
-  return versions.sort(compareSemver);
-}
-
-function compareSemver(a: string, b: string): number {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < 3; i++) {
-    if (pa[i] !== pb[i]) return pa[i] - pb[i];
-  }
-  return 0;
 }

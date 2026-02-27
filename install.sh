@@ -6,6 +6,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/master/install.sh | bash
 #
 # Or with options:
+#   curl -fsSL ... | bash -s -- --dir ~/nerve --version v1.4.4
 #   curl -fsSL ... | bash -s -- --dir ~/nerve --branch main
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -29,6 +30,8 @@ trap cleanup EXIT
 # ── Defaults ──────────────────────────────────────────────────────────
 INSTALL_DIR="${NERVE_INSTALL_DIR:-${HOME}/nerve}"
 BRANCH="master"
+BRANCH_EXPLICIT=false
+VERSION=""
 REPO="https://github.com/daggerhashimoto/openclaw-nerve.git"
 NODE_MIN=22
 SKIP_SETUP=false
@@ -139,6 +142,61 @@ detect_gateway_token() {
   echo ""
 }
 
+normalize_version_tag() {
+  local raw="$1"
+  local normalized="${raw#v}"
+  if [[ "$normalized" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "v${normalized}"
+    return 0
+  fi
+  return 1
+}
+
+github_repo_path_from_url() {
+  local url="$1"
+  local path=""
+
+  if [[ "$url" =~ ^https://github.com/([^/]+)/([^/]+)(\.git)?$ ]]; then
+    path="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+  elif [[ "$url" =~ ^git@github.com:([^/]+)/([^/]+)(\.git)?$ ]]; then
+    path="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+  elif [[ "$url" =~ ^ssh://git@github.com/([^/]+)/([^/]+)(\.git)?$ ]]; then
+    path="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+  else
+    return 1
+  fi
+
+  path="${path%.git}"
+  echo "$path"
+}
+
+fetch_latest_release_tag() {
+  local repo_path
+  repo_path=$(github_repo_path_from_url "$REPO") || return 1
+
+  local api_url="https://api.github.com/repos/${repo_path}/releases/latest"
+  local response
+  local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+
+  if [[ -n "$token" ]]; then
+    response=$(curl -fsSL \
+      -H "Accept: application/vnd.github+json" \
+      -H "User-Agent: nerve-installer" \
+      -H "Authorization: Bearer ${token}" \
+      "$api_url" 2>/dev/null) || return 1
+  else
+    response=$(curl -fsSL \
+      -H "Accept: application/vnd.github+json" \
+      -H "User-Agent: nerve-installer" \
+      "$api_url" 2>/dev/null) || return 1
+  fi
+
+  local tag
+  tag=$(printf '%s' "$response" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d);if(typeof j.tag_name==="string")process.stdout.write(j.tag_name);}catch{}});') || return 1
+
+  normalize_version_tag "$tag" || return 1
+}
+
 STAGE_CURRENT=0
 STAGE_TOTAL=5
 stage() {
@@ -158,7 +216,8 @@ stage_done() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dir)       [[ $# -ge 2 ]] || { echo "Missing value for --dir"; exit 1; }; INSTALL_DIR="$2"; shift 2 ;;
-    --branch)    [[ $# -ge 2 ]] || { echo "Missing value for --branch"; exit 1; }; BRANCH="$2"; shift 2 ;;
+    --branch)    [[ $# -ge 2 ]] || { echo "Missing value for --branch"; exit 1; }; BRANCH="$2"; BRANCH_EXPLICIT=true; shift 2 ;;
+    --version)   [[ $# -ge 2 ]] || { echo "Missing value for --version"; exit 1; }; VERSION="$2"; shift 2 ;;
     --repo)      [[ $# -ge 2 ]] || { echo "Missing value for --repo"; exit 1; }; REPO="$2"; shift 2 ;;
     --skip-setup) SKIP_SETUP=true; shift ;;
     --dry-run)    DRY_RUN=true; shift ;;
@@ -167,9 +226,10 @@ while [[ $# -gt 0 ]]; do
       echo "Nerve Installer"
       echo ""
       echo "Options:"
-      echo "  --dir <path>     Install directory (default: ~/nerve)"
-      echo "  --branch <name>  Git branch (default: master)"
-      echo "  --repo <url>     Git repo URL"
+      echo "  --dir <path>       Install directory (default: ~/nerve)"
+      echo "  --version <vX.Y.Z> Install a specific release version"
+      echo "  --branch <name>    Install from a branch (dev override; bypasses release mode)"
+      echo "  --repo <url>       Git repo URL"
       echo "  --skip-setup       Skip the interactive setup wizard"
       echo "  --gateway-token <t> Gateway token (for non-interactive installs)"
       echo "  --dry-run          Simulate the install without changing anything"
@@ -179,6 +239,11 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+if [[ -n "$VERSION" && "$BRANCH_EXPLICIT" == "true" ]]; then
+  fail "Use either --version or --branch, not both"
+  exit 1
+fi
 
 # ── Detect interactive mode ───────────────────────────────────────────
 # When piped via curl | bash, stdin is the pipe — but /dev/tty still
@@ -439,21 +504,66 @@ check_gateway
 # ── [2/5] Clone or update ────────────────────────────────────────────
 stage "Download"
 
+TARGET_REF=""
+TARGET_REF_KIND=""
+if [[ -n "$VERSION" ]]; then
+  if ! TARGET_REF=$(normalize_version_tag "$VERSION"); then
+    fail "Invalid --version: ${VERSION} (expected vX.Y.Z)"
+    exit 1
+  fi
+  TARGET_REF_KIND="version"
+elif [[ "$BRANCH_EXPLICIT" == "true" ]]; then
+  TARGET_REF="$BRANCH"
+  TARGET_REF_KIND="branch"
+else
+  TARGET_REF=$(fetch_latest_release_tag || true)
+  if [[ -n "$TARGET_REF" ]]; then
+    TARGET_REF_KIND="release"
+  else
+    TARGET_REF="$BRANCH"
+    TARGET_REF_KIND="branch-fallback"
+    warn "Could not resolve latest GitHub release — falling back to branch ${BRANCH}"
+  fi
+fi
+
+if [[ "$TARGET_REF_KIND" == "release" || "$TARGET_REF_KIND" == "version" ]]; then
+  info "Using ref ${TARGET_REF} (${TARGET_REF_KIND})"
+else
+  info "Using ref ${TARGET_REF} (${TARGET_REF_KIND})"
+fi
+
 if [[ "$DRY_RUN" == "true" ]]; then
   if [[ -d "$INSTALL_DIR/.git" ]]; then
     dry "Would update existing installation in ${INSTALL_DIR}"
-    dry "Would pull latest ${BRANCH}"
+    dry "Would checkout ${TARGET_REF}"
   else
     dry "Would clone ${REPO}"
+    dry "Would checkout ${TARGET_REF}"
     dry "Would install to ${INSTALL_DIR}"
   fi
 else
   if [[ -d "$INSTALL_DIR/.git" ]]; then
     cd "$INSTALL_DIR"
-    run_with_dots "Updating" git pull origin "$BRANCH" -q
-    ok "Updated to latest ${BRANCH}"
+
+    if [[ "$TARGET_REF_KIND" == "branch" || "$TARGET_REF_KIND" == "branch-fallback" ]]; then
+      run_with_dots "Fetching ${TARGET_REF}" git fetch origin "$TARGET_REF" -q
+      run_with_dots "Checking out ${TARGET_REF}" git checkout --force "$TARGET_REF" -q
+      run_with_dots "Resetting to origin/${TARGET_REF}" git reset --hard "origin/${TARGET_REF}" -q
+    else
+      run_with_dots "Fetching tags" git fetch --tags origin -q
+      run_with_dots "Checking out ${TARGET_REF}" git checkout --force "$TARGET_REF" -q
+    fi
+
+    ok "Updated to ${TARGET_REF}"
   else
-    run_with_dots "Cloning Nerve" git clone --branch "$BRANCH" --depth 1 -q "$REPO" "$INSTALL_DIR"
+    if [[ "$TARGET_REF_KIND" == "branch" || "$TARGET_REF_KIND" == "branch-fallback" ]]; then
+      run_with_dots "Cloning Nerve" git clone --branch "$TARGET_REF" --depth 1 -q "$REPO" "$INSTALL_DIR"
+    else
+      run_with_dots "Cloning Nerve" git clone --depth 1 -q "$REPO" "$INSTALL_DIR"
+      cd "$INSTALL_DIR"
+      run_with_dots "Fetching tags" git fetch --tags origin -q
+      run_with_dots "Checking out ${TARGET_REF}" git checkout --force "$TARGET_REF" -q
+    fi
     ok "Cloned to ${INSTALL_DIR}"
   fi
 

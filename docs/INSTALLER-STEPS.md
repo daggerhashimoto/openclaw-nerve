@@ -21,10 +21,12 @@ This makes it fail fast on command errors, unset variables, and pipeline failure
 It initializes defaults such as:
 
 - `INSTALL_DIR` (default `~/nerve`, overridable via `NERVE_INSTALL_DIR`)
-- `BRANCH` (default `master`)
+- `BRANCH` (default `master`, used only for explicit/fallback branch installs)
 - `REPO`
 - `NODE_MIN=22`
 - flags: `SKIP_SETUP`, `DRY_RUN`
+- `VERSION` (optional pinned release version)
+- `BRANCH_EXPLICIT` (tracks whether `--branch` was set)
 - `GATEWAY_TOKEN` (optional CLI override)
 - `ENV_MISSING` (tracks partial installs)
 
@@ -46,12 +48,15 @@ Defines output helpers (`ok`, `warn`, `fail`, `info`, `dry`) and utility functio
 Supported flags:
 
 - `--dir <path>`
-- `--branch <name>`
+- `--version <vX.Y.Z>`
+- `--branch <name>` (dev override; bypasses release-first flow)
 - `--repo <url>`
 - `--skip-setup`
 - `--dry-run`
 - `--gateway-token <token>`
 - `--help`
+
+`--version` and `--branch` are mutually exclusive.
 
 Unknown or malformed args exit with error.
 
@@ -108,14 +113,24 @@ The script runs these checks in order:
 
 ## 2) Stage 2/5 — Download
 
-### 2.1 Dry-run behavior
-- Prints what would happen (clone vs update).
+### 2.1 Target ref resolution (release-first)
+The installer resolves a target ref before clone/update:
 
-### 2.2 Real behavior
+1. If `--version` is provided: use that release tag (`vX.Y.Z`)
+2. Else if `--branch` is provided: use that branch
+3. Else (default): query GitHub Releases API for latest published release tag
+4. If release API fails: fallback to branch (`master` by default)
+
+### 2.2 Dry-run behavior
+- Prints target ref and what clone/update would do.
+
+### 2.3 Real behavior
 - If `INSTALL_DIR/.git` exists:
-  - `git pull origin <branch>`
-- Else:
-  - `git clone --branch <branch> --depth 1 <repo> <dir>`
+  - Branch mode: `git fetch origin <branch>` + checkout + hard reset to `origin/<branch>`
+  - Release mode: `git fetch --tags origin` + checkout `<tag>`
+- Else (fresh clone):
+  - Branch mode: `git clone --branch <branch> --depth 1 <repo> <dir>`
+  - Release mode: clone repo, fetch tags, checkout `<tag>`
 - Then `cd` into `INSTALL_DIR`.
 
 ---

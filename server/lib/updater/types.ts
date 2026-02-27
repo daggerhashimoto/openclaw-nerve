@@ -46,6 +46,7 @@ export interface ResolvedVersion {
   version: string;
   current: string;
   isUpToDate: boolean;
+  source: 'release' | 'tag' | 'explicit';
 }
 
 // ── Preflight ────────────────────────────────────────────────────────

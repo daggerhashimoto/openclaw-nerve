@@ -58,14 +58,20 @@ export async function orchestrate(options: UpdateOptions, reporter: Reporter): P
     // ── 3. Resolve version ─────────────────────────────────────────
     stageNum++;
     reporter.stage('Resolving version', stageNum, totalStages);
-    const resolved = resolveVersion(options.cwd, options.version);
+    const resolved = await resolveVersion(options.cwd, options.version);
 
     if (resolved.isUpToDate) {
       reporter.ok(`Already up to date (v${resolved.current})`);
       return EXIT_CODES.UP_TO_DATE;
     }
 
-    reporter.info(`v${resolved.current} → v${resolved.version}`);
+    const sourceLabel =
+      resolved.source === 'release'
+        ? 'latest release'
+        : resolved.source === 'tag'
+          ? 'latest tag fallback'
+          : 'pinned version';
+    reporter.info(`v${resolved.current} → v${resolved.version} (${sourceLabel})`);
 
     // ── Dry-run stops here ─────────────────────────────────────────
     if (options.dryRun) {

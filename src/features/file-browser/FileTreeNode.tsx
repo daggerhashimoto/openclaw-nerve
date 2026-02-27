@@ -18,6 +18,7 @@ interface FileTreeNodeProps {
   onDragStart: (entry: TreeEntry, event: React.DragEvent) => void;
   onDragEnd: () => void;
   onDragOverDirectory: (entry: TreeEntry, event: React.DragEvent) => void;
+  onDragLeaveDirectory: (entry: TreeEntry, event: React.DragEvent) => void;
   onDropDirectory: (entry: TreeEntry, event: React.DragEvent) => void;
   renamingPath: string | null;
   renameValue: string;
@@ -41,6 +42,7 @@ export function FileTreeNode({
   onDragStart,
   onDragEnd,
   onDragOverDirectory,
+  onDragLeaveDirectory,
   onDropDirectory,
   renamingPath,
   renameValue,
@@ -100,6 +102,7 @@ export function FileTreeNode({
         onDragStart={(e) => onDragStart(entry, e)}
         onDragEnd={onDragEnd}
         onDragOver={isDir ? (e) => onDragOverDirectory(entry, e) : undefined}
+        onDragLeave={isDir ? (e) => onDragLeaveDirectory(entry, e) : undefined}
         onDrop={isDir ? (e) => onDropDirectory(entry, e) : undefined}
         draggable={canDrag}
         tabIndex={0}
@@ -164,6 +167,7 @@ export function FileTreeNode({
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
               onDragOverDirectory={onDragOverDirectory}
+              onDragLeaveDirectory={onDragLeaveDirectory}
               onDropDirectory={onDropDirectory}
               renamingPath={renamingPath}
               renameValue={renameValue}

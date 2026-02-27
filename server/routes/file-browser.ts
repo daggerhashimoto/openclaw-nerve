@@ -111,10 +111,7 @@ async function listDirectory(
 
 function handleFileOpError(c: Context, err: unknown) {
   if (err instanceof FileOpError) {
-    return c.json(
-      { ok: false, error: err.message, code: err.code },
-      err.status as 400 | 403 | 404 | 409 | 422 | 500,
-    );
+    return c.json({ ok: false, error: err.message, code: err.code }, err.status);
   }
   const message = err instanceof Error ? err.message : 'Operation failed';
   return c.json({ ok: false, error: message }, 500);

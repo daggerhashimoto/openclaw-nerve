@@ -14,9 +14,14 @@ import {
   isExcluded,
   resolveWorkspacePath,
 } from './file-utils.js';
+import { withMutex } from './mutex.js';
 
 const TRASH_DIR = '.trash';
 const TRASH_INDEX = '.index.json';
+const TRASH_UNDO_TTL_MS = 10_000;
+const FILE_OPS_MUTEX_KEY = 'file-ops';
+
+type FileOpStatus = 400 | 403 | 404 | 409 | 422 | 500;
 
 export interface FileOpResult {
   from: string;
@@ -38,15 +43,19 @@ interface TrashIndexDoc {
 const EMPTY_INDEX: TrashIndexDoc = { version: 1, items: {} };
 
 export class FileOpError extends Error {
-  status: number;
+  status: FileOpStatus;
   code: string;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: FileOpStatus, code: string, message: string) {
     super(message);
     this.name = 'FileOpError';
     this.status = status;
     this.code = code;
   }
+}
+
+async function withFileOpsLock<T>(fn: () => Promise<T>): Promise<T> {
+  return withMutex(FILE_OPS_MUTEX_KEY, fn);
 }
 
 function toPosix(rel: string): string {
@@ -98,6 +107,12 @@ function assertValidNewName(newName: string): void {
   if (trimmed.includes('/') || trimmed.includes('\\')) {
     throw new FileOpError(400, 'invalid_name', 'Name cannot include path separators');
   }
+  if (/[\x00-\x1f\x7f]/.test(trimmed)) {
+    throw new FileOpError(400, 'invalid_name', 'Name contains unsupported control characters');
+  }
+  if (Buffer.byteLength(trimmed, 'utf8') > 255) {
+    throw new FileOpError(400, 'invalid_name', 'Name is too long (max 255 bytes)');
+  }
   if (isExcluded(trimmed)) {
     throw new FileOpError(403, 'excluded_name', 'Name is not allowed');
   }
@@ -125,6 +140,12 @@ function assertNotProtected(relPath: string): void {
   }
 }
 
+function assertNotProtectedTarget(targetRelPath: string): void {
+  if (isTrashRoot(targetRelPath)) {
+    throw new FileOpError(422, 'protected_path', 'Cannot target reserved .trash root path');
+  }
+}
+
 function assertNotMovingDirIntoSelf(sourceAbs: string, targetAbs: string, sourceIsDirectory: boolean): void {
   if (!sourceIsDirectory) return;
   if (targetAbs === sourceAbs || targetAbs.startsWith(sourceAbs + path.sep)) {
@@ -147,7 +168,17 @@ function trashIndexAbs(): string {
 }
 
 async function ensureTrashInfra(): Promise<void> {
-  await fs.mkdir(trashDirAbs(), { recursive: true });
+  try {
+    await fs.mkdir(trashDirAbs(), { recursive: true });
+  } catch {
+    throw new FileOpError(422, 'trash_path_conflict', 'Reserved .trash path is not a directory');
+  }
+
+  const trashStat = await fs.stat(trashDirAbs()).catch(() => null);
+  if (!trashStat || !trashStat.isDirectory()) {
+    throw new FileOpError(422, 'trash_path_conflict', 'Reserved .trash path is not a directory');
+  }
+
   if (!(await exists(trashIndexAbs()))) {
     await fs.writeFile(trashIndexAbs(), JSON.stringify(EMPTY_INDEX, null, 2) + '\n', 'utf-8');
   }
@@ -229,119 +260,135 @@ async function updateTrashIndexAfterMove(fromRel: string, toRel: string): Promis
 }
 
 export async function renameEntry(params: { path: string; newName: string }): Promise<FileOpResult> {
-  assertValidNewName(params.newName);
+  return withFileOpsLock(async () => {
+    assertValidNewName(params.newName);
 
-  const sourceAbs = await resolveExistingPathOrThrow(params.path);
-  const sourceRel = toWorkspaceRelative(sourceAbs);
-  assertNotProtected(sourceRel);
+    const sourceAbs = await resolveExistingPathOrThrow(params.path);
+    const sourceRel = toWorkspaceRelative(sourceAbs);
+    assertNotProtected(sourceRel);
 
-  await statOrThrow(sourceAbs);
+    await statOrThrow(sourceAbs);
 
-  const targetAbs = await resolvePathAllowNewOrThrow(
-    toPosix(path.join(path.dirname(sourceRel), params.newName.trim())),
-  );
-  const targetRel = toWorkspaceRelative(targetAbs);
+    const targetAbs = await resolvePathAllowNewOrThrow(
+      toPosix(path.join(path.dirname(sourceRel), params.newName.trim())),
+    );
+    const targetRel = toWorkspaceRelative(targetAbs);
+    assertNotProtectedTarget(targetRel);
 
-  if (sourceAbs === targetAbs) {
+    if (sourceAbs === targetAbs) {
+      return { from: sourceRel, to: targetRel };
+    }
+
+    await assertTargetNotExists(targetAbs);
+    await fs.rename(sourceAbs, targetAbs);
+    await updateTrashIndexAfterMove(sourceRel, targetRel);
+
     return { from: sourceRel, to: targetRel };
-  }
-
-  await assertTargetNotExists(targetAbs);
-  await fs.rename(sourceAbs, targetAbs);
-  await updateTrashIndexAfterMove(sourceRel, targetRel);
-
-  return { from: sourceRel, to: targetRel };
+  });
 }
 
 export async function moveEntry(params: { sourcePath: string; targetDirPath: string }): Promise<FileOpResult> {
-  const sourceAbs = await resolveExistingPathOrThrow(params.sourcePath);
-  const sourceRel = toWorkspaceRelative(sourceAbs);
-  assertNotProtected(sourceRel);
+  return withFileOpsLock(async () => {
+    const sourceAbs = await resolveExistingPathOrThrow(params.sourcePath);
+    const sourceRel = toWorkspaceRelative(sourceAbs);
+    assertNotProtected(sourceRel);
 
-  const sourceStat = await statOrThrow(sourceAbs);
+    const sourceStat = await statOrThrow(sourceAbs);
 
-  let targetDirAbs: string;
-  if (!params.targetDirPath) {
-    targetDirAbs = workspaceRoot();
-  } else {
-    targetDirAbs = await resolveExistingPathOrThrow(params.targetDirPath);
-  }
+    let targetDirAbs: string;
+    if (!params.targetDirPath) {
+      targetDirAbs = workspaceRoot();
+    } else {
+      targetDirAbs = await resolveExistingPathOrThrow(params.targetDirPath);
+    }
 
-  const targetDirStat = await statOrThrow(targetDirAbs);
-  if (!targetDirStat.isDirectory()) {
-    throw new FileOpError(400, 'target_not_directory', 'Target must be a directory');
-  }
+    const targetDirStat = await statOrThrow(targetDirAbs);
+    if (!targetDirStat.isDirectory()) {
+      throw new FileOpError(400, 'target_not_directory', 'Target must be a directory');
+    }
 
-  const targetAbs = path.join(targetDirAbs, path.basename(sourceAbs));
-  const targetRel = toWorkspaceRelative(targetAbs);
+    const targetAbs = path.join(targetDirAbs, path.basename(sourceAbs));
+    const targetRel = toWorkspaceRelative(targetAbs);
+    assertNotProtectedTarget(targetRel);
 
-  if (sourceAbs === targetAbs) {
+    // Prevent bypassing trash metadata by moving directly into .trash via generic move.
+    if (!isInTrash(sourceRel) && isInTrash(targetRel)) {
+      throw new FileOpError(422, 'use_trash_api', 'Use the trash action for deleting items');
+    }
+
+    if (sourceAbs === targetAbs) {
+      return { from: sourceRel, to: targetRel };
+    }
+
+    assertNotMovingDirIntoSelf(sourceAbs, targetAbs, sourceStat.isDirectory());
+    await assertTargetNotExists(targetAbs);
+
+    await fs.rename(sourceAbs, targetAbs);
+    await updateTrashIndexAfterMove(sourceRel, targetRel);
+
     return { from: sourceRel, to: targetRel };
-  }
-
-  assertNotMovingDirIntoSelf(sourceAbs, targetAbs, sourceStat.isDirectory());
-  await assertTargetNotExists(targetAbs);
-
-  await fs.rename(sourceAbs, targetAbs);
-  await updateTrashIndexAfterMove(sourceRel, targetRel);
-
-  return { from: sourceRel, to: targetRel };
+  });
 }
 
 export async function trashEntry(params: { path: string }): Promise<FileOpResult & { undoTtlMs: number }> {
-  const sourceAbs = await resolveExistingPathOrThrow(params.path);
-  const sourceRel = toWorkspaceRelative(sourceAbs);
+  return withFileOpsLock(async () => {
+    const sourceAbs = await resolveExistingPathOrThrow(params.path);
+    const sourceRel = toWorkspaceRelative(sourceAbs);
 
-  assertNotProtected(sourceRel);
-  if (isInTrash(sourceRel)) {
-    throw new FileOpError(422, 'already_in_trash', 'Path is already in trash');
-  }
+    assertNotProtected(sourceRel);
+    if (isInTrash(sourceRel)) {
+      throw new FileOpError(422, 'already_in_trash', 'Path is already in trash');
+    }
 
-  const sourceStat = await statOrThrow(sourceAbs);
+    const sourceStat = await statOrThrow(sourceAbs);
 
-  await ensureTrashInfra();
-  const targetAbs = await buildUniqueTrashTarget(sourceAbs, sourceStat.isDirectory());
-  const targetRel = toWorkspaceRelative(targetAbs);
+    await ensureTrashInfra();
+    const targetAbs = await buildUniqueTrashTarget(sourceAbs, sourceStat.isDirectory());
+    const targetRel = toWorkspaceRelative(targetAbs);
 
-  await fs.rename(sourceAbs, targetAbs);
+    await fs.rename(sourceAbs, targetAbs);
 
-  const index = await readTrashIndex();
-  index.items[targetRel] = {
-    id: randomId(),
-    originalPath: sourceRel,
-    deletedAtMs: Date.now(),
-    type: sourceStat.isDirectory() ? 'directory' : 'file',
-  };
-  await writeTrashIndex(index);
+    const index = await readTrashIndex();
+    index.items[targetRel] = {
+      id: randomId(),
+      originalPath: sourceRel,
+      deletedAtMs: Date.now(),
+      type: sourceStat.isDirectory() ? 'directory' : 'file',
+    };
+    await writeTrashIndex(index);
 
-  return { from: sourceRel, to: targetRel, undoTtlMs: 10000 };
+    return { from: sourceRel, to: targetRel, undoTtlMs: TRASH_UNDO_TTL_MS };
+  });
 }
 
 export async function restoreEntry(params: { path: string }): Promise<FileOpResult> {
-  const sourceAbs = await resolveExistingPathOrThrow(params.path);
-  const sourceRel = toWorkspaceRelative(sourceAbs);
+  return withFileOpsLock(async () => {
+    const sourceAbs = await resolveExistingPathOrThrow(params.path);
+    const sourceRel = toWorkspaceRelative(sourceAbs);
 
-  if (!isInTrash(sourceRel) || isTrashRoot(sourceRel)) {
-    throw new FileOpError(422, 'not_restorable', 'Only trashed items can be restored');
-  }
+    if (!isInTrash(sourceRel) || isTrashRoot(sourceRel)) {
+      throw new FileOpError(422, 'not_restorable', 'Only trashed items can be restored');
+    }
 
-  await ensureTrashInfra();
-  const index = await readTrashIndex();
-  const item = index.items[sourceRel];
+    await ensureTrashInfra();
+    const index = await readTrashIndex();
+    const item = index.items[sourceRel];
 
-  if (!item) {
-    throw new FileOpError(404, 'restore_metadata_missing', 'Restore metadata not found for this item');
-  }
+    if (!item) {
+      throw new FileOpError(404, 'restore_metadata_missing', 'Restore metadata not found for this item');
+    }
 
-  const targetAbs = await resolvePathAllowNewOrThrow(item.originalPath);
-  const targetRel = toWorkspaceRelative(targetAbs);
+    const targetAbs = await resolvePathAllowNewOrThrow(item.originalPath);
+    const targetRel = toWorkspaceRelative(targetAbs);
+    assertNotProtectedTarget(targetRel);
 
-  await assertTargetNotExists(targetAbs);
-  await fs.mkdir(path.dirname(targetAbs), { recursive: true });
-  await fs.rename(sourceAbs, targetAbs);
+    await assertTargetNotExists(targetAbs);
+    await fs.mkdir(path.dirname(targetAbs), { recursive: true });
+    await fs.rename(sourceAbs, targetAbs);
 
-  delete index.items[sourceRel];
-  await writeTrashIndex(index);
+    delete index.items[sourceRel];
+    await writeTrashIndex(index);
 
-  return { from: sourceRel, to: targetRel };
+    return { from: sourceRel, to: targetRel };
+  });
 }

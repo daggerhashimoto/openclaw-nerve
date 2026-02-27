@@ -18,6 +18,8 @@ const COLLAPSED_WIDTH = 0;
 
 const WIDTH_STORAGE_KEY = 'nerve-file-tree-width';
 const COLLAPSED_STORAGE_KEY = 'nerve-file-tree-collapsed';
+const MENU_VIEWPORT_PADDING = 8;
+const UNDO_TOAST_TTL_MS = 10_000;
 
 function loadWidth(): number {
   try {
@@ -160,6 +162,25 @@ export function FileTreePanel({
     };
   }, [contextMenu]);
 
+  // Clamp context menu within viewport after render.
+  useEffect(() => {
+    if (!contextMenu || !contextMenuRef.current) return;
+
+    const menuEl = contextMenuRef.current;
+    const width = menuEl.offsetWidth;
+    const height = menuEl.offsetHeight;
+
+    const maxX = Math.max(MENU_VIEWPORT_PADDING, window.innerWidth - width - MENU_VIEWPORT_PADDING);
+    const maxY = Math.max(MENU_VIEWPORT_PADDING, window.innerHeight - height - MENU_VIEWPORT_PADDING);
+
+    const nextX = Math.min(Math.max(contextMenu.x, MENU_VIEWPORT_PADDING), maxX);
+    const nextY = Math.min(Math.max(contextMenu.y, MENU_VIEWPORT_PADDING), maxY);
+
+    if (nextX !== contextMenu.x || nextY !== contextMenu.y) {
+      setContextMenu((prev) => (prev ? { ...prev, x: nextX, y: nextY } : prev));
+    }
+  }, [contextMenu]);
+
   const toggleCollapsed = useCallback(() => {
     collapsedRef.current = !collapsedRef.current;
     setCollapsed(collapsedRef.current);
@@ -242,9 +263,9 @@ export function FileTreePanel({
             type: 'undo',
             message: `Moved ${basename(result.from)} to Trash`,
             trashPath: result.to,
-            ttlMs: result.undoTtlMs || 10000,
+            ttlMs: result.undoTtlMs ?? UNDO_TOAST_TTL_MS,
           },
-          result.undoTtlMs || 10000,
+          result.undoTtlMs ?? UNDO_TOAST_TTL_MS,
         );
         return;
       }
@@ -350,9 +371,9 @@ export function FileTreePanel({
           type: 'undo',
           message: `Moved ${basename(result.from)} to Trash`,
           trashPath: result.to,
-          ttlMs: result.undoTtlMs || 10000,
+          ttlMs: result.undoTtlMs ?? UNDO_TOAST_TTL_MS,
         },
-        result.undoTtlMs || 10000,
+        result.undoTtlMs ?? UNDO_TOAST_TTL_MS,
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Move to Trash failed';
@@ -401,6 +422,13 @@ export function FileTreePanel({
     event.dataTransfer.dropEffect = 'move';
     setDropTargetPath(entry.path);
   }, [canDropToTarget, dragSource]);
+
+  const handleDragLeaveDirectory = useCallback((entry: TreeEntry, event: React.DragEvent) => {
+    if (dropTargetPath !== entry.path) return;
+    const relatedTarget = event.relatedTarget as Node | null;
+    if (relatedTarget && event.currentTarget.contains(relatedTarget)) return;
+    setDropTargetPath(null);
+  }, [dropTargetPath]);
 
   const handleDropDirectory = useCallback((entry: TreeEntry, event: React.DragEvent) => {
     event.preventDefault();
@@ -542,6 +570,7 @@ export function FileTreePanel({
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               onDragOverDirectory={handleDragOverDirectory}
+              onDragLeaveDirectory={handleDragLeaveDirectory}
               onDropDirectory={handleDropDirectory}
               renamingPath={renameTargetPath}
               renameValue={renameValue}
@@ -603,18 +632,20 @@ export function FileTreePanel({
 
       {/* Toast */}
       {toast && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-40 max-w-[92%] px-3 py-2 rounded-md border text-xs shadow-lg bg-card flex items-center gap-2">
-          <span className={toast.type === 'error' ? 'text-destructive' : 'text-foreground'}>{toast.message}</span>
+        <div className="fixed bottom-4 left-4 z-[70] w-fit min-w-[320px] max-w-[min(92vw,680px)] px-4 py-2.5 rounded-md border text-xs shadow-lg bg-card flex items-center gap-3">
+          <span className={`flex-1 ${toast.type === 'error' ? 'text-destructive' : 'text-foreground'}`}>
+            {toast.message}
+          </span>
           {toast.type === 'undo' && (
             <button
-              className="text-primary hover:underline"
+              className="text-primary hover:underline shrink-0"
               onClick={() => { void handleUndoToast(); }}
             >
               Undo
             </button>
           )}
           <button
-            className="ml-1 text-muted-foreground hover:text-foreground"
+            className="ml-1 text-muted-foreground hover:text-foreground shrink-0"
             onClick={dismissToast}
             aria-label="Dismiss"
           >

@@ -41,3 +41,6 @@ voice-phrases.json
 coverage/
 .test-tasks/
 src/test/*.js
+
+# Local review artifacts
+wave-reviews/

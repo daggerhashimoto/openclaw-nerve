@@ -1,6 +1,6 @@
 # Updating Nerve
 
-Nerve ships a built-in updater that pulls the latest release from GitHub, rebuilds, restarts the service, and verifies health — all in one command.
+Nerve ships a built-in updater that pulls the latest published release from GitHub, rebuilds, restarts the service, and verifies health — all in one command.
 
 ## Quick start
 
@@ -10,7 +10,7 @@ npm run update -- --yes
 
 This will:
 1. Check prerequisites (git, Node.js, npm)
-2. Resolve the latest version from remote tags
+2. Resolve the latest published GitHub release (fallback: latest semver tag)
 3. Snapshot the current state for rollback
 4. `git fetch --tags && git checkout <tag>`
 5. `npm install && npm run build && npm run build:server`
@@ -52,7 +52,7 @@ npm run update -- --yes --no-restart
 | 0 | Success |
 | 1 | Already up to date |
 | 10 | Preflight failure (missing git/node/npm) |
-| 20 | Version resolution failure (tag not found, no remote tags) |
+| 20 | Version resolution failure (release/tag not found) |
 | 40 | Build failure (npm install or build step) |
 | 50 | Service restart failure |
 | 60 | Health check failure (service unhealthy or version mismatch) |
@@ -121,14 +121,15 @@ If no service manager is found, the updater skips restart and prints manual star
 
 ## Troubleshooting
 
-### "No semver tags found on remote"
+### "Could not fetch release or semver tags"
 
-The updater reads tags via `git ls-remote --tags origin`. If no tags exist on the remote, it falls back to local tags. If both are empty, it fails with exit code 20.
+The updater resolves versions from GitHub Releases first. If release lookup fails (network/rate limits), it falls back to semver tags. If both sources fail, it exits with code 20.
 
-**Fix:** Ensure you cloned from the official repo and tags have been pushed:
+**Fix:** Verify remote/release access and tags:
 ```bash
-git remote -v              # Verify origin points to the right repo
-git fetch --tags origin    # Pull any missing tags
+git remote -v                               # Verify origin points to the right repo
+git fetch --tags origin                     # Pull any missing tags
+curl -sSf https://api.github.com/repos/<owner>/<repo>/releases/latest | jq .tag_name
 ```
 
 ### "Lock acquisition failure" (exit 80)

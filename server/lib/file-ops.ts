@@ -96,6 +96,16 @@ async function statOrThrow(absPath: string): Promise<Stats> {
   }
 }
 
+function hasControlChars(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 32 || code === 127) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function assertValidNewName(newName: string): void {
   const trimmed = newName.trim();
   if (!trimmed) {
@@ -107,7 +117,7 @@ function assertValidNewName(newName: string): void {
   if (trimmed.includes('/') || trimmed.includes('\\')) {
     throw new FileOpError(400, 'invalid_name', 'Name cannot include path separators');
   }
-  if (/[\x00-\x1f\x7f]/.test(trimmed)) {
+  if (hasControlChars(trimmed)) {
     throw new FileOpError(400, 'invalid_name', 'Name contains unsupported control characters');
   }
   if (Buffer.byteLength(trimmed, 'utf8') > 255) {

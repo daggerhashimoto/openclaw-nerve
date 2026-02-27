@@ -12,6 +12,18 @@ interface FileTreeNodeProps {
   onToggleDir: (path: string) => void;
   onOpenFile: (path: string) => void;
   onSelect: (path: string) => void;
+  onContextMenu: (entry: TreeEntry, event: React.MouseEvent) => void;
+  dragSourcePath: string | null;
+  dropTargetPath: string | null;
+  onDragStart: (entry: TreeEntry, event: React.DragEvent) => void;
+  onDragEnd: () => void;
+  onDragOverDirectory: (entry: TreeEntry, event: React.DragEvent) => void;
+  onDropDirectory: (entry: TreeEntry, event: React.DragEvent) => void;
+  renamingPath: string | null;
+  renameValue: string;
+  onRenameChange: (value: string) => void;
+  onRenameCommit: () => void;
+  onRenameCancel: () => void;
 }
 
 export function FileTreeNode({
@@ -23,13 +35,30 @@ export function FileTreeNode({
   onToggleDir,
   onOpenFile,
   onSelect,
+  onContextMenu,
+  dragSourcePath,
+  dropTargetPath,
+  onDragStart,
+  onDragEnd,
+  onDragOverDirectory,
+  onDropDirectory,
+  renamingPath,
+  renameValue,
+  onRenameChange,
+  onRenameCommit,
+  onRenameCancel,
 }: FileTreeNodeProps) {
   const isDir = entry.type === 'directory';
   const isExpanded = expandedPaths.has(entry.path);
   const isSelected = selectedPath === entry.path;
   const isLoading = loadingPaths.has(entry.path);
+  const isRenaming = renamingPath === entry.path;
+  const canDrag = entry.path !== '.trash' && !isRenaming;
+  const isDropTarget = isDir && dropTargetPath === entry.path;
+  const isDragSource = dragSourcePath === entry.path;
 
   const handleClick = () => {
+    if (isRenaming) return;
     onSelect(entry.path);
     if (isDir) {
       onToggleDir(entry.path);
@@ -39,12 +68,13 @@ export function FileTreeNode({
   const canOpen = !isDir && (!entry.binary || isImageFile(entry.name));
 
   const handleDoubleClick = () => {
-    if (canOpen) {
+    if (canOpen && !isRenaming) {
       onOpenFile(entry.path);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (isRenaming) return;
     if (e.key === 'Enter') {
       if (isDir) {
         onToggleDir(entry.path);
@@ -59,11 +89,19 @@ export function FileTreeNode({
       <div
         className={`flex items-center gap-1 py-[2px] pr-2 cursor-pointer select-none text-[12px] leading-5 hover:bg-muted/50 ${
           isSelected ? 'bg-muted/70 text-foreground' : 'text-muted-foreground'
-        } ${entry.binary && !canOpen ? 'opacity-50' : ''}`}
+        } ${entry.binary && !canOpen ? 'opacity-50' : ''} ${
+          isDropTarget ? 'bg-primary/15 ring-1 ring-primary/40' : ''
+        } ${isDragSource ? 'opacity-50' : ''}`}
         style={{ paddingLeft: depth * 16 + 8 }}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         onKeyDown={handleKeyDown}
+        onContextMenu={(e) => onContextMenu(entry, e)}
+        onDragStart={(e) => onDragStart(entry, e)}
+        onDragEnd={onDragEnd}
+        onDragOver={isDir ? (e) => onDragOverDirectory(entry, e) : undefined}
+        onDrop={isDir ? (e) => onDropDirectory(entry, e) : undefined}
+        draggable={canDrag}
         tabIndex={0}
         title={entry.path}
       >
@@ -88,7 +126,22 @@ export function FileTreeNode({
         )}
 
         {/* Name */}
-        <span className="truncate">{entry.name}</span>
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={(e) => onRenameChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onRenameCommit();
+              if (e.key === 'Escape') onRenameCancel();
+            }}
+            onBlur={onRenameCommit}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 min-w-0 bg-background border border-border/60 px-1 py-0 text-[12px] leading-5 text-foreground focus:outline-none focus:border-primary"
+          />
+        ) : (
+          <span className="truncate">{entry.name}</span>
+        )}
       </div>
 
       {/* Children */}
@@ -105,6 +158,18 @@ export function FileTreeNode({
               onToggleDir={onToggleDir}
               onOpenFile={onOpenFile}
               onSelect={onSelect}
+              onContextMenu={onContextMenu}
+              dragSourcePath={dragSourcePath}
+              dropTargetPath={dropTargetPath}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onDragOverDirectory={onDragOverDirectory}
+              onDropDirectory={onDropDirectory}
+              renamingPath={renamingPath}
+              renameValue={renameValue}
+              onRenameChange={onRenameChange}
+              onRenameCommit={onRenameCommit}
+              onRenameCancel={onRenameCancel}
             />
           ))}
         </div>

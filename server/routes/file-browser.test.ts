@@ -191,6 +191,262 @@ describe('file-browser routes', () => {
     });
   });
 
+  describe('POST /api/files/rename', () => {
+    it('renames a file', async () => {
+      await fs.writeFile(path.join(tmpDir, 'old.md'), 'hi');
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'old.md', newName: 'new.md' }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; from: string; to: string };
+      expect(json.ok).toBe(true);
+      expect(json.from).toBe('old.md');
+      expect(json.to).toBe('new.md');
+
+      await expect(fs.stat(path.join(tmpDir, 'new.md'))).resolves.toBeTruthy();
+      await expect(fs.stat(path.join(tmpDir, 'old.md'))).rejects.toBeTruthy();
+    });
+
+    it('returns 409 when target name exists', async () => {
+      await fs.writeFile(path.join(tmpDir, 'a.md'), 'a');
+      await fs.writeFile(path.join(tmpDir, 'b.md'), 'b');
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'a.md', newName: 'b.md' }),
+      });
+
+      expect(res.status).toBe(409);
+    });
+  });
+
+  describe('POST /api/files/move', () => {
+    it('moves a file into a directory', async () => {
+      await fs.writeFile(path.join(tmpDir, 'move-me.md'), 'hello');
+      await fs.mkdir(path.join(tmpDir, 'docs'));
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourcePath: 'move-me.md', targetDirPath: 'docs' }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; from: string; to: string };
+      expect(json.ok).toBe(true);
+      expect(json.from).toBe('move-me.md');
+      expect(json.to).toBe('docs/move-me.md');
+    });
+
+    it('blocks moving a directory into itself', async () => {
+      await fs.mkdir(path.join(tmpDir, 'parent', 'child'), { recursive: true });
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourcePath: 'parent', targetDirPath: 'parent/child' }),
+      });
+
+      expect(res.status).toBe(422);
+    });
+  });
+
+  describe('POST /api/files/trash + restore', () => {
+    it('moves file to .trash and restores it', async () => {
+      await fs.mkdir(path.join(tmpDir, 'docs'), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, 'docs', 'spec.md'), 'spec');
+      const app = await buildApp();
+
+      const trashRes = await app.request('/api/files/trash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'docs/spec.md' }),
+      });
+
+      expect(trashRes.status).toBe(200);
+      const trashed = (await trashRes.json()) as { ok: boolean; from: string; to: string };
+      expect(trashed.ok).toBe(true);
+      expect(trashed.from).toBe('docs/spec.md');
+      expect(trashed.to.startsWith('.trash/')).toBe(true);
+
+      const restoreRes = await app.request('/api/files/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: trashed.to }),
+      });
+
+      expect(restoreRes.status).toBe(200);
+      const restored = (await restoreRes.json()) as { ok: boolean; to: string };
+      expect(restored.ok).toBe(true);
+      expect(restored.to).toBe('docs/spec.md');
+
+      const content = await fs.readFile(path.join(tmpDir, 'docs', 'spec.md'), 'utf-8');
+      expect(content).toBe('spec');
+    });
+
+    it('hides .trash/.index.json from the tree', async () => {
+      await fs.writeFile(path.join(tmpDir, 'keep.md'), 'ok');
+      const app = await buildApp();
+
+      await app.request('/api/files/trash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'keep.md' }),
+      });
+
+      const rootRes = await app.request('/api/files/tree');
+      const rootJson = (await rootRes.json()) as { entries: Array<{ name: string; path: string }> };
+      expect(rootJson.entries.some(e => e.name === '.trash')).toBe(true);
+
+      const trashTreeRes = await app.request('/api/files/tree?path=.trash');
+      const trashTree = (await trashTreeRes.json()) as { entries: Array<{ name: string }> };
+      expect(trashTree.entries.some(e => e.name === '.index.json')).toBe(false);
+    });
+  });
+
+  describe('POST /api/files/rename', () => {
+    it('renames a file in place', async () => {
+      await fs.writeFile(path.join(tmpDir, 'old.md'), 'hello');
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'old.md', newName: 'new.md' }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; from: string; to: string };
+      expect(json.ok).toBe(true);
+      expect(json.from).toBe('old.md');
+      expect(json.to).toBe('new.md');
+
+      await expect(fs.readFile(path.join(tmpDir, 'new.md'), 'utf-8')).resolves.toBe('hello');
+    });
+
+    it('returns 409 on name conflict', async () => {
+      await fs.writeFile(path.join(tmpDir, 'a.md'), 'a');
+      await fs.writeFile(path.join(tmpDir, 'b.md'), 'b');
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'a.md', newName: 'b.md' }),
+      });
+
+      expect(res.status).toBe(409);
+    });
+  });
+
+  describe('POST /api/files/move', () => {
+    it('moves a file into a directory', async () => {
+      await fs.mkdir(path.join(tmpDir, 'docs'));
+      await fs.writeFile(path.join(tmpDir, 'note.md'), 'hello');
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourcePath: 'note.md', targetDirPath: 'docs' }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; from: string; to: string };
+      expect(json.ok).toBe(true);
+      expect(json.to).toBe('docs/note.md');
+
+      await expect(fs.readFile(path.join(tmpDir, 'docs', 'note.md'), 'utf-8')).resolves.toBe('hello');
+    });
+
+    it('blocks moving a folder into its own descendant', async () => {
+      await fs.mkdir(path.join(tmpDir, 'a'));
+      await fs.mkdir(path.join(tmpDir, 'a', 'b'), { recursive: true });
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourcePath: 'a', targetDirPath: 'a/b' }),
+      });
+
+      expect(res.status).toBe(422);
+    });
+  });
+
+  describe('POST /api/files/trash + /api/files/restore', () => {
+    it('moves file to .trash and restores it back', async () => {
+      await fs.mkdir(path.join(tmpDir, 'docs'));
+      await fs.writeFile(path.join(tmpDir, 'docs', 'spec.md'), 'spec');
+      const app = await buildApp();
+
+      const trashRes = await app.request('/api/files/trash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'docs/spec.md' }),
+      });
+
+      expect(trashRes.status).toBe(200);
+      const trashJson = (await trashRes.json()) as { ok: boolean; from: string; to: string };
+      expect(trashJson.ok).toBe(true);
+      expect(trashJson.from).toBe('docs/spec.md');
+      expect(trashJson.to.startsWith('.trash/')).toBe(true);
+
+      // .trash should be visible, but internal index should remain hidden
+      const treeRes = await app.request('/api/files/tree?path=.trash&depth=1');
+      expect(treeRes.status).toBe(200);
+      const treeJson = (await treeRes.json()) as { ok: boolean; entries: Array<{ name: string }> };
+      const names = treeJson.entries.map((e) => e.name);
+      expect(names).not.toContain('.index.json');
+
+      const restoreRes = await app.request('/api/files/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: trashJson.to }),
+      });
+
+      expect(restoreRes.status).toBe(200);
+      const restoreJson = (await restoreRes.json()) as { ok: boolean; to: string };
+      expect(restoreJson.ok).toBe(true);
+      expect(restoreJson.to).toBe('docs/spec.md');
+
+      await expect(fs.readFile(path.join(tmpDir, 'docs', 'spec.md'), 'utf-8')).resolves.toBe('spec');
+    });
+
+    it('restore returns 409 when original path is occupied', async () => {
+      await fs.mkdir(path.join(tmpDir, 'docs'));
+      await fs.writeFile(path.join(tmpDir, 'docs', 'spec.md'), 'original');
+      const app = await buildApp();
+
+      const trashRes = await app.request('/api/files/trash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'docs/spec.md' }),
+      });
+      const trashJson = (await trashRes.json()) as { to: string };
+
+      // Re-create original path to force conflict
+      await fs.writeFile(path.join(tmpDir, 'docs', 'spec.md'), 'replacement');
+
+      const restoreRes = await app.request('/api/files/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: trashJson.to }),
+      });
+
+      expect(restoreRes.status).toBe(409);
+    });
+  });
+
   describe('GET /api/files/raw', () => {
     it('returns 400 when path is missing', async () => {
       const app = await buildApp();

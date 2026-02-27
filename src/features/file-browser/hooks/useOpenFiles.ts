@@ -35,6 +35,16 @@ function basename(filePath: string): string {
   return filePath.split('/').pop() || filePath;
 }
 
+function matchesPathPrefix(candidatePath: string, prefix: string): boolean {
+  return candidatePath === prefix || candidatePath.startsWith(`${prefix}/`);
+}
+
+function remapPathPrefix(candidatePath: string, fromPrefix: string, toPrefix: string): string {
+  if (candidatePath === fromPrefix) return toPrefix;
+  if (!candidatePath.startsWith(`${fromPrefix}/`)) return candidatePath;
+  return `${toPrefix}${candidatePath.slice(fromPrefix.length)}`;
+}
+
 export function useOpenFiles() {
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
   const [activeTab, setActiveTabState] = useState<string>(loadPersistedTab);
@@ -333,6 +343,52 @@ export function useOpenFiles() {
     });
   }, [reloadFile]);
 
+  /**
+   * Remap open editor tabs when a file/folder path changes.
+   * Supports prefix remaps for directory moves.
+   */
+  const remapOpenPaths = useCallback((fromPath: string, toPath: string) => {
+    if (!fromPath || !toPath || fromPath === toPath) return;
+
+    setOpenFiles((prev) => {
+      const next = prev.map((f) => {
+        if (!matchesPathPrefix(f.path, fromPath)) return f;
+        const nextPath = remapPathPrefix(f.path, fromPath, toPath);
+        return {
+          ...f,
+          path: nextPath,
+          name: basename(nextPath),
+        };
+      });
+      persistFiles(next);
+      return next;
+    });
+
+    setActiveTabState((currentTab) => {
+      if (!matchesPathPrefix(currentTab, fromPath)) return currentTab;
+      const nextTab = remapPathPrefix(currentTab, fromPath, toPath);
+      persistTab(nextTab);
+      return nextTab;
+    });
+  }, []);
+
+  /** Close any open tabs under a path prefix (file or folder). */
+  const closeOpenPathsByPrefix = useCallback((pathPrefix: string) => {
+    if (!pathPrefix) return;
+
+    setOpenFiles((prev) => {
+      const next = prev.filter((f) => !matchesPathPrefix(f.path, pathPrefix));
+      persistFiles(next);
+      return next;
+    });
+
+    setActiveTabState((currentTab) => {
+      if (!matchesPathPrefix(currentTab, pathPrefix)) return currentTab;
+      persistTab('chat');
+      return 'chat';
+    });
+  }, []);
+
   return {
     openFiles,
     activeTab,
@@ -344,5 +400,7 @@ export function useOpenFiles() {
     reloadFile,
     initializeFiles,
     handleFileChanged,
+    remapOpenPaths,
+    closeOpenPathsByPrefix,
   };
 }

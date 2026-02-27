@@ -6,9 +6,10 @@
  */
 
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { PanelLeftClose, PanelLeftOpen, RefreshCw } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, RefreshCw, Pencil, Trash2, RotateCcw, X } from 'lucide-react';
 import { FileTreeNode } from './FileTreeNode';
 import { useFileTree } from './hooks/useFileTree';
+import type { TreeEntry } from './types';
 
 const MIN_WIDTH = 160;
 const MAX_WIDTH = 400;
@@ -31,13 +32,46 @@ function loadCollapsed(): boolean {
   } catch { return false; }
 }
 
+function getParentDir(filePath: string): string {
+  const idx = filePath.lastIndexOf('/');
+  return idx === -1 ? '' : filePath.slice(0, idx);
+}
+
+function basename(filePath: string): string {
+  const idx = filePath.lastIndexOf('/');
+  return idx === -1 ? filePath : filePath.slice(idx + 1);
+}
+
+function isTrashItemPath(filePath: string): boolean {
+  return filePath.startsWith('.trash/') && filePath !== '.trash';
+}
+
 interface FileTreePanelProps {
   onOpenFile: (path: string) => void;
+  onRemapOpenPaths?: (fromPath: string, toPath: string) => void;
+  onCloseOpenPaths?: (pathPrefix: string) => void;
   /** Called externally when a file changes (SSE) — refreshes affected directory */
   lastChangedPath?: string | null;
 }
 
-export function FileTreePanel({ onOpenFile, lastChangedPath }: FileTreePanelProps) {
+interface FileOpResult {
+  ok: boolean;
+  from: string;
+  to: string;
+  undoTtlMs?: number;
+  error?: string;
+}
+
+type FileTreeToast =
+  | { type: 'success' | 'error'; message: string }
+  | { type: 'undo'; message: string; trashPath: string; ttlMs: number };
+
+export function FileTreePanel({
+  onOpenFile,
+  onRemapOpenPaths,
+  onCloseOpenPaths,
+  lastChangedPath,
+}: FileTreePanelProps) {
   const {
     entries, loading, error, expandedPaths, selectedPath,
     loadingPaths, toggleDirectory, selectFile, refresh, handleFileChange,
@@ -63,6 +97,68 @@ export function FileTreePanel({ onOpenFile, lastChangedPath }: FileTreePanelProp
     const c = loadCollapsed();
     return c ? COLLAPSED_WIDTH : loadWidth();
   });
+
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: TreeEntry } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  const [renameTargetPath, setRenameTargetPath] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInFlightRef = useRef(false);
+
+  const [dragSource, setDragSource] = useState<TreeEntry | null>(null);
+  const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
+
+  const [toast, setToast] = useState<FileTreeToast | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const clearToastTimer = useCallback(() => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+  }, []);
+
+  const dismissToast = useCallback(() => {
+    clearToastTimer();
+    setToast(null);
+  }, [clearToastTimer]);
+
+  const showToast = useCallback((nextToast: FileTreeToast, timeoutMs?: number) => {
+    clearToastTimer();
+    setToast(nextToast);
+    if (timeoutMs && timeoutMs > 0) {
+      toastTimerRef.current = window.setTimeout(() => {
+        setToast(null);
+        toastTimerRef.current = null;
+      }, timeoutMs);
+    }
+  }, [clearToastTimer]);
+
+  useEffect(() => () => clearToastTimer(), [clearToastTimer]);
+
+  // Close context menu on outside click / escape
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (contextMenuRef.current?.contains(target)) return;
+      setContextMenu(null);
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setContextMenu(null);
+      }
+    };
+
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [contextMenu]);
 
   const toggleCollapsed = useCallback(() => {
     collapsedRef.current = !collapsedRef.current;
@@ -110,6 +206,235 @@ export function FileTreePanel({ onOpenFile, lastChangedPath }: FileTreePanelProp
     setWidth(DEFAULT_WIDTH);
   }, []);
 
+  const postFileOp = useCallback(async <T extends { ok?: boolean; error?: string }>(
+    endpoint: string,
+    body: unknown,
+  ): Promise<T> => {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    let data: T;
+    try {
+      data = await res.json() as T;
+    } catch {
+      throw new Error('Invalid server response');
+    }
+
+    if (!res.ok || data.ok === false) {
+      throw new Error(data.error || 'Operation failed');
+    }
+
+    return data;
+  }, []);
+
+  const runMove = useCallback(async (sourcePath: string, targetDirPath: string) => {
+    try {
+      // Dragging onto .trash behaves like explicit trash action.
+      if (targetDirPath === '.trash' && !sourcePath.startsWith('.trash/')) {
+        const result = await postFileOp<FileOpResult>('/api/files/trash', { path: sourcePath });
+        onCloseOpenPaths?.(result.from);
+        refresh();
+        showToast(
+          {
+            type: 'undo',
+            message: `Moved ${basename(result.from)} to Trash`,
+            trashPath: result.to,
+            ttlMs: result.undoTtlMs || 10000,
+          },
+          result.undoTtlMs || 10000,
+        );
+        return;
+      }
+
+      const result = await postFileOp<FileOpResult>('/api/files/move', {
+        sourcePath,
+        targetDirPath,
+      });
+      refresh();
+      onRemapOpenPaths?.(result.from, result.to);
+      selectFile(result.to);
+      showToast({ type: 'success', message: `Moved ${basename(result.from)}` }, 3000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Move failed';
+      showToast({ type: 'error', message }, 4500);
+    }
+  }, [onCloseOpenPaths, onRemapOpenPaths, postFileOp, refresh, selectFile, showToast]);
+
+  const canDropToTarget = useCallback((source: TreeEntry, targetDirPath: string): boolean => {
+    if (source.path === '.trash') return false;
+
+    // No-op move to same parent
+    if (getParentDir(source.path) === targetDirPath) return false;
+
+    // Drag to trash allowed (soft-delete flow), unless already in trash.
+    if (targetDirPath === '.trash') {
+      return !source.path.startsWith('.trash/');
+    }
+
+    if (source.type === 'directory') {
+      if (targetDirPath === source.path) return false;
+      if (targetDirPath.startsWith(`${source.path}/`)) return false;
+    }
+
+    return true;
+  }, []);
+
+  const handleContextMenu = useCallback((entry: TreeEntry, event: React.MouseEvent) => {
+    event.preventDefault();
+    selectFile(entry.path);
+    setContextMenu({ x: event.clientX, y: event.clientY, entry });
+  }, [selectFile]);
+
+  const startRename = useCallback((entry: TreeEntry) => {
+    if (entry.path === '.trash') {
+      showToast({ type: 'error', message: 'Cannot rename .trash root' }, 3500);
+      return;
+    }
+    setRenameTargetPath(entry.path);
+    setRenameValue(entry.name);
+    setContextMenu(null);
+  }, [showToast]);
+
+  const cancelRename = useCallback(() => {
+    setRenameTargetPath(null);
+    setRenameValue('');
+  }, []);
+
+  const commitRename = useCallback(async () => {
+    if (!renameTargetPath || renameInFlightRef.current) return;
+
+    const nextName = renameValue.trim();
+    if (!nextName) {
+      showToast({ type: 'error', message: 'Name cannot be empty' }, 3000);
+      cancelRename();
+      return;
+    }
+
+    renameInFlightRef.current = true;
+    try {
+      const result = await postFileOp<FileOpResult>('/api/files/rename', {
+        path: renameTargetPath,
+        newName: nextName,
+      });
+      cancelRename();
+      refresh();
+      onRemapOpenPaths?.(result.from, result.to);
+      selectFile(result.to);
+      showToast({ type: 'success', message: `Renamed to ${basename(result.to)}` }, 3000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Rename failed';
+      showToast({ type: 'error', message }, 4500);
+      cancelRename();
+    } finally {
+      renameInFlightRef.current = false;
+    }
+  }, [cancelRename, onRemapOpenPaths, postFileOp, refresh, renameTargetPath, renameValue, selectFile, showToast]);
+
+  const moveToTrash = useCallback(async (entry: TreeEntry) => {
+    if (entry.path === '.trash' || entry.path.startsWith('.trash/')) {
+      showToast({ type: 'error', message: 'Item is already in Trash' }, 3000);
+      setContextMenu(null);
+      return;
+    }
+
+    try {
+      const result = await postFileOp<FileOpResult>('/api/files/trash', { path: entry.path });
+      onCloseOpenPaths?.(result.from);
+      refresh();
+      setContextMenu(null);
+      showToast(
+        {
+          type: 'undo',
+          message: `Moved ${basename(result.from)} to Trash`,
+          trashPath: result.to,
+          ttlMs: result.undoTtlMs || 10000,
+        },
+        result.undoTtlMs || 10000,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Move to Trash failed';
+      showToast({ type: 'error', message }, 4500);
+      setContextMenu(null);
+    }
+  }, [onCloseOpenPaths, postFileOp, refresh, showToast]);
+
+  const restoreEntry = useCallback(async (entryPath: string) => {
+    try {
+      const result = await postFileOp<FileOpResult>('/api/files/restore', { path: entryPath });
+      refresh();
+      onRemapOpenPaths?.(result.from, result.to);
+      selectFile(result.to);
+      showToast({ type: 'success', message: `Restored ${basename(result.to)}` }, 3000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Restore failed';
+      showToast({ type: 'error', message }, 4500);
+    }
+  }, [onRemapOpenPaths, postFileOp, refresh, selectFile, showToast]);
+
+  const handleUndoToast = useCallback(async () => {
+    if (!toast || toast.type !== 'undo') return;
+    const trashPath = toast.trashPath;
+    dismissToast();
+    await restoreEntry(trashPath);
+  }, [dismissToast, restoreEntry, toast]);
+
+  const handleDragStart = useCallback((entry: TreeEntry, event: React.DragEvent) => {
+    if (entry.path === '.trash') return;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', entry.path);
+    setDragSource(entry);
+    selectFile(entry.path);
+  }, [selectFile]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragSource(null);
+    setDropTargetPath(null);
+  }, []);
+
+  const handleDragOverDirectory = useCallback((entry: TreeEntry, event: React.DragEvent) => {
+    if (!dragSource) return;
+    if (!canDropToTarget(dragSource, entry.path)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTargetPath(entry.path);
+  }, [canDropToTarget, dragSource]);
+
+  const handleDropDirectory = useCallback((entry: TreeEntry, event: React.DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!dragSource) return;
+
+    const source = dragSource;
+    setDragSource(null);
+    setDropTargetPath(null);
+
+    if (!canDropToTarget(source, entry.path)) return;
+    void runMove(source.path, entry.path);
+  }, [canDropToTarget, dragSource, runMove]);
+
+  const handleRootDragOver = useCallback((event: React.DragEvent) => {
+    if (!dragSource) return;
+    if (!canDropToTarget(dragSource, '')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTargetPath('.');
+  }, [canDropToTarget, dragSource]);
+
+  const handleRootDrop = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    if (!dragSource) return;
+
+    const source = dragSource;
+    setDragSource(null);
+    setDropTargetPath(null);
+
+    if (!canDropToTarget(source, '')) return;
+    void runMove(source.path, '');
+  }, [canDropToTarget, dragSource, runMove]);
+
   if (collapsed) {
     return (
       <div className="shrink-0 border-r border-border bg-background flex flex-col items-center pt-2 w-9">
@@ -125,14 +450,36 @@ export function FileTreePanel({ onOpenFile, lastChangedPath }: FileTreePanelProp
     );
   }
 
+  const menuEntry = contextMenu?.entry;
+  const menuPath = menuEntry?.path || '';
+  const menuInTrash = isTrashItemPath(menuPath);
+  const showRestore = menuInTrash;
+  const showRename = Boolean(menuEntry && menuPath !== '.trash');
+  const showTrashAction = Boolean(menuEntry && !menuPath.startsWith('.trash') && menuPath !== '.trash');
+
   return (
     <div
       ref={panelRef}
       className="shrink-0 border-r border-border bg-background flex flex-col min-h-0 relative"
       style={{ width }}
+      onContextMenu={(e) => {
+        // Right-click on empty panel area closes any open context menu.
+        if (e.target === e.currentTarget) {
+          e.preventDefault();
+          setContextMenu(null);
+        }
+      }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+      <div
+        className={`flex items-center justify-between px-3 py-2 border-b border-border ${dropTargetPath === '.' ? 'bg-primary/15 ring-1 ring-primary/40' : ''}`}
+        onDragOver={handleRootDragOver}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+          if (dropTargetPath === '.') setDropTargetPath(null);
+        }}
+        onDrop={handleRootDrop}
+      >
         <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
           Workspace
         </span>
@@ -189,10 +536,92 @@ export function FileTreePanel({ onOpenFile, lastChangedPath }: FileTreePanelProp
               onToggleDir={toggleDirectory}
               onOpenFile={onOpenFile}
               onSelect={selectFile}
+              onContextMenu={handleContextMenu}
+              dragSourcePath={dragSource?.path || null}
+              dropTargetPath={dropTargetPath}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragOverDirectory={handleDragOverDirectory}
+              onDropDirectory={handleDropDirectory}
+              renamingPath={renameTargetPath}
+              renameValue={renameValue}
+              onRenameChange={setRenameValue}
+              onRenameCommit={() => { void commitRename(); }}
+              onRenameCancel={cancelRename}
             />
           ))
         )}
       </div>
+
+      {/* Context menu */}
+      {contextMenu && menuEntry && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 min-w-[160px] bg-card border border-border shadow-lg rounded-md py-1"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          {showRestore && (
+            <button
+              className="w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted/60 flex items-center gap-2"
+              onClick={() => {
+                setContextMenu(null);
+                void restoreEntry(menuEntry.path);
+              }}
+            >
+              <RotateCcw size={12} />
+              Restore
+            </button>
+          )}
+
+          {showRename && (
+            <button
+              className="w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted/60 flex items-center gap-2"
+              onClick={() => startRename(menuEntry)}
+            >
+              <Pencil size={12} />
+              Rename
+            </button>
+          )}
+
+          {showTrashAction && (
+            <button
+              className="w-full px-3 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10 flex items-center gap-2"
+              onClick={() => { void moveToTrash(menuEntry); }}
+            >
+              <Trash2 size={12} />
+              Move to Trash
+            </button>
+          )}
+
+          {!showRestore && !showRename && !showTrashAction && (
+            <div className="px-3 py-1.5 text-xs text-muted-foreground">
+              No actions
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-40 max-w-[92%] px-3 py-2 rounded-md border text-xs shadow-lg bg-card flex items-center gap-2">
+          <span className={toast.type === 'error' ? 'text-destructive' : 'text-foreground'}>{toast.message}</span>
+          {toast.type === 'undo' && (
+            <button
+              className="text-primary hover:underline"
+              onClick={() => { void handleUndoToast(); }}
+            >
+              Undo
+            </button>
+          )}
+          <button
+            className="ml-1 text-muted-foreground hover:text-foreground"
+            onClick={dismissToast}
+            aria-label="Dismiss"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
 
       {/* Resize handle */}
       <div
@@ -206,4 +635,3 @@ export function FileTreePanel({ onOpenFile, lastChangedPath }: FileTreePanelProp
     </div>
   );
 }
-

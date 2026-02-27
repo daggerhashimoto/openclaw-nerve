@@ -89,7 +89,7 @@ export default function App({ onLogout }: AppProps) {
   const {
     openFiles, activeTab, setActiveTab,
     openFile, closeFile, updateContent, saveFile, reloadFile, initializeFiles,
-    handleFileChanged,
+    handleFileChanged, remapOpenPaths, closeOpenPathsByPrefix,
   } = useOpenFiles();
 
   // Save with conflict toast
@@ -454,7 +454,12 @@ export default function App({ onLogout }: AppProps) {
       <div className="flex-1 flex overflow-hidden min-h-0">
         {/* File tree — far left, collapsible */}
         <PanelErrorBoundary name="File Explorer">
-          <FileTreePanel onOpenFile={openFile} lastChangedPath={lastChangedPath} />
+          <FileTreePanel
+            onOpenFile={openFile}
+            lastChangedPath={lastChangedPath}
+            onRemapOpenPaths={remapOpenPaths}
+            onCloseOpenPaths={closeOpenPathsByPrefix}
+          />
         </PanelErrorBoundary>
 
         {/* Main area: desktop split, mobile chat-first */}

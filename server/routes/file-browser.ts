@@ -11,7 +11,7 @@
  * @module
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -21,6 +21,13 @@ import {
   isBinary,
   MAX_FILE_SIZE,
 } from '../lib/file-utils.js';
+import {
+  FileOpError,
+  moveEntry,
+  renameEntry,
+  restoreEntry,
+  trashEntry,
+} from '../lib/file-ops.js';
 
 const app = new Hono();
 
@@ -61,7 +68,14 @@ async function listDirectory(
   for (const item of items) {
     // Skip excluded names and hidden files (except specific ones)
     if (isExcluded(item.name)) continue;
-    if (item.name.startsWith('.') && item.name !== '.nerveignore') continue;
+
+    const inTrash = basePath === '.trash' || basePath.startsWith('.trash/');
+    if (inTrash) {
+      // Internal metadata file for restore bookkeeping.
+      if (item.name === '.index.json') continue;
+    } else if (item.name.startsWith('.') && item.name !== '.nerveignore' && item.name !== '.trash') {
+      continue;
+    }
 
     const relativePath = basePath ? path.join(basePath, item.name) : item.name;
     const fullPath = path.join(dirPath, item.name);
@@ -93,6 +107,17 @@ async function listDirectory(
   }
 
   return entries;
+}
+
+function handleFileOpError(c: Context, err: unknown) {
+  if (err instanceof FileOpError) {
+    return c.json(
+      { ok: false, error: err.message, code: err.code },
+      err.status as 400 | 403 | 404 | 409 | 422 | 500,
+    );
+  }
+  const message = err instanceof Error ? err.message : 'Operation failed';
+  return c.json({ ok: false, error: message }, 500);
 }
 
 // ── GET /api/files/tree ──────────────────────────────────────────────
@@ -237,6 +262,103 @@ app.put('/api/files/write', async (c) => {
     });
   } catch {
     return c.json({ ok: false, error: 'Failed to write file' }, 500);
+  }
+});
+
+// ── POST /api/files/rename ────────────────────────────────────────────
+
+app.post('/api/files/rename', async (c) => {
+  let body: { path?: string; newName?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'Invalid JSON body' }, 400);
+  }
+
+  if (!body.path || typeof body.path !== 'string') {
+    return c.json({ ok: false, error: 'Missing path' }, 400);
+  }
+  if (!body.newName || typeof body.newName !== 'string') {
+    return c.json({ ok: false, error: 'Missing newName' }, 400);
+  }
+
+  try {
+    const result = await renameEntry({ path: body.path, newName: body.newName });
+    return c.json({ ok: true, ...result });
+  } catch (err) {
+    return handleFileOpError(c, err);
+  }
+});
+
+// ── POST /api/files/move ──────────────────────────────────────────────
+
+app.post('/api/files/move', async (c) => {
+  let body: { sourcePath?: string; targetDirPath?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'Invalid JSON body' }, 400);
+  }
+
+  if (!body.sourcePath || typeof body.sourcePath !== 'string') {
+    return c.json({ ok: false, error: 'Missing sourcePath' }, 400);
+  }
+  if (typeof body.targetDirPath !== 'string') {
+    return c.json({ ok: false, error: 'Missing targetDirPath' }, 400);
+  }
+
+  try {
+    const result = await moveEntry({
+      sourcePath: body.sourcePath,
+      targetDirPath: body.targetDirPath,
+    });
+    return c.json({ ok: true, ...result });
+  } catch (err) {
+    return handleFileOpError(c, err);
+  }
+});
+
+// ── POST /api/files/trash ─────────────────────────────────────────────
+
+app.post('/api/files/trash', async (c) => {
+  let body: { path?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'Invalid JSON body' }, 400);
+  }
+
+  if (!body.path || typeof body.path !== 'string') {
+    return c.json({ ok: false, error: 'Missing path' }, 400);
+  }
+
+  try {
+    const result = await trashEntry({ path: body.path });
+    return c.json({ ok: true, ...result });
+  } catch (err) {
+    return handleFileOpError(c, err);
+  }
+});
+
+// ── POST /api/files/restore ───────────────────────────────────────────
+
+app.post('/api/files/restore', async (c) => {
+  let body: { path?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'Invalid JSON body' }, 400);
+  }
+
+  if (!body.path || typeof body.path !== 'string') {
+    return c.json({ ok: false, error: 'Missing path' }, 400);
+  }
+
+  try {
+    const result = await restoreEntry({ path: body.path });
+    return c.json({ ok: true, ...result });
+  } catch (err) {
+    return handleFileOpError(c, err);
   }
 });
 

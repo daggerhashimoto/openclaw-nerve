@@ -186,7 +186,7 @@ export function createCommands(actions: CommandActions): Command[] {
     ...(actions.onSetViewMode ? [
       {
         id: 'open-kanban',
-        label: 'Open Kanban View',
+        label: 'Open Tasks View',
         action: () => actions.onSetViewMode!('kanban'),
         category: 'kanban' as const,
         keywords: ['kanban', 'board', 'tasks', 'view'],
@@ -200,7 +200,7 @@ export function createCommands(actions: CommandActions): Command[] {
       },
       {
         id: 'create-kanban-task',
-        label: 'Create Kanban Task',
+        label: 'Create Task',
         action: () => actions.onSetViewMode!('kanban'),
         category: 'kanban' as const,
         keywords: ['kanban', 'task', 'create', 'new', 'add'],

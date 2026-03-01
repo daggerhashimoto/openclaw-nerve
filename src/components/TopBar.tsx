@@ -204,8 +204,8 @@ export function TopBar({
               </button>
               <button
                 onClick={() => onViewModeChange('kanban')}
-                title="Kanban View"
-                aria-label="Switch to kanban view"
+                title="Tasks View"
+                aria-label="Switch to tasks view"
                 aria-pressed={viewMode === 'kanban'}
                 className={`flex items-center gap-1 px-2 h-6 text-[10px] transition-colors cursor-pointer ${
                   viewMode === 'kanban'
@@ -214,7 +214,7 @@ export function TopBar({
                 }`}
               >
                 <LayoutGrid size={12} aria-hidden="true" />
-                <span className="hidden sm:inline">Kanban</span>
+                <span className="hidden sm:inline">Tasks</span>
               </button>
             </div>
           )}

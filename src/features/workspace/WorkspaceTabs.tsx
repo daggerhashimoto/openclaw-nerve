@@ -17,7 +17,7 @@ interface Tab {
 const TABS: Tab[] = [
   { id: 'memory', label: 'Memory', icon: Brain },
   { id: 'crons', label: 'Crons', icon: Clock },
-  { id: 'kanban', label: 'Kanban', icon: Columns3 },
+  { id: 'kanban', label: 'Tasks', icon: Columns3 },
   { id: 'config', label: 'Config', icon: Settings },
 ];
 

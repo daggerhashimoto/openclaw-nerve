@@ -115,7 +115,7 @@ export const KanbanHeader = memo(function KanbanHeader({
       {/* Row 1: title + stats + actions */}
       <div className="flex items-center gap-3 flex-wrap">
         {/* Left: title + stats */}
-        <h1 className="text-sm font-bold text-foreground tracking-wide uppercase">Kanban</h1>
+        <h1 className="text-sm font-bold text-foreground tracking-wide uppercase">Tasks</h1>
         <div className="hidden sm:flex items-center gap-1.5">
           <StatChip label="To Do" count={statusCounts.todo} accent="text-blue-400" />
           <StatChip label="In Progress" count={statusCounts['in-progress']} accent="text-cyan-400" />

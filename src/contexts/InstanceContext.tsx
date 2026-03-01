@@ -26,8 +26,14 @@ const InstanceContext = createContext<InstanceContextValue | null>(null);
 export function InstanceProvider({ children }: { children: ReactNode }) {
   const [instances, setInstances] = useState<DiscoveredInstance[]>([]);
   const [instancesLoading, setInstancesLoading] = useState(true);
-  const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
+  const [activeInstanceId, setActiveInstanceIdState] = useState<string | null>(null);
   const activeInstanceIdRef = useRef<string | null>(null);
+
+  const setActiveInstanceId = useCallback((id: string | null) => {
+    // Keep ref in sync immediately so global fetch routing doesn't lag one switch behind.
+    activeInstanceIdRef.current = id;
+    setActiveInstanceIdState(id);
+  }, []);
 
   useEffect(() => {
     activeInstanceIdRef.current = activeInstanceId;

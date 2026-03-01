@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { useInstancesOptional } from '@/contexts/InstanceContext';
 
 export interface ServerEvent {
   event: string;
@@ -59,11 +60,13 @@ export function useServerEvents(
   onEvent: EventHandler,
   options: UseServerEventsOptions = {}
 ): UseServerEventsReturn {
+  const instances = useInstancesOptional();
   const {
     enabled = true,
     reconnectBaseDelay = 1000,
     reconnectMaxDelay = 30000,
   } = options;
+  const eventsPath = instances?.routeApiPath('/api/events') ?? '/api/events';
 
   const [connected, setConnected] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
@@ -83,7 +86,7 @@ export function useServerEvents(
     // Don't connect if disabled or already connected
     if (!enabled || eventSourceRef.current) return;
 
-    const es = new EventSource('/api/events');
+    const es = new EventSource(eventsPath);
     eventSourceRef.current = es;
 
     es.onopen = () => {
@@ -140,7 +143,7 @@ export function useServerEvents(
         return attempt;
       });
     };
-  }, [enabled, reconnectBaseDelay, reconnectMaxDelay]);
+  }, [enabled, reconnectBaseDelay, reconnectMaxDelay, eventsPath]);
 
   // Keep connectRef in sync so stale setTimeout closures call the latest version
   useEffect(() => {

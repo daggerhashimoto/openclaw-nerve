@@ -309,6 +309,11 @@ Master-side proxy scaffold for forwarding API calls to a selected local Docker i
 - Path traversal (`..`), protocol-relative (`//`), absolute URL/protocol smuggling patterns, malformed encoding, and backslashes are rejected.
 - Proxy target host is fixed to loopback (`127.0.0.1`) to avoid SSRF-style host pivoting.
 
+**Frontend wiring note (Milestone 4):**
+- The UI keeps `Master` as the default context and only rewrites a conservative allowlist of known OpenClaw/Nerve API paths to `/api/instances/:id/proxy/...` when a non-master instance is selected.
+- `/api/instances*` and auth routes remain master-only from the browser.
+- Unknown/unlisted API paths stay on master by default.
+
 **Error responses:**
 
 | Status | Body | Description |

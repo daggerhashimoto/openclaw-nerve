@@ -10,6 +10,7 @@ import { useGateway, loadConfig } from '@/contexts/GatewayContext';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { useChat } from '@/contexts/ChatContext';
 import { useSettings, type STTInputMode } from '@/contexts/SettingsContext';
+import { useInstances } from '@/contexts/InstanceContext';
 import { getSessionKey } from '@/types';
 import { useConnectionManager } from '@/hooks/useConnectionManager';
 import { useDashboardData } from '@/hooks/useDashboardData';
@@ -79,6 +80,9 @@ export default function App({ onLogout }: AppProps) {
     toggleEvents, toggleLog, toggleTelemetry,
     setTheme, setFont,
   } = useSettings();
+  const {
+    instances, instancesLoading, activeInstanceId, setActiveInstanceId, refreshInstances,
+  } = useInstances();
 
   // Connection management (extracted hook)
   const {
@@ -365,6 +369,11 @@ export default function App({ onLogout }: AppProps) {
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-background">
           <PanelErrorBoundary name="Sessions">
             <SessionList
+              instances={instances}
+              instancesLoading={instancesLoading}
+              activeInstanceId={activeInstanceId}
+              onSelectInstance={setActiveInstanceId}
+              onRefreshInstances={refreshInstances}
               sessions={sessions}
               currentSession={currentSession}
               busyState={busyState}
@@ -394,6 +403,11 @@ export default function App({ onLogout }: AppProps) {
     <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading sessions…</div>}>
       <PanelErrorBoundary name="Sessions">
         <SessionList
+          instances={instances}
+          instancesLoading={instancesLoading}
+          activeInstanceId={activeInstanceId}
+          onSelectInstance={setActiveInstanceId}
+          onRefreshInstances={refreshInstances}
           sessions={sessions}
           currentSession={currentSession}
           busyState={busyState}

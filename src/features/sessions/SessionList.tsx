@@ -5,6 +5,7 @@ import { SessionSkeletonGroup } from '@/components/skeletons';
 import { buildSessionTree, flattenTree, getSessionType } from './sessionTree';
 import { SessionNode } from './SessionNode';
 import type { GranularAgentState } from '@/types';
+import type { DiscoveredInstance } from '@/contexts/InstanceContext';
 import {
   Dialog,
   DialogContent,
@@ -18,6 +19,11 @@ import { AlertTriangle, Plus } from 'lucide-react';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
 
 interface SessionListProps {
+  instances?: DiscoveredInstance[];
+  instancesLoading?: boolean;
+  activeInstanceId?: string | null;
+  onSelectInstance?: (id: string | null) => void;
+  onRefreshInstances?: () => void;
   sessions: Session[];
   currentSession: string;
   busyState: Record<string, boolean>;
@@ -36,7 +42,27 @@ interface SessionListProps {
 }
 
 /** Sidebar list of agent sessions with tree structure and context menus. */
-export function SessionList({ sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
+export function SessionList({
+  instances = [],
+  instancesLoading = false,
+  activeInstanceId = null,
+  onSelectInstance,
+  onRefreshInstances,
+  sessions,
+  currentSession,
+  busyState,
+  agentStatus,
+  unreadSessions,
+  onSelect,
+  onRefresh,
+  onDelete,
+  onSpawn,
+  onRename,
+  onAbort,
+  isLoading,
+  agentName = 'Agent',
+  compact = false,
+}: SessionListProps) {
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
@@ -126,6 +152,60 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
 
   return (
     <div className={compact ? 'flex flex-col max-h-[65vh]' : 'h-full flex flex-col min-h-0'}>
+      <div className="panel-header border-l-[3px] border-l-info">
+        <span className="panel-label text-info">
+          <span className="panel-diamond">◆</span>
+          INSTANCES
+        </span>
+        {onRefreshInstances && (
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              type="button"
+              onClick={onRefreshInstances}
+              aria-label="Refresh instances"
+              title="Refresh instances"
+              className="bg-transparent border border-border/60 text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-muted-foreground"
+            >
+              <span aria-hidden="true">↻</span>
+            </button>
+          </div>
+        )}
+      </div>
+      <div className={compact ? 'overflow-y-auto border-b border-border/60' : 'max-h-44 overflow-y-auto border-b border-border/60'}>
+        <button
+          type="button"
+          onClick={() => onSelectInstance?.(null)}
+          className={`w-full text-left px-3 py-2 text-xs border-l-[2px] transition-colors ${
+            activeInstanceId === null
+              ? 'border-l-info bg-info/10 text-foreground'
+              : 'border-l-transparent text-muted-foreground hover:text-foreground hover:bg-muted/20'
+          }`}
+        >
+          <div className="font-mono">Master</div>
+          <div className="text-[10px] uppercase tracking-wider opacity-70">local control plane</div>
+        </button>
+        {instancesLoading && instances.length === 0 ? (
+          <div className="px-3 py-2 text-[11px] text-muted-foreground">Discovering instances…</div>
+        ) : instances.length === 0 ? (
+          <div className="px-3 py-2 text-[11px] text-muted-foreground">No instances discovered</div>
+        ) : instances.map((instance) => (
+          <button
+            key={instance.id}
+            type="button"
+            onClick={() => onSelectInstance?.(instance.id)}
+            className={`w-full text-left px-3 py-2 text-xs border-l-[2px] transition-colors ${
+              activeInstanceId === instance.id
+                ? 'border-l-info bg-info/10 text-foreground'
+                : 'border-l-transparent text-muted-foreground hover:text-foreground hover:bg-muted/20'
+            }`}
+            title={instance.id}
+          >
+            <div className="font-mono truncate">{instance.name || instance.id}</div>
+            <div className="text-[10px] uppercase tracking-wider opacity-70 truncate">{instance.state || instance.status || 'unknown'}</div>
+          </button>
+        ))}
+      </div>
+
       <div className="panel-header border-l-[3px] border-l-info">
         <span className="panel-label text-info">
           <span className="panel-diamond">◆</span>

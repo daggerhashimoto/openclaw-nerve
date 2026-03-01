@@ -1,0 +1,98 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { routeApiPath, routeFetchInput } from '@/lib/apiRouting';
+
+export interface DiscoveredInstance {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  createdAt: string | null;
+  hasGatewayToken: boolean;
+}
+
+interface InstanceContextValue {
+  instances: DiscoveredInstance[];
+  instancesLoading: boolean;
+  activeInstanceId: string | null;
+  setActiveInstanceId: (id: string | null) => void;
+  refreshInstances: () => Promise<void>;
+  routeApiPath: (pathWithQuery: string) => string;
+}
+
+const InstanceContext = createContext<InstanceContextValue | null>(null);
+
+export function InstanceProvider({ children }: { children: ReactNode }) {
+  const [instances, setInstances] = useState<DiscoveredInstance[]>([]);
+  const [instancesLoading, setInstancesLoading] = useState(true);
+  const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
+  const activeInstanceIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    activeInstanceIdRef.current = activeInstanceId;
+  }, [activeInstanceId]);
+
+  const refreshInstances = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/instances');
+      if (!resp.ok) return;
+      const payload = await resp.json() as { instances?: DiscoveredInstance[] };
+      const next = Array.isArray(payload.instances) ? payload.instances : [];
+      setInstances(next);
+
+      // Fall back to master if selected instance disappeared.
+      if (activeInstanceIdRef.current && !next.some((instance) => instance.id === activeInstanceIdRef.current)) {
+        setActiveInstanceId(null);
+      }
+    } catch {
+      // Keep stale values; do not fail UI flows on transient discovery issues.
+    } finally {
+      setInstancesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshInstances();
+    const interval = window.setInterval(() => {
+      void refreshInstances();
+    }, 30000);
+    return () => window.clearInterval(interval);
+  }, [refreshInstances]);
+
+  useEffect(() => {
+    const originalFetch = globalThis.fetch.bind(globalThis);
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const rewritten = routeFetchInput(input, activeInstanceIdRef.current, window.location.origin);
+      return originalFetch(rewritten, init);
+    }) as typeof fetch;
+
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }, []);
+
+  const routeCurrentApiPath = useCallback((pathWithQuery: string) => {
+    return routeApiPath(pathWithQuery, activeInstanceId);
+  }, [activeInstanceId]);
+
+  const value = useMemo<InstanceContextValue>(() => ({
+    instances,
+    instancesLoading,
+    activeInstanceId,
+    setActiveInstanceId,
+    refreshInstances,
+    routeApiPath: routeCurrentApiPath,
+  }), [instances, instancesLoading, activeInstanceId, refreshInstances, routeCurrentApiPath]);
+
+  return <InstanceContext.Provider value={value}>{children}</InstanceContext.Provider>;
+}
+
+export function useInstances() {
+  const ctx = useContext(InstanceContext);
+  if (!ctx) throw new Error('useInstances must be used within InstanceProvider');
+  return ctx;
+}
+
+export function useInstancesOptional() {
+  return useContext(InstanceContext);
+}

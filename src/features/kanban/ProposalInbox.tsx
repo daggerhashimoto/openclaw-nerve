@@ -126,6 +126,7 @@ function ProposalRow({
           onClick={handleApprove}
           disabled={acting}
           title="Approve"
+          aria-label="Approve proposal"
           className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
         >
           <Check size={14} />
@@ -136,6 +137,7 @@ function ProposalRow({
           onClick={handleReject}
           disabled={acting}
           title="Reject"
+          aria-label="Reject proposal"
           className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
         >
           <X size={14} />

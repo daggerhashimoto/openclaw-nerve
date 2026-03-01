@@ -104,6 +104,7 @@ export const KanbanHeader = memo(function KanbanHeader({
   }, [filters, onFiltersChange]);
 
   const clearFilters = useCallback(() => {
+    clearTimeout(debounceRef.current);
     setSearchValue('');
     onFiltersChange({ q: '', priority: [], assignee: '', labels: [] });
   }, [onFiltersChange]);

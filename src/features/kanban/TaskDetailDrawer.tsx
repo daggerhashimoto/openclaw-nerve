@@ -279,7 +279,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${STATUS_BADGE[task.status]}`}>
                   {STATUS_LABEL[task.status]}
                 </span>
-                <span className={`text-[10px] font-semibold ${PRIORITY_COLOR[task.priority]}`}>
+                <span className={`text-[10px] font-semibold ${PRIORITY_COLOR[editPriority]}`}>
                   {editPriority.charAt(0).toUpperCase() + editPriority.slice(1)}
                 </span>
               </div>

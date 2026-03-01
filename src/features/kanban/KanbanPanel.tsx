@@ -102,7 +102,7 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
         onCreateTask={openCreateDialog}
         proposals={proposals}
         pendingProposalCount={pendingProposalCount}
-        onApproveProposal={async (id) => { await approveProposal(id); fetchTasks(); }}
+        onApproveProposal={async (id) => { await approveProposal(id); await fetchTasks(); }}
         onRejectProposal={async (id) => { await rejectProposal(id); }}
       />
 

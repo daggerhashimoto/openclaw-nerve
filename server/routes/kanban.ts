@@ -709,7 +709,7 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
     const spawnArgs: Record<string, unknown> = {
       task: `You are working on a Kanban task.\n\nTitle: ${task.title}\n\nDescription: ${taskDescription}\n\nDeliver your result as a clear summary of what was done.`,
       mode: 'run',
-      label: `kanban-${id}`,
+      label: `kanban-run-${id}-${Date.now()}`,
     };
     // Use task's model, or fall back to kanban config default, or Sonnet 4.5
     const config = await store.getConfig();
@@ -717,11 +717,11 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
     spawnArgs.model = model;
     if (task.thinking) spawnArgs.thinking = task.thinking;
 
+    const runLabel = spawnArgs.label as string;
     invokeGatewayTool('sessions_spawn', spawnArgs)
       .then(() => {
         // Poll for session completion in the background
-        const label = `kanban-${id}`;
-        pollSessionCompletion(store, id, label);
+        pollSessionCompletion(store, id, runLabel);
       })
       .catch((err) => {
         console.error(`[kanban] Failed to spawn session for task ${id}:`, err);

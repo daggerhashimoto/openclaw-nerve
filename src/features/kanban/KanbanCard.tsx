@@ -140,9 +140,9 @@ function CardContent({
       {/* Row 3: labels */}
       {task.labels.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1.5 ml-4">
-          {task.labels.slice(0, 3).map(label => (
+          {task.labels.slice(0, 3).map((label, idx) => (
             <span
-              key={label}
+              key={`${label}-${idx}`}
               className="text-[10px] font-medium leading-none bg-muted text-muted-foreground px-1.5 py-0.5 rounded-sm"
             >
               {label}

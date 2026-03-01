@@ -19,7 +19,7 @@ import { homedir } from 'node:os';
 import { Socket } from 'node:net';
 import { z } from 'zod';
 import { invokeGatewayTool } from '../lib/gateway-client.js';
-import { rateLimitGeneral } from '../middleware/rate-limit.js';
+import { rateLimitGeneral, rateLimitRestart } from '../middleware/rate-limit.js';
 import { resolveOpenclawBin } from '../lib/openclaw-bin.js';
 import { config } from '../lib/config.js';
 
@@ -348,7 +348,7 @@ app.post('/api/gateway/session-patch', rateLimitGeneral, async (c) => {
 
 const GATEWAY_RESTART_TIMEOUT_MS = 15_000;
 
-app.post('/api/gateway/restart', rateLimitGeneral, async (c) => {
+app.post('/api/gateway/restart', rateLimitRestart, async (c) => {
   // DBus session vars are required for `systemctl --user` commands.
   // When Nerve runs as a system service these may be absent; provide fallbacks.
   const uid = process.getuid?.() ?? 1000;
@@ -406,9 +406,11 @@ app.post('/api/gateway/restart', rateLimitGeneral, async (c) => {
         } else {
           // Check for positive running state AND absence of failure indicators
           const running = output.includes('Runtime: running');
-          const stopped = output.includes('Runtime: stopped');
-          const failed = output.includes('state activating') || output.includes('last exit 1');
-          const ok = running && !stopped && !failed;
+          const activating = output.includes('state activating');
+          const failed = output.includes('last exit 1') && !running;
+          // activating is a normal transitional state -- keep retrying
+          const ok = running && !failed;
+          if (activating && !running) { resolve({ ok: false, output }); return; }
           resolve({ ok, output });
         }
       });

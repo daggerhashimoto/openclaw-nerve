@@ -21,6 +21,7 @@ vi.mock('../lib/config.js', () => ({
 
 vi.mock('../middleware/rate-limit.js', () => ({
   rateLimitGeneral: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
+  rateLimitRestart: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
 }));
 
 vi.mock('../lib/openclaw-bin.js', () => ({
@@ -120,6 +121,7 @@ describe('gateway routes', () => {
       }));
       vi.doMock('../middleware/rate-limit.js', () => ({
         rateLimitGeneral: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
+        rateLimitRestart: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
       }));
       vi.doMock('../lib/openclaw-bin.js', () => ({
         resolveOpenclawBin: () => '/usr/bin/openclaw',
@@ -326,6 +328,28 @@ describe('gateway routes', () => {
       // Restore
       if (origXdg !== undefined) process.env.XDG_RUNTIME_DIR = origXdg;
       if (origDbus !== undefined) process.env.DBUS_SESSION_BUS_ADDRESS = origDbus;
+    });
+
+    it('returns 200 on successful restart with port reachable', async () => {
+      vi.useFakeTimers();
+      socketMock.connectOk = true;
+      let call = 0;
+      execFileImpl = (_bin: unknown, _args: unknown, _opts: unknown, cb: unknown) => {
+        if (call === 0) {
+          call++;
+          (cb as (err: null, stdout: string) => void)(null, 'Restarted');
+        } else {
+          (cb as (err: null, stdout: string) => void)(null, 'Runtime: running');
+        }
+      };
+      const app = buildApp();
+      const resPromise = app.request('/api/gateway/restart', { method: 'POST' });
+      await vi.runAllTimersAsync();
+      const res = await resPromise;
+      expect(res.status).toBe(200);
+      const json = await res.json() as { ok: boolean; output: string };
+      expect(json.ok).toBe(true);
+      expect(json.output).toMatch(/successfully/i);
     });
 
     it('returns 500 when status says running but port is not reachable', async () => {

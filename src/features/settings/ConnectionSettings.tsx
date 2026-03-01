@@ -11,8 +11,6 @@ interface ConnectionSettingsProps {
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
   onGatewayRestart?: () => void;
   gatewayRestarting?: boolean;
-  gatewayRestartNotice?: { ok: boolean; message: string } | null;
-  onDismissNotice?: () => void;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -39,8 +37,6 @@ export function ConnectionSettings({
   connectionState,
   onGatewayRestart,
   gatewayRestarting = false,
-  gatewayRestartNotice,
-  onDismissNotice,
 }: ConnectionSettingsProps) {
   const [showToken, setShowToken] = useState(false);
 
@@ -116,22 +112,7 @@ export function ConnectionSettings({
             <RotateCw size={12} aria-hidden="true" className={gatewayRestarting ? 'animate-spin' : ''} />
             {gatewayRestarting ? 'Restarting…' : 'Restart Gateway'}
           </button>
-          {gatewayRestartNotice && (
-            <button
-              type="button"
-              onClick={onDismissNotice}
-              aria-label="Dismiss restart notice"
-              className={`w-full px-3 py-2 text-[11px] font-mono flex items-center gap-2 border rounded-sm cursor-pointer hover:opacity-90 ${
-                gatewayRestartNotice.ok
-                  ? 'bg-green-900/20 text-green-300 border-green-700/40'
-                  : 'bg-red-900/20 text-red-300 border-red-700/40'
-              }`}
-              title="Click to dismiss"
-            >
-              <span>{gatewayRestartNotice.ok ? '✓' : '⚠'}</span>
-              <span className="whitespace-pre-wrap text-left">{gatewayRestartNotice.message}</span>
-            </button>
-          )}
+
         </>
       )}
     </div>

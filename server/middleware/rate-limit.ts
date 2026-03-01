@@ -161,3 +161,6 @@ export const rateLimitGeneral = rateLimit({ maxRequests: 60, windowMs: 60 * 1000
 
 /** Preset: 5 requests per minute (for authentication — brute-force protection) */
 export const rateLimitAuth = rateLimit({ maxRequests: 5, windowMs: 60 * 1000 });
+
+/** Preset: 3 requests per minute (for service restart — prevent restart storms) */
+export const rateLimitRestart = rateLimit({ maxRequests: 3, windowMs: 60 * 1000 });

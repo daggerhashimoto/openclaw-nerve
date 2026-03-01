@@ -36,8 +36,6 @@ interface SettingsDrawerProps {
   // Gateway restart
   onGatewayRestart?: () => void;
   gatewayRestarting?: boolean;
-  gatewayRestartNotice?: { ok: boolean; message: string } | null;
-  onDismissNotice?: () => void;
 }
 
 type SettingsCategory = 'advanced' | 'audio' | 'appearance';
@@ -85,8 +83,6 @@ export function SettingsDrawer({
   onLogout,
   onGatewayRestart,
   gatewayRestarting,
-  gatewayRestartNotice,
-  onDismissNotice,
 }: SettingsDrawerProps) {
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -248,8 +244,6 @@ export function SettingsDrawer({
                 connectionState={connectionState}
                 onGatewayRestart={onGatewayRestart}
                 gatewayRestarting={gatewayRestarting}
-                gatewayRestartNotice={gatewayRestartNotice}
-                onDismissNotice={onDismissNotice}
               />
             )}
           </div>

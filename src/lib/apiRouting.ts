@@ -3,7 +3,7 @@ const MASTER_ONLY_API_PREFIXES = [
   '/api/auth',
 ] as const;
 
-const PROXYABLE_API_PREFIXES = [
+const INSTANCE_ROUTED_API_PREFIXES = [
   '/api/agentlog',
   '/api/channels',
   '/api/claude-code-limits',
@@ -28,6 +28,9 @@ const PROXYABLE_API_PREFIXES = [
   '/api/workspace',
 ] as const;
 
+export const INSTANCE_ID_HEADER = 'X-Instance-Id';
+export const INSTANCE_ID_QUERY_PARAM = 'instanceId';
+
 function matchesPrefix(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
@@ -50,41 +53,71 @@ export function routeApiPath(pathWithQuery: string, instanceId: string | null): 
     return pathWithQuery;
   }
 
-  const proxyPrefix = `/api/instances/${encodeURIComponent(instanceId)}/proxy`;
-  if (pathname === proxyPrefix || pathname.startsWith(`${proxyPrefix}/`)) {
+  if (!INSTANCE_ROUTED_API_PREFIXES.some((prefix) => matchesPrefix(pathname, prefix))) {
     return pathWithQuery;
   }
 
-  if (!PROXYABLE_API_PREFIXES.some((prefix) => matchesPrefix(pathname, prefix))) {
-    return pathWithQuery;
-  }
-
-  return `${proxyPrefix}${pathname}${suffix}`;
+  const query = suffix.startsWith('?') ? suffix.slice(1) : suffix;
+  const params = new URLSearchParams(query);
+  params.set(INSTANCE_ID_QUERY_PARAM, instanceId);
+  const nextQuery = params.toString();
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
 }
 
-export function routeFetchInput(
+function shouldAttachInstanceMetadata(
   input: RequestInfo | URL,
-  instanceId: string | null,
   currentOrigin: string,
-): RequestInfo | URL {
-  if (!instanceId) return input;
-
+): boolean {
   if (typeof input === 'string' || input instanceof URL) {
-    const raw = input.toString();
-    const parsed = new URL(raw, currentOrigin);
-    if (parsed.origin !== currentOrigin) return input;
-    const routed = routeApiPath(`${parsed.pathname}${parsed.search}`, instanceId);
-    if (routed === `${parsed.pathname}${parsed.search}`) return input;
-
-    if (raw.startsWith('/')) return routed;
-    return new URL(routed, currentOrigin).toString();
+    const parsed = new URL(input.toString(), currentOrigin);
+    if (parsed.origin !== currentOrigin) return false;
+    return parsed.pathname.startsWith('/api/') || parsed.pathname === '/api';
   }
 
   const parsed = new URL(input.url, currentOrigin);
-  if (parsed.origin !== currentOrigin) return input;
-  const routed = routeApiPath(`${parsed.pathname}${parsed.search}`, instanceId);
-  if (routed === `${parsed.pathname}${parsed.search}`) return input;
-  return new Request(new URL(routed, currentOrigin).toString(), input);
+  if (parsed.origin !== currentOrigin) return false;
+  return parsed.pathname.startsWith('/api/') || parsed.pathname === '/api';
 }
 
-export { MASTER_ONLY_API_PREFIXES, PROXYABLE_API_PREFIXES };
+export function addInstanceHeaderToFetch(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  instanceId: string | null,
+  currentOrigin: string,
+): { input: RequestInfo | URL; init: RequestInit | undefined } {
+  if (!instanceId) return { input, init };
+  if (!shouldAttachInstanceMetadata(input, currentOrigin)) return { input, init };
+
+  const pathname = (() => {
+    if (typeof input === 'string' || input instanceof URL) {
+      return new URL(input.toString(), currentOrigin).pathname;
+    }
+    return new URL(input.url, currentOrigin).pathname;
+  })();
+
+  if (!INSTANCE_ROUTED_API_PREFIXES.some((prefix) => matchesPrefix(pathname, prefix))) {
+    return { input, init };
+  }
+  if (MASTER_ONLY_API_PREFIXES.some((prefix) => matchesPrefix(pathname, prefix))) {
+    return { input, init };
+  }
+
+  const headers = new Headers(
+    init?.headers
+      ?? (input instanceof Request ? input.headers : undefined),
+  );
+  headers.set(INSTANCE_ID_HEADER, instanceId);
+
+  if (input instanceof Request) {
+    const requestInit: RequestInit = {
+      ...input,
+      ...init,
+      headers,
+    };
+    return { input: new Request(input, requestInit), init: undefined };
+  }
+
+  return { input, init: { ...init, headers } };
+}
+
+export { MASTER_ONLY_API_PREFIXES, INSTANCE_ROUTED_API_PREFIXES };

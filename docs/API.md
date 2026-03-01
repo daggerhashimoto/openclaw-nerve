@@ -15,6 +15,7 @@ Nerve exposes a REST + SSE API served by [Hono](https://hono.dev/) on the config
 - [Connect Defaults](#connect-defaults)
 - [Instance Discovery](#instance-discovery)
 - [Instance Proxy Scaffold](#instance-proxy-scaffold)
+- [Centralized Instance Targeting](#centralized-instance-targeting)
 - [Events (SSE)](#events-sse)
 - [Text-to-Speech](#text-to-speech)
 - [Transcription](#transcription)
@@ -309,11 +310,6 @@ Master-side proxy scaffold for forwarding API calls to a selected local Docker i
 - Path traversal (`..`), protocol-relative (`//`), absolute URL/protocol smuggling patterns, malformed encoding, and backslashes are rejected.
 - Proxy target host is fixed to loopback (`127.0.0.1`) to avoid SSRF-style host pivoting.
 
-**Frontend wiring note (Milestone 4):**
-- The UI keeps `Master` as the default context and only rewrites a conservative allowlist of known OpenClaw/Nerve API paths to `/api/instances/:id/proxy/...` when a non-master instance is selected.
-- `/api/instances*` and auth routes remain master-only from the browser.
-- Unknown/unlisted API paths stay on master by default.
-
 **Error responses:**
 
 | Status | Body | Description |
@@ -325,6 +321,24 @@ Master-side proxy scaffold for forwarding API calls to a selected local Docker i
 | 503 | `{ "error": "...", "code": "docker_unavailable" }` | Docker CLI/daemon unavailable |
 | 502 | `{ "error": "...", "code": "docker_command_failed" }` | Docker command failed |
 | 502 | `{ "error": "Proxy request failed.", "code": "proxy_request_failed" }` | Upstream fetch failure |
+
+---
+
+## Centralized Instance Targeting
+
+Nerve now supports centralized instance routing via request metadata so frontend calls can stay mostly unchanged.
+
+- `X-Instance-Id: <id>` header:
+  Preferred for `fetch`/HTTP API calls.
+- `?instanceId=<id>` query parameter:
+  Supported for channels that cannot set custom headers directly (for example, `EventSource` and `/ws` upgrades).
+
+Routing behavior:
+
+- Eligible API routes (`/api/files*`, `/api/sessions*`, `/api/events*`, `/api/agentlog*`, etc.) are proxied to the selected instance automatically by middleware.
+- `/api/instances*` remains master-only and never auto-proxied.
+- Unknown/unlisted API paths default to master for safety.
+- Explicit `ANY /api/instances/:id/proxy/*` remains supported.
 
 ---
 

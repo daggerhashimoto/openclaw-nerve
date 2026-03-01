@@ -111,6 +111,31 @@ describe('useWebSocket', () => {
   });
 
   describe('Connect handshake payload', () => {
+    it('adds selected instance metadata to proxied ws URL', async () => {
+      const wsInstances: MockWebSocket[] = [];
+      const OriginalMockWS = MockWebSocket;
+      (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket = class extends OriginalMockWS {
+        constructor(url: string) {
+          super(url);
+          wsInstances.push(this);
+        }
+      };
+
+      const { result } = renderHook(() => useWebSocket('cid-selected'));
+
+      act(() => {
+        result.current.connect('ws://localhost:8080/ws', 'test-token');
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(wsInstances).toHaveLength(1);
+      const wsUrl = new URL(wsInstances[0].url);
+      expect(wsUrl.searchParams.get('instanceId')).toBe('cid-selected');
+    });
+
     it('should include a stable per-tab client.instanceId in connect params', async () => {
       const wsInstances: MockWebSocket[] = [];
       const OriginalMockWS = MockWebSocket;

@@ -25,6 +25,12 @@ import { config, WS_ALLOWED_HOSTS, SESSION_COOKIE_NAME } from './config.js';
 import { verifySession, parseSessionCookie } from './session.js';
 import { createDeviceBlock, getDeviceIdentity } from './device-identity.js';
 import { resolveOpenclawBin } from './openclaw-bin.js';
+import {
+  getInstanceToken,
+  getLocalOpenClawInstance,
+  resolvePublishedGatewayPort,
+} from './docker-instances.js';
+import { parseInstanceId } from './instance-routing.js';
 
 /** @internal — exported for test overrides */
 export const _internals = { challengeTimeoutMs: 5_000 };
@@ -105,13 +111,14 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
     }
   });
 
-  wss.on('connection', (clientWs: WebSocket, req: IncomingMessage) => {
+  wss.on('connection', async (clientWs: WebSocket, req: IncomingMessage) => {
     const connId = randomUUID().slice(0, 8);
     const tag = `[ws-proxy:${connId}]`;
     const url = new URL(req.url || '/', 'https://localhost');
     const target = url.searchParams.get('target');
+    const requestedInstanceId = parseInstanceId(url.searchParams.get('instanceId'));
 
-    console.log(`${tag} New connection: target=${target}`);
+    console.log(`${tag} New connection: target=${target}, instance=${requestedInstanceId || 'master'}`);
 
     if (!target) {
       clientWs.close(1008, 'Missing ?target= param');
@@ -119,24 +126,47 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
     }
 
     let targetUrl: URL;
-    try {
-      targetUrl = new URL(target);
-    } catch {
-      clientWs.close(1008, 'Invalid target URL');
-      return;
-    }
+    let authTokenOverride: string | null = null;
+    if (requestedInstanceId) {
+      try {
+        const instance = await getLocalOpenClawInstance(requestedInstanceId);
+        if (!instance) {
+          clientWs.close(1013, 'Instance unavailable');
+          return;
+        }
+        const port = resolvePublishedGatewayPort(instance.ports);
+        if (!port) {
+          clientWs.close(1013, 'Instance gateway port unavailable');
+          return;
+        }
+        targetUrl = new URL(`ws://127.0.0.1:${port}/ws`);
+        const tokenResult = await getInstanceToken(requestedInstanceId);
+        authTokenOverride = tokenResult?.token || null;
+      } catch (err) {
+        console.warn(`${tag} Failed to resolve instance target: ${(err as Error).message}`);
+        clientWs.close(1011, 'Failed to resolve instance target');
+        return;
+      }
+    } else {
+      try {
+        targetUrl = new URL(target);
+      } catch {
+        clientWs.close(1008, 'Invalid target URL');
+        return;
+      }
 
-    if (!['ws:', 'wss:'].includes(targetUrl.protocol) || !WS_ALLOWED_HOSTS.has(targetUrl.hostname)) {
-      console.warn(`${tag} Rejected: target not allowed: ${target}`);
-      clientWs.close(1008, 'Target not allowed');
-      return;
-    }
+      if (!['ws:', 'wss:'].includes(targetUrl.protocol) || !WS_ALLOWED_HOSTS.has(targetUrl.hostname)) {
+        console.warn(`${tag} Rejected: target not allowed: ${target}`);
+        clientWs.close(1008, 'Target not allowed');
+        return;
+      }
 
-    const targetPort = Number(targetUrl.port) || (targetUrl.protocol === 'wss:' ? 443 : 80);
-    if (targetPort < 1 || targetPort > 65535) {
-      console.warn(`${tag} Rejected: invalid port ${targetPort}`);
-      clientWs.close(1008, 'Invalid target port');
-      return;
+      const targetPort = Number(targetUrl.port) || (targetUrl.protocol === 'wss:' ? 443 : 80);
+      if (targetPort < 1 || targetPort > 65535) {
+        console.warn(`${tag} Rejected: invalid port ${targetPort}`);
+        clientWs.close(1008, 'Invalid target port');
+        return;
+      }
     }
 
     // Forward origin header for gateway auth
@@ -144,7 +174,7 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
     const scheme = isEncrypted ? 'https' : 'http';
     const clientOrigin = req.headers.origin || `${scheme}://${req.headers.host}`;
 
-    createGatewayRelay(clientWs, targetUrl, clientOrigin, connId);
+    createGatewayRelay(clientWs, targetUrl, clientOrigin, connId, authTokenOverride);
   });
 }
 
@@ -165,6 +195,7 @@ function createGatewayRelay(
   targetUrl: URL,
   clientOrigin: string,
   connId: string,
+  authTokenOverride: string | null,
 ): void {
   const tag = `[ws-proxy:${connId}]`;
   const connStartTime = Date.now();
@@ -254,9 +285,10 @@ function createGatewayRelay(
     if (gwWs.readyState !== WebSocket.OPEN) return;
     connectSent = true;
     clearChallengeTimer();
+    const withAuth = overrideConnectAuthToken(savedConnectMsg, authTokenOverride);
     const modified = (useDeviceIdentity && nonce)
-      ? injectDeviceIdentity(savedConnectMsg, nonce)
-      : savedConnectMsg;
+      ? injectDeviceIdentity(withAuth, nonce)
+      : withAuth;
     gwWs.send(JSON.stringify(modified));
     handshakeComplete = true;
     flushPending();
@@ -473,6 +505,24 @@ interface ConnectParams {
   role?: string;
   scopes?: string[];
   auth?: { token?: string };
+}
+
+function overrideConnectAuthToken(
+  msg: Record<string, unknown>,
+  authTokenOverride: string | null,
+): Record<string, unknown> {
+  if (!authTokenOverride) return msg;
+  const params = (msg.params || {}) as ConnectParams;
+  return {
+    ...msg,
+    params: {
+      ...params,
+      auth: {
+        ...(params.auth || {}),
+        token: authTokenOverride,
+      },
+    },
+  };
 }
 
 function injectDeviceIdentity(msg: Record<string, unknown>, nonce: string, logTag = '[ws-proxy]'): Record<string, unknown> {

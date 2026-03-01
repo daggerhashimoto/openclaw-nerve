@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- hooks intentionally co-located with provider */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { routeApiPath, routeFetchInput } from '@/lib/apiRouting';
+import { addInstanceHeaderToFetch, routeApiPath } from '@/lib/apiRouting';
 
 export interface DiscoveredInstance {
   id: string;
@@ -63,8 +63,13 @@ export function InstanceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const originalFetch = globalThis.fetch.bind(globalThis);
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-      const rewritten = routeFetchInput(input, activeInstanceIdRef.current, window.location.origin);
-      return originalFetch(rewritten, init);
+      const routed = addInstanceHeaderToFetch(
+        input,
+        init,
+        activeInstanceIdRef.current,
+        window.location.origin,
+      );
+      return originalFetch(routed.input, routed.init);
     }) as typeof fetch;
 
     return () => {

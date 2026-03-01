@@ -43,15 +43,25 @@ vi.mock('./openclaw-bin.js', () => ({
   resolveOpenclawBin: vi.fn(() => '/usr/bin/echo'),
 }));
 
+vi.mock('./docker-instances.js', () => ({
+  getInstanceToken: vi.fn(),
+  getLocalOpenClawInstance: vi.fn(),
+  resolvePublishedGatewayPort: vi.fn(),
+}));
+
 import { setupWebSocketProxy, closeAllWebSockets, _internals } from './ws-proxy.js';
 import { config } from './config.js';
 import { verifySession, parseSessionCookie } from './session.js';
 import { createDeviceBlock } from './device-identity.js';
 import { createServer as createHttpServer } from 'node:http';
+import { getInstanceToken, getLocalOpenClawInstance, resolvePublishedGatewayPort } from './docker-instances.js';
 
 const mockedConfig = config as { auth: boolean; sessionSecret: string };
 const mockedVerifySession = verifySession as ReturnType<typeof vi.fn>;
 const mockedParseSessionCookie = parseSessionCookie as ReturnType<typeof vi.fn>;
+const mockedGetInstanceToken = getInstanceToken as ReturnType<typeof vi.fn>;
+const mockedGetLocalOpenClawInstance = getLocalOpenClawInstance as ReturnType<typeof vi.fn>;
+const mockedResolvePublishedGatewayPort = resolvePublishedGatewayPort as ReturnType<typeof vi.fn>;
 
 function waitForMessage(ws: WebSocket, timeoutMs = 3000): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -108,6 +118,9 @@ describe('ws-proxy', () => {
     mockedConfig.auth = false;
     mockedVerifySession.mockReset();
     mockedParseSessionCookie.mockReset();
+    mockedGetInstanceToken.mockReset();
+    mockedGetLocalOpenClawInstance.mockReset();
+    mockedResolvePublishedGatewayPort.mockReset();
     mockGw.clearReceived();
 
     // Create a new HTTP server and attach ws-proxy
@@ -170,6 +183,44 @@ describe('ws-proxy', () => {
       expect(parsed.type).toBe('event');
       expect(parsed.event).toBe('connect.challenge');
       expect(parsed.payload.nonce).toBeTruthy();
+      ws.close();
+    });
+
+    it('routes ws traffic to selected instance when instanceId metadata is present', async () => {
+      const targetPort = Number(new URL(mockGw.url).port);
+      mockedGetLocalOpenClawInstance.mockResolvedValue({
+        id: 'cid-selected',
+        ports: [{ containerPort: 18789, protocol: 'tcp', hostIp: '0.0.0.0', hostPort: targetPort }],
+      });
+      mockedResolvePublishedGatewayPort.mockReturnValue(targetPort);
+      mockedGetInstanceToken.mockResolvedValue({
+        instanceId: 'cid-selected',
+        found: true,
+        token: 'instance-token',
+        tokenKey: 'GATEWAY_TOKEN',
+      });
+
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent('ws://evil.com/ws')}&instanceId=cid-selected`,
+      );
+
+      const challenge = await waitForMessage(ws);
+      expect(JSON.parse(challenge).event).toBe('connect.challenge');
+
+      ws.send(JSON.stringify({
+        type: 'req',
+        id: 'c1',
+        method: 'connect',
+        params: { auth: { token: 'client-token' }, client: { id: 'nerve-ui', mode: 'webchat' } },
+      }));
+
+      await waitForMessage(ws); // connect response
+      const connectMsg = mockGw.received.find((m) => {
+        const d = m.data as Record<string, unknown>;
+        return d.type === 'req' && d.method === 'connect';
+      });
+      const auth = ((connectMsg?.data as Record<string, unknown>)?.params as { auth?: { token?: string } })?.auth;
+      expect(auth?.token).toBe('instance-token');
       ws.close();
     });
 

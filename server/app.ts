@@ -18,6 +18,7 @@ import { cacheHeaders } from './middleware/cache-headers.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { securityHeaders } from './middleware/security-headers.js';
 import { authMiddleware } from './middleware/auth.js';
+import { instanceRoutingMiddleware } from './middleware/instance-routing.js';
 import { config } from './lib/config.js';
 
 import healthRoutes from './routes/health.js';
@@ -92,7 +93,7 @@ app.use(
     },
     credentials: true,
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Instance-Id'],
   }),
 );
 app.use('*', securityHeaders);
@@ -105,6 +106,8 @@ app.use(
 );
 // Authentication — after bodyLimit (reject oversized before auth), before compress/routes
 app.use('*', authMiddleware);
+// Centralized metadata-driven instance routing for eligible API calls.
+app.use('/api/*', instanceRoutingMiddleware);
 // Apply compression to all routes except SSE (compression buffers chunks and breaks streaming)
 app.use('*', async (c, next) => {
   if (c.req.path === '/api/events') return next();

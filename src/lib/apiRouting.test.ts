@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { routeApiPath, routeFetchInput } from './apiRouting';
+import { addInstanceHeaderToFetch, routeApiPath } from './apiRouting';
 
 describe('routeApiPath', () => {
   it('keeps master path when master is active', () => {
@@ -11,12 +11,12 @@ describe('routeApiPath', () => {
     expect(routeApiPath('/api/instances/cid-a/token', 'cid-a')).toBe('/api/instances/cid-a/token');
   });
 
-  it('proxies allowlisted API paths for selected instance', () => {
+  it('appends instance metadata to routable API paths', () => {
     expect(routeApiPath('/api/sessions?limit=20', 'cid-a')).toBe(
-      '/api/instances/cid-a/proxy/api/sessions?limit=20',
+      '/api/sessions?limit=20&instanceId=cid-a',
     );
     expect(routeApiPath('/api/gateway/models', 'cid-a')).toBe(
-      '/api/instances/cid-a/proxy/api/gateway/models',
+      '/api/gateway/models?instanceId=cid-a',
     );
   });
 
@@ -25,21 +25,31 @@ describe('routeApiPath', () => {
   });
 });
 
-describe('routeFetchInput', () => {
+describe('addInstanceHeaderToFetch', () => {
   const origin = 'http://localhost:3000';
 
-  it('rewrites same-origin relative API URLs', () => {
-    expect(routeFetchInput('/api/memories', 'cid-a', origin)).toBe('/api/instances/cid-a/proxy/api/memories');
+  it('adds header to same-origin routable API URLs', () => {
+    const routed = addInstanceHeaderToFetch('/api/memories', undefined, 'cid-a', origin);
+    const headers = new Headers(routed.init?.headers);
+    expect(headers.get('X-Instance-Id')).toBe('cid-a');
   });
 
-  it('does not rewrite cross-origin URLs', () => {
-    expect(routeFetchInput('https://example.com/api/memories', 'cid-a', origin)).toBe('https://example.com/api/memories');
+  it('does not touch cross-origin URLs', () => {
+    const routed = addInstanceHeaderToFetch('https://example.com/api/memories', undefined, 'cid-a', origin);
+    expect(routed.input).toBe('https://example.com/api/memories');
+    expect(routed.init).toBeUndefined();
   });
 
-  it('rewrites same-origin Request objects', () => {
+  it('adds headers to Request objects', () => {
     const req = new Request('http://localhost:3000/api/tokens');
-    const rewritten = routeFetchInput(req, 'cid-a', origin);
-    expect(rewritten).toBeInstanceOf(Request);
-    expect((rewritten as Request).url).toBe('http://localhost:3000/api/instances/cid-a/proxy/api/tokens');
+    const routed = addInstanceHeaderToFetch(req, undefined, 'cid-a', origin);
+    expect(routed.input).toBeInstanceOf(Request);
+    expect((routed.input as Request).headers.get('X-Instance-Id')).toBe('cid-a');
+    expect(routed.init).toBeUndefined();
+  });
+
+  it('keeps master-only APIs untouched', () => {
+    const routed = addInstanceHeaderToFetch('/api/instances', undefined, 'cid-a', origin);
+    expect(routed.init).toBeUndefined();
   });
 });

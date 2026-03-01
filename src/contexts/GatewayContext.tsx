@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components -- hooks and helpers intentionally co-located with provider */
 import { createContext, useContext, useCallback, useRef, useEffect, useState, useMemo, type ReactNode } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { useInstancesOptional } from './InstanceContext';
 import type { GatewayEvent } from '@/types';
 
 type EventHandler = (msg: GatewayEvent) => void;
@@ -41,7 +42,9 @@ function saveConfig(url: string, token: string) {
 }
 
 export function GatewayProvider({ children }: { children: ReactNode }) {
-  const { connectionState, connect: wsConnect, disconnect, rpc, onEvent, connectError, reconnectAttempt } = useWebSocket();
+  const instances = useInstancesOptional();
+  const activeInstanceId = instances?.activeInstanceId ?? null;
+  const { connectionState, connect: wsConnect, disconnect, rpc, onEvent, connectError, reconnectAttempt } = useWebSocket(activeInstanceId);
   const [model, setModel] = useState('--');
   const [thinking, setThinking] = useState('--');
   const [sparkline, setSparkline] = useState('▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁');
@@ -49,6 +52,8 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
   const currentBucketEvents = useRef(0);
   const isVisibleRef = useRef(true);
   const subscribersRef = useRef<Set<EventHandler>>(new Set());
+  const lastConnectRef = useRef<{ url: string; token: string } | null>(null);
+  const previousInstanceIdRef = useRef<string | null>(activeInstanceId);
 
   // Track page visibility
   useEffect(() => {
@@ -133,8 +138,28 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
   // Wrap connect to save config
   const connect = useCallback(async (url: string, token: string) => {
     saveConfig(url, token);
+    lastConnectRef.current = { url, token };
     await wsConnect(url, token);
   }, [wsConnect]);
+
+  // Keep the gateway stream aligned to the selected instance.
+  useEffect(() => {
+    const prev = previousInstanceIdRef.current;
+    if (prev === activeInstanceId) return;
+    previousInstanceIdRef.current = activeInstanceId;
+
+    const saved = lastConnectRef.current || (() => {
+      const loaded = loadConfig();
+      if (loaded.url && loaded.token) return { url: loaded.url as string, token: loaded.token as string };
+      return null;
+    })();
+    if (!saved) return;
+
+    if (connectionState === 'connected' || connectionState === 'connecting' || connectionState === 'reconnecting') {
+      disconnect();
+      void wsConnect(saved.url, saved.token).catch(() => {});
+    }
+  }, [activeInstanceId, connectionState, disconnect, wsConnect]);
 
   const value = useMemo<GatewayContextValue>(() => ({
     connectionState,

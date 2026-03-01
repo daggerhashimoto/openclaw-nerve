@@ -52,7 +52,7 @@ function getOrCreateInstanceId(): string {
  * WebSocket traffic is proxied through Nerve's `/ws` endpoint so the
  * client works behind reverse proxies and HTTPS termination.
  */
-export function useWebSocket(): UseWebSocketReturn {
+export function useWebSocket(activeInstanceId: string | null = null): UseWebSocketReturn {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [connectError, setConnectError] = useState('');
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
@@ -64,7 +64,7 @@ export function useWebSocket(): UseWebSocketReturn {
   const connectResolveRef = useRef<(() => void) | null>(null);
   const connectRejectRef = useRef<((e: Error) => void) | null>(null);
   const onEvent = useRef<((msg: GatewayEvent) => void) | null>(null);
-  
+
   // Auto-reconnect state
   const credentialsRef = useRef<{ url: string; token: string } | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,6 +74,11 @@ export function useWebSocket(): UseWebSocketReturn {
   const doConnectRef = useRef<((url: string, token: string, isReconnect: boolean) => Promise<void>) | null>(null);
   const instanceIdRef = useRef(getOrCreateInstanceId());
   const connectionGenRef = useRef(0);
+  const activeInstanceIdRef = useRef<string | null>(activeInstanceId);
+
+  useEffect(() => {
+    activeInstanceIdRef.current = activeInstanceId;
+  }, [activeInstanceId]);
 
   const rejectPending = useCallback((reason: Error) => {
     const pending = pendingRef.current;
@@ -133,11 +138,13 @@ export function useWebSocket(): UseWebSocketReturn {
         // This ensures the connection works regardless of how the user
         // accesses Nerve (direct, SSH tunnel, reverse proxy, HTTPS).
         // The server-side proxy handles Origin headers and auth.
-        let wsUrl = url;
         const proxyProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const proxyBase = `${proxyProtocol}//${window.location.host}/ws`;
-        wsUrl = `${proxyBase}?target=${encodeURIComponent(url)}`;
-        ws = new WebSocket(wsUrl);
+        const params = new URLSearchParams({ target: url });
+        if (activeInstanceIdRef.current) {
+          params.set('instanceId', activeInstanceIdRef.current);
+        }
+        ws = new WebSocket(`${proxyBase}?${params.toString()}`);
       } catch (e: unknown) {
         const errMsg = e instanceof Error ? e.message : String(e);
         setConnectError('Invalid URL: ' + errMsg);
@@ -268,7 +275,7 @@ export function useWebSocket(): UseWebSocketReturn {
       };
     });
   }, [rejectPending]);
-  
+
   // Store doConnect in ref so it can reference itself for reconnection
   useEffect(() => {
     doConnectRef.current = doConnect;

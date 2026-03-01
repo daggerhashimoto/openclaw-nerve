@@ -101,6 +101,35 @@ npm run setup    # interactive wizard — configures .env
 npm run prod     # builds and starts the server
 ```
 
+### Docker (Milestone 1)
+
+Build one image that runs both OpenClaw gateway and Nerve:
+
+```bash
+docker build -f Dockerfile.multiclaw -t multiclaw:milestone1 .
+```
+
+Run it with both ports published (`3181` gateway, `3080` Nerve UI):
+
+```bash
+docker run --rm -it \
+  -p 3080:3080 \
+  -p 3181:3181 \
+  -e GATEWAY_TOKEN=your-token \
+  -e OPENCLAW_GATEWAY_TOKEN=your-token \
+  -e NERVE_AUTH=true \
+  -e NERVE_SESSION_SECRET="$(openssl rand -hex 32)" \
+  multiclaw:milestone1
+```
+
+Container env vars:
+- `GATEWAY_TOKEN` (required): token Nerve uses for gateway API calls.
+- `OPENCLAW_GATEWAY_TOKEN` (recommended): token passed to OpenClaw gateway itself.
+- `PORT` (optional, default `3080`): Nerve HTTP port.
+- `OPENCLAW_GATEWAY_PORT` (optional, default `3181`): gateway port.
+- `OPENCLAW_GATEWAY_CMD` (optional): custom gateway start command override.
+- `OPENCLAW_GATEWAY_STOP_CMD` (optional): custom gateway stop command override for shutdown.
+
 ### Updating
 
 ```bash

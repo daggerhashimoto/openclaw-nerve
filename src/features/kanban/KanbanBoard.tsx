@@ -96,7 +96,7 @@ export const KanbanBoard = memo(function KanbanBoard({
   );
 
   /* ── DnD hook ── */
-  const { sensors, collisionDetection, activeTask, onDragStart, onDragOver, onDragEnd } = useKanbanDragDrop({
+  const { sensors, collisionDetection, activeTask, onDragStart, onDragOver, onDragEnd, onDragCancel } = useKanbanDragDrop({
     tasks: localTasks,
     setTasksOptimistic: setTasksWithDragTracking,
     reorderTask: apiReorderTask,
@@ -124,6 +124,11 @@ export const KanbanBoard = memo(function KanbanBoard({
     },
     [onDragEnd],
   );
+
+  const handleDragCancel = useCallback(() => {
+    onDragCancel();
+    isDraggingRef.current = false;
+  }, [onDragCancel]);
 
   /* ── Derived tasksByStatus from local state ── */
   const localTasksByStatus = useCallback(
@@ -190,6 +195,7 @@ export const KanbanBoard = memo(function KanbanBoard({
       onDragStart={handleDragStart}
       onDragOver={onDragOver}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
       <div className="flex-1 overflow-x-auto">
         <div className="flex gap-3 p-0 min-w-min h-full">

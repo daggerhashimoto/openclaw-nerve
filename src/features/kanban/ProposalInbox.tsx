@@ -82,15 +82,15 @@ function ProposalRow({
   onReject,
 }: {
   proposal: KanbanProposal;
-  onApprove: (id: string) => void;
-  onReject: (id: string) => void;
+  onApprove: (id: string) => void | Promise<void>;
+  onReject: (id: string) => void | Promise<void>;
 }) {
   const [acting, setActing] = useState(false);
 
   const handleApprove = async () => {
     setActing(true);
     try {
-      onApprove(proposal.id);
+      await onApprove(proposal.id);
     } finally {
       setActing(false);
     }
@@ -99,7 +99,7 @@ function ProposalRow({
   const handleReject = async () => {
     setActing(true);
     try {
-      onReject(proposal.id);
+      await onReject(proposal.id);
     } finally {
       setActing(false);
     }
@@ -143,8 +143,8 @@ function ProposalRow({
 /* ── Main inbox panel ── */
 interface ProposalInboxProps {
   proposals: KanbanProposal[];
-  onApprove: (id: string) => void;
-  onReject: (id: string) => void;
+  onApprove: (id: string) => void | Promise<void>;
+  onReject: (id: string) => void | Promise<void>;
 }
 
 export const ProposalInbox = memo(function ProposalInbox({

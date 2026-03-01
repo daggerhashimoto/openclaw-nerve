@@ -5,7 +5,6 @@
 
 import { useMemo } from 'react';
 import { ArrowRight } from 'lucide-react';
-import { useKanban } from './hooks/useKanban';
 import type { KanbanTask, TaskStatus, TaskPriority } from './types';
 import { COLUMN_LABELS } from './types';
 
@@ -24,6 +23,10 @@ const MAX_ROWS = 5;
 interface KanbanQuickViewProps {
   onOpenBoard: () => void;
   onOpenTask: (task: KanbanTask) => void;
+  tasksByStatus: (status: TaskStatus) => KanbanTask[];
+  statusCounts: Record<TaskStatus, number>;
+  loading?: boolean;
+  error?: string | null;
 }
 
 function TaskRow({ task, onClick }: { task: KanbanTask; onClick: () => void }) {
@@ -80,8 +83,7 @@ function StatusSection({
   );
 }
 
-export function KanbanQuickView({ onOpenBoard, onOpenTask }: KanbanQuickViewProps) {
-  const { tasksByStatus, statusCounts, loading, error } = useKanban();
+export function KanbanQuickView({ onOpenBoard, onOpenTask, tasksByStatus, statusCounts, loading = false, error = null }: KanbanQuickViewProps) {
 
   const sections = useMemo(() => {
     return QUICK_STATUSES.map(s => ({

@@ -1064,15 +1064,19 @@ export class KanbanStore {
     const task = data.tasks[idx];
     const now = Date.now();
 
-    // Build patch from payload (exclude 'id')
-    const { id: _id, ...patch } = payload;
+    // Build patch from payload — allowlist safe fields only
+    const ALLOWED_UPDATE_FIELDS = ['title', 'description', 'status', 'priority', 'assignee', 'labels', 'result'] as const;
+    const patch: Record<string, unknown> = {};
+    for (const key of ALLOWED_UPDATE_FIELDS) {
+      if (key in payload) patch[key] = payload[key];
+    }
 
     // If status changed, re-compute columnOrder
     if (patch.status && patch.status !== task.status) {
       const maxOrder = data.tasks
         .filter((t) => t.status === (patch.status as TaskStatus) && t.id !== taskId)
         .reduce((max, t) => Math.max(max, t.columnOrder), -1);
-      (patch as Record<string, unknown>).columnOrder = maxOrder + 1;
+      patch.columnOrder = maxOrder + 1;
     }
 
     const updated: KanbanTask = { ...task, ...patch, updatedAt: now, version: task.version + 1 } as KanbanTask;

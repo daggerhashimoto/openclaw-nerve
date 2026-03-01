@@ -250,6 +250,14 @@ export function useKanbanDragDrop({
     [tasks, findColumnForId, setTasksOptimistic, reorderTask, onError],
   );
 
+  const onDragCancel = useCallback(() => {
+    if (snapshotRef.current) {
+      setTasksOptimistic(() => snapshotRef.current!);
+    }
+    snapshotRef.current = null;
+    setActiveTask(null);
+  }, [setTasksOptimistic]);
+
   return {
     sensors,
     collisionDetection: closestCorners,
@@ -257,5 +265,6 @@ export function useKanbanDragDrop({
     onDragStart,
     onDragOver,
     onDragEnd,
+    onDragCancel,
   };
 }

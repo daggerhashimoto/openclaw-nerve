@@ -78,7 +78,7 @@ interface WorkspacePanelProps {
 export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, compact = false, onOpenBoard }: WorkspacePanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>(getInitialTab);
   const { activeCount } = useCrons();
-  const { statusCounts } = useKanban();
+  const { statusCounts, tasksByStatus, loading: kanbanLoading, error: kanbanError } = useKanban();
   const kanbanActiveCount = (statusCounts.todo || 0) + (statusCounts['in-progress'] || 0) + (statusCounts.review || 0);
 
   const [visitedTabs, setVisitedTabs] = useState<Set<TabId>>(() => new Set([activeTab]));
@@ -128,6 +128,10 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, c
             <KanbanQuickView
               onOpenBoard={onOpenBoard ?? (() => {})}
               onOpenTask={() => onOpenBoard?.()}
+              tasksByStatus={tasksByStatus}
+              statusCounts={statusCounts}
+              loading={kanbanLoading}
+              error={kanbanError}
             />
           )}
         </div>

@@ -412,6 +412,7 @@ app.post('/api/kanban/proposals', rateLimitGeneral, async (c) => {
   const { type, payload, sourceSessionKey, proposedBy } = parsed.data;
 
   // Validate payload against type-specific schema
+  let safePayload: Record<string, unknown>;
   if (type === 'create') {
     const payloadParsed = proposalCreatePayloadSchema.safeParse(payload);
     if (!payloadParsed.success) {
@@ -420,6 +421,7 @@ app.post('/api/kanban/proposals', rateLimitGeneral, async (c) => {
         details: payloadParsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
       }, 400);
     }
+    safePayload = payloadParsed.data;
   } else {
     const payloadParsed = proposalUpdatePayloadSchema.safeParse(payload);
     if (!payloadParsed.success) {
@@ -428,19 +430,20 @@ app.post('/api/kanban/proposals', rateLimitGeneral, async (c) => {
         details: payloadParsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
       }, 400);
     }
+    safePayload = payloadParsed.data;
     // Validate that referenced task exists
     try {
-      await store.getTask(payload.id as string);
+      await store.getTask(safePayload.id as string);
     } catch (err) {
       if (err instanceof TaskNotFoundError) {
-        return c.json({ error: 'not_found', details: `Referenced task not found: ${payload.id}` }, 404);
+        return c.json({ error: 'not_found', details: `Referenced task not found: ${safePayload.id}` }, 404);
       }
       throw err;
     }
   }
 
   try {
-    const proposal = await store.createProposal({ type, payload, sourceSessionKey, proposedBy });
+    const proposal = await store.createProposal({ type, payload: safePayload, sourceSessionKey, proposedBy });
     return c.json(proposal, 201);
   } catch (err) {
     if (err instanceof TaskNotFoundError) {

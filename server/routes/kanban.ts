@@ -32,6 +32,82 @@ import type {
 
 const app = new Hono();
 
+// ── Session completion poller ────────────────────────────────────────
+
+/** Poll gateway sessions_list for a kanban run label until it finishes, then complete the run. */
+function pollSessionCompletion(
+  store: ReturnType<typeof getKanbanStore>,
+  taskId: string,
+  label: string,
+  intervalMs = 5_000,
+  maxAttempts = 360, // 30 minutes max
+): void {
+  let attempts = 0;
+
+  const poll = async () => {
+    attempts++;
+    if (attempts > maxAttempts) {
+      console.warn(`[kanban] Polling timed out for task ${taskId} (label: ${label})`);
+      await store.completeRun(taskId, undefined, 'Run timed out (polling limit reached)').catch(() => {});
+      return;
+    }
+
+    try {
+      const result = await invokeGatewayTool('sessions_list', {
+        kinds: ['subagent'],
+        limit: 50,
+        messageLimit: 1,
+      });
+
+      // sessions_list returns { sessions: [...] } or similar
+      const sessions = (result as Record<string, unknown>)?.sessions as Array<Record<string, unknown>> | undefined
+        ?? (result as Record<string, unknown>)?.recent as Array<Record<string, unknown>> | undefined
+        ?? [];
+
+      const match = sessions.find((s) => s.label === label);
+
+      if (!match) {
+        // Session not found yet or already gone -- check if task still in-progress
+        const task = await store.getTask(taskId).catch(() => null);
+        if (!task || task.status !== 'in-progress') return; // task moved, stop polling
+        setTimeout(poll, intervalMs);
+        return;
+      }
+
+      const status = match.status as string;
+      if (status === 'done' || status === 'completed' || status === 'finished') {
+        // Extract last message as result
+        const messages = (match.lastMessages ?? match.messages ?? []) as Array<Record<string, unknown>>;
+        const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+        const resultText = typeof lastAssistant?.content === 'string'
+          ? lastAssistant.content
+          : typeof lastAssistant?.text === 'string'
+            ? lastAssistant.text
+            : 'Completed (no result text)';
+        await store.completeRun(taskId, resultText).catch((err) => {
+          console.error(`[kanban] Failed to complete run for task ${taskId}:`, err);
+        });
+        return;
+      }
+
+      if (status === 'error' || status === 'failed') {
+        const errorMsg = (match.error as string) || 'Agent session failed';
+        await store.completeRun(taskId, undefined, errorMsg).catch(() => {});
+        return;
+      }
+
+      // Still running -- keep polling
+      setTimeout(poll, intervalMs);
+    } catch (err) {
+      console.error(`[kanban] Poll error for task ${taskId}:`, err);
+      setTimeout(poll, intervalMs); // retry on transient errors
+    }
+  };
+
+  // Start after a brief delay to let the session register
+  setTimeout(poll, 3_000);
+}
+
 // ── Zod schemas ──────────────────────────────────────────────────────
 
 const taskStatusSchema = z.enum(['backlog', 'todo', 'in-progress', 'review', 'done', 'cancelled']);
@@ -562,10 +638,16 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
     if (task.model) spawnArgs.model = task.model;
     if (task.thinking) spawnArgs.thinking = task.thinking;
 
-    invokeGatewayTool('sessions_spawn', spawnArgs).catch((err) => {
-      console.error(`[kanban] Failed to spawn session for task ${id}:`, err);
-      store.completeRun(id, undefined, `Spawn failed: ${err.message}`).catch(() => {});
-    });
+    invokeGatewayTool('sessions_spawn', spawnArgs)
+      .then((result: unknown) => {
+        // Poll for session completion in the background
+        const label = `kanban-${id}`;
+        pollSessionCompletion(store, id, label);
+      })
+      .catch((err) => {
+        console.error(`[kanban] Failed to spawn session for task ${id}:`, err);
+        store.completeRun(id, undefined, `Spawn failed: ${err.message}`).catch(() => {});
+      });
 
     return c.json(task);
   } catch (err) {

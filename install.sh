@@ -156,11 +156,11 @@ github_repo_path_from_url() {
   local url="$1"
   local path=""
 
-  if [[ "$url" =~ ^https://github.com/([^/]+)/([^/]+)(\.git)?$ ]]; then
+  if [[ "$url" =~ ^https://github.com/([^/]+)/([^/]+)(\.git)?/?$ ]]; then
     path="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
-  elif [[ "$url" =~ ^git@github.com:([^/]+)/([^/]+)(\.git)?$ ]]; then
+  elif [[ "$url" =~ ^git@github.com:([^/]+)/([^/]+)(\.git)?/?$ ]]; then
     path="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
-  elif [[ "$url" =~ ^ssh://git@github.com/([^/]+)/([^/]+)(\.git)?$ ]]; then
+  elif [[ "$url" =~ ^ssh://git@github.com/([^/]+)/([^/]+)(\.git)?/?$ ]]; then
     path="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
   else
     return 1

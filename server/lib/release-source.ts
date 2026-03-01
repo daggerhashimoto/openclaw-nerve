@@ -37,7 +37,7 @@ export function normalizeSemverTag(tag: string | null | undefined): string | nul
 function parseSemverTags(output: string): string[] {
   const versions: string[] = [];
   for (const line of output.split('\n')) {
-    const match = /v?(\d+\.\d+\.\d+)$/.exec(line.trim());
+    const match = /^(?:refs\/tags\/)?v?(\d+\.\d+\.\d+)$/.exec(line.trim());
     if (match && !versions.includes(match[1])) {
       versions.push(match[1]);
     }

@@ -194,14 +194,31 @@ async function ensureTrashInfra(): Promise<void> {
   }
 }
 
+function isValidTrashIndexItem(item: unknown): item is TrashIndexItem {
+  return (
+    typeof item === 'object' &&
+    item !== null &&
+    typeof (item as TrashIndexItem).id === 'string' &&
+    typeof (item as TrashIndexItem).originalPath === 'string' &&
+    typeof (item as TrashIndexItem).deletedAtMs === 'number' &&
+    ((item as TrashIndexItem).type === 'file' || (item as TrashIndexItem).type === 'directory')
+  );
+}
+
 async function readTrashIndex(): Promise<TrashIndexDoc> {
   try {
     const raw = await fs.readFile(trashIndexAbs(), 'utf-8');
     const parsed = JSON.parse(raw) as Partial<TrashIndexDoc>;
     if (parsed && parsed.version === 1 && parsed.items && typeof parsed.items === 'object') {
+      const validItems: Record<string, TrashIndexItem> = {};
+      for (const [key, value] of Object.entries(parsed.items)) {
+        if (isValidTrashIndexItem(value)) {
+          validItems[key] = value;
+        }
+      }
       return {
         version: 1,
-        items: parsed.items as Record<string, TrashIndexItem>,
+        items: validItems,
       };
     }
     return { ...EMPTY_INDEX, items: {} };
@@ -211,7 +228,35 @@ async function readTrashIndex(): Promise<TrashIndexDoc> {
 }
 
 async function writeTrashIndex(index: TrashIndexDoc): Promise<void> {
-  await fs.writeFile(trashIndexAbs(), JSON.stringify(index, null, 2) + '\n', 'utf-8');
+  const indexPath = trashIndexAbs();
+  const dirPath = path.dirname(indexPath);
+  const tempPath = path.join(dirPath, `${TRASH_INDEX}.${process.pid}.${Date.now()}.${randomId()}.tmp`);
+  const payload = JSON.stringify(index, null, 2) + '\n';
+
+  let tempHandle: Awaited<ReturnType<typeof fs.open>> | null = null;
+  try {
+    tempHandle = await fs.open(tempPath, 'w');
+    await tempHandle.writeFile(payload, 'utf-8');
+    await tempHandle.sync();
+    await tempHandle.close();
+    tempHandle = null;
+
+    await fs.rename(tempPath, indexPath);
+
+    try {
+      const dirHandle = await fs.open(dirPath, 'r');
+      await dirHandle.sync();
+      await dirHandle.close();
+    } catch {
+      // Best-effort durability on platforms/filesystems that support dir fsync.
+    }
+  } catch {
+    if (tempHandle) {
+      await tempHandle.close().catch(() => undefined);
+    }
+    await fs.rm(tempPath, { force: true }).catch(() => undefined);
+    throw new FileOpError(500, 'trash_index_write_failed', 'Failed to persist trash index');
+  }
 }
 
 function randomId(): string {

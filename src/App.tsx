@@ -146,10 +146,15 @@ export default function App({ onLogout }: AppProps) {
     } catch { /* ignore */ }
     return 'chat';
   });
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const setViewMode = useCallback((mode: ViewMode) => {
     setViewModeRaw(mode);
     try { localStorage.setItem('nerve:viewMode', mode); } catch { /* ignore */ }
   }, []);
+  const openTaskInBoard = useCallback((taskId: string) => {
+    setPendingTaskId(taskId);
+    setViewMode('kanban');
+  }, [setViewMode]);
 
   // Build command list with stable references
   const openSettings = useCallback(() => setSettingsOpen(true), []);
@@ -361,7 +366,7 @@ export default function App({ onLogout }: AppProps) {
         </div>
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-background">
           <PanelErrorBoundary name="Workspace">
-            <WorkspacePanel memories={memories} onRefreshMemories={refreshMemories} memoriesLoading={memoriesLoading} onOpenBoard={() => setViewMode('kanban')} />
+            <WorkspacePanel memories={memories} onRefreshMemories={refreshMemories} memoriesLoading={memoriesLoading} onOpenBoard={() => setViewMode('kanban')} onOpenTask={openTaskInBoard} />
           </PanelErrorBoundary>
         </div>
       </div>
@@ -394,7 +399,7 @@ export default function App({ onLogout }: AppProps) {
   const compactWorkspacePanel = (
     <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading workspace…</div>}>
       <PanelErrorBoundary name="Workspace">
-        <WorkspacePanel memories={memories} onRefreshMemories={refreshMemories} memoriesLoading={memoriesLoading} compact onOpenBoard={() => setViewMode('kanban')} />
+        <WorkspacePanel memories={memories} onRefreshMemories={refreshMemories} memoriesLoading={memoriesLoading} compact onOpenBoard={() => setViewMode('kanban')} onOpenTask={openTaskInBoard} />
       </PanelErrorBoundary>
     </Suspense>
   );
@@ -488,7 +493,7 @@ export default function App({ onLogout }: AppProps) {
         {viewMode === 'kanban' ? (
           <div className="flex-1 flex flex-col min-w-0 min-h-0 boot-panel">
             <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
-              <KanbanPanel />
+              <KanbanPanel initialTaskId={pendingTaskId} onInitialTaskConsumed={() => setPendingTaskId(null)} />
             </Suspense>
           </div>
         ) : isCompactLayout ? (

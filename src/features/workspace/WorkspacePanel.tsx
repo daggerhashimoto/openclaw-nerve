@@ -73,9 +73,11 @@ interface WorkspacePanelProps {
   compact?: boolean;
   /** Switch the app to full kanban board view. */
   onOpenBoard?: () => void;
+  /** Open a specific task in the full board view. */
+  onOpenTask?: (taskId: string) => void;
 }
 
-export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, compact = false, onOpenBoard }: WorkspacePanelProps) {
+export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, compact = false, onOpenBoard, onOpenTask }: WorkspacePanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>(getInitialTab);
   const { activeCount } = useCrons();
 
@@ -125,7 +127,7 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, c
           {visitedTabs.has('kanban') && (
             <KanbanQuickView
               onOpenBoard={onOpenBoard ?? (() => {})}
-              onOpenTask={() => onOpenBoard?.()}
+              onOpenTask={(task) => onOpenTask ? onOpenTask(task.id) : onOpenBoard?.()}
             />
           )}
         </div>

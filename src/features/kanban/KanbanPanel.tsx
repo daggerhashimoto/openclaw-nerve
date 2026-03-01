@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { KanbanTask } from './types';
 import { useKanban } from './hooks/useKanban';
 import { useProposals } from './hooks/useProposals';
@@ -7,11 +7,18 @@ import { KanbanBoard } from './KanbanBoard';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { TaskDetailDrawer } from './TaskDetailDrawer';
 
+interface KanbanPanelProps {
+  /** If set, auto-open the drawer for this task ID on mount. */
+  initialTaskId?: string | null;
+  /** Called after the initial task drawer has been opened (to clear the ID). */
+  onInitialTaskConsumed?: () => void;
+}
+
 /**
  * Main Kanban panel — replaces the placeholder from Wave 1.
  * Full board with header, columns, create dialog, and detail drawer.
  */
-export function KanbanPanel() {
+export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPanelProps = {}) {
   const {
     tasks,
     loading,
@@ -40,6 +47,18 @@ export function KanbanPanel() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<KanbanTask | null>(null);
+  const consumedRef = useRef<string | null>(null);
+
+  // Auto-open drawer for initialTaskId
+  useEffect(() => {
+    if (!initialTaskId || initialTaskId === consumedRef.current) return;
+    const match = tasks.find((t) => t.id === initialTaskId);
+    if (match) {
+      setSelectedTask(match);
+      consumedRef.current = initialTaskId;
+      onInitialTaskConsumed?.();
+    }
+  }, [initialTaskId, tasks, onInitialTaskConsumed]);
 
   /* ── Card click → open drawer ── */
   const handleCardClick = useCallback((task: KanbanTask) => {

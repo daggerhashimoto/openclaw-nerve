@@ -10,7 +10,8 @@ const PROXY_RESPONSE_HEADERS = new Set([
   'cache-control',
   'etag',
   'last-modified',
-  'content-encoding',
+  // Intentionally omit content-encoding: upstream fetch may already decode body.
+  // Forwarding stale encoding headers can cause client-side "Decoding failed" errors.
 ]);
 
 const PROXY_REQUEST_HEADERS = new Set([

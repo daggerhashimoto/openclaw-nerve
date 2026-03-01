@@ -1095,6 +1095,117 @@ describe('proposal auto mode via HTTP', () => {
   });
 });
 
+// ── POST /api/kanban/tasks/:id/complete (marker parsing) ─────────────
+
+describe('POST /api/kanban/tasks/:id/complete — marker parsing', () => {
+  async function setupRunningTask(app: Hono): Promise<KanbanTask> {
+    const task = await createTask(app, { status: 'todo' });
+    const execRes = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    return execRes.json() as Promise<KanbanTask>;
+  }
+
+  it('creates proposals from markers in result text', async () => {
+    const app = await buildApp();
+    const task = await setupRunningTask(app);
+
+    const resultText = 'Task done.\n[kanban:create]{"title":"Follow-up task","priority":"high"}[/kanban:create]\nEnd.';
+    const res = await app.request(`/api/kanban/tasks/${task.id}/complete`, json({ result: resultText }));
+    expect(res.status).toBe(200);
+
+    // Verify proposal was created
+    const proposalsRes = await app.request('/api/kanban/proposals?status=pending');
+    const proposals = await proposalsRes.json() as { proposals: Array<{ type: string; payload: Record<string, unknown> }> };
+    expect(proposals.proposals.length).toBeGreaterThanOrEqual(1);
+    const found = proposals.proposals.find(p => p.payload.title === 'Follow-up task');
+    expect(found).toBeDefined();
+    expect(found!.type).toBe('create');
+  });
+
+  it('strips markers from stored result', async () => {
+    const app = await buildApp();
+    const task = await setupRunningTask(app);
+
+    const resultText = 'Task done.\n[kanban:create]{"title":"Follow-up"}[/kanban:create]\nEnd.';
+    const res = await app.request(`/api/kanban/tasks/${task.id}/complete`, json({ result: resultText }));
+    expect(res.status).toBe(200);
+    const completed = await res.json() as KanbanTask;
+    expect(completed.result).not.toContain('[kanban:create]');
+    expect(completed.result).toContain('Task done.');
+    expect(completed.result).toContain('End.');
+  });
+
+  it('handles result with no markers (no proposals, result unchanged)', async () => {
+    const app = await buildApp();
+    const task = await setupRunningTask(app);
+
+    const resultText = 'All work completed successfully.';
+    const res = await app.request(`/api/kanban/tasks/${task.id}/complete`, json({ result: resultText }));
+    expect(res.status).toBe(200);
+    const completed = await res.json() as KanbanTask;
+    expect(completed.result).toBe(resultText);
+
+    const proposalsRes = await app.request('/api/kanban/proposals');
+    const proposals = await proposalsRes.json() as { proposals: unknown[] };
+    expect(proposals.proposals).toHaveLength(0);
+  });
+
+  it('handles invalid markers gracefully (result still stored)', async () => {
+    const app = await buildApp();
+    const task = await setupRunningTask(app);
+
+    const resultText = 'Done.\n[kanban:create]{bad json}[/kanban:create]\nFinished.';
+    const res = await app.request(`/api/kanban/tasks/${task.id}/complete`, json({ result: resultText }));
+    expect(res.status).toBe(200);
+    const completed = await res.json() as KanbanTask;
+    // Invalid markers are not parsed but still stripped by the regex
+    expect(completed.result).toBeDefined();
+
+    // No proposals from invalid markers
+    const proposalsRes = await app.request('/api/kanban/proposals');
+    const proposals = await proposalsRes.json() as { proposals: unknown[] };
+    expect(proposals.proposals).toHaveLength(0);
+  });
+
+  it('does not parse markers when error is provided', async () => {
+    const app = await buildApp();
+    const task = await setupRunningTask(app);
+
+    const resultText = '[kanban:create]{"title":"Should not be created"}[/kanban:create]';
+    const res = await app.request(`/api/kanban/tasks/${task.id}/complete`, json({
+      result: resultText,
+      error: 'Task failed',
+    }));
+    expect(res.status).toBe(200);
+
+    const proposalsRes = await app.request('/api/kanban/proposals');
+    const proposals = await proposalsRes.json() as { proposals: unknown[] };
+    expect(proposals.proposals).toHaveLength(0);
+  });
+
+  it('handles multiple markers (create + update)', async () => {
+    const app = await buildApp();
+    // Create an existing task for the update marker to reference
+    const existingTask = await createTask(app, { title: 'Existing task' });
+    const task = await setupRunningTask(app);
+
+    const resultText = [
+      'Work done.',
+      `[kanban:create]{"title":"New task from agent"}[/kanban:create]`,
+      `[kanban:update]{"id":"${existingTask.id}","status":"done"}[/kanban:update]`,
+      'Finished.',
+    ].join('\n');
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/complete`, json({ result: resultText }));
+    expect(res.status).toBe(200);
+
+    const proposalsRes = await app.request('/api/kanban/proposals');
+    const proposals = await proposalsRes.json() as { proposals: Array<{ type: string }> };
+    expect(proposals.proposals).toHaveLength(2);
+    expect(proposals.proposals.some(p => p.type === 'create')).toBe(true);
+    expect(proposals.proposals.some(p => p.type === 'update')).toBe(true);
+  });
+});
+
 // ── Full workflow through HTTP ───────────────────────────────────────
 
 describe('full workflow via HTTP', () => {

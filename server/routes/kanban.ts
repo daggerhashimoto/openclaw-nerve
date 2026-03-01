@@ -23,6 +23,7 @@ import {
   ProposalAlreadyResolvedError,
 } from '../lib/kanban-store.js';
 import { invokeGatewayTool } from '../lib/gateway-client.js';
+import { parseKanbanMarkers, stripKanbanMarkers } from '../lib/parseMarkers.js';
 import type {
   TaskStatus,
   TaskPriority,
@@ -134,8 +135,26 @@ function pollSessionCompletion(
           console.warn(`[kanban] Could not fetch history for ${label}:`, err);
         }
 
+        // Parse kanban markers from the result and create proposals
+        const markers = parseKanbanMarkers(resultText);
+        for (const marker of markers) {
+          try {
+            await store.createProposal({
+              type: marker.type,
+              payload: marker.payload,
+              sourceSessionKey: label,
+              proposedBy: `agent:${label}`,
+            });
+          } catch (err) {
+            console.warn(`[kanban] Failed to create proposal from marker:`, err);
+          }
+        }
+
+        // Strip markers from the stored result text
+        const cleanResult = markers.length > 0 ? stripKanbanMarkers(resultText) : resultText;
+
         console.log(`[kanban] Run completed for task ${taskId} (label: ${label})`);
-        await store.completeRun(taskId, resultText).catch((err) => {
+        await store.completeRun(taskId, cleanResult).catch((err) => {
           console.error(`[kanban] Failed to complete run for task ${taskId}:`, err);
         });
         return;
@@ -830,7 +849,29 @@ app.post('/api/kanban/tasks/:id/complete', rateLimitGeneral, async (c) => {
   }
 
   try {
-    const task = await store.completeRun(id, parsed.data.result, parsed.data.error);
+    let resultText = parsed.data.result;
+
+    // Parse kanban markers from the result text and create proposals
+    if (resultText && !parsed.data.error) {
+      const markers = parseKanbanMarkers(resultText);
+      for (const marker of markers) {
+        try {
+          await store.createProposal({
+            type: marker.type,
+            payload: marker.payload,
+            sourceSessionKey: `complete:${id}`,
+            proposedBy: 'operator',
+          });
+        } catch (err) {
+          console.warn(`[kanban] Failed to create proposal from marker in complete:`, err);
+        }
+      }
+      if (markers.length > 0) {
+        resultText = stripKanbanMarkers(resultText);
+      }
+    }
+
+    const task = await store.completeRun(id, resultText, parsed.data.error);
     return c.json(task);
   } catch (err) {
     return handleWorkflowError(c, err);

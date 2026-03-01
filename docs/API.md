@@ -14,6 +14,7 @@ Nerve exposes a REST + SSE API served by [Hono](https://hono.dev/) on the config
 - [Version](#version)
 - [Connect Defaults](#connect-defaults)
 - [Instance Discovery](#instance-discovery)
+- [Instance Proxy Scaffold](#instance-proxy-scaffold)
 - [Events (SSE)](#events-sse)
 - [Text-to-Speech](#text-to-speech)
 - [Transcription](#transcription)
@@ -286,6 +287,39 @@ No unrelated container environment variables are returned.
 | 404 | `{ "error": "Instance not found." }` | Container not found or not recognized as an OpenClaw instance |
 | 503 | `{ "error": "...", "code": "docker_unavailable" }` | Docker CLI/daemon unavailable |
 | 502 | `{ "error": "...", "code": "docker_command_failed" }` | Docker command returned an error |
+
+---
+
+## Instance Proxy Scaffold
+
+### `ANY /api/instances/:id/proxy/*`
+
+Master-side proxy scaffold for forwarding API calls to a selected local Docker instance.
+
+- Target resolution uses local Docker inspection and forwards to `http://127.0.0.1:<published-port>`.
+- Port selection prefers container `18789/tcp`; if unavailable, falls back to the first published TCP port.
+- Method, query string, body, and a safe request-header subset are forwarded.
+- Route is intentionally strict and blocks ambiguous or unsafe paths.
+
+**Rate Limit:** General (60/min)
+
+**Guardrails:**
+
+- Paths under `/api/instances` are master-pinned and cannot be proxied.
+- Path traversal (`..`), protocol-relative (`//`), absolute URL/protocol smuggling patterns, malformed encoding, and backslashes are rejected.
+- Proxy target host is fixed to loopback (`127.0.0.1`) to avoid SSRF-style host pivoting.
+
+**Error responses:**
+
+| Status | Body | Description |
+|-------|------|-------------|
+| 400 | `{ "error": "...", "code": "invalid_proxy_path" }` | Unsafe/ambiguous proxy path |
+| 400 | `{ "error": "...", "code": "master_pinned_path" }` | Attempt to proxy instance-management endpoints |
+| 404 | `{ "error": "Instance unavailable.", "code": "instance_unavailable" }` | Container not found or not recognized as OpenClaw |
+| 409 | `{ "error": "...", "code": "target_port_unavailable" }` | No published TCP target port found for that container |
+| 503 | `{ "error": "...", "code": "docker_unavailable" }` | Docker CLI/daemon unavailable |
+| 502 | `{ "error": "...", "code": "docker_command_failed" }` | Docker command failed |
+| 502 | `{ "error": "Proxy request failed.", "code": "proxy_request_failed" }` | Upstream fetch failure |
 
 ---
 

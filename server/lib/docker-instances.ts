@@ -24,6 +24,8 @@ export interface LocalInstanceSummary {
   hasGatewayToken: boolean;
 }
 
+const DEFAULT_GATEWAY_CONTAINER_PORT = 18789;
+
 export interface InstanceTokenResult {
   instanceId: string;
   found: boolean;
@@ -214,4 +216,36 @@ export async function getInstanceToken(instanceId: string): Promise<InstanceToke
     token: token.token,
     tokenKey: token.tokenKey,
   };
+}
+
+export async function getLocalOpenClawInstance(instanceId: string): Promise<LocalInstanceSummary | null> {
+  const inspected = await inspectContainers([instanceId]);
+  const target = inspected[0];
+  if (!target) return null;
+  if (!looksLikeOpenClawInstance(target)) return null;
+  return toSummary(target);
+}
+
+export function resolvePublishedGatewayPort(
+  ports: InstancePort[],
+  preferredContainerPort = DEFAULT_GATEWAY_CONTAINER_PORT,
+): number | null {
+  const preferred = ports.find(
+    (port) =>
+      port.protocol === 'tcp' &&
+      port.containerPort === preferredContainerPort &&
+      typeof port.hostPort === 'number' &&
+      Number.isFinite(port.hostPort) &&
+      port.hostPort > 0,
+  );
+  if (preferred?.hostPort) return preferred.hostPort;
+
+  const fallback = ports.find(
+    (port) =>
+      port.protocol === 'tcp' &&
+      typeof port.hostPort === 'number' &&
+      Number.isFinite(port.hostPort) &&
+      port.hostPort > 0,
+  );
+  return fallback?.hostPort ?? null;
 }

@@ -153,12 +153,15 @@ export function useWebSocket(activeInstanceId: string | null = null): UseWebSock
         return;
       }
       wsRef.current = ws;
+      const socket = ws;
 
       ws.onopen = () => {
+        if (wsRef.current !== socket) return;
         setConnectionState(isReconnect ? 'reconnecting' : 'connecting');
       };
 
       ws.onmessage = (ev) => {
+        if (wsRef.current !== socket) return;
         let msg: GatewayMessage;
         try { msg = JSON.parse(ev.data) as GatewayMessage; } catch { return; }
 
@@ -227,6 +230,7 @@ export function useWebSocket(activeInstanceId: string | null = null): UseWebSock
       };
 
       ws.onerror = () => {
+        if (wsRef.current !== socket) return;
         // Don't set error message during reconnect attempts (too noisy)
         if (!isReconnect) {
           setConnectError('WebSocket error — check URL');
@@ -234,6 +238,7 @@ export function useWebSocket(activeInstanceId: string | null = null): UseWebSock
       };
 
       ws.onclose = () => {
+        if (wsRef.current !== socket) return;
         rejectPending(new Error('WebSocket disconnected'));
 
         // Stale connection: a newer doConnect has already superseded this one

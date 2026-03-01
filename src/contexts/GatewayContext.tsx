@@ -157,9 +157,10 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
 
     if (connectionState === 'connected' || connectionState === 'connecting' || connectionState === 'reconnecting') {
       disconnect();
-      void wsConnect(saved.url, saved.token).catch(() => {});
+      // Use public connect wrapper so reconnect credentials/flags are reset consistently.
+      void connect(saved.url, saved.token).catch(() => {});
     }
-  }, [activeInstanceId, connectionState, disconnect, wsConnect]);
+  }, [activeInstanceId, connectionState, disconnect, connect]);
 
   const value = useMemo<GatewayContextValue>(() => ({
     connectionState,

@@ -234,7 +234,7 @@ describe('instances routes', () => {
 
   it('blocks unsafe proxy path encodings', async () => {
     const app = buildApp();
-    const res = await app.request('/api/instances/cid-open/proxy/%2e%2e/secrets');
+    const res = await app.request('/api/instances/cid-open/proxy/http:%2f%2fevil.example');
     expect(res.status).toBe(400);
     const json = (await res.json()) as { code: string };
     expect(json.code).toBe('invalid_proxy_path');

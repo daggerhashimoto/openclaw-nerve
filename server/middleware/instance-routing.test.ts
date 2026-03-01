@@ -49,6 +49,7 @@ describe('instanceRoutingMiddleware', () => {
             NetworkSettings: {
               Ports: {
                 '18789/tcp': [{ HostIp: '0.0.0.0', HostPort: '28789' }],
+                '3080/tcp': [{ HostIp: '0.0.0.0', HostPort: '23080' }],
               },
             },
           },

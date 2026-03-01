@@ -123,12 +123,15 @@ docker run --rm -it \
 ```
 
 Container env vars:
-- `GATEWAY_TOKEN` (required): token Nerve uses for gateway API calls.
+- `GATEWAY_TOKEN` (recommended): token Nerve uses for gateway API calls.
 - `OPENCLAW_GATEWAY_TOKEN` (recommended): token passed to OpenClaw gateway itself.
+  - If only one is provided, startup syncs both.
+  - If neither is provided, startup auto-generates a token.
 - `PORT` (optional, default `3080`): Nerve HTTP port.
 - `OPENCLAW_GATEWAY_PORT` (optional, default `3181`): gateway port.
 - `OPENCLAW_GATEWAY_CMD` (optional): custom gateway start command override.
 - `OPENCLAW_GATEWAY_STOP_CMD` (optional): custom gateway stop command override for shutdown.
+- `NERVE_ALLOW_INSECURE` (optional, default `true` in multiclaw container startup): allows `HOST=0.0.0.0` without auth for local multi-instance testing. For production, prefer `NERVE_AUTH=true` with session secret/password.
 
 ### Updating
 

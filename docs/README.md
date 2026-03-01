@@ -14,6 +14,12 @@ Use this folder as the docs hub for Nerve.
 - [Agent Markers](./AGENT-MARKERS.md)
 - [Code Review](./CODE_REVIEW.md)
 
+## Deployment Guides
+
+- [Run everything on one machine](./DEPLOYMENT-A.md)
+- [Use a cloud Gateway with Nerve on your laptop](./DEPLOYMENT-B.md)
+- [Run both Nerve and Gateway in the cloud](./DEPLOYMENT-C.md)
+
 ## Release Notes
 
 - [Changelog](../CHANGELOG.md)

@@ -79,6 +79,12 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
 
 The installer handles dependencies, cloning, building, and launching. It runs a setup wizard that auto-detects your gateway token and walks you through configuration.
 
+### Pick your setup
+
+- **[Run everything on one machine](docs/DEPLOYMENT-A.md)**
+- **[Use a cloud Gateway with Nerve on your laptop](docs/DEPLOYMENT-B.md)**
+- **[Run both Nerve and Gateway in the cloud](docs/DEPLOYMENT-C.md)**
+
 ### Manual install
 
 ```bash
@@ -138,6 +144,7 @@ See [Security](docs/SECURITY.md) for the full threat model.
 |---|---|
 | **[Architecture](docs/ARCHITECTURE.md)** | How the codebase is organized |
 | **[Configuration](docs/CONFIGURATION.md)** | Every `.env` variable explained |
+| **[Deployment Guides](docs/README.md#deployment-guides)** | Practical guides for local, remote Gateway, and cloud setups |
 | **[Agent Markers](docs/AGENT-MARKERS.md)** | TTS markers, inline charts, and how agents render rich UI |
 | **[Security](docs/SECURITY.md)** | What's locked down and how |
 | **[API](docs/API.md)** | REST and WebSocket endpoints |

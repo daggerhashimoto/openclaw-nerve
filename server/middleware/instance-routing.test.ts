@@ -78,7 +78,7 @@ describe('instanceRoutingMiddleware', () => {
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('http://127.0.0.1:28789/api/files/read?path=README.md');
+    expect(url).toBe('http://127.0.0.1:23080/api/files/read?path=README.md');
   });
 
   it('keeps /api/instances master-pinned even when instance metadata is present', async () => {

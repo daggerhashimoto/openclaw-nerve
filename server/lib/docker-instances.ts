@@ -24,7 +24,7 @@ export interface LocalInstanceSummary {
   hasGatewayToken: boolean;
 }
 
-const DEFAULT_GATEWAY_CONTAINER_PORT = 18789;
+const DEFAULT_GATEWAY_CONTAINER_PORTS = [3181, 18789] as const;
 const DEFAULT_NERVE_CONTAINER_PORT = 3080;
 
 export interface InstanceTokenResult {
@@ -166,7 +166,7 @@ export function looksLikeOpenClawInstance(inspect: DockerInspect): boolean {
   if (Object.entries(labels).some(([k, v]) => OPENCLAW_HINT_RE.test(k) || OPENCLAW_HINT_RE.test(v))) return true;
   if (env.some((entry) => entry.startsWith('OPENCLAW_'))) return true;
   if (TOKEN_ENV_KEYS.some((key) => env.some((entry) => entry.startsWith(`${key}=`)))) return true;
-  return portKeys.some((key) => key.startsWith(`${DEFAULT_GATEWAY_CONTAINER_PORT}/`));
+  return DEFAULT_GATEWAY_CONTAINER_PORTS.some((port) => portKeys.some((key) => key.startsWith(`${port}/`)));
 }
 
 function toSummary(inspect: DockerInspect): LocalInstanceSummary {
@@ -235,26 +235,26 @@ export async function getLocalOpenClawInstance(instanceId: string): Promise<Loca
   return toSummary(target);
 }
 
-export function resolvePublishedGatewayPort(
-  ports: InstancePort[],
-  preferredContainerPort = DEFAULT_GATEWAY_CONTAINER_PORT,
-): number | null {
-  const preferred = ports.find(
+function resolvePublishedPortByContainerPort(ports: InstancePort[], containerPort: number): number | null {
+  const match = ports.find(
     (port) =>
       port.protocol === 'tcp' &&
-      port.containerPort === preferredContainerPort &&
+      port.containerPort === containerPort &&
       typeof port.hostPort === 'number' &&
       Number.isFinite(port.hostPort) &&
       port.hostPort > 0,
   );
-  if (preferred?.hostPort) return preferred.hostPort;
+  return match?.hostPort ?? null;
+}
 
-  const fallback = ports.find(
-    (port) =>
-      port.protocol === 'tcp' &&
-      typeof port.hostPort === 'number' &&
-      Number.isFinite(port.hostPort) &&
-      port.hostPort > 0,
-  );
-  return fallback?.hostPort ?? null;
+export function resolvePublishedNervePort(ports: InstancePort[]): number | null {
+  return resolvePublishedPortByContainerPort(ports, DEFAULT_NERVE_CONTAINER_PORT);
+}
+
+export function resolvePublishedGatewayPort(ports: InstancePort[]): number | null {
+  for (const gatewayPort of DEFAULT_GATEWAY_CONTAINER_PORTS) {
+    const resolved = resolvePublishedPortByContainerPort(ports, gatewayPort);
+    if (resolved) return resolved;
+  }
+  return null;
 }

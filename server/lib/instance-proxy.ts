@@ -1,7 +1,7 @@
 import {
   DockerCommandError,
   getLocalOpenClawInstance,
-  resolvePublishedGatewayPort,
+  resolvePublishedNervePort,
 } from './docker-instances.js';
 import { isMasterOnlyApiPath } from './instance-routing.js';
 
@@ -126,12 +126,12 @@ export async function proxyToInstance(options: ProxyToInstanceOptions): Promise<
     throw new InstanceProxyError(404, 'instance_unavailable', 'Instance unavailable.');
   }
 
-  const targetPort = resolvePublishedGatewayPort(instance.ports);
+  const targetPort = resolvePublishedNervePort(instance.ports);
   if (!targetPort) {
     throw new InstanceProxyError(
       409,
       'target_port_unavailable',
-      'Instance has no published gateway port.',
+      'Instance has no published Nerve port.',
     );
   }
 

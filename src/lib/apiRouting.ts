@@ -113,11 +113,21 @@ export function addInstanceHeaderToFetch(
       ...input,
       ...init,
       headers,
+      // Avoid cross-instance stale cache reuse for identical URLs.
+      cache: 'no-store',
     };
     return { input: new Request(input, requestInit), init: undefined };
   }
 
-  return { input, init: { ...init, headers } };
+  return {
+    input,
+    init: {
+      ...init,
+      headers,
+      // Avoid cross-instance stale cache reuse for identical URLs.
+      cache: 'no-store',
+    },
+  };
 }
 
 export { MASTER_ONLY_API_PREFIXES, INSTANCE_ROUTED_API_PREFIXES };

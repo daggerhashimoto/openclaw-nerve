@@ -4,9 +4,9 @@
  */
 
 import { useCallback } from 'react';
-import { Brain, Clock, Settings, Puzzle, type LucideIcon } from 'lucide-react';
+import { Brain, Clock, Settings, Puzzle, Columns3, type LucideIcon } from 'lucide-react';
 
-export type TabId = 'memory' | 'crons' | 'skills' | 'config';
+export type TabId = 'memory' | 'crons' | 'skills' | 'config' | 'kanban';
 
 interface Tab {
   id: TabId;
@@ -17,6 +17,7 @@ interface Tab {
 const TABS: Tab[] = [
   { id: 'memory', label: 'Memory', icon: Brain },
   { id: 'crons', label: 'Crons', icon: Clock },
+  { id: 'kanban', label: 'Kanban', icon: Columns3 },
   { id: 'skills', label: 'Skills', icon: Puzzle },
   { id: 'config', label: 'Config', icon: Settings },
 ];
@@ -25,10 +26,11 @@ interface WorkspaceTabsProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
   cronCount?: number;
+  kanbanCount?: number;
 }
 
 /** Horizontal tab bar for workspace sections (Memory, Crons, Skills, Config). */
-export function WorkspaceTabs({ activeTab, onTabChange, cronCount }: WorkspaceTabsProps) {
+export function WorkspaceTabs({ activeTab, onTabChange, cronCount, kanbanCount }: WorkspaceTabsProps) {
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const currentIndex = TABS.findIndex(t => t.id === activeTab);
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
@@ -52,7 +54,9 @@ export function WorkspaceTabs({ activeTab, onTabChange, cronCount }: WorkspaceTa
       <div className="flex items-center gap-0 flex-1 min-w-0">
       {TABS.map((tab, i) => {
         const isActive = tab.id === activeTab;
-        const badge = tab.id === 'crons' && cronCount ? cronCount : undefined;
+        const badge = tab.id === 'crons' && cronCount ? cronCount
+          : tab.id === 'kanban' && kanbanCount ? kanbanCount
+          : undefined;
         const Icon = tab.icon;
         return (
           <button

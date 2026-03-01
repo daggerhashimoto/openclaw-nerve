@@ -1,5 +1,7 @@
 import { memo, useState, useEffect } from 'react';
 import { Clock, Play, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { KanbanTask, TaskPriority } from './types';
 
 /* ── Priority colors (from spec §19.4) ── */
@@ -53,14 +55,67 @@ function RunBadge({ status }: { status: string }) {
 interface KanbanCardProps {
   task: KanbanTask;
   onClick: (task: KanbanTask) => void;
+  /** True when rendered inside DragOverlay — skips sortable hook */
+  isOverlay?: boolean;
+  /** Alias for isOverlay (compat with KanbanBoard) */
+  isDragOverlay?: boolean;
 }
 
-export const KanbanCard = memo(function KanbanCard({ task, onClick }: KanbanCardProps) {
+export const KanbanCard = memo(function KanbanCard({ task, onClick, isOverlay, isDragOverlay }: KanbanCardProps) {
+  const overlay = isOverlay || isDragOverlay;
+  return overlay ? (
+    <CardContent task={task} onClick={onClick} isDragging isOverlay />
+  ) : (
+    <SortableCard task={task} onClick={onClick} />
+  );
+});
+
+/* ── Sortable wrapper (only used for in-place cards, not overlay) ── */
+function SortableCard({ task, onClick }: { task: KanbanTask; onClick: (task: KanbanTask) => void }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task.id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <CardContent task={task} onClick={onClick} isDragging={isDragging} />
+    </div>
+  );
+}
+
+/* ── Visual card content (shared between sortable + overlay) ── */
+function CardContent({
+  task,
+  onClick,
+  isDragging,
+  isOverlay,
+}: {
+  task: KanbanTask;
+  onClick: (task: KanbanTask) => void;
+  isDragging?: boolean;
+  isOverlay?: boolean;
+}) {
   return (
     <button
       type="button"
-      onClick={() => onClick(task)}
-      className="w-full text-left bg-card border border-border rounded-[10px] px-2.5 py-2.5 hover:shadow-[0_4px_14px_rgba(0,0,0,.25)] transition-shadow duration-[120ms] cursor-pointer group focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      onClick={() => { if (!isDragging) onClick(task); }}
+      className={`w-full text-left bg-card border border-border rounded-[10px] px-2.5 py-2.5 transition-all duration-[120ms] cursor-pointer group focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
+        isOverlay
+          ? 'shadow-[0_8px_24px_rgba(0,0,0,.35)] scale-[1.02] rotate-[1deg] border-primary/40'
+          : isDragging
+            ? 'opacity-30'
+            : 'hover:shadow-[0_4px_14px_rgba(0,0,0,.25)]'
+      }`}
     >
       {/* Row 1: priority dot + title */}
       <div className="flex items-start gap-2">
@@ -127,7 +182,7 @@ export const KanbanCard = memo(function KanbanCard({ task, onClick }: KanbanCard
       </div>
     </button>
   );
-});
+}
 
 /* ── Tiny elapsed-time component (ticks every second) ── */
 function ElapsedTime({ since }: { since: number }) {

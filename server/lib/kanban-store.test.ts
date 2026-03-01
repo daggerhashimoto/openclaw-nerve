@@ -1,9 +1,16 @@
-/** Tests for kanban-store: CRUD, CAS conflicts, reorder, config, filters, workflow. */
+/** Tests for kanban-store: CRUD, CAS conflicts, reorder, config, filters, workflow, proposals. */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { KanbanStore, VersionConflictError, TaskNotFoundError, InvalidTransitionError } from './kanban-store.js';
+import {
+  KanbanStore,
+  VersionConflictError,
+  TaskNotFoundError,
+  InvalidTransitionError,
+  ProposalNotFoundError,
+  ProposalAlreadyResolvedError,
+} from './kanban-store.js';
 import type { KanbanTask } from './kanban-store.js';
 
 let store: KanbanStore;
@@ -830,6 +837,218 @@ describe('full workflow', () => {
     const reExecuted = await store.executeTask(aborted.id);
     expect(reExecuted.status).toBe('in-progress');
     expect(reExecuted.run!.status).toBe('running');
+  });
+});
+
+// ── Proposals ────────────────────────────────────────────────────────
+
+describe('createProposal', () => {
+  it('creates a pending create proposal', async () => {
+    const proposal = await store.createProposal({
+      type: 'create',
+      payload: { title: 'New feature', priority: 'high' },
+      proposedBy: 'agent:codex',
+    });
+    expect(proposal.id).toBeTruthy();
+    expect(proposal.type).toBe('create');
+    expect(proposal.status).toBe('pending');
+    expect(proposal.version).toBe(1);
+    expect(proposal.payload.title).toBe('New feature');
+    expect(proposal.proposedBy).toBe('agent:codex');
+    expect(proposal.proposedAt).toBeGreaterThan(0);
+  });
+
+  it('creates a pending update proposal', async () => {
+    const task = await createSampleTask();
+    const proposal = await store.createProposal({
+      type: 'update',
+      payload: { id: task.id, status: 'done', result: 'Completed' },
+      proposedBy: 'agent:codex',
+    });
+    expect(proposal.type).toBe('update');
+    expect(proposal.status).toBe('pending');
+    expect(proposal.payload.id).toBe(task.id);
+  });
+
+  it('stores sourceSessionKey', async () => {
+    const proposal = await store.createProposal({
+      type: 'create',
+      payload: { title: 'Tracked' },
+      proposedBy: 'agent:codex',
+      sourceSessionKey: 'sess-abc',
+    });
+    expect(proposal.sourceSessionKey).toBe('sess-abc');
+  });
+});
+
+describe('approveProposal', () => {
+  it('approve create → task exists', async () => {
+    const proposal = await store.createProposal({
+      type: 'create',
+      payload: { title: 'Agent task', priority: 'high', labels: ['agent'] },
+      proposedBy: 'agent:codex',
+    });
+
+    const { proposal: approved, task } = await store.approveProposal(proposal.id);
+    expect(approved.status).toBe('approved');
+    expect(approved.resolvedBy).toBe('operator');
+    expect(approved.resolvedAt).toBeGreaterThan(0);
+    expect(approved.resultTaskId).toBe(task.id);
+    expect(approved.version).toBe(2);
+
+    // Task actually exists in the store
+    const found = await store.getTask(task.id);
+    expect(found.title).toBe('Agent task');
+    expect(found.priority).toBe('high');
+    expect(found.labels).toContain('agent');
+    expect(found.createdBy).toBe('agent:codex');
+  });
+
+  it('approve update → task modified', async () => {
+    const task = await createSampleTask({ title: 'Original' });
+    const proposal = await store.createProposal({
+      type: 'update',
+      payload: { id: task.id, title: 'Updated by agent', status: 'done' },
+      proposedBy: 'agent:codex',
+    });
+
+    const { proposal: approved, task: updated } = await store.approveProposal(proposal.id);
+    expect(approved.status).toBe('approved');
+    expect(approved.resultTaskId).toBe(task.id);
+
+    const found = await store.getTask(task.id);
+    expect(found.title).toBe('Updated by agent');
+    expect(found.status).toBe('done');
+  });
+
+  it('double approve → error', async () => {
+    const proposal = await store.createProposal({
+      type: 'create',
+      payload: { title: 'Double' },
+      proposedBy: 'agent:codex',
+    });
+    await store.approveProposal(proposal.id);
+
+    await expect(store.approveProposal(proposal.id)).rejects.toThrow(ProposalAlreadyResolvedError);
+  });
+
+  it('throws ProposalNotFoundError for missing proposal', async () => {
+    await expect(store.approveProposal('nonexistent')).rejects.toThrow(ProposalNotFoundError);
+  });
+
+  it('throws TaskNotFoundError when update references missing task', async () => {
+    const proposal = await store.createProposal({
+      type: 'update',
+      payload: { id: 'nonexistent-task', status: 'done' },
+      proposedBy: 'agent:codex',
+    });
+    await expect(store.approveProposal(proposal.id)).rejects.toThrow(TaskNotFoundError);
+  });
+});
+
+describe('rejectProposal', () => {
+  it('rejects a pending proposal', async () => {
+    const proposal = await store.createProposal({
+      type: 'create',
+      payload: { title: 'Reject me' },
+      proposedBy: 'agent:codex',
+    });
+
+    const rejected = await store.rejectProposal(proposal.id, 'Not needed');
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.reason).toBe('Not needed');
+    expect(rejected.resolvedBy).toBe('operator');
+    expect(rejected.resolvedAt).toBeGreaterThan(0);
+    expect(rejected.version).toBe(2);
+  });
+
+  it('reject then approve → error', async () => {
+    const proposal = await store.createProposal({
+      type: 'create',
+      payload: { title: 'Reject first' },
+      proposedBy: 'agent:codex',
+    });
+    await store.rejectProposal(proposal.id, 'No');
+
+    await expect(store.approveProposal(proposal.id)).rejects.toThrow(ProposalAlreadyResolvedError);
+  });
+
+  it('throws ProposalNotFoundError for missing proposal', async () => {
+    await expect(store.rejectProposal('nonexistent')).rejects.toThrow(ProposalNotFoundError);
+  });
+
+  it('double reject → error', async () => {
+    const proposal = await store.createProposal({
+      type: 'create',
+      payload: { title: 'Double reject' },
+      proposedBy: 'agent:codex',
+    });
+    await store.rejectProposal(proposal.id);
+    await expect(store.rejectProposal(proposal.id)).rejects.toThrow(ProposalAlreadyResolvedError);
+  });
+});
+
+describe('listProposals', () => {
+  it('lists all proposals', async () => {
+    await store.createProposal({ type: 'create', payload: { title: 'A' }, proposedBy: 'agent:a' });
+    await store.createProposal({ type: 'create', payload: { title: 'B' }, proposedBy: 'agent:b' });
+
+    const all = await store.listProposals();
+    expect(all).toHaveLength(2);
+    // Most recent first
+    expect(all[0].payload.title).toBe('B');
+  });
+
+  it('filters by status', async () => {
+    const p1 = await store.createProposal({ type: 'create', payload: { title: 'A' }, proposedBy: 'agent:a' });
+    await store.createProposal({ type: 'create', payload: { title: 'B' }, proposedBy: 'agent:b' });
+    await store.approveProposal(p1.id);
+
+    const pending = await store.listProposals('pending');
+    expect(pending).toHaveLength(1);
+    expect(pending[0].payload.title).toBe('B');
+
+    const approved = await store.listProposals('approved');
+    expect(approved).toHaveLength(1);
+    expect(approved[0].payload.title).toBe('A');
+  });
+
+  it('returns empty array when no proposals', async () => {
+    const all = await store.listProposals();
+    expect(all).toEqual([]);
+  });
+});
+
+describe('proposal auto mode', () => {
+  it('auto mode immediately creates task', async () => {
+    await store.updateConfig({ proposalPolicy: 'auto' });
+
+    const proposal = await store.createProposal({
+      type: 'create',
+      payload: { title: 'Auto-created' },
+      proposedBy: 'agent:codex',
+    });
+    expect(proposal.status).toBe('approved');
+    expect(proposal.resultTaskId).toBeTruthy();
+
+    // Task exists
+    const task = await store.getTask(proposal.resultTaskId!);
+    expect(task.title).toBe('Auto-created');
+  });
+
+  it('auto mode immediately applies update', async () => {
+    const task = await createSampleTask({ title: 'Before' });
+    await store.updateConfig({ proposalPolicy: 'auto' });
+
+    const proposal = await store.createProposal({
+      type: 'update',
+      payload: { id: task.id, title: 'After auto' },
+      proposedBy: 'agent:codex',
+    });
+    expect(proposal.status).toBe('approved');
+
+    const updated = await store.getTask(task.id);
+    expect(updated.title).toBe('After auto');
   });
 });
 

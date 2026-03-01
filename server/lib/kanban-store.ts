@@ -74,10 +74,47 @@ export interface KanbanBoardConfig {
   reviewRequired: boolean;
   allowDoneDragBypass: boolean;
   quickViewLimit: number;
+  proposalPolicy: 'confirm' | 'auto';
+}
+
+// ── Proposals ────────────────────────────────────────────────────────
+
+export type ProposalStatus = 'pending' | 'approved' | 'rejected';
+
+export interface KanbanProposal {
+  id: string;
+  type: 'create' | 'update';
+  payload: Record<string, unknown>;
+  sourceSessionKey?: string;
+  proposedBy: TaskActor;
+  proposedAt: number;
+  status: ProposalStatus;
+  version: number;
+  resolvedAt?: number;
+  resolvedBy?: TaskActor;
+  reason?: string;
+  resultTaskId?: string;
+}
+
+export class ProposalNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Proposal not found: ${id}`);
+    this.name = 'ProposalNotFoundError';
+  }
+}
+
+export class ProposalAlreadyResolvedError extends Error {
+  proposal: KanbanProposal;
+  constructor(proposal: KanbanProposal) {
+    super(`Proposal already resolved: ${proposal.id} (${proposal.status})`);
+    this.name = 'ProposalAlreadyResolvedError';
+    this.proposal = proposal;
+  }
 }
 
 export interface StoreData {
   tasks: KanbanTask[];
+  proposals: KanbanProposal[];
   config: KanbanBoardConfig;
   meta: {
     schemaVersion: number;
@@ -169,11 +206,13 @@ const DEFAULT_CONFIG: KanbanBoardConfig = {
   reviewRequired: true,
   allowDoneDragBypass: false,
   quickViewLimit: 5,
+  proposalPolicy: 'confirm',
 };
 
 function emptyStore(): StoreData {
   return {
     tasks: [],
+    proposals: [],
     config: structuredClone(DEFAULT_CONFIG),
     meta: { schemaVersion: CURRENT_SCHEMA_VERSION, updatedAt: Date.now() },
   };
@@ -182,7 +221,8 @@ function emptyStore(): StoreData {
 // ── Audit log ────────────────────────────────────────────────────────
 
 export type AuditAction = 'create' | 'update' | 'delete' | 'reorder' | 'config_update'
-  | 'execute' | 'approve' | 'reject' | 'abort' | 'complete_run' | 'reconcile';
+  | 'execute' | 'approve' | 'reject' | 'abort' | 'complete_run' | 'reconcile'
+  | 'proposal_create' | 'proposal_approve' | 'proposal_reject';
 
 interface AuditEntry {
   ts: number;
@@ -242,6 +282,13 @@ export class KanbanStore {
     }
     if (!Array.isArray(data.tasks)) {
       data.tasks = [];
+    }
+    if (!Array.isArray(data.proposals)) {
+      data.proposals = [];
+    }
+    // Backfill proposalPolicy for existing configs
+    if (!data.config.proposalPolicy) {
+      data.config.proposalPolicy = 'confirm';
     }
     data.meta.schemaVersion = CURRENT_SCHEMA_VERSION;
     return data;
@@ -850,6 +897,187 @@ export class KanbanStore {
 
       return reconciled;
     });
+  }
+
+  // ── Proposals ─────────────────────────────────────────────────────
+
+  async createProposal(input: {
+    type: 'create' | 'update';
+    payload: Record<string, unknown>;
+    sourceSessionKey?: string;
+    proposedBy: TaskActor;
+  }): Promise<KanbanProposal> {
+    return this.withLock(async () => {
+      const data = await this.readRaw();
+      const now = Date.now();
+
+      const proposal: KanbanProposal = {
+        id: crypto.randomUUID(),
+        type: input.type,
+        payload: input.payload,
+        sourceSessionKey: input.sourceSessionKey,
+        proposedBy: input.proposedBy,
+        proposedAt: now,
+        status: 'pending',
+        version: 1,
+      };
+
+      // In auto mode, immediately execute the proposal
+      if (data.config.proposalPolicy === 'auto') {
+        if (input.type === 'create') {
+          const task = await this._createTaskUnlocked(data, input.payload, input.proposedBy);
+          proposal.status = 'approved';
+          proposal.resolvedAt = now;
+          proposal.resolvedBy = input.proposedBy;
+          proposal.resultTaskId = task.id;
+        } else {
+          await this._applyUpdateUnlocked(data, input.payload, input.proposedBy);
+          proposal.status = 'approved';
+          proposal.resolvedAt = now;
+          proposal.resolvedBy = input.proposedBy;
+          proposal.resultTaskId = input.payload.id as string;
+        }
+      }
+
+      data.proposals.push(proposal);
+      await this.writeRaw(data);
+      await this.audit({ ts: now, action: 'proposal_create', detail: `type=${input.type}` });
+      return proposal;
+    });
+  }
+
+  async approveProposal(
+    id: string,
+    actor: TaskActor = 'operator',
+  ): Promise<{ proposal: KanbanProposal; task: KanbanTask }> {
+    return this.withLock(async () => {
+      const data = await this.readRaw();
+      const proposal = data.proposals.find((p) => p.id === id);
+      if (!proposal) throw new ProposalNotFoundError(id);
+      if (proposal.status !== 'pending') throw new ProposalAlreadyResolvedError(proposal);
+
+      const now = Date.now();
+      let task: KanbanTask;
+
+      if (proposal.type === 'create') {
+        task = await this._createTaskUnlocked(data, proposal.payload, proposal.proposedBy);
+        proposal.resultTaskId = task.id;
+      } else {
+        task = await this._applyUpdateUnlocked(data, proposal.payload, actor);
+        proposal.resultTaskId = proposal.payload.id as string;
+      }
+
+      proposal.status = 'approved';
+      proposal.resolvedAt = now;
+      proposal.resolvedBy = actor;
+      proposal.version += 1;
+
+      await this.writeRaw(data);
+      await this.audit({ ts: now, action: 'proposal_approve', detail: `proposal=${id}`, actor });
+      return { proposal, task };
+    });
+  }
+
+  async rejectProposal(
+    id: string,
+    reason?: string,
+    actor: TaskActor = 'operator',
+  ): Promise<KanbanProposal> {
+    return this.withLock(async () => {
+      const data = await this.readRaw();
+      const proposal = data.proposals.find((p) => p.id === id);
+      if (!proposal) throw new ProposalNotFoundError(id);
+      if (proposal.status !== 'pending') throw new ProposalAlreadyResolvedError(proposal);
+
+      const now = Date.now();
+      proposal.status = 'rejected';
+      proposal.resolvedAt = now;
+      proposal.resolvedBy = actor;
+      proposal.reason = reason;
+      proposal.version += 1;
+
+      await this.writeRaw(data);
+      await this.audit({ ts: now, action: 'proposal_reject', detail: `proposal=${id}`, actor });
+      return proposal;
+    });
+  }
+
+  async listProposals(statusFilter?: ProposalStatus): Promise<KanbanProposal[]> {
+    return this.withLock(async () => {
+      const data = await this.readRaw();
+      let proposals = data.proposals;
+      if (statusFilter) {
+        proposals = proposals.filter((p) => p.status === statusFilter);
+      }
+      // Most recent first
+      return proposals.sort((a, b) => b.proposedAt - a.proposedAt);
+    });
+  }
+
+  // ── Internal helpers for proposals (call ONLY while lock is held) ──
+
+  private async _createTaskUnlocked(
+    data: StoreData,
+    payload: Record<string, unknown>,
+    proposedBy: TaskActor,
+  ): Promise<KanbanTask> {
+    const targetStatus = (payload.status as TaskStatus) ?? data.config.defaults.status;
+    const maxOrder = data.tasks
+      .filter((t) => t.status === targetStatus)
+      .reduce((max, t) => Math.max(max, t.columnOrder), -1);
+
+    const now = Date.now();
+    const task: KanbanTask = {
+      id: crypto.randomUUID(),
+      title: payload.title as string,
+      description: payload.description as string | undefined,
+      status: targetStatus,
+      priority: (payload.priority as TaskPriority) ?? data.config.defaults.priority,
+      createdBy: proposedBy,
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+      sourceSessionKey: payload.sourceSessionKey as string | undefined,
+      assignee: payload.assignee as TaskActor | undefined,
+      labels: (payload.labels as string[]) ?? [],
+      columnOrder: maxOrder + 1,
+      model: payload.model as string | undefined,
+      thinking: payload.thinking as KanbanTask['thinking'],
+      dueAt: payload.dueAt as number | undefined,
+      estimateMin: payload.estimateMin as number | undefined,
+      feedback: [],
+    };
+
+    data.tasks.push(task);
+    return task;
+  }
+
+  private async _applyUpdateUnlocked(
+    data: StoreData,
+    payload: Record<string, unknown>,
+    actor: TaskActor,
+  ): Promise<KanbanTask> {
+    const taskId = payload.id as string;
+    const idx = data.tasks.findIndex((t) => t.id === taskId);
+    if (idx === -1) throw new TaskNotFoundError(taskId);
+
+    const task = data.tasks[idx];
+    const now = Date.now();
+
+    // Build patch from payload (exclude 'id')
+    const { id: _id, ...patch } = payload;
+
+    // If status changed, re-compute columnOrder
+    if (patch.status && patch.status !== task.status) {
+      const maxOrder = data.tasks
+        .filter((t) => t.status === (patch.status as TaskStatus) && t.id !== taskId)
+        .reduce((max, t) => Math.max(max, t.columnOrder), -1);
+      (patch as Record<string, unknown>).columnOrder = maxOrder + 1;
+    }
+
+    const updated: KanbanTask = { ...task, ...patch, updatedAt: now, version: task.version + 1 } as KanbanTask;
+    data.tasks[idx] = updated;
+    return updated;
   }
 
   /** Reset store to empty (for testing). */

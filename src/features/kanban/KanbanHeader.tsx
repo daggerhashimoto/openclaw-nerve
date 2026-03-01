@@ -1,8 +1,10 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
-import { Search, Filter, Plus, X } from 'lucide-react';
+import { Search, Filter, Plus, X, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TaskStatus, TaskPriority } from './types';
 import type { KanbanFilters } from './hooks/useKanban';
+import { ProposalInbox } from './ProposalInbox';
+import type { KanbanProposal } from './hooks/useProposals';
 
 /* ── Stats chip ── */
 function StatChip({ label, count, accent }: { label: string; count: number; accent: string }) {
@@ -43,6 +45,10 @@ interface KanbanHeaderProps {
   onFiltersChange: (filters: KanbanFilters) => void;
   statusCounts: Record<TaskStatus, number>;
   onCreateTask: () => void;
+  proposals?: KanbanProposal[];
+  pendingProposalCount?: number;
+  onApproveProposal?: (id: string) => void;
+  onRejectProposal?: (id: string) => void;
 }
 
 export const KanbanHeader = memo(function KanbanHeader({
@@ -50,12 +56,30 @@ export const KanbanHeader = memo(function KanbanHeader({
   onFiltersChange,
   statusCounts,
   onCreateTask,
+  proposals = [],
+  pendingProposalCount = 0,
+  onApproveProposal,
+  onRejectProposal,
 }: KanbanHeaderProps) {
   const [showFilters, setShowFilters] = useState(false);
+  const [showInbox, setShowInbox] = useState(false);
   const [searchValue, setSearchValue] = useState(filters.q);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
+  const inboxRef = useRef<HTMLDivElement>(null);
+
+  /* Close inbox popover when clicking outside */
+  useEffect(() => {
+    if (!showInbox) return;
+    const handler = (e: MouseEvent) => {
+      if (inboxRef.current && !inboxRef.current.contains(e.target as Node)) {
+        setShowInbox(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showInbox]);
 
   /* Debounced search — reads filtersRef to avoid overwriting concurrent filter changes */
   const handleSearchChange = useCallback((value: string) => {
@@ -130,6 +154,40 @@ export const KanbanHeader = memo(function KanbanHeader({
           >
             <Filter size={14} />
           </Button>
+
+          {/* Proposal inbox */}
+          <div className="relative" ref={inboxRef}>
+            <Button
+              variant={showInbox ? 'secondary' : 'outline'}
+              size="icon-sm"
+              onClick={() => setShowInbox(!showInbox)}
+              title="Agent proposals"
+            >
+              <Inbox size={14} />
+              {pendingProposalCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[10px] font-bold bg-primary text-primary-foreground rounded-full flex items-center justify-center">
+                  {pendingProposalCount}
+                </span>
+              )}
+            </Button>
+
+            {/* Inbox popover */}
+            {showInbox && (
+              <div className="absolute right-0 top-full mt-1 w-[340px] bg-popover border border-border rounded-lg shadow-lg z-50">
+                <div className="px-3 py-2 border-b border-border/40">
+                  <span className="text-xs font-semibold text-foreground">Agent Proposals</span>
+                  {pendingProposalCount > 0 && (
+                    <span className="ml-2 text-[10px] text-muted-foreground">{pendingProposalCount} pending</span>
+                  )}
+                </div>
+                <ProposalInbox
+                  proposals={proposals}
+                  onApprove={(id) => onApproveProposal?.(id)}
+                  onReject={(id) => onRejectProposal?.(id)}
+                />
+              </div>
+            )}
+          </div>
 
           {/* Create */}
           <Button size="sm" onClick={onCreateTask}>

@@ -9,6 +9,7 @@ import { useState, useCallback } from 'react';
 import { WorkspaceTabs, type TabId } from './WorkspaceTabs';
 import { MemoryTab, CronsTab, ConfigTab, SkillsTab } from './tabs';
 import { useCrons } from './hooks/useCrons';
+import { KanbanQuickView, useKanban } from '@/features/kanban';
 import type { Memory } from '@/types';
 
 const STORAGE_KEY = 'nerve-workspace-tab';
@@ -16,7 +17,7 @@ const STORAGE_KEY = 'nerve-workspace-tab';
 function getInitialTab(): TabId {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && ['memory', 'crons', 'skills', 'config'].includes(stored)) {
+    if (stored && ['memory', 'crons', 'skills', 'config', 'kanban'].includes(stored)) {
       return stored as TabId;
     }
   } catch { /* ignore */ }
@@ -29,11 +30,15 @@ interface WorkspacePanelProps {
   memoriesLoading?: boolean;
   /** Render in compact dropdown mode (chat-first topbar panel). */
   compact?: boolean;
+  /** Switch the app to full kanban board view. */
+  onOpenBoard?: () => void;
 }
 
-export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, compact = false }: WorkspacePanelProps) {
+export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, compact = false, onOpenBoard }: WorkspacePanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>(getInitialTab);
   const { activeCount } = useCrons();
+  const { statusCounts } = useKanban();
+  const kanbanActiveCount = (statusCounts.todo || 0) + (statusCounts['in-progress'] || 0) + (statusCounts.review || 0);
 
   const [visitedTabs, setVisitedTabs] = useState<Set<TabId>>(() => new Set([activeTab]));
 
@@ -56,6 +61,7 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, c
         activeTab={activeTab}
         onTabChange={handleTabChange}
         cronCount={activeCount || undefined}
+        kanbanCount={kanbanActiveCount || undefined}
       />
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className={activeTab === 'memory' ? 'h-full' : 'hidden'} hidden={activeTab !== 'memory'} role="tabpanel" id="workspace-tabpanel-memory" aria-labelledby="workspace-tab-memory">
@@ -80,6 +86,14 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, c
         </div>
         <div className={activeTab === 'config' ? 'h-full' : 'hidden'} hidden={activeTab !== 'config'} role="tabpanel" id="workspace-tabpanel-config" aria-labelledby="workspace-tab-config">
           {visitedTabs.has('config') && <ConfigTab />}
+        </div>
+        <div className={activeTab === 'kanban' ? 'h-full' : 'hidden'} hidden={activeTab !== 'kanban'} role="tabpanel" id="workspace-tabpanel-kanban" aria-labelledby="workspace-tab-kanban">
+          {visitedTabs.has('kanban') && (
+            <KanbanQuickView
+              onOpenBoard={onOpenBoard ?? (() => {})}
+              onOpenTask={() => onOpenBoard?.()}
+            />
+          )}
         </div>
       </div>
     </div>

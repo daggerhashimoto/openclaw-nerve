@@ -143,6 +143,38 @@ export function useKanban() {
     return updated;
   }, [fetchTasks]);
 
+  /** Reorder / move a task via the dedicated reorder endpoint. */
+  const reorderTask = useCallback(async (
+    id: string,
+    version: number,
+    targetStatus: TaskStatus,
+    targetIndex: number,
+  ): Promise<KanbanTask> => {
+    const res = await fetch(`/api/kanban/tasks/${encodeURIComponent(id)}/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version, targetStatus, targetIndex }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        const err = new Error('version_conflict');
+        (err as VersionConflictError).latest = body.latest;
+        throw err;
+      }
+      throw new Error(body.details || body.error || `HTTP ${res.status}`);
+    }
+    const updated: KanbanTask = await res.json();
+    // Refetch to sync all columnOrder values from server
+    await fetchTasks(undefined, { silent: true });
+    return updated;
+  }, [fetchTasks]);
+
+  /** Optimistic state updater for drag-and-drop — applies immediately, no API call. */
+  const setTasksOptimistic = useCallback((updater: (prev: KanbanTask[]) => KanbanTask[]) => {
+    setTasks(updater);
+  }, []);
+
   const deleteTask = useCallback(async (id: string): Promise<void> => {
     const res = await fetch(`/api/kanban/tasks/${encodeURIComponent(id)}`, {
       method: 'DELETE',
@@ -180,6 +212,7 @@ export function useKanban() {
 
   return {
     tasks,
+    setTasks,
     total,
     loading,
     error,
@@ -189,6 +222,8 @@ export function useKanban() {
     createTask,
     updateTask,
     deleteTask,
+    reorderTask,
+    setTasksOptimistic,
     tasksByStatus,
     statusCounts,
   };

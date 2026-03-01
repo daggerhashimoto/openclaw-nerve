@@ -791,6 +791,305 @@ describe('POST /api/kanban/tasks/:id/abort', () => {
   });
 });
 
+// ── GET /api/kanban/proposals ─────────────────────────────────────────
+
+describe('GET /api/kanban/proposals', () => {
+  it('returns empty list when no proposals', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/proposals');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { proposals: unknown[] };
+    expect(body.proposals).toEqual([]);
+  });
+
+  it('returns pending proposals', async () => {
+    const app = await buildApp();
+    await app.request('/api/kanban/proposals', json({
+      type: 'create',
+      payload: { title: 'Test' },
+      proposedBy: 'agent:codex',
+    }));
+
+    const res = await app.request('/api/kanban/proposals?status=pending');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { proposals: unknown[] };
+    expect(body.proposals).toHaveLength(1);
+  });
+
+  it('filters by status', async () => {
+    const app = await buildApp();
+    const createRes = await app.request('/api/kanban/proposals', json({
+      type: 'create',
+      payload: { title: 'Test' },
+      proposedBy: 'agent:codex',
+    }));
+    const proposal = await createRes.json() as { id: string };
+
+    // Approve it
+    await app.request(`/api/kanban/proposals/${proposal.id}/approve`, { method: 'POST' });
+
+    // Should not appear in pending
+    const res = await app.request('/api/kanban/proposals?status=pending');
+    const body = await res.json() as { proposals: unknown[] };
+    expect(body.proposals).toHaveLength(0);
+
+    // Should appear in approved
+    const res2 = await app.request('/api/kanban/proposals?status=approved');
+    const body2 = await res2.json() as { proposals: unknown[] };
+    expect(body2.proposals).toHaveLength(1);
+  });
+
+  it('returns 400 for invalid status', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/proposals?status=invalid');
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── POST /api/kanban/proposals ───────────────────────────────────────
+
+describe('POST /api/kanban/proposals', () => {
+  it('creates a create proposal', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/proposals', json({
+      type: 'create',
+      payload: { title: 'New task', priority: 'high' },
+      proposedBy: 'agent:codex',
+    }));
+    expect(res.status).toBe(201);
+    const body = await res.json() as { id: string; type: string; status: string };
+    expect(body.type).toBe('create');
+    expect(body.status).toBe('pending');
+    expect(body.id).toBeTruthy();
+  });
+
+  it('creates an update proposal', async () => {
+    const app = await buildApp();
+    const task = await createTask(app);
+
+    const res = await app.request('/api/kanban/proposals', json({
+      type: 'update',
+      payload: { id: task.id, status: 'done' },
+      proposedBy: 'agent:codex',
+    }));
+    expect(res.status).toBe(201);
+    const body = await res.json() as { type: string; status: string };
+    expect(body.type).toBe('update');
+  });
+
+  it('returns 400 for create payload without title', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/proposals', json({
+      type: 'create',
+      payload: { priority: 'high' },
+      proposedBy: 'agent:codex',
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for update payload without id', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/proposals', json({
+      type: 'update',
+      payload: { status: 'done' },
+      proposedBy: 'agent:codex',
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 for update referencing nonexistent task', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/proposals', json({
+      type: 'update',
+      payload: { id: 'nonexistent', status: 'done' },
+      proposedBy: 'agent:codex',
+    }));
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 for invalid JSON', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/proposals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not json',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for missing type', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/proposals', json({
+      payload: { title: 'test' },
+      proposedBy: 'agent:codex',
+    }));
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── POST /api/kanban/proposals/:id/approve ───────────────────────────
+
+describe('POST /api/kanban/proposals/:id/approve', () => {
+  it('approves a create proposal and returns task', async () => {
+    const app = await buildApp();
+    const createRes = await app.request('/api/kanban/proposals', json({
+      type: 'create',
+      payload: { title: 'Approve me', priority: 'high' },
+      proposedBy: 'agent:codex',
+    }));
+    const proposal = await createRes.json() as { id: string };
+
+    const res = await app.request(`/api/kanban/proposals/${proposal.id}/approve`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { proposal: { status: string }; task: KanbanTask };
+    expect(body.proposal.status).toBe('approved');
+    expect(body.task.title).toBe('Approve me');
+    expect(body.task.id).toBeTruthy();
+  });
+
+  it('approves an update proposal', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { title: 'Original' });
+
+    const createRes = await app.request('/api/kanban/proposals', json({
+      type: 'update',
+      payload: { id: task.id, title: 'Updated' },
+      proposedBy: 'agent:codex',
+    }));
+    const proposal = await createRes.json() as { id: string };
+
+    const res = await app.request(`/api/kanban/proposals/${proposal.id}/approve`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { proposal: { status: string }; task: KanbanTask };
+    expect(body.task.title).toBe('Updated');
+  });
+
+  it('returns 404 for missing proposal', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/proposals/nonexistent/approve', { method: 'POST' });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 409 for already-approved proposal', async () => {
+    const app = await buildApp();
+    const createRes = await app.request('/api/kanban/proposals', json({
+      type: 'create',
+      payload: { title: 'Double approve' },
+      proposedBy: 'agent:codex',
+    }));
+    const proposal = await createRes.json() as { id: string };
+
+    await app.request(`/api/kanban/proposals/${proposal.id}/approve`, { method: 'POST' });
+    const res = await app.request(`/api/kanban/proposals/${proposal.id}/approve`, { method: 'POST' });
+    expect(res.status).toBe(409);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe('already_resolved');
+  });
+});
+
+// ── POST /api/kanban/proposals/:id/reject ────────────────────────────
+
+describe('POST /api/kanban/proposals/:id/reject', () => {
+  it('rejects a proposal with reason', async () => {
+    const app = await buildApp();
+    const createRes = await app.request('/api/kanban/proposals', json({
+      type: 'create',
+      payload: { title: 'Reject me' },
+      proposedBy: 'agent:codex',
+    }));
+    const proposal = await createRes.json() as { id: string };
+
+    const res = await app.request(`/api/kanban/proposals/${proposal.id}/reject`, json({
+      reason: 'Not useful',
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json() as { proposal: { status: string; reason: string } };
+    expect(body.proposal.status).toBe('rejected');
+    expect(body.proposal.reason).toBe('Not useful');
+  });
+
+  it('rejects without reason (empty body)', async () => {
+    const app = await buildApp();
+    const createRes = await app.request('/api/kanban/proposals', json({
+      type: 'create',
+      payload: { title: 'Reject' },
+      proposedBy: 'agent:codex',
+    }));
+    const proposal = await createRes.json() as { id: string };
+
+    const res = await app.request(`/api/kanban/proposals/${proposal.id}/reject`, { method: 'POST' });
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 404 for missing proposal', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/proposals/nonexistent/reject', json({}));
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 409 for already-rejected proposal', async () => {
+    const app = await buildApp();
+    const createRes = await app.request('/api/kanban/proposals', json({
+      type: 'create',
+      payload: { title: 'Double reject' },
+      proposedBy: 'agent:codex',
+    }));
+    const proposal = await createRes.json() as { id: string };
+
+    await app.request(`/api/kanban/proposals/${proposal.id}/reject`, { method: 'POST' });
+    const res = await app.request(`/api/kanban/proposals/${proposal.id}/reject`, { method: 'POST' });
+    expect(res.status).toBe(409);
+  });
+});
+
+// ── Auto mode proposals ──────────────────────────────────────────────
+
+describe('proposal auto mode via HTTP', () => {
+  it('auto mode creates task immediately', async () => {
+    const app = await buildApp();
+
+    // Set auto mode
+    await app.request('/api/kanban/config', jsonPut({ proposalPolicy: 'auto' }));
+
+    const res = await app.request('/api/kanban/proposals', json({
+      type: 'create',
+      payload: { title: 'Auto task' },
+      proposedBy: 'agent:codex',
+    }));
+    expect(res.status).toBe(201);
+    const body = await res.json() as { status: string; resultTaskId: string };
+    expect(body.status).toBe('approved');
+    expect(body.resultTaskId).toBeTruthy();
+
+    // Verify task exists
+    const listRes = await app.request('/api/kanban/tasks');
+    const tasks = await listRes.json() as { items: KanbanTask[] };
+    expect(tasks.items.some(t => t.title === 'Auto task')).toBe(true);
+  });
+
+  it('auto mode applies update immediately', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { title: 'Before' });
+
+    await app.request('/api/kanban/config', jsonPut({ proposalPolicy: 'auto' }));
+
+    const res = await app.request('/api/kanban/proposals', json({
+      type: 'update',
+      payload: { id: task.id, title: 'After auto' },
+      proposedBy: 'agent:codex',
+    }));
+    expect(res.status).toBe(201);
+    const body = await res.json() as { status: string };
+    expect(body.status).toBe('approved');
+
+    // Verify update applied
+    const getRes = await app.request('/api/kanban/tasks');
+    const tasks = await getRes.json() as { items: KanbanTask[] };
+    const found = tasks.items.find(t => t.id === task.id);
+    expect(found?.title).toBe('After auto');
+  });
+});
+
 // ── Full workflow through HTTP ───────────────────────────────────────
 
 describe('full workflow via HTTP', () => {

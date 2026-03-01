@@ -19,11 +19,14 @@ import {
   VersionConflictError,
   TaskNotFoundError,
   InvalidTransitionError,
+  ProposalNotFoundError,
+  ProposalAlreadyResolvedError,
 } from '../lib/kanban-store.js';
 import type {
   TaskStatus,
   TaskPriority,
   TaskActor,
+  ProposalStatus,
 } from '../lib/kanban-store.js';
 
 const app = new Hono();
@@ -110,6 +113,46 @@ const configSchema = z.object({
   reviewRequired: z.boolean().optional(),
   allowDoneDragBypass: z.boolean().optional(),
   quickViewLimit: z.number().int().min(1).max(50).optional(),
+  proposalPolicy: z.enum(['confirm', 'auto']).optional(),
+});
+
+// ── Proposal schemas ─────────────────────────────────────────────────
+
+const proposalStatusSchema = z.enum(['pending', 'approved', 'rejected']);
+
+const proposalCreatePayloadSchema = z.object({
+  title: z.string().min(1).max(500),
+  description: z.string().max(10_000).optional(),
+  status: taskStatusSchema.optional(),
+  priority: taskPrioritySchema.optional(),
+  assignee: taskActorSchema.optional(),
+  labels: z.array(z.string().max(100)).max(50).optional(),
+  model: z.string().max(200).optional(),
+  thinking: thinkingSchema.optional(),
+  dueAt: z.number().optional(),
+  estimateMin: z.number().min(0).optional(),
+});
+
+const proposalUpdatePayloadSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1).max(500).optional(),
+  description: z.string().max(10_000).optional(),
+  status: taskStatusSchema.optional(),
+  priority: taskPrioritySchema.optional(),
+  assignee: taskActorSchema.optional(),
+  labels: z.array(z.string().max(100)).max(50).optional(),
+  result: z.string().max(50_000).optional(),
+});
+
+const createProposalSchema = z.object({
+  type: z.enum(['create', 'update']),
+  payload: z.record(z.string(), z.unknown()),
+  sourceSessionKey: z.string().max(500).optional(),
+  proposedBy: taskActorSchema.default('operator'),
+});
+
+const rejectProposalSchema = z.object({
+  reason: z.string().max(5000).optional(),
 });
 
 // ── Workflow schemas ─────────────────────────────────────────────────
@@ -325,6 +368,143 @@ app.put('/api/kanban/config', rateLimitGeneral, async (c) => {
 
   const config = await store.updateConfig(parsed.data);
   return c.json(config);
+});
+
+// ── Proposal routes ──────────────────────────────────────────────────
+
+// GET /api/kanban/proposals
+app.get('/api/kanban/proposals', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  const url = new URL(c.req.url);
+  const statusParam = url.searchParams.get('status') as ProposalStatus | null;
+
+  // Validate status param if provided
+  if (statusParam) {
+    const parsed = proposalStatusSchema.safeParse(statusParam);
+    if (!parsed.success) {
+      return c.json({ error: 'validation_error', details: 'Invalid status filter' }, 400);
+    }
+  }
+
+  const proposals = await store.listProposals(statusParam ?? undefined);
+  return c.json({ proposals });
+});
+
+// POST /api/kanban/proposals
+app.post('/api/kanban/proposals', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'validation_error', details: 'Invalid JSON body' }, 400);
+  }
+
+  const parsed = createProposalSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({
+      error: 'validation_error',
+      details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    }, 400);
+  }
+
+  const { type, payload, sourceSessionKey, proposedBy } = parsed.data;
+
+  // Validate payload against type-specific schema
+  if (type === 'create') {
+    const payloadParsed = proposalCreatePayloadSchema.safeParse(payload);
+    if (!payloadParsed.success) {
+      return c.json({
+        error: 'validation_error',
+        details: payloadParsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+      }, 400);
+    }
+  } else {
+    const payloadParsed = proposalUpdatePayloadSchema.safeParse(payload);
+    if (!payloadParsed.success) {
+      return c.json({
+        error: 'validation_error',
+        details: payloadParsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+      }, 400);
+    }
+    // Validate that referenced task exists
+    try {
+      await store.getTask(payload.id as string);
+    } catch (err) {
+      if (err instanceof TaskNotFoundError) {
+        return c.json({ error: 'not_found', details: `Referenced task not found: ${payload.id}` }, 404);
+      }
+      throw err;
+    }
+  }
+
+  try {
+    const proposal = await store.createProposal({ type, payload, sourceSessionKey, proposedBy });
+    return c.json(proposal, 201);
+  } catch (err) {
+    if (err instanceof TaskNotFoundError) {
+      return c.json({ error: 'not_found', details: err.message }, 404);
+    }
+    throw err;
+  }
+});
+
+// POST /api/kanban/proposals/:id/approve
+app.post('/api/kanban/proposals/:id/approve', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  const id = c.req.param('id');
+
+  try {
+    const { proposal, task } = await store.approveProposal(id);
+    return c.json({ proposal, task });
+  } catch (err) {
+    if (err instanceof ProposalNotFoundError) {
+      return c.json({ error: 'not_found', details: err.message }, 404);
+    }
+    if (err instanceof ProposalAlreadyResolvedError) {
+      return c.json({ error: 'already_resolved', proposal: err.proposal }, 409);
+    }
+    if (err instanceof TaskNotFoundError) {
+      return c.json({ error: 'not_found', details: err.message }, 404);
+    }
+    throw err;
+  }
+});
+
+// POST /api/kanban/proposals/:id/reject
+app.post('/api/kanban/proposals/:id/reject', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  const id = c.req.param('id');
+
+  let body: unknown = {};
+  try {
+    const text = await c.req.text();
+    if (text) body = JSON.parse(text);
+  } catch {
+    return c.json({ error: 'validation_error', details: 'Invalid JSON body' }, 400);
+  }
+
+  const parsed = rejectProposalSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({
+      error: 'validation_error',
+      details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    }, 400);
+  }
+
+  try {
+    const proposal = await store.rejectProposal(id, parsed.data.reason);
+    return c.json({ proposal });
+  } catch (err) {
+    if (err instanceof ProposalNotFoundError) {
+      return c.json({ error: 'not_found', details: err.message }, 404);
+    }
+    if (err instanceof ProposalAlreadyResolvedError) {
+      return c.json({ error: 'already_resolved', proposal: err.proposal }, 409);
+    }
+    throw err;
+  }
 });
 
 // ── Workflow helpers ──────────────────────────────────────────────────

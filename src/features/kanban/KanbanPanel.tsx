@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { KanbanTask } from './types';
 import { useKanban } from './hooks/useKanban';
+import { useProposals } from './hooks/useProposals';
 import { KanbanHeader } from './KanbanHeader';
 import { KanbanBoard } from './KanbanBoard';
 import { CreateTaskDialog } from './CreateTaskDialog';
@@ -24,6 +25,13 @@ export function KanbanPanel() {
     tasksByStatus,
     statusCounts,
   } = useKanban();
+
+  const {
+    proposals,
+    pendingCount: pendingProposalCount,
+    approveProposal,
+    rejectProposal,
+  } = useProposals();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<KanbanTask | null>(null);
@@ -68,6 +76,10 @@ export function KanbanPanel() {
         onFiltersChange={setFilters}
         statusCounts={statusCounts}
         onCreateTask={openCreateDialog}
+        proposals={proposals}
+        pendingProposalCount={pendingProposalCount}
+        onApproveProposal={async (id) => { await approveProposal(id); fetchTasks(); }}
+        onRejectProposal={async (id) => { await rejectProposal(id); }}
       />
 
       {/* Board body */}

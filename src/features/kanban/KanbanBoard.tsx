@@ -1,8 +1,11 @@
-import { memo } from 'react';
+import { memo, useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { LayoutGrid } from 'lucide-react';
+import { DndContext, DragOverlay } from '@dnd-kit/core';
 import type { KanbanTask, TaskStatus } from './types';
 import { COLUMNS } from './types';
 import { KanbanColumn } from './KanbanColumn';
+import { KanbanCard } from './KanbanCard';
+import { useKanbanDragDrop } from './hooks/useKanbanDragDrop';
 
 interface KanbanBoardProps {
   tasksByStatus: (status: TaskStatus) => KanbanTask[];
@@ -34,6 +37,29 @@ function SkeletonColumn() {
   );
 }
 
+/** Reorder API call — standalone, no hook dependency */
+async function apiReorderTask(
+  id: string,
+  version: number,
+  targetStatus: TaskStatus,
+  targetIndex: number,
+): Promise<KanbanTask> {
+  const res = await fetch(`/api/kanban/tasks/${encodeURIComponent(id)}/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version, targetStatus, targetIndex }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 409) {
+      const err = new Error('version_conflict');
+      throw err;
+    }
+    throw new Error(body.details || body.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export const KanbanBoard = memo(function KanbanBoard({
   tasksByStatus,
   onCardClick,
@@ -43,6 +69,69 @@ export const KanbanBoard = memo(function KanbanBoard({
   hasAnyTasks,
   onCreateTask,
 }: KanbanBoardProps) {
+  /* ── Build flat task list from the tasksByStatus prop ── */
+  const propTasks = useMemo(() => {
+    const all: KanbanTask[] = [];
+    for (const col of COLUMNS) {
+      all.push(...tasksByStatus(col));
+    }
+    return all;
+  }, [tasksByStatus]);
+
+  /* ── Local task state for DnD optimistic updates ── */
+  const [localTasks, setLocalTasks] = useState<KanbanTask[]>(propTasks);
+  const isDraggingRef = useRef(false);
+
+  // Sync from props when NOT dragging
+  useEffect(() => {
+    if (!isDraggingRef.current) {
+      setLocalTasks(propTasks);
+    }
+  }, [propTasks]);
+
+  /* Wrap setTasks for drag hook — accepts updater function */
+  const setTasksWithDragTracking = useCallback(
+    (updater: (prev: KanbanTask[]) => KanbanTask[]) => setLocalTasks(updater),
+    [],
+  );
+
+  /* ── DnD hook ── */
+  const { sensors, collisionDetection, activeTask, onDragStart, onDragOver, onDragEnd } = useKanbanDragDrop({
+    tasks: localTasks,
+    setTasksOptimistic: setTasksWithDragTracking,
+    reorderTask: apiReorderTask,
+    onError: (msg) => {
+      // Sync back from props on error
+      setLocalTasks(propTasks);
+      console.warn('[Kanban DnD]', msg);
+    },
+  });
+
+  /* Track drag state so we don't clobber optimistic updates with prop sync */
+  const handleDragStart = useCallback(
+    (event: Parameters<typeof onDragStart>[0]) => {
+      isDraggingRef.current = true;
+      onDragStart(event);
+    },
+    [onDragStart],
+  );
+
+  const handleDragEnd = useCallback(
+    async (event: Parameters<typeof onDragEnd>[0]) => {
+      await onDragEnd(event);
+      // Small delay to let API respond before re-syncing from props
+      setTimeout(() => { isDraggingRef.current = false; }, 500);
+    },
+    [onDragEnd],
+  );
+
+  /* ── Derived tasksByStatus from local state ── */
+  const localTasksByStatus = useCallback(
+    (status: TaskStatus): KanbanTask[] =>
+      localTasks.filter(t => t.status === status).sort((a, b) => a.columnOrder - b.columnOrder),
+    [localTasks],
+  );
+
   /* ── Error state ── */
   if (error) {
     return (
@@ -95,17 +184,33 @@ export const KanbanBoard = memo(function KanbanBoard({
 
   /* ── Board with columns ── */
   return (
-    <div className="flex-1 overflow-x-auto">
-      <div className="flex gap-3 p-0 min-w-min h-full">
-        {COLUMNS.map(status => (
-          <KanbanColumn
-            key={status}
-            status={status}
-            tasks={tasksByStatus(status)}
-            onCardClick={onCardClick}
-          />
-        ))}
+    <DndContext
+      sensors={sensors}
+      collisionDetection={collisionDetection}
+      onDragStart={handleDragStart}
+      onDragOver={onDragOver}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="flex-1 overflow-x-auto">
+        <div className="flex gap-3 p-0 min-w-min h-full">
+          {COLUMNS.map(status => (
+            <KanbanColumn
+              key={status}
+              status={status}
+              tasks={localTasksByStatus(status)}
+              onCardClick={onCardClick}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+
+      <DragOverlay dropAnimation={null}>
+        {activeTask ? (
+          <div className="w-[320px] opacity-90 rotate-[2deg]">
+            <KanbanCard task={activeTask} onClick={() => {}} isDragOverlay />
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 });

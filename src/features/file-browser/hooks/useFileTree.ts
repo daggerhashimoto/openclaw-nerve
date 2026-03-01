@@ -2,6 +2,15 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useInstancesOptional } from '@/contexts/InstanceContext';
 import type { TreeEntry } from '../types';
 
+interface FileTreeDebugState {
+  instanceId: string | null;
+  lastPath: string;
+  status: number | null;
+  ok: boolean;
+  error: string | null;
+  at: number;
+}
+
 const STORAGE_KEY_PREFIX = 'nerve-file-tree-expanded';
 
 function storageKeyForInstance(instanceId: string | null): string {
@@ -50,6 +59,14 @@ export function useFileTree() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
   const [workspaceInfo, setWorkspaceInfo] = useState<{ isCustomWorkspace: boolean; rootPath: string } | null>(null);
+  const [debug, setDebug] = useState<FileTreeDebugState>({
+    instanceId: activeInstanceId,
+    lastPath: '',
+    status: null,
+    ok: true,
+    error: null,
+    at: Date.now(),
+  });
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -66,17 +83,45 @@ export function useFileTree() {
   const fetchChildren = useCallback(async (dirPath: string): Promise<TreeEntry[] | null> => {
     try {
       const params = dirPath ? `?path=${encodeURIComponent(dirPath)}&depth=1` : '?depth=1';
-      const res = await fetch(`/api/files/tree${params}`);
-      if (!res.ok) return null;
+      const requestPath = `/api/files/tree${params}`;
+      const res = await fetch(requestPath);
+      if (!res.ok) {
+        setDebug({
+          instanceId: activeInstanceId,
+          lastPath: requestPath,
+          status: res.status,
+          ok: false,
+          error: `HTTP ${res.status}`,
+          at: Date.now(),
+        });
+        return null;
+      }
       const data = await res.json();
-      if (data.ok && data.workspaceInfo) {
+      const ok = Boolean(data?.ok);
+      if (ok && data.workspaceInfo) {
         setWorkspaceInfo(data.workspaceInfo);
       }
-      return data.ok ? data.entries : null;
-    } catch {
+      setDebug({
+        instanceId: activeInstanceId,
+        lastPath: requestPath,
+        status: res.status,
+        ok,
+        error: ok ? null : String(data?.error || 'Unknown error'),
+        at: Date.now(),
+      });
+      return ok ? data.entries : null;
+    } catch (err) {
+      setDebug({
+        instanceId: activeInstanceId,
+        lastPath: dirPath || '/',
+        status: null,
+        ok: false,
+        error: err instanceof Error ? err.message : 'Fetch failed',
+        at: Date.now(),
+      });
       return null;
     }
-  }, []);
+  }, [activeInstanceId]);
 
   // Initial load
   const loadRoot = useCallback(async () => {
@@ -225,6 +270,7 @@ export function useFileTree() {
     selectedPath,
     loadingPaths,
     workspaceInfo,
+    debug,
     toggleDirectory,
     selectFile,
     refresh,

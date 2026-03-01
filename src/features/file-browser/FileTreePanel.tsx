@@ -77,7 +77,7 @@ export function FileTreePanel({
 }: FileTreePanelProps) {
   const {
     entries, loading, error, expandedPaths, selectedPath,
-    loadingPaths, workspaceInfo, toggleDirectory, selectFile, refresh, handleFileChange,
+    loadingPaths, workspaceInfo, debug, toggleDirectory, selectFile, refresh, handleFileChange,
   } = useFileTree();
 
   // React to external file changes
@@ -542,7 +542,7 @@ export function FileTreePanel({
     >
       {/* Header */}
       <div
-        className={`flex items-center justify-between px-3 py-2 border-b border-border ${dropTargetPath === '.' ? 'bg-primary/15 ring-1 ring-primary/40' : ''}`}
+        className={`px-3 py-2 border-b border-border ${dropTargetPath === '.' ? 'bg-primary/15 ring-1 ring-primary/40' : ''}`}
         onDragOver={handleRootDragOver}
         onDragLeave={(e) => {
           if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
@@ -550,26 +550,31 @@ export function FileTreePanel({
         }}
         onDrop={handleRootDrop}
       >
-        <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
-          {workspaceInfo?.isCustomWorkspace ? workspaceInfo.rootPath : 'Workspace'}
-        </span>
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={refresh}
-            className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
-            title="Refresh file tree"
-            aria-label="Refresh file tree"
-          >
-            <RefreshCw size={12} />
-          </button>
-          <button
-            onClick={toggleCollapsed}
-            className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
-            title="Close file explorer (Ctrl+B)"
-            aria-label="Close file explorer"
-          >
-            <PanelLeftClose size={12} />
-          </button>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+            {workspaceInfo?.isCustomWorkspace ? workspaceInfo.rootPath : 'Workspace'}
+          </span>
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={refresh}
+              className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+              title="Refresh file tree"
+              aria-label="Refresh file tree"
+            >
+              <RefreshCw size={12} />
+            </button>
+            <button
+              onClick={toggleCollapsed}
+              className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+              title="Close file explorer (Ctrl+B)"
+              aria-label="Close file explorer"
+            >
+              <PanelLeftClose size={12} />
+            </button>
+          </div>
+        </div>
+        <div className="mt-1 text-[9px] font-mono text-muted-foreground truncate" title={`${debug.lastPath} ${debug.error || ''}`}>
+          inst={debug.instanceId ? debug.instanceId.slice(0, 8) : 'master'} · {debug.ok ? `ok:${debug.status ?? '-'}` : `err:${debug.error || debug.status || 'unknown'}`}
         </div>
       </div>
 

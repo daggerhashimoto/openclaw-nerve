@@ -34,7 +34,23 @@ const app = new Hono();
 
 // ── Session completion poller ────────────────────────────────────────
 
-/** Poll gateway sessions_list for a kanban run label until it finishes, then complete the run. */
+/** Parse gateway tool response — unwraps content[0].text JSON wrapper if present. */
+function parseGatewayResponse(result: unknown): Record<string, unknown> {
+  if (result && typeof result === 'object') {
+    const r = result as Record<string, unknown>;
+    // Gateway wraps tool results in { content: [{ type: "text", text: "..." }] }
+    const content = r.content as Array<Record<string, unknown>> | undefined;
+    if (content?.[0]?.text && typeof content[0].text === 'string') {
+      try { return JSON.parse(content[0].text); } catch { /* fall through */ }
+    }
+    // Also check details (some tools put parsed data there)
+    if (r.details && typeof r.details === 'object') return r.details as Record<string, unknown>;
+    return r;
+  }
+  return {};
+}
+
+/** Poll gateway subagents for a kanban run label until it finishes, then complete the run. */
 function pollSessionCompletion(
   store: ReturnType<typeof getKanbanStore>,
   taskId: string,
@@ -53,37 +69,53 @@ function pollSessionCompletion(
     }
 
     try {
-      const result = await invokeGatewayTool('sessions_list', {
-        kinds: ['subagent'],
-        limit: 50,
-        messageLimit: 1,
-      });
+      // Check if task is still in-progress before polling
+      const task = await store.getTask(taskId).catch(() => null);
+      if (!task || task.status !== 'in-progress') return; // task was moved/aborted, stop
 
-      // sessions_list returns { sessions: [...] } or similar
-      const sessions = (result as Record<string, unknown>)?.sessions as Array<Record<string, unknown>> | undefined
-        ?? (result as Record<string, unknown>)?.recent as Array<Record<string, unknown>> | undefined
-        ?? [];
+      const raw = await invokeGatewayTool('subagents', { action: 'list' });
+      const parsed = parseGatewayResponse(raw);
 
-      const match = sessions.find((s) => s.label === label);
+      // subagents list returns { active: [...], recent: [...] }
+      const active = (parsed.active ?? []) as Array<Record<string, unknown>>;
+      const recent = (parsed.recent ?? []) as Array<Record<string, unknown>>;
+      const all = [...active, ...recent];
+
+      const match = all.find((s) => s.label === label);
 
       if (!match) {
-        // Session not found yet or already gone -- check if task still in-progress
-        const task = await store.getTask(taskId).catch(() => null);
-        if (!task || task.status !== 'in-progress') return; // task moved, stop polling
+        // Not found yet -- may not have registered, keep trying
         setTimeout(poll, intervalMs);
         return;
       }
 
       const status = match.status as string;
-      if (status === 'done' || status === 'completed' || status === 'finished') {
-        // Extract last message as result
-        const messages = (match.lastMessages ?? match.messages ?? []) as Array<Record<string, unknown>>;
-        const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
-        const resultText = typeof lastAssistant?.content === 'string'
-          ? lastAssistant.content
-          : typeof lastAssistant?.text === 'string'
-            ? lastAssistant.text
-            : 'Completed (no result text)';
+
+      if (status === 'done') {
+        // Fetch session history to get the result text
+        let resultText = 'Completed (no result text)';
+        try {
+          const histRaw = await invokeGatewayTool('sessions_history', {
+            sessionKey: match.sessionKey,
+            limit: 3,
+          });
+          const histParsed = parseGatewayResponse(histRaw);
+          const messages = (histParsed.messages ?? []) as Array<Record<string, unknown>>;
+          const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+          if (lastAssistant) {
+            const content = lastAssistant.content;
+            if (typeof content === 'string') {
+              resultText = content;
+            } else if (Array.isArray(content)) {
+              const textPart = (content as Array<Record<string, unknown>>).find((p) => p.type === 'text');
+              if (textPart && typeof textPart.text === 'string') resultText = textPart.text;
+            }
+          }
+        } catch (err) {
+          console.warn(`[kanban] Could not fetch history for ${label}:`, err);
+        }
+
+        console.log(`[kanban] Run completed for task ${taskId} (label: ${label})`);
         await store.completeRun(taskId, resultText).catch((err) => {
           console.error(`[kanban] Failed to complete run for task ${taskId}:`, err);
         });
@@ -96,7 +128,12 @@ function pollSessionCompletion(
         return;
       }
 
-      // Still running -- keep polling
+      if (status === 'running') {
+        setTimeout(poll, intervalMs);
+        return;
+      }
+
+      // Unknown status -- keep polling
       setTimeout(poll, intervalMs);
     } catch (err) {
       console.error(`[kanban] Poll error for task ${taskId}:`, err);
@@ -191,6 +228,7 @@ const configSchema = z.object({
   allowDoneDragBypass: z.boolean().optional(),
   quickViewLimit: z.number().int().min(1).max(50).optional(),
   proposalPolicy: z.enum(['confirm', 'auto']).optional(),
+  defaultModel: z.string().max(100).optional(),
 });
 
 // ── Proposal schemas ─────────────────────────────────────────────────
@@ -635,7 +673,10 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
       mode: 'run',
       label: `kanban-${id}`,
     };
-    if (task.model) spawnArgs.model = task.model;
+    // Use task's model, or fall back to kanban config default, or Sonnet 4.5
+    const config = await store.getConfig();
+    const model = task.model || (config as unknown as Record<string, unknown>).defaultModel as string || 'anthropic/claude-sonnet-4-5';
+    spawnArgs.model = model;
     if (task.thinking) spawnArgs.thinking = task.thinking;
 
     invokeGatewayTool('sessions_spawn', spawnArgs)

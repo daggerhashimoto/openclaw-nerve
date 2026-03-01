@@ -39,7 +39,7 @@ describe('instances routes', () => {
       expect(bin).toBe('docker');
       const dockerArgs = args as string[];
       if (dockerArgs[0] === 'ps') {
-        (cb as (err: null, stdout: string, stderr: string) => void)(null, 'cid-open\ncid-nginx\n', '');
+        (cb as (err: null, stdout: string, stderr: string) => void)(null, 'cid-open\ncid-open-no-nerve\ncid-nginx\n', '');
         return;
       }
       if (dockerArgs[0] === 'inspect') {
@@ -55,7 +55,23 @@ describe('instances routes', () => {
             },
             State: { Status: 'running' },
             NetworkSettings: {
-              Ports: { '18789/tcp': [{ HostIp: '0.0.0.0', HostPort: '18789' }] },
+              Ports: {
+                '18789/tcp': [{ HostIp: '0.0.0.0', HostPort: '18789' }],
+                '3080/tcp': [{ HostIp: '0.0.0.0', HostPort: '13080' }],
+              },
+            },
+          },
+          {
+            Id: 'cid-open-no-nerve',
+            Name: '/openclaw-gateway-only',
+            Config: {
+              Image: 'ghcr.io/openclaw/openclaw-gateway:latest',
+              Env: ['OPENCLAW_GATEWAY_TOKEN=test-token'],
+              Labels: { 'com.docker.compose.project': 'openclaw' },
+            },
+            State: { Status: 'running' },
+            NetworkSettings: {
+              Ports: { '18789/tcp': [{ HostIp: '0.0.0.0', HostPort: '18790' }] },
             },
           },
           {
@@ -117,7 +133,7 @@ describe('instances routes', () => {
               Labels: {},
             },
             State: { Status: 'running' },
-            NetworkSettings: { Ports: {} },
+            NetworkSettings: { Ports: { '3080/tcp': [{ HostIp: '0.0.0.0', HostPort: '13080' }] } },
           },
         ]);
         (cb as (err: null, stdout: string, stderr: string) => void)(null, payload, '');
@@ -162,7 +178,10 @@ describe('instances routes', () => {
             },
             State: { Status: 'running' },
             NetworkSettings: {
-              Ports: { '18789/tcp': [{ HostIp: '0.0.0.0', HostPort: '28789' }] },
+              Ports: {
+                '18789/tcp': [{ HostIp: '0.0.0.0', HostPort: '28789' }],
+                '3080/tcp': [{ HostIp: '0.0.0.0', HostPort: '23080' }],
+              },
             },
           },
         ]);
@@ -272,7 +291,10 @@ describe('instances routes', () => {
             },
             State: { Status: 'running' },
             NetworkSettings: {
-              Ports: { '18789/tcp': null },
+              Ports: {
+                '18789/tcp': null,
+                '3080/tcp': null,
+              },
             },
           },
         ]);

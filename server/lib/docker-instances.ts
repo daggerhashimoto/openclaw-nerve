@@ -25,6 +25,7 @@ export interface LocalInstanceSummary {
 }
 
 const DEFAULT_GATEWAY_CONTAINER_PORT = 18789;
+const DEFAULT_NERVE_CONTAINER_PORT = 3080;
 
 export interface InstanceTokenResult {
   instanceId: string;
@@ -146,7 +147,15 @@ function extractToken(inspect: DockerInspect): { token: string | null; tokenKey:
   return { token: null, tokenKey: null };
 }
 
+function exposesNervePort(inspect: DockerInspect): boolean {
+  const portKeys = Object.keys(inspect.NetworkSettings?.Ports || {});
+  return portKeys.some((key) => key.startsWith(`${DEFAULT_NERVE_CONTAINER_PORT}/`));
+}
+
 export function looksLikeOpenClawInstance(inspect: DockerInspect): boolean {
+  // MultiClaw instance list should only include containers that expose Nerve.
+  if (!exposesNervePort(inspect)) return false;
+
   const name = (inspect.Name || '').replace(/^\//, '');
   const image = inspect.Config?.Image || '';
   const labels = inspect.Config?.Labels || {};
@@ -157,7 +166,7 @@ export function looksLikeOpenClawInstance(inspect: DockerInspect): boolean {
   if (Object.entries(labels).some(([k, v]) => OPENCLAW_HINT_RE.test(k) || OPENCLAW_HINT_RE.test(v))) return true;
   if (env.some((entry) => entry.startsWith('OPENCLAW_'))) return true;
   if (TOKEN_ENV_KEYS.some((key) => env.some((entry) => entry.startsWith(`${key}=`)))) return true;
-  return portKeys.some((key) => key.startsWith('18789/'));
+  return portKeys.some((key) => key.startsWith(`${DEFAULT_GATEWAY_CONTAINER_PORT}/`));
 }
 
 function toSummary(inspect: DockerInspect): LocalInstanceSummary {

@@ -57,6 +57,7 @@ Create recurring jobs and one-shot reminders. Every scheduled run shows up as it
 | **File browser** | Browse your workspace and open files in tabs |
 | **Built-in editor** | CodeMirror editor with syntax highlighting, conflict-safe saves, and automatic lock protection during concurrent agent edits |
 | **Multi-session** | Session tree with sub-agents, per-session model overrides, unread indicators |
+| **Kanban board** | Drag-and-drop task management with agent execution, review workflow, and proposal inbox |
 | **Responsive UI** | Fully responsive layout across desktop, tablet, and mobile with touch-friendly controls |
 | **Sub-agents** | Spawn background workers with custom models and reasoning levels |
 | **Monitoring** | Token usage, context window meter, cost tracking, activity logs |

@@ -28,6 +28,7 @@ Nerve exposes a REST + SSE API served by [Hono](https://hono.dev/) on the config
 - [File Serving](#file-serving)
 - [Codex Limits](#codex-limits)
 - [Claude Code Limits](#claude-code-limits)
+- [Kanban](#kanban)
 - [Error Handling](#error-handling)
 - [Rate Limiting](#rate-limiting)
 
@@ -1218,6 +1219,560 @@ Returns Claude Code rate limit information by spawning the CLI parser. Reset tim
   }
 }
 ```
+
+---
+
+## Kanban
+
+Task board with drag-and-drop columns, agent execution, and a proposal workflow. Tasks flow through a state machine: `backlog` → `todo` → `in-progress` → `review` → `done`. See [Architecture](./ARCHITECTURE.md#kanban-subsystem) for design details.
+
+### Task Object
+
+All task endpoints return a `KanbanTask` object:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | UUID |
+| `title` | `string` | Task title (1--500 chars) |
+| `description` | `string \| undefined` | Optional description (max 10000 chars) |
+| `status` | `string` | One of: `backlog`, `todo`, `in-progress`, `review`, `done`, `cancelled` |
+| `priority` | `string` | One of: `critical`, `high`, `normal`, `low` |
+| `createdBy` | `string` | `"operator"` or `"agent:<label>"` |
+| `createdAt` | `number` | Epoch milliseconds |
+| `updatedAt` | `number` | Epoch milliseconds |
+| `version` | `number` | CAS version (incremented on every mutation) |
+| `sourceSessionKey` | `string \| undefined` | Originating session |
+| `assignee` | `string \| undefined` | `"operator"` or `"agent:<label>"` |
+| `labels` | `string[]` | Tags (max 50, each max 100 chars) |
+| `columnOrder` | `number` | Position within the status column |
+| `run` | `object \| undefined` | Active or last run link (see below) |
+| `result` | `string \| undefined` | Agent output text (max 50000 chars) |
+| `resultAt` | `number \| undefined` | When the result was set |
+| `model` | `string \| undefined` | Model override for execution |
+| `thinking` | `string \| undefined` | Thinking level: `off`, `low`, `medium`, `high` |
+| `dueAt` | `number \| undefined` | Due date (epoch ms) |
+| `estimateMin` | `number \| undefined` | Estimated minutes |
+| `actualMin` | `number \| undefined` | Actual minutes |
+| `feedback` | `array` | Review feedback entries: `{ at, by, note }` |
+
+**Run link object** (`run`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessionKey` | `string` | Gateway session key |
+| `sessionId` | `string \| undefined` | Session ID |
+| `runId` | `string \| undefined` | Run ID |
+| `startedAt` | `number` | Epoch milliseconds |
+| `endedAt` | `number \| undefined` | Epoch milliseconds |
+| `status` | `string` | `running`, `done`, `error`, `aborted` |
+| `error` | `string \| undefined` | Error message if failed |
+
+### `GET /api/kanban/tasks`
+
+List tasks with optional filters and pagination.
+
+**Rate Limit:** General (60/min)
+
+**Query Parameters:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `status` | `string` | *(all)* | Filter by status. Repeatable or comma-separated (e.g. `?status=todo,in-progress`) |
+| `priority` | `string` | *(all)* | Filter by priority. Repeatable or comma-separated |
+| `assignee` | `string` | *(all)* | Filter by assignee (exact match) |
+| `label` | `string` | *(all)* | Filter by label (exact match) |
+| `q` | `string` | *(none)* | Search title, description, and labels (case-insensitive substring) |
+| `limit` | `number` | `50` | Page size (1--200) |
+| `offset` | `number` | `0` | Pagination offset |
+
+**Response:**
+
+```json
+{
+  "items": [
+    {
+      "id": "a1b2c3d4-...",
+      "title": "Refactor auth module",
+      "status": "todo",
+      "priority": "high",
+      "version": 3,
+      "labels": ["backend"],
+      "columnOrder": 0,
+      "createdBy": "operator",
+      "createdAt": 1708100000000,
+      "updatedAt": 1708100500000,
+      "feedback": []
+    }
+  ],
+  "total": 12,
+  "limit": 50,
+  "offset": 0,
+  "hasMore": false
+}
+```
+
+Tasks are sorted by status order → column order → most recently updated.
+
+### `POST /api/kanban/tasks`
+
+Create a new task.
+
+**Rate Limit:** General (60/min)
+
+**Request Body:**
+
+```json
+{
+  "title": "Refactor auth module",
+  "description": "Extract session logic into its own service",
+  "status": "todo",
+  "priority": "high",
+  "assignee": "operator",
+  "labels": ["backend", "refactor"],
+  "model": "anthropic/claude-sonnet-4-20250514",
+  "thinking": "medium",
+  "dueAt": 1708200000000,
+  "estimateMin": 60
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | `string` | Yes | Task title (1--500 chars) |
+| `description` | `string` | No | Description (max 10000 chars) |
+| `status` | `string` | No | Initial status. Defaults to board config `defaults.status` (usually `todo`) |
+| `priority` | `string` | No | Priority. Defaults to board config `defaults.priority` (usually `normal`) |
+| `createdBy` | `string` | No | Creator. Default: `"operator"` |
+| `sourceSessionKey` | `string` | No | Originating session key (max 500 chars) |
+| `assignee` | `string` | No | `"operator"` or `"agent:<label>"` |
+| `labels` | `string[]` | No | Tags (max 50 items, each max 100 chars). Default: `[]` |
+| `model` | `string` | No | Model for agent execution (max 200 chars) |
+| `thinking` | `string` | No | Thinking level: `off`, `low`, `medium`, `high` |
+| `dueAt` | `number` | No | Due date (epoch ms) |
+| `estimateMin` | `number` | No | Estimated minutes (≥0) |
+
+**Response (201):** The created `KanbanTask` object.
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | Validation error (missing title, invalid field values) |
+
+### `PATCH /api/kanban/tasks/:id`
+
+Update a task. Requires the current `version` for optimistic concurrency (CAS). Send `null` for nullable fields to clear them.
+
+**Rate Limit:** General (60/min)
+
+**Request Body:**
+
+```json
+{
+  "version": 3,
+  "title": "Updated title",
+  "priority": "critical",
+  "assignee": null
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | `number` | Yes | Current task version (for conflict detection) |
+| `title` | `string` | No | Updated title |
+| `description` | `string \| null` | No | Updated description. `null` to clear |
+| `status` | `string` | No | New status |
+| `priority` | `string` | No | New priority |
+| `assignee` | `string \| null` | No | New assignee. `null` to clear |
+| `labels` | `string[]` | No | Replace labels |
+| `model` | `string \| null` | No | Model override. `null` to clear |
+| `thinking` | `string \| null` | No | Thinking level. `null` to clear |
+| `dueAt` | `number \| null` | No | Due date. `null` to clear |
+| `estimateMin` | `number \| null` | No | Estimated minutes. `null` to clear |
+| `actualMin` | `number \| null` | No | Actual minutes. `null` to clear |
+| `result` | `string \| null` | No | Result text (max 50000 chars). `null` to clear |
+
+**Response:** The updated `KanbanTask` object.
+
+**Errors:**
+
+| Status | Body | Condition |
+|--------|------|-----------|
+| 400 | `{ "error": "validation_error", "details": "..." }` | Invalid field values |
+| 404 | `{ "error": "not_found" }` | Task not found |
+| 409 | `{ "error": "version_conflict", "serverVersion": 4, "latest": {...} }` | Version mismatch. Response includes the current task so you can retry |
+
+### `DELETE /api/kanban/tasks/:id`
+
+Delete a task permanently.
+
+**Rate Limit:** General (60/min)
+
+**Response:**
+
+```json
+{ "ok": true }
+```
+
+**Errors:** 404 if task not found.
+
+### `POST /api/kanban/tasks/:id/reorder`
+
+Move a task to a different position within its column or to another column. CAS-versioned.
+
+**Rate Limit:** General (60/min)
+
+**Request Body:**
+
+```json
+{
+  "version": 3,
+  "targetStatus": "in-progress",
+  "targetIndex": 0
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | `number` | Yes | Current task version |
+| `targetStatus` | `string` | Yes | Target column status |
+| `targetIndex` | `number` | Yes | Zero-based position in the target column |
+
+**Response:** The updated `KanbanTask` object.
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | Invalid body |
+| 404 | Task not found |
+| 409 | Version conflict (returns `serverVersion` and `latest` task) |
+
+### `POST /api/kanban/tasks/:id/execute`
+
+Execute a task by spawning an agent session. The task must be in `todo` or `backlog` status. Moves the task to `in-progress` and starts polling the agent session for completion.
+
+**Rate Limit:** General (60/min)
+
+**Request Body (optional):**
+
+```json
+{
+  "model": "anthropic/claude-sonnet-4-20250514",
+  "thinking": "high"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `model` | `string` | No | Model override (max 200 chars). Falls back to task's model → board `defaultModel` → `anthropic/claude-sonnet-4-5` |
+| `thinking` | `string` | No | Thinking level: `off`, `low`, `medium`, `high` |
+
+**Response:** The updated `KanbanTask` object with `status: "in-progress"` and a `run` object.
+
+**Errors:**
+
+| Status | Body | Condition |
+|--------|------|-----------|
+| 404 | `{ "error": "not_found" }` | Task not found |
+| 409 | `{ "error": "invalid_transition", "from": "done", "to": "in-progress" }` | Task not in `todo` or `backlog` status |
+
+**Notes:**
+- If the task is already `in-progress` with an active run, returns the task as-is (idempotent).
+- The spawned agent receives the task title and description as its prompt.
+- The backend polls the gateway every 5 seconds for up to 30 minutes. On completion, the task moves to `review`. On error, it moves back to `todo`.
+
+### `POST /api/kanban/tasks/:id/complete`
+
+Complete a running task. Called by the backend poller automatically, but can also be called directly.
+
+**Rate Limit:** General (60/min)
+
+**Request Body (optional):**
+
+```json
+{
+  "result": "Refactored auth module. Extracted SessionService class...",
+  "error": "Agent session timed out"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `result` | `string` | No | Agent output text (max 50000 chars). Kanban markers are parsed and stripped automatically |
+| `error` | `string` | No | Error message (max 5000 chars). If set, task moves to `todo` instead of `review` |
+
+**Response:** The updated `KanbanTask` object.
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 404 | Task not found |
+| 409 | No active run to complete |
+
+### `POST /api/kanban/tasks/:id/approve`
+
+Approve a task in review. Moves it to `done`.
+
+**Rate Limit:** General (60/min)
+
+**Request Body (optional):**
+
+```json
+{
+  "note": "Looks good, nice work"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `note` | `string` | No | Approval note (max 5000 chars). Added to task feedback |
+
+**Response:** The updated `KanbanTask` object with `status: "done"`.
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 404 | Task not found |
+| 409 | Task not in `review` status |
+
+### `POST /api/kanban/tasks/:id/reject`
+
+Reject a task in review. Moves it back to `todo` and clears the run and result so it can be re-executed.
+
+**Rate Limit:** General (60/min)
+
+**Request Body:**
+
+```json
+{
+  "note": "Missing error handling for edge cases"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `note` | `string` | Yes | Rejection reason (1--5000 chars). Added to task feedback |
+
+**Response:** The updated `KanbanTask` object with `status: "todo"`.
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | Missing or empty `note` |
+| 404 | Task not found |
+| 409 | Task not in `review` status |
+
+### `POST /api/kanban/tasks/:id/abort`
+
+Abort a running task. Marks the run as aborted and moves the task back to `todo`.
+
+**Rate Limit:** General (60/min)
+
+**Request Body (optional):**
+
+```json
+{
+  "note": "Taking too long, will retry with a different approach"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `note` | `string` | No | Abort reason (max 5000 chars). Added to task feedback |
+
+**Response:** The updated `KanbanTask` object with `status: "todo"`.
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 404 | Task not found |
+| 409 | Task not `in-progress` with an active run |
+
+### `GET /api/kanban/proposals`
+
+List kanban proposals (agent-suggested task changes).
+
+**Rate Limit:** General (60/min)
+
+**Query Parameters:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `status` | `string` | *(all)* | Filter by status: `pending`, `approved`, `rejected` |
+
+**Response:**
+
+```json
+{
+  "proposals": [
+    {
+      "id": "f8e7d6c5-...",
+      "type": "create",
+      "payload": { "title": "Add rate limiting to API", "priority": "high" },
+      "proposedBy": "agent:kanban-abc123",
+      "proposedAt": 1708100000000,
+      "status": "pending",
+      "version": 1
+    }
+  ]
+}
+```
+
+Proposals are sorted most-recent first.
+
+### `POST /api/kanban/proposals`
+
+Create a proposal manually. Typically proposals are created automatically when agents emit kanban markers, but this endpoint allows direct creation.
+
+**Rate Limit:** General (60/min)
+
+**Request Body:**
+
+```json
+{
+  "type": "create",
+  "payload": {
+    "title": "Add rate limiting to API",
+    "priority": "high",
+    "labels": ["backend"]
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `string` | Yes | `"create"` or `"update"` |
+| `payload` | `object` | Yes | Task fields. Schema depends on `type` (see below) |
+| `sourceSessionKey` | `string` | No | Originating session key (max 500 chars) |
+| `proposedBy` | `string` | No | Actor. Default: `"operator"` |
+
+**Create payload fields:** `title` (required), `description`, `status`, `priority`, `assignee`, `labels`, `model`, `thinking`, `dueAt`, `estimateMin`
+
+**Update payload fields:** `id` (required -- references existing task), `title`, `description`, `status`, `priority`, `assignee`, `labels`, `result`
+
+**Response (201):** The created proposal object.
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | Invalid payload for the given type |
+| 404 | Update proposal references a non-existent task |
+
+**Notes:**
+- When `proposalPolicy` is `"auto"`, the proposal is immediately applied (created as `approved`).
+- When `proposalPolicy` is `"confirm"` (default), the proposal stays `pending` until manually approved or rejected.
+
+### `POST /api/kanban/proposals/:id/approve`
+
+Approve a pending proposal. Creates or updates the task based on the proposal type.
+
+**Rate Limit:** General (60/min)
+
+**Response:**
+
+```json
+{
+  "proposal": { "id": "...", "status": "approved", "resolvedAt": 1708100500000 },
+  "task": { "id": "...", "title": "Add rate limiting to API" }
+}
+```
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 404 | Proposal not found |
+| 409 | Proposal already resolved (`{ "error": "already_resolved", "proposal": {...} }`) |
+
+### `POST /api/kanban/proposals/:id/reject`
+
+Reject a pending proposal.
+
+**Rate Limit:** General (60/min)
+
+**Request Body (optional):**
+
+```json
+{
+  "reason": "Not a priority right now"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `reason` | `string` | No | Rejection reason (max 5000 chars) |
+
+**Response:**
+
+```json
+{
+  "proposal": { "id": "...", "status": "rejected", "reason": "Not a priority right now" }
+}
+```
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 404 | Proposal not found |
+| 409 | Proposal already resolved |
+
+### `GET /api/kanban/config`
+
+Get the current board configuration.
+
+**Rate Limit:** General (60/min)
+
+**Response:**
+
+```json
+{
+  "columns": [
+    { "key": "backlog", "title": "Backlog", "visible": true },
+    { "key": "todo", "title": "To Do", "visible": true },
+    { "key": "in-progress", "title": "In Progress", "visible": true },
+    { "key": "review", "title": "Review", "visible": true },
+    { "key": "done", "title": "Done", "visible": true },
+    { "key": "cancelled", "title": "Cancelled", "visible": false }
+  ],
+  "defaults": {
+    "status": "todo",
+    "priority": "normal"
+  },
+  "reviewRequired": true,
+  "allowDoneDragBypass": false,
+  "quickViewLimit": 5,
+  "proposalPolicy": "confirm"
+}
+```
+
+### `PUT /api/kanban/config`
+
+Update board configuration. Partial updates -- only include the fields you want to change.
+
+**Rate Limit:** General (60/min)
+
+**Request Body (partial):**
+
+```json
+{
+  "proposalPolicy": "auto",
+  "defaultModel": "anthropic/claude-sonnet-4-20250514",
+  "quickViewLimit": 10
+}
+```
+
+See [Configuration -- Kanban](./CONFIGURATION.md#kanban) for all available fields and defaults.
+
+**Response:** The full updated config object.
+
+**Errors:** 400 if validation fails.
 
 ---
 

@@ -145,6 +145,92 @@ Agents that have the chart syntax in their `TOOLS.md` will naturally include `[c
 
 ---
 
+## Kanban Markers -- `[kanban:create]` / `[kanban:update]`
+
+Lets agents propose task changes on the kanban board. Markers are parsed from agent output, converted into proposals, and stripped from the displayed result.
+
+### Format
+
+**Create a task:**
+
+```
+[kanban:create]{"title":"Fix login timeout bug","priority":"high","description":"Users report 504 errors after 30s"}[/kanban:create]
+```
+
+**Update an existing task:**
+
+```
+[kanban:update]{"id":"a1b2c3d4-...","status":"done","result":"Fixed the timeout by increasing the keepalive"}[/kanban:update]
+```
+
+### Safety Limits
+
+- **Max 5 markers** per message (additional markers are ignored)
+- **Max 2 KB** per JSON payload (markers exceeding this are skipped)
+- Malformed JSON or missing required fields are silently skipped
+
+### Create Payload Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | `string` | Yes | Task title (1--500 chars) |
+| `description` | `string` | No | Task description (max 10000 chars) |
+| `status` | `string` | No | Initial status (defaults to board config) |
+| `priority` | `string` | No | `critical`, `high`, `normal`, `low` |
+| `assignee` | `string` | No | `"operator"` or `"agent:<label>"` |
+| `labels` | `string[]` | No | Tags (max 50 items) |
+| `model` | `string` | No | Model for execution |
+| `thinking` | `string` | No | `off`, `low`, `medium`, `high` |
+| `dueAt` | `number` | No | Due date (epoch ms) |
+| `estimateMin` | `number` | No | Estimated minutes |
+
+### Update Payload Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | `string` | Yes | Task ID to update |
+| `title` | `string` | No | New title |
+| `description` | `string` | No | New description |
+| `status` | `string` | No | New status |
+| `priority` | `string` | No | New priority |
+| `assignee` | `string` | No | New assignee |
+| `labels` | `string[]` | No | Replace labels |
+| `result` | `string` | No | Result text (max 50000 chars) |
+
+### How It Works
+
+1. Agent includes `[kanban:create]` or `[kanban:update]` markers in its response
+2. When the agent session completes, the backend's poller (or `POST /api/kanban/tasks/:id/complete`) parses the markers
+3. Each valid marker creates a **proposal** in the kanban store
+4. Markers are stripped from the result text stored on the task
+5. The proposal appears in the frontend's proposal inbox
+6. The operator approves or rejects the proposal
+
+When `proposalPolicy` is `"auto"`, step 6 is skipped -- proposals are applied immediately.
+
+### Example
+
+An agent working on a task might output:
+
+```
+I've completed the auth refactoring. I also noticed two related issues.
+
+[kanban:create]{"title":"Add rate limiting to login endpoint","priority":"high","labels":["security"]}[/kanban:create]
+[kanban:create]{"title":"Update auth documentation","priority":"low","labels":["docs"]}[/kanban:create]
+```
+
+The result stored on the task: "I've completed the auth refactoring. I also noticed two related issues."
+
+Two proposals are created in the inbox for the operator to review.
+
+### Implementation
+
+- **Parser**: `server/lib/parseMarkers.ts` -- regex-based extraction with JSON validation
+- **Integration**: `server/routes/kanban.ts` -- `pollSessionCompletion()` and `POST .../complete` handler
+- **Frontend**: Proposals are displayed in the kanban board's proposal inbox
+
+---
+
 ## Marker Processing Pipeline
 
 When an agent response arrives, markers are processed in this order:

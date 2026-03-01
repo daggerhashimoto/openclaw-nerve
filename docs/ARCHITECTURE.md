@@ -352,6 +352,18 @@ Applied in order in `app.ts`:
 | `/api/files/write` | `routes/file-browser.ts` | POST | Write file with mtime-based optimistic concurrency (409 on conflict) |
 | `/api/claude-code-limits` | `routes/claude-code-limits.ts` | GET | Claude Code rate limits via PTY + CLI parsing |
 | `/api/codex-limits` | `routes/codex-limits.ts` | GET | Codex rate limits via OpenAI API with local file fallback |
+| `/api/kanban/tasks` | `routes/kanban.ts` | GET, POST | Task CRUD -- list (with filters/pagination) and create |
+| `/api/kanban/tasks/:id` | `routes/kanban.ts` | PATCH, DELETE | Update (CAS-versioned) and delete tasks |
+| `/api/kanban/tasks/:id/reorder` | `routes/kanban.ts` | POST | Reorder/move tasks across columns |
+| `/api/kanban/tasks/:id/execute` | `routes/kanban.ts` | POST | Spawn agent session for task |
+| `/api/kanban/tasks/:id/complete` | `routes/kanban.ts` | POST | Complete a running task (auto-called by poller) |
+| `/api/kanban/tasks/:id/approve` | `routes/kanban.ts` | POST | Approve task in review -> done |
+| `/api/kanban/tasks/:id/reject` | `routes/kanban.ts` | POST | Reject task in review -> todo |
+| `/api/kanban/tasks/:id/abort` | `routes/kanban.ts` | POST | Abort running task -> todo |
+| `/api/kanban/proposals` | `routes/kanban.ts` | GET, POST | List and create proposals |
+| `/api/kanban/proposals/:id/approve` | `routes/kanban.ts` | POST | Approve pending proposal |
+| `/api/kanban/proposals/:id/reject` | `routes/kanban.ts` | POST | Reject pending proposal |
+| `/api/kanban/config` | `routes/kanban.ts` | GET, PUT | Board configuration |
 
 ### Server Libraries
 
@@ -472,6 +484,124 @@ The frontend calls gateway methods via `GatewayContext.rpc()`:
 | `exec.approval.request` | — | Exec approval requested |
 | `exec.approval.resolved` | — | Exec approval granted |
 | `presence` | — | Presence updates |
+
+---
+
+## Kanban Subsystem
+
+The kanban board provides task management with agent execution, drag-and-drop reordering, and a proposal system for agent-initiated changes.
+
+### Store Design
+
+```
+server/data/kanban/tasks.json   -- single JSON file (tasks + proposals + config)
+server/data/kanban/audit.log    -- append-only audit log (JSONL)
+```
+
+All data lives in one JSON file (`StoreData`). Every mutation acquires an async mutex, reads the file, applies the change, and writes back atomically via temp-file rename. This guarantees consistency under concurrent requests without a database.
+
+| File | Purpose |
+|------|---------|
+| `server/lib/kanban-store.ts` | `KanbanStore` class -- mutex-protected CRUD, workflow transitions, CAS versioning, proposal management |
+| `server/routes/kanban.ts` | Hono routes, Zod validation, gateway session spawning, poll loop |
+| `server/lib/parseMarkers.ts` | Regex-based `[kanban:create]`/`[kanban:update]` marker extraction |
+
+The store schema is versioned (`meta.schemaVersion`). A `migrate()` function runs on every read to backfill new fields transparently.
+
+### State Machine
+
+```
+                    execute          complete (success)        approve
+  backlog --------+                  +---- review ------------ done
+                  v                  |       |
+  todo --------- in-progress -------+       | reject
+                  |                          v
+                  | abort / error         todo (run cleared)
+                  +---------------------> todo
+```
+
+| Transition | From | To | Trigger |
+|------------|------|----|---------|
+| Execute | `backlog`, `todo` | `in-progress` | `POST .../execute` |
+| Complete (success) | `in-progress` | `review` | Poller or `POST .../complete` |
+| Complete (error) | `in-progress` | `todo` | Poller or `POST .../complete` with `error` |
+| Approve | `review` | `done` | `POST .../approve` |
+| Reject | `review` | `todo` | `POST .../reject` (clears run + result) |
+| Abort | `in-progress` | `todo` | `POST .../abort` |
+
+The `cancelled` status exists in the schema but has no automatic transitions -- tasks are moved there manually via `PATCH`.
+
+### CAS Versioning
+
+Every task has a `version` field (starts at 1, incremented on every mutation). Mutating endpoints (`PATCH`, reorder, workflow actions) require the client to send the current version. If it doesn't match, the server returns **409** with the latest task so the client can retry:
+
+```json
+{ "error": "version_conflict", "serverVersion": 5, "latest": { "..." } }
+```
+
+This prevents stale overwrites from concurrent editors (drag-and-drop, API clients, agent completions).
+
+### Agent Execution Flow
+
+```
+1. POST /api/kanban/tasks/:id/execute
+   +-- store.executeTask()    -> status = in-progress, run.status = running
+   +-- invokeGatewayTool('sessions_spawn', { label: 'kanban-<id>', ... })
+       +-- fire-and-forget
+
+2. pollSessionCompletion()    -> polls gateway subagents every 5s (max 360 attempts / 30 min)
+   +-- invokeGatewayTool('subagents', { action: 'list' })
+   +-- match by label
+   +-- if status=done:
+       |   fetch session history (last 3 messages)
+       |   parseKanbanMarkers(resultText) -> create proposals
+       |   stripKanbanMarkers(resultText) -> clean result
+       +-- store.completeRun(taskId, cleanResult)
+   +-- if status=error/failed:
+       +-- store.completeRun(taskId, undefined, errorMsg)
+   +-- if status=running:
+       +-- schedule next poll
+
+3. store.completeRun()
+   |-- success -> run.status = done, task.status = review
+   +-- error   -> run.status = error, task.status = todo
+```
+
+The model cascade is: task's `model` -> board config `defaultModel` -> `anthropic/claude-sonnet-4-5`.
+
+### Marker Parsing
+
+When agent output arrives (via poller or `POST .../complete`), it's scanned for kanban markers:
+
+```
+[kanban:create]{"title":"Fix login bug","priority":"high"}[/kanban:create]
+[kanban:update]{"id":"abc","status":"done"}[/kanban:update]
+```
+
+Each valid marker creates a **proposal** in the store. The markers are then stripped from the result text before it's saved on the task. See [Agent Markers](./AGENT-MARKERS.md#kanban-markers----kanbancreate--kanbanupdate) for the full format.
+
+### Proposal System
+
+Proposals let agents suggest task changes without directly modifying the board:
+
+1. Agent emits `[kanban:create]` or `[kanban:update]` markers in its output
+2. Backend parses markers -> creates proposals with `status: "pending"`
+3. Frontend polls proposals every 5 seconds -> shows inbox notification
+4. Operator approves or rejects each proposal
+
+The `proposalPolicy` config controls behavior:
+- `"confirm"` (default) -- proposals stay pending until the operator acts
+- `"auto"` -- proposals are applied immediately on creation
+
+### Polling Architecture
+
+| What | Who | Interval | Purpose |
+|------|-----|----------|---------|
+| Task list | Frontend | 5s | Sync board state across tabs/users |
+| Proposals | Frontend | 5s | Show new proposals in inbox |
+| Gateway subagents | Backend | 5s | Detect when agent runs complete |
+
+Backend polling for each running task is independent -- each `executeTask` call starts its own poll loop (capped at 360 attempts = 30 minutes). Stale runs are reconciled by `reconcileStaleRuns()`.
 
 ---
 

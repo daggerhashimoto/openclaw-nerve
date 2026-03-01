@@ -192,7 +192,7 @@ async function handleProxy(c: Context) {
     target.search = search;
 
     const method = c.req.method.toUpperCase();
-    let body: BodyInit | undefined;
+    let body: ArrayBuffer | undefined;
     if (method !== 'GET' && method !== 'HEAD') {
       const payload = await c.req.raw.arrayBuffer();
       if (payload.byteLength > 0) body = payload;

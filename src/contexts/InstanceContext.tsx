@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- hooks intentionally co-located with provider */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { routeApiPath, routeFetchInput } from '@/lib/apiRouting';
 

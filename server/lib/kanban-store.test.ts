@@ -233,10 +233,10 @@ describe('listTasks', () => {
   });
 
   it('sorts by status order, then columnOrder, then updatedAt desc', async () => {
-    const t1 = await createSampleTask({ title: 'Backlog', status: 'backlog' });
-    const t2 = await createSampleTask({ title: 'Todo 1', status: 'todo' });
-    const t3 = await createSampleTask({ title: 'Todo 2', status: 'todo' });
-    const t4 = await createSampleTask({ title: 'Done', status: 'done' });
+    await createSampleTask({ title: 'Backlog', status: 'backlog' });
+    await createSampleTask({ title: 'Todo 1', status: 'todo' });
+    await createSampleTask({ title: 'Todo 2', status: 'todo' });
+    await createSampleTask({ title: 'Done', status: 'done' });
 
     const result = await store.listTasks();
     expect(result.items.map((t) => t.title)).toEqual(['Backlog', 'Todo 1', 'Todo 2', 'Done']);
@@ -293,7 +293,7 @@ describe('updateTask', () => {
   });
 
   it('re-computes columnOrder on status change', async () => {
-    const t1 = await createSampleTask({ title: 'A', status: 'review' });
+    await createSampleTask({ title: 'A', status: 'review' });
     const t2 = await createSampleTask({ title: 'B', status: 'todo' });
 
     // Move B to review column
@@ -332,7 +332,7 @@ describe('deleteTask', () => {
   });
 
   it('does not affect other tasks', async () => {
-    const t1 = await createSampleTask({ title: 'Keep' });
+    await createSampleTask({ title: 'Keep' });
     const t2 = await createSampleTask({ title: 'Delete' });
     await store.deleteTask(t2.id);
     const result = await store.listTasks();
@@ -345,8 +345,8 @@ describe('deleteTask', () => {
 
 describe('reorderTask', () => {
   it('moves task within same column', async () => {
-    const t1 = await createSampleTask({ title: 'A', status: 'todo' });
-    const t2 = await createSampleTask({ title: 'B', status: 'todo' });
+    await createSampleTask({ title: 'A', status: 'todo' });
+    await createSampleTask({ title: 'B', status: 'todo' });
     const t3 = await createSampleTask({ title: 'C', status: 'todo' });
 
     // Move C to index 0 (top)
@@ -360,7 +360,7 @@ describe('reorderTask', () => {
 
   it('moves task to a different column', async () => {
     const t1 = await createSampleTask({ title: 'A', status: 'todo' });
-    const t2 = await createSampleTask({ title: 'B', status: 'in-progress' });
+    await createSampleTask({ title: 'B', status: 'in-progress' });
 
     // Move A to in-progress at index 0
     const reordered = await store.reorderTask(t1.id, t1.version, 'in-progress', 0);
@@ -758,7 +758,7 @@ describe('reconcileStaleRuns', () => {
   });
 
   it('does not reconcile non-running tasks', async () => {
-    const task = await createSampleTask({ status: 'todo' });
+    await createSampleTask({ status: 'todo' });
     // Task is in todo, not in-progress
     const reconciled = await store.reconcileStaleRuns(0);
     expect(reconciled.length).toBe(0);
@@ -912,7 +912,7 @@ describe('approveProposal', () => {
       proposedBy: 'agent:codex',
     });
 
-    const { proposal: approved, task: updated } = await store.approveProposal(proposal.id);
+    const { proposal: approved } = await store.approveProposal(proposal.id);
     expect(approved.status).toBe('approved');
     expect(approved.resultTaskId).toBe(task.id);
 

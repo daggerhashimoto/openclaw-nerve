@@ -54,6 +54,7 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
     if (!initialTaskId || initialTaskId === consumedRef.current) return;
     const match = tasks.find((t) => t.id === initialTaskId);
     if (match) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-time sync from prop
       setSelectedTask(match);
       consumedRef.current = initialTaskId;
       onInitialTaskConsumed?.();

@@ -932,7 +932,7 @@ export class KanbanStore {
           proposal.resolvedBy = input.proposedBy;
           proposal.resultTaskId = task.id;
         } else {
-          await this._applyUpdateUnlocked(data, input.payload, input.proposedBy);
+          await this._applyUpdateUnlocked(data, input.payload);
           proposal.status = 'approved';
           proposal.resolvedAt = now;
           proposal.resolvedBy = input.proposedBy;
@@ -964,7 +964,7 @@ export class KanbanStore {
         task = await this._createTaskUnlocked(data, proposal.payload, proposal.proposedBy);
         proposal.resultTaskId = task.id;
       } else {
-        task = await this._applyUpdateUnlocked(data, proposal.payload, actor);
+        task = await this._applyUpdateUnlocked(data, proposal.payload);
         proposal.resultTaskId = proposal.payload.id as string;
       }
 
@@ -1056,7 +1056,6 @@ export class KanbanStore {
   private async _applyUpdateUnlocked(
     data: StoreData,
     payload: Record<string, unknown>,
-    _actor: TaskActor,
   ): Promise<KanbanTask> {
     const taskId = payload.id as string;
     const idx = data.tasks.findIndex((t) => t.id === taskId);

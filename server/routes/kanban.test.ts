@@ -364,8 +364,8 @@ describe('DELETE /api/kanban/tasks/:id', () => {
 describe('POST /api/kanban/tasks/:id/reorder', () => {
   it('reorders a task within the same column', async () => {
     const app = await buildApp();
-    const t1 = await createTask(app, { title: 'A' });
-    const t2 = await createTask(app, { title: 'B' });
+    await createTask(app, { title: 'A' });
+    await createTask(app, { title: 'B' });
     const t3 = await createTask(app, { title: 'C' });
 
     // Move C to top
@@ -1225,7 +1225,7 @@ describe('full workflow via HTTP', () => {
       status: 'review',
     }));
     expect(reviewRes.status).toBe(200);
-    const inReview = await reviewRes.json() as KanbanTask;
+    await reviewRes.json();
 
     // Approve
     const approveRes = await app.request(`/api/kanban/tasks/${task.id}/approve`, json({

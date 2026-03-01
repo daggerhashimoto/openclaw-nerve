@@ -67,6 +67,8 @@ export const KanbanCard = memo(function KanbanCard({ task, onClick }: KanbanCard
         <span
           className={`mt-1 shrink-0 w-2 h-2 rounded-full ${PRIORITY_DOT[task.priority]}`}
           title={PRIORITY_LABEL[task.priority]}
+          aria-label={`Priority: ${PRIORITY_LABEL[task.priority]}`}
+          role="img"
         />
         <span className="text-[13px] font-semibold leading-[18px] text-foreground line-clamp-2 min-w-0">
           {task.title}

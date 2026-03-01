@@ -1,16 +1,17 @@
 import { memo } from 'react';
 import { Inbox } from 'lucide-react';
 import type { KanbanTask, TaskStatus } from './types';
+import { COLUMN_LABELS } from './types';
 import { KanbanCard } from './KanbanCard';
 
-/* ── Column display config ── */
-const COLUMN_META: Record<TaskStatus, { title: string; accent: string }> = {
-  backlog: { title: 'Backlog', accent: 'text-slate-400' },
-  todo: { title: 'To Do', accent: 'text-blue-400' },
-  'in-progress': { title: 'In Progress', accent: 'text-cyan-400' },
-  review: { title: 'Review', accent: 'text-amber-400' },
-  done: { title: 'Done', accent: 'text-green-400' },
-  cancelled: { title: 'Cancelled', accent: 'text-gray-500' },
+/* ── Column accent colors ── */
+const COLUMN_ACCENT: Record<TaskStatus, string> = {
+  backlog: 'text-slate-400',
+  todo: 'text-blue-400',
+  'in-progress': 'text-cyan-400',
+  review: 'text-amber-400',
+  done: 'text-green-400',
+  cancelled: 'text-gray-500',
 };
 
 interface KanbanColumnProps {
@@ -20,15 +21,15 @@ interface KanbanColumnProps {
 }
 
 export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardClick }: KanbanColumnProps) {
-  const meta = COLUMN_META[status];
+  const accent = COLUMN_ACCENT[status];
 
   return (
     <div className="flex flex-col min-w-[280px] w-[320px] max-w-[360px] shrink-0 bg-background/50 rounded-lg border border-border/40">
       {/* Sticky column header (§19.2: 40px) */}
       <div className="sticky top-0 z-10 flex items-center justify-between h-10 px-3 bg-background/80 backdrop-blur-sm border-b border-border/40 rounded-t-lg">
         <div className="flex items-center gap-2">
-          <span className={`text-xs font-bold uppercase tracking-wider ${meta.accent}`}>
-            {meta.title}
+          <span className={`text-xs font-bold uppercase tracking-wider ${accent}`}>
+            {COLUMN_LABELS[status]}
           </span>
         </div>
         <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-sm tabular-nums">

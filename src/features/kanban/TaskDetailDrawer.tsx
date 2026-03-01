@@ -110,9 +110,10 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
     }
   }, [task, saving, editTitle, editDescription, editStatus, editPriority, editLabels, editAssignee, onUpdate]);
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   const handleDelete = useCallback(async () => {
     if (!task || deleting) return;
-    if (!window.confirm('Delete this task permanently?')) return;
     setDeleting(true);
     try {
       await onDelete(task.id);
@@ -121,6 +122,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
       setError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
       setDeleting(false);
+      setConfirmDelete(false);
     }
   }, [task, deleting, onDelete, onClose]);
 
@@ -185,10 +187,11 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
 
               {/* Title */}
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+                <label htmlFor="kb-title" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
                   Title
                 </label>
                 <Input
+                  id="kb-title"
                   value={editTitle}
                   onChange={e => { setEditTitle(e.target.value); markDirty(); }}
                   className="h-[34px] text-sm font-semibold"
@@ -197,10 +200,11 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
 
               {/* Description */}
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+                <label htmlFor="kb-description" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
                   Description
                 </label>
                 <textarea
+                  id="kb-description"
                   value={editDescription}
                   onChange={e => { setEditDescription(e.target.value); markDirty(); }}
                   placeholder="Markdown description…"
@@ -212,10 +216,11 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
               {/* Status + Priority grid */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+                  <label htmlFor="kb-status" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
                     Status
                   </label>
                   <select
+                    id="kb-status"
                     value={editStatus}
                     onChange={e => { setEditStatus(e.target.value as TaskStatus); markDirty(); }}
                     className={selectClass}
@@ -226,10 +231,11 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
                   </select>
                 </div>
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+                  <label htmlFor="kb-priority" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
                     Priority
                   </label>
                   <select
+                    id="kb-priority"
                     value={editPriority}
                     onChange={e => { setEditPriority(e.target.value as TaskPriority); markDirty(); }}
                     className={selectClass}
@@ -244,10 +250,11 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
               {/* Labels + Assignee */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+                  <label htmlFor="kb-labels" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
                     <Tag size={10} className="inline mr-1" />Labels
                   </label>
                   <Input
+                    id="kb-labels"
                     value={editLabels}
                     onChange={e => { setEditLabels(e.target.value); markDirty(); }}
                     placeholder="bug, urgent"
@@ -255,10 +262,11 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+                  <label htmlFor="kb-assignee" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
                     <User size={10} className="inline mr-1" />Assignee
                   </label>
                   <Input
+                    id="kb-assignee"
                     value={editAssignee}
                     onChange={e => { setEditAssignee(e.target.value); markDirty(); }}
                     placeholder="operator"
@@ -365,15 +373,36 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
 
               <div className="flex-1" />
 
-              <Button
-                size="xs"
-                variant="destructive"
-                onClick={handleDelete}
-                disabled={deleting}
-              >
-                {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                Delete
-              </Button>
+              {confirmDelete ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="text-[11px] text-destructive font-medium">Delete?</span>
+                  <Button
+                    size="xs"
+                    variant="destructive"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                  >
+                    {deleting ? <Loader2 size={12} className="animate-spin" /> : 'Yes'}
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={deleting}
+                  >
+                    No
+                  </Button>
+                </span>
+              ) : (
+                <Button
+                  size="xs"
+                  variant="destructive"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 size={12} />
+                  Delete
+                </Button>
+              )}
 
               <Button
                 size="xs"

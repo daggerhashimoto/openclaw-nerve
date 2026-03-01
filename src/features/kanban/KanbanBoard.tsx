@@ -1,10 +1,8 @@
 import { memo } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import type { KanbanTask, TaskStatus } from './types';
+import { COLUMNS } from './types';
 import { KanbanColumn } from './KanbanColumn';
-
-/* ── Visible columns in display order (cancelled excluded from board) ── */
-const COLUMNS: TaskStatus[] = ['backlog', 'todo', 'in-progress', 'review', 'done'];
 
 interface KanbanBoardProps {
   tasksByStatus: (status: TaskStatus) => KanbanTask[];

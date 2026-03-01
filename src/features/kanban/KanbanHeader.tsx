@@ -7,9 +7,9 @@ import type { KanbanFilters } from './hooks/useKanban';
 /* ── Stats chip ── */
 function StatChip({ label, count, accent }: { label: string; count: number; accent: string }) {
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-sm ${accent}`}>
+    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-sm ${accent}`}>
       <span>{label}</span>
-      <span className="bg-white/10 px-1 rounded-sm tabular-nums">{count}</span>
+      <span className="bg-white/15 px-1 rounded-sm tabular-nums">{count}</span>
     </span>
   );
 }

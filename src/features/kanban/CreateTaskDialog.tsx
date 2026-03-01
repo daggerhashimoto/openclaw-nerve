@@ -119,10 +119,11 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDia
 
         {/* Title */}
         <div>
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+          <label htmlFor="kb-new-title" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
             Title <span className="text-destructive">*</span>
           </label>
           <Input
+            id="kb-new-title"
             ref={titleRef}
             value={title}
             onChange={e => setTitle(e.target.value)}
@@ -138,10 +139,11 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDia
 
         {/* Description */}
         <div>
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+          <label htmlFor="kb-new-desc" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
             Description
           </label>
           <textarea
+            id="kb-new-desc"
             value={description}
             onChange={e => setDescription(e.target.value)}
             placeholder="Markdown description (optional)…"
@@ -154,10 +156,11 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDia
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* Status */}
           <div>
-            <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+            <label htmlFor="kb-new-status" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
               Status
             </label>
             <select
+              id="kb-new-status"
               value={status}
               onChange={e => setStatus(e.target.value as TaskStatus)}
               className={selectClass}
@@ -170,10 +173,11 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDia
 
           {/* Priority */}
           <div>
-            <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+            <label htmlFor="kb-new-priority" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
               Priority
             </label>
             <select
+              id="kb-new-priority"
               value={priority}
               onChange={e => setPriority(e.target.value as TaskPriority)}
               className={selectClass}
@@ -186,10 +190,11 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDia
 
           {/* Labels */}
           <div>
-            <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+            <label htmlFor="kb-new-labels" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
               Labels
             </label>
             <Input
+              id="kb-new-labels"
               value={labelsRaw}
               onChange={e => setLabelsRaw(e.target.value)}
               placeholder="bug, frontend, urgent"
@@ -200,10 +205,11 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDia
 
           {/* Assignee */}
           <div>
-            <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+            <label htmlFor="kb-new-assignee" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
               Assignee
             </label>
             <Input
+              id="kb-new-assignee"
               value={assignee}
               onChange={e => setAssignee(e.target.value)}
               placeholder="operator"

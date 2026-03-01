@@ -3,6 +3,19 @@
 
 export type TaskStatus = 'backlog' | 'todo' | 'in-progress' | 'review' | 'done' | 'cancelled';
 export type TaskPriority = 'critical' | 'high' | 'normal' | 'low';
+
+/** Canonical column display order. Single source of truth for board + header. */
+export const COLUMNS: TaskStatus[] = ['backlog', 'todo', 'in-progress', 'review', 'done'];
+
+/** Human-readable column labels. */
+export const COLUMN_LABELS: Record<TaskStatus, string> = {
+  backlog: 'Backlog',
+  todo: 'To Do',
+  'in-progress': 'In Progress',
+  review: 'Review',
+  done: 'Done',
+  cancelled: 'Cancelled',
+};
 export type TaskActor = 'operator' | `agent:${string}`;
 
 export interface TaskFeedback {

@@ -140,11 +140,20 @@ export function useKanban() {
   }, [fetchTasks]);
 
   /* ── Helpers ── */
-  const tasksByStatus = useCallback((status: TaskStatus): KanbanTask[] => {
-    return tasks
-      .filter(t => t.status === status)
-      .sort((a, b) => a.columnOrder - b.columnOrder);
+  const tasksByStatusMap = useMemo(() => {
+    const map = new Map<TaskStatus, KanbanTask[]>();
+    for (const t of tasks) {
+      let list = map.get(t.status);
+      if (!list) { list = []; map.set(t.status, list); }
+      list.push(t);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.columnOrder - b.columnOrder);
+    return map;
   }, [tasks]);
+
+  const tasksByStatus = useCallback((status: TaskStatus): KanbanTask[] => {
+    return tasksByStatusMap.get(status) ?? [];
+  }, [tasksByStatusMap]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<TaskStatus, number> = {

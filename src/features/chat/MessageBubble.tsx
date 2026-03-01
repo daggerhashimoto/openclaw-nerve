@@ -105,7 +105,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, onTogg
     ? decodeHtmlEntities(systemPreview || msg.rawText.slice(0, 60).replace(/\n/g, ' ') + (msg.rawText.length > 60 ? '…' : ''))
     : '';
 
-  const memoryCollapsedKey = `mem-${index}`;
+  const memoryCollapsedKey = `mem-${msg.msgId || msg.tempId || index}`;
 
   const handleCopy = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();

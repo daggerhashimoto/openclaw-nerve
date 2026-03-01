@@ -3,6 +3,8 @@ import { themes, type ThemeName } from '@/lib/themes';
 import { fonts, type FontName } from '@/lib/fonts';
 import type { TTSProvider } from '@/features/tts/useTTS';
 
+export type ViewMode = 'chat' | 'kanban';
+
 export interface CommandActions {
   onNewSession: () => void;
   onResetSession: () => void;
@@ -20,6 +22,7 @@ export interface CommandActions {
   onOpenSettings: () => void;
   onRefreshSessions: () => void;
   onRefreshMemory: () => void;
+  onSetViewMode?: (mode: ViewMode) => void;
 }
 
 const THEME_LABELS: Record<ThemeName, string> = {
@@ -179,6 +182,30 @@ export function createCommands(actions: CommandActions): Command[] {
       category: 'voice',
       keywords: ['wake', 'voice', 'microphone', 'hey'],
     },
+    // Kanban commands
+    ...(actions.onSetViewMode ? [
+      {
+        id: 'open-kanban',
+        label: 'Open Kanban View',
+        action: () => actions.onSetViewMode!('kanban'),
+        category: 'kanban' as const,
+        keywords: ['kanban', 'board', 'tasks', 'view'],
+      },
+      {
+        id: 'open-chat',
+        label: 'Open Chat View',
+        action: () => actions.onSetViewMode!('chat'),
+        category: 'kanban' as const,
+        keywords: ['chat', 'conversation', 'view'],
+      },
+      {
+        id: 'create-kanban-task',
+        label: 'Create Kanban Task',
+        action: () => actions.onSetViewMode!('kanban'),
+        category: 'kanban' as const,
+        keywords: ['kanban', 'task', 'create', 'new', 'add'],
+      },
+    ] : []),
     ...themeCommands,
     ...fontCommands,
   ];
@@ -187,9 +214,10 @@ export function createCommands(actions: CommandActions): Command[] {
 const CATEGORY_ORDER: Record<string, number> = {
   actions: 0,
   navigation: 1,
-  settings: 2,
-  appearance: 3,
-  voice: 4,
+  kanban: 2,
+  settings: 3,
+  appearance: 4,
+  voice: 5,
 };
 
 /** Filter commands by fuzzy-matching against a search query. */

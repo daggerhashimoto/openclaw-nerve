@@ -19,6 +19,7 @@ import { StatusBar } from '@/components/StatusBar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ChatPanel, type ChatPanelHandle } from '@/features/chat/ChatPanel';
 import type { TTSProvider } from '@/features/tts/useTTS';
+import type { ViewMode } from '@/features/command-palette/commands';
 import { ResizablePanels } from '@/components/ResizablePanels';
 import { getContextLimit, DEFAULT_GATEWAY_WS } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -34,6 +35,9 @@ const CommandPalette = lazy(() => import('@/features/command-palette/CommandPale
 // Lazy-loaded side panels
 const SessionList = lazy(() => import('@/features/sessions/SessionList').then(m => ({ default: m.SessionList })));
 const WorkspacePanel = lazy(() => import('@/features/workspace/WorkspacePanel').then(m => ({ default: m.WorkspacePanel })));
+
+// Lazy-loaded view modes
+const KanbanPanel = lazy(() => import('@/features/kanban/KanbanPanel').then(m => ({ default: m.KanbanPanel })));
 
 interface AppProps {
   onLogout?: () => void;
@@ -134,6 +138,19 @@ export default function App({ onLogout }: AppProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
 
+  // View mode state (chat | kanban), persisted to localStorage
+  const [viewMode, setViewModeRaw] = useState<ViewMode>(() => {
+    try {
+      const saved = localStorage.getItem('nerve:viewMode');
+      if (saved === 'kanban') return 'kanban';
+    } catch { /* ignore */ }
+    return 'chat';
+  });
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setViewModeRaw(mode);
+    try { localStorage.setItem('nerve:viewMode', mode); } catch { /* ignore */ }
+  }, []);
+
   // Build command list with stable references
   const openSettings = useCallback(() => setSettingsOpen(true), []);
   const openSearch = useCallback(() => setSearchOpen(true), []);
@@ -160,9 +177,10 @@ export default function App({ onLogout }: AppProps) {
     onOpenSettings: openSettings,
     onRefreshSessions: refreshSessions,
     onRefreshMemory: refreshMemories,
+    onSetViewMode: setViewMode,
   }), [openSpawnDialog, handleReset, toggleSound, handleAbort, openSettings, openSearch,
     setTheme, setFont, setTtsProvider, handleToggleWakeWord, toggleEvents, toggleLog, toggleTelemetry,
-    refreshSessions, refreshMemories]);
+    refreshSessions, refreshMemories, setViewMode]);
 
   // Keyboard shortcut handlers with useCallback
   const handleOpenPalette = useCallback(() => setPaletteOpen(true), []);
@@ -420,6 +438,8 @@ export default function App({ onLogout }: AppProps) {
         mobilePanelButtonsVisible={isCompactLayout}
         sessionsPanel={compactSessionsPanel}
         workspacePanel={compactWorkspacePanel}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
       />
       
       <PanelErrorBoundary name="Settings">
@@ -452,18 +472,26 @@ export default function App({ onLogout }: AppProps) {
       </PanelErrorBoundary>
       
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* File tree — far left, collapsible */}
-        <PanelErrorBoundary name="File Explorer">
-          <FileTreePanel
-            onOpenFile={openFile}
-            lastChangedPath={lastChangedPath}
-            onRemapOpenPaths={remapOpenPaths}
-            onCloseOpenPaths={closeOpenPathsByPrefix}
-          />
-        </PanelErrorBoundary>
+        {/* File tree — far left, collapsible (chat mode only) */}
+        {viewMode === 'chat' && (
+          <PanelErrorBoundary name="File Explorer">
+            <FileTreePanel
+              onOpenFile={openFile}
+              lastChangedPath={lastChangedPath}
+              onRemapOpenPaths={remapOpenPaths}
+              onCloseOpenPaths={closeOpenPathsByPrefix}
+            />
+          </PanelErrorBoundary>
+        )}
 
-        {/* Main area: desktop split, mobile chat-first */}
-        {isCompactLayout ? (
+        {/* Main area: kanban or chat */}
+        {viewMode === 'kanban' ? (
+          <div className="flex-1 flex flex-col min-w-0 min-h-0 boot-panel">
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
+              <KanbanPanel />
+            </Suspense>
+          </div>
+        ) : isCompactLayout ? (
           <div className="flex-1 min-w-0 min-h-0 boot-panel">
             {chatContent}
           </div>

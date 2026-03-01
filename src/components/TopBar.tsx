@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense, type ReactNode } from 'react';
-import { Activity, BarChart3, Settings, Radio, Users, Brain } from 'lucide-react';
+import { Activity, BarChart3, Settings, Radio, Users, Brain, MessageSquare, LayoutGrid } from 'lucide-react';
+import type { ViewMode } from '@/features/command-palette/commands';
 import type { AgentLogEntry, EventEntry, TokenData } from '@/types';
 import NerveLogo from './NerveLogo';
 
@@ -71,6 +72,10 @@ interface TopBarProps {
   sessionsPanel?: ReactNode;
   /** Renderable Workspace panel content (compact mode). */
   workspacePanel?: ReactNode;
+  /** Current view mode (chat or kanban). */
+  viewMode?: ViewMode;
+  /** Callback to change the view mode. */
+  onViewModeChange?: (mode: ViewMode) => void;
 }
 
 /**
@@ -91,6 +96,8 @@ export function TopBar({
   mobilePanelButtonsVisible = false,
   sessionsPanel,
   workspacePanel,
+  viewMode = 'chat',
+  onViewModeChange,
 }: TopBarProps) {
   const [activePanel, setActivePanel] = useState<PanelId>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -177,6 +184,40 @@ export function TopBar({
           <span className="hidden sm:inline text-sm sm:text-base font-bold text-primary tracking-[2px] sm:tracking-[4px] [text-shadow:0_0_12px_rgba(232,168,56,0.5),0_0_24px_rgba(232,168,56,0.2)] uppercase truncate">
             NERVE
           </span>
+
+          {/* View mode toggle */}
+          {onViewModeChange && (
+            <div className="flex items-center ml-3 border border-border/60 rounded-sm overflow-hidden">
+              <button
+                onClick={() => onViewModeChange('chat')}
+                title="Chat View"
+                aria-label="Switch to chat view"
+                aria-pressed={viewMode === 'chat'}
+                className={`flex items-center gap-1 px-2 h-6 text-[10px] transition-colors cursor-pointer ${
+                  viewMode === 'chat'
+                    ? 'bg-primary/15 text-primary border-r border-border/60'
+                    : 'text-muted-foreground hover:text-foreground border-r border-border/60'
+                }`}
+              >
+                <MessageSquare size={12} aria-hidden="true" />
+                <span className="hidden sm:inline">Chat</span>
+              </button>
+              <button
+                onClick={() => onViewModeChange('kanban')}
+                title="Kanban View"
+                aria-label="Switch to kanban view"
+                aria-pressed={viewMode === 'kanban'}
+                className={`flex items-center gap-1 px-2 h-6 text-[10px] transition-colors cursor-pointer ${
+                  viewMode === 'kanban'
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <LayoutGrid size={12} aria-hidden="true" />
+                <span className="hidden sm:inline">Kanban</span>
+              </button>
+            </div>
+          )}
         </div>
         <div ref={buttonsRef} className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           {/* Compact layout launchers (chat-first mode) */}

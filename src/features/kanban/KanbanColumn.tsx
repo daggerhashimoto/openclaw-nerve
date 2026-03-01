@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react';
 import { Inbox } from 'lucide-react';
-import { useDroppable } from '@dnd-kit/core';
+import { useDroppable, useDndContext } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { KanbanTask, TaskStatus } from './types';
 import { COLUMN_LABELS } from './types';
@@ -26,15 +26,21 @@ export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardCl
   const accent = COLUMN_ACCENT[status];
 
   // Make the column itself a drop target (for dropping into empty columns)
-  const { setNodeRef, isOver } = useDroppable({ id: status });
+  const { setNodeRef, isOver: isDirectlyOver } = useDroppable({ id: status });
+  const { active, over } = useDndContext();
 
   // Stable list of sortable ids for this column
   const taskIds = useMemo(() => tasks.map((t) => t.id), [tasks]);
 
+  // Highlight when dragging over this column OR over any card in this column
+  const isOverColumn = isDirectlyOver || (
+    active !== null && over !== null && over.id !== status && taskIds.includes(over.id as string)
+  );
+
   return (
     <div
       className={`flex flex-col min-w-[280px] w-[320px] max-w-[360px] shrink-0 bg-background/50 rounded-lg border transition-colors duration-150 ${
-        isOver ? 'border-primary/50 bg-primary/5' : 'border-border/40'
+        isOverColumn ? 'border-primary/50 bg-primary/5' : 'border-border/40'
       }`}
     >
       {/* Sticky column header (§19.2: 40px) */}

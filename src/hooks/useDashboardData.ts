@@ -12,6 +12,7 @@
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useGateway } from '@/contexts/GatewayContext';
+import { useInstancesOptional } from '@/contexts/InstanceContext';
 import { useServerEvents, type ServerEvent } from '@/hooks/useServerEvents';
 import type { Memory, TokenData, GatewayEvent } from '@/types';
 
@@ -37,6 +38,8 @@ export interface DashboardDataState {
 
 export function useDashboardData(options: DashboardDataOptions = {}): DashboardDataState {
   const { subscribe, connectionState } = useGateway();
+  const instances = useInstancesOptional();
+  const activeInstanceId = instances?.activeInstanceId ?? null;
   const [memories, setMemories] = useState<Memory[]>([]);
   const [memoriesLoading, setMemoriesLoading] = useState(true);
   const [tokenData, setTokenData] = useState<TokenData | null>(null);
@@ -134,24 +137,25 @@ export function useDashboardData(options: DashboardDataOptions = {}): DashboardD
     });
   }, [subscribe, connectionState]);
 
-  // Initial fetch and polling
+  // Initial fetch and polling (restarts when active instance changes)
   useEffect(() => {
     const controller = new AbortController();
-    
-    // Initial fetch
+
+    // Fetch immediately for current instance context.
+    setMemoriesLoading(true);
     refreshMemories(controller.signal);
     refreshTokens(controller.signal);
-    
-    // Polling as safety net — SSE/WS provide real-time updates
+
+    // Polling as safety net — SSE/WS provide real-time updates.
     const memIv = setInterval(() => refreshMemories(controller.signal), MEMORY_POLL_INTERVAL);
     const tokIv = setInterval(() => refreshTokens(controller.signal), TOKEN_POLL_INTERVAL);
-    
+
     return () => {
       controller.abort();
       clearInterval(memIv);
       clearInterval(tokIv);
     };
-  }, [refreshMemories, refreshTokens]);
+  }, [refreshMemories, refreshTokens, activeInstanceId]);
 
   return {
     memories,

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useInstancesOptional } from '@/contexts/InstanceContext';
 import type { TreeEntry } from '../types';
 
 const STORAGE_KEY = 'nerve-file-tree-expanded';
@@ -38,6 +39,8 @@ function mergeChildren(
 
 /** Hook for managing file tree state with workspace info and persistence. */
 export function useFileTree() {
+  const instances = useInstancesOptional();
+  const activeInstanceId = instances?.activeInstanceId ?? null;
   const [entries, setEntries] = useState<TreeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -106,8 +109,15 @@ export function useFileTree() {
     setLoading(false);
   }, [fetchChildren]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount
-  useEffect(() => { void loadRoot(); }, [loadRoot]);
+  // Reload file tree whenever instance context changes.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset on instance switch
+  useEffect(() => {
+    setEntries([]);
+    setSelectedPath(null);
+    setError(null);
+    setLoading(true);
+    void loadRoot();
+  }, [loadRoot, activeInstanceId]);
 
   const toggleDirectory = useCallback(async (dirPath: string) => {
     setExpandedPaths((prev) => {

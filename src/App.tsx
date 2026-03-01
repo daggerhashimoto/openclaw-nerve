@@ -539,10 +539,11 @@ export default function App({ onLogout }: AppProps) {
       </PanelErrorBoundary>
       
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* File tree — far left, collapsible; hidden (not unmounted) in kanban to preserve state */}
+        {/* File tree — far left, collapsible; hidden in kanban */}
         <div className={viewMode === 'kanban' ? 'hidden' : 'h-full min-h-0'}>
           <PanelErrorBoundary name="File Explorer">
             <FileTreePanel
+              key={`file-tree-${activeInstanceId || 'master'}`}
               onOpenFile={openFile}
               lastChangedPath={lastChangedPath}
               onRemapOpenPaths={remapOpenPaths}

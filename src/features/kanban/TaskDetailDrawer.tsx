@@ -48,6 +48,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
   const [editPriority, setEditPriority] = useState<TaskPriority>('normal');
   const [editLabels, setEditLabels] = useState('');
   const [editAssignee, setEditAssignee] = useState('');
+  const [editVersion, setEditVersion] = useState(0);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
       setEditPriority(task.priority);
       setEditLabels(task.labels.join(', '));
       setEditAssignee(task.assignee || '');
+      setEditVersion(task.version);
       setError(null);
       setDirty(false);
       setConfirmDelete(false);
@@ -103,7 +105,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
         priority: editPriority,
         labels,
         assignee: editAssignee.trim() || null,
-        version: task.version,
+        version: editVersion,
       });
       setDirty(false);
     } catch (err) {
@@ -117,6 +119,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
           setEditPriority(latest.priority);
           setEditLabels(latest.labels.join(', '));
           setEditAssignee(latest.assignee || '');
+          setEditVersion(latest.version);
         }
         setError('Task was modified elsewhere. Fields refreshed to latest version -- review and save again.');
         setDirty(false);
@@ -126,7 +129,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
     } finally {
       setSaving(false);
     }
-  }, [task, saving, editTitle, editDescription, editStatus, editPriority, editLabels, editAssignee, onUpdate]);
+  }, [task, saving, editTitle, editDescription, editStatus, editPriority, editLabels, editAssignee, editVersion, onUpdate]);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
 

@@ -169,10 +169,13 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
       }
     }
 
-    // Forward origin header for gateway auth
+    // Forward origin header for gateway auth.
+    // For instance-routed connections, use loopback origin expected by containerized
+    // multiclaw gateway controlUi allowlist to avoid origin mismatch on remote host URLs.
     const isEncrypted = !!(req.socket as unknown as { encrypted?: boolean }).encrypted;
     const scheme = isEncrypted ? 'https' : 'http';
-    const clientOrigin = req.headers.origin || `${scheme}://${req.headers.host}`;
+    const defaultOrigin = req.headers.origin || `${scheme}://${req.headers.host}`;
+    const clientOrigin = requestedInstanceId ? 'http://127.0.0.1:3080' : defaultOrigin;
 
     createGatewayRelay(clientWs, targetUrl, clientOrigin, connId, authTokenOverride);
   });

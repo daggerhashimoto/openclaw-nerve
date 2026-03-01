@@ -36,6 +36,7 @@ interface MessageBubbleProps {
   index: number;
   isCollapsed: boolean;
   isMemoryCollapsed: boolean;
+  memoryKey?: string;
   onToggleCollapse: (idx: number) => void;
   onToggleMemory: (key: string) => void;
   firstMessageTime?: Date | null;
@@ -70,7 +71,7 @@ function RoleBadge({ role, agentName = 'Agent' }: { role: string; agentName?: st
   return <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-sm bg-muted-foreground/20 text-muted-foreground">SYSTEM</span>;
 }
 
-function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, onToggleCollapse, onToggleMemory, firstMessageTime, searchQuery, isCurrentMatch, agentName }: MessageBubbleProps) {
+function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, firstMessageTime, searchQuery, isCurrentMatch, agentName }: MessageBubbleProps) {
   const isUser = msg.role === 'user';
   const isAssistant = msg.role === 'assistant';
   const isSystem = msg.role === 'system' || msg.role === 'event';
@@ -105,7 +106,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, onTogg
     ? decodeHtmlEntities(systemPreview || msg.rawText.slice(0, 60).replace(/\n/g, ' ') + (msg.rawText.length > 60 ? '…' : ''))
     : '';
 
-  const memoryCollapsedKey = `mem-${msg.msgId || msg.tempId || index}`;
+  const memoryCollapsedKey = memoryKey ?? `mem-${msg.msgId || msg.tempId || index}`;
 
   const handleCopy = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();

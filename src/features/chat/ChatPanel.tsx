@@ -303,6 +303,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
                 index={i}
                 isCollapsed={isCollapsed}
                 isMemoryCollapsed={isMemoryCollapsed}
+                memoryKey={memoryKey}
                 onToggleCollapse={toggleCollapse}
                 onToggleMemory={toggleMemory}
                 firstMessageTime={firstMessageTime}

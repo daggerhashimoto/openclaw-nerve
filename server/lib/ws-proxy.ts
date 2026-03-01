@@ -177,7 +177,7 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
     const defaultOrigin = req.headers.origin || `${scheme}://${req.headers.host}`;
     const clientOrigin = requestedInstanceId ? 'http://127.0.0.1:3080' : defaultOrigin;
 
-    createGatewayRelay(clientWs, targetUrl, clientOrigin, connId, authTokenOverride);
+    createGatewayRelay(clientWs, targetUrl, clientOrigin, connId, authTokenOverride, !requestedInstanceId);
   });
 }
 
@@ -199,6 +199,7 @@ function createGatewayRelay(
   clientOrigin: string,
   connId: string,
   authTokenOverride: string | null,
+  useDeviceIdentityDefault = true,
 ): void {
   const tag = `[ws-proxy:${connId}]`;
   const connStartTime = Date.now();
@@ -235,7 +236,7 @@ function createGatewayRelay(
   let gwWs: WebSocket;
   let challengeNonce: string | null = null;
   let handshakeComplete = false;
-  let useDeviceIdentity = true;
+  let useDeviceIdentity = useDeviceIdentityDefault;
   let hasRetried = false;
   /** Saved connect message — held separately from pending until challenge arrives */
   let savedConnectMsg: Record<string, unknown> | null = null;

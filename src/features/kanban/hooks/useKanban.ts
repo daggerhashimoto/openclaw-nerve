@@ -20,6 +20,11 @@ export interface KanbanFilters {
 
 const EMPTY_FILTERS: KanbanFilters = { q: '', priority: [], assignee: '', labels: [] };
 
+/** Error with attached latest task from a 409 response */
+export interface VersionConflictError extends Error {
+  latest?: KanbanTask;
+}
+
 /* ── Create / Update payloads ── */
 export interface CreateTaskPayload {
   title: string;
@@ -32,11 +37,11 @@ export interface CreateTaskPayload {
 
 export interface UpdateTaskPayload {
   title?: string;
-  description?: string;
+  description?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
   labels?: string[];
-  assignee?: string;
+  assignee?: string | null;
   version: number;
 }
 
@@ -61,7 +66,6 @@ export function useKanban() {
   const abortRef = useRef<AbortController | null>(null);
 
   /* ── Fetch ── */
-  const initialLoadDone = useRef(false);
 
   const fetchTasks = useCallback(async (f?: KanbanFilters, { silent = false }: { silent?: boolean } = {}) => {
     abortRef.current?.abort();
@@ -81,7 +85,6 @@ export function useKanban() {
       setTasks(data.items);
       setTotal(data.total);
       if (!silent) setError(null);
-      initialLoadDone.current = true;
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
       // Only surface errors on explicit fetches, not silent polls
@@ -128,7 +131,11 @@ export function useKanban() {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      if (res.status === 409) throw new Error('version_conflict');
+      if (res.status === 409) {
+        const err = new Error('version_conflict');
+        (err as VersionConflictError).latest = body.latest;
+        throw err;
+      }
       throw new Error(body.details || body.error || `HTTP ${res.status}`);
     }
     const updated: KanbanTask = await res.json();

@@ -6,7 +6,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { KanbanTask, TaskStatus, TaskPriority } from './types';
-import type { UpdateTaskPayload } from './hooks/useKanban';
+import type { UpdateTaskPayload, VersionConflictError } from './hooks/useKanban';
 
 /* ── Priority colors ── */
 const PRIORITY_COLOR: Record<TaskPriority, string> = {
@@ -65,18 +65,25 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
       setEditAssignee(task.assignee || '');
       setError(null);
       setDirty(false);
+      setConfirmDelete(false);
     }
   }, [task]);
+
+  /* Safe close — warn on unsaved changes */
+  const safeClose = useCallback(() => {
+    if (dirty && !window.confirm('You have unsaved changes. Discard?')) return;
+    onClose();
+  }, [dirty, onClose]);
 
   /* Close on Escape */
   useEffect(() => {
     if (!task) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') safeClose();
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, [task, onClose]);
+  }, [task, safeClose]);
 
   const markDirty = useCallback(() => setDirty(true), []);
 
@@ -91,17 +98,28 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
         .filter(Boolean);
       await onUpdate(task.id, {
         title: editTitle.trim(),
-        description: editDescription.trim() || undefined,
+        description: editDescription.trim() || null,
         status: editStatus,
         priority: editPriority,
         labels,
-        assignee: editAssignee.trim() || undefined,
+        assignee: editAssignee.trim() || null,
         version: task.version,
       });
       setDirty(false);
     } catch (err) {
       if (err instanceof Error && err.message === 'version_conflict') {
-        setError('Board changed elsewhere. Refreshed latest order.');
+        const latest = (err as VersionConflictError).latest;
+        if (latest) {
+          // Refresh drawer fields with latest server state so user can retry
+          setEditTitle(latest.title);
+          setEditDescription(latest.description || '');
+          setEditStatus(latest.status);
+          setEditPriority(latest.priority);
+          setEditLabels(latest.labels.join(', '));
+          setEditAssignee(latest.assignee || '');
+        }
+        setError('Task was modified elsewhere. Fields refreshed to latest version -- review and save again.');
+        setDirty(false);
       } else {
         setError(err instanceof Error ? err.message : 'Save failed');
       }
@@ -141,7 +159,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
       {isOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/40 transition-opacity duration-200"
-          onClick={onClose}
+          onClick={safeClose}
         />
       )}
 
@@ -168,7 +186,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
                 </span>
               </div>
               <button
-                onClick={onClose}
+                onClick={safeClose}
                 className="p-1 rounded-sm text-muted-foreground hover:text-foreground transition-colors"
                 aria-label="Close drawer"
               >
@@ -194,6 +212,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
                   id="kb-title"
                   value={editTitle}
                   onChange={e => { setEditTitle(e.target.value); markDirty(); }}
+                  maxLength={500}
                   className="h-[34px] text-sm font-semibold"
                 />
               </div>

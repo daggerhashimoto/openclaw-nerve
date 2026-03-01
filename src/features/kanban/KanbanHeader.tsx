@@ -54,15 +54,17 @@ export const KanbanHeader = memo(function KanbanHeader({
   const [showFilters, setShowFilters] = useState(false);
   const [searchValue, setSearchValue] = useState(filters.q);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
 
-  /* Debounced search */
+  /* Debounced search — reads filtersRef to avoid overwriting concurrent filter changes */
   const handleSearchChange = useCallback((value: string) => {
     setSearchValue(value);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      onFiltersChange({ ...filters, q: value });
+      onFiltersChange({ ...filtersRef.current, q: value });
     }, 300);
-  }, [filters, onFiltersChange]);
+  }, [onFiltersChange]);
 
   /* Cleanup debounce on unmount */
   useEffect(() => {

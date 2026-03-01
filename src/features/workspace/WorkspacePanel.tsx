@@ -1,6 +1,6 @@
 /**
  * WorkspacePanel — Tabbed container replacing the standalone MemoryList.
- * Tabs: Memory, Crons, Skills, Config
+ * Tabs: Memory, Crons, Kanban, Config (with Files/Skills sub-views)
  * Active tab persisted in localStorage. Content lazy-loaded per tab.
  * Tab action buttons (add, refresh) render in the tab bar header.
  */
@@ -12,12 +12,53 @@ import { useCrons } from './hooks/useCrons';
 import { KanbanQuickView, useKanban } from '@/features/kanban';
 import type { Memory } from '@/types';
 
+const CONFIG_VIEW_KEY = 'nerve-config-view';
+
+/** Combined Config tab with Files/Skills sub-view toggle. */
+function ConfigWithSkills() {
+  const [view, setView] = useState<'files' | 'skills'>(() => {
+    try {
+      const stored = localStorage.getItem(CONFIG_VIEW_KEY);
+      if (stored === 'skills') return 'skills';
+    } catch { /* ignore */ }
+    return 'files';
+  });
+
+  const switchView = useCallback((v: 'files' | 'skills') => {
+    setView(v);
+    try { localStorage.setItem(CONFIG_VIEW_KEY, v); } catch { /* ignore */ }
+  }, []);
+
+  return (
+    <div className="h-full flex flex-col min-h-0">
+      <div className="flex items-center gap-0.5 px-2 py-1 border-b border-border/40">
+        {(['files', 'skills'] as const).map(v => (
+          <button
+            key={v}
+            onClick={() => switchView(v)}
+            className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm border-0 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 ${
+              view === v
+                ? 'bg-purple/15 text-purple font-semibold'
+                : 'bg-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {view === 'files' ? <ConfigTab /> : <SkillsTab />}
+      </div>
+    </div>
+  );
+}
+
 const STORAGE_KEY = 'nerve-workspace-tab';
 
 function getInitialTab(): TabId {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && ['memory', 'crons', 'skills', 'config', 'kanban'].includes(stored)) {
+    if (stored && ['memory', 'crons', 'config', 'kanban'].includes(stored)) {
       return stored as TabId;
     }
   } catch { /* ignore */ }
@@ -79,13 +120,8 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, c
             <CronsTab />
           )}
         </div>
-        <div className={activeTab === 'skills' ? 'h-full' : 'hidden'} hidden={activeTab !== 'skills'} role="tabpanel" id="workspace-tabpanel-skills" aria-labelledby="workspace-tab-skills">
-          {visitedTabs.has('skills') && (
-            <SkillsTab />
-          )}
-        </div>
         <div className={activeTab === 'config' ? 'h-full' : 'hidden'} hidden={activeTab !== 'config'} role="tabpanel" id="workspace-tabpanel-config" aria-labelledby="workspace-tab-config">
-          {visitedTabs.has('config') && <ConfigTab />}
+          {visitedTabs.has('config') && <ConfigWithSkills />}
         </div>
         <div className={activeTab === 'kanban' ? 'h-full' : 'hidden'} hidden={activeTab !== 'kanban'} role="tabpanel" id="workspace-tabpanel-kanban" aria-labelledby="workspace-tab-kanban">
           {visitedTabs.has('kanban') && (

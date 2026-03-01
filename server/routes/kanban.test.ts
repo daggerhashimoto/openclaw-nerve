@@ -1,4 +1,4 @@
-/** Tests for kanban API routes: CRUD, validation, CAS conflicts, reorder, config. */
+/** Tests for kanban API routes: CRUD, validation, CAS conflicts, reorder, config, workflow. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import fs from 'node:fs';
@@ -493,5 +493,354 @@ describe('PUT /api/kanban/config', () => {
     const res = await app.request('/api/kanban/config');
     const cfg = await res.json() as Record<string, unknown>;
     expect(cfg.reviewRequired).toBe(false);
+  });
+});
+
+// ── POST /api/kanban/tasks/:id/execute ───────────────────────────────
+
+describe('POST /api/kanban/tasks/:id/execute', () => {
+  it('executes a todo task', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    expect(res.status).toBe(200);
+    const body = await res.json() as KanbanTask;
+    expect(body.status).toBe('in-progress');
+    expect(body.run).toBeDefined();
+    expect(body.run!.status).toBe('running');
+    expect(body.run!.sessionKey).toBeTruthy();
+    expect(body.version).toBe(2);
+  });
+
+  it('executes a backlog task', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'backlog' });
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    expect(res.status).toBe(200);
+    const body = await res.json() as KanbanTask;
+    expect(body.status).toBe('in-progress');
+  });
+
+  it('accepts empty body', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/execute`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('applies model and thinking overrides', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({
+      model: 'claude-opus',
+      thinking: 'high',
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json() as KanbanTask;
+    expect(body.model).toBe('claude-opus');
+    expect(body.thinking).toBe('high');
+  });
+
+  it('is idempotent for already-running task', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+
+    const res1 = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    const body1 = await res1.json() as KanbanTask;
+
+    const res2 = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    expect(res2.status).toBe(200);
+    const body2 = await res2.json() as KanbanTask;
+    expect(body2.run!.sessionKey).toBe(body1.run!.sessionKey);
+    expect(body2.version).toBe(body1.version);
+  });
+
+  it('returns 409 for invalid transition (done task)', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    // Move to done
+    await app.request(`/api/kanban/tasks/${task.id}`, jsonPatch({
+      version: 1,
+      status: 'done',
+    }));
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    expect(res.status).toBe(409);
+    const body = await res.json() as { error: string; from: string; to: string };
+    expect(body.error).toBe('invalid_transition');
+    expect(body.from).toBe('done');
+    expect(body.to).toBe('in-progress');
+  });
+
+  it('returns 404 for missing task', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/tasks/missing/execute', json({}));
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 for invalid body', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    const res = await app.request(`/api/kanban/tasks/${task.id}/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{bad',
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── POST /api/kanban/tasks/:id/approve ───────────────────────────────
+
+describe('POST /api/kanban/tasks/:id/approve', () => {
+  it('approves a review task', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    // Move to review
+    await app.request(`/api/kanban/tasks/${task.id}`, jsonPatch({
+      version: 1,
+      status: 'review',
+    }));
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/approve`, json({}));
+    expect(res.status).toBe(200);
+    const body = await res.json() as KanbanTask;
+    expect(body.status).toBe('done');
+  });
+
+  it('approves with a note', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    await app.request(`/api/kanban/tasks/${task.id}`, jsonPatch({
+      version: 1,
+      status: 'review',
+    }));
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/approve`, json({
+      note: 'Ship it!',
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json() as KanbanTask;
+    expect(body.feedback.length).toBe(1);
+    expect(body.feedback[0].note).toBe('Ship it!');
+  });
+
+  it('accepts empty body', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    await app.request(`/api/kanban/tasks/${task.id}`, jsonPatch({
+      version: 1,
+      status: 'review',
+    }));
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/approve`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 409 for non-review task', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/approve`, json({}));
+    expect(res.status).toBe(409);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe('invalid_transition');
+  });
+
+  it('returns 404 for missing task', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/tasks/missing/approve', json({}));
+    expect(res.status).toBe(404);
+  });
+});
+
+// ── POST /api/kanban/tasks/:id/reject ────────────────────────────────
+
+describe('POST /api/kanban/tasks/:id/reject', () => {
+  it('rejects a review task with required note', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    await app.request(`/api/kanban/tasks/${task.id}`, jsonPatch({
+      version: 1,
+      status: 'review',
+    }));
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/reject`, json({
+      note: 'Needs more work',
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json() as KanbanTask;
+    expect(body.status).toBe('todo');
+    expect(body.feedback.length).toBe(1);
+    expect(body.feedback[0].note).toBe('Needs more work');
+  });
+
+  it('returns 400 when note is missing', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    await app.request(`/api/kanban/tasks/${task.id}`, jsonPatch({
+      version: 1,
+      status: 'review',
+    }));
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/reject`, json({}));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when note is empty string', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    await app.request(`/api/kanban/tasks/${task.id}`, jsonPatch({
+      version: 1,
+      status: 'review',
+    }));
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/reject`, json({
+      note: '',
+    }));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 409 for non-review task', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/reject`, json({
+      note: 'nope',
+    }));
+    expect(res.status).toBe(409);
+  });
+
+  it('returns 404 for missing task', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/tasks/missing/reject', json({
+      note: 'nope',
+    }));
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 for invalid JSON', async () => {
+    const app = await buildApp();
+    const task = await createTask(app);
+    const res = await app.request(`/api/kanban/tasks/${task.id}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not json',
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── POST /api/kanban/tasks/:id/abort ─────────────────────────────────
+
+describe('POST /api/kanban/tasks/:id/abort', () => {
+  it('aborts a running task', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+
+    // Execute first
+    await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/abort`, json({
+      note: 'Taking too long',
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json() as KanbanTask;
+    expect(body.status).toBe('todo');
+    expect(body.run!.status).toBe('aborted');
+    expect(body.run!.endedAt).toBeGreaterThan(0);
+    expect(body.feedback.length).toBe(1);
+  });
+
+  it('aborts without note', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/abort`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as KanbanTask;
+    expect(body.status).toBe('todo');
+    expect(body.feedback.length).toBe(0);
+  });
+
+  it('returns 409 for non-in-progress task', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/abort`, json({}));
+    expect(res.status).toBe(409);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe('invalid_transition');
+  });
+
+  it('returns 404 for missing task', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/kanban/tasks/missing/abort', json({}));
+    expect(res.status).toBe(404);
+  });
+});
+
+// ── Full workflow through HTTP ───────────────────────────────────────
+
+describe('full workflow via HTTP', () => {
+  it('execute → approve', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+
+    // Execute
+    const execRes = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    expect(execRes.status).toBe(200);
+    const executed = await execRes.json() as KanbanTask;
+    expect(executed.status).toBe('in-progress');
+
+    // Manually move to review (simulating completeRun via PATCH)
+    const reviewRes = await app.request(`/api/kanban/tasks/${task.id}`, jsonPatch({
+      version: executed.version,
+      status: 'review',
+    }));
+    expect(reviewRes.status).toBe(200);
+    const inReview = await reviewRes.json() as KanbanTask;
+
+    // Approve
+    const approveRes = await app.request(`/api/kanban/tasks/${task.id}/approve`, json({
+      note: 'LGTM',
+    }));
+    expect(approveRes.status).toBe(200);
+    const approved = await approveRes.json() as KanbanTask;
+    expect(approved.status).toBe('done');
+  });
+
+  it('execute → abort → re-execute', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+
+    // Execute
+    await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+
+    // Abort
+    const abortRes = await app.request(`/api/kanban/tasks/${task.id}/abort`, json({
+      note: 'Wrong model',
+    }));
+    expect(abortRes.status).toBe(200);
+    const aborted = await abortRes.json() as KanbanTask;
+    expect(aborted.status).toBe('todo');
+
+    // Re-execute
+    const reExecRes = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    expect(reExecRes.status).toBe(200);
+    const reExecuted = await reExecRes.json() as KanbanTask;
+    expect(reExecuted.status).toBe('in-progress');
+    expect(reExecuted.run!.status).toBe('running');
   });
 });

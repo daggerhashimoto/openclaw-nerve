@@ -11,13 +11,14 @@
  * @module
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 import {
   getKanbanStore,
   VersionConflictError,
   TaskNotFoundError,
+  InvalidTransitionError,
 } from '../lib/kanban-store.js';
 import type {
   TaskStatus,
@@ -111,6 +112,25 @@ const configSchema = z.object({
   quickViewLimit: z.number().int().min(1).max(50).optional(),
 });
 
+// ── Workflow schemas ─────────────────────────────────────────────────
+
+const executeSchema = z.object({
+  model: z.string().max(200).optional(),
+  thinking: thinkingSchema.optional(),
+});
+
+const approveSchema = z.object({
+  note: z.string().max(5000).optional(),
+});
+
+const rejectSchema = z.object({
+  note: z.string().min(1).max(5000),
+});
+
+const abortSchema = z.object({
+  note: z.string().max(5000).optional(),
+});
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function parseArray(value: string | string[] | undefined): string[] {
@@ -190,13 +210,14 @@ app.patch('/api/kanban/tasks/:id', rateLimitGeneral, async (c) => {
     }, 400);
   }
 
-  const { version, ...patch } = parsed.data;
+  const { version, ...rawPatch } = parsed.data;
 
   // Convert nulls to undefined for optional clearing
-  const cleanPatch: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(patch)) {
-    if (v !== undefined) cleanPatch[k] = v === null ? undefined : v;
-  }
+  const cleanPatch = Object.fromEntries(
+    Object.entries(rawPatch)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => [k, v === null ? undefined : v]),
+  ) as Record<string, unknown>;
 
   try {
     const updated = await store.updateTask(id, version, cleanPatch);
@@ -304,6 +325,138 @@ app.put('/api/kanban/config', rateLimitGeneral, async (c) => {
 
   const config = await store.updateConfig(parsed.data);
   return c.json(config);
+});
+
+// ── Workflow helpers ──────────────────────────────────────────────────
+
+function handleWorkflowError(c: Context, err: unknown) {
+  if (err instanceof InvalidTransitionError) {
+    return c.json({
+      error: 'invalid_transition',
+      from: err.from,
+      to: err.to,
+      message: err.message,
+    }, 409);
+  }
+  if (err instanceof TaskNotFoundError) {
+    return c.json({ error: 'not_found', details: err.message }, 404);
+  }
+  throw err;
+}
+
+// POST /api/kanban/tasks/:id/execute
+app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  const id = c.req.param('id');
+
+  let body: unknown = {};
+  try {
+    const text = await c.req.text();
+    if (text) body = JSON.parse(text);
+  } catch {
+    return c.json({ error: 'validation_error', details: 'Invalid JSON body' }, 400);
+  }
+
+  const parsed = executeSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({
+      error: 'validation_error',
+      details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    }, 400);
+  }
+
+  try {
+    const task = await store.executeTask(id, parsed.data, 'operator');
+    return c.json(task);
+  } catch (err) {
+    return handleWorkflowError(c, err);
+  }
+});
+
+// POST /api/kanban/tasks/:id/approve
+app.post('/api/kanban/tasks/:id/approve', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  const id = c.req.param('id');
+
+  let body: unknown = {};
+  try {
+    const text = await c.req.text();
+    if (text) body = JSON.parse(text);
+  } catch {
+    return c.json({ error: 'validation_error', details: 'Invalid JSON body' }, 400);
+  }
+
+  const parsed = approveSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({
+      error: 'validation_error',
+      details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    }, 400);
+  }
+
+  try {
+    const task = await store.approveTask(id, parsed.data.note, 'operator');
+    return c.json(task);
+  } catch (err) {
+    return handleWorkflowError(c, err);
+  }
+});
+
+// POST /api/kanban/tasks/:id/reject
+app.post('/api/kanban/tasks/:id/reject', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  const id = c.req.param('id');
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'validation_error', details: 'Invalid JSON body' }, 400);
+  }
+
+  const parsed = rejectSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({
+      error: 'validation_error',
+      details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    }, 400);
+  }
+
+  try {
+    const task = await store.rejectTask(id, parsed.data.note, 'operator');
+    return c.json(task);
+  } catch (err) {
+    return handleWorkflowError(c, err);
+  }
+});
+
+// POST /api/kanban/tasks/:id/abort
+app.post('/api/kanban/tasks/:id/abort', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  const id = c.req.param('id');
+
+  let body: unknown = {};
+  try {
+    const text = await c.req.text();
+    if (text) body = JSON.parse(text);
+  } catch {
+    return c.json({ error: 'validation_error', details: 'Invalid JSON body' }, 400);
+  }
+
+  const parsed = abortSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({
+      error: 'validation_error',
+      details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    }, 400);
+  }
+
+  try {
+    const task = await store.abortTask(id, parsed.data.note, 'operator');
+    return c.json(task);
+  } catch (err) {
+    return handleWorkflowError(c, err);
+  }
 });
 
 export default app;

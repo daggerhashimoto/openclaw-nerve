@@ -127,6 +127,17 @@ export class TaskNotFoundError extends Error {
   }
 }
 
+export class InvalidTransitionError extends Error {
+  from: TaskStatus;
+  to: TaskStatus;
+  constructor(from: TaskStatus, to: TaskStatus, message: string) {
+    super(message);
+    this.name = 'InvalidTransitionError';
+    this.from = from;
+    this.to = to;
+  }
+}
+
 // ── Constants ────────────────────────────────────────────────────────
 
 const CURRENT_SCHEMA_VERSION = 1;
@@ -170,7 +181,8 @@ function emptyStore(): StoreData {
 
 // ── Audit log ────────────────────────────────────────────────────────
 
-export type AuditAction = 'create' | 'update' | 'delete' | 'reorder' | 'config_update';
+export type AuditAction = 'create' | 'update' | 'delete' | 'reorder' | 'config_update'
+  | 'execute' | 'approve' | 'reject' | 'abort' | 'complete_run' | 'reconcile';
 
 interface AuditEntry {
   ts: number;
@@ -525,6 +537,318 @@ export class KanbanStore {
       await this.writeRaw(data);
       await this.audit({ ts: Date.now(), action: 'config_update' });
       return data.config;
+    });
+  }
+
+  // ── Workflow: Execute ──────────────────────────────────────────────
+
+  async executeTask(
+    id: string,
+    options?: { model?: string; thinking?: 'off' | 'low' | 'medium' | 'high' },
+    actor?: string,
+  ): Promise<KanbanTask> {
+    return this.withLock(async () => {
+      const data = await this.readRaw();
+      const idx = data.tasks.findIndex((t) => t.id === id);
+      if (idx === -1) throw new TaskNotFoundError(id);
+
+      const task = data.tasks[idx];
+
+      // Idempotency: if already in-progress with an active run, return as-is
+      if (task.status === 'in-progress' && task.run?.status === 'running') {
+        return task;
+      }
+
+      // Validate transition: must be in todo or backlog
+      if (task.status !== 'todo' && task.status !== 'backlog') {
+        throw new InvalidTransitionError(
+          task.status,
+          'in-progress',
+          `Cannot execute task in "${task.status}" status; must be "todo" or "backlog"`,
+        );
+      }
+
+      const now = Date.now();
+      const sessionKey = `kanban-run-${id}-${now}`;
+
+      task.status = 'in-progress';
+      task.run = {
+        sessionKey,
+        startedAt: now,
+        status: 'running',
+      };
+      if (options?.model) task.model = options.model;
+      if (options?.thinking) task.thinking = options.thinking;
+
+      // Re-compute columnOrder for in-progress column
+      const maxOrder = data.tasks
+        .filter((t) => t.status === 'in-progress' && t.id !== id)
+        .reduce((max, t) => Math.max(max, t.columnOrder), -1);
+      task.columnOrder = maxOrder + 1;
+
+      task.updatedAt = now;
+      task.version += 1;
+
+      data.tasks[idx] = task;
+      await this.writeRaw(data);
+      await this.audit({ ts: now, action: 'execute', taskId: id, actor });
+      return task;
+    });
+  }
+
+  // ── Workflow: Approve ────────────────────────────────────────────
+
+  async approveTask(id: string, note?: string, actor?: string): Promise<KanbanTask> {
+    return this.withLock(async () => {
+      const data = await this.readRaw();
+      const idx = data.tasks.findIndex((t) => t.id === id);
+      if (idx === -1) throw new TaskNotFoundError(id);
+
+      const task = data.tasks[idx];
+
+      if (task.status !== 'review') {
+        throw new InvalidTransitionError(
+          task.status,
+          'done',
+          `Cannot approve task in "${task.status}" status; must be "review"`,
+        );
+      }
+
+      const now = Date.now();
+      task.status = 'done';
+
+      if (note) {
+        task.feedback.push({
+          at: now,
+          by: (actor as TaskActor) ?? 'operator',
+          note,
+        });
+      }
+
+      // Re-compute columnOrder for done column
+      const maxOrder = data.tasks
+        .filter((t) => t.status === 'done' && t.id !== id)
+        .reduce((max, t) => Math.max(max, t.columnOrder), -1);
+      task.columnOrder = maxOrder + 1;
+
+      task.updatedAt = now;
+      task.version += 1;
+
+      data.tasks[idx] = task;
+      await this.writeRaw(data);
+      await this.audit({ ts: now, action: 'approve', taskId: id, actor });
+      return task;
+    });
+  }
+
+  // ── Workflow: Reject ─────────────────────────────────────────────
+
+  async rejectTask(id: string, note: string, actor?: string): Promise<KanbanTask> {
+    return this.withLock(async () => {
+      const data = await this.readRaw();
+      const idx = data.tasks.findIndex((t) => t.id === id);
+      if (idx === -1) throw new TaskNotFoundError(id);
+
+      const task = data.tasks[idx];
+
+      if (task.status !== 'review') {
+        throw new InvalidTransitionError(
+          task.status,
+          'todo',
+          `Cannot reject task in "${task.status}" status; must be "review"`,
+        );
+      }
+
+      const now = Date.now();
+      task.status = 'todo';
+
+      task.feedback.push({
+        at: now,
+        by: (actor as TaskActor) ?? 'operator',
+        note,
+      });
+
+      // Clear the run so it can be re-executed
+      task.run = undefined;
+      task.result = undefined;
+      task.resultAt = undefined;
+
+      // Re-compute columnOrder for todo column
+      const maxOrder = data.tasks
+        .filter((t) => t.status === 'todo' && t.id !== id)
+        .reduce((max, t) => Math.max(max, t.columnOrder), -1);
+      task.columnOrder = maxOrder + 1;
+
+      task.updatedAt = now;
+      task.version += 1;
+
+      data.tasks[idx] = task;
+      await this.writeRaw(data);
+      await this.audit({ ts: now, action: 'reject', taskId: id, actor });
+      return task;
+    });
+  }
+
+  // ── Workflow: Abort ──────────────────────────────────────────────
+
+  async abortTask(id: string, note?: string, actor?: string): Promise<KanbanTask> {
+    return this.withLock(async () => {
+      const data = await this.readRaw();
+      const idx = data.tasks.findIndex((t) => t.id === id);
+      if (idx === -1) throw new TaskNotFoundError(id);
+
+      const task = data.tasks[idx];
+
+      if (task.status !== 'in-progress' || !task.run || task.run.status !== 'running') {
+        throw new InvalidTransitionError(
+          task.status,
+          'todo',
+          `Cannot abort task: must be "in-progress" with an active run`,
+        );
+      }
+
+      const now = Date.now();
+
+      // Mark run as aborted
+      task.run.status = 'aborted';
+      task.run.endedAt = now;
+
+      // Move back to todo
+      task.status = 'todo';
+
+      if (note) {
+        task.feedback.push({
+          at: now,
+          by: (actor as TaskActor) ?? 'operator',
+          note,
+        });
+      }
+
+      // Re-compute columnOrder for todo column
+      const maxOrder = data.tasks
+        .filter((t) => t.status === 'todo' && t.id !== id)
+        .reduce((max, t) => Math.max(max, t.columnOrder), -1);
+      task.columnOrder = maxOrder + 1;
+
+      task.updatedAt = now;
+      task.version += 1;
+
+      data.tasks[idx] = task;
+      await this.writeRaw(data);
+      await this.audit({ ts: now, action: 'abort', taskId: id, actor });
+      return task;
+    });
+  }
+
+  // ── Run completion handler ───────────────────────────────────────
+
+  async completeRun(
+    taskId: string,
+    result?: string,
+    error?: string,
+  ): Promise<KanbanTask> {
+    return this.withLock(async () => {
+      const data = await this.readRaw();
+      const idx = data.tasks.findIndex((t) => t.id === taskId);
+      if (idx === -1) throw new TaskNotFoundError(taskId);
+
+      const task = data.tasks[idx];
+
+      if (!task.run || task.run.status !== 'running') {
+        throw new InvalidTransitionError(
+          task.status,
+          error ? 'todo' : 'review',
+          `No active run to complete on task "${taskId}"`,
+        );
+      }
+
+      const now = Date.now();
+      task.run.endedAt = now;
+
+      if (error) {
+        // Error path: mark run as error, move back to todo
+        task.run.status = 'error';
+        task.run.error = error;
+        task.status = 'todo';
+
+        const maxOrder = data.tasks
+          .filter((t) => t.status === 'todo' && t.id !== taskId)
+          .reduce((max, t) => Math.max(max, t.columnOrder), -1);
+        task.columnOrder = maxOrder + 1;
+      } else {
+        // Success path: mark run as done, move to review
+        task.run.status = 'done';
+        task.status = 'review';
+        if (result) {
+          task.result = result;
+          task.resultAt = now;
+        }
+
+        const maxOrder = data.tasks
+          .filter((t) => t.status === 'review' && t.id !== taskId)
+          .reduce((max, t) => Math.max(max, t.columnOrder), -1);
+        task.columnOrder = maxOrder + 1;
+      }
+
+      task.updatedAt = now;
+      task.version += 1;
+
+      data.tasks[idx] = task;
+      await this.writeRaw(data);
+      await this.audit({
+        ts: now,
+        action: 'complete_run',
+        taskId,
+        detail: error ? `error: ${error}` : 'success',
+      });
+      return task;
+    });
+  }
+
+  // ── Stale run reconciliation ─────────────────────────────────────
+
+  async reconcileStaleRuns(maxAgeMs: number): Promise<KanbanTask[]> {
+    return this.withLock(async () => {
+      const data = await this.readRaw();
+      const now = Date.now();
+      const reconciled: KanbanTask[] = [];
+
+      for (let i = 0; i < data.tasks.length; i++) {
+        const task = data.tasks[i];
+        if (
+          task.status === 'in-progress' &&
+          task.run?.status === 'running' &&
+          now - task.run.startedAt > maxAgeMs
+        ) {
+          task.run.status = 'error';
+          task.run.endedAt = now;
+          task.run.error = 'stale run reconciled';
+
+          task.status = 'todo';
+
+          const maxOrder = data.tasks
+            .filter((t) => t.status === 'todo' && t.id !== task.id)
+            .reduce((max, t) => Math.max(max, t.columnOrder), -1);
+          task.columnOrder = maxOrder + 1;
+
+          task.updatedAt = now;
+          task.version += 1;
+
+          data.tasks[i] = task;
+          reconciled.push(task);
+        }
+      }
+
+      if (reconciled.length > 0) {
+        await this.writeRaw(data);
+        await this.audit({
+          ts: now,
+          action: 'reconcile',
+          detail: `reconciled ${reconciled.length} stale run(s)`,
+        });
+      }
+
+      return reconciled;
     });
   }
 

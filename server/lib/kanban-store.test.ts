@@ -1,9 +1,9 @@
-/** Tests for kanban-store: CRUD, CAS conflicts, reorder, config, filters. */
+/** Tests for kanban-store: CRUD, CAS conflicts, reorder, config, filters, workflow. */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { KanbanStore, VersionConflictError, TaskNotFoundError } from './kanban-store.js';
+import { KanbanStore, VersionConflictError, TaskNotFoundError, InvalidTransitionError } from './kanban-store.js';
 import type { KanbanTask } from './kanban-store.js';
 
 let store: KanbanStore;
@@ -458,6 +458,378 @@ describe('reset', () => {
 
     const result = await store.listTasks();
     expect(result.total).toBe(0);
+  });
+});
+
+// ── Execute ──────────────────────────────────────────────────────────
+
+describe('executeTask', () => {
+  it('moves task from todo to in-progress with run link', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    const executed = await store.executeTask(task.id);
+
+    expect(executed.status).toBe('in-progress');
+    expect(executed.run).toBeDefined();
+    expect(executed.run!.status).toBe('running');
+    expect(executed.run!.sessionKey).toContain(`kanban-run-${task.id}`);
+    expect(executed.run!.startedAt).toBeGreaterThan(0);
+    expect(executed.run!.endedAt).toBeUndefined();
+    expect(executed.version).toBe(task.version + 1);
+  });
+
+  it('moves task from backlog to in-progress', async () => {
+    const task = await createSampleTask({ status: 'backlog' });
+    const executed = await store.executeTask(task.id);
+    expect(executed.status).toBe('in-progress');
+    expect(executed.run!.status).toBe('running');
+  });
+
+  it('applies model and thinking overrides', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    const executed = await store.executeTask(task.id, { model: 'gpt-5', thinking: 'high' });
+    expect(executed.model).toBe('gpt-5');
+    expect(executed.thinking).toBe('high');
+  });
+
+  it('is idempotent when task already has active run', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    const first = await store.executeTask(task.id);
+    const second = await store.executeTask(first.id);
+
+    // Should return same data without version bump
+    expect(second.version).toBe(first.version);
+    expect(second.run!.sessionKey).toBe(first.run!.sessionKey);
+  });
+
+  it('throws InvalidTransitionError for done task', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    // Manually set to done via updateTask
+    await store.updateTask(task.id, task.version, { status: 'done' });
+
+    try {
+      await store.executeTask(task.id);
+      expect.fail('Expected InvalidTransitionError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(InvalidTransitionError);
+      const ite = err as InvalidTransitionError;
+      expect(ite.from).toBe('done');
+      expect(ite.to).toBe('in-progress');
+    }
+  });
+
+  it('throws InvalidTransitionError for review task', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    await store.updateTask(task.id, task.version, { status: 'review' });
+    await expect(store.executeTask(task.id)).rejects.toThrow(InvalidTransitionError);
+  });
+
+  it('throws TaskNotFoundError for missing task', async () => {
+    await expect(store.executeTask('nonexistent')).rejects.toThrow(TaskNotFoundError);
+  });
+
+  it('re-computes columnOrder for in-progress column', async () => {
+    const existing = await createSampleTask({ status: 'todo' });
+    // Put an existing task in in-progress
+    await store.updateTask(existing.id, existing.version, { status: 'in-progress' });
+
+    const task = await createSampleTask({ status: 'todo' });
+    const executed = await store.executeTask(task.id);
+    expect(executed.columnOrder).toBe(1); // after existing
+  });
+});
+
+// ── Approve ──────────────────────────────────────────────────────────
+
+describe('approveTask', () => {
+  it('moves task from review to done', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    await store.updateTask(task.id, task.version, { status: 'review' });
+    const reviewed = await store.getTask(task.id);
+
+    const approved = await store.approveTask(reviewed.id);
+    expect(approved.status).toBe('done');
+    expect(approved.version).toBe(reviewed.version + 1);
+  });
+
+  it('adds feedback note when provided', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    await store.updateTask(task.id, task.version, { status: 'review' });
+    const reviewed = await store.getTask(task.id);
+
+    const approved = await store.approveTask(reviewed.id, 'Looks great!', 'operator');
+    expect(approved.feedback.length).toBe(1);
+    expect(approved.feedback[0].note).toBe('Looks great!');
+    expect(approved.feedback[0].by).toBe('operator');
+  });
+
+  it('does not add feedback when no note', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    await store.updateTask(task.id, task.version, { status: 'review' });
+    const reviewed = await store.getTask(task.id);
+
+    const approved = await store.approveTask(reviewed.id);
+    expect(approved.feedback.length).toBe(0);
+  });
+
+  it('throws InvalidTransitionError for non-review task', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+
+    try {
+      await store.approveTask(task.id);
+      expect.fail('Expected InvalidTransitionError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(InvalidTransitionError);
+      const ite = err as InvalidTransitionError;
+      expect(ite.from).toBe('todo');
+      expect(ite.to).toBe('done');
+    }
+  });
+
+  it('throws TaskNotFoundError for missing task', async () => {
+    await expect(store.approveTask('nonexistent')).rejects.toThrow(TaskNotFoundError);
+  });
+});
+
+// ── Reject ───────────────────────────────────────────────────────────
+
+describe('rejectTask', () => {
+  it('moves task from review to todo with feedback', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    await store.updateTask(task.id, task.version, { status: 'review' });
+    const reviewed = await store.getTask(task.id);
+
+    const rejected = await store.rejectTask(reviewed.id, 'Needs more work');
+    expect(rejected.status).toBe('todo');
+    expect(rejected.feedback.length).toBe(1);
+    expect(rejected.feedback[0].note).toBe('Needs more work');
+    expect(rejected.version).toBe(reviewed.version + 1);
+  });
+
+  it('clears run and result on reject', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    // Simulate an executed + completed task in review
+    await store.updateTask(task.id, task.version, {
+      status: 'review',
+      run: { sessionKey: 'test', startedAt: Date.now(), endedAt: Date.now(), status: 'done' },
+      result: 'Some result',
+      resultAt: Date.now(),
+    });
+    const reviewed = await store.getTask(task.id);
+
+    const rejected = await store.rejectTask(reviewed.id, 'Redo this');
+    expect(rejected.run).toBeUndefined();
+    expect(rejected.result).toBeUndefined();
+    expect(rejected.resultAt).toBeUndefined();
+  });
+
+  it('throws InvalidTransitionError for non-review task', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    await expect(store.rejectTask(task.id, 'nope')).rejects.toThrow(InvalidTransitionError);
+  });
+
+  it('throws TaskNotFoundError for missing task', async () => {
+    await expect(store.rejectTask('nonexistent', 'nope')).rejects.toThrow(TaskNotFoundError);
+  });
+});
+
+// ── Abort ────────────────────────────────────────────────────────────
+
+describe('abortTask', () => {
+  it('aborts running task and moves back to todo', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    const executed = await store.executeTask(task.id);
+
+    const aborted = await store.abortTask(executed.id, 'Taking too long');
+    expect(aborted.status).toBe('todo');
+    expect(aborted.run!.status).toBe('aborted');
+    expect(aborted.run!.endedAt).toBeGreaterThan(0);
+    expect(aborted.feedback.length).toBe(1);
+    expect(aborted.feedback[0].note).toBe('Taking too long');
+    expect(aborted.version).toBe(executed.version + 1);
+  });
+
+  it('aborts without note', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    const executed = await store.executeTask(task.id);
+
+    const aborted = await store.abortTask(executed.id);
+    expect(aborted.status).toBe('todo');
+    expect(aborted.run!.status).toBe('aborted');
+    expect(aborted.feedback.length).toBe(0);
+  });
+
+  it('throws InvalidTransitionError for non-in-progress task', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    await expect(store.abortTask(task.id)).rejects.toThrow(InvalidTransitionError);
+  });
+
+  it('throws InvalidTransitionError for in-progress task without active run', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    // Set to in-progress without run
+    await store.updateTask(task.id, task.version, { status: 'in-progress' });
+    const updated = await store.getTask(task.id);
+    await expect(store.abortTask(updated.id)).rejects.toThrow(InvalidTransitionError);
+  });
+
+  it('throws TaskNotFoundError for missing task', async () => {
+    await expect(store.abortTask('nonexistent')).rejects.toThrow(TaskNotFoundError);
+  });
+});
+
+// ── Complete run ─────────────────────────────────────────────────────
+
+describe('completeRun', () => {
+  it('completes successfully: moves to review with result', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    const executed = await store.executeTask(task.id);
+
+    const completed = await store.completeRun(executed.id, 'Task output here');
+    expect(completed.status).toBe('review');
+    expect(completed.run!.status).toBe('done');
+    expect(completed.run!.endedAt).toBeGreaterThan(0);
+    expect(completed.result).toBe('Task output here');
+    expect(completed.resultAt).toBeGreaterThan(0);
+    expect(completed.version).toBe(executed.version + 1);
+  });
+
+  it('completes with error: moves back to todo', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    const executed = await store.executeTask(task.id);
+
+    const completed = await store.completeRun(executed.id, undefined, 'Runtime error');
+    expect(completed.status).toBe('todo');
+    expect(completed.run!.status).toBe('error');
+    expect(completed.run!.error).toBe('Runtime error');
+    expect(completed.run!.endedAt).toBeGreaterThan(0);
+  });
+
+  it('throws InvalidTransitionError when no active run', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    await expect(store.completeRun(task.id, 'result')).rejects.toThrow(InvalidTransitionError);
+  });
+
+  it('throws TaskNotFoundError for missing task', async () => {
+    await expect(store.completeRun('nonexistent', 'result')).rejects.toThrow(TaskNotFoundError);
+  });
+
+  it('completes without result string on success', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    const executed = await store.executeTask(task.id);
+
+    const completed = await store.completeRun(executed.id);
+    expect(completed.status).toBe('review');
+    expect(completed.run!.status).toBe('done');
+    expect(completed.result).toBeUndefined();
+  });
+});
+
+// ── Reconcile stale runs ─────────────────────────────────────────────
+
+describe('reconcileStaleRuns', () => {
+  it('reconciles stale running tasks', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    const executed = await store.executeTask(task.id);
+
+    // Manually backdate the run start time
+    await store.updateTask(executed.id, executed.version, {
+      run: { ...executed.run!, startedAt: Date.now() - 100_000 },
+    });
+
+    const reconciled = await store.reconcileStaleRuns(50_000);
+    expect(reconciled.length).toBe(1);
+    expect(reconciled[0].status).toBe('todo');
+    expect(reconciled[0].run!.status).toBe('error');
+    expect(reconciled[0].run!.error).toBe('stale run reconciled');
+  });
+
+  it('does not reconcile fresh runs', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    await store.executeTask(task.id);
+
+    const reconciled = await store.reconcileStaleRuns(999_999_999);
+    expect(reconciled.length).toBe(0);
+  });
+
+  it('does not reconcile non-running tasks', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    // Task is in todo, not in-progress
+    const reconciled = await store.reconcileStaleRuns(0);
+    expect(reconciled.length).toBe(0);
+  });
+
+  it('reconciles multiple stale tasks', async () => {
+    const t1 = await createSampleTask({ status: 'todo', title: 'A' });
+    const t2 = await createSampleTask({ status: 'todo', title: 'B' });
+    const e1 = await store.executeTask(t1.id);
+    const e2 = await store.executeTask(t2.id);
+
+    // Backdate both
+    await store.updateTask(e1.id, e1.version, {
+      run: { ...e1.run!, startedAt: Date.now() - 100_000 },
+    });
+    const e2Updated = await store.getTask(e2.id);
+    await store.updateTask(e2Updated.id, e2Updated.version, {
+      run: { ...e2Updated.run!, startedAt: Date.now() - 100_000 },
+    });
+
+    const reconciled = await store.reconcileStaleRuns(50_000);
+    expect(reconciled.length).toBe(2);
+    expect(reconciled.every((t) => t.status === 'todo')).toBe(true);
+    expect(reconciled.every((t) => t.run!.status === 'error')).toBe(true);
+  });
+
+  it('returns empty array when nothing to reconcile', async () => {
+    const reconciled = await store.reconcileStaleRuns(50_000);
+    expect(reconciled).toEqual([]);
+  });
+});
+
+// ── Full workflow (execute → complete → approve) ─────────────────────
+
+describe('full workflow', () => {
+  it('execute → completeRun → approve', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+
+    // Execute
+    const executed = await store.executeTask(task.id);
+    expect(executed.status).toBe('in-progress');
+
+    // Complete run
+    const completed = await store.completeRun(executed.id, 'Done!');
+    expect(completed.status).toBe('review');
+
+    // Approve
+    const approved = await store.approveTask(completed.id, 'LGTM');
+    expect(approved.status).toBe('done');
+    expect(approved.feedback.length).toBe(1);
+  });
+
+  it('execute → completeRun → reject → re-execute', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+
+    const executed = await store.executeTask(task.id);
+    const completed = await store.completeRun(executed.id, 'Half done');
+    const rejected = await store.rejectTask(completed.id, 'Not good enough');
+    expect(rejected.status).toBe('todo');
+    expect(rejected.run).toBeUndefined();
+
+    // Can re-execute after reject
+    const reExecuted = await store.executeTask(rejected.id);
+    expect(reExecuted.status).toBe('in-progress');
+    expect(reExecuted.run!.status).toBe('running');
+  });
+
+  it('execute → abort → re-execute', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+
+    const executed = await store.executeTask(task.id);
+    const aborted = await store.abortTask(executed.id, 'Too slow');
+    expect(aborted.status).toBe('todo');
+
+    // Can re-execute after abort (run is still on task but aborted)
+    const reExecuted = await store.executeTask(aborted.id);
+    expect(reExecuted.status).toBe('in-progress');
+    expect(reExecuted.run!.status).toBe('running');
   });
 });
 

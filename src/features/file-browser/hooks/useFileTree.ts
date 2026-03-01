@@ -2,21 +2,23 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useInstancesOptional } from '@/contexts/InstanceContext';
 import type { TreeEntry } from '../types';
 
-const STORAGE_KEY = 'nerve-file-tree-expanded';
+const STORAGE_KEY_PREFIX = 'nerve-file-tree-expanded';
 
-/** Load expanded paths from localStorage for persistence. */
-function loadExpandedPaths(): Set<string> {
+function storageKeyForInstance(instanceId: string | null): string {
+  return `${STORAGE_KEY_PREFIX}:${instanceId || 'master'}`;
+}
+
+function loadExpandedPaths(instanceId: string | null): Set<string> {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(storageKeyForInstance(instanceId));
     if (stored) return new Set(JSON.parse(stored));
   } catch { /* ignore */ }
   return new Set<string>();
 }
 
-/** Save expanded paths to localStorage for persistence. */
-function saveExpandedPaths(paths: Set<string>) {
+function saveExpandedPaths(instanceId: string | null, paths: Set<string>) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...paths]));
+    localStorage.setItem(storageKeyForInstance(instanceId), JSON.stringify([...paths]));
   } catch { /* ignore */ }
 }
 
@@ -44,7 +46,7 @@ export function useFileTree() {
   const [entries, setEntries] = useState<TreeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(loadExpandedPaths);
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => loadExpandedPaths(activeInstanceId));
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
   const [workspaceInfo, setWorkspaceInfo] = useState<{ isCustomWorkspace: boolean; rootPath: string } | null>(null);
@@ -55,10 +57,10 @@ export function useFileTree() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  // Persist expanded paths
+  // Persist expanded paths per instance
   useEffect(() => {
-    saveExpandedPaths(expandedPaths);
-  }, [expandedPaths]);
+    saveExpandedPaths(activeInstanceId, expandedPaths);
+  }, [activeInstanceId, expandedPaths]);
 
   // Fetch a directory's children
   const fetchChildren = useCallback(async (dirPath: string): Promise<TreeEntry[] | null> => {
@@ -80,14 +82,19 @@ export function useFileTree() {
   const loadRoot = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const children = await fetchChildren('');
+    let children = await fetchChildren('');
+    if (!children) {
+      // Instance switch can race with transport reconnect; retry once quickly.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      children = await fetchChildren('');
+    }
     if (!mountedRef.current) return;
 
     if (children) {
       setEntries(children);
 
       // Re-expand previously expanded directories
-      const expanded = loadExpandedPaths();
+      const expanded = loadExpandedPaths(activeInstanceId);
       if (expanded.size > 0) {
         // Fetch children for each expanded path (in parallel)
         const promises = [...expanded].map(async (p) => {
@@ -107,11 +114,12 @@ export function useFileTree() {
       setError('Failed to load file tree');
     }
     setLoading(false);
-  }, [fetchChildren]);
+  }, [fetchChildren, activeInstanceId]);
 
   // Reload file tree whenever instance context changes.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset on instance switch
   useEffect(() => {
+    setExpandedPaths(loadExpandedPaths(activeInstanceId));
     setEntries([]);
     setSelectedPath(null);
     setError(null);

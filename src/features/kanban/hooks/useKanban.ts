@@ -61,13 +61,18 @@ export function useKanban() {
   const abortRef = useRef<AbortController | null>(null);
 
   /* ── Fetch ── */
-  const fetchTasks = useCallback(async (f?: KanbanFilters) => {
+  const initialLoadDone = useRef(false);
+
+  const fetchTasks = useCallback(async (f?: KanbanFilters, { silent = false }: { silent?: boolean } = {}) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setLoading(true);
-    setError(null);
+    // Only show loading skeleton on first load or explicit filter changes, not background polls
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const qs = buildQuery(f ?? filters);
       const res = await fetch(`/api/kanban/tasks?${qs}`, { signal: controller.signal });
@@ -75,11 +80,14 @@ export function useKanban() {
       const data: TasksResponse = await res.json();
       setTasks(data.items);
       setTotal(data.total);
+      if (!silent) setError(null);
+      initialLoadDone.current = true;
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      // Only surface errors on explicit fetches, not silent polls
+      if (!silent) setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [filters]);
 
@@ -89,9 +97,9 @@ export function useKanban() {
     return () => abortRef.current?.abort();
   }, [filters, fetchTasks]);
 
-  /* Auto-refresh every 5s so board stays current */
+  /* Auto-refresh every 5s so board stays current (silent — no loading flash) */
   useEffect(() => {
-    const id = setInterval(() => fetchTasks(), 5_000);
+    const id = setInterval(() => fetchTasks(undefined, { silent: true }), 5_000);
     return () => clearInterval(id);
   }, [fetchTasks]);
 

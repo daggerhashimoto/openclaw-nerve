@@ -75,7 +75,14 @@ export const KanbanCard = memo(function KanbanCard({ task, onClick }: KanbanCard
         </span>
       </div>
 
-      {/* Row 2: labels */}
+      {/* Row 2: description preview */}
+      {task.description && (
+        <p className="mt-1 ml-4 text-[11px] leading-[15px] text-muted-foreground line-clamp-1">
+          {task.description}
+        </p>
+      )}
+
+      {/* Row 3: labels */}
       {task.labels.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1.5 ml-4">
           {task.labels.slice(0, 3).map(label => (

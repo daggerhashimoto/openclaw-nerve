@@ -22,6 +22,7 @@ import {
   ProposalNotFoundError,
   ProposalAlreadyResolvedError,
 } from '../lib/kanban-store.js';
+import { invokeGatewayTool } from '../lib/gateway-client.js';
 import type {
   TaskStatus,
   TaskPriority,
@@ -550,6 +551,22 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
 
   try {
     const task = await store.executeTask(id, parsed.data, 'operator');
+
+    // Spawn agent session via gateway (fire-and-forget)
+    const taskDescription = task.description || task.title;
+    const spawnArgs: Record<string, unknown> = {
+      task: `You are working on a Kanban task.\n\nTitle: ${task.title}\n\nDescription: ${taskDescription}\n\nDeliver your result as a clear summary of what was done.`,
+      mode: 'run',
+      label: `kanban-${id}`,
+    };
+    if (task.model) spawnArgs.model = task.model;
+    if (task.thinking) spawnArgs.thinking = task.thinking;
+
+    invokeGatewayTool('sessions_spawn', spawnArgs).catch((err) => {
+      console.error(`[kanban] Failed to spawn session for task ${id}:`, err);
+      store.completeRun(id, undefined, `Spawn failed: ${err.message}`).catch(() => {});
+    });
+
     return c.json(task);
   } catch (err) {
     return handleWorkflowError(c, err);
@@ -636,6 +653,42 @@ app.post('/api/kanban/tasks/:id/abort', rateLimitGeneral, async (c) => {
 
   try {
     const task = await store.abortTask(id, parsed.data.note, 'operator');
+    return c.json(task);
+  } catch (err) {
+    return handleWorkflowError(c, err);
+  }
+});
+
+// ── Completion webhook ───────────────────────────────────────────────
+
+const completeSchema = z.object({
+  result: z.string().max(50_000).optional(),
+  error: z.string().max(5000).optional(),
+});
+
+// POST /api/kanban/tasks/:id/complete
+app.post('/api/kanban/tasks/:id/complete', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  const id = c.req.param('id');
+
+  let body: unknown = {};
+  try {
+    const text = await c.req.text();
+    if (text) body = JSON.parse(text);
+  } catch {
+    return c.json({ error: 'validation_error', details: 'Invalid JSON body' }, 400);
+  }
+
+  const parsed = completeSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({
+      error: 'validation_error',
+      details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    }, 400);
+  }
+
+  try {
+    const task = await store.completeRun(id, parsed.data.result, parsed.data.error);
     return c.json(task);
   } catch (err) {
     return handleWorkflowError(c, err);

@@ -24,6 +24,10 @@ export function KanbanPanel() {
     deleteTask,
     tasksByStatus,
     statusCounts,
+    executeTask,
+    approveTask,
+    rejectTask,
+    abortTask,
   } = useKanban();
 
   const {
@@ -108,6 +112,10 @@ export function KanbanPanel() {
         onClose={handleCloseDrawer}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
+        onExecute={executeTask}
+        onApprove={approveTask}
+        onReject={rejectTask}
+        onAbort={abortTask}
       />
     </div>
   );

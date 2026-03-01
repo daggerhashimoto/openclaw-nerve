@@ -24,6 +24,11 @@ async function buildApp(): Promise<Hono> {
     rateLimitGeneral: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
   }));
 
+  // Mock gateway client so fire-and-forget spawn doesn't interfere with test cleanup
+  vi.doMock('../lib/gateway-client.js', () => ({
+    invokeGatewayTool: vi.fn(() => Promise.resolve({ childSessionKey: 'test-session' })),
+  }));
+
   // Create store from the re-imported module so instanceof checks work
   const storeModule = await import('../lib/kanban-store.js');
   const store = new storeModule.KanbanStore(path.join(tmpDir, 'tasks.json'));

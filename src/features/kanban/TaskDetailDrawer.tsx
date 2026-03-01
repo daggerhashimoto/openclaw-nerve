@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   X, Play, CheckCircle2, XCircle, Trash2, Save, Loader2,
-  Clock, User, Tag, AlertTriangle, MessageSquare,
+  Clock, User, Tag, AlertTriangle, MessageSquare, StopCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,14 +34,43 @@ const STATUS_BADGE: Record<TaskStatus, string> = {
   cancelled: 'bg-gray-500/20 text-gray-400',
 };
 
+/* ── Elapsed time helper ── */
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  if (m < 60) return `${m}m ${rs}s`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return `${h}h ${rm}m`;
+}
+
+function RunElapsed({ startedAt }: { startedAt: number }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span className="text-[10px] text-muted-foreground tabular-nums">
+      {formatElapsed(Date.now() - startedAt)}
+    </span>
+  );
+}
+
 interface TaskDetailDrawerProps {
   task: KanbanTask | null;
   onClose: () => void;
   onUpdate: (id: string, payload: UpdateTaskPayload) => Promise<KanbanTask>;
   onDelete: (id: string) => Promise<void>;
+  onExecute?: (id: string, options?: { model?: string; thinking?: string }) => Promise<KanbanTask>;
+  onApprove?: (id: string, note?: string) => Promise<KanbanTask>;
+  onReject?: (id: string, note: string) => Promise<KanbanTask>;
+  onAbort?: (id: string, note?: string) => Promise<KanbanTask>;
 }
 
-export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDetailDrawerProps) {
+export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute, onApprove, onReject, onAbort }: TaskDetailDrawerProps) {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editStatus, setEditStatus] = useState<TaskStatus>('todo');
@@ -147,10 +176,76 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
     }
   }, [task, deleting, onDelete, onClose]);
 
-  /* Stub action handlers (Issue 05) */
-  const stubAction = useCallback((action: string) => {
-    alert(`${action} — coming in Issue 05`);
-  }, []);
+  /* ── Workflow action state ── */
+  const [workflowLoading, setWorkflowLoading] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
+  const [showRejectInput, setShowRejectInput] = useState(false);
+
+  const handleExecute = useCallback(async () => {
+    if (!task || !onExecute || workflowLoading) return;
+    setWorkflowLoading('execute');
+    setError(null);
+    try {
+      await onExecute(task.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Execute failed');
+    } finally {
+      setWorkflowLoading(null);
+    }
+  }, [task, onExecute, workflowLoading]);
+
+  const handleApprove = useCallback(async () => {
+    if (!task || !onApprove || workflowLoading) return;
+    setWorkflowLoading('approve');
+    setError(null);
+    try {
+      await onApprove(task.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Approve failed');
+    } finally {
+      setWorkflowLoading(null);
+    }
+  }, [task, onApprove, workflowLoading]);
+
+  const handleReject = useCallback(async () => {
+    if (!task || !onReject || workflowLoading) return;
+    if (!showRejectInput) {
+      setShowRejectInput(true);
+      return;
+    }
+    if (!rejectNote.trim()) return;
+    setWorkflowLoading('reject');
+    setError(null);
+    try {
+      await onReject(task.id, rejectNote.trim());
+      setShowRejectInput(false);
+      setRejectNote('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reject failed');
+    } finally {
+      setWorkflowLoading(null);
+    }
+  }, [task, onReject, workflowLoading, showRejectInput, rejectNote]);
+
+  const handleAbort = useCallback(async () => {
+    if (!task || !onAbort || workflowLoading) return;
+    setWorkflowLoading('abort');
+    setError(null);
+    try {
+      await onAbort(task.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Abort failed');
+    } finally {
+      setWorkflowLoading(null);
+    }
+  }, [task, onAbort, workflowLoading]);
+
+  /* Reset reject input when task changes */
+  useEffect(() => {
+    setShowRejectInput(false);
+    setRejectNote('');
+    setWorkflowLoading(null);
+  }, [task?.id]);
 
   const isOpen = task !== null;
 
@@ -323,11 +418,25 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
               {task.run && (
                 <div className="border-t border-border/50 pt-3">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                    Linked Run
+                    Agent Run
                   </h4>
-                  <div className="space-y-1 text-[11px] text-muted-foreground">
-                    <div>Session: <code className="text-[10px] bg-muted px-1 py-0.5 rounded">{task.run.sessionKey}</code></div>
-                    <div>Status: <span className="font-semibold">{task.run.status}</span></div>
+                  <div className="space-y-1.5 text-[11px] text-muted-foreground">
+                    {/* Status badge */}
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                        task.run.status === 'running' ? 'bg-cyan-500/20 text-cyan-400' :
+                        task.run.status === 'done' ? 'bg-green-500/20 text-green-400' :
+                        task.run.status === 'error' ? 'bg-red-500/20 text-red-400' :
+                        'bg-amber-500/20 text-amber-400'
+                      }`}>
+                        {task.run.status === 'running' && <Loader2 size={9} className="animate-spin" />}
+                        {task.run.status.charAt(0).toUpperCase() + task.run.status.slice(1)}
+                      </span>
+                      {task.run.status === 'running' && task.run.startedAt && (
+                        <RunElapsed startedAt={task.run.startedAt} />
+                      )}
+                    </div>
+                    <div>Session: <code className="text-[10px] bg-muted px-1 py-0.5 rounded select-all cursor-pointer">{task.run.sessionKey}</code></div>
                     {task.run.startedAt && (
                       <div>Started: {new Date(task.run.startedAt).toLocaleString()}</div>
                     )}
@@ -335,7 +444,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
                       <div>Ended: {new Date(task.run.endedAt).toLocaleString()}</div>
                     )}
                     {task.run.error && (
-                      <div className="text-destructive">Error: {task.run.error}</div>
+                      <div className="text-destructive break-words">Error: {task.run.error}</div>
                     )}
                   </div>
                 </div>
@@ -375,21 +484,52 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
             </div>
 
             {/* Sticky action bar */}
-            <div className="shrink-0 border-t border-border bg-background/90 backdrop-blur-sm px-3.5 py-2.5 flex items-center gap-2">
-              {/* Contextual action stubs (Issue 05) */}
-              {(task.status === 'backlog' || task.status === 'todo') && (
-                <Button size="xs" variant="outline" onClick={() => stubAction('Execute')}>
-                  <Play size={12} /> Execute
+            <div className="shrink-0 border-t border-border bg-background/90 backdrop-blur-sm px-3.5 py-2.5 flex flex-col gap-2">
+              {/* Reject note input */}
+              {showRejectInput && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={rejectNote}
+                    onChange={e => setRejectNote(e.target.value)}
+                    placeholder="Rejection reason (required)…"
+                    className="h-[30px] text-xs flex-1"
+                    onKeyDown={e => { if (e.key === 'Enter') handleReject(); if (e.key === 'Escape') { setShowRejectInput(false); setRejectNote(''); } }}
+                    autoFocus
+                  />
+                  <Button size="xs" variant="outline" onClick={() => { setShowRejectInput(false); setRejectNote(''); }}>
+                    Cancel
+                  </Button>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+              {/* Workflow actions */}
+              {(task.status === 'backlog' || task.status === 'todo') && onExecute && (
+                <Button size="xs" variant="outline" onClick={handleExecute} disabled={workflowLoading !== null}>
+                  {workflowLoading === 'execute' ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                  Execute
+                </Button>
+              )}
+              {task.status === 'in-progress' && task.run?.status === 'running' && onAbort && (
+                <Button size="xs" variant="outline" onClick={handleAbort} disabled={workflowLoading !== null} className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10">
+                  {workflowLoading === 'abort' ? <Loader2 size={12} className="animate-spin" /> : <StopCircle size={12} />}
+                  Abort
                 </Button>
               )}
               {task.status === 'review' && (
                 <>
-                  <Button size="xs" variant="outline" onClick={() => stubAction('Approve')}>
-                    <CheckCircle2 size={12} /> Approve
-                  </Button>
-                  <Button size="xs" variant="outline" onClick={() => stubAction('Reject')}>
-                    <XCircle size={12} /> Reject
-                  </Button>
+                  {onApprove && (
+                    <Button size="xs" variant="outline" onClick={handleApprove} disabled={workflowLoading !== null} className="text-green-500 border-green-500/30 hover:bg-green-500/10">
+                      {workflowLoading === 'approve' ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                      Approve
+                    </Button>
+                  )}
+                  {onReject && (
+                    <Button size="xs" variant="outline" onClick={handleReject} disabled={workflowLoading !== null || (showRejectInput && !rejectNote.trim())} className="text-red-500 border-red-500/30 hover:bg-red-500/10">
+                      {workflowLoading === 'reject' ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
+                      Reject
+                    </Button>
+                  )}
                 </>
               )}
 
@@ -434,6 +574,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete }: TaskDeta
                 {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
                 Save
               </Button>
+              </div>
             </div>
           </>
         )}

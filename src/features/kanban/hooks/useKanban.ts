@@ -186,6 +186,68 @@ export function useKanban() {
     await fetchTasks();
   }, [fetchTasks]);
 
+  /* ── Workflow mutations ── */
+
+  const executeTask = useCallback(async (id: string, options?: { model?: string; thinking?: string }): Promise<KanbanTask> => {
+    const res = await fetch(`/api/kanban/tasks/${encodeURIComponent(id)}/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options ?? {}),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.details || body.error || `HTTP ${res.status}`);
+    }
+    const task: KanbanTask = await res.json();
+    await fetchTasks(undefined, { silent: true });
+    return task;
+  }, [fetchTasks]);
+
+  const approveTask = useCallback(async (id: string, note?: string): Promise<KanbanTask> => {
+    const res = await fetch(`/api/kanban/tasks/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(note ? { note } : {}),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.details || body.error || `HTTP ${res.status}`);
+    }
+    const task: KanbanTask = await res.json();
+    await fetchTasks(undefined, { silent: true });
+    return task;
+  }, [fetchTasks]);
+
+  const rejectTask = useCallback(async (id: string, note: string): Promise<KanbanTask> => {
+    const res = await fetch(`/api/kanban/tasks/${encodeURIComponent(id)}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.details || body.error || `HTTP ${res.status}`);
+    }
+    const task: KanbanTask = await res.json();
+    await fetchTasks(undefined, { silent: true });
+    return task;
+  }, [fetchTasks]);
+
+  const abortTask = useCallback(async (id: string, note?: string): Promise<KanbanTask> => {
+    const res = await fetch(`/api/kanban/tasks/${encodeURIComponent(id)}/abort`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(note ? { note } : {}),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.details || body.error || `HTTP ${res.status}`);
+    }
+    const task: KanbanTask = await res.json();
+    await fetchTasks(undefined, { silent: true });
+    return task;
+  }, [fetchTasks]);
+
   /* ── Helpers ── */
   const tasksByStatusMap = useMemo(() => {
     const map = new Map<TaskStatus, KanbanTask[]>();
@@ -226,5 +288,9 @@ export function useKanban() {
     setTasksOptimistic,
     tasksByStatus,
     statusCounts,
+    executeTask,
+    approveTask,
+    rejectTask,
+    abortTask,
   };
 }

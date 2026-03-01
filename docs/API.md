@@ -13,6 +13,7 @@ Nerve exposes a REST + SSE API served by [Hono](https://hono.dev/) on the config
 - [Server Info](#server-info)
 - [Version](#version)
 - [Connect Defaults](#connect-defaults)
+- [Instance Discovery](#instance-discovery)
 - [Events (SSE)](#events-sse)
 - [Text-to-Speech](#text-to-speech)
 - [Transcription](#transcription)
@@ -203,6 +204,88 @@ Provides gateway WebSocket URL and auth token for the frontend's auto-connect fe
   "agentName": "Agent"
 }
 ```
+
+---
+
+## Instance Discovery
+
+### `GET /api/instances`
+
+List local Docker containers that look like OpenClaw instances.
+
+Scope is **local Docker daemon only**. The server shells out to `docker` with a short timeout and returns a stable schema for instance selection UIs.
+
+**Rate Limit:** General (60/min)
+
+**Response (200):**
+
+```json
+{
+  "source": "local-docker",
+  "updatedAt": 1708100000000,
+  "instances": [
+    {
+      "id": "5f0d...",
+      "name": "openclaw-gateway",
+      "image": "ghcr.io/openclaw/openclaw-gateway:latest",
+      "state": "running",
+      "status": "running",
+      "createdAt": "2026-03-01T00:00:00.000000000Z",
+      "labels": { "com.docker.compose.project": "openclaw" },
+      "ports": [
+        { "containerPort": 18789, "protocol": "tcp", "hostIp": "0.0.0.0", "hostPort": 18789 }
+      ],
+      "hasGatewayToken": true
+    }
+  ]
+}
+```
+
+**Error shape (5xx):**
+
+```json
+{
+  "source": "local-docker",
+  "updatedAt": 1708100000000,
+  "instances": [],
+  "error": {
+    "code": "docker_unavailable",
+    "message": "Docker daemon is not reachable."
+  }
+}
+```
+
+### `GET /api/instances/:id/token`
+
+Retrieve an auth token for one discovered local OpenClaw container.
+
+Token extraction is restricted to allowlisted keys only:
+- `OPENCLAW_GATEWAY_TOKEN`
+- `GATEWAY_TOKEN`
+
+No unrelated container environment variables are returned.
+
+**Rate Limit:** General (60/min)
+
+**Response (200):**
+
+```json
+{
+  "instanceId": "5f0d...",
+  "found": true,
+  "token": "your-token",
+  "tokenKey": "OPENCLAW_GATEWAY_TOKEN"
+}
+```
+
+**Error responses:**
+
+| Status | Body | Description |
+|-------|------|-------------|
+| 400 | `{ "error": "Invalid instance id." }` | Invalid container identifier format |
+| 404 | `{ "error": "Instance not found." }` | Container not found or not recognized as an OpenClaw instance |
+| 503 | `{ "error": "...", "code": "docker_unavailable" }` | Docker CLI/daemon unavailable |
+| 502 | `{ "error": "...", "code": "docker_command_failed" }` | Docker command returned an error |
 
 ---
 

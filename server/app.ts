@@ -45,6 +45,7 @@ import filesRoutes from './routes/files.js';
 import voicePhrasesRoutes from './routes/voice-phrases.js';
 import fileBrowserRoutes from './routes/file-browser.js';
 import kanbanRoutes from './routes/kanban.js';
+import instancesRoutes from './routes/instances.js';
 // activity routes removed — tab dropped from workspace panel
 
 const app = new Hono();
@@ -119,7 +120,7 @@ const routes = [
   codexLimitsRoutes, claudeCodeLimitsRoutes, versionRoutes, versionCheckRoutes,
   gatewayRoutes, connectDefaultsRoutes,
   workspaceRoutes, cronsRoutes, sessionsRoutes, skillsRoutes, filesRoutes, apiKeysRoutes,
-  voicePhrasesRoutes, fileBrowserRoutes, channelsRoutes, kanbanRoutes,
+  voicePhrasesRoutes, fileBrowserRoutes, channelsRoutes, kanbanRoutes, instancesRoutes,
 ];
 for (const route of routes) app.route('/', route);
 

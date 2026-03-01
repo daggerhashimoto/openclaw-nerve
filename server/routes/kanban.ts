@@ -50,6 +50,25 @@ function parseGatewayResponse(result: unknown): Record<string, unknown> {
   return {};
 }
 
+// ── Active poll timer tracking (for graceful shutdown) ───────────────
+
+const activePollTimers = new Set<ReturnType<typeof setTimeout>>();
+
+function trackTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
+  const id = setTimeout(() => {
+    activePollTimers.delete(id);
+    fn();
+  }, ms);
+  activePollTimers.add(id);
+  return id;
+}
+
+/** Cancel all active poll timers (call on shutdown). */
+export function cleanupKanbanPollers(): void {
+  for (const t of activePollTimers) clearTimeout(t);
+  activePollTimers.clear();
+}
+
 /** Poll gateway subagents for a kanban run label until it finishes, then complete the run. */
 function pollSessionCompletion(
   store: ReturnType<typeof getKanbanStore>,
@@ -85,7 +104,7 @@ function pollSessionCompletion(
 
       if (!match) {
         // Not found yet -- may not have registered, keep trying
-        setTimeout(poll, intervalMs);
+        trackTimeout(poll, intervalMs);
         return;
       }
 
@@ -129,20 +148,20 @@ function pollSessionCompletion(
       }
 
       if (status === 'running') {
-        setTimeout(poll, intervalMs);
+        trackTimeout(poll, intervalMs);
         return;
       }
 
       // Unknown status -- keep polling
-      setTimeout(poll, intervalMs);
+      trackTimeout(poll, intervalMs);
     } catch (err) {
       console.error(`[kanban] Poll error for task ${taskId}:`, err);
-      setTimeout(poll, intervalMs); // retry on transient errors
+      trackTimeout(poll, intervalMs); // retry on transient errors
     }
   };
 
   // Start after a brief delay to let the session register
-  setTimeout(poll, 3_000);
+  trackTimeout(poll, 3_000);
 }
 
 // ── Zod schemas ──────────────────────────────────────────────────────
@@ -675,12 +694,12 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
     };
     // Use task's model, or fall back to kanban config default, or Sonnet 4.5
     const config = await store.getConfig();
-    const model = task.model || (config as unknown as Record<string, unknown>).defaultModel as string || 'anthropic/claude-sonnet-4-5';
+    const model = task.model || config.defaultModel || 'anthropic/claude-sonnet-4-5';
     spawnArgs.model = model;
     if (task.thinking) spawnArgs.thinking = task.thinking;
 
     invokeGatewayTool('sessions_spawn', spawnArgs)
-      .then((result: unknown) => {
+      .then(() => {
         // Poll for session completion in the background
         const label = `kanban-${id}`;
         pollSessionCompletion(store, id, label);

@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { Check, X, ArrowUpCircle, PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { KanbanProposal } from './hooks/useProposals';
@@ -21,9 +21,14 @@ function TypeBadge({ type }: { type: 'create' | 'update' }) {
   );
 }
 
-/* ── Relative timestamp ── */
+/* ── Relative timestamp (ticks every 30s for live updates) ── */
 function RelativeTime({ ts }: { ts: number }) {
-  const diff = Math.max(0, Date.now() - ts);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const diff = Math.max(0, now - ts);
   const secs = Math.floor(diff / 1000);
   let label: string;
   if (secs < 60) label = 'just now';

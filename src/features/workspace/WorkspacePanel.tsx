@@ -9,7 +9,7 @@ import { useState, useCallback } from 'react';
 import { WorkspaceTabs, type TabId } from './WorkspaceTabs';
 import { MemoryTab, CronsTab, ConfigTab, SkillsTab } from './tabs';
 import { useCrons } from './hooks/useCrons';
-import { KanbanQuickView, useKanban } from '@/features/kanban';
+import { KanbanQuickView } from '@/features/kanban';
 import type { Memory } from '@/types';
 
 const CONFIG_VIEW_KEY = 'nerve-config-view';
@@ -78,8 +78,6 @@ interface WorkspacePanelProps {
 export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, compact = false, onOpenBoard }: WorkspacePanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>(getInitialTab);
   const { activeCount } = useCrons();
-  const { statusCounts, tasksByStatus, loading: kanbanLoading, error: kanbanError } = useKanban();
-  const kanbanActiveCount = (statusCounts.todo || 0) + (statusCounts['in-progress'] || 0) + (statusCounts.review || 0);
 
   const [visitedTabs, setVisitedTabs] = useState<Set<TabId>>(() => new Set([activeTab]));
 
@@ -102,7 +100,7 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, c
         activeTab={activeTab}
         onTabChange={handleTabChange}
         cronCount={activeCount || undefined}
-        kanbanCount={kanbanActiveCount || undefined}
+        kanbanCount={undefined}
       />
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className={activeTab === 'memory' ? 'h-full' : 'hidden'} hidden={activeTab !== 'memory'} role="tabpanel" id="workspace-tabpanel-memory" aria-labelledby="workspace-tab-memory">
@@ -128,10 +126,6 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, c
             <KanbanQuickView
               onOpenBoard={onOpenBoard ?? (() => {})}
               onOpenTask={() => onOpenBoard?.()}
-              tasksByStatus={tasksByStatus}
-              statusCounts={statusCounts}
-              loading={kanbanLoading}
-              error={kanbanError}
             />
           )}
         </div>

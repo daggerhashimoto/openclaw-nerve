@@ -66,8 +66,10 @@ export const KanbanHeader = memo(function KanbanHeader({
   const [searchValue, setSearchValue] = useState(filters.q);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const filtersRef = useRef(filters);
-  filtersRef.current = filters;
   const inboxRef = useRef<HTMLDivElement>(null);
+
+  /* Keep filtersRef in sync (avoids stale closures in debounced search) */
+  useEffect(() => { filtersRef.current = filters; });
 
   /* Close inbox popover when clicking outside */
   useEffect(() => {

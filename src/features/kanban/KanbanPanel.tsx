@@ -22,6 +22,7 @@ export function KanbanPanel() {
     createTask,
     updateTask,
     deleteTask,
+    reorderTask,
     tasksByStatus,
     statusCounts,
     executeTask,
@@ -96,6 +97,7 @@ export function KanbanPanel() {
           onRetry={() => fetchTasks()}
           hasAnyTasks={tasks.length > 0}
           onCreateTask={openCreateDialog}
+          reorderTask={reorderTask}
         />
       </div>
 

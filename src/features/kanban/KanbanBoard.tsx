@@ -1,4 +1,4 @@
-import { memo, useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { memo, useState, useCallback, useMemo, useRef } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import { DndContext, DragOverlay } from '@dnd-kit/core';
 import type { KanbanTask, TaskStatus } from './types';
@@ -15,6 +15,7 @@ interface KanbanBoardProps {
   onRetry: () => void;
   hasAnyTasks: boolean;
   onCreateTask: () => void;
+  reorderTask: (id: string, version: number, targetStatus: TaskStatus, targetIndex: number) => Promise<KanbanTask>;
 }
 
 /* ── Loading skeleton ── */
@@ -37,29 +38,6 @@ function SkeletonColumn() {
   );
 }
 
-/** Reorder API call — standalone, no hook dependency */
-async function apiReorderTask(
-  id: string,
-  version: number,
-  targetStatus: TaskStatus,
-  targetIndex: number,
-): Promise<KanbanTask> {
-  const res = await fetch(`/api/kanban/tasks/${encodeURIComponent(id)}/reorder`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ version, targetStatus, targetIndex }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    if (res.status === 409) {
-      const err = new Error('version_conflict');
-      throw err;
-    }
-    throw new Error(body.details || body.error || `HTTP ${res.status}`);
-  }
-  return res.json();
-}
-
 export const KanbanBoard = memo(function KanbanBoard({
   tasksByStatus,
   onCardClick,
@@ -68,6 +46,7 @@ export const KanbanBoard = memo(function KanbanBoard({
   onRetry,
   hasAnyTasks,
   onCreateTask,
+  reorderTask,
 }: KanbanBoardProps) {
   /* ── Build flat task list from the tasksByStatus prop ── */
   const propTasks = useMemo(() => {
@@ -78,31 +57,29 @@ export const KanbanBoard = memo(function KanbanBoard({
     return all;
   }, [tasksByStatus]);
 
-  /* ── Local task state for DnD optimistic updates ── */
-  const [localTasks, setLocalTasks] = useState<KanbanTask[]>(propTasks);
+  /* ── Drag override: non-null only during an active drag ── */
+  const [dragOverride, setDragOverride] = useState<KanbanTask[] | null>(null);
   const isDraggingRef = useRef(false);
 
-  // Sync from props when NOT dragging
-  useEffect(() => {
-    if (!isDraggingRef.current) {
-      setLocalTasks(propTasks);
-    }
-  }, [propTasks]);
+  // During drag use optimistic state; otherwise use server data directly
+  const localTasks = dragOverride ?? propTasks;
 
-  /* Wrap setTasks for drag hook — accepts updater function */
+  /* Wrap setTasks for drag hook — operates on the override */
   const setTasksWithDragTracking = useCallback(
-    (updater: (prev: KanbanTask[]) => KanbanTask[]) => setLocalTasks(updater),
-    [],
+    (updater: (prev: KanbanTask[]) => KanbanTask[]) => {
+      setDragOverride(prev => updater(prev ?? propTasks));
+    },
+    [propTasks],
   );
 
   /* ── DnD hook ── */
   const { sensors, collisionDetection, activeTask, onDragStart, onDragOver, onDragEnd, onDragCancel } = useKanbanDragDrop({
     tasks: localTasks,
     setTasksOptimistic: setTasksWithDragTracking,
-    reorderTask: apiReorderTask,
+    reorderTask,
     onError: (msg) => {
-      // Sync back from props on error
-      setLocalTasks(propTasks);
+      // Clear override to fall back to prop data
+      setDragOverride(null);
       console.warn('[Kanban DnD]', msg);
     },
   });
@@ -111,16 +88,20 @@ export const KanbanBoard = memo(function KanbanBoard({
   const handleDragStart = useCallback(
     (event: Parameters<typeof onDragStart>[0]) => {
       isDraggingRef.current = true;
+      setDragOverride(propTasks); // snapshot current state
       onDragStart(event);
     },
-    [onDragStart],
+    [onDragStart, propTasks],
   );
 
   const handleDragEnd = useCallback(
     async (event: Parameters<typeof onDragEnd>[0]) => {
       await onDragEnd(event);
-      // Small delay to let API respond before re-syncing from props
-      setTimeout(() => { isDraggingRef.current = false; }, 500);
+      // Small delay to let API respond before clearing override
+      setTimeout(() => {
+        isDraggingRef.current = false;
+        setDragOverride(null);
+      }, 500);
     },
     [onDragEnd],
   );
@@ -128,6 +109,7 @@ export const KanbanBoard = memo(function KanbanBoard({
   const handleDragCancel = useCallback(() => {
     onDragCancel();
     isDraggingRef.current = false;
+    setDragOverride(null);
   }, [onDragCancel]);
 
   /* ── Derived tasksByStatus from local state ── */

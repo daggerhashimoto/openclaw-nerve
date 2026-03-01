@@ -186,7 +186,7 @@ function CardContent({
 
 /* ── Tiny elapsed-time component (ticks every second) ── */
 function ElapsedTime({ since }: { since: number }) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);

@@ -75,6 +75,7 @@ export interface KanbanBoardConfig {
   allowDoneDragBypass: boolean;
   quickViewLimit: number;
   proposalPolicy: 'confirm' | 'auto';
+  defaultModel?: string;
 }
 
 // ── Proposals ────────────────────────────────────────────────────────
@@ -1055,7 +1056,7 @@ export class KanbanStore {
   private async _applyUpdateUnlocked(
     data: StoreData,
     payload: Record<string, unknown>,
-    actor: TaskActor,
+    _actor: TaskActor,
   ): Promise<KanbanTask> {
     const taskId = payload.id as string;
     const idx = data.tasks.findIndex((t) => t.id === taskId);
@@ -1063,6 +1064,9 @@ export class KanbanStore {
 
     const task = data.tasks[idx];
     const now = Date.now();
+
+    // No CAS version check here — proposals intentionally override current state.
+    // The proposal workflow (confirm/auto) serves as the gating mechanism instead.
 
     // Build patch from payload — allowlist safe fields only
     const ALLOWED_UPDATE_FIELDS = ['title', 'description', 'status', 'priority', 'assignee', 'labels', 'result'] as const;

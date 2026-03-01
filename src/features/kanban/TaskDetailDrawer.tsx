@@ -47,14 +47,14 @@ function formatElapsed(ms: number): string {
 }
 
 function RunElapsed({ startedAt }: { startedAt: number }) {
-  const [, setTick] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setTick(t => t + 1), 1000);
+    const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
   return (
     <span className="text-[10px] text-muted-foreground tabular-nums">
-      {formatElapsed(Date.now() - startedAt)}
+      {formatElapsed(now - startedAt)}
     </span>
   );
 }

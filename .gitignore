@@ -44,3 +44,7 @@ src/test/*.js
 
 # Local review artifacts
 wave-reviews/
+
+# Kanban runtime data
+server/data/kanban/tasks.json
+server/data/kanban/audit.log

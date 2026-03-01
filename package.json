@@ -1,6 +1,6 @@
 {
   "name": "openclaw-nerve",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "Web interface for OpenClaw — chat, voice input, TTS, and agent monitoring in the browser",
   "license": "MIT",
   "engines": {
@@ -25,14 +25,14 @@
   "scripts": {
     "dev": "vite",
     "dev:server": "tsx watch server/index.ts",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run build:server",
     "build:server": "tsc -p config/tsconfig.server.json --outDir server-dist --noEmit false --declaration false && tsc -p config/tsconfig.bin.json",
     "update": "node bin-dist/bin/nerve-update.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node server-dist/index.js",
     "start:server": "tsx server/index.ts",
-    "prod": "npm run build && npm run build:server && node server-dist/index.js",
+    "prod": "npm run build && node server-dist/index.js",
     "setup": "tsx scripts/setup.ts",
     "test": "vitest",
     "test:coverage": "vitest --coverage",

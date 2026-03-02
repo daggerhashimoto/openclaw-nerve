@@ -101,6 +101,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
         <button
           type="button"
           onClick={() => setSysExpanded(!sysExpanded)}
+          aria-expanded={sysExpanded}
           className="w-full flex items-center gap-2 px-4 py-1.5 text-[10px] text-muted-foreground hover:bg-secondary/50 transition-colors cursor-pointer bg-transparent border-0"
         >
           <span className={`shrink-0 w-3 transition-transform ${sysExpanded ? 'rotate-90' : ''}`}>›</span>
@@ -358,6 +359,10 @@ export const MessageBubble = memo(MessageBubbleInner, (prev, next) => {
   // Content changes (for streaming updates)
   if (prev.msg.rawText !== next.msg.rawText) return false;
   if (prev.msg.html !== next.msg.html) return false;
+  
+  // System notification fields
+  if (prev.msg.isSystemNotification !== next.msg.isSystemNotification) return false;
+  if (prev.msg.systemLabel !== next.msg.systemLabel) return false;
   
   // Thinking state
   if (prev.msg.isThinking !== next.msg.isThinking) return false;

@@ -60,17 +60,22 @@ export function detectSystemNotification(text: string): { match: boolean; label:
 
   // Detect status
   const statusMatch = text.match(/just\s+(completed|finished|failed|timed out)/i);
-  const status = statusMatch?.[1]?.toLowerCase() || 'completed';
+  const status = statusMatch?.[1]?.toLowerCase();
 
   for (const pattern of SYSTEM_NOTIFICATION_PATTERNS) {
     if (pattern.test(text)) {
-      return { match: true, label: `${label} — ${status}` };
+      return { match: true, label: status ? `${label} — ${status}` : label };
     }
   }
 
   // Also catch "Findings:" + "Summarize this naturally" blocks
   if (/\bFindings:\b/.test(text) && /\bSummarize this naturally\b/i.test(text)) {
-    return { match: true, label: label !== 'System notification' ? `${label} — ${status}` : 'Agent relay' };
+    return {
+      match: true,
+      label: label !== 'System notification'
+        ? (status ? `${label} — ${status}` : label)
+        : 'Agent relay',
+    };
   }
 
   return { match: false, label: '' };

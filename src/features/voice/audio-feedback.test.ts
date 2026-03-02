@@ -93,15 +93,15 @@ describe('audio-feedback', () => {
   });
 
   describe('playCancelPing', () => {
-    it('should create an Audio element for /sounds/wake.mp3', () => {
+    it('should create an Audio element for /sounds/cancel.mp3', () => {
       playCancelPing();
       expect(mockAudioInstances).toHaveLength(1);
-      expect(mockAudioInstances[0].src).toBe('/sounds/wake.mp3');
+      expect(mockAudioInstances[0].src).toBe('/sounds/cancel.mp3');
     });
 
-    it('should set playbackRate to 0.8', () => {
+    it('should use default playbackRate', () => {
       playCancelPing();
-      expect(mockAudioInstances[0].playbackRate).toBe(0.8);
+      expect(mockAudioInstances[0].playbackRate).toBe(1);
     });
 
     it('should call play()', () => {
@@ -137,11 +137,11 @@ describe('audio-feedback', () => {
       expect(mockAudioInstances).toHaveLength(3);
     });
 
-    it('playCancelPing reuses the wake.mp3 singleton', () => {
+    it('playCancelPing creates its own cancel.mp3 singleton', () => {
       playWakePing();
       playCancelPing();
-      // Both use /sounds/wake.mp3 — only one Audio created
-      expect(mockAudioInstances).toHaveLength(1);
+      // wake.mp3 + cancel.mp3 = 2 separate Audio instances
+      expect(mockAudioInstances).toHaveLength(2);
     });
   });
 

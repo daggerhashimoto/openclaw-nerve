@@ -44,7 +44,7 @@ export function playSubmitPing(): void {
 
 /** Play cancel sound when voice input is cancelled. */
 export function playCancelPing(): void {
-  playSound('/sounds/wake.mp3', 0.8);
+  playSound('/sounds/cancel.mp3');
 }
 
 /** Simple notification ping (used for chat completion sounds) */

@@ -1,42 +1,23 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// Mock AudioContext
-class MockOscillatorNode {
-  frequency = { value: 0 };
-  type: OscillatorType = 'sine';
-  connect = vi.fn();
-  start = vi.fn();
-  stop = vi.fn();
-}
+// Track all instances created by our mock Audio class
+const mockAudioInstances: MockAudio[] = [];
 
-class MockGainNode {
-  gain = {
-    value: 0,
-    setValueAtTime: vi.fn(),
-    exponentialRampToValueAtTime: vi.fn(),
-  };
-  connect = vi.fn();
-}
-
-class MockAudioContext {
-  static instances: MockAudioContext[] = [];
-  state: AudioContextState = 'running';
+class MockAudio {
+  src: string;
   currentTime = 0;
-  destination = {};
-  
-  constructor() {
-    MockAudioContext.instances.push(this);
-  }
+  playbackRate = 1;
+  play = vi.fn(() => Promise.resolve());
 
-  createOscillator = vi.fn(() => new MockOscillatorNode());
-  createGain = vi.fn(() => new MockGainNode());
-  resume = vi.fn(() => Promise.resolve());
+  constructor(src?: string) {
+    this.src = src ?? '';
+    mockAudioInstances.push(this);
+  }
 }
+
+vi.stubGlobal('Audio', MockAudio);
 
 describe('audio-feedback', () => {
-  let originalAudioContext: typeof AudioContext | undefined;
-  let originalWebkitAudioContext: unknown;
-  // Import functions fresh each test to reset module state
   let ensureAudioContext: () => void;
   let playWakePing: () => void;
   let playSubmitPing: () => void;
@@ -44,222 +25,133 @@ describe('audio-feedback', () => {
   let playPing: () => void;
 
   beforeEach(async () => {
-    MockAudioContext.instances = [];
-    originalAudioContext = (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext;
-    originalWebkitAudioContext = (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext;
-    
-    (window as unknown as { AudioContext: typeof MockAudioContext }).AudioContext = MockAudioContext as unknown as typeof AudioContext;
-    vi.clearAllMocks();
-    
-    // Reset module cache and reimport to get fresh state
-    vi.resetModules();
-    const audioFeedback = await import('./audio-feedback');
-    ensureAudioContext = audioFeedback.ensureAudioContext;
-    playWakePing = audioFeedback.playWakePing;
-    playSubmitPing = audioFeedback.playSubmitPing;
-    playCancelPing = audioFeedback.playCancelPing;
-    playPing = audioFeedback.playPing;
-  });
+    mockAudioInstances.length = 0;
 
-  afterEach(() => {
-    if (originalAudioContext) {
-      (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = originalAudioContext;
-    } else {
-      delete (window as unknown as { AudioContext?: unknown }).AudioContext;
-    }
-    if (originalWebkitAudioContext) {
-      (window as unknown as { webkitAudioContext: unknown }).webkitAudioContext = originalWebkitAudioContext;
-    } else {
-      delete (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext;
-    }
+    vi.resetModules();
+    const mod = await import('./audio-feedback');
+    ensureAudioContext = mod.ensureAudioContext;
+    playWakePing = mod.playWakePing;
+    playSubmitPing = mod.playSubmitPing;
+    playCancelPing = mod.playCancelPing;
+    playPing = mod.playPing;
   });
 
   describe('ensureAudioContext', () => {
-    it('should create AudioContext on first call', () => {
-      ensureAudioContext();
-      expect(MockAudioContext.instances.length).toBe(1);
-    });
-
-    it('should reuse existing AudioContext on subsequent calls', () => {
-      ensureAudioContext();
-      ensureAudioContext();
-      ensureAudioContext();
-      
-      // Should only create one instance
-      expect(MockAudioContext.instances.length).toBe(1);
-    });
-
-    it('should resume suspended AudioContext', () => {
-      ensureAudioContext();
-      const ctx = MockAudioContext.instances[0];
-      ctx.state = 'suspended';
-      
-      ensureAudioContext();
-      
-      expect(ctx.resume).toHaveBeenCalled();
-    });
-
-    it('should not throw when AudioContext is unavailable', () => {
-      delete (window as unknown as { AudioContext?: unknown }).AudioContext;
-      delete (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext;
-      
+    it('should be a no-op and not throw', () => {
       expect(() => ensureAudioContext()).not.toThrow();
-    });
-
-    it('should fall back to webkitAudioContext', () => {
-      delete (window as unknown as { AudioContext?: unknown }).AudioContext;
-      (window as unknown as { webkitAudioContext: typeof MockAudioContext }).webkitAudioContext = MockAudioContext as unknown as typeof AudioContext;
-      
-      ensureAudioContext();
-      
-      expect(MockAudioContext.instances.length).toBe(1);
     });
   });
 
   describe('playWakePing', () => {
-    it('should create oscillator and gain nodes', () => {
+    it('should create an Audio element for /sounds/wake.mp3', () => {
       playWakePing();
-      
-      const ctx = MockAudioContext.instances[0];
-      expect(ctx).toBeDefined();
-      expect(ctx.createOscillator).toHaveBeenCalled();
-      expect(ctx.createGain).toHaveBeenCalled();
+      expect(mockAudioInstances).toHaveLength(1);
+      expect(mockAudioInstances[0].src).toBe('/sounds/wake.mp3');
     });
 
-    it('should set frequency to 880Hz', () => {
+    it('should call play()', () => {
       playWakePing();
-      
-      const ctx = MockAudioContext.instances[0];
-      const osc = ctx.createOscillator.mock.results[0].value as MockOscillatorNode;
-      expect(osc.frequency.value).toBe(880);
+      expect(mockAudioInstances[0].play).toHaveBeenCalled();
     });
 
-    it('should start and schedule stop', () => {
+    it('should use default playbackRate of 1', () => {
       playWakePing();
-      
-      const ctx = MockAudioContext.instances[0];
-      const osc = ctx.createOscillator.mock.results[0].value as MockOscillatorNode;
-      expect(osc.start).toHaveBeenCalled();
-      expect(osc.stop).toHaveBeenCalled();
+      expect(mockAudioInstances[0].playbackRate).toBe(1);
     });
 
-    it('should not throw when AudioContext is unavailable', () => {
-      delete (window as unknown as { AudioContext?: unknown }).AudioContext;
-      delete (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext;
-      
-      expect(() => playWakePing()).not.toThrow();
+    it('should reuse the same Audio instance on repeated calls', () => {
+      playWakePing();
+      playWakePing();
+      expect(mockAudioInstances).toHaveLength(1);
+    });
+
+    it('should reset currentTime before playing', () => {
+      playWakePing();
+      const instance = mockAudioInstances[0];
+      instance.currentTime = 5;
+      playWakePing();
+      expect(instance.currentTime).toBe(0);
     });
   });
 
   describe('playSubmitPing', () => {
-    it('should create two oscillators for two-tone ping', () => {
+    it('should create an Audio element for /sounds/send.mp3', () => {
       playSubmitPing();
-      
-      const ctx = MockAudioContext.instances[0];
-      expect(ctx.createOscillator).toHaveBeenCalledTimes(2);
-      expect(ctx.createGain).toHaveBeenCalledTimes(2);
+      expect(mockAudioInstances).toHaveLength(1);
+      expect(mockAudioInstances[0].src).toBe('/sounds/send.mp3');
     });
 
-    it('should set frequencies to 660Hz and 880Hz', () => {
+    it('should call play()', () => {
       playSubmitPing();
-      
-      const ctx = MockAudioContext.instances[0];
-      const osc1 = ctx.createOscillator.mock.results[0].value as MockOscillatorNode;
-      const osc2 = ctx.createOscillator.mock.results[1].value as MockOscillatorNode;
-      
-      expect(osc1.frequency.value).toBe(660);
-      expect(osc2.frequency.value).toBe(880);
+      expect(mockAudioInstances[0].play).toHaveBeenCalled();
     });
 
-    it('should not throw when AudioContext is unavailable', () => {
-      delete (window as unknown as { AudioContext?: unknown }).AudioContext;
-      delete (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext;
-      
-      expect(() => playSubmitPing()).not.toThrow();
+    it('should use default playbackRate of 1', () => {
+      playSubmitPing();
+      expect(mockAudioInstances[0].playbackRate).toBe(1);
     });
   });
 
   describe('playCancelPing', () => {
-    it('should create two oscillators for two-tone ping', () => {
+    it('should create an Audio element for /sounds/wake.mp3', () => {
       playCancelPing();
-      
-      const ctx = MockAudioContext.instances[0];
-      expect(ctx.createOscillator).toHaveBeenCalledTimes(2);
+      expect(mockAudioInstances).toHaveLength(1);
+      expect(mockAudioInstances[0].src).toBe('/sounds/wake.mp3');
     });
 
-    it('should set frequencies to 880Hz and 440Hz (descending)', () => {
+    it('should set playbackRate to 0.8', () => {
       playCancelPing();
-      
-      const ctx = MockAudioContext.instances[0];
-      const osc1 = ctx.createOscillator.mock.results[0].value as MockOscillatorNode;
-      const osc2 = ctx.createOscillator.mock.results[1].value as MockOscillatorNode;
-      
-      expect(osc1.frequency.value).toBe(880);
-      expect(osc2.frequency.value).toBe(440);
+      expect(mockAudioInstances[0].playbackRate).toBe(0.8);
     });
 
-    it('should not throw when AudioContext is unavailable', () => {
-      delete (window as unknown as { AudioContext?: unknown }).AudioContext;
-      delete (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext;
-      
-      expect(() => playCancelPing()).not.toThrow();
+    it('should call play()', () => {
+      playCancelPing();
+      expect(mockAudioInstances[0].play).toHaveBeenCalled();
     });
   });
 
   describe('playPing', () => {
-    it('should create oscillator at 880Hz', () => {
+    it('should create an Audio element for /sounds/notify.mp3', () => {
       playPing();
-      
-      const ctx = MockAudioContext.instances[0];
-      expect(ctx.createOscillator).toHaveBeenCalled();
-      
-      const osc = ctx.createOscillator.mock.results[0].value as MockOscillatorNode;
-      expect(osc.frequency.value).toBe(880);
+      expect(mockAudioInstances).toHaveLength(1);
+      expect(mockAudioInstances[0].src).toBe('/sounds/notify.mp3');
     });
 
-    it('should set gain to 0.08 (softer than other pings)', () => {
+    it('should call play()', () => {
       playPing();
-      
-      const ctx = MockAudioContext.instances[0];
-      const gain = ctx.createGain.mock.results[0].value as MockGainNode;
-      expect(gain.gain.setValueAtTime).toHaveBeenCalledWith(0.08, expect.any(Number));
+      expect(mockAudioInstances[0].play).toHaveBeenCalled();
     });
 
-    it('should not throw when AudioContext is unavailable', () => {
-      delete (window as unknown as { AudioContext?: unknown }).AudioContext;
-      delete (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext;
-      
-      expect(() => playPing()).not.toThrow();
+    it('should use default playbackRate of 1', () => {
+      playPing();
+      expect(mockAudioInstances[0].playbackRate).toBe(1);
     });
   });
 
-  describe('Audio Feedback Distinctiveness', () => {
-    it('wake ping should be single 880Hz tone', () => {
+  describe('lazy singleton caching', () => {
+    it('should create separate Audio instances for different sounds', () => {
       playWakePing();
-      const ctx = MockAudioContext.instances[0];
-      expect(ctx.createOscillator).toHaveBeenCalledTimes(1);
-      const osc = ctx.createOscillator.mock.results[0].value as MockOscillatorNode;
-      expect(osc.frequency.value).toBe(880);
-    });
-
-    it('submit ping should be ascending (660Hz → 880Hz)', () => {
       playSubmitPing();
-      const ctx = MockAudioContext.instances[0];
-      expect(ctx.createOscillator).toHaveBeenCalledTimes(2);
-      const osc1 = ctx.createOscillator.mock.results[0].value as MockOscillatorNode;
-      const osc2 = ctx.createOscillator.mock.results[1].value as MockOscillatorNode;
-      expect(osc1.frequency.value).toBe(660);
-      expect(osc2.frequency.value).toBe(880);
+      playPing();
+      // wake.mp3 + send.mp3 + notify.mp3 = 3 instances
+      expect(mockAudioInstances).toHaveLength(3);
     });
 
-    it('cancel ping should be descending (880Hz → 440Hz)', () => {
+    it('playCancelPing reuses the wake.mp3 singleton', () => {
+      playWakePing();
       playCancelPing();
-      const ctx = MockAudioContext.instances[0];
-      expect(ctx.createOscillator).toHaveBeenCalledTimes(2);
-      const osc1 = ctx.createOscillator.mock.results[0].value as MockOscillatorNode;
-      const osc2 = ctx.createOscillator.mock.results[1].value as MockOscillatorNode;
-      expect(osc1.frequency.value).toBe(880);
-      expect(osc2.frequency.value).toBe(440);
+      // Both use /sounds/wake.mp3 — only one Audio created
+      expect(mockAudioInstances).toHaveLength(1);
+    });
+  });
+
+  describe('error resilience', () => {
+    it('should not throw when play() rejects', () => {
+      playWakePing();
+      mockAudioInstances[0].play.mockImplementationOnce(() =>
+        Promise.reject(new Error('Autoplay blocked')),
+      );
+      expect(() => playWakePing()).not.toThrow();
     });
   });
 });

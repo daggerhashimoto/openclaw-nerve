@@ -991,6 +991,8 @@ describe('rejectProposal', () => {
 describe('listProposals', () => {
   it('lists all proposals', async () => {
     await store.createProposal({ type: 'create', payload: { title: 'A' }, proposedBy: 'agent:a' });
+    // Small delay to ensure distinct timestamps for stable sort order
+    await new Promise((r) => setTimeout(r, 5));
     await store.createProposal({ type: 'create', payload: { title: 'B' }, proposedBy: 'agent:b' });
 
     const all = await store.listProposals();

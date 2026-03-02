@@ -80,6 +80,31 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
   const isCollapsible = isMessageCollapsible(msg);
   const [copied, setCopied] = useState(false);
 
+  // System notification strip (subagent/cron completions) — collapsible, not a full bubble
+  const [sysExpanded, setSysExpanded] = useState(false);
+  if (msg.isSystemNotification) {
+    const statusIcon = msg.systemLabel?.includes('failed') || msg.systemLabel?.includes('timed out') ? '⚠' : '⚡';
+    return (
+      <div className="group relative border-b border-border/20">
+        <button
+          type="button"
+          onClick={() => setSysExpanded(!sysExpanded)}
+          className="w-full flex items-center gap-2 px-4 py-1.5 text-[10px] text-muted-foreground hover:bg-secondary/50 transition-colors cursor-pointer bg-transparent border-0"
+        >
+          <span className={`shrink-0 w-3 transition-transform ${sysExpanded ? 'rotate-90' : ''}`}>›</span>
+          <span>{statusIcon}</span>
+          <span className="font-mono tracking-wide uppercase truncate text-info">{msg.systemLabel || 'System notification'}</span>
+          <span className="ml-auto text-[9px] text-info/40 shrink-0">{timeStr}</span>
+        </button>
+        {sysExpanded && (
+          <div className="px-8 py-2 text-[11px] text-muted-foreground bg-secondary/30 border-t border-border/20 max-h-[300px] overflow-y-auto">
+            <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{msg.rawText}</pre>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const { memories, content: cleanContent } = isUser ? extractMemories(msg.rawText) : { memories: null, content: msg.rawText };
   const rawForDisplay = isUser && memories ? cleanContent : msg.rawText;
   const isVoiceMessage = isUser && (msg.isVoice || rawForDisplay.includes('[voice] '));

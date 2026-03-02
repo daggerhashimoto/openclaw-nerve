@@ -2,6 +2,7 @@ export {
   loadChatHistory,
   processChatMessages,
   filterMessage,
+  detectSystemNotification,
   splitToolCallMessage,
   groupToolMessages,
   tagIntermediateMessages,

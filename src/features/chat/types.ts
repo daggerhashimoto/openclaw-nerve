@@ -66,4 +66,8 @@ export interface ChatMsg {
   thinkingDurationMs?: number;
   /** Whether this is a voice (STT-transcribed) message */
   isVoice?: boolean;
+  /** System notification (subagent/cron completion) — rendered as collapsible strip */
+  isSystemNotification?: boolean;
+  /** Short label for system notification strip (e.g. "Subagent completed: kb-fix-auth") */
+  systemLabel?: string;
 }

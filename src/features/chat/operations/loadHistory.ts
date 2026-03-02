@@ -43,22 +43,45 @@ type RpcFn = (method: string, params: Record<string, unknown>) => Promise<unknow
 
 // ─── Filtering ─────────────────────────────────────────────────────────────────
 
+/** Patterns that identify system notification messages (subagent/cron completions). */
+const SYSTEM_NOTIFICATION_PATTERNS = [
+  /^A \w[\w\s-]* task "(.+?)" just (completed|finished|failed|timed out)/is,
+  /^A background task/i,
+  /^A cron job "(.+?)" just (completed|finished|failed)/is,
+  /^\[Queued announce messages while agent was busy\]/i,
+  /^\[System Message\].*?(?:subagent|task|cron).*?(?:completed|finished|failed)/is,
+];
+
+/** Check if text matches a system notification and extract label. */
+export function detectSystemNotification(text: string): { match: boolean; label: string } {
+  // Extract task/job name from quotes if present
+  const taskMatch = text.match(/(?:task|job)\s+"([^"]+)"/i);
+  const label = taskMatch?.[1] || 'System notification';
+
+  // Detect status
+  const statusMatch = text.match(/just\s+(completed|finished|failed|timed out)/i);
+  const status = statusMatch?.[1]?.toLowerCase() || 'completed';
+
+  for (const pattern of SYSTEM_NOTIFICATION_PATTERNS) {
+    if (pattern.test(text)) {
+      return { match: true, label: `${label} — ${status}` };
+    }
+  }
+
+  // Also catch "Findings:" + "Summarize this naturally" blocks
+  if (/\bFindings:\b/.test(text) && /\bSummarize this naturally\b/i.test(text)) {
+    return { match: true, label: label !== 'System notification' ? `${label} — ${status}` : 'Agent relay' };
+  }
+
+  return { match: false, label: '' };
+}
+
 /** Determine whether a history message should be shown in the chat UI. */
 export function filterMessage(m: ChatMessage): boolean {
   const text = extractText(m);
 
-  // Hide sub-agent / background-task completion notifications injected by the gateway.
-  // These are trigger messages sent to the parent session when a spawned sub-agent finishes.
-  // The announceType varies ("background task", "subagent task", "cron task", etc.)
-  // so we match the general pattern: `A <type> "<label>" just <status>.`
-  if (m.role === 'user' && /^A \w[\w\s-]* task ".+?" just (completed|finished|failed|timed out)/is.test(text)) return false;
-  if (m.role === 'user' && /^A background task/i.test(text)) return false;
-  // Also hide the full trigger block (contains "Findings:" and "Summarize this naturally")
-  if (m.role === 'user' && /\bFindings:\b/.test(text) && /\bSummarize this naturally\b/i.test(text)) return false;
-  // Hide cron completion announcements
-  if (m.role === 'user' && /^A cron job ".+?" just (completed|finished|failed)/is.test(text)) return false;
-  // Hide queued announce messages
-  if (m.role === 'user' && /^\[Queued announce messages while agent was busy\]/i.test(text)) return false;
+  // System notifications are now rendered as collapsible strips, not hidden.
+  // They pass through the filter and get tagged during message processing.
 
   // Hide redundant tool results for Edit/Write operations
   // (diff view already shows the changes — only hide exact success patterns)
@@ -266,6 +289,9 @@ export function splitToolCallMessage(m: ChatMessage): ChatMsg[] {
   // Extract image content blocks (base64 images from gateway)
   const contentImages = Array.isArray(m.content) ? extractImageBlocks(m.content as ContentBlock[]) : [];
 
+  // Tag system notifications (subagent/cron completions) for collapsible strip rendering
+  const sysNotif = m.role === 'user' ? detectSystemNotification(rawText) : { match: false, label: '' };
+
   return [{
     role: m.role as ChatMsgRole,
     html: renderToolResults(renderMarkdown(text)),
@@ -276,6 +302,7 @@ export function splitToolCallMessage(m: ChatMessage): ChatMsg[] {
     ...(extractedImages.length > 0 ? { extractedImages } : {}),
     ...(contentImages.length > 0 ? { images: contentImages } : {}),
     ...(isVoice ? { isVoice: true } : {}),
+    ...(sysNotif.match ? { isSystemNotification: true, systemLabel: sysNotif.label } : {}),
   }];
 }
 

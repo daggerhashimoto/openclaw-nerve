@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   filterMessage,
+  detectSystemNotification,
   splitToolCallMessage,
   groupToolMessages,
   tagIntermediateMessages,
@@ -20,41 +21,39 @@ describe('filterMessage', () => {
     expect(filterMessage({ role: 'assistant', content: 'Hi there' })).toBe(true);
   });
 
-  it('hides sub-agent completion notifications', () => {
+  it('passes through sub-agent completions (tagged)', () => {
     expect(filterMessage({
       role: 'user',
       content: 'A background task "cleanup" just completed.',
-    })).toBe(false);
+    })).toBe(true);
   });
 
-  it('hides cron job completion notifications', () => {
+  it('passes through cron completions (tagged)', () => {
     expect(filterMessage({
       role: 'user',
       content: 'A cron job "daily-check" just completed.',
-    })).toBe(false);
+    })).toBe(true);
   });
 
-  it('hides queued announce messages', () => {
+  it('passes through queued announce messages (tagged)', () => {
     expect(filterMessage({
       role: 'user',
       content: '[Queued announce messages while agent was busy] Some content',
-    })).toBe(false);
+    })).toBe(true);
   });
 
-  it('hides background task messages', () => {
+  it('passes through background task messages (tagged)', () => {
     expect(filterMessage({
       role: 'user',
       content: 'A background task started.',
-    })).toBe(false);
+    })).toBe(true);
   });
 
-  it('hides trigger blocks with Findings and Summarize', () => {
-    // The filter uses \bFindings:\b — \b after ":" requires a word char adjacent
-    // Real gateway format: "Findings:some text"
+  it('passes through trigger blocks (tagged)', () => {
     expect(filterMessage({
       role: 'user',
       content: 'Findings:results here\nSummarize this naturally for the user.',
-    })).toBe(false);
+    })).toBe(true);
   });
 
   it('hides redundant Edit tool results', () => {
@@ -231,13 +230,15 @@ describe('processChatMessages', () => {
     expect(result.every(m => m.msgId)).toBe(true);
   });
 
-  it('filters out background task notifications', () => {
+  it('tags background task notifications as system notifications', () => {
     const msgs: ChatMessage[] = [
       { role: 'user', content: 'A background task "x" just completed.' },
       { role: 'assistant', content: 'Hello' },
     ];
     const result = processChatMessages(msgs);
-    expect(result.every(m => !m.rawText.includes('background task'))).toBe(true);
+    const sysMsg = result.find(m => m.rawText.includes('background task'));
+    expect(sysMsg).toBeDefined();
+    expect(sysMsg!.isSystemNotification).toBe(true);
   });
 
   it('handles empty input', () => {

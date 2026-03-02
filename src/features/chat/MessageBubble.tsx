@@ -79,9 +79,21 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
   const missionTime = formatMissionTime(msg.timestamp, firstMessageTime ?? null);
   const isCollapsible = isMessageCollapsible(msg);
   const [copied, setCopied] = useState(false);
+  const [sysExpanded, setSysExpanded] = useState(false);
+
+  // useCallback must be called unconditionally (before any early returns)
+  const handleCopy = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(msg.rawText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.warn('Clipboard copy failed', err);
+    }
+  }, [msg.rawText]);
 
   // System notification strip (subagent/cron completions) — collapsible, not a full bubble
-  const [sysExpanded, setSysExpanded] = useState(false);
   if (msg.isSystemNotification) {
     const statusIcon = msg.systemLabel?.includes('failed') || msg.systemLabel?.includes('timed out') ? '⚠' : '⚡';
     return (
@@ -132,17 +144,6 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
     : '';
 
   const memoryCollapsedKey = memoryKey ?? `mem-${msg.msgId || msg.tempId || index}`;
-
-  const handleCopy = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(msg.rawText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch (err) {
-      console.warn('Clipboard copy failed', err);
-    }
-  }, [msg.rawText]);
 
   // Visual indicator for current search match
   const matchClass = isCurrentMatch ? 'ring-2 ring-primary/60 ring-offset-1 ring-offset-background' : '';

@@ -2,7 +2,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   filterMessage,
-  detectSystemNotification,
   splitToolCallMessage,
   groupToolMessages,
   tagIntermediateMessages,

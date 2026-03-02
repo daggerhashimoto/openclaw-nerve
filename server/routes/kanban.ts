@@ -101,16 +101,9 @@ function pollSessionCompletion(
       const recent = (parsed.recent ?? []) as Array<Record<string, unknown>>;
       const all = [...active, ...recent];
 
-      // Gateway may truncate long labels with "..." so handle that case.
-      const match = all.find((s) => {
-        const sLabel = String(s.label ?? '');
-        if (!sLabel) return false;
-        // Exact match
-        if (sLabel === label) return true;
-        // Gateway truncated the label — check if our label starts with the truncated portion
-        if (sLabel.endsWith('...') && label.startsWith(sLabel.slice(0, -3))) return true;
-        return false;
-      });
+      // Labels are now kb-{slug}-{timestamp} (max ~47 chars), well under
+      // the gateway's ~50 char truncation limit. Exact match only.
+      const match = all.find((s) => String(s.label ?? '') === label);
 
       if (!match) {
         // Not found yet -- may not have registered, keep trying

@@ -230,6 +230,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // IME composition guard: during active CJK composition the browser may
+    // fire keydown for Enter/Escape/etc.  Let the IME handle them – acting
+    // on these events causes ghost messages (issue #65).
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+
     // Tab completion for session names (Tab cycles, Escape cancels)
     if (e.key === 'Tab' || e.key === 'Escape') {
       const consumed = handleTabKey(e as React.KeyboardEvent<HTMLTextAreaElement>);

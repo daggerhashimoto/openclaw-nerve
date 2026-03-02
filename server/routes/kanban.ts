@@ -101,16 +101,14 @@ function pollSessionCompletion(
       const recent = (parsed.recent ?? []) as Array<Record<string, unknown>>;
       const all = [...active, ...recent];
 
-      // Gateway may truncate long labels with "..." so use startsWith for matching.
-      // Also match by sessionKey prefix as a secondary fallback.
+      // Gateway may truncate long labels with "..." so handle that case.
       const match = all.find((s) => {
         const sLabel = String(s.label ?? '');
+        if (!sLabel) return false;
         // Exact match
         if (sLabel === label) return true;
-        // Gateway truncated the label -- check if our label starts with the truncated portion
+        // Gateway truncated the label — check if our label starts with the truncated portion
         if (sLabel.endsWith('...') && label.startsWith(sLabel.slice(0, -3))) return true;
-        // Our label starts with the gateway label (without ellipsis)
-        if (label.startsWith(sLabel) || sLabel.startsWith(label)) return true;
         return false;
       });
 
@@ -721,7 +719,7 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
     const spawnArgs: Record<string, unknown> = {
       task: `You are working on a Kanban task.\n\nTitle: ${task.title}\n\nDescription: ${taskDescription}\n\nDeliver your result as a clear summary of what was done.`,
       mode: 'run',
-      label: `kb-${id}`,
+      label: task.run!.sessionKey,
     };
     // Use task's model, or board default. If neither is set, omit — OpenClaw
     // will use whatever default model the operator configured in openclaw.json.
@@ -731,7 +729,7 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
     const thinking = task.thinking || config.defaultThinking;
     if (thinking) spawnArgs.thinking = thinking;
 
-    const runLabel = spawnArgs.label as string;
+    const runLabel = task.run!.sessionKey;
     invokeGatewayTool('sessions_spawn', spawnArgs)
       .then(() => {
         // Poll for session completion in the background

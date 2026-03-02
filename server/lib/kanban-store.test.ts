@@ -478,7 +478,7 @@ describe('executeTask', () => {
     expect(executed.status).toBe('in-progress');
     expect(executed.run).toBeDefined();
     expect(executed.run!.status).toBe('running');
-    expect(executed.run!.sessionKey).toBe(`kb-${task.id}`);
+    expect(executed.run!.sessionKey).toMatch(new RegExp(`^kb-${task.id}-\\d+$`));
     expect(executed.run!.startedAt).toBeGreaterThan(0);
     expect(executed.run!.endedAt).toBeUndefined();
     expect(executed.version).toBe(task.version + 1);

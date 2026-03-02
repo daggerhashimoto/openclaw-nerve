@@ -641,7 +641,8 @@ export class KanbanStore {
       }
 
       const now = Date.now();
-      const sessionKey = `kb-${id}`;
+      // Include a short timestamp suffix so reruns of the same task get unique session keys.
+      const sessionKey = `kb-${id}-${now}`;
 
       task.status = 'in-progress';
       task.run = {
@@ -1053,9 +1054,10 @@ export class KanbanStore {
 
     const now = Date.now();
     const existingIds = new Set(data.tasks.map((t) => t.id));
+    const title = typeof payload.title === 'string' && payload.title ? payload.title : 'untitled';
     const task: KanbanTask = {
-      id: uniqueSlugId(payload.title as string, existingIds),
-      title: payload.title as string,
+      id: uniqueSlugId(title, existingIds),
+      title,
       description: payload.description as string | undefined,
       status: targetStatus,
       priority: (payload.priority as TaskPriority) ?? data.config.defaults.priority,

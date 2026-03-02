@@ -76,7 +76,7 @@ function pollSessionCompletion(
   taskId: string,
   label: string,
   intervalMs = 5_000,
-  maxAttempts = 360, // 30 minutes max
+  maxAttempts = 720, // 60 minutes max
 ): void {
   let attempts = 0;
 
@@ -93,7 +93,7 @@ function pollSessionCompletion(
       const task = await store.getTask(taskId).catch(() => null);
       if (!task || task.status !== 'in-progress') return; // task was moved/aborted, stop
 
-      const raw = await invokeGatewayTool('subagents', { action: 'list' });
+      const raw = await invokeGatewayTool('subagents', { action: 'list', recentMinutes: 120 });
       const parsed = parseGatewayResponse(raw);
 
       // subagents list returns { active: [...], recent: [...] }
@@ -101,7 +101,18 @@ function pollSessionCompletion(
       const recent = (parsed.recent ?? []) as Array<Record<string, unknown>>;
       const all = [...active, ...recent];
 
-      const match = all.find((s) => s.label === label);
+      // Gateway may truncate long labels with "..." so use startsWith for matching.
+      // Also match by sessionKey prefix as a secondary fallback.
+      const match = all.find((s) => {
+        const sLabel = String(s.label ?? '');
+        // Exact match
+        if (sLabel === label) return true;
+        // Gateway truncated the label -- check if our label starts with the truncated portion
+        if (sLabel.endsWith('...') && label.startsWith(sLabel.slice(0, -3))) return true;
+        // Our label starts with the gateway label (without ellipsis)
+        if (label.startsWith(sLabel) || sLabel.startsWith(label)) return true;
+        return false;
+      });
 
       if (!match) {
         // Not found yet -- may not have registered, keep trying
@@ -710,7 +721,7 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
     const spawnArgs: Record<string, unknown> = {
       task: `You are working on a Kanban task.\n\nTitle: ${task.title}\n\nDescription: ${taskDescription}\n\nDeliver your result as a clear summary of what was done.`,
       mode: 'run',
-      label: `kanban-run-${id}-${Date.now()}`,
+      label: `kb-${id}`,
     };
     // Use task's model, or board default. If neither is set, omit — OpenClaw
     // will use whatever default model the operator configured in openclaw.json.

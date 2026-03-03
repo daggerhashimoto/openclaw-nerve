@@ -115,7 +115,8 @@ export function useKanbanDragDrop({
 
         // Ensure moved card is at newIndex
         const withoutActive = destAll.filter((t) => t.id !== activeId);
-        const activeItem = destAll.find((t) => t.id === activeId)!;
+        const activeItem = destAll.find((t) => t.id === activeId);
+        if (!activeItem) return prev; // task deleted concurrently, bail out
         withoutActive.splice(newIndex, 0, activeItem);
 
         const orderMap = new Map<string, number>();

@@ -176,7 +176,7 @@ export async function orchestrate(options: UpdateOptions, reporter: Reporter): P
     reporter.done(resolved.current, resolved.version);
     return EXIT_CODES.SUCCESS;
   } catch (err) {
-    return handleFailure(err, options, serviceManager, snapshotCreated, reporter);
+    return await handleFailure(err, options, serviceManager, snapshotCreated, reporter);
   } finally {
     if (locked) releaseLock();
   }

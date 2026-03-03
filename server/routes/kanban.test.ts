@@ -552,18 +552,15 @@ describe('POST /api/kanban/tasks/:id/execute', () => {
     expect(body.thinking).toBe('high');
   });
 
-  it('is idempotent for already-running task', async () => {
+  it('rejects duplicate execution of already-running task', async () => {
     const app = await buildApp();
     const task = await createTask(app, { status: 'todo' });
 
     const res1 = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
-    const body1 = await res1.json() as KanbanTask;
+    expect(res1.status).toBe(200);
 
     const res2 = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
-    expect(res2.status).toBe(200);
-    const body2 = await res2.json() as KanbanTask;
-    expect(body2.run!.sessionKey).toBe(body1.run!.sessionKey);
-    expect(body2.version).toBe(body1.version);
+    expect(res2.status).toBe(409);
   });
 
   it('returns 409 for invalid transition (done task)', async () => {

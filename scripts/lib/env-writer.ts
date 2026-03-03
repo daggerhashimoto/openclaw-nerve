@@ -146,7 +146,11 @@ export function loadExistingEnv(envPath: string): EnvConfig {
     const eqIdx = trimmed.indexOf('=');
     if (eqIdx > 0) {
       const key = trimmed.slice(0, eqIdx).trim();
-      const value = trimmed.slice(eqIdx + 1).trim();
+      let value = trimmed.slice(eqIdx + 1).trim();
+      // Strip matching surrounding quotes ("value" or 'value')
+      if (value.length >= 2 && ((value[0] === '"' && value[value.length - 1] === '"') || (value[0] === "'" && value[value.length - 1] === "'"))) {
+        value = value.slice(1, -1);
+      }
       if (value) config[key] = value;
     }
   }

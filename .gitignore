@@ -48,3 +48,4 @@ wave-reviews/
 # Kanban runtime data
 server/data/kanban/tasks.json
 server/data/kanban/audit.log
+node_modules

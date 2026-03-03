@@ -705,6 +705,12 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
   }
 
   try {
+    // Guard: reject if task is already in-progress (double-click race)
+    const existing = await store.getTask(id);
+    if (existing.status === 'in-progress') {
+      return c.json({ error: 'duplicate_execution', details: 'Task is already being executed' }, 409);
+    }
+
     const task = await store.executeTask(id, parsed.data, 'operator');
 
     // Spawn agent session via gateway (fire-and-forget)

@@ -57,16 +57,35 @@ export function compressImage(file: File): Promise<CompressedImage> {
       const base64 = dataUrl.split(',')[1];
 
       if (base64.length > MAX_COMPRESSED_BYTES) {
-        if (useAlpha) {
-          // PNG can't reduce quality — re-encode as JPEG at low quality as last resort
-          const fallbackUrl = canvas.toDataURL('image/jpeg', 0.4);
-          const fallbackBase64 = fallbackUrl.split(',')[1];
-          resolve({ base64: fallbackBase64, mimeType: 'image/jpeg', preview: fallbackUrl });
-        } else {
-          const smallerUrl = canvas.toDataURL(mimeType, 0.4);
-          const smallerBase64 = smallerUrl.split(',')[1];
-          resolve({ base64: smallerBase64, mimeType, preview: smallerUrl });
+        // Retry at lower quality
+        const retryMime = useAlpha ? 'image/jpeg' : mimeType;
+        const retryUrl = canvas.toDataURL(retryMime, 0.4);
+        const retryBase64 = retryUrl.split(',')[1];
+
+        if (retryBase64.length <= MAX_COMPRESSED_BYTES) {
+          resolve({ base64: retryBase64, mimeType: retryMime, preview: retryUrl });
+          return;
         }
+
+        // Still too large: scale dimensions to 50% and try once more
+        const halfW = Math.round(width / 2);
+        const halfH = Math.round(height / 2);
+        const smallCanvas = document.createElement('canvas');
+        smallCanvas.width = halfW;
+        smallCanvas.height = halfH;
+        const smallCtx = smallCanvas.getContext('2d');
+        if (!smallCtx) return reject(new Error('Canvas not supported'));
+        smallCtx.drawImage(canvas, 0, 0, halfW, halfH);
+
+        const smallUrl = smallCanvas.toDataURL(retryMime, 0.4);
+        const smallBase64 = smallUrl.split(',')[1];
+
+        if (smallBase64.length > MAX_COMPRESSED_BYTES) {
+          reject(new Error('Image is too large to send. Please use a smaller image.'));
+          return;
+        }
+
+        resolve({ base64: smallBase64, mimeType: retryMime, preview: smallUrl });
       } else {
         resolve({ base64, mimeType, preview: dataUrl });
       }

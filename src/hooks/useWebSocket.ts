@@ -73,6 +73,7 @@ export function useWebSocket(): UseWebSocketReturn {
   const hasConnectedRef = useRef(false);
   const doConnectRef = useRef<((url: string, token: string, isReconnect: boolean) => Promise<void>) | null>(null);
   const instanceIdRef = useRef(getOrCreateInstanceId());
+  const connectionGenRef = useRef(0);
 
   const rejectPending = useCallback((reason: Error) => {
     const pending = pendingRef.current;
@@ -114,6 +115,7 @@ export function useWebSocket(): UseWebSocketReturn {
 
   const doConnect = useCallback((url: string, token: string, isReconnect: boolean): Promise<void> => {
     return new Promise((resolve, reject) => {
+      const gen = ++connectionGenRef.current;
       if (!isReconnect) {
         setConnectError('');
       }
@@ -226,7 +228,10 @@ export function useWebSocket(): UseWebSocketReturn {
 
       ws.onclose = () => {
         rejectPending(new Error('WebSocket disconnected'));
-        
+
+        // Stale connection: a newer doConnect has already superseded this one
+        if (gen !== connectionGenRef.current) return;
+
         // Don't reconnect if intentionally disconnected, no credentials, or never connected
         if (intentionalDisconnectRef.current || !credentialsRef.current || !hasConnectedRef.current) {
           setConnectionState('disconnected');

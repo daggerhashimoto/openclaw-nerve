@@ -472,12 +472,19 @@ export function AudioSettings({
   const showTinyAccuracyWarning = isNonEnglishLocalStt && isMultilingual && sttModel === 'tiny';
 
   const OPENAI_VOICES = [
-    { value: 'alloy', label: 'Alloy' },
-    { value: 'echo', label: 'Echo' },
-    { value: 'fable', label: 'Fable' },
-    { value: 'onyx', label: 'Onyx' },
-    { value: 'nova', label: 'Nova' },
-    { value: 'shimmer', label: 'Shimmer' },
+    { value: 'alloy', label: 'Alloy — Neutral, balanced' },
+    { value: 'ash', label: 'Ash — Warm, conversational' },
+    { value: 'ballad', label: 'Ballad — Expressive, storytelling' },
+    { value: 'cedar', label: 'Cedar — Calm, steady' },
+    { value: 'coral', label: 'Coral — Clear, friendly' },
+    { value: 'echo', label: 'Echo — Smooth, calm' },
+    { value: 'fable', label: 'Fable — British-accented, narrative' },
+    { value: 'marin', label: 'Marin — Warm, approachable' },
+    { value: 'nova', label: 'Nova — Energetic, young' },
+    { value: 'onyx', label: 'Onyx — Deep, authoritative' },
+    { value: 'sage', label: 'Sage — Wise, measured' },
+    { value: 'shimmer', label: 'Shimmer — Soft, gentle' },
+    { value: 'verse', label: 'Verse — Versatile, dynamic' },
   ];
 
   // Build Edge voice options from selected language.
@@ -713,7 +720,7 @@ export function AudioSettings({
                   onChange={(v) => updateField('openai', 'voice', v)}
                   options={OPENAI_VOICES}
                   ariaLabel="OpenAI Voice"
-                  menuClassName="min-w-[140px]"
+                  menuClassName="min-w-[260px]"
                 />
               </div>
               <ExpandableInput

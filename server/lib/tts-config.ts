@@ -36,7 +36,7 @@ export interface TTSVoiceConfig {
   openai: {
     /** OpenAI TTS model (gpt-4o-mini-tts, tts-1, tts-1-hd) */
     model: string;
-    /** Voice name (nova, alloy, echo, fable, onyx, shimmer) */
+    /** Voice name (alloy, ash, ballad, cedar, coral, echo, fable, marin, nova, onyx, sage, shimmer, verse) */
     voice: string;
     /** Natural language instructions for how the voice should sound */
     instructions: string;

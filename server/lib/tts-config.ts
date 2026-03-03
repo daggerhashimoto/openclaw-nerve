@@ -143,28 +143,34 @@ export interface ResolvedTTSVoice {
 /**
  * Resolve the effective Edge TTS voice considering language preference.
  *
- * Priority chain:
- *   1. Per-voice override in tts-config.json (power users) — if it differs from the English default
- *   2. Language-derived voice (from language registry + gender preference)
- *   3. DEFAULT_VOICE fallback
+ * Rules:
+ *   1) For English, keep explicit non-default user override.
+ *   2) For non-English, only keep user override if it matches that language locale.
+ *      Otherwise auto-fallback to the language-derived voice.
  */
 export function resolveEdgeTTSVoice(): ResolvedTTSVoice {
   const cfg = getTTSConfig();
   const lang = config.language;
   const gender = config.edgeVoiceGender;
 
-  // If user explicitly overrode the voice to something non-default, respect it
+  const languageVoice = getEdgeTtsVoice(lang, gender);
   const userVoice = cfg.edge.voice;
-  const defaultEnVoice = DEFAULTS.edge.voice; // 'en-US-AriaNeural'
-  const isUserOverride = userVoice && userVoice !== defaultEnVoice;
 
-  if (isUserOverride) {
-    return { voice: userVoice, language: lang, fallback: false };
+  if (userVoice) {
+    if (lang === 'en') {
+      const defaultEnVoice = DEFAULTS.edge.voice; // 'en-US-AriaNeural'
+      if (userVoice !== defaultEnVoice) {
+        return { voice: userVoice, language: lang, fallback: false };
+      }
+    } else {
+      const localePrefix = languageVoice.split('-').slice(0, 2).join('-');
+      if (localePrefix && userVoice.startsWith(`${localePrefix}-`)) {
+        return { voice: userVoice, language: lang, fallback: false };
+      }
+    }
   }
 
-  // Use language-derived voice
-  const voice = getEdgeTtsVoice(lang, gender);
-  return { voice, language: lang, fallback: false };
+  return { voice: languageVoice, language: lang, fallback: false };
 }
 
 /**

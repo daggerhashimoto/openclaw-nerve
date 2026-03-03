@@ -31,6 +31,43 @@ interface LanguageSupportEntry {
   tts: { edge: boolean; qwen3: boolean; openai: boolean };
 }
 
+interface EdgeVoiceOption {
+  value: string;
+  label: string;
+}
+
+const EDGE_ENGLISH_VOICE_OPTIONS: EdgeVoiceOption[] = [
+  { value: 'en-US-AriaNeural', label: 'Aria (US)' },
+  { value: 'en-US-JennyNeural', label: 'Jenny (US)' },
+  { value: 'en-US-GuyNeural', label: 'Guy (US)' },
+  { value: 'en-GB-SoniaNeural', label: 'Sonia (GB)' },
+  { value: 'en-GB-RyanNeural', label: 'Ryan (GB)' },
+  { value: 'en-AU-NatashaNeural', label: 'Natasha (AU)' },
+  { value: 'en-IE-EmilyNeural', label: 'Emily (IE)' },
+];
+
+function getEdgeVoiceOptions(
+  lang: string,
+  support: LanguageSupportEntry[] | null,
+  languageName?: string,
+): EdgeVoiceOption[] {
+  if (lang === 'en') return EDGE_ENGLISH_VOICE_OPTIONS;
+
+  const supportEntry = support?.find((s) => s.code === lang);
+  if (supportEntry?.edgeTtsVoices) {
+    const { female, male } = supportEntry.edgeTtsVoices;
+    const fName = female.replace(/Neural$/, '').split('-').pop() || 'Female';
+    const mName = male.replace(/Neural$/, '').split('-').pop() || 'Male';
+    return [
+      { value: female, label: `${fName} (${languageName || lang})` },
+      { value: male, label: `${mName} (${languageName || lang})` },
+    ];
+  }
+
+  // Safety fallback while support data is loading.
+  return EDGE_ENGLISH_VOICE_OPTIONS;
+}
+
 /** Hook to manage language preference via the /api/language endpoints. */
 function useLanguage() {
   const [state, setState] = useState<LanguageState | null>(null);
@@ -491,40 +528,27 @@ export function AudioSettings({
   ].filter(v => !isLegacyModel || !LEGACY_ONLY_VOICES.has(v.value));
 
   // Build Edge voice options from selected language.
-  // English keeps the full legacy list; other languages use curated voice pairs.
-  const edgeVoicesForLang = useMemo(() => {
-    const lang = langState?.language || 'en';
+  const edgeVoicesForLang = useMemo(
+    () => getEdgeVoiceOptions(langState?.language || 'en', support, currentLangInfo?.name),
+    [currentLangInfo?.name, langState?.language, support],
+  );
 
-    if (lang === 'en') {
-      return [
-        { value: 'en-US-AriaNeural', label: 'Aria (US)' },
-        { value: 'en-US-JennyNeural', label: 'Jenny (US)' },
-        { value: 'en-US-GuyNeural', label: 'Guy (US)' },
-        { value: 'en-GB-SoniaNeural', label: 'Sonia (GB)' },
-        { value: 'en-GB-RyanNeural', label: 'Ryan (GB)' },
-        { value: 'en-AU-NatashaNeural', label: 'Natasha (AU)' },
-        { value: 'en-IE-EmilyNeural', label: 'Emily (IE)' },
-      ];
+  // Keep Edge voice consistent with language choice.
+  // If the currently saved voice is invalid for the selected language,
+  // auto-switch to that language's default Edge voice and save immediately.
+  useEffect(() => {
+    if (!langState?.language || !config) return;
+
+    const options = getEdgeVoiceOptions(langState.language, support, currentLangInfo?.name);
+    const fallbackVoice = options[0]?.value;
+    if (!fallbackVoice) return;
+
+    const currentVoice = config.edge.voice;
+    const isValid = options.some((opt) => opt.value === currentVoice);
+    if (!isValid && currentVoice !== fallbackVoice) {
+      updateField('edge', 'voice', fallbackVoice);
     }
-
-    const supportEntry = support?.find((s) => s.code === lang);
-    if (supportEntry?.edgeTtsVoices) {
-      const { female, male } = supportEntry.edgeTtsVoices;
-      const fName = female.replace(/Neural$/, '').split('-').pop() || 'Female';
-      const mName = male.replace(/Neural$/, '').split('-').pop() || 'Male';
-      return [
-        { value: female, label: `${fName} (${currentLangInfo?.name || lang})` },
-        { value: male, label: `${mName} (${currentLangInfo?.name || lang})` },
-      ];
-    }
-
-    // Fallback safety net
-    return [
-      { value: 'en-US-AriaNeural', label: 'Aria (US)' },
-      { value: 'en-US-JennyNeural', label: 'Jenny (US)' },
-      { value: 'en-US-GuyNeural', label: 'Guy (US)' },
-    ];
-  }, [currentLangInfo?.name, langState?.language, support]);
+  }, [config, currentLangInfo?.name, langState?.language, support, updateField]);
 
   const wakePhraseDisplay = useMemo(() => {
     const phrase = buildPrimaryWakePhrase(agentName, langState?.language || 'en', activeWakePhrase ? [activeWakePhrase] : undefined);

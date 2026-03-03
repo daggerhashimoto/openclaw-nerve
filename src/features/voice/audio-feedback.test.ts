@@ -1,21 +1,40 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// Track all instances created by our mock Audio class
-const mockAudioInstances: MockAudio[] = [];
+// Mock AudioContext and related Web Audio API
+const mockStart = vi.fn();
+const mockConnect = vi.fn();
 
-class MockAudio {
-  src: string;
-  currentTime = 0;
-  playbackRate = 1;
-  play = vi.fn(() => Promise.resolve());
+const mockCreateBufferSource = vi.fn(() => ({
+  buffer: null,
+  playbackRate: { value: 1 },
+  connect: mockConnect,
+  start: mockStart,
+}));
 
-  constructor(src?: string) {
-    this.src = src ?? '';
-    mockAudioInstances.push(this);
-  }
+const mockDecodeAudioData = vi.fn(() =>
+  Promise.resolve({ duration: 1, length: 44100, sampleRate: 44100 } as unknown as AudioBuffer),
+);
+
+const mockResume = vi.fn(() => Promise.resolve());
+
+class MockAudioContext {
+  state = 'running';
+  destination = {};
+  createBufferSource = mockCreateBufferSource;
+  decodeAudioData = mockDecodeAudioData;
+  resume = mockResume;
 }
 
-vi.stubGlobal('Audio', MockAudio);
+vi.stubGlobal('AudioContext', MockAudioContext);
+
+// Mock fetch for preloading
+const mockArrayBuffer = new ArrayBuffer(8);
+vi.stubGlobal('fetch', vi.fn(() =>
+  Promise.resolve({
+    ok: true,
+    arrayBuffer: () => Promise.resolve(mockArrayBuffer),
+  }),
+));
 
 describe('audio-feedback', () => {
   let ensureAudioContext: () => void;
@@ -25,7 +44,12 @@ describe('audio-feedback', () => {
   let playPing: () => void;
 
   beforeEach(async () => {
-    mockAudioInstances.length = 0;
+    mockStart.mockClear();
+    mockConnect.mockClear();
+    mockCreateBufferSource.mockClear();
+    mockDecodeAudioData.mockClear();
+    mockResume.mockClear();
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockClear();
 
     vi.resetModules();
     const mod = await import('./audio-feedback');
@@ -34,124 +58,87 @@ describe('audio-feedback', () => {
     playSubmitPing = mod.playSubmitPing;
     playCancelPing = mod.playCancelPing;
     playPing = mod.playPing;
+
+    // Wait for preloads to complete
+    await new Promise(r => setTimeout(r, 10));
   });
 
   describe('ensureAudioContext', () => {
-    it('should be a no-op and not throw', () => {
+    it('should not throw', () => {
       expect(() => ensureAudioContext()).not.toThrow();
     });
   });
 
-  describe('playWakePing', () => {
-    it('should create an Audio element for /sounds/wake.mp3', () => {
-      playWakePing();
-      expect(mockAudioInstances).toHaveLength(1);
-      expect(mockAudioInstances[0].src).toBe('/sounds/wake.mp3');
+  describe('preloading', () => {
+    it('should fetch all 4 sound files on module load', () => {
+      const fetchCalls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+      const urls = fetchCalls.map((c: string[]) => c[0]);
+      expect(urls).toContain('/sounds/wake.mp3');
+      expect(urls).toContain('/sounds/send.ogg');
+      expect(urls).toContain('/sounds/cancel.ogg');
+      expect(urls).toContain('/sounds/notify.ogg');
     });
 
-    it('should call play()', () => {
+    it('should decode audio data for each file', () => {
+      expect(mockDecodeAudioData).toHaveBeenCalled();
+    });
+  });
+
+  describe('playWakePing', () => {
+    it('should create a buffer source and start it', () => {
       playWakePing();
-      expect(mockAudioInstances[0].play).toHaveBeenCalled();
+      expect(mockCreateBufferSource).toHaveBeenCalled();
+      expect(mockConnect).toHaveBeenCalled();
+      expect(mockStart).toHaveBeenCalledWith(0);
     });
 
     it('should use default playbackRate of 1', () => {
       playWakePing();
-      expect(mockAudioInstances[0].playbackRate).toBe(1);
-    });
-
-    it('should reuse the same Audio instance on repeated calls', () => {
-      playWakePing();
-      playWakePing();
-      expect(mockAudioInstances).toHaveLength(1);
-    });
-
-    it('should reset currentTime before playing', () => {
-      playWakePing();
-      const instance = mockAudioInstances[0];
-      instance.currentTime = 5;
-      playWakePing();
-      expect(instance.currentTime).toBe(0);
+      const source = mockCreateBufferSource.mock.results[0].value;
+      expect(source.playbackRate.value).toBe(1);
     });
   });
 
   describe('playSubmitPing', () => {
-    it('should create an Audio element for /sounds/send.mp3', () => {
+    it('should create a buffer source and start it', () => {
       playSubmitPing();
-      expect(mockAudioInstances).toHaveLength(1);
-      expect(mockAudioInstances[0].src).toBe('/sounds/send.mp3');
-    });
-
-    it('should call play()', () => {
-      playSubmitPing();
-      expect(mockAudioInstances[0].play).toHaveBeenCalled();
-    });
-
-    it('should use default playbackRate of 1', () => {
-      playSubmitPing();
-      expect(mockAudioInstances[0].playbackRate).toBe(1);
+      expect(mockCreateBufferSource).toHaveBeenCalled();
+      expect(mockStart).toHaveBeenCalledWith(0);
     });
   });
 
   describe('playCancelPing', () => {
-    it('should create an Audio element for /sounds/cancel.mp3', () => {
+    it('should create a buffer source and start it', () => {
       playCancelPing();
-      expect(mockAudioInstances).toHaveLength(1);
-      expect(mockAudioInstances[0].src).toBe('/sounds/cancel.mp3');
-    });
-
-    it('should use default playbackRate', () => {
-      playCancelPing();
-      expect(mockAudioInstances[0].playbackRate).toBe(1);
-    });
-
-    it('should call play()', () => {
-      playCancelPing();
-      expect(mockAudioInstances[0].play).toHaveBeenCalled();
+      expect(mockCreateBufferSource).toHaveBeenCalled();
+      expect(mockStart).toHaveBeenCalledWith(0);
     });
   });
 
   describe('playPing', () => {
-    it('should create an Audio element for /sounds/notify.mp3', () => {
+    it('should create a buffer source and start it', () => {
       playPing();
-      expect(mockAudioInstances).toHaveLength(1);
-      expect(mockAudioInstances[0].src).toBe('/sounds/notify.mp3');
-    });
-
-    it('should call play()', () => {
-      playPing();
-      expect(mockAudioInstances[0].play).toHaveBeenCalled();
-    });
-
-    it('should use default playbackRate of 1', () => {
-      playPing();
-      expect(mockAudioInstances[0].playbackRate).toBe(1);
+      expect(mockCreateBufferSource).toHaveBeenCalled();
+      expect(mockStart).toHaveBeenCalledWith(0);
     });
   });
 
-  describe('lazy singleton caching', () => {
-    it('should create separate Audio instances for different sounds', () => {
+  describe('multiple plays', () => {
+    it('should create a new buffer source each time (not singleton)', () => {
       playWakePing();
-      playSubmitPing();
-      playPing();
-      // wake.mp3 + send.mp3 + notify.mp3 = 3 instances
-      expect(mockAudioInstances).toHaveLength(3);
-    });
-
-    it('playCancelPing creates its own cancel.mp3 singleton', () => {
       playWakePing();
-      playCancelPing();
-      // wake.mp3 + cancel.mp3 = 2 separate Audio instances
-      expect(mockAudioInstances).toHaveLength(2);
+      // AudioBufferSourceNode is one-shot — new source per play
+      expect(mockCreateBufferSource).toHaveBeenCalledTimes(2);
     });
   });
 
   describe('error resilience', () => {
-    it('should not throw when play() rejects', () => {
-      playWakePing();
-      mockAudioInstances[0].play.mockImplementationOnce(() =>
-        Promise.reject(new Error('Autoplay blocked')),
-      );
+    it('should not throw when AudioContext is unavailable', () => {
+      // Even if something goes wrong internally, functions should not throw
       expect(() => playWakePing()).not.toThrow();
+      expect(() => playSubmitPing()).not.toThrow();
+      expect(() => playCancelPing()).not.toThrow();
+      expect(() => playPing()).not.toThrow();
     });
   });
 });

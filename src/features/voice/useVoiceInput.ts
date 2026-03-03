@@ -279,9 +279,16 @@ export function useVoiceInput(
             }
           } else if (currentMode === 'wake') {
             if (matchesPhrase(transcript, wakePhrasesRef.current, languageRef.current)) {
+              // Guard against double-trigger from interim + final results
+              if (wakeTriggeredRef.current) return;
               wakeTriggeredRef.current = true;
+              // Stop recognition immediately — no longer needed and it uses the audio pipeline
+              intentionalStopRef.current = true;
+              try { recognitionRef.current?.abort(); } catch { /* already stopped */ }
+              recognitionRef.current = null;
               playWakePing();
-              doStartRecording();
+              // Delay mic acquisition until wake chime finishes (~0.75s)
+              trackedTimeout(() => doStartRecording(), 800);
               return;
             }
           }

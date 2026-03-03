@@ -516,8 +516,8 @@ export default function App({ onLogout }: AppProps) {
       </PanelErrorBoundary>
       
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* File tree — far left, collapsible (chat mode only) */}
-        {viewMode === 'chat' && (
+        {/* File tree — far left, collapsible; hidden (not unmounted) in kanban to preserve state */}
+        <div className={viewMode === 'kanban' ? 'hidden' : undefined}>
           <PanelErrorBoundary name="File Explorer">
             <FileTreePanel
               onOpenFile={openFile}
@@ -526,30 +526,38 @@ export default function App({ onLogout }: AppProps) {
               onCloseOpenPaths={closeOpenPathsByPrefix}
             />
           </PanelErrorBoundary>
-        )}
+        </div>
 
-        {/* Main area: kanban or chat */}
-        {viewMode === 'kanban' ? (
+        {/*
+         * Chat panel is always rendered but hidden when kanban is active.
+         * This keeps ChatPanel → InputBar → useVoiceInput mounted so that
+         * in-progress voice recording / STT transcription survives tab switches.
+         * See: https://github.com/.../issues/64
+         */}
+        {viewMode === 'kanban' && (
           <div className="flex-1 flex flex-col min-w-0 min-h-0 boot-panel">
             <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
               <KanbanPanel initialTaskId={pendingTaskId} onInitialTaskConsumed={() => setPendingTaskId(null)} />
             </Suspense>
           </div>
-        ) : isCompactLayout ? (
-          <div className="flex-1 min-w-0 min-h-0 boot-panel">
+        )}
+        {isCompactLayout ? (
+          <div className={`flex-1 min-w-0 min-h-0 boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
             {chatContent}
           </div>
         ) : (
-          <ResizablePanels
-            leftPercent={panelRatio}
-            onResize={setPanelRatio}
-            minLeftPercent={30}
-            maxLeftPercent={75}
-            leftClassName="boot-panel"
-            rightClassName="boot-panel flex flex-col gap-px bg-border"
-            left={chatContent}
-            right={renderRightPanels(handleSessionChange)}
-          />
+          <div style={{ display: viewMode === 'kanban' ? 'none' : 'contents' }}>
+            <ResizablePanels
+              leftPercent={panelRatio}
+              onResize={setPanelRatio}
+              minLeftPercent={30}
+              maxLeftPercent={75}
+              leftClassName="boot-panel"
+              rightClassName="boot-panel flex flex-col gap-px bg-border"
+              left={chatContent}
+              right={renderRightPanels(handleSessionChange)}
+            />
+          </div>
         )}
       </div>
 

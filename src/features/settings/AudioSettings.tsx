@@ -834,23 +834,6 @@ export function AudioSettings({
       )}
 
       {showInput && (
-        <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
-          <div className="flex items-center gap-3">
-            <Mic size={14} className={liveTranscriptionPreview ? 'text-primary' : 'text-muted-foreground'} aria-hidden="true" />
-            <div className="flex flex-col">
-              <span className="text-[12px]" id="live-transcription-label">Live Transcription Preview</span>
-              <span className="text-[10px] text-muted-foreground">Show muted text in the input while speaking</span>
-            </div>
-          </div>
-          <Switch
-            checked={liveTranscriptionPreview}
-            onCheckedChange={onToggleLiveTranscriptionPreview}
-            aria-label="Toggle live transcription preview"
-          />
-        </div>
-      )}
-
-      {showInput && (
         <div className="flex flex-col gap-1.5">
           <span className="text-[10px] text-muted-foreground uppercase tracking-[1px]">STT Provider</span>
           <div className="flex gap-2">
@@ -882,6 +865,23 @@ export function AudioSettings({
                 ? 'Using OpenAI Whisper API'
                 : 'OpenAI Whisper API — enter your API key below'}
           </span>
+        </div>
+      )}
+
+      {showInput && (
+        <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
+          <div className="flex items-center gap-3">
+            <Mic size={14} className={liveTranscriptionPreview ? 'text-primary' : 'text-muted-foreground'} aria-hidden="true" />
+            <div className="flex flex-col">
+              <span className="text-[12px]" id="live-transcription-label">Live Transcription Preview</span>
+              <span className="text-[10px] text-muted-foreground">Browser preview while speaking; final transcript may differ by provider.</span>
+            </div>
+          </div>
+          <Switch
+            checked={liveTranscriptionPreview}
+            onCheckedChange={onToggleLiveTranscriptionPreview}
+            aria-label="Toggle live transcription preview"
+          />
         </div>
       )}
 

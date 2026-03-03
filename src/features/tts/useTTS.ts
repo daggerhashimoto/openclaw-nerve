@@ -32,6 +32,7 @@ async function fetchTTS(text: string, provider: TTSProvider = 'openai', model?: 
   const resp = await fetch('/api/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(body),
   });
   if (!resp.ok) throw new Error(`TTS failed: ${resp.status}`);

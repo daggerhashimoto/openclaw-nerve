@@ -42,7 +42,10 @@ export function useTTSConfig(): UseTTSConfigReturn {
 
   useEffect(() => {
     fetch('/api/tts/config')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`TTS config request failed: ${r.status}`);
+        return r.json();
+      })
       .then((data) => { setConfig(data); setLoading(false); })
       .catch((e) => { setError(e.message); setLoading(false); });
   }, []);
@@ -53,7 +56,10 @@ export function useTTSConfig(): UseTTSConfigReturn {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`TTS config request failed: ${r.status}`);
+        return r.json();
+      })
       .then((updated) => {
         setConfig(updated);
         setSaved(true);

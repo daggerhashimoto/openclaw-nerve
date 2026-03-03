@@ -37,6 +37,20 @@ interface PhrasesData {
   wakePhrases?: string[];
 }
 
+interface PhraseItem {
+  id: string;
+  value: string;
+}
+
+let phraseIdCounter = 0;
+function nextPhraseId(): string {
+  return `phrase-${++phraseIdCounter}`;
+}
+
+function toPhraseItems(strings: string[]): PhraseItem[] {
+  return strings.map((value) => ({ id: nextPhraseId(), value }));
+}
+
 function PhraseList({
   phrases,
   onChange,
@@ -44,7 +58,7 @@ function PhraseList({
   onRemove,
   placeholder,
 }: {
-  phrases: string[];
+  phrases: PhraseItem[];
   onChange: (index: number, value: string) => void;
   onAdd: () => void;
   onRemove: (index: number) => void;
@@ -53,10 +67,10 @@ function PhraseList({
   return (
     <div className="space-y-1.5">
       {phrases.map((phrase, i) => (
-        <div key={i} className="flex items-center gap-2">
+        <div key={phrase.id} className="flex items-center gap-2">
           <input
             type="text"
-            value={phrase}
+            value={phrase.value}
             onChange={e => onChange(i, e.target.value)}
             className="flex-1 px-3 py-1.5 text-[12px] bg-background border border-border/60 focus:border-primary outline-none transition-colors rounded-sm"
             placeholder={`${placeholder} ${i + 1}...`}
@@ -92,8 +106,8 @@ export function VoicePhrasesModal({
   languageNativeName,
 }: VoicePhrasesModalProps) {
   const [wakePhrase, setWakePhrase] = useState('');
-  const [stopPhrases, setStopPhrases] = useState<string[]>([]);
-  const [cancelPhrases, setCancelPhrases] = useState<string[]>([]);
+  const [stopPhrases, setStopPhrases] = useState<PhraseItem[]>([]);
+  const [cancelPhrases, setCancelPhrases] = useState<PhraseItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -110,14 +124,14 @@ export function VoicePhrasesModal({
       })
       .then((data: PhrasesData) => {
         setWakePhrase(data.wakePhrases?.find((phrase) => phrase.trim().length > 0) || '');
-        setStopPhrases(data.stopPhrases.length > 0 ? data.stopPhrases : ['']);
-        setCancelPhrases(data.cancelPhrases.length > 0 ? data.cancelPhrases : ['']);
+        setStopPhrases(toPhraseItems(data.stopPhrases.length > 0 ? data.stopPhrases : ['']));
+        setCancelPhrases(toPhraseItems(data.cancelPhrases.length > 0 ? data.cancelPhrases : ['']));
       })
       .catch((err) => {
         if ((err as DOMException)?.name === 'AbortError' || controller.signal.aborted) return;
         setWakePhrase('');
-        setStopPhrases(['']);
-        setCancelPhrases(['']);
+        setStopPhrases(toPhraseItems(['']));
+        setCancelPhrases(toPhraseItems(['']));
       });
 
     return () => controller.abort();
@@ -128,7 +142,7 @@ export function VoicePhrasesModal({
       const setter = type === 'stop' ? setStopPhrases : setCancelPhrases;
       setter((prev) => {
         const next = [...prev];
-        next[index] = value;
+        next[index] = { ...next[index], value };
         return next;
       });
     },
@@ -137,7 +151,7 @@ export function VoicePhrasesModal({
 
   const addPhrase = useCallback((type: 'stop' | 'cancel') => {
     const setter = type === 'stop' ? setStopPhrases : setCancelPhrases;
-    setter((prev) => [...prev, '']);
+    setter((prev) => [...prev, { id: nextPhraseId(), value: '' }]);
   }, []);
 
   const removePhrase = useCallback((type: 'stop' | 'cancel', index: number) => {
@@ -151,8 +165,8 @@ export function VoicePhrasesModal({
 
     try {
       const body: Record<string, string[]> = {
-        stopPhrases: stopPhrases.filter(p => p.trim()),
-        cancelPhrases: cancelPhrases.filter(p => p.trim()),
+        stopPhrases: stopPhrases.map(p => p.value).filter(v => v.trim()),
+        cancelPhrases: cancelPhrases.map(p => p.value).filter(v => v.trim()),
       };
       const wake = wakePhrase.trim();
       if (wake.length > 0) {

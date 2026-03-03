@@ -42,8 +42,8 @@ export const WHISPER_MODEL_FILES: Record<string, string> = {
   'small':    'ggml-small.bin',
 };
 
-// New installs default to multilingual tiny for fast bootstrap.
-export const WHISPER_DEFAULT_MODEL = 'tiny';
+// New installs default to multilingual base for better multilingual accuracy.
+export const WHISPER_DEFAULT_MODEL = 'base';
 
 // ─── Language registry ───────────────────────────────────────────────────────
 

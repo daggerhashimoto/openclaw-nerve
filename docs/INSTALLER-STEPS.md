@@ -157,10 +157,11 @@ The installer resolves a target ref before clone/update:
 - Deletes npm/build temp log files on success.
 
 ### 3.5 Local speech model bootstrap
-- Ensures `~/.nerve/models/ggml-tiny.en.bin` exists.
-- If missing, downloads ~75MB from Hugging Face.
-- If download fails, continues with warning (voice input can still use OpenAI API).
-- Note: this is bootstrap-only for fast first run. Runtime default STT model is `tiny` (multilingual) unless user overrides `WHISPER_MODEL`.
+- Resolves target model from `.env` `WHISPER_MODEL` (defaults to `base`).
+- Ensures matching file exists in `~/.nerve/models/` (for example `ggml-base.bin`).
+- If missing, downloads the selected model from Hugging Face.
+- If download fails, continues with warning (local STT may fail unless OpenAI STT is configured).
+- Runtime default STT model is `base` (multilingual) unless user overrides `WHISPER_MODEL`.
 
 ### 3.6 `ffmpeg` check/install
 - If `ffmpeg` missing:

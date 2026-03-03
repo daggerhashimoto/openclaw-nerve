@@ -49,7 +49,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const saved = localStorage.getItem('oc-stt-provider') as STTProvider | null;
     return saved === 'openai' ? 'openai' : 'local';
   });
-  const [sttModel, setSttModelState] = useState(() => localStorage.getItem('oc-stt-model') || 'tiny');
+  const [sttModel, setSttModelState] = useState(() => localStorage.getItem('oc-stt-model') || 'base');
   const [wakeWordEnabled, setWakeWordEnabled] = useState(false);
   const [liveTranscriptionPreview, setLiveTranscriptionPreview] = useState(() => {
     const saved = localStorage.getItem('nerve:liveTranscriptionPreview');

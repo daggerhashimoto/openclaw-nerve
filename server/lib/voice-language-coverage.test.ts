@@ -7,8 +7,8 @@ describe('server multilingual voice phrase coverage', () => {
     expect(DEFAULT_LANGUAGE).toBe('en');
   });
 
-  it('should default local whisper model to tiny', () => {
-    expect(WHISPER_DEFAULT_MODEL).toBe('tiny');
+  it('should default local whisper model to base', () => {
+    expect(WHISPER_DEFAULT_MODEL).toBe('base');
   });
 
   it('should provide stop and cancel defaults for every supported language', () => {

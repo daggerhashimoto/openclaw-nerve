@@ -691,9 +691,9 @@ else
   rm -f "$npm_log" "$build_log" 2>/dev/null
 
   # ── Download speech model (for local voice input) ──────────────────
-  # Keep installer bootstrap in sync with UI/server default (multilingual tiny).
+  # Keep installer bootstrap in sync with UI/server default (multilingual base).
   WHISPER_MODEL_DIR="${HOME}/.nerve/models"
-  WHISPER_MODEL_KEY="tiny"
+  WHISPER_MODEL_KEY="base"
   if [[ -f .env ]]; then
     EXISTING_WHISPER_MODEL=$(grep -E '^WHISPER_MODEL=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r' || true)
     if [[ -n "$EXISTING_WHISPER_MODEL" ]]; then
@@ -710,10 +710,10 @@ else
     base)     WHISPER_MODEL_FILE="ggml-base.bin"    ; WHISPER_MODEL_SIZE="142MB" ;;
     small)    WHISPER_MODEL_FILE="ggml-small.bin"   ; WHISPER_MODEL_SIZE="466MB" ;;
     *)
-      warn "Unknown WHISPER_MODEL='${WHISPER_MODEL_KEY}' in .env — defaulting to tiny"
-      WHISPER_MODEL_KEY="tiny"
-      WHISPER_MODEL_FILE="ggml-tiny.bin"
-      WHISPER_MODEL_SIZE="75MB"
+      warn "Unknown WHISPER_MODEL='${WHISPER_MODEL_KEY}' in .env — defaulting to base"
+      WHISPER_MODEL_KEY="base"
+      WHISPER_MODEL_FILE="ggml-base.bin"
+      WHISPER_MODEL_SIZE="142MB"
       ;;
   esac
 

@@ -66,8 +66,7 @@ export function mergeFinalMessages(existing: ChatMsg[], incoming: ChatMsg[]): Ch
       if (duplicateRecentUser) continue;
     }
 
-    if (!msg.msgId) msg.msgId = generateMsgId();
-    merged.push(msg);
+    merged.push(msg.msgId ? msg : { ...msg, msgId: generateMsgId() });
   }
 
   return merged;
@@ -162,9 +161,9 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
   /** Get all messages (full buffer, not just visible window). */
   const getAllMessages = useCallback(() => allMessagesRef.current, []);
 
-  /** Set all messages buffer directly (for optimistic inserts). */
-  const setAllMessages = useCallback((all: ChatMsg[]) => {
-    allMessagesRef.current = all;
+  /** Set all messages buffer directly, or via functional updater for atomic read-then-write. */
+  const setAllMessages = useCallback((updater: ChatMsg[] | ((prev: ChatMsg[]) => ChatMsg[])) => {
+    allMessagesRef.current = typeof updater === 'function' ? updater(allMessagesRef.current) : updater;
   }, []);
 
   /** Reset message state (for session switch). */

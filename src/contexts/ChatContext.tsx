@@ -552,8 +552,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     recoveryHook.incrementGeneration();
 
-    // Optimistic insert
-    msgHook.setAllMessages([...msgHook.getAllMessages(), userMsg]);
+    // Optimistic insert (functional updater to avoid read-then-write race)
+    msgHook.setAllMessages(prev => [...prev, userMsg]);
     msgHook.setMessages((prev: ChatMsg[]) => [...prev, userMsg]);
     setIsGenerating(true);
     streamHook.setStream((prev: ChatStreamState) => ({ ...prev, html: '', runId: undefined }));
@@ -577,15 +577,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         streamHook.startThinking(ack.runId);
       }
 
-      // Confirm the message
+      // Confirm the message (functional updater to avoid race after await)
       const confirmMsg = (m: ChatMsg) => m.tempId === tempId ? { ...m, pending: false } : m;
-      msgHook.setAllMessages(msgHook.getAllMessages().map(confirmMsg));
+      msgHook.setAllMessages(prev => prev.map(confirmMsg));
       msgHook.setMessages((prev: ChatMsg[]) => prev.map(confirmMsg));
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
 
       const failMsg = (m: ChatMsg) => m.tempId === tempId ? { ...m, pending: false, failed: true } : m;
-      msgHook.setAllMessages(msgHook.getAllMessages().map(failMsg));
+      msgHook.setAllMessages(prev => prev.map(failMsg));
       msgHook.setMessages((prev: ChatMsg[]) => prev.map(failMsg));
 
       const errMsgBubble: ChatMsg = {
@@ -595,7 +595,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         rawText: '',
         timestamp: new Date(),
       };
-      msgHook.setAllMessages([...msgHook.getAllMessages(), errMsgBubble]);
+      msgHook.setAllMessages(prev => [...prev, errMsgBubble]);
       msgHook.setMessages((prev: ChatMsg[]) => [...prev, errMsgBubble]);
       setIsGenerating(false);
     }
@@ -636,7 +636,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         rawText: '',
         timestamp: new Date(),
       };
-      msgHook.setAllMessages([...msgHook.getAllMessages(), msg]);
+      msgHook.setAllMessages(prev => [...prev, msg]);
       msgHook.setMessages((prev: ChatMsg[]) => [...prev, msg]);
     }
   }, [msgHook, rpc]);

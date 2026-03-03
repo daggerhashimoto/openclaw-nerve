@@ -59,24 +59,30 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   const prevMessageCount = useRef(0);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const isLoadingMore = useRef(false);
+  const loadMoreRef = useRef(loadMore);
+  const hasMoreRef = useRef(hasMore);
+
+  // Keep refs in sync so the observer callback always sees current values
+  useEffect(() => { loadMoreRef.current = loadMore; }, [loadMore]);
+  useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
 
   // Infinite scroll — load older messages when sentinel enters viewport
   useEffect(() => {
-    if (!loadMore || !hasMore) return;
+    if (!loadMoreRef.current || !hasMoreRef.current) return;
     const sentinel = sentinelRef.current;
     const container = scrollRef.current;
     if (!sentinel || !container) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (!entries[0].isIntersecting || isLoadingMore.current) return;
+        if (!entries[0].isIntersecting || isLoadingMore.current || !loadMoreRef.current || !hasMoreRef.current) return;
         isLoadingMore.current = true;
 
         // Preserve scroll position: record distance from bottom before prepend
         const prevScrollHeight = container.scrollHeight;
         const prevScrollTop = container.scrollTop;
 
-        loadMore();
+        loadMoreRef.current();
 
         // After React commits DOM updates, restore scroll position.
         // Double-rAF ensures we run after React's commit + browser layout.
@@ -94,7 +100,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loadMore, hasMore, messages.length]);
+  }, [loadMore, hasMore]);
 
   // Expose focusInput to parent
   useImperativeHandle(ref, () => ({

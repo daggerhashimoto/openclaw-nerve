@@ -370,10 +370,11 @@ export function groupToolMessages(msgs: ChatMsg[]): ChatMsg[] {
       flushTools();
       // Attach any rescued images from preceding tool results
       if (pendingImages.length > 0 && msg.role === 'assistant') {
-        msg.images = [...(msg.images || []), ...pendingImages];
+        grouped.push({ ...msg, images: [...(msg.images || []), ...pendingImages] });
         pendingImages = [];
+      } else {
+        grouped.push(msg);
       }
-      grouped.push(msg);
     }
   }
   flushTools();

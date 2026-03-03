@@ -7,6 +7,7 @@ import type { STTProvider } from '@/contexts/SettingsContext';
 import { useTTSConfig } from '@/features/tts/useTTSConfig';
 import { VoicePhrasesModal } from './VoicePhrasesModal';
 import { buildPrimaryWakePhrase } from '@/lib/constants';
+import { shouldDeferEdgeVoiceAutoSwitch } from './audioSettingsUtils';
 
 // ─── Language types ──────────────────────────────────────────────────────────
 
@@ -29,10 +30,6 @@ interface LanguageSupportEntry {
   edgeTtsVoices: { female: string; male: string };
   stt: { local: boolean; openai: boolean };
   tts: { edge: boolean; qwen3: boolean; openai: boolean };
-}
-
-export function shouldDeferEdgeVoiceAutoSwitch(language: string, support: Array<{ code: string }> | null): boolean {
-  return language !== 'en' && !support?.some((entry) => entry.code === language);
 }
 
 interface EdgeVoiceOption {
@@ -212,6 +209,8 @@ interface AudioSettingsProps {
   onSttModelChange: (model: string) => void;
   wakeWordEnabled: boolean;
   onToggleWakeWord: () => void;
+  liveTranscriptionPreview: boolean;
+  onToggleLiveTranscriptionPreview: () => void;
   agentName?: string;
   section?: AudioSettingsSection;
 }
@@ -426,6 +425,8 @@ export function AudioSettings({
   onSttModelChange,
   wakeWordEnabled,
   onToggleWakeWord,
+  liveTranscriptionPreview,
+  onToggleLiveTranscriptionPreview,
   agentName = 'Agent',
   section = 'all',
 }: AudioSettingsProps) {
@@ -830,6 +831,23 @@ export function AudioSettings({
           <span className="text-green">◆</span>
           SPEECH-TO-TEXT
         </h3>
+      )}
+
+      {showInput && (
+        <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
+          <div className="flex items-center gap-3">
+            <Mic size={14} className={liveTranscriptionPreview ? 'text-primary' : 'text-muted-foreground'} aria-hidden="true" />
+            <div className="flex flex-col">
+              <span className="text-[12px]" id="live-transcription-label">Live Transcription Preview</span>
+              <span className="text-[10px] text-muted-foreground">Show muted text in the input while speaking</span>
+            </div>
+          </div>
+          <Switch
+            checked={liveTranscriptionPreview}
+            onCheckedChange={onToggleLiveTranscriptionPreview}
+            aria-label="Toggle live transcription preview"
+          />
+        </div>
       )}
 
       {showInput && (

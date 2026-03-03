@@ -22,6 +22,8 @@ interface SettingsContextValue {
   setWakeWordEnabled: (enabled: boolean) => void;
   handleToggleWakeWord: () => void;
   handleWakeWordState: (enabled: boolean, toggle: () => void) => void;
+  liveTranscriptionPreview: boolean;
+  toggleLiveTranscriptionPreview: () => void;
   speak: (text: string) => Promise<void>;
   panelRatio: number;
   setPanelRatio: (ratio: number) => void;
@@ -49,6 +51,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   });
   const [sttModel, setSttModelState] = useState(() => localStorage.getItem('oc-stt-model') || 'tiny');
   const [wakeWordEnabled, setWakeWordEnabled] = useState(false);
+  const [liveTranscriptionPreview, setLiveTranscriptionPreview] = useState(() => {
+    const saved = localStorage.getItem('nerve:liveTranscriptionPreview');
+    return saved !== 'false'; // Default to enabled
+  });
   const [panelRatio, setPanelRatioState] = useState(() => {
     const saved = localStorage.getItem('oc-panel-ratio');
     return saved ? Number(saved) : 75;
@@ -88,6 +94,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSoundEnabled(prev => {
       const next = !prev;
       localStorage.setItem('oc-sound', String(next));
+      return next;
+    });
+  }, []);
+
+  const toggleLiveTranscriptionPreview = useCallback(() => {
+    setLiveTranscriptionPreview(prev => {
+      const next = !prev;
+      localStorage.setItem('nerve:liveTranscriptionPreview', String(next));
       return next;
     });
   }, []);
@@ -220,6 +234,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setWakeWordEnabled,
     handleToggleWakeWord,
     handleWakeWordState,
+    liveTranscriptionPreview,
+    toggleLiveTranscriptionPreview,
     speak,
     panelRatio,
     setPanelRatio,
@@ -237,6 +253,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     soundEnabled, toggleSound, ttsProvider, ttsModel, changeTtsProvider, changeTtsModel, toggleTtsProvider,
     sttProvider, changeSttProvider, sttModel, changeSttModel,
     wakeWordEnabled, handleToggleWakeWord, handleWakeWordState,
+    liveTranscriptionPreview, toggleLiveTranscriptionPreview,
     speak, panelRatio, setPanelRatio, telemetryVisible, toggleTelemetry,
     eventsVisible, toggleEvents, logVisible, toggleLog, theme, setTheme, font, setFont,
   ]);

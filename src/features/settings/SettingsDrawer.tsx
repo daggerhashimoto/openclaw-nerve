@@ -29,6 +29,8 @@ interface SettingsDrawerProps {
   onSttModelChange: (model: string) => void;
   wakeWordEnabled: boolean;
   onToggleWakeWord: () => void;
+  liveTranscriptionPreview: boolean;
+  onToggleLiveTranscriptionPreview: () => void;
   // Agent identity
   agentName?: string;
   // Auth
@@ -79,6 +81,8 @@ export function SettingsDrawer({
   onSttModelChange,
   wakeWordEnabled,
   onToggleWakeWord,
+  liveTranscriptionPreview,
+  onToggleLiveTranscriptionPreview,
   agentName,
   onLogout,
   onGatewayRestart,
@@ -228,6 +232,8 @@ export function SettingsDrawer({
                 onSttModelChange={onSttModelChange}
                 wakeWordEnabled={wakeWordEnabled}
                 onToggleWakeWord={onToggleWakeWord}
+                liveTranscriptionPreview={liveTranscriptionPreview}
+                onToggleLiveTranscriptionPreview={onToggleLiveTranscriptionPreview}
                 agentName={agentName}
               />
             )}

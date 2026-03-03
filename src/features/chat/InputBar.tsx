@@ -4,6 +4,7 @@ import { useVoiceInput } from '@/features/voice/useVoiceInput';
 import { useTabCompletion } from '@/hooks/useTabCompletion';
 import { useInputHistory } from '@/hooks/useInputHistory';
 import { useSessionContext } from '@/contexts/SessionContext';
+import { useSettings } from '@/contexts/SettingsContext';
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '@/lib/constants';
 import { compressImage } from './image-compress';
 import type { ImageAttachment } from './types';
@@ -35,6 +36,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   // Tab completion for session names
   const { sessions, agentName: ctxAgentName } = useSessionContext();
+  const { liveTranscriptionPreview } = useSettings();
   const getSessionLabels = useMemo(() => {
     // Build a closure that returns current session labels
     const labels = sessions.map((s) => {
@@ -108,7 +110,16 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   // Live transcription preview: write interim transcript to textarea during recording
   useEffect(() => {
-    if (voiceState === 'recording' && inputRef.current) {
+    if (!inputRef.current) return;
+
+    if (!liveTranscriptionPreview) {
+      // Ensure temporary preview styling is removed when feature is disabled.
+      inputRef.current.style.fontStyle = '';
+      inputRef.current.style.opacity = '';
+      return;
+    }
+
+    if (voiceState === 'recording') {
       if (interimTranscript) {
         inputRef.current.value = interimTranscript;
         inputRef.current.style.fontStyle = 'italic';
@@ -119,7 +130,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         inputRef.current.value = '';
         inputRef.current.style.height = 'auto';
       }
-    } else if (inputRef.current) {
+    } else {
       // Clear provisional styling when not recording
       inputRef.current.style.fontStyle = '';
       inputRef.current.style.opacity = '';
@@ -128,7 +139,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         inputRef.current.style.height = 'auto';
       }
     }
-  }, [interimTranscript, voiceState]);
+  }, [interimTranscript, liveTranscriptionPreview, voiceState]);
 
   const processFiles = useCallback((files: FileList | File[]) => {
     const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));

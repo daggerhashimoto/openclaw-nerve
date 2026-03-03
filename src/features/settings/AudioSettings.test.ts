@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldDeferEdgeVoiceAutoSwitch } from './AudioSettings';
+import { shouldDeferEdgeVoiceAutoSwitch } from './audioSettingsUtils';
 
 describe('shouldDeferEdgeVoiceAutoSwitch', () => {
   it('does not defer for English even when support is not loaded', () => {

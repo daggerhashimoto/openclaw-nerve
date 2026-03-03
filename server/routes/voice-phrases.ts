@@ -1,7 +1,7 @@
 /**
  * Voice phrases API — per-language stop/cancel phrase management.
  *
- * GET  /api/voice-phrases?lang=fr  → merged phrases (language + English fallback)
+ * GET  /api/voice-phrases?lang=fr  → effective phrases for that language (no English merge)
  * GET  /api/voice-phrases/:lang    → language-only phrases (no English merge)
  * PUT  /api/voice-phrases/:lang    → save custom phrases for a language
  * GET  /api/voice-phrases/status   → which languages have custom phrases configured
@@ -20,7 +20,7 @@ import {
 const app = new Hono();
 
 /**
- * GET /api/voice-phrases — merged phrases for current (or specified) language.
+ * GET /api/voice-phrases — effective phrases for current (or specified) language.
  * Client uses these for voice recognition matching.
  * Query param `lang` overrides the server config language.
  */

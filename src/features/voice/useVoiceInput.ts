@@ -18,7 +18,7 @@ const DEFAULT_PHRASES: VoicePhrases = {
 
 let phrasesCache: { lang: string; phrases: VoicePhrases } | null = null;
 
-/** Fetch voice phrases for the given language (merged with English fallback on server). */
+/** Fetch effective voice phrases for the given language (no English merge). */
 async function fetchVoicePhrases(lang?: string): Promise<VoicePhrases> {
   const effectiveLang = lang || 'en';
   if (phrasesCache && phrasesCache.lang === effectiveLang) return phrasesCache.phrases;

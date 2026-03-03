@@ -120,33 +120,19 @@ function writeStore(store: PhrasesStore): void {
 
 /**
  * Get voice phrases for a specific language.
- * Returns the user's custom phrases merged with English as fallback.
- * The matching logic should check both the language-specific set AND English.
+ * Returns only that language's phrase set (custom > defaults), without English merge.
+ * Falls back to English only if the requested language has no configured/default set.
  */
 export function getVoicePhrases(lang?: string): LanguageVoicePhrases {
   const store = readStore();
-  const effectiveLang = lang || 'en';
+  const effectiveLang = (lang || 'en').toLowerCase();
 
-  // Get language-specific phrases (custom > defaults)
   const langPhrases = store[effectiveLang] || DEFAULT_VOICE_PHRASES[effectiveLang];
-  const enPhrases = store['en'] || DEFAULT_VOICE_PHRASES.en;
-
-  if (!langPhrases || effectiveLang === 'en') {
-    return enPhrases;
+  if (langPhrases) {
+    return langPhrases;
   }
 
-  // Merge: language-specific + English fallback (deduplicated)
-  const merged: LanguageVoicePhrases = {
-    stopPhrases: [...new Set([...langPhrases.stopPhrases, ...enPhrases.stopPhrases])],
-    cancelPhrases: [...new Set([...langPhrases.cancelPhrases, ...enPhrases.cancelPhrases])],
-  };
-
-  // Wake phrases: language-specific only (no English merge — these replace, not augment)
-  if (langPhrases.wakePhrases?.length) {
-    merged.wakePhrases = langPhrases.wakePhrases;
-  }
-
-  return merged;
+  return store['en'] || DEFAULT_VOICE_PHRASES.en;
 }
 
 /**

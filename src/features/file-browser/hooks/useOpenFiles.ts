@@ -96,8 +96,14 @@ export function useOpenFiles() {
   }, []);
 
   const openFile = useCallback(async (filePath: string) => {
-    // If already open, just switch tab
+    // If already open, just switch tab -- do NOT refetch (would clobber dirty edits)
+    if (openFilesRef.current.some(f => f.path === filePath)) {
+      setActiveTab(filePath);
+      return;
+    }
+
     setOpenFiles((prev) => {
+      // Re-check inside updater in case of concurrent calls
       const existing = prev.find(f => f.path === filePath);
       if (existing) return prev;
 
@@ -199,8 +205,9 @@ export function useOpenFiles() {
   }, []);
 
   // Ref to always have current openFiles for saveFile (avoids stale closure)
-  const openFilesRef = useRef(openFiles);
-  useEffect(() => { openFilesRef.current = openFiles; });
+  const openFilesRef = useRef<OpenFile[]>([]);
+  // eslint-disable-next-line react-hooks/immutability
+  openFilesRef.current = openFiles;
 
   const saveFile = useCallback(async (filePath: string): Promise<{ ok: boolean; conflict?: boolean }> => {
     const file = openFilesRef.current.find(f => f.path === filePath);

@@ -770,7 +770,7 @@ export function applyTheme(themeName: ThemeName): void {
   const hljsHref = `/hljs/${hljsTheme}.min.css`;
   
   if (existingLink) {
-    if (existingLink.href !== hljsHref) {
+    if (existingLink.getAttribute('href') !== hljsHref) {
       existingLink.href = hljsHref;
     }
   } else {

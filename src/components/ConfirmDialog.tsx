@@ -42,11 +42,7 @@ export function ConfirmDialog({
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onCancel();
-    if (e.key === 'Enter' && dialogRef.current?.contains(document.activeElement)) {
-      e.preventDefault();
-      onConfirm();
-    }
-  }, [onConfirm, onCancel]);
+  }, [onCancel]);
 
   const handleTabKey = useCallback((e: KeyboardEvent) => {
     if (e.key !== 'Tab' || !dialogRef.current) return;

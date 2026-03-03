@@ -91,6 +91,9 @@ EXT_LANG_MAP['h'] = 'c';
 EXT_LANG_MAP['m'] = 'objectivec';
 EXT_LANG_MAP['vue'] = 'xml';
 EXT_LANG_MAP['svelte'] = 'xml';
+// Extensionless filenames (lowercase for detectLanguage lookup)
+EXT_LANG_MAP['dockerfile'] = 'dockerfile';
+EXT_LANG_MAP['makefile'] = 'makefile';
 
 /** Get file extension for a code-fence language identifier */
 export function getExtension(lang: string): string {
@@ -102,7 +105,11 @@ export function getExtension(lang: string): string {
 /** Detect highlight.js language from a file path */
 export function detectLanguage(filePath?: string): string {
   if (!filePath) return '';
-  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  const filename = filePath.split('/').pop() || '';
+  // Check full filename first (Dockerfile, Makefile, etc.)
+  const byName = EXT_LANG_MAP[filename.toLowerCase()];
+  if (byName) return byName;
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
   return EXT_LANG_MAP[ext] || '';
 }
 

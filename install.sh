@@ -691,20 +691,44 @@ else
   rm -f "$npm_log" "$build_log" 2>/dev/null
 
   # ── Download speech model (for local voice input) ──────────────────
+  # Keep installer bootstrap in sync with UI/server default (multilingual tiny).
   WHISPER_MODEL_DIR="${HOME}/.nerve/models"
-  WHISPER_MODEL_FILE="ggml-tiny.en.bin"
+  WHISPER_MODEL_KEY="tiny"
+  if [[ -f .env ]]; then
+    EXISTING_WHISPER_MODEL=$(grep -E '^WHISPER_MODEL=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r' || true)
+    if [[ -n "$EXISTING_WHISPER_MODEL" ]]; then
+      WHISPER_MODEL_KEY="$EXISTING_WHISPER_MODEL"
+    fi
+  fi
+
+  WHISPER_MODEL_SIZE="75MB"
+  case "$WHISPER_MODEL_KEY" in
+    tiny.en)  WHISPER_MODEL_FILE="ggml-tiny.en.bin" ; WHISPER_MODEL_SIZE="75MB" ;;
+    base.en)  WHISPER_MODEL_FILE="ggml-base.en.bin" ; WHISPER_MODEL_SIZE="142MB" ;;
+    small.en) WHISPER_MODEL_FILE="ggml-small.en.bin"; WHISPER_MODEL_SIZE="466MB" ;;
+    tiny)     WHISPER_MODEL_FILE="ggml-tiny.bin"    ; WHISPER_MODEL_SIZE="75MB" ;;
+    base)     WHISPER_MODEL_FILE="ggml-base.bin"    ; WHISPER_MODEL_SIZE="142MB" ;;
+    small)    WHISPER_MODEL_FILE="ggml-small.bin"   ; WHISPER_MODEL_SIZE="466MB" ;;
+    *)
+      warn "Unknown WHISPER_MODEL='${WHISPER_MODEL_KEY}' in .env — defaulting to tiny"
+      WHISPER_MODEL_KEY="tiny"
+      WHISPER_MODEL_FILE="ggml-tiny.bin"
+      WHISPER_MODEL_SIZE="75MB"
+      ;;
+  esac
+
   WHISPER_MODEL_PATH="${WHISPER_MODEL_DIR}/${WHISPER_MODEL_FILE}"
   WHISPER_MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${WHISPER_MODEL_FILE}"
 
   if [[ -f "$WHISPER_MODEL_PATH" ]]; then
-    ok "Speech model already downloaded"
+    ok "Speech model already downloaded (${WHISPER_MODEL_KEY})"
   else
     mkdir -p "$WHISPER_MODEL_DIR"
-    run_with_dots "Downloading speech model (75MB)" bash -c "curl -fsSL -o '$WHISPER_MODEL_PATH' '$WHISPER_MODEL_URL' 2>/dev/null"
+    run_with_dots "Downloading speech model ${WHISPER_MODEL_KEY} (${WHISPER_MODEL_SIZE})" bash -c "curl -fsSL -o '$WHISPER_MODEL_PATH' '$WHISPER_MODEL_URL' 2>/dev/null"
     if [[ $RWD_EXIT -eq 0 ]]; then
-      ok "Speech model ready"
+      ok "Speech model ready (${WHISPER_MODEL_KEY})"
     else
-      warn "Speech model download failed — voice input will use OpenAI API (requires OPENAI_API_KEY)"
+      warn "Speech model download failed — local STT may fail unless STT_PROVIDER=openai with OPENAI_API_KEY"
       rm -f "$WHISPER_MODEL_PATH" 2>/dev/null
     fi
   fi

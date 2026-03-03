@@ -142,20 +142,25 @@ verify_whisper_runtime() {
 
   # Compatibility fallback for Sonoma generation where latest prebuilt may fail.
   if [[ "$mac_major" =~ ^[0-9]+$ ]] && [[ "$mac_major" -le 14 ]]; then
-    warn "Applying Whisper compatibility fallback (@fugood/node-whisper-darwin-arm64@1.0.10)"
+    warn "Applying Whisper compatibility fallback (@fugood/whisper.node@1.0.10)"
 
-    run_with_dots "Installing Whisper Darwin fallback package" npm install --no-save --silent @fugood/node-whisper-darwin-arm64@1.0.10
+    # Install both wrapper + platform package at the same version so
+    # @fugood/whisper.node does not keep resolving a stale 1.0.16 optional dep.
+    run_with_dots "Installing Whisper fallback package set" npm install --no-save --silent @fugood/whisper.node@1.0.10 @fugood/node-whisper-darwin-arm64@1.0.10
     if [[ $RWD_EXIT -ne 0 ]]; then
       fail "Fallback install failed"
       hint "Try manually:"
       cmd "cd ${INSTALL_DIR}"
-      cmd "npm install --no-save @fugood/node-whisper-darwin-arm64@1.0.10"
+      cmd "npm install --no-save @fugood/whisper.node@1.0.10 @fugood/node-whisper-darwin-arm64@1.0.10"
       cmd "node -e \"import('@fugood/whisper.node').then(async (m)=>{const api=m.loadWhisperModule?m:m.default;await api.loadWhisperModule();console.log('ok');}).catch(e=>{console.error(e);process.exit(1)})\""
       exit 1
     fi
 
+    # Log the effective installed versions for debugging fallback issues.
+    npm ls @fugood/whisper.node @fugood/node-whisper-darwin-arm64 >>"$whisper_test_log" 2>&1 || true
+
     if node -e "$whisper_probe" >>"$whisper_test_log" 2>&1; then
-      ok "Whisper native runtime works with Darwin fallback package"
+      ok "Whisper native runtime works with fallback package set"
       return 0
     fi
 
@@ -172,7 +177,7 @@ verify_whisper_runtime() {
   echo ""
   hint "Local STT fallback options:"
   cmd "cd ${INSTALL_DIR}"
-  cmd "npm install --no-save @fugood/node-whisper-darwin-arm64@1.0.10"
+  cmd "npm install --no-save @fugood/whisper.node@1.0.10 @fugood/node-whisper-darwin-arm64@1.0.10"
   cmd "# or use cloud STT by setting STT_PROVIDER=openai"
   exit 1
 }

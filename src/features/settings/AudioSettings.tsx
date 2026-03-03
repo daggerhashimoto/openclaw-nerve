@@ -31,6 +31,10 @@ interface LanguageSupportEntry {
   tts: { edge: boolean; qwen3: boolean; openai: boolean };
 }
 
+export function shouldDeferEdgeVoiceAutoSwitch(language: string, support: Array<{ code: string }> | null): boolean {
+  return language !== 'en' && !support?.some((entry) => entry.code === language);
+}
+
 interface EdgeVoiceOption {
   value: string;
   label: string;
@@ -538,6 +542,13 @@ export function AudioSettings({
   // auto-switch to that language's default Edge voice and save immediately.
   useEffect(() => {
     if (!langState?.language || !config) return;
+
+    // For non-English languages, wait until support matrix is loaded.
+    // Otherwise we may temporarily see English fallback options and persist
+    // an incorrect English voice before language voices arrive.
+    if (shouldDeferEdgeVoiceAutoSwitch(langState.language, support)) {
+      return;
+    }
 
     const options = getEdgeVoiceOptions(langState.language, support, currentLangInfo?.name);
     const fallbackVoice = options[0]?.value;

@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
-import { getEdgeTtsVoice, getQwen3Language, getFallbackInfo } from './language.js';
+import { getEdgeTtsVoice, getQwen3Language, getFallbackInfo, resolveLanguage } from './language.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -140,12 +140,19 @@ export interface ResolvedTTSVoice {
   warning?: string;
 }
 
+/** Extract BCP-47 locale prefix from an Edge voice id (e.g. tr-TR from tr-TR-EmelNeural). */
+function voiceLocalePrefix(voiceName: string): string {
+  const match = voiceName.match(/^([a-z]{2,3}-[A-Z]{2})-/);
+  return match?.[1] || '';
+}
+
 /**
  * Resolve the effective Edge TTS voice considering language preference.
  *
  * Rules:
  *   1) For English, keep explicit non-default user override.
- *   2) For non-English, only keep user override if it matches that language locale.
+ *   2) For non-English, keep user override only if its locale matches
+ *      one of the selected language's registered Edge locales.
  *      Otherwise auto-fallback to the language-derived voice.
  */
 export function resolveEdgeTTSVoice(): ResolvedTTSVoice {
@@ -163,9 +170,17 @@ export function resolveEdgeTTSVoice(): ResolvedTTSVoice {
         return { voice: userVoice, language: lang, fallback: false };
       }
     } else {
-      const localePrefix = languageVoice.split('-').slice(0, 2).join('-');
-      if (localePrefix && userVoice.startsWith(`${localePrefix}-`)) {
-        return { voice: userVoice, language: lang, fallback: false };
+      const languageConfig = resolveLanguage(lang);
+      const userLocale = voiceLocalePrefix(userVoice);
+      if (languageConfig && userLocale) {
+        const allowedLocales = new Set(
+          Object.values(languageConfig.edgeTtsVoices)
+            .map((voice) => voiceLocalePrefix(voice))
+            .filter(Boolean),
+        );
+        if (allowedLocales.has(userLocale)) {
+          return { voice: userVoice, language: lang, fallback: false };
+        }
       }
     }
   }

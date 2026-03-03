@@ -436,13 +436,27 @@ export function useVoiceInput(
     return cleanTranscript(text || '', stopPhrasesRegexRef.current);
   }, []);
 
+  const waitForBrowserTranscript = useCallback(async (timeoutMs = 350, stepMs = 25) => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const current = browserTranscriptRef.current.trim();
+      if (current) return current;
+      await new Promise((resolve) => setTimeout(resolve, stepMs));
+    }
+    return browserTranscriptRef.current.trim();
+  }, []);
+
   const doStopAndTranscribe = useCallback(() => {
     const mr = mediaRecorderRef.current;
     if (!mr || mr.state !== 'recording') return;
     setInterimTranscript('');
     wakeTriggeredRef.current = false;
     intentionalStopRef.current = true;
-    try { recognitionRef.current?.abort(); } catch { /* already stopped */ }
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      try { recognitionRef.current?.abort(); } catch { /* already stopped */ }
+    }
     recognitionRef.current = null;
 
     setVoiceState('transcribing');
@@ -450,18 +464,24 @@ export function useVoiceInput(
       const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
       stopStream();
       try {
-        const browserTranscript = browserTranscriptRef.current.trim();
         const browserRecognitionSupported = Boolean(getSpeechRecognition());
+        let browserTranscript = browserTranscriptRef.current.trim();
         let cleaned = '';
 
         if (sttInputModeRef.current === 'local') {
           cleaned = await transcribeWithBackend(blob);
-        } else if (browserTranscript) {
-          cleaned = browserTranscript;
-        } else if (sttInputModeRef.current === 'hybrid' || !browserRecognitionSupported) {
-          cleaned = await transcribeWithBackend(blob);
         } else {
-          throw new Error('Browser speech recognition did not produce a transcript');
+          if (!browserTranscript) {
+            browserTranscript = await waitForBrowserTranscript();
+          }
+
+          if (browserTranscript) {
+            cleaned = browserTranscript;
+          } else if (sttInputModeRef.current === 'hybrid' || !browserRecognitionSupported) {
+            cleaned = await transcribeWithBackend(blob);
+          } else {
+            throw new Error('Browser speech recognition did not produce a transcript');
+          }
         }
 
         if (cleaned) onTranscriptionRef.current(cleaned);
@@ -481,7 +501,7 @@ export function useVoiceInput(
       }
     };
     mr.stop();
-  }, [resetBrowserTranscript, stopStream, setVoiceState, transcribeWithBackend]);
+  }, [resetBrowserTranscript, stopStream, setVoiceState, transcribeWithBackend, waitForBrowserTranscript]);
 
   const startWakeWordListener = useCallback(() => {
     const SpeechRecognition = getSpeechRecognition();

@@ -60,7 +60,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [wakeWordEnabled, setWakeWordEnabled] = useState(false);
   const [liveTranscriptionPreview, setLiveTranscriptionPreview] = useState(() => {
     const saved = localStorage.getItem('nerve:liveTranscriptionPreview');
-    return saved !== 'false'; // Default to enabled
+    return saved === 'true'; // Default to disabled (fresh installs)
   });
   const [panelRatio, setPanelRatioState] = useState(() => {
     const saved = localStorage.getItem('oc-panel-ratio');

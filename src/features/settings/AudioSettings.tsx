@@ -873,10 +873,15 @@ export function AudioSettings({
         </div>
       )}
 
-      {showInput && (
+      {/* STT Model selector (only for local provider) */}
+      {showInput && sttProvider === 'local' && (
+        <SttModelSelector model={sttModel} onModelChange={onSttModelChange} />
+      )}
+
+      {showInput && sttProvider === 'local' && (
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
-            <div className="flex flex-col">
+          <div className="flex items-start justify-between gap-3 px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
+            <div className="flex min-w-0 flex-1 flex-col">
               <span className="text-[12px]">Input Mode</span>
               <span className="text-[10px] text-muted-foreground">Choose whether final text comes from the browser, the backend, or browser-first fallback.</span>
             </div>
@@ -889,7 +894,8 @@ export function AudioSettings({
                 { value: 'local', label: 'Local' },
               ]}
               ariaLabel="STT Input Mode"
-              menuClassName="min-w-[140px]"
+              triggerClassName="w-[120px] justify-between shrink-0"
+              menuClassName="min-w-[120px]"
             />
           </div>
           <span className="text-[10px] text-muted-foreground px-1">
@@ -922,11 +928,6 @@ export function AudioSettings({
       {/* STT API key input */}
       {showInput && sttProvider === 'openai' && !apiKeys.openai && (
         <ApiKeyInput keyName="OPENAI_API_KEY" provider="OpenAI Whisper" fieldName="openaiKey" onSaved={() => setApiKeys(k => ({ ...k, openai: true }))} />
-      )}
-
-      {/* STT Model selector (only for local provider) */}
-      {showInput && sttProvider === 'local' && (
-        <SttModelSelector model={sttModel} onModelChange={onSttModelChange} />
       )}
 
       {/* Voice Phrases Modal — shown when switching to non-English language */}

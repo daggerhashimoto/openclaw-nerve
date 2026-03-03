@@ -36,7 +36,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   // Tab completion for session names
   const { sessions, agentName: ctxAgentName } = useSessionContext();
-  const { liveTranscriptionPreview, sttInputMode } = useSettings();
+  const { liveTranscriptionPreview, sttInputMode, sttProvider } = useSettings();
   const getSessionLabels = useMemo(() => {
     // Build a closure that returns current session labels
     const labels = sessions.map((s) => {
@@ -104,9 +104,18 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     };
   }, []);
 
-  const { voiceState, interimTranscript, wakeWordEnabled, toggleWakeWord } = useVoiceInput((text) => {
+  const effectiveSttInputMode = sttProvider === 'openai' ? 'local' : sttInputMode;
+
+  const { voiceState, interimTranscript, wakeWordEnabled, toggleWakeWord, error: voiceError, clearError: clearVoiceError } = useVoiceInput((text) => {
+    const input = inputRef.current;
+    if (input) {
+      input.value = '';
+      input.style.height = 'auto';
+      input.style.fontStyle = '';
+      input.style.opacity = '';
+    }
     onSend('[voice] ' + text);
-  }, agentName, voiceLang, voicePhrasesVersion, sttInputMode);
+  }, agentName, voiceLang, voicePhrasesVersion, effectiveSttInputMode);
 
   // Live transcription preview: write interim transcript to textarea during recording
   useEffect(() => {
@@ -132,9 +141,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       }
     } else {
       // Clear provisional styling when not recording
+      const hadVoicePreviewStyling =
+        inputRef.current.style.fontStyle === 'italic' || inputRef.current.style.opacity === '0.5';
       inputRef.current.style.fontStyle = '';
       inputRef.current.style.opacity = '';
-      if (voiceState === 'transcribing') {
+      if (voiceState === 'transcribing' || hadVoicePreviewStyling) {
         inputRef.current.value = '';
         inputRef.current.style.height = 'auto';
       }
@@ -262,6 +273,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     onSend(text || '', pendingImages.length > 0 ? [...pendingImages] : undefined);
     setPendingImages([]);
     setAttachmentError(null);
+    clearVoiceError();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -346,6 +358,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const handleInput = () => {
     if (!inputRef.current) return;
     resetTabCompletion();
+    clearVoiceError();
     inputRef.current.style.height = 'auto';
     inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + 'px';
   };
@@ -446,6 +459,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           ? 'Transcribing…'
           : 'Enter or ⌘Enter to send · Shift+Enter for newline · Double Left Shift for voice · Ctrl+F search'}
       </div>
+      {voiceError && (
+        <div className="text-[10px] text-destructive px-4 pb-1.5 pl-10 bg-card" role="alert">
+          {voiceError}
+        </div>
+      )}
     </>
   );
 });

@@ -5,6 +5,7 @@ import { type ThemeName, applyTheme, themeNames } from '@/lib/themes';
 import { type FontName, applyFont, fontNames } from '@/lib/fonts';
 
 export type STTProvider = 'local' | 'openai';
+export type STTInputMode = 'browser' | 'local' | 'hybrid';
 
 interface SettingsContextValue {
   soundEnabled: boolean;
@@ -16,6 +17,8 @@ interface SettingsContextValue {
   toggleTtsProvider: () => void;
   sttProvider: STTProvider;
   setSttProvider: (provider: STTProvider) => void;
+  sttInputMode: STTInputMode;
+  setSttInputMode: (mode: STTInputMode) => void;
   sttModel: string;
   setSttModel: (model: string) => void;
   wakeWordEnabled: boolean;
@@ -48,6 +51,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [sttProvider, setSttProviderState] = useState<STTProvider>(() => {
     const saved = localStorage.getItem('oc-stt-provider') as STTProvider | null;
     return saved === 'openai' ? 'openai' : 'local';
+  });
+  const [sttInputMode, setSttInputModeState] = useState<STTInputMode>(() => {
+    const saved = localStorage.getItem('nerve:sttInputMode') as STTInputMode | null;
+    return saved === 'browser' || saved === 'local' || saved === 'hybrid' ? saved : 'hybrid';
   });
   const [sttModel, setSttModelState] = useState(() => localStorage.getItem('oc-stt-model') || 'base');
   const [wakeWordEnabled, setWakeWordEnabled] = useState(false);
@@ -159,6 +166,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }).catch(() => {});
   }, []);
 
+  const changeSttInputMode = useCallback((mode: STTInputMode) => {
+    setSttInputModeState(mode);
+    localStorage.setItem('nerve:sttInputMode', mode);
+  }, []);
+
   const changeSttModel = useCallback((model: string) => {
     setSttModelState(model);
     localStorage.setItem('oc-stt-model', model);
@@ -237,6 +249,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     toggleTtsProvider,
     sttProvider,
     setSttProvider: changeSttProvider,
+    sttInputMode,
+    setSttInputMode: changeSttInputMode,
     sttModel,
     setSttModel: changeSttModel,
     wakeWordEnabled,
@@ -260,7 +274,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setFont,
   }), [
     soundEnabled, toggleSound, ttsProvider, ttsModel, changeTtsProvider, changeTtsModel, toggleTtsProvider,
-    sttProvider, changeSttProvider, sttModel, changeSttModel,
+    sttProvider, changeSttProvider, sttInputMode, changeSttInputMode, sttModel, changeSttModel,
     wakeWordEnabled, handleToggleWakeWord, handleWakeWordState,
     liveTranscriptionPreview, toggleLiveTranscriptionPreview,
     speak, panelRatio, setPanelRatio, telemetryVisible, toggleTelemetry,

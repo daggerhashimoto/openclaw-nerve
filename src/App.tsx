@@ -9,7 +9,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } fro
 import { useGateway, loadConfig } from '@/contexts/GatewayContext';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { useChat } from '@/contexts/ChatContext';
-import { useSettings } from '@/contexts/SettingsContext';
+import { useSettings, type STTInputMode } from '@/contexts/SettingsContext';
 import { getSessionKey } from '@/types';
 import { useConnectionManager } from '@/hooks/useConnectionManager';
 import { useDashboardData } from '@/hooks/useDashboardData';
@@ -71,7 +71,7 @@ export default function App({ onLogout }: AppProps) {
   const {
     soundEnabled, toggleSound,
     ttsProvider, ttsModel, setTtsProvider, setTtsModel,
-    sttProvider, setSttProvider, sttModel, setSttModel,
+    sttProvider, setSttProvider, sttInputMode, setSttInputMode, sttModel, setSttModel,
     wakeWordEnabled, handleToggleWakeWord, handleWakeWordState,
     liveTranscriptionPreview, toggleLiveTranscriptionPreview,
     panelRatio, setPanelRatio,
@@ -308,6 +308,10 @@ export default function App({ onLogout }: AppProps) {
     setSttProvider(provider);
   }, [setSttProvider]);
 
+  const handleSttInputModeChange = useCallback((mode: STTInputMode) => {
+    setSttInputMode(mode);
+  }, [setSttInputMode]);
+
   const handleSttModelChange = useCallback((model: string) => {
     setSttModel(model);
   }, [setSttModel]);
@@ -503,8 +507,10 @@ export default function App({ onLogout }: AppProps) {
             onTtsProviderChange={handleTtsProviderChange}
             onTtsModelChange={handleTtsModelChange}
             sttProvider={sttProvider}
+            sttInputMode={sttInputMode}
             sttModel={sttModel}
             onSttProviderChange={handleSttProviderChange}
+            onSttInputModeChange={handleSttInputModeChange}
             onSttModelChange={handleSttModelChange}
             wakeWordEnabled={wakeWordEnabled}
             onToggleWakeWord={handleToggleWakeWord}

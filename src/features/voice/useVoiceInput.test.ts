@@ -78,6 +78,10 @@ class MockMediaStream {
   }
 }
 
+function hasTranscribeRequest(fetchMock: Mock) {
+  return fetchMock.mock.calls.some(([url]) => url === '/api/transcribe');
+}
+
 describe('useVoiceInput', () => {
   let mockRecognition: MockSpeechRecognition | null = null;
   let originalFetch: typeof fetch;
@@ -104,12 +108,33 @@ describe('useVoiceInput', () => {
       getUserMedia: vi.fn().mockResolvedValue(new MockMediaStream()),
     };
 
-    // Mock fetch for transcription
+    // Mock fetch for voice phrases and transcription
     originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ text: 'transcribed text' }),
-    });
+    globalThis.fetch = vi.fn((input: string | URL) => {
+      const url = String(input);
+
+      if (url.startsWith('/api/voice-phrases')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            stopPhrases: ['boom', 'done'],
+            cancelPhrases: ['cancel'],
+          }),
+        });
+      }
+
+      if (url === '/api/transcribe') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ text: 'transcribed text' }),
+        });
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    }) as typeof fetch;
 
     vi.clearAllMocks();
   });
@@ -425,6 +450,116 @@ describe('useVoiceInput', () => {
       // The error should be logged
       expect(consoleSpy).toHaveBeenCalled();
       consoleSpy.mockRestore();
+    });
+
+    it('should submit browser transcript directly in browser mode', async () => {
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription, 'Agent', 'en', 0, 'browser'));
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      act(() => {
+        mockRecognition?.simulateResult('hello world');
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(onTranscription).toHaveBeenCalledWith('hello world');
+      expect(hasTranscribeRequest(globalThis.fetch as Mock)).toBe(false);
+    });
+
+    it('should always use backend transcription in local mode', async () => {
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription, 'Agent', 'en', 0, 'local'));
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      act(() => {
+        mockRecognition?.simulateResult('browser transcript');
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(onTranscription).toHaveBeenCalledWith('transcribed text');
+      expect(hasTranscribeRequest(globalThis.fetch as Mock)).toBe(true);
+    });
+
+    it('should prefer browser transcript in hybrid mode', async () => {
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription, 'Agent', 'en', 0, 'hybrid'));
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      act(() => {
+        mockRecognition?.simulateResult('hybrid browser text');
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(onTranscription).toHaveBeenCalledWith('hybrid browser text');
+      expect(hasTranscribeRequest(globalThis.fetch as Mock)).toBe(false);
+    });
+
+    it('should fall back to backend transcription in hybrid mode when browser transcript is empty', async () => {
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription, 'Agent', 'en', 0, 'hybrid'));
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(onTranscription).toHaveBeenCalledWith('transcribed text');
+      expect(hasTranscribeRequest(globalThis.fetch as Mock)).toBe(true);
+    });
+
+    it('should fall back to backend transcription in browser mode when browser recognition is unsupported', async () => {
+      delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition;
+
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription, 'Agent', 'en', 0, 'browser'));
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(onTranscription).toHaveBeenCalledWith('transcribed text');
+      expect(hasTranscribeRequest(globalThis.fetch as Mock)).toBe(true);
     });
   });
 

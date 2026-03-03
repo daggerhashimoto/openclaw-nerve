@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { buildPrimaryWakePhrase, buildStopPhrasesRegex } from '@/lib/constants';
 import { playWakePing, playSubmitPing, playCancelPing, ensureAudioContext } from './audio-feedback';
+import type { STTInputMode } from '@/contexts/SettingsContext';
 
 // ─── Phrases from server config ──────────────────────────────────────────────
 
@@ -84,6 +85,10 @@ function matchesPhrase(transcript: string, phrases: string[], language: string):
   });
 }
 
+function cleanTranscript(text: string, stopPhrasesRegex: RegExp): string {
+  return (text || '').trim().replace(stopPhrasesRegex, '').trim();
+}
+
 /**
  * Hook that manages voice input via the Web Speech API and MediaRecorder.
  *
@@ -95,6 +100,7 @@ function matchesPhrase(transcript: string, phrases: string[], language: string):
  * @param agentName - Agent display name used to build dynamic wake phrases.
  * @param language - Active language code used for recognition and phrase matching.
  * @param phrasesVersion - Incrementing token to force phrase reloads after config edits.
+ * @param sttInputMode - Finalization strategy for browser vs backend transcription.
  */
 /** Map ISO 639-1 language code to BCP-47 locale for Web Speech API. */
 export const LANG_TO_BCP47: Record<string, string> = {
@@ -137,6 +143,7 @@ export function useVoiceInput(
   agentName: string = 'Agent',
   language: string = 'en',
   phrasesVersion: number = 0,
+  sttInputMode: STTInputMode = 'hybrid',
 ) {
   const [state, setState] = useState<VoiceState>('idle');
   const stateRef = useRef<VoiceState>('idle');
@@ -149,6 +156,8 @@ export function useVoiceInput(
   const lastCapsTimeRef = useRef(0);
   const onTranscriptionRef = useRef(onTranscription);
   onTranscriptionRef.current = onTranscription;
+  const sttInputModeRef = useRef(sttInputMode);
+  sttInputModeRef.current = sttInputMode;
 
   // Single persistent recognition instance
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -198,6 +207,7 @@ export function useVoiceInput(
   const languageRef = useRef(language);
   languageRef.current = language;
   const wakeTriggeredRef = useRef(false);
+  const browserTranscriptRef = useRef('');
   // Track intentional stops to avoid restart loops
   const intentionalStopRef = useRef(false);
   // Mode: 'wake' = listening for wake word, 'stop' = listening for stop/cancel phrases
@@ -224,6 +234,10 @@ export function useVoiceInput(
     streamRef.current = null;
     mediaRecorderRef.current = null;
     chunksRef.current = [];
+  }, []);
+
+  const resetBrowserTranscript = useCallback(() => {
+    browserTranscriptRef.current = '';
   }, []);
 
   // Start or restart the single recognition instance
@@ -264,9 +278,19 @@ export function useVoiceInput(
       intentionalStopRef.current = false;
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
+        const currentMode = modeRef.current;
+        if (currentMode === 'stop') {
+          let full = '';
+          for (let j = 0; j < event.results.length; j++) {
+            full += event.results[j][0].transcript;
+          }
+          const cleaned = cleanTranscript(full, stopPhrasesRegexRef.current);
+          browserTranscriptRef.current = cleaned;
+          setInterimTranscript(cleaned);
+        }
+
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const transcript = event.results[i][0].transcript;
-          const currentMode = modeRef.current;
           if (currentMode === 'stop') {
             if (matchesPhrase(transcript, phrasesRef.current.cancelPhrases, languageRef.current)) {
               playCancelPing();
@@ -293,15 +317,6 @@ export function useVoiceInput(
               return;
             }
           }
-        }
-        // Surface interim transcript for live preview (once per event, outside loop)
-        if (modeRef.current === 'stop') {
-          let full = '';
-          for (let j = 0; j < event.results.length; j++) {
-            full += event.results[j][0].transcript;
-          }
-          const cleaned = full.replace(stopPhrasesRegexRef.current, '').trim();
-          setInterimTranscript(cleaned);
         }
       };
 
@@ -368,6 +383,8 @@ export function useVoiceInput(
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       chunksRef.current = [];
+      resetBrowserTranscript();
+      setInterimTranscript('');
       const mr = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
       mediaRecorderRef.current = mr;
       mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
@@ -387,10 +404,11 @@ export function useVoiceInput(
         ensureRecognitionRef.current('wake');
       }
     }
-  }, [setVoiceState]);
+  }, [resetBrowserTranscript, setVoiceState]);
 
   const doDiscard = useCallback(() => {
     setInterimTranscript('');
+    resetBrowserTranscript();
     wakeTriggeredRef.current = false;
     intentionalStopRef.current = true;
     try { recognitionRef.current?.abort(); } catch { /* already stopped */ }
@@ -407,7 +425,16 @@ export function useVoiceInput(
     } else {
       setVoiceState('idle');
     }
-  }, [stopStream, setVoiceState]);
+  }, [resetBrowserTranscript, stopStream, setVoiceState]);
+
+  const transcribeWithBackend = useCallback(async (blob: Blob) => {
+    const fd = new FormData();
+    fd.append('file', blob, 'audio.webm');
+    const resp = await fetch('/api/transcribe', { method: 'POST', body: fd, credentials: 'include' });
+    if (!resp.ok) throw new Error(await resp.text());
+    const { text } = await resp.json();
+    return cleanTranscript(text || '', stopPhrasesRegexRef.current);
+  }, []);
 
   const doStopAndTranscribe = useCallback(() => {
     const mr = mediaRecorderRef.current;
@@ -423,18 +450,27 @@ export function useVoiceInput(
       const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
       stopStream();
       try {
-        const fd = new FormData();
-        fd.append('file', blob, 'audio.webm');
-        const resp = await fetch('/api/transcribe', { method: 'POST', body: fd, credentials: 'include' });
-        if (!resp.ok) throw new Error(await resp.text());
-        const { text } = await resp.json();
-        // Use dynamic stop phrases regex (includes agent's wake phrase)
-        const cleaned = (text || '').trim().replace(stopPhrasesRegexRef.current, '').trim();
+        const browserTranscript = browserTranscriptRef.current.trim();
+        const browserRecognitionSupported = Boolean(getSpeechRecognition());
+        let cleaned = '';
+
+        if (sttInputModeRef.current === 'local') {
+          cleaned = await transcribeWithBackend(blob);
+        } else if (browserTranscript) {
+          cleaned = browserTranscript;
+        } else if (sttInputModeRef.current === 'hybrid' || !browserRecognitionSupported) {
+          cleaned = await transcribeWithBackend(blob);
+        } else {
+          throw new Error('Browser speech recognition did not produce a transcript');
+        }
+
         if (cleaned) onTranscriptionRef.current(cleaned);
         setError(null);
       } catch (err) {
         console.error('Transcription failed:', err);
         setError(`Transcription failed: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        resetBrowserTranscript();
       }
       // Resume wake word listener
       if (wakeWordEnabledRef.current) {
@@ -445,7 +481,7 @@ export function useVoiceInput(
       }
     };
     mr.stop();
-  }, [stopStream, setVoiceState]);
+  }, [resetBrowserTranscript, stopStream, setVoiceState, transcribeWithBackend]);
 
   const startWakeWordListener = useCallback(() => {
     const SpeechRecognition = getSpeechRecognition();

@@ -36,7 +36,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   // Tab completion for session names
   const { sessions, agentName: ctxAgentName } = useSessionContext();
-  const { liveTranscriptionPreview } = useSettings();
+  const { liveTranscriptionPreview, sttInputMode } = useSettings();
   const getSessionLabels = useMemo(() => {
     // Build a closure that returns current session labels
     const labels = sessions.map((s) => {
@@ -106,7 +106,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   const { voiceState, interimTranscript, wakeWordEnabled, toggleWakeWord } = useVoiceInput((text) => {
     onSend('[voice] ' + text);
-  }, agentName, voiceLang, voicePhrasesVersion);
+  }, agentName, voiceLang, voicePhrasesVersion, sttInputMode);
 
   // Live transcription preview: write interim transcript to textarea during recording
   useEffect(() => {

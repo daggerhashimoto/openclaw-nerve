@@ -4,7 +4,7 @@ import { ConnectionSettings } from './ConnectionSettings';
 import { AudioSettings } from './AudioSettings';
 import { AppearanceSettings } from './AppearanceSettings';
 import type { TTSProvider } from '@/features/tts/useTTS';
-import type { STTProvider } from '@/contexts/SettingsContext';
+import type { STTInputMode, STTProvider } from '@/contexts/SettingsContext';
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -24,8 +24,10 @@ interface SettingsDrawerProps {
   onTtsProviderChange: (provider: TTSProvider) => void;
   onTtsModelChange: (model: string) => void;
   sttProvider: STTProvider;
+  sttInputMode: STTInputMode;
   sttModel: string;
   onSttProviderChange: (provider: STTProvider) => void;
+  onSttInputModeChange: (mode: STTInputMode) => void;
   onSttModelChange: (model: string) => void;
   wakeWordEnabled: boolean;
   onToggleWakeWord: () => void;
@@ -76,8 +78,10 @@ export function SettingsDrawer({
   onTtsProviderChange,
   onTtsModelChange,
   sttProvider,
+  sttInputMode,
   sttModel,
   onSttProviderChange,
+  onSttInputModeChange,
   onSttModelChange,
   wakeWordEnabled,
   onToggleWakeWord,
@@ -227,8 +231,10 @@ export function SettingsDrawer({
                 onTtsProviderChange={onTtsProviderChange}
                 onTtsModelChange={onTtsModelChange}
                 sttProvider={sttProvider}
+                sttInputMode={sttInputMode}
                 sttModel={sttModel}
                 onSttProviderChange={onSttProviderChange}
+                onSttInputModeChange={onSttInputModeChange}
                 onSttModelChange={onSttModelChange}
                 wakeWordEnabled={wakeWordEnabled}
                 onToggleWakeWord={onToggleWakeWord}

@@ -3,7 +3,7 @@ import { Volume2, VolumeX, Mic, MicOff, Download, AlertTriangle, KeyRound, Globe
 import { Switch } from '@/components/ui/switch';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import type { TTSProvider } from '@/features/tts/useTTS';
-import type { STTProvider } from '@/contexts/SettingsContext';
+import type { STTInputMode, STTProvider } from '@/contexts/SettingsContext';
 import { useTTSConfig } from '@/features/tts/useTTSConfig';
 import { VoicePhrasesModal } from './VoicePhrasesModal';
 import { buildPrimaryWakePhrase } from '@/lib/constants';
@@ -204,8 +204,10 @@ interface AudioSettingsProps {
   onTtsProviderChange: (provider: TTSProvider) => void;
   onTtsModelChange: (model: string) => void;
   sttProvider: STTProvider;
+  sttInputMode: STTInputMode;
   sttModel: string;
   onSttProviderChange: (provider: STTProvider) => void;
+  onSttInputModeChange: (mode: STTInputMode) => void;
   onSttModelChange: (model: string) => void;
   wakeWordEnabled: boolean;
   onToggleWakeWord: () => void;
@@ -420,8 +422,10 @@ export function AudioSettings({
   onTtsProviderChange,
   onTtsModelChange,
   sttProvider,
+  sttInputMode,
   sttModel,
   onSttProviderChange,
+  onSttInputModeChange,
   onSttModelChange,
   wakeWordEnabled,
   onToggleWakeWord,
@@ -865,6 +869,35 @@ export function AudioSettings({
               : apiKeys.openai
                 ? 'Using OpenAI Whisper API'
                 : 'OpenAI Whisper API — enter your API key below'}
+          </span>
+        </div>
+      )}
+
+      {showInput && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
+            <div className="flex flex-col">
+              <span className="text-[12px]">Input Mode</span>
+              <span className="text-[10px] text-muted-foreground">Choose whether final text comes from the browser, the backend, or browser-first fallback.</span>
+            </div>
+            <InlineSelect
+              value={sttInputMode}
+              onChange={(value) => onSttInputModeChange(value as STTInputMode)}
+              options={[
+                { value: 'hybrid', label: 'Hybrid' },
+                { value: 'browser', label: 'Browser' },
+                { value: 'local', label: 'Local' },
+              ]}
+              ariaLabel="STT Input Mode"
+              menuClassName="min-w-[140px]"
+            />
+          </div>
+          <span className="text-[10px] text-muted-foreground px-1">
+            {sttInputMode === 'browser'
+              ? 'Use browser speech recognition for the final message. Backend transcription is only used if browser recognition is unavailable.'
+              : sttInputMode === 'local'
+                ? 'Always finalize from /api/transcribe, even if the browser preview looks better.'
+                : 'Use the browser transcript when it captures speech; fall back to /api/transcribe when it does not.'}
           </span>
         </div>
       )}

@@ -471,6 +471,9 @@ export function AudioSettings({
   const showEnglishOnlyWarning = isNonEnglishLocalStt && !isMultilingual;
   const showTinyAccuracyWarning = isNonEnglishLocalStt && isMultilingual && sttModel === 'tiny';
 
+  // All 13 OpenAI TTS voices. tts-1 and tts-1-hd only support a subset (no ballad, cedar, marin, verse).
+  const LEGACY_ONLY_VOICES = new Set(['ballad', 'cedar', 'marin', 'verse']);
+  const isLegacyModel = ttsModel === 'tts-1' || ttsModel === 'tts-1-hd';
   const OPENAI_VOICES = [
     { value: 'alloy', label: 'Alloy — Neutral, balanced' },
     { value: 'ash', label: 'Ash — Warm, conversational' },
@@ -485,7 +488,7 @@ export function AudioSettings({
     { value: 'sage', label: 'Sage — Wise, measured' },
     { value: 'shimmer', label: 'Shimmer — Soft, gentle' },
     { value: 'verse', label: 'Verse — Versatile, dynamic' },
-  ];
+  ].filter(v => !isLegacyModel || !LEGACY_ONLY_VOICES.has(v.value));
 
   // Build Edge voice options from selected language.
   // English keeps the full legacy list; other languages use curated voice pairs.

@@ -54,7 +54,7 @@ Always send `version` in PATCH and reorder requests. On `409`, read `latest` fro
 ### Proposing changes (as an agent)
 Agents that can't directly modify the board should use proposals:
 1. `POST /api/kanban/proposals` with `{ "type": "create", "payload": { "title": "..." }, "proposedBy": "agent:myname" }`.
-2. The operator approves or rejects via `/api/kanban/proposals/:id/approve` or `/reject`.
+2. The operator approves or rejects via `/api/kanban/proposals/:id/approve` or `/api/kanban/proposals/:id/reject`.
 
 ## Full API Reference
 

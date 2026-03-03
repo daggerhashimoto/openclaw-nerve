@@ -11,8 +11,9 @@
 /** Mask a token for display, with a guard for short tokens. */
 // Show token in prompts so users can verify what they entered
 
-import { existsSync, readdirSync, mkdirSync, copyFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, mkdirSync, copyFileSync, lstatSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { input, password, confirm, select } from '@inquirer/prompts';
@@ -39,8 +40,7 @@ import { detectGatewayConfig, getEnvGatewayToken, restartGateway, approveAllPend
 const PROJECT_ROOT = resolve(process.cwd());
 const ENV_PATH = resolve(PROJECT_ROOT, '.env');
 const SKILLS_SRC = resolve(PROJECT_ROOT, 'skills');
-const HOME = process.env.HOME || process.env.USERPROFILE || '';
-const SKILLS_DEST = resolve(HOME, '.openclaw', 'workspace', 'skills');
+const SKILLS_DEST = resolve(homedir(), '.openclaw', 'workspace', 'skills');
 const TOTAL_SECTIONS = 6;
 
 const args = process.argv.slice(2);
@@ -155,7 +155,9 @@ function copyDirSync(src: string, dest: string): void {
   for (const entry of readdirSync(src)) {
     const srcPath = join(src, entry);
     const destPath = join(dest, entry);
-    if (statSync(srcPath).isDirectory()) {
+    const stat = lstatSync(srcPath);
+    if (stat.isSymbolicLink()) continue;
+    if (stat.isDirectory()) {
       copyDirSync(srcPath, destPath);
     } else {
       copyFileSync(srcPath, destPath);
@@ -169,12 +171,16 @@ function installBundledSkills(): void {
   let installed = 0;
   for (const skillName of readdirSync(SKILLS_SRC)) {
     const skillSrc = join(SKILLS_SRC, skillName);
-    if (!statSync(skillSrc).isDirectory()) continue;
+    if (!lstatSync(skillSrc).isDirectory()) continue;
     if (!existsSync(join(skillSrc, 'SKILL.md'))) continue;
 
-    const skillDest = join(SKILLS_DEST, skillName);
-    copyDirSync(skillSrc, skillDest);
-    installed++;
+    try {
+      const skillDest = join(SKILLS_DEST, skillName);
+      copyDirSync(skillSrc, skillDest);
+      installed++;
+    } catch (err) {
+      warn(`Failed to install skill "${skillName}": ${(err as Error).message}`);
+    }
   }
 
   if (installed > 0) {

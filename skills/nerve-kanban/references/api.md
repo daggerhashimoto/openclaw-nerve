@@ -99,7 +99,7 @@ interface KanbanBoardConfig {
   quickViewLimit: number;
   proposalPolicy: 'confirm' | 'auto';
   defaultModel?: string;
-  defaultThinking?: string;
+  defaultThinking?: ThinkingLevel;
 }
 ```
 
@@ -463,7 +463,7 @@ Update board configuration. Partial updates supported (unset fields keep current
 | `quickViewLimit` | number (1-50) | |
 | `proposalPolicy` | `'confirm'` \| `'auto'` | `auto` = proposals auto-approve |
 | `defaultModel` | string (max 100) | Default model for task execution |
-| `defaultThinking` | string (max 20) | Default thinking level |
+| `defaultThinking` | ThinkingLevel | Default thinking level |
 
 **Column shape:**
 ```typescript
@@ -616,7 +616,7 @@ curl -X POST http://localhost:3000/api/kanban/proposals/abc-uuid/reject \
 
 ## Task Lifecycle / State Machine
 
-```
+```text
 backlog ──┐
           ├──→ in-progress ──→ review ──→ done
 todo ─────┘       │              │

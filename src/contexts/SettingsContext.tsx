@@ -105,15 +105,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('oc-tts-model', model);
   }, []);
 
-  // Sync STT provider to server on mount (in case server restarted).
-  // GET first to avoid overwriting server state with a stale local value.
+  // Sync STT settings to server on mount (in case server restarted).
+  // GET first to avoid overwriting server state with stale local values.
   useEffect(() => {
     if (!sttProvider) return;
     fetch('/api/transcribe/config')
       .then(resp => resp.ok ? resp.json() : null)
       .then(data => {
         const serverProvider = data?.provider as STTProvider | undefined;
-        // Only PUT if local value differs from what the server already has
+        const serverModel = typeof data?.model === 'string' ? data.model : '';
+
+        // Model: trust server on startup to avoid stale localStorage mismatches
+        // (e.g. UI says tiny.en while server is actually tiny).
+        if (serverModel && serverModel !== sttModel) {
+          setSttModelState(serverModel);
+          localStorage.setItem('oc-stt-model', serverModel);
+        }
+
+        // Provider: preserve prior behavior (push local preference to server).
         if (serverProvider !== sttProvider) {
           return fetch('/api/transcribe/config', {
             method: 'PUT',

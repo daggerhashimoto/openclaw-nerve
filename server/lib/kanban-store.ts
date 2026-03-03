@@ -310,9 +310,24 @@ export class KanbanStore {
     if (!Array.isArray(data.proposals)) {
       data.proposals = [];
     }
-    // Backfill proposalPolicy for existing configs
+    // Backfill missing config fields from defaults
+    if (!data.config.columns || data.config.columns.length === 0) {
+      data.config.columns = structuredClone(DEFAULT_CONFIG.columns);
+    }
+    if (!data.config.defaults || !data.config.defaults.status) {
+      data.config.defaults = structuredClone(DEFAULT_CONFIG.defaults);
+    }
     if (!data.config.proposalPolicy) {
       data.config.proposalPolicy = 'confirm';
+    }
+    if (data.config.reviewRequired === undefined) {
+      data.config.reviewRequired = DEFAULT_CONFIG.reviewRequired;
+    }
+    if (data.config.allowDoneDragBypass === undefined) {
+      data.config.allowDoneDragBypass = DEFAULT_CONFIG.allowDoneDragBypass;
+    }
+    if (data.config.quickViewLimit === undefined) {
+      data.config.quickViewLimit = DEFAULT_CONFIG.quickViewLimit;
     }
     data.meta.schemaVersion = CURRENT_SCHEMA_VERSION;
     return data;

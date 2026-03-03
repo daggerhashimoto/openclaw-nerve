@@ -112,6 +112,32 @@ run_with_dots() {
   return $RWD_EXIT
 }
 
+# Resolve the home directory that Nerve will actually run under.
+# Important when install is invoked via sudo (HOME=/root) but service runs as user.
+resolve_runtime_home() {
+  local runtime_home="${HOME}"
+
+  if [[ -n "${SUDO_USER:-}" ]]; then
+    if command -v getent &>/dev/null; then
+      runtime_home=$(getent passwd "${SUDO_USER}" | cut -d: -f6)
+    elif command -v dscl &>/dev/null; then
+      runtime_home=$(dscl . -read "/Users/${SUDO_USER}" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+    else
+      runtime_home=$(awk -F: -v user="${SUDO_USER}" '$1 == user {print $6}' /etc/passwd)
+    fi
+
+    if [[ -z "$runtime_home" ]]; then
+      if [[ "$(uname -s)" == "Darwin" ]]; then
+        runtime_home="/Users/${SUDO_USER}"
+      else
+        runtime_home="/home/${SUDO_USER}"
+      fi
+    fi
+  fi
+
+  echo "$runtime_home"
+}
+
 # Verify that @fugood/whisper.node can actually load its native binary.
 # On some macOS 14 arm64 systems, npm install succeeds but runtime binary load
 # fails later on first transcription. We catch that here and apply fallback.
@@ -146,18 +172,20 @@ verify_whisper_runtime() {
 
     # Install both wrapper + platform package at the same version so
     # @fugood/whisper.node does not keep resolving a stale 1.0.16 optional dep.
-    run_with_dots "Installing Whisper fallback package set" npm install --no-save --silent @fugood/whisper.node@1.0.10 @fugood/node-whisper-darwin-arm64@1.0.10
+    # --force is required because package.json still declares ^1.0.16.
+    run_with_dots "Installing Whisper fallback package set" npm install --no-save --force --silent @fugood/whisper.node@1.0.10 @fugood/node-whisper-darwin-arm64@1.0.10
     if [[ $RWD_EXIT -ne 0 ]]; then
       fail "Fallback install failed"
       hint "Try manually:"
       cmd "cd ${INSTALL_DIR}"
-      cmd "npm install --no-save @fugood/whisper.node@1.0.10 @fugood/node-whisper-darwin-arm64@1.0.10"
+      cmd "npm install --no-save --force @fugood/whisper.node@1.0.10 @fugood/node-whisper-darwin-arm64@1.0.10"
       cmd "node -e \"import('@fugood/whisper.node').then(async (m)=>{const api=m.loadWhisperModule?m:m.default;await api.loadWhisperModule();console.log('ok');}).catch(e=>{console.error(e);process.exit(1)})\""
       exit 1
     fi
 
     # Log the effective installed versions for debugging fallback issues.
     npm ls @fugood/whisper.node @fugood/node-whisper-darwin-arm64 >>"$whisper_test_log" 2>&1 || true
+    node -e "const p=(n)=>{try{return require(n + '/package.json').version}catch{return 'missing'}};console.log('fallback versions',p('@fugood/whisper.node'),p('@fugood/node-whisper-darwin-arm64'));" >>"$whisper_test_log" 2>&1 || true
 
     if node -e "$whisper_probe" >>"$whisper_test_log" 2>&1; then
       ok "Whisper native runtime works with fallback package set"
@@ -177,7 +205,7 @@ verify_whisper_runtime() {
   echo ""
   hint "Local STT fallback options:"
   cmd "cd ${INSTALL_DIR}"
-  cmd "npm install --no-save @fugood/whisper.node@1.0.10 @fugood/node-whisper-darwin-arm64@1.0.10"
+  cmd "npm install --no-save --force @fugood/whisper.node@1.0.10 @fugood/node-whisper-darwin-arm64@1.0.10"
   cmd "# or use cloud STT by setting STT_PROVIDER=openai"
   exit 1
 }
@@ -764,7 +792,8 @@ else
   rm -f "$npm_log" "$build_log" 2>/dev/null
 
   # ── Download speech model (for local voice input) ──────────────────
-  WHISPER_MODEL_DIR="${HOME}/.nerve/models"
+  RUNTIME_HOME="$(resolve_runtime_home)"
+  WHISPER_MODEL_DIR="${RUNTIME_HOME}/.nerve/models"
 
   # Keep installer model bootstrap in sync with server defaults.
   # Current default in server/lib/constants.ts is multilingual `tiny`.

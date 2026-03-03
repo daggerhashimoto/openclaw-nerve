@@ -400,12 +400,12 @@ export async function transcribeLocal(
 
     // 4. Extract text
     if (result.isAborted) {
-      return { ok: false, status: 500, message: 'Transcription was aborted' };
+      return { ok: false, status: 400, message: 'No speech detected. Please try again.' };
     }
 
     const text = result.result?.trim() || '';
     if (!text) {
-      return { ok: false, status: 500, message: 'Transcription returned empty result' };
+      return { ok: false, status: 400, message: 'No speech detected. Please try again.' };
     }
 
     return { ok: true, text };

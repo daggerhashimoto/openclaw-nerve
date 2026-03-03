@@ -488,7 +488,7 @@ export function FileTreePanel({
   return (
     <div
       ref={panelRef}
-      className="shrink-0 border-r border-border bg-background flex flex-col min-h-0 relative"
+      className="shrink-0 border-r border-border bg-background flex flex-col h-full min-h-0 relative"
       style={{ width }}
       onContextMenu={(e) => {
         // Right-click on empty panel area closes any open context menu.

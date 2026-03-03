@@ -526,7 +526,7 @@ export default function App({ onLogout }: AppProps) {
       
       <div className="flex-1 flex overflow-hidden min-h-0">
         {/* File tree — far left, collapsible; hidden (not unmounted) in kanban to preserve state */}
-        <div className={viewMode === 'kanban' ? 'hidden' : undefined}>
+        <div className={viewMode === 'kanban' ? 'hidden' : 'h-full min-h-0'}>
           <PanelErrorBoundary name="File Explorer">
             <FileTreePanel
               onOpenFile={openFile}

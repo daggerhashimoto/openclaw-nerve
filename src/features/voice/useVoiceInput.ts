@@ -312,8 +312,8 @@ export function useVoiceInput(
               try { recognitionRef.current?.abort(); } catch { /* already stopped */ }
               recognitionRef.current = null;
               playWakePing();
-              // Delay mic acquisition until wake chime finishes (~0.75s)
-              trackedTimeout(() => doStartRecording(), 800);
+              // Delay mic acquisition until wake chime finishes (~0.35s)
+              trackedTimeout(() => doStartRecording(), 370);
               return;
             }
           }

@@ -112,10 +112,9 @@ run_with_dots() {
   return $RWD_EXIT
 }
 
-# Verify that @fugood/whisper.node can actually load on this machine.
-# On some macOS 14 arm64 systems, the latest prebuilt package can install
-# successfully but fail at runtime. We detect that during install and apply
-# a known-good fallback for those hosts.
+# Verify that @fugood/whisper.node can actually load its native binary.
+# On some macOS 14 arm64 systems, npm install succeeds but runtime binary load
+# fails later on first transcription. We catch that here and apply fallback.
 verify_whisper_runtime() {
   if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
     return 0
@@ -127,37 +126,42 @@ verify_whisper_runtime() {
   whisper_test_log=$(mktemp /tmp/nerve-whisper-check-XXXXXX)
   TEMP_FILES+=("$whisper_test_log")
 
-  info "Checking local Whisper runtime compatibility (macOS ${mac_ver}, arm64)"
+  # IMPORTANT: importing the package is not enough; we must call
+  # loadWhisperModule() to force native binary resolution.
+  local whisper_probe
+  whisper_probe="import('@fugood/whisper.node').then(async (m)=>{const api=(typeof m.loadWhisperModule==='function')?m:((m.default&&typeof m.default.loadWhisperModule==='function')?m.default:null);if(!api)throw new Error('whisper.node missing loadWhisperModule export');await api.loadWhisperModule();process.exit(0);}).catch((e)=>{console.error(e?.stack||e?.message||String(e));process.exit(1);})"
 
-  if node -e "import('@fugood/whisper.node').then(()=>process.exit(0)).catch((e)=>{console.error(e?.stack||e?.message||String(e));process.exit(1);})" >"$whisper_test_log" 2>&1; then
-    ok "Whisper runtime compatibility check passed"
+  info "Checking local Whisper native runtime (macOS ${mac_ver}, arm64)"
+
+  if node -e "$whisper_probe" >"$whisper_test_log" 2>&1; then
+    ok "Whisper native runtime check passed"
     return 0
   fi
 
-  warn "Whisper runtime check failed on macOS ${mac_ver}"
+  warn "Whisper native runtime check failed on macOS ${mac_ver}"
 
   # Compatibility fallback for Sonoma generation where latest prebuilt may fail.
   if [[ "$mac_major" =~ ^[0-9]+$ ]] && [[ "$mac_major" -le 14 ]]; then
-    warn "Applying Whisper compatibility fallback (@fugood/whisper.node@1.0.10)"
+    warn "Applying Whisper compatibility fallback (@fugood/node-whisper-darwin-arm64@1.0.10)"
 
-    run_with_dots "Installing Whisper fallback" npm install --no-save --silent @fugood/whisper.node@1.0.10
+    run_with_dots "Installing Whisper Darwin fallback package" npm install --no-save --silent @fugood/node-whisper-darwin-arm64@1.0.10
     if [[ $RWD_EXIT -ne 0 ]]; then
       fail "Fallback install failed"
       hint "Try manually:"
       cmd "cd ${INSTALL_DIR}"
-      cmd "npm install --no-save @fugood/whisper.node@1.0.10"
-      cmd "node -e \"import('@fugood/whisper.node').then(()=>console.log('ok')).catch(e=>{console.error(e);process.exit(1)})\""
+      cmd "npm install --no-save @fugood/node-whisper-darwin-arm64@1.0.10"
+      cmd "node -e \"import('@fugood/whisper.node').then(async (m)=>{const api=m.loadWhisperModule?m:m.default;await api.loadWhisperModule();console.log('ok');}).catch(e=>{console.error(e);process.exit(1)})\""
       exit 1
     fi
 
-    if node -e "import('@fugood/whisper.node').then(()=>process.exit(0)).catch((e)=>{console.error(e?.stack||e?.message||String(e));process.exit(1);})" >>"$whisper_test_log" 2>&1; then
-      ok "Whisper runtime works with fallback package on macOS ${mac_ver}"
+    if node -e "$whisper_probe" >>"$whisper_test_log" 2>&1; then
+      ok "Whisper native runtime works with Darwin fallback package"
       return 0
     fi
 
-    fail "Whisper runtime still failing after fallback"
+    fail "Whisper native runtime still failing after fallback"
   else
-    fail "Whisper runtime incompatible on this macOS version"
+    fail "Whisper native runtime incompatible on this macOS version"
   fi
 
   echo ""
@@ -168,7 +172,7 @@ verify_whisper_runtime() {
   echo ""
   hint "Local STT fallback options:"
   cmd "cd ${INSTALL_DIR}"
-  cmd "npm install --no-save @fugood/whisper.node@1.0.10"
+  cmd "npm install --no-save @fugood/node-whisper-darwin-arm64@1.0.10"
   cmd "# or use cloud STT by setting STT_PROVIDER=openai"
   exit 1
 }

@@ -165,7 +165,7 @@ export function resolveEdgeTTSVoice(): ResolvedTTSVoice {
 
   if (userVoice) {
     if (lang === 'en') {
-      const defaultEnVoice = DEFAULTS.edge.voice; // 'en-US-AriaNeural'
+      const defaultEnVoice = getEdgeTtsVoice('en', gender);
       if (userVoice !== defaultEnVoice) {
         return { voice: userVoice, language: lang, fallback: false };
       }

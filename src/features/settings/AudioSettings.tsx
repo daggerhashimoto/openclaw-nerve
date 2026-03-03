@@ -556,7 +556,8 @@ export function AudioSettings({
     if (!fallbackVoice) return;
 
     const currentVoice = config.edge.voice;
-    const isValid = options.some((opt) => opt.value === currentVoice);
+    const isEnglishOverride = langState.language === 'en' && /^en-/i.test(currentVoice);
+    const isValid = isEnglishOverride || options.some((opt) => opt.value === currentVoice);
     if (!isValid && currentVoice !== fallbackVoice) {
       updateField('edge', 'voice', fallbackVoice);
     }

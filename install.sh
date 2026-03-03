@@ -701,6 +701,13 @@ else
     fi
   fi
 
+  # Normalize .env value: trim whitespace, strip inline comments and wrapping quotes.
+  WHISPER_MODEL_KEY=$(printf '%s' "$WHISPER_MODEL_KEY" | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//')
+  if [[ "$WHISPER_MODEL_KEY" =~ ^\".*\"$ || "$WHISPER_MODEL_KEY" =~ ^\'.*\'$ ]]; then
+    WHISPER_MODEL_KEY="${WHISPER_MODEL_KEY:1:${#WHISPER_MODEL_KEY}-2}"
+  fi
+  WHISPER_MODEL_KEY=$(printf '%s' "$WHISPER_MODEL_KEY" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | tr '[:upper:]' '[:lower:]')
+
   WHISPER_MODEL_SIZE="75MB"
   case "$WHISPER_MODEL_KEY" in
     tiny.en)  WHISPER_MODEL_FILE="ggml-tiny.en.bin" ; WHISPER_MODEL_SIZE="75MB" ;;

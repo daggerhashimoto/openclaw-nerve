@@ -112,6 +112,67 @@ run_with_dots() {
   return $RWD_EXIT
 }
 
+# Verify that @fugood/whisper.node can actually load on this machine.
+# On some macOS 14 arm64 systems, the latest prebuilt package can install
+# successfully but fail at runtime. We detect that during install and apply
+# a known-good fallback for those hosts.
+verify_whisper_runtime() {
+  if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
+    return 0
+  fi
+
+  local mac_ver mac_major whisper_test_log
+  mac_ver=$(sw_vers -productVersion 2>/dev/null || echo "unknown")
+  mac_major=$(echo "$mac_ver" | cut -d. -f1)
+  whisper_test_log=$(mktemp /tmp/nerve-whisper-check-XXXXXX)
+  TEMP_FILES+=("$whisper_test_log")
+
+  info "Checking local Whisper runtime compatibility (macOS ${mac_ver}, arm64)"
+
+  if node -e "import('@fugood/whisper.node').then(()=>process.exit(0)).catch((e)=>{console.error(e?.stack||e?.message||String(e));process.exit(1);})" >"$whisper_test_log" 2>&1; then
+    ok "Whisper runtime compatibility check passed"
+    return 0
+  fi
+
+  warn "Whisper runtime check failed on macOS ${mac_ver}"
+
+  # Compatibility fallback for Sonoma generation where latest prebuilt may fail.
+  if [[ "$mac_major" =~ ^[0-9]+$ ]] && [[ "$mac_major" -le 14 ]]; then
+    warn "Applying Whisper compatibility fallback (@fugood/whisper.node@1.0.10)"
+
+    run_with_dots "Installing Whisper fallback" npm install --no-save --silent @fugood/whisper.node@1.0.10
+    if [[ $RWD_EXIT -ne 0 ]]; then
+      fail "Fallback install failed"
+      hint "Try manually:"
+      cmd "cd ${INSTALL_DIR}"
+      cmd "npm install --no-save @fugood/whisper.node@1.0.10"
+      cmd "node -e \"import('@fugood/whisper.node').then(()=>console.log('ok')).catch(e=>{console.error(e);process.exit(1)})\""
+      exit 1
+    fi
+
+    if node -e "import('@fugood/whisper.node').then(()=>process.exit(0)).catch((e)=>{console.error(e?.stack||e?.message||String(e));process.exit(1);})" >>"$whisper_test_log" 2>&1; then
+      ok "Whisper runtime works with fallback package on macOS ${mac_ver}"
+      return 0
+    fi
+
+    fail "Whisper runtime still failing after fallback"
+  else
+    fail "Whisper runtime incompatible on this macOS version"
+  fi
+
+  echo ""
+  echo -e "  ${RAIL}  ${DIM}── Whisper runtime error log ──${NC}"
+  tail -20 "$whisper_test_log" | while IFS= read -r line; do
+    echo -e "  ${RAIL}  ${DIM}${line}${NC}"
+  done
+  echo ""
+  hint "Local STT fallback options:"
+  cmd "cd ${INSTALL_DIR}"
+  cmd "npm install --no-save @fugood/whisper.node@1.0.10"
+  cmd "# or use cloud STT by setting STT_PROVIDER=openai"
+  exit 1
+}
+
 # Read the real gateway token. Systemd service file takes priority because
 # the gateway process uses its env var over openclaw.json (known 2026.2.19 bug).
 detect_gateway_token() {
@@ -583,6 +644,9 @@ else
   run_with_dots "Installing dependencies" bash -c "npm ci --loglevel=error > '$npm_log' 2>&1"
   if [[ $RWD_EXIT -eq 0 ]]; then
     ok "Dependencies installed"
+
+    # Validate local Whisper runtime compatibility on macOS arm64.
+    verify_whisper_runtime
 
     # Back up existing build outputs for rollback on failure
     BUILD_BACKUP=""

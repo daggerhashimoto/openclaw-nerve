@@ -169,12 +169,19 @@ function installBundledSkills(): void {
   if (!existsSync(SKILLS_SRC)) return;
 
   let installed = 0;
-  for (const skillName of readdirSync(SKILLS_SRC)) {
-    const skillSrc = join(SKILLS_SRC, skillName);
-    if (!lstatSync(skillSrc).isDirectory()) continue;
-    if (!existsSync(join(skillSrc, 'SKILL.md'))) continue;
+  let entries: string[];
+  try {
+    entries = readdirSync(SKILLS_SRC);
+  } catch {
+    return;
+  }
 
+  for (const skillName of entries) {
     try {
+      const skillSrc = join(SKILLS_SRC, skillName);
+      if (!lstatSync(skillSrc).isDirectory()) continue;
+      if (!existsSync(join(skillSrc, 'SKILL.md'))) continue;
+
       const skillDest = join(SKILLS_DEST, skillName);
       copyDirSync(skillSrc, skillDest);
       installed++;

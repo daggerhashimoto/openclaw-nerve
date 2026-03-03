@@ -107,6 +107,7 @@ interface DownloadProgress {
 }
 
 let currentDownload: DownloadProgress | null = null;
+let currentDownloadAbort: AbortController | null = null;
 
 /** Get current download progress (null if no download active). */
 export function getDownloadProgress(): DownloadProgress | null {
@@ -130,17 +131,24 @@ async function downloadModel(model: string): Promise<{ ok: boolean; message: str
   const url = `${WHISPER_MODELS_BASE_URL}/${filename}`;
   console.log(`[whisper-local] Downloading model: ${model} from ${url}`);
 
-  currentDownload = { model, downloading: true, bytesDownloaded: 0, totalBytes: 0, percent: 0 };
+  const progress: DownloadProgress = { model, downloading: true, bytesDownloaded: 0, totalBytes: 0, percent: 0 };
+  currentDownload = progress;
+
+  const controller = new AbortController();
+  currentDownloadAbort = controller;
 
   try {
-    const response = await fetch(url, { redirect: 'follow' });
+    const response = await fetch(url, { redirect: 'follow', signal: controller.signal });
     if (!response.ok || !response.body) {
-      currentDownload = { ...currentDownload, downloading: false, error: `HTTP ${response.status}` };
+      if (currentDownload === progress) {
+        progress.downloading = false;
+        progress.error = `HTTP ${response.status}`;
+      }
       return { ok: false, message: `Download failed: HTTP ${response.status}` };
     }
 
     const totalBytes = Number(response.headers.get('content-length') || 0);
-    currentDownload.totalBytes = totalBytes;
+    progress.totalBytes = totalBytes;
 
     const writer = createWriteStream(tmpPath);
     let bytesDownloaded = 0;
@@ -151,8 +159,8 @@ async function downloadModel(model: string): Promise<{ ok: boolean; message: str
       if (done) break;
       writer.write(Buffer.from(value));
       bytesDownloaded += value.byteLength;
-      currentDownload.bytesDownloaded = bytesDownloaded;
-      currentDownload.percent = totalBytes > 0 ? Math.round((bytesDownloaded / totalBytes) * 100) : 0;
+      progress.bytesDownloaded = bytesDownloaded;
+      progress.percent = totalBytes > 0 ? Math.round((bytesDownloaded / totalBytes) * 100) : 0;
     }
     writer.end();
 
@@ -166,22 +174,43 @@ async function downloadModel(model: string): Promise<{ ok: boolean; message: str
     const { renameSync } = await import('node:fs');
     renameSync(tmpPath, destPath);
 
-    currentDownload = { ...currentDownload, downloading: false, percent: 100 };
+    if (currentDownload === progress) {
+      progress.downloading = false;
+      progress.percent = 100;
+    }
     console.log(`[whisper-local] Model downloaded: ${model} (${(bytesDownloaded / 1024 / 1024).toFixed(0)}MB)`);
 
     // Clear download state after a moment so UI can see completion
-    setTimeout(() => { currentDownload = null; }, 3000);
+    setTimeout(() => {
+      if (currentDownload === progress) currentDownload = null;
+    }, 3000);
 
     return { ok: true, message: `Downloaded ${model}` };
   } catch (err) {
-    const msg = (err as Error).message;
-    console.error(`[whisper-local] Download failed:`, msg);
-    currentDownload = { ...currentDownload, downloading: false, error: msg };
+    const isAbort = (err as { name?: string })?.name === 'AbortError';
+    const msg = isAbort ? 'Download cancelled' : (err as Error).message;
+    if (!isAbort) {
+      console.error('[whisper-local] Download failed:', msg);
+    }
+
+    if (currentDownload === progress) {
+      progress.downloading = false;
+      progress.error = msg;
+    }
+
     // Clean up partial file
     try { unlinkSync(tmpPath); } catch { /* ignore */ }
-    // Clear error state after a moment
-    setTimeout(() => { currentDownload = null; }, 5000);
-    return { ok: false, message: `Download failed: ${msg}` };
+
+    // Clear error/cancel state after a moment
+    setTimeout(() => {
+      if (currentDownload === progress) currentDownload = null;
+    }, isAbort ? 1200 : 5000);
+
+    return { ok: false, message: isAbort ? `${model} download cancelled` : `Download failed: ${msg}` };
+  } finally {
+    if (currentDownloadAbort === controller) {
+      currentDownloadAbort = null;
+    }
   }
 }
 
@@ -197,8 +226,14 @@ export async function setWhisperModel(model: string): Promise<{ ok: boolean; mes
   // If model not available, start downloading
   if (!isModelAvailable(model)) {
     if (currentDownload?.downloading) {
-      return { ok: true, message: `Already downloading ${currentDownload.model}`, downloading: true };
+      if (currentDownload.model === model) {
+        return { ok: true, message: `Already downloading ${currentDownload.model}`, downloading: true };
+      }
+      // User switched model while another download is running.
+      // Cancel stale download and start requested model instead.
+      currentDownloadAbort?.abort();
     }
+
     // Fire and forget — download runs in background
     downloadModel(model).then((result) => {
       if (result.ok) {
@@ -210,6 +245,12 @@ export async function setWhisperModel(model: string): Promise<{ ok: boolean; mes
       }
     });
     return { ok: true, message: `Downloading ${model}...`, downloading: true };
+  }
+
+  // If switching to an already-available model while another download is in progress,
+  // cancel the stale background download to avoid confusing progress UI.
+  if (currentDownload?.downloading && currentDownload.model !== model) {
+    currentDownloadAbort?.abort();
   }
 
   if (model === activeModel && whisperContext) {

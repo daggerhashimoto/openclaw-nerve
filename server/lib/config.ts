@@ -68,6 +68,8 @@ export const config = {
   // Gateway connection
   gatewayUrl: process.env.GATEWAY_URL || DEFAULT_GATEWAY_URL,
   gatewayToken: process.env.GATEWAY_TOKEN || process.env.OPENCLAW_GATEWAY_TOKEN || '',
+  // Expose gateway token to non-loopback LAN clients (security: disabled by default)
+  lanExposeToken: (process.env.NERVE_LAN_EXPOSE_TOKEN || 'false').toLowerCase() === 'true',
 
   // Agent identity (used in UI)
   agentName: process.env.AGENT_NAME || 'Agent',

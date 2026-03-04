@@ -41,9 +41,14 @@ app.get('/api/connect-defaults', rateLimitGeneral, (c) => {
     wsUrl = gwUrl.replace(/^http/, 'ws');
   }
 
+  // Return token if:
+  // 1. Client is loopback, OR
+  // 2. NERVE_LAN_EXPOSE_TOKEN is enabled in .env
+  const shouldExposeToken = isLoopback || config.lanExposeToken;
+
   return c.json({
     wsUrl,
-    token: isLoopback ? (config.gatewayToken || null) : null,
+    token: shouldExposeToken ? (config.gatewayToken || null) : null,
     agentName: config.agentName,
   });
 });

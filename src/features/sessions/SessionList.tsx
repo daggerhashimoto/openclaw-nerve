@@ -15,15 +15,16 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Plus } from 'lucide-react';
+import { AlertTriangle, Plus, Square, Trash2 } from 'lucide-react';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
+import { CreateInstanceDialog } from './CreateInstanceDialog';
 
 interface SessionListProps {
   instances?: DiscoveredInstance[];
   instancesLoading?: boolean;
   activeInstanceId?: string | null;
   onSelectInstance?: (id: string | null) => void;
-  onRefreshInstances?: () => void;
+  onRefreshInstances?: () => Promise<void> | void;
   sessions: Session[];
   currentSession: string;
   busyState: Record<string, boolean>;
@@ -66,6 +67,9 @@ export function SessionList({
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
+  const [createInstanceOpen, setCreateInstanceOpen] = useState(false);
+  const [instanceMutatingId, setInstanceMutatingId] = useState<string | null>(null);
+  const [instanceMutationError, setInstanceMutationError] = useState('');
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -115,6 +119,57 @@ export function SessionList({
     setDeleteTarget({ key, label });
   }, []);
 
+  const handleInstanceCreated = useCallback(async (_instanceId: string) => {
+    if (onRefreshInstances) await onRefreshInstances();
+    // Keep operator on current context (usually master) until new instance is actually ready.
+  }, [onRefreshInstances]);
+
+  const stopInstance = useCallback(async (instance: DiscoveredInstance) => {
+    if (!onRefreshInstances) return;
+    setInstanceMutationError('');
+    setInstanceMutatingId(instance.id);
+    try {
+      const response = await fetch(`/api/instances/${encodeURIComponent(instance.id)}/stop`, {
+        method: 'POST',
+      });
+      const payload = await response.json().catch(() => ({})) as { error?: { message?: string } };
+      if (!response.ok) {
+        throw new Error(payload.error?.message || 'Failed to stop instance.');
+      }
+      await onRefreshInstances();
+    } catch (err) {
+      setInstanceMutationError(err instanceof Error ? err.message : 'Failed to stop instance.');
+    } finally {
+      setInstanceMutatingId(null);
+    }
+  }, [onRefreshInstances]);
+
+  const removeInstance = useCallback(async (instance: DiscoveredInstance) => {
+    if (!onRefreshInstances) return;
+    const confirmed = window.confirm(`Remove instance "${instance.name || instance.id}"? This also removes its managed local state.`);
+    if (!confirmed) return;
+
+    setInstanceMutationError('');
+    setInstanceMutatingId(instance.id);
+    try {
+      const response = await fetch(`/api/instances/${encodeURIComponent(instance.id)}`, {
+        method: 'DELETE',
+      });
+      const payload = await response.json().catch(() => ({})) as { error?: { message?: string } };
+      if (!response.ok) {
+        throw new Error(payload.error?.message || 'Failed to remove instance.');
+      }
+      if (activeInstanceId === instance.id) {
+        onSelectInstance?.(null);
+      }
+      await onRefreshInstances();
+    } catch (err) {
+      setInstanceMutationError(err instanceof Error ? err.message : 'Failed to remove instance.');
+    } finally {
+      setInstanceMutatingId(null);
+    }
+  }, [activeInstanceId, onRefreshInstances, onSelectInstance]);
+
   const prevPercentsRef = useRef<Record<string, number>>({});
   const prevTokensRef = useRef<Record<string, number>>({});
 
@@ -161,6 +216,15 @@ export function SessionList({
           <div className="flex items-center gap-1 ml-auto">
             <button
               type="button"
+              onClick={() => setCreateInstanceOpen(true)}
+              aria-label="Add instance"
+              title="Add instance"
+              className="bg-transparent border border-border/60 text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-muted-foreground"
+            >
+              <Plus size={14} />
+            </button>
+            <button
+              type="button"
               onClick={onRefreshInstances}
               aria-label="Refresh instances"
               title="Refresh instances"
@@ -188,22 +252,57 @@ export function SessionList({
           <div className="px-3 py-2 text-[11px] text-muted-foreground">Discovering instances…</div>
         ) : instances.length === 0 ? (
           <div className="px-3 py-2 text-[11px] text-muted-foreground">No instances discovered</div>
-        ) : instances.map((instance) => (
-          <button
-            key={instance.id}
-            type="button"
-            onClick={() => onSelectInstance?.(instance.id)}
-            className={`w-full text-left px-3 py-2 text-xs border-l-[2px] transition-colors ${
-              activeInstanceId === instance.id
-                ? 'border-l-info bg-info/10 text-foreground'
-                : 'border-l-transparent text-muted-foreground hover:text-foreground hover:bg-muted/20'
-            }`}
-            title={instance.id}
-          >
-            <div className="font-mono truncate">{instance.name || instance.id}</div>
-            <div className="text-[10px] uppercase tracking-wider opacity-70 truncate">{instance.state || instance.status || 'unknown'}</div>
-          </button>
-        ))}
+        ) : instances.map((instance) => {
+          const status = instance.availability || instance.state || instance.status || 'unknown';
+          const running = /running/i.test(status);
+          const mutating = instanceMutatingId === instance.id;
+
+          return (
+            <div
+              key={instance.id}
+              className={`w-full px-2 py-1.5 text-xs border-l-[2px] transition-colors ${
+                activeInstanceId === instance.id
+                  ? 'border-l-info bg-info/10 text-foreground'
+                  : 'border-l-transparent text-muted-foreground hover:text-foreground hover:bg-muted/20'
+              }`}
+              title={instance.id}
+            >
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onSelectInstance?.(instance.id)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <div className="font-mono truncate">{instance.name || instance.id}</div>
+                  <div className="text-[10px] uppercase tracking-wider opacity-70 truncate">{status}</div>
+                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => void stopInstance(instance)}
+                    disabled={mutating || !running || !onRefreshInstances}
+                    title={running ? 'Stop instance' : 'Instance already stopped'}
+                    className="bg-transparent border border-border/60 text-muted-foreground text-[10px] w-6 h-6 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-muted-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Square size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void removeInstance(instance)}
+                    disabled={mutating || !onRefreshInstances}
+                    title="Remove instance"
+                    className="bg-transparent border border-border/60 text-muted-foreground text-[10px] w-6 h-6 cursor-pointer flex items-center justify-center hover:text-red hover:border-red disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {instanceMutationError && (
+          <div className="px-3 py-2 text-[10px] text-red font-mono border-t border-border/40">{instanceMutationError}</div>
+        )}
       </div>
 
       <div className="panel-header border-l-[3px] border-l-info">
@@ -342,6 +441,11 @@ export function SessionList({
           onSpawn={onSpawn}
         />
       )}
+      <CreateInstanceDialog
+        open={createInstanceOpen}
+        onOpenChange={setCreateInstanceOpen}
+        onCreated={handleInstanceCreated}
+      />
     </div>
   );
 }

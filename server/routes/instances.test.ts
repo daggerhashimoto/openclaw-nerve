@@ -24,13 +24,30 @@ function buildApp() {
 
 describe('instances routes', () => {
   let originalFetch: typeof globalThis.fetch;
+  let originalMulticlawDefaultImage: string | undefined;
+  let originalGatewayToken: string | undefined;
+  let originalOpenAiKey: string | undefined;
+  let originalNotionKey: string | undefined;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
+    originalMulticlawDefaultImage = process.env.MULTICLAW_DEFAULT_IMAGE;
+    originalGatewayToken = process.env.GATEWAY_TOKEN;
+    originalOpenAiKey = process.env.OPENAI_API_KEY;
+    originalNotionKey = process.env.NOTION_API_KEY;
+    process.env.MULTICLAW_DEFAULT_IMAGE = 'multiclaw:test';
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    if (originalMulticlawDefaultImage === undefined) delete process.env.MULTICLAW_DEFAULT_IMAGE;
+    else process.env.MULTICLAW_DEFAULT_IMAGE = originalMulticlawDefaultImage;
+    if (originalGatewayToken === undefined) delete process.env.GATEWAY_TOKEN;
+    else process.env.GATEWAY_TOKEN = originalGatewayToken;
+    if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalOpenAiKey;
+    if (originalNotionKey === undefined) delete process.env.NOTION_API_KEY;
+    else process.env.NOTION_API_KEY = originalNotionKey;
     vi.restoreAllMocks();
   });
 
@@ -155,6 +172,222 @@ describe('instances routes', () => {
     expect(json.found).toBe(true);
     expect(json.token).toBe('abc123');
     expect(json.tokenKey).toBe('GATEWAY_TOKEN');
+  });
+
+  it('lists copyable master credentials without exposing values', async () => {
+    delete process.env.OPENAI_API_KEY;
+
+    const app = buildApp();
+    const res = await app.request('/api/instances/credentials');
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      credentials: Array<{ key: string; isSet: boolean }>;
+      types: string[];
+    };
+
+    expect(json.types).toEqual(['docker']);
+    expect(json.credentials).toEqual(
+      expect.arrayContaining([
+        { key: 'ENV:OPENAI_API_KEY', isSet: false },
+        { key: 'OPENCLAW_JSON_ENTRY:skills.entries.notion', isSet: true },
+      ]),
+    );
+    expect(json.credentials.some((entry) => entry.key === 'ENV:GATEWAY_TOKEN')).toBe(false);
+    expect(json.credentials.some((entry) => entry.key === 'ENV:OPENCLAW_GATEWAY_TOKEN')).toBe(false);
+  });
+
+  it('creates a docker instance and copies selected, set credentials', async () => {
+    process.env.GATEWAY_TOKEN = 'test-gateway-token';
+    process.env.NOTION_API_KEY = 'ntn_test';
+    delete process.env.OPENAI_API_KEY;
+
+    execFileImpl = (_bin: unknown, args: unknown, _opts: unknown, cb: unknown) => {
+      const dockerArgs = args as string[];
+      if (dockerArgs[0] === 'run') {
+        expect(dockerArgs).toContain('--name');
+        expect(dockerArgs).toContain('multiclaw-worker-1');
+        expect(dockerArgs).toContain('0:3080');
+        expect(dockerArgs).toContain('0:3181');
+        expect(dockerArgs).toContain('NERVE_ALLOW_INSECURE=true');
+        expect(dockerArgs).not.toContain('OPENAI_API_KEY=');
+        expect(dockerArgs[dockerArgs.length - 1]).toBe('multiclaw:test');
+        (cb as (err: null, stdout: string, stderr: string) => void)(null, 'cid-new\n', '');
+        return;
+      }
+      if (dockerArgs[0] === 'inspect') {
+        const payload = JSON.stringify([
+          {
+            Id: 'cid-new',
+            Name: '/multiclaw-worker-1',
+            Created: '2026-03-02T12:00:00Z',
+            Config: {
+              Image: 'multiclaw:test',
+              Env: ['GATEWAY_TOKEN=test-gateway-token'],
+              Labels: { 'com.openclaw.role': 'worker' },
+            },
+            State: { Status: 'running' },
+            NetworkSettings: {
+              Ports: { '3080/tcp': [{ HostIp: '0.0.0.0', HostPort: '23111' }] },
+            },
+          },
+        ]);
+        (cb as (err: null, stdout: string, stderr: string) => void)(null, payload, '');
+        return;
+      }
+      (cb as (err: Error, stdout: string, stderr: string) => void)(new Error('unexpected args'), '', '');
+    };
+
+    const app = buildApp();
+    const res = await app.request('/api/instances', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'multiclaw-worker-1',
+        type: 'docker',
+        configurationKeys: ['OPENCLAW_JSON_ENTRY:skills.entries.notion', 'ENV:OPENAI_API_KEY'],
+      }),
+    });
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as {
+      type: string;
+      image: string;
+      copiedCredentialKeys: string[];
+      instance: { id: string; name: string };
+    };
+    expect(json.type).toBe('docker');
+    expect(json.image).toBe('multiclaw:test');
+    expect(json.copiedCredentialKeys).toEqual(
+      expect.arrayContaining(['OPENCLAW_JSON_ENTRY:skills.entries.notion']),
+    );
+    expect(json.instance.id).toBe('cid-new');
+    expect(json.instance.name).toBe('multiclaw-worker-1');
+  });
+
+  it('validates create-instance request body', async () => {
+    const app = buildApp();
+    const res = await app.request('/api/instances', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'bad name with spaces',
+        type: 'docker',
+        credentialKeys: [],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: { code: string } };
+    expect(json.error.code).toBe('invalid_request');
+  });
+
+  it('returns mapped create error for docker name conflict', async () => {
+    execFileImpl = (_bin: unknown, args: unknown, _opts: unknown, cb: unknown) => {
+      const dockerArgs = args as string[];
+      if (dockerArgs[0] === 'run') {
+        const err = new Error('docker run failed');
+        (cb as (err: Error, stdout: string, stderr: string) => void)(
+          err,
+          '',
+          'Error response from daemon: Conflict. The container name "/multiclaw-worker-1" is already in use by container "abc".',
+        );
+        return;
+      }
+      (cb as (err: Error, stdout: string, stderr: string) => void)(new Error('unexpected args'), '', '');
+    };
+
+    const app = buildApp();
+    const res = await app.request('/api/instances', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'multiclaw-worker-1',
+        type: 'docker',
+        credentialKeys: [],
+      }),
+    });
+    expect(res.status).toBe(409);
+    const json = (await res.json()) as { error: { code: string } };
+    expect(json.error.code).toBe('instance_name_in_use');
+  });
+
+  it('stops an instance', async () => {
+    let inspectCount = 0;
+    execFileImpl = (_bin: unknown, args: unknown, _opts: unknown, cb: unknown) => {
+      const dockerArgs = args as string[];
+      if (dockerArgs[0] === 'inspect') {
+        inspectCount += 1;
+        const payload = JSON.stringify([
+          {
+            Id: 'cid-open',
+            Name: '/openclaw-main',
+            Config: {
+              Image: 'openclaw/gateway:latest',
+              Env: ['GATEWAY_TOKEN=abc123'],
+              Labels: {},
+            },
+            State: { Status: inspectCount === 1 ? 'running' : 'exited' },
+            NetworkSettings: { Ports: { '3080/tcp': [{ HostIp: '0.0.0.0', HostPort: '13080' }] } },
+          },
+        ]);
+        (cb as (err: null, stdout: string, stderr: string) => void)(null, payload, '');
+        return;
+      }
+      if (dockerArgs[0] === 'stop') {
+        (cb as (err: null, stdout: string, stderr: string) => void)(null, 'cid-open\n', '');
+        return;
+      }
+      (cb as (err: Error, stdout: string, stderr: string) => void)(new Error('unexpected args'), '', '');
+    };
+
+    const app = buildApp();
+    const res = await app.request('/api/instances/cid-open/stop', { method: 'POST' });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ok: boolean; instance: { id: string; state: string } };
+    expect(json.ok).toBe(true);
+    expect(json.instance.id).toBe('cid-open');
+    expect(json.instance.state).toBe('exited');
+  });
+
+  it('removes an instance', async () => {
+    execFileImpl = (_bin: unknown, args: unknown, _opts: unknown, cb: unknown) => {
+      const dockerArgs = args as string[];
+      if (dockerArgs[0] === 'inspect') {
+        const payload = JSON.stringify([
+          {
+            Id: 'cid-open',
+            Name: '/openclaw-main',
+            Config: {
+              Image: 'openclaw/gateway:latest',
+              Env: ['GATEWAY_TOKEN=abc123'],
+              Labels: {},
+            },
+            State: { Status: 'exited' },
+            Mounts: [
+              {
+                Source: '/home/ubuntu/.openclaw/multiclaw-instances/test-remove/.openclaw',
+                Destination: '/home/node/.openclaw',
+              },
+            ],
+            NetworkSettings: { Ports: { '3080/tcp': [{ HostIp: '0.0.0.0', HostPort: '13080' }] } },
+          },
+        ]);
+        (cb as (err: null, stdout: string, stderr: string) => void)(null, payload, '');
+        return;
+      }
+      if (dockerArgs[0] === 'rm') {
+        expect(dockerArgs).toEqual(['rm', '-f', 'cid-open']);
+        (cb as (err: null, stdout: string, stderr: string) => void)(null, 'cid-open\n', '');
+        return;
+      }
+      (cb as (err: Error, stdout: string, stderr: string) => void)(new Error('unexpected args'), '', '');
+    };
+
+    const app = buildApp();
+    const res = await app.request('/api/instances/cid-open', { method: 'DELETE' });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ok: boolean; instanceId: string; removed: boolean };
+    expect(json.ok).toBe(true);
+    expect(json.instanceId).toBe('cid-open');
+    expect(json.removed).toBe(true);
   });
 
   it('validates instance id format', async () => {

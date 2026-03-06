@@ -289,6 +289,87 @@ No unrelated container environment variables are returned.
 | 503 | `{ "error": "...", "code": "docker_unavailable" }` | Docker CLI/daemon unavailable |
 | 502 | `{ "error": "...", "code": "docker_command_failed" }` | Docker command returned an error |
 
+### `GET /api/instances/credentials`
+
+List allowlisted credential keys that can be copied from the master process when creating a new instance.
+
+Only metadata is returned (`key`, `isSet`). Credential values are never returned.
+
+**Rate Limit:** General (60/min)
+
+**Response (200):**
+
+```json
+{
+  "types": ["docker"],
+  "credentials": [
+    { "key": "GATEWAY_TOKEN", "isSet": true },
+    { "key": "OPENCLAW_GATEWAY_TOKEN", "isSet": false },
+    { "key": "OPENAI_API_KEY", "isSet": true },
+    { "key": "REPLICATE_API_TOKEN", "isSet": false }
+  ]
+}
+```
+
+### `POST /api/instances`
+
+Create a new local Docker-backed MultiClaw instance.
+
+Current implementation supports `type: "docker"` only, but request shape is structured for future instance types.
+
+**Rate Limit:** General (60/min)
+
+**Request Body:**
+
+```json
+{
+  "name": "multiclaw-worker-1",
+  "type": "docker",
+  "credentialKeys": ["GATEWAY_TOKEN", "OPENAI_API_KEY"]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `string` | Docker container name (`[A-Za-z0-9][A-Za-z0-9_.-]{0,62}`) |
+| `type` | `"docker"` | Instance runtime type (docker only for now) |
+| `credentialKeys` | `string[]` | Allowlisted master credential keys to copy if set |
+
+**Success Response (201):**
+
+```json
+{
+  "type": "docker",
+  "image": "multiclaw:latest",
+  "copiedCredentialKeys": ["GATEWAY_TOKEN"],
+  "instance": {
+    "id": "6d6f...",
+    "name": "multiclaw-worker-1",
+    "image": "multiclaw:latest",
+    "state": "running",
+    "status": "running",
+    "createdAt": "2026-03-02T12:00:00.000000000Z",
+    "labels": {},
+    "ports": [
+      { "containerPort": 3080, "protocol": "tcp", "hostIp": "0.0.0.0", "hostPort": 31021 }
+    ],
+    "hasGatewayToken": true
+  }
+}
+```
+
+**Error responses:**
+
+| Status | Body | Description |
+|-------|------|-------------|
+| 400 | `{ "error": { "code": "invalid_json", ... } }` | Body is not valid JSON |
+| 400 | `{ "error": { "code": "invalid_request", ... } }` | Validation failed (name/type/keys) |
+| 400 | `{ "error": { "code": "invalid_credential_key", ... } }` | Credential key not in allowlist |
+| 409 | `{ "error": { "code": "instance_name_in_use", ... } }` | Container name already exists |
+| 422 | `{ "error": { "code": "image_not_available", ... } }` | Resolved image cannot be pulled/found |
+| 503 | `{ "error": { "code": "docker_unavailable", ... } }` | Docker CLI/daemon unavailable |
+| 502 | `{ "error": { "code": "docker_command_failed", ... } }` | Docker command failed |
+
 ---
 
 ## Instance Proxy Scaffold

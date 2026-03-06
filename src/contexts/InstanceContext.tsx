@@ -10,6 +10,8 @@ export interface DiscoveredInstance {
   status: string;
   createdAt: string | null;
   hasGatewayToken: boolean;
+  availability?: 'ready' | 'initializing' | 'unreachable';
+  gateway?: 'ok' | 'unreachable';
 }
 
 interface InstanceContextValue {
@@ -62,7 +64,7 @@ export function InstanceProvider({ children }: { children: ReactNode }) {
     refreshInstances();
     const interval = window.setInterval(() => {
       void refreshInstances();
-    }, 30000);
+    }, 5000);
     return () => window.clearInterval(interval);
   }, [refreshInstances]);
 

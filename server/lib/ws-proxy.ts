@@ -141,7 +141,11 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
         }
         targetUrl = new URL(`ws://127.0.0.1:${port}/ws`);
         const tokenResult = await getInstanceToken(requestedInstanceId);
-        authTokenOverride = tokenResult?.token || null;
+        if (!tokenResult?.token) {
+          clientWs.close(1011, 'Instance token missing');
+          return;
+        }
+        authTokenOverride = tokenResult.token;
       } catch (err) {
         console.warn(`${tag} Failed to resolve instance target: ${(err as Error).message}`);
         clientWs.close(1011, 'Failed to resolve instance target');

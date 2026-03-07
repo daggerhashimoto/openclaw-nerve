@@ -110,7 +110,7 @@ Clear the session cookie.
 
 ### `GET /health`
 
-Health check with gateway connectivity probe.
+Basic health check with gateway connectivity probe.
 
 **Rate Limit:** None
 
@@ -127,6 +127,44 @@ Health check with gateway connectivity probe.
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | `string` | Always `"ok"` if the server is running |
+| `uptime` | `number` | Server uptime in seconds |
+| `gateway` | `"ok" \| "unreachable"` | Result of a 3-second gateway health probe |
+
+### `GET /healthcheck`
+
+Explicit readiness contract for orchestration and container probes.
+
+**Rate Limit:** None
+
+**Response (gateway reachable):**
+
+```json
+{
+  "service": "nerve",
+  "status": "ready",
+  "ready": true,
+  "uptime": 3621.42,
+  "gateway": "ok"
+}
+```
+
+**Response (gateway unavailable):**
+
+```json
+{
+  "service": "nerve",
+  "status": "initializing",
+  "ready": false,
+  "uptime": 3621.42,
+  "gateway": "unreachable"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `service` | `"nerve"` | Service identifier |
+| `status` | `"ready" \| "initializing"` | Readiness state derived from gateway probe |
+| `ready` | `boolean` | `true` only when `gateway === "ok"` |
 | `uptime` | `number` | Server uptime in seconds |
 | `gateway` | `"ok" \| "unreachable"` | Result of a 3-second gateway health probe |
 

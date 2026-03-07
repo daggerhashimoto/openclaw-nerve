@@ -253,8 +253,9 @@ export function SessionList({
         ) : instances.length === 0 ? (
           <div className="px-3 py-2 text-[11px] text-muted-foreground">No instances discovered</div>
         ) : instances.map((instance) => {
-          const status = instance.availability || instance.state || instance.status || 'unknown';
-          const running = /running/i.test(status);
+          const runtimeStatus = instance.state || instance.status || 'unknown';
+          const status = instance.availability || runtimeStatus;
+          const running = /running/i.test(runtimeStatus);
           const mutating = instanceMutatingId === instance.id;
 
           return (

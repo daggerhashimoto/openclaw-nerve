@@ -224,6 +224,28 @@ describe('ws-proxy', () => {
       ws.close();
     });
 
+    it('fails fast when instanceId is selected and instance token is missing', async () => {
+      const targetPort = Number(new URL(mockGw.url).port);
+      mockedGetLocalOpenClawInstance.mockResolvedValue({
+        id: 'cid-selected',
+        ports: [{ containerPort: 18789, protocol: 'tcp', hostIp: '0.0.0.0', hostPort: targetPort }],
+      });
+      mockedResolvePublishedGatewayPort.mockReturnValue(targetPort);
+      mockedGetInstanceToken.mockResolvedValue({
+        instanceId: 'cid-selected',
+        found: false,
+        token: null,
+        tokenKey: null,
+      });
+
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent('ws://evil.com/ws')}&instanceId=cid-selected`,
+      );
+      const { code, reason } = await waitForClose(ws);
+      expect(code).toBe(1011);
+      expect(reason).toContain('Instance token missing');
+    });
+
     it('destroys non-/ws upgrade requests', async () => {
       const ws = new WebSocket(`ws://127.0.0.1:${proxyPort}/other`);
       const { code } = await waitForCloseOrError(ws);

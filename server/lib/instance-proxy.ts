@@ -7,7 +7,12 @@ import { isMasterOnlyApiPath } from './instance-routing.js';
 
 const PROXY_RESPONSE_HEADERS = new Set([
   'content-type',
+  'content-disposition',
+  'content-language',
+  'content-length',
   'cache-control',
+  'expires',
+  'vary',
   'etag',
   'last-modified',
   // Intentionally omit content-encoding: upstream fetch may already decode body.
@@ -101,8 +106,14 @@ function buildForwardHeaders(reqHeaders: Headers): Headers {
 
 function buildResponseHeaders(upstream: Headers): Headers {
   const out = new Headers();
+  const upstreamHasContentEncoding = upstream.has('content-encoding');
   for (const [key, value] of upstream.entries()) {
-    if (PROXY_RESPONSE_HEADERS.has(key.toLowerCase())) {
+    const lower = key.toLowerCase();
+    if (!PROXY_RESPONSE_HEADERS.has(lower)) continue;
+    // Node fetch may decode upstream payload while still exposing encoded length.
+    // Do not forward stale content-length if upstream declared content-encoding.
+    if (lower === 'content-length' && upstreamHasContentEncoding) continue;
+    if (lower !== 'content-encoding') {
       out.set(key, value);
     }
   }

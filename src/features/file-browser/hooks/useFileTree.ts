@@ -62,7 +62,17 @@ export function useFileTree() {
     try {
       const params = dirPath ? `?path=${encodeURIComponent(dirPath)}&depth=1` : '?depth=1';
       const res = await fetch(`/api/files/tree${params}`);
-      if (!res.ok) return null;
+      if (!res.ok) {
+        if (res.status === 400 || res.status === 404) {
+          // Evict this path from expanded paths
+          setExpandedPaths(prev => {
+            const next = new Set(prev);
+            next.delete(dirPath);
+            return next;
+          });
+        }
+        return null;
+      }
       const data = await res.json();
       if (data.ok && data.workspaceInfo) {
         setWorkspaceInfo(data.workspaceInfo);
@@ -71,7 +81,7 @@ export function useFileTree() {
     } catch {
       return null;
     }
-  }, []);
+  }, [setExpandedPaths]);
 
   // Initial load
   const loadRoot = useCallback(async () => {

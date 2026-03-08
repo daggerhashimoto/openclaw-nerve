@@ -352,4 +352,330 @@ describe('useFileTree', () => {
       expect(returnKeys).toHaveLength(expectedKeys.length);
     });
   });
+
+  describe('cache eviction on invalid paths', () => {
+    it('evicts path from expandedPaths on 404 error', async () => {
+      const mockLocalStorage = vi.mocked(localStorage);
+      mockLocalStorage.getItem.mockReturnValue('["src","invalid-dir"]');
+
+      const mockFetch = vi.mocked(fetch);
+      
+      // Initial load succeeds
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'src', path: 'src', type: 'directory', children: null },
+          ],
+          workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace' },
+        }),
+      } as Response);
+
+      // Fetch for 'src' succeeds
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'index.ts', path: 'src/index.ts', type: 'file', children: null },
+          ],
+        }),
+      } as Response);
+
+      // Fetch for 'invalid-dir' returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ ok: false, error: 'Directory not found' }),
+      } as Response);
+
+      const { result } = renderHook(() => useFileTree());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      // 'invalid-dir' should be removed from expandedPaths
+      await waitFor(() => {
+        expect(result.current.expandedPaths.has('invalid-dir')).toBe(false);
+        expect(result.current.expandedPaths.has('src')).toBe(true);
+      });
+    });
+
+    it('evicts path from expandedPaths on 400 Invalid path error', async () => {
+      const mockFetch = vi.mocked(fetch);
+      
+      // Initial load succeeds
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'src', path: 'src', type: 'directory', children: null },
+          ],
+          workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace' },
+        }),
+      } as Response);
+
+      const { result } = renderHook(() => useFileTree());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      // Toggle a directory that returns 400 Invalid path
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ ok: false, error: 'Invalid path' }),
+      } as Response);
+
+      result.current.toggleDirectory('src');
+
+      await waitFor(() => {
+        expect(result.current.expandedPaths.has('src')).toBe(false);
+      });
+    });
+
+    it('evicts path from expandedPaths on 400 Not a directory error', async () => {
+      const mockFetch = vi.mocked(fetch);
+      
+      // Initial load succeeds
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'file.txt', path: 'file.txt', type: 'directory', children: null },
+          ],
+          workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace' },
+        }),
+      } as Response);
+
+      const { result } = renderHook(() => useFileTree());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      // Toggle what appears to be a directory but is actually a file
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ ok: false, error: 'Not a directory' }),
+      } as Response);
+
+      result.current.toggleDirectory('file.txt');
+
+      await waitFor(() => {
+        expect(result.current.expandedPaths.has('file.txt')).toBe(false);
+      });
+    });
+
+    it('does not evict path on server error statuses (500)', async () => {
+      const mockFetch = vi.mocked(fetch);
+      
+      // Initial load succeeds
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'src', path: 'src', type: 'directory', children: null },
+          ],
+          workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace' },
+        }),
+      } as Response);
+
+      const { result } = renderHook(() => useFileTree());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      // Toggle directory - returns 500 server error
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ ok: false, error: 'Server error' }),
+      } as Response);
+
+      result.current.toggleDirectory('src');
+
+      await waitFor(() => {
+        // Path should still be in expandedPaths (transient error, might work later)
+        expect(result.current.expandedPaths.has('src')).toBe(true);
+      });
+    });
+
+    it('persists cache eviction to localStorage', async () => {
+      const mockLocalStorage = vi.mocked(localStorage);
+      mockLocalStorage.getItem.mockReturnValue('[]');
+
+      const mockFetch = vi.mocked(fetch);
+      
+      // Initial load succeeds
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'src', path: 'src', type: 'directory', children: null },
+          ],
+          workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace' },
+        }),
+      } as Response);
+
+      const { result } = renderHook(() => useFileTree());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      const writesBeforeToggle = mockLocalStorage.setItem.mock.calls.length;
+
+      // Toggle directory that returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ ok: false, error: 'Directory not found' }),
+      } as Response);
+
+      result.current.toggleDirectory('src');
+
+      await waitFor(() => {
+        expect(result.current.expandedPaths.has('src')).toBe(false);
+      });
+
+      // Verify localStorage.setItem was called to persist the change
+      await waitFor(() => {
+        expect(mockLocalStorage.setItem.mock.calls.length).toBeGreaterThan(writesBeforeToggle);
+        expect(mockLocalStorage.setItem).toHaveBeenLastCalledWith(
+          'nerve-file-tree-expanded',
+          expect.not.stringContaining('src'),
+        );
+      });
+    });
+  });
+
+  describe('regression: existing behavior unchanged', () => {
+    it('still loads children successfully on valid paths', async () => {
+      const mockFetch = vi.mocked(fetch);
+      
+      // Initial load
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'src', path: 'src', type: 'directory', children: null },
+          ],
+          workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace' },
+        }),
+      } as Response);
+
+      const { result } = renderHook(() => useFileTree());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      // Toggle directory - succeeds
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'index.ts', path: 'src/index.ts', type: 'file', children: null },
+          ],
+        }),
+      } as Response);
+
+      result.current.toggleDirectory('src');
+
+      await waitFor(() => {
+        expect(result.current.expandedPaths.has('src')).toBe(true);
+        expect(result.current.entries[0].children).toHaveLength(1);
+      });
+    });
+
+    it('still handles network errors without evicting from cache', async () => {
+      const mockFetch = vi.mocked(fetch);
+      
+      // Initial load
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'src', path: 'src', type: 'directory', children: null },
+          ],
+          workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace' },
+        }),
+      } as Response);
+
+      const { result } = renderHook(() => useFileTree());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      // Toggle directory - network error
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+      result.current.toggleDirectory('src');
+
+      await waitFor(() => {
+        // Path should still be in expandedPaths (might work on retry)
+        expect(result.current.expandedPaths.has('src')).toBe(true);
+      });
+    });
+
+    it('still collapses directories when toggled again', async () => {
+      const mockFetch = vi.mocked(fetch);
+      
+      // Initial load
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'src', path: 'src', type: 'directory', children: null },
+          ],
+          workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace' },
+        }),
+      } as Response);
+
+      const { result } = renderHook(() => useFileTree());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      // Expand directory
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'index.ts', path: 'src/index.ts', type: 'file', children: null },
+          ],
+        }),
+      } as Response);
+
+      result.current.toggleDirectory('src');
+
+      await waitFor(() => {
+        expect(result.current.expandedPaths.has('src')).toBe(true);
+      });
+
+      // Collapse directory
+      result.current.toggleDirectory('src');
+
+      await waitFor(() => {
+        expect(result.current.expandedPaths.has('src')).toBe(false);
+      });
+    });
+  });
 });

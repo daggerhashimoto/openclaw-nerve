@@ -559,6 +559,132 @@ describe('useFileTree', () => {
     });
   });
 
+  describe('permanent error cache cleanup', () => {
+    it('prunes descendant expanded paths when a parent directory returns 404 on restore', async () => {
+      const mockLocalStorage = vi.mocked(localStorage);
+      mockLocalStorage.getItem.mockReturnValue('["src","src/components","src/components/button"]');
+
+      const mockFetch = vi.mocked(fetch);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'src', path: 'src', type: 'directory', children: null },
+          ],
+          workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace' },
+        }),
+      } as Response);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ ok: false, error: 'Directory not found' }),
+      } as Response);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'button.tsx', path: 'src/components/button.tsx', type: 'file', children: null },
+          ],
+        }),
+      } as Response);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [],
+        }),
+      } as Response);
+
+      const { result } = renderHook(() => useFileTree());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      await waitFor(() => {
+        expect(result.current.expandedPaths.has('src')).toBe(false);
+        expect(result.current.expandedPaths.has('src/components')).toBe(false);
+        expect(result.current.expandedPaths.has('src/components/button')).toBe(false);
+      });
+    });
+
+    it('clears cached children after a permanent error so a later expand refetches', async () => {
+      const mockFetch = vi.mocked(fetch);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'src', path: 'src', type: 'directory', children: null },
+          ],
+          workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace' },
+        }),
+      } as Response);
+
+      const { result } = renderHook(() => useFileTree());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'index.ts', path: 'src/index.ts', type: 'file', children: null },
+          ],
+        }),
+      } as Response);
+
+      result.current.toggleDirectory('src');
+
+      await waitFor(() => {
+        expect(result.current.expandedPaths.has('src')).toBe(true);
+        expect(result.current.entries.find((entry) => entry.path === 'src')?.children).toHaveLength(1);
+        expect(result.current.entries.find((entry) => entry.path === 'src')?.children?.[0]?.path).toBe('src/index.ts');
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ ok: false, error: 'Directory not found' }),
+      } as Response);
+
+      result.current.handleFileChange('src/index.ts');
+
+      await waitFor(() => {
+        expect(result.current.expandedPaths.has('src')).toBe(false);
+        expect(result.current.entries.find((entry) => entry.path === 'src')?.children).toBeNull();
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [
+            { name: 'main.ts', path: 'src/main.ts', type: 'file', children: null },
+          ],
+        }),
+      } as Response);
+
+      result.current.toggleDirectory('src');
+
+      await waitFor(() => {
+        expect(result.current.expandedPaths.has('src')).toBe(true);
+        expect(result.current.entries.find((entry) => entry.path === 'src')?.children).toHaveLength(1);
+        expect(result.current.entries.find((entry) => entry.path === 'src')?.children?.[0]?.path).toBe('src/main.ts');
+      });
+    });
+  });
+
   describe('regression: existing behavior unchanged', () => {
     it('still loads children successfully on valid paths', async () => {
       const mockFetch = vi.mocked(fetch);
@@ -596,7 +722,7 @@ describe('useFileTree', () => {
 
       await waitFor(() => {
         expect(result.current.expandedPaths.has('src')).toBe(true);
-        expect(result.current.entries[0].children).toHaveLength(1);
+        expect(result.current.entries.find((entry) => entry.path === 'src')?.children).toHaveLength(1);
       });
     });
 

@@ -36,6 +36,21 @@ function mergeChildren(
   });
 }
 
+/** Clear cached children for a directory entry and reset to unloaded state */
+function clearEntryFromTree(entries: TreeEntry[], targetPath: string): TreeEntry[] {
+  return entries.map((entry) => {
+    if (entry.path === targetPath && entry.type === 'directory') {
+      // Reset to unloaded state
+      return { ...entry, children: null };
+    }
+    if (entry.children && entry.type === 'directory') {
+      // Recursively process children
+      return { ...entry, children: clearEntryFromTree(entry.children, targetPath) };
+    }
+    return entry;
+  });
+}
+
 /** Hook for managing file tree state with workspace info and persistence. */
 export function useFileTree() {
   const [entries, setEntries] = useState<TreeEntry[]>([]);
@@ -63,12 +78,22 @@ export function useFileTree() {
       const params = dirPath ? `?path=${encodeURIComponent(dirPath)}&depth=1` : '?depth=1';
       const res = await fetch(`/api/files/tree${params}`);
       if (!res.ok) {
-        if (res.status === 400 || res.status === 404) {
-          // Evict this path from expanded paths
+        if (dirPath && (res.status === 400 || res.status === 404)) {
+          // Evict this path from expandedPaths and clear cached children
           setExpandedPaths(prev => {
             const next = new Set(prev);
-            next.delete(dirPath);
+            // Remove the path and all descendants
+            for (const path of next) {
+              if (path === dirPath || path.startsWith(`${dirPath}/`)) {
+                next.delete(path);
+              }
+            }
             return next;
+          });
+
+          // Clear cached children for this entry
+          setEntries(prev => {
+            return clearEntryFromTree(prev, dirPath);
           });
         }
         return null;
@@ -81,7 +106,7 @@ export function useFileTree() {
     } catch {
       return null;
     }
-  }, [setExpandedPaths]);
+  }, [setExpandedPaths, setEntries]);
 
   // Initial load
   const loadRoot = useCallback(async () => {

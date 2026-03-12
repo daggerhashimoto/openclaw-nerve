@@ -92,23 +92,23 @@ export default function App({ onLogout }: AppProps) {
   // Track last changed file path for tree refresh
   const [lastChangedPath, setLastChangedPath] = useState<string | null>(null);
 
-  // File browser collapse state for mobile optimization
-  const [fileBrowserCollapsed, setFileBrowserCollapsed] = useState(() => {
+  const initialCompactLayout = typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches;
+  const initialDesktopFileBrowserCollapsed = (() => {
     try {
       const saved = localStorage.getItem('nerve-file-tree-collapsed');
       if (saved !== null) return saved === 'true';
     } catch {
-      // ignore storage errors and fall back to viewport-aware default
-    }
-
-    if (typeof window !== 'undefined') {
-      return window.matchMedia('(max-width: 900px)').matches;
+      // ignore storage errors and fall back to desktop default
     }
 
     return false;
-  });
-  const desktopFileBrowserCollapsedRef = useRef(fileBrowserCollapsed);
-  const previousCompactLayoutRef = useRef(false);
+  })();
+
+  // File browser collapse state for mobile optimization
+  const [fileBrowserCollapsed, setFileBrowserCollapsed] = useState(() => (
+    initialCompactLayout ? true : initialDesktopFileBrowserCollapsed
+  ));
+  const desktopFileBrowserCollapsedRef = useRef(initialDesktopFileBrowserCollapsed);
 
   // Sync localStorage when state changes
   useEffect(() => {
@@ -173,10 +173,7 @@ export default function App({ onLogout }: AppProps) {
   } = useGatewayRestart();
 
   // Responsive layout state (chat-first on smaller viewports)
-  const [isCompactLayout, setIsCompactLayout] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return window.matchMedia('(max-width: 900px)').matches;
-  });
+  const [isCompactLayout, setIsCompactLayout] = useState(initialCompactLayout);
 
   // Command palette state
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -194,8 +191,13 @@ export default function App({ onLogout }: AppProps) {
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const setViewMode = useCallback((mode: ViewMode) => {
     setViewModeRaw(mode);
+
+    if (mode === 'kanban' && isCompactLayout) {
+      setFileBrowserCollapsed(true);
+    }
+
     try { localStorage.setItem('nerve:viewMode', mode); } catch { /* ignore */ }
-  }, []);
+  }, [isCompactLayout]);
   const openTaskInBoard = useCallback((taskId: string) => {
     setPendingTaskId(taskId);
     setViewMode('kanban');
@@ -303,13 +305,25 @@ export default function App({ onLogout }: AppProps) {
     prevLogCount.current = currentCount;
   }, [agentLogEntries.length]);
 
+  const handleCompactLayoutChange = useCallback((nextIsCompactLayout: boolean) => {
+    setIsCompactLayout(nextIsCompactLayout);
+    setFileBrowserCollapsed(prevCollapsed => {
+      if (nextIsCompactLayout) {
+        desktopFileBrowserCollapsedRef.current = prevCollapsed;
+        return true;
+      }
+
+      return desktopFileBrowserCollapsedRef.current;
+    });
+  }, []);
+
   // Responsive mode: switch to chat-first layout on smaller screens
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const mq = window.matchMedia('(max-width: 900px)');
     const onChange = (event: MediaQueryListEvent) => {
-      setIsCompactLayout(event.matches);
+      handleCompactLayoutChange(event.matches);
     };
 
     if (mq.addEventListener) {
@@ -320,26 +334,7 @@ export default function App({ onLogout }: AppProps) {
     // Safari fallback
     mq.addListener(onChange);
     return () => mq.removeListener(onChange);
-  }, []);
-
-  useEffect(() => {
-    if (previousCompactLayoutRef.current === isCompactLayout) return;
-
-    if (isCompactLayout) {
-      desktopFileBrowserCollapsedRef.current = fileBrowserCollapsed;
-      setFileBrowserCollapsed(true);
-    } else {
-      setFileBrowserCollapsed(desktopFileBrowserCollapsedRef.current);
-    }
-
-    previousCompactLayoutRef.current = isCompactLayout;
-  }, [fileBrowserCollapsed, isCompactLayout]);
-
-  useEffect(() => {
-    if (isCompactLayout && viewMode === 'kanban' && !fileBrowserCollapsed) {
-      setFileBrowserCollapsed(true);
-    }
-  }, [fileBrowserCollapsed, isCompactLayout, viewMode]);
+  }, [handleCompactLayoutChange]);
 
   // Handler for session changes
   const handleSessionChange = useCallback(async (key: string) => {

@@ -47,7 +47,7 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
                 <NerveLogo size={26} />
               </div>
               <div>
-                <div className="text-[10px] font-mono uppercase tracking-[0.34em] text-primary/80">Gateway Handshake</div>
+                <div className="text-[10px] font-medium uppercase tracking-[0.3em] text-primary/80">Gateway Handshake</div>
                 <DialogTitle className="mt-1 text-xl font-semibold tracking-[-0.03em] text-foreground">
                   Connect Nerve to your OpenClaw gateway
                 </DialogTitle>
@@ -62,14 +62,14 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
         <div className="flex flex-col gap-5 px-5 py-5 sm:px-6 sm:py-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="shell-panel rounded-2xl px-4 py-3">
-              <div className="text-[10px] font-mono uppercase tracking-[0.28em] text-muted-foreground">Connection</div>
+              <div className="text-[10px] font-medium uppercase tracking-[0.24em] text-muted-foreground">Connection</div>
               <div className="mt-2 text-sm font-medium text-foreground">Secure local bridge</div>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 Nerve talks to your gateway over WebSocket and keeps the session state in sync live.
               </p>
             </div>
             <div className="shell-panel rounded-2xl px-4 py-3">
-              <div className="text-[10px] font-mono uppercase tracking-[0.28em] text-muted-foreground">Credentials</div>
+              <div className="text-[10px] font-medium uppercase tracking-[0.24em] text-muted-foreground">Credentials</div>
               <div className="mt-2 text-sm font-medium text-foreground">Use the gateway token</div>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 Paste the same token configured in OpenClaw. Nerve will reuse it for reconnects.
@@ -79,7 +79,7 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
 
           <div className="grid gap-4">
             <label className="flex flex-col gap-2">
-              <span className="text-[11px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
+              <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
                 WebSocket endpoint
               </span>
               <Input
@@ -91,7 +91,7 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
               />
             </label>
             <label className="flex flex-col gap-2">
-              <span className="text-[11px] font-mono uppercase tracking-[0.24em] text-muted-foreground">
+              <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
                 Gateway token
               </span>
               <Input
@@ -114,7 +114,7 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
               onClick={handleConnect}
               disabled={connecting}
               size="lg"
-              className="min-w-[220px] font-mono text-[11px] uppercase tracking-[0.26em]"
+              className="min-w-[220px] text-[11px] uppercase tracking-[0.22em]"
             >
               {connecting ? 'Connecting…' : 'Connect to Gateway'}
             </Button>

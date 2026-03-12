@@ -187,7 +187,7 @@ export function TopBar({
               <span className="truncate text-sm font-semibold uppercase tracking-[0.34em] text-primary sm:text-base">
                 Nerve
               </span>
-              <span className="hidden lg:inline text-[10px] font-mono uppercase tracking-[0.26em] text-muted-foreground/70">
+              <span className="hidden lg:inline text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground/70">
                 OpenClaw cockpit
               </span>
             </div>
@@ -205,7 +205,7 @@ export function TopBar({
                 aria-label="Switch to chat view"
                 aria-pressed={viewMode === 'chat'}
                 data-active={viewMode === 'chat'}
-                className="shell-chip text-[11px] font-mono uppercase tracking-[0.18em]"
+                className="shell-chip text-[11px] uppercase tracking-[0.14em]"
               >
                 <MessageSquare size={13} aria-hidden="true" />
                 <span>Chat</span>
@@ -216,7 +216,7 @@ export function TopBar({
                 aria-label="Switch to tasks view"
                 aria-pressed={viewMode === 'kanban'}
                 data-active={viewMode === 'kanban'}
-                className="shell-chip text-[11px] font-mono uppercase tracking-[0.18em]"
+                className="shell-chip text-[11px] uppercase tracking-[0.14em]"
               >
                 <LayoutGrid size={13} aria-hidden="true" />
                 <span>Tasks</span>

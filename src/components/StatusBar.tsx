@@ -122,7 +122,7 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
           role="status"
           aria-live="polite"
           aria-atomic="true"
-          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono uppercase tracking-[0.2em] ${statusColor} animate-status-flash`}
+          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold uppercase tracking-[0.16em] ${statusColor} animate-status-flash`}
         >
           <span className="text-[8px]" aria-hidden="true">●</span>
           <span>{statusLabel}</span>
@@ -165,7 +165,7 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
         <span className="rounded-full border border-border/70 bg-background/75 px-2.5 py-1 font-mono text-[10px] tracking-[-0.08em] text-muted-foreground">
           {sparkline}<span className="ml-1 text-primary animate-alive">_</span>
         </span>
-        <span className="font-mono text-[9px] uppercase tracking-[0.22em] text-muted-foreground/55">v{__APP_VERSION__}</span>
+        <span className="text-[9px] font-medium uppercase tracking-[0.18em] text-muted-foreground/55">v{__APP_VERSION__}</span>
         <UpdateBadge />
       </div>
     </div>

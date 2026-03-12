@@ -160,7 +160,7 @@ export function ConfigTab() {
                 <Pencil size={14} />
               </button>
             </div>
-            <pre className="px-3 py-2 text-[11px] text-foreground whitespace-pre-wrap font-mono leading-relaxed">
+            <pre className="px-3 py-2 text-[11px] text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono leading-relaxed">
               {content}
             </pre>
           </div>
@@ -172,8 +172,9 @@ export function ConfigTab() {
               ref={textareaRef}
               value={editContent}
               onChange={e => setEditContent(e.target.value)}
-              className="flex-1 w-full px-3 py-2 text-[11px] font-mono bg-background text-foreground border-0 resize-none outline-none focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 focus-visible:ring-inset"
+              className="flex-1 w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] px-3 py-2 text-[11px] font-mono bg-background text-foreground border-0 resize-none outline-none focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 focus-visible:ring-inset"
               spellCheck={false}
+              wrap="soft"
             />
             <div className="flex items-center gap-2 border-t border-border/60 bg-secondary/28 px-3 py-2">
               <Button

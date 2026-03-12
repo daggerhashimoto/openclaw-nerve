@@ -114,15 +114,15 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
     : null;
 
   return (
-    <div className="shell-panel mx-2 mb-2 flex min-h-10 items-center rounded-2xl px-3 py-2 text-[10px] text-muted-foreground shrink-0 select-none sm:mx-4 sm:mb-3 sm:px-4 sm:text-[11px]">
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 overflow-hidden">
+    <div className="shell-panel mx-2 mb-2 flex min-h-10 items-center overflow-x-auto rounded-2xl px-3 py-2 text-[10px] text-muted-foreground shrink-0 select-none sm:mx-4 sm:mb-3 sm:px-4 sm:text-[11px]">
+      <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-x-2.5 overflow-visible whitespace-nowrap sm:gap-x-3">
         {/* Connection status */}
         <span
           key={flashKey}
           role="status"
           aria-live="polite"
           aria-atomic="true"
-          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] ${statusColor} animate-status-flash`}
+          className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.08em] sm:gap-1.5 sm:px-2.5 sm:tracking-[0.12em] ${statusColor} animate-status-flash`}
         >
           <span className="text-[8px]" aria-hidden="true">●</span>
           <span>{statusLabel}</span>
@@ -140,7 +140,9 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
 
         {/* Session count */}
         <span className="shrink-0 text-foreground/78">
-          <span className="font-mono tabular-nums text-foreground">{sessionCount}</span> active sessions
+          <span className="font-mono tabular-nums text-foreground">{sessionCount}</span>
+          <span className="ml-1 sm:hidden">sessions</span>
+          <span className="ml-1 hidden sm:inline">active sessions</span>
         </span>
 
         {/* Gateway uptime (hidden on narrow/medium screens) */}

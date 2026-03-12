@@ -40,7 +40,7 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
   return (
     <Dialog open={open}>
       <DialogContent className="shell-panel max-w-[min(92vw,560px)] p-0 overflow-hidden [&>button]:hidden" showCloseButton={false}>
-        <div className="border-b border-border/70 bg-gradient-to-r from-primary/10 via-transparent to-info/10 px-5 py-4 sm:px-6">
+        <div className="border-b border-border/70 bg-gradient-to-r from-primary/12 via-transparent to-info/6 px-5 py-4 sm:px-6">
           <DialogHeader className="gap-3 text-left">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/20 bg-background/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">

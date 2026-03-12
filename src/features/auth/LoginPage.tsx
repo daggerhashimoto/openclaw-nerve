@@ -1,7 +1,7 @@
 /**
  * LoginPage — Full-screen login gate for Nerve authentication.
  *
- * Renders a password form matching Nerve's dark theme with purple accents.
+ * Renders a password form matching Nerve's dark cockpit theme.
  * Supports Enter-to-submit and auto-focuses the password input on mount.
  */
 
@@ -37,7 +37,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,color-mix(in_srgb,var(--color-primary)_12%,transparent),transparent_32%),radial-gradient(circle_at_bottom_right,color-mix(in_srgb,var(--color-info)_12%,transparent),transparent_30%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,color-mix(in_srgb,var(--color-primary)_14%,transparent),transparent_34%),radial-gradient(circle_at_bottom_right,color-mix(in_srgb,var(--color-info)_7%,transparent),transparent_32%)]" />
       <div className="shell-panel relative w-full max-w-[min(92vw,980px)] overflow-hidden rounded-[28px]">
         <div className="grid lg:grid-cols-[1.15fr_0.85fr]">
           <div className="border-b border-border/70 bg-gradient-to-br from-background via-card/90 to-secondary/90 px-6 py-8 sm:px-8 lg:border-b-0 lg:border-r">

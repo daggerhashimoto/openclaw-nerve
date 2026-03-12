@@ -537,98 +537,102 @@ export function FileTreePanel({
   return (
     <div
       ref={panelRef}
-      className="shell-panel relative flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden rounded-[28px]"
+      className="relative flex h-full min-h-0 w-full shrink-0 flex-col overflow-visible"
       style={isCompactLayout ? undefined : { width }}
-      onContextMenu={(e) => {
-        // Right-click on empty panel area closes any open context menu.
-        if (e.target === e.currentTarget) {
-          e.preventDefault();
-          setContextMenu(null);
-        }
-      }}
     >
-      {/* Header */}
       <div
-        className={`flex items-center justify-between border-b border-border/70 px-4 py-3 ${dropTargetPath === '.' ? 'bg-primary/12 ring-1 ring-inset ring-primary/35' : 'bg-gradient-to-r from-secondary/90 to-card/85'}`}
-        onDragOver={handleRootDragOver}
-        onDragLeave={(e) => {
-          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-          if (dropTargetPath === '.') setDropTargetPath(null);
+        className="shell-panel flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden rounded-[28px]"
+        onContextMenu={(e) => {
+          // Right-click on empty panel area closes any open context menu.
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            setContextMenu(null);
+          }
         }}
-        onDrop={handleRootDrop}
       >
-        <span className="text-[10px] font-mono font-semibold uppercase tracking-[0.26em] text-muted-foreground">
-          {workspaceInfo?.isCustomWorkspace ? workspaceInfo.rootPath : 'Workspace'}
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={refresh}
-            className="shell-icon-button size-10 px-0"
-            title="Refresh file tree"
-            aria-label="Refresh file tree"
-          >
-            <RefreshCw size={16} />
-          </button>
-          <button
-            onClick={toggleCollapsed}
-            className="shell-icon-button size-10 px-0"
-            title="Close file explorer (Ctrl+B)"
-            aria-label="Close file explorer"
-          >
-            <PanelLeftClose size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* Tree content */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden py-1" role="tree" aria-label="File explorer">
-        {loading ? (
-          <div className="flex items-center gap-2 px-3 py-4 text-xs text-muted-foreground">
-            <RefreshCw className="animate-spin" size={12} />
-            Loading...
-          </div>
-        ) : error ? (
-          <div className="px-3 py-4 text-xs text-destructive">
-            {error}
+        {/* Header */}
+        <div
+          className={`flex items-center justify-between border-b border-border/70 px-4 py-3 ${dropTargetPath === '.' ? 'bg-primary/12 ring-1 ring-inset ring-primary/35' : 'bg-gradient-to-r from-secondary/90 to-card/85'}`}
+          onDragOver={handleRootDragOver}
+          onDragLeave={(e) => {
+            if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+            if (dropTargetPath === '.') setDropTargetPath(null);
+          }}
+          onDrop={handleRootDrop}
+        >
+          <span className="text-[10px] font-mono font-semibold uppercase tracking-[0.26em] text-muted-foreground">
+            {workspaceInfo?.isCustomWorkspace ? workspaceInfo.rootPath : 'Workspace'}
+          </span>
+          <div className="flex items-center gap-2">
             <button
               onClick={refresh}
-              className="block mt-2 text-primary hover:underline"
+              className="shell-icon-button size-10 px-0"
+              title="Refresh file tree"
+              aria-label="Refresh file tree"
             >
-              Retry
+              <RefreshCw size={16} />
+            </button>
+            <button
+              onClick={toggleCollapsed}
+              className="shell-icon-button size-10 px-0"
+              title="Close file explorer (Ctrl+B)"
+              aria-label="Close file explorer"
+            >
+              <PanelLeftClose size={16} />
             </button>
           </div>
-        ) : entries.length === 0 ? (
-          <div className="px-3 py-4 text-xs text-muted-foreground">
-            Empty workspace
-          </div>
-        ) : (
-          entries.map((entry) => (
-            <FileTreeNode
-              key={entry.path}
-              entry={entry}
-              depth={0}
-              expandedPaths={expandedPaths}
-              selectedPath={selectedPath}
-              loadingPaths={loadingPaths}
-              onToggleDir={toggleDirectory}
-              onOpenFile={onOpenFile}
-              onSelect={selectFile}
-              onContextMenu={handleContextMenu}
-              dragSourcePath={dragSource?.path || null}
-              dropTargetPath={dropTargetPath}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              onDragOverDirectory={handleDragOverDirectory}
-              onDragLeaveDirectory={handleDragLeaveDirectory}
-              onDropDirectory={handleDropDirectory}
-              renamingPath={renameTargetPath}
-              renameValue={renameValue}
-              onRenameChange={setRenameValue}
-              onRenameCommit={() => { void commitRename(); }}
-              onRenameCancel={cancelRename}
-            />
-          ))
-        )}
+        </div>
+
+        {/* Tree content */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden py-1" role="tree" aria-label="File explorer">
+          {loading ? (
+            <div className="flex items-center gap-2 px-3 py-4 text-xs text-muted-foreground">
+              <RefreshCw className="animate-spin" size={12} />
+              Loading...
+            </div>
+          ) : error ? (
+            <div className="px-3 py-4 text-xs text-destructive">
+              {error}
+              <button
+                onClick={refresh}
+                className="block mt-2 text-primary hover:underline"
+              >
+                Retry
+              </button>
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="px-3 py-4 text-xs text-muted-foreground">
+              Empty workspace
+            </div>
+          ) : (
+            entries.map((entry) => (
+              <FileTreeNode
+                key={entry.path}
+                entry={entry}
+                depth={0}
+                expandedPaths={expandedPaths}
+                selectedPath={selectedPath}
+                loadingPaths={loadingPaths}
+                onToggleDir={toggleDirectory}
+                onOpenFile={onOpenFile}
+                onSelect={selectFile}
+                onContextMenu={handleContextMenu}
+                dragSourcePath={dragSource?.path || null}
+                dropTargetPath={dropTargetPath}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onDragOverDirectory={handleDragOverDirectory}
+                onDragLeaveDirectory={handleDragLeaveDirectory}
+                onDropDirectory={handleDropDirectory}
+                renamingPath={renameTargetPath}
+                renameValue={renameValue}
+                onRenameChange={setRenameValue}
+                onRenameCommit={() => { void commitRename(); }}
+                onRenameCancel={cancelRename}
+              />
+            ))
+          )}
+        </div>
       </div>
 
       {/* Context menu */}
@@ -706,14 +710,14 @@ export function FileTreePanel({
       {/* Resize handle */}
       {!isCompactLayout && (
         <div
-          className="absolute top-0 right-0 z-10 flex h-full w-3 cursor-col-resize items-stretch justify-center"
+          className="absolute top-0 -right-3 z-20 flex h-full w-3 cursor-col-resize items-stretch justify-center"
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClickResize}
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize file explorer"
         >
-          <div className="pointer-events-none my-4 w-px rounded-full bg-border" />
+          <div className="pointer-events-none my-3 w-px rounded-full bg-border transition-colors hover:bg-primary/55" />
         </div>
       )}
 

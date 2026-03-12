@@ -61,7 +61,7 @@ export function ConnectionSettings({
         <button
           onClick={onReconnect}
           disabled={connectionState === 'connecting' || connectionState === 'reconnecting'}
-          className="cockpit-toolbar-button ml-auto"
+          className="cockpit-toolbar-button w-full justify-center sm:ml-auto sm:w-auto"
           title="Reconnect to gateway"
         >
           <RefreshCw size={14} className={connectionState === 'reconnecting' ? 'animate-spin' : ''} />
@@ -125,7 +125,7 @@ export function ConnectionSettings({
               type="button"
               onClick={onGatewayRestart}
               disabled={gatewayRestarting}
-              className="cockpit-toolbar-button shrink-0"
+              className="cockpit-toolbar-button w-full justify-center sm:w-auto"
             >
               <RotateCw size={14} aria-hidden="true" className={gatewayRestarting ? 'animate-spin' : ''} />
               {gatewayRestarting ? 'Restarting...' : 'Restart'}

@@ -404,7 +404,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       />
       {/* Input row */}
       <div
-        className={`flex items-end gap-2 border-t px-3 py-3 shrink-0 bg-card/92 focus-within:border-t-primary/40 focus-within:shadow-[0_-1px_10px_rgba(232,168,56,0.12)] ${voiceState === 'recording' ? 'border-t-red-500 shadow-[0_-1px_12px_rgba(239,68,68,0.24)]' : 'border-border/70'}`}
+        className={`flex items-end gap-1.5 border-t px-2.5 py-2.5 shrink-0 bg-card/92 focus-within:border-t-primary/40 focus-within:shadow-[0_-1px_10px_rgba(232,168,56,0.12)] sm:gap-2 sm:px-3 sm:py-3 ${voiceState === 'recording' ? 'border-t-red-500 shadow-[0_-1px_12px_rgba(239,68,68,0.24)]' : 'border-border/70'}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -439,7 +439,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           placeholder="Message..."
           aria-label="Message input"
           rows={1}
-          className="min-h-[46px] max-h-[160px] flex-1 resize-none border-none bg-transparent px-1 py-2 text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
+          className="min-h-[46px] max-h-[160px] flex-1 resize-none border-none bg-transparent px-1 py-2 text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[15px]"
         />
         <button
           onClick={() => fileInputRef.current?.click()}
@@ -454,18 +454,28 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           disabled={isGenerating}
           aria-label={isGenerating ? "Generating response..." : "Send message"}
           aria-busy={isGenerating}
-          className={`send-btn flex min-h-11 items-center justify-center gap-2 self-stretch rounded-2xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-transform ${isGenerating ? 'cursor-not-allowed opacity-50' : 'hover:-translate-y-px hover:bg-primary/95 active:scale-95'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
+          className={`send-btn flex min-h-11 items-center justify-center gap-2 self-stretch rounded-2xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-transform sm:px-4 ${isGenerating ? 'cursor-not-allowed opacity-50' : 'hover:-translate-y-px hover:bg-primary/95 active:scale-95'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
         >
           {isGenerating ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ArrowUp size={16} aria-hidden="true" />}
           <span className="hidden sm:inline">{isGenerating ? 'Sending' : 'Send'}</span>
         </button>
       </div>
-      <div className="bg-card/92 px-4 pb-2 text-[11px] text-muted-foreground">
+      <div className="bg-card/92 px-3 pb-2 text-[11px] text-muted-foreground sm:px-4">
         {voiceState === 'recording'
-          ? 'Recording… Left Shift to send · Double Left Shift to discard'
+          ? (
+            <>
+              <span className="sm:hidden">Recording… Shift to send · Double Shift to discard</span>
+              <span className="hidden sm:inline">Recording… Left Shift to send · Double Left Shift to discard</span>
+            </>
+          )
           : voiceState === 'transcribing'
           ? 'Transcribing…'
-          : 'Enter or ⌘Enter to send · Shift+Enter for newline · Double Left Shift for voice · Ctrl+F search'}
+          : (
+            <>
+              <span className="sm:hidden">Enter to send · Shift+Enter newline · Double Shift voice</span>
+              <span className="hidden sm:inline">Enter or ⌘Enter to send · Shift+Enter for newline · Double Left Shift for voice · Ctrl+F search</span>
+            </>
+          )}
       </div>
       {voiceError && (
         <div className="bg-card/92 px-4 pb-3 text-[11px] text-destructive" role="alert">

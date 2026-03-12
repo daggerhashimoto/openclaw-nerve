@@ -34,11 +34,11 @@ export function AppearanceSettings() {
             <span className="text-xs text-muted-foreground">Swap the full cockpit palette in one move.</span>
           </div>
         </div>
-        <div className="relative shrink-0">
+        <div className="relative w-full sm:w-auto">
           <select
             value={theme}
             onChange={handleThemeChange}
-            className="cockpit-select min-w-[148px] appearance-none pr-9 text-sm"
+            className="cockpit-select w-full appearance-none pr-9 text-sm sm:min-w-[148px]"
             aria-label="Select theme"
           >
             {themeNames.map((name) => (
@@ -60,11 +60,11 @@ export function AppearanceSettings() {
             <span className="text-xs text-muted-foreground">Code blocks stay monospace</span>
           </div>
         </div>
-        <div className="relative shrink-0">
+        <div className="relative w-full sm:w-auto">
           <select
             value={font}
             onChange={handleFontChange}
-            className="cockpit-select min-w-[148px] appearance-none pr-9 text-sm"
+            className="cockpit-select w-full appearance-none pr-9 text-sm sm:min-w-[148px]"
             aria-label="Select font"
           >
             {fontNames.map((name) => (

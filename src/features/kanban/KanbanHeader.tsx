@@ -1,5 +1,5 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
-import { Search, Filter, Plus, X, Inbox } from 'lucide-react';
+import { Filter, Plus, X, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TaskStatus, TaskPriority } from './types';
 import type { KanbanFilters } from './hooks/useKanban';
@@ -135,21 +135,20 @@ export const KanbanHeader = memo(function KanbanHeader({
         <div className="flex-1" />
 
         {/* Right: search + filter toggle + create */}
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
           {/* Search */}
-          <div className="relative">
-            <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <div className="relative min-w-0 flex-1 sm:flex-none">
             <input
               type="text"
               value={searchValue}
               onChange={e => handleSearchChange(e.target.value)}
               placeholder="Search tasks…"
-              className="cockpit-input h-10 w-[200px] pl-9 pr-8 text-sm sm:w-[260px]"
+              className="cockpit-input h-10 w-full min-w-0 px-4 pr-12 text-sm sm:w-[280px]"
             />
             {searchValue && (
               <button
                 onClick={() => handleSearchChange('')}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground"
               >
                 <X size={12} />
               </button>

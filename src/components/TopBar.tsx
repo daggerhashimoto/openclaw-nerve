@@ -226,11 +226,11 @@ export function TopBar({
     : "max-h-0 opacity-0 pointer-events-none";
   const panelContentClass = panelConfig.contentClass;
 
-  const buttonBase = "shell-icon-button min-w-9 px-2.5 sm:px-3";
+  const buttonBase = "shell-icon-button h-10 min-w-10 px-2.5 sm:min-w-9 sm:px-3";
 
   return (
     <div className="relative z-40 px-2 pt-2 sm:px-4 sm:pt-3">
-      <header className="shell-panel flex h-14 items-center justify-between rounded-2xl px-3 sm:px-4 shrink-0">
+      <header className="shell-panel flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl px-3 py-2 shrink-0 sm:flex-nowrap sm:px-4">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/20 bg-background/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <NerveLogo size={24} />
@@ -245,36 +245,35 @@ export function TopBar({
               OpenClaw Cockpit{" "}
             </div>
           </div>
-
-          {/* View mode toggle */}
-          {onViewModeChange && (
-            <div className="ml-2 hidden items-center gap-2 sm:flex">
-              <button
-                onClick={() => onViewModeChange("chat")}
-                title="Chat View"
-                aria-label="Switch to chat view"
-                aria-pressed={viewMode === "chat"}
-                data-active={viewMode === "chat"}
-                className="shell-chip text-[11px] uppercase tracking-[0.14em]"
-              >
-                <MessageSquare size={13} aria-hidden="true" />
-                <span>Chat</span>
-              </button>
-              <button
-                onClick={() => onViewModeChange("kanban")}
-                title="Tasks View"
-                aria-label="Switch to tasks view"
-                aria-pressed={viewMode === "kanban"}
-                data-active={viewMode === "kanban"}
-                className="shell-chip text-[11px] uppercase tracking-[0.14em]"
-              >
-                <LayoutGrid size={13} aria-hidden="true" />
-                <span>Tasks</span>
-              </button>
-            </div>
-          )}
         </div>
-        <div ref={buttonsRef} className="flex items-center gap-2 shrink-0">
+        {/* View mode toggle */}
+        {onViewModeChange && (
+          <div className="order-3 flex w-full items-center gap-2 sm:order-none sm:ml-2 sm:w-auto">
+            <button
+              onClick={() => onViewModeChange("chat")}
+              title="Chat View"
+              aria-label="Switch to chat view"
+              aria-pressed={viewMode === "chat"}
+              data-active={viewMode === "chat"}
+              className="shell-chip min-h-10 flex-1 justify-center text-[11px] uppercase tracking-[0.14em] sm:flex-none"
+            >
+              <MessageSquare size={13} aria-hidden="true" />
+              <span>Chat</span>
+            </button>
+            <button
+              onClick={() => onViewModeChange("kanban")}
+              title="Tasks View"
+              aria-label="Switch to tasks view"
+              aria-pressed={viewMode === "kanban"}
+              data-active={viewMode === "kanban"}
+              className="shell-chip min-h-10 flex-1 justify-center text-[11px] uppercase tracking-[0.14em] sm:flex-none"
+            >
+              <LayoutGrid size={13} aria-hidden="true" />
+              <span>Tasks</span>
+            </button>
+          </div>
+        )}
+        <div ref={buttonsRef} className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-1.5 overflow-x-auto pb-1 sm:max-w-none sm:gap-2 sm:overflow-visible sm:pb-0">
           {/* Compact layout launchers (chat-first mode) */}
           {mobilePanelButtonsVisible && sessionsPanel && (
             <button
@@ -381,7 +380,7 @@ export function TopBar({
             onClick={onSettings}
             title="Settings"
             aria-label="Open settings"
-            className={`${buttonBase} size-9 px-0`}
+            className="shell-icon-button size-10 px-0"
           >
             <Settings size={14} aria-hidden="true" />
           </button>

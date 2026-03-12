@@ -34,7 +34,7 @@ export function ChatHeader({
   } = useModelEffort();
 
   return (
-    <div className="panel-header border-l-[3px] border-l-primary/70 gap-2.5 px-3">
+    <div className="panel-header flex-wrap items-start gap-2.5 border-l-[3px] border-l-primary/70 px-3 py-3 sm:flex-nowrap sm:items-center">
       {/* Explorer expand button */}
       {onToggleFileBrowser && (
         <button
@@ -55,7 +55,7 @@ export function ChatHeader({
       </div>
 
       {/* Model + Effort selectors on the right */}
-      <div className="flex items-center gap-1 sm:gap-2 ml-auto min-w-0">
+      <div className="ml-auto flex w-full min-w-0 flex-wrap items-center gap-1.5 sm:w-auto sm:flex-nowrap sm:justify-end sm:gap-2">
         {uiError && (
           <span
             className="hidden max-w-[220px] truncate text-[11px] text-red md:inline"
@@ -66,7 +66,7 @@ export function ChatHeader({
             ⚠ {uiError}
           </span>
         )}
-        <div className="flex items-center gap-1 min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-1 sm:flex-none">
           <Cpu size={12} className="text-foreground/70 shrink-0" aria-hidden="true" />
           <span className="hidden text-[11px] text-muted-foreground sm:inline">Model</span>
           <InlineSelect
@@ -75,12 +75,12 @@ export function ChatHeader({
             ariaLabel="Model"
             disabled={controlsDisabled}
             title={controlsDisabled ? 'Connect to gateway to change model' : undefined}
-            triggerClassName="max-w-[110px] rounded-xl border-border/75 bg-background/65 px-2.5 py-1 text-[11px] font-sans text-foreground sm:max-w-[180px]"
+            triggerClassName="w-full rounded-xl border-border/75 bg-background/65 px-2.5 py-1 text-[11px] font-sans text-foreground sm:w-auto sm:max-w-[180px]"
             menuClassName="min-w-[180px] rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_50px_rgba(0,0,0,0.28)] sm:min-w-[220px]"
             options={modelOptions}
           />
         </div>
-        <div className="flex items-center gap-1 min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-1 sm:flex-none">
           <Gauge size={12} className="text-foreground/70 shrink-0" aria-hidden="true" />
           <span className="hidden text-[11px] text-muted-foreground sm:inline">Effort</span>
           <InlineSelect
@@ -89,7 +89,7 @@ export function ChatHeader({
             ariaLabel="Effort"
             disabled={controlsDisabled}
             title={controlsDisabled ? 'Connect to gateway to change effort' : undefined}
-            triggerClassName="max-w-[84px] rounded-xl border-border/75 bg-background/65 px-2.5 py-1 text-[11px] font-sans text-foreground sm:max-w-none"
+            triggerClassName="w-full rounded-xl border-border/75 bg-background/65 px-2.5 py-1 text-[11px] font-sans text-foreground sm:w-auto sm:max-w-none"
             menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_50px_rgba(0,0,0,0.28)]"
             options={effortOptions}
           />

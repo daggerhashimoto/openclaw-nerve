@@ -48,7 +48,7 @@ const EDGE_ENGLISH_VOICE_OPTIONS: EdgeVoiceOption[] = [
 ];
 
 const INLINE_SELECT_TRIGGER_CLASS =
-  'min-h-11 rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground';
+  'min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-left text-sm font-sans text-foreground sm:w-auto';
 const INLINE_SELECT_MENU_CLASS =
   'rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]';
 
@@ -937,7 +937,7 @@ export function AudioSettings({
                 { value: 'local', label: 'Local' },
               ]}
               ariaLabel="STT Input Mode"
-              triggerClassName={`${INLINE_SELECT_TRIGGER_CLASS} w-[132px] justify-between shrink-0`}
+              triggerClassName={`${INLINE_SELECT_TRIGGER_CLASS} w-full shrink-0 sm:w-[132px]`}
               menuClassName={`${INLINE_SELECT_MENU_CLASS} min-w-[140px]`}
             />
           </div>

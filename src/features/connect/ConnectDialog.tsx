@@ -87,7 +87,7 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
                 onChange={e => setUrl(e.target.value)}
                 spellCheck={false}
                 placeholder="ws://127.0.0.1:18789"
-                className="font-mono text-[13px]"
+                className="font-mono text-base sm:text-[13px]"
               />
             </label>
             <label className="flex flex-col gap-2">
@@ -101,7 +101,7 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
                 onKeyDown={e => e.key === 'Enter' && handleConnect()}
                 spellCheck={false}
                 placeholder="Paste the token from your gateway config"
-                className="font-mono text-[13px]"
+                className="font-mono text-base sm:text-[13px]"
               />
             </label>
           </div>
@@ -114,7 +114,7 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
               onClick={handleConnect}
               disabled={connecting}
               size="lg"
-              className="min-w-[220px] text-[11px] uppercase tracking-[0.22em]"
+              className="w-full text-[11px] uppercase tracking-[0.22em] sm:w-auto sm:min-w-[220px]"
             >
               {connecting ? 'Connecting…' : 'Connect to Gateway'}
             </Button>

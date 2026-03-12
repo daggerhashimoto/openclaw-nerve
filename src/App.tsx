@@ -95,9 +95,20 @@ export default function App({ onLogout }: AppProps) {
   // File browser collapse state for mobile optimization
   const [fileBrowserCollapsed, setFileBrowserCollapsed] = useState(() => {
     try {
-      return localStorage.getItem('nerve-file-tree-collapsed') === 'true';
-    } catch { return false; }
+      const saved = localStorage.getItem('nerve-file-tree-collapsed');
+      if (saved !== null) return saved === 'true';
+    } catch {
+      // ignore storage errors and fall back to viewport-aware default
+    }
+
+    if (typeof window !== 'undefined') {
+      return window.matchMedia('(max-width: 900px)').matches;
+    }
+
+    return false;
   });
+  const desktopFileBrowserCollapsedRef = useRef(fileBrowserCollapsed);
+  const previousCompactLayoutRef = useRef(false);
 
   // Sync localStorage when state changes
   useEffect(() => {
@@ -146,6 +157,7 @@ export default function App({ onLogout }: AppProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [booted, setBooted] = useState(false);
   const [logGlow, setLogGlow] = useState(false);
+  const [desktopRightPanelWidth, setDesktopRightPanelWidth] = useState<number | null>(null);
   const prevLogCount = useRef(0);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
@@ -310,6 +322,25 @@ export default function App({ onLogout }: AppProps) {
     return () => mq.removeListener(onChange);
   }, []);
 
+  useEffect(() => {
+    if (previousCompactLayoutRef.current === isCompactLayout) return;
+
+    if (isCompactLayout) {
+      desktopFileBrowserCollapsedRef.current = fileBrowserCollapsed;
+      setFileBrowserCollapsed(true);
+    } else {
+      setFileBrowserCollapsed(desktopFileBrowserCollapsedRef.current);
+    }
+
+    previousCompactLayoutRef.current = isCompactLayout;
+  }, [fileBrowserCollapsed, isCompactLayout]);
+
+  useEffect(() => {
+    if (isCompactLayout && viewMode === 'kanban' && !fileBrowserCollapsed) {
+      setFileBrowserCollapsed(true);
+    }
+  }, [fileBrowserCollapsed, isCompactLayout, viewMode]);
+
   // Handler for session changes
   const handleSessionChange = useCallback(async (key: string) => {
     setCurrentSession(key);
@@ -443,6 +474,8 @@ export default function App({ onLogout }: AppProps) {
     </Suspense>
   );
 
+  const showCompactFileBrowser = isCompactLayout && viewMode !== 'kanban' && !fileBrowserCollapsed;
+
   return (
     <div className="scan-lines relative h-screen flex flex-col overflow-hidden" data-booted={booted}>
       {/* Skip to main content link for keyboard navigation */}
@@ -465,11 +498,11 @@ export default function App({ onLogout }: AppProps) {
        * Kept compact and centered so they read as transient shell notices instead of old alarm strips.
        */}
       {connectionState === 'reconnecting' && !gatewayRestarting && (
-        <div className="fixed left-1/2 top-12 z-50 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-destructive/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-destructive/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
           <span className="inline-flex size-7 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
             <AlertTriangle size={14} aria-hidden="true" />
           </span>
-          <span className="whitespace-nowrap">
+          <span className="min-w-0 text-left leading-5">
             Signal lost. Reconnecting{reconnectAttempt > 1 ? `, attempt ${reconnectAttempt}` : ''}.
           </span>
           <span className="size-2 rounded-full bg-destructive animate-pulse" aria-hidden="true" />
@@ -477,11 +510,11 @@ export default function App({ onLogout }: AppProps) {
       )}
 
       {gatewayRestarting && (
-        <div className="fixed left-1/2 top-12 z-50 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-orange/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-orange/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
           <span className="inline-flex size-7 items-center justify-center rounded-xl bg-orange/10 text-orange">
             <RotateCw size={14} className="animate-spin" aria-hidden="true" />
           </span>
-          <span className="whitespace-nowrap">Gateway restarting…</span>
+          <span className="min-w-0 text-left leading-5">Gateway restarting…</span>
         </div>
       )}
 
@@ -489,7 +522,7 @@ export default function App({ onLogout }: AppProps) {
         <button
           type="button"
           onClick={dismissNotice}
-          className={`fixed left-1/2 top-12 z-50 flex -translate-x-1/2 cursor-pointer items-center gap-2 rounded-2xl border px-4 py-2 text-xs font-medium shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-transform hover:-translate-x-1/2 hover:-translate-y-px ${
+          className={`fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 cursor-pointer items-start gap-2 rounded-2xl border px-4 py-2 text-xs font-medium shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-transform hover:-translate-x-1/2 hover:-translate-y-px ${
             gatewayRestartNotice.ok
               ? 'border-green/25 bg-card/94 text-foreground'
               : 'border-destructive/25 bg-card/94 text-foreground'
@@ -500,7 +533,7 @@ export default function App({ onLogout }: AppProps) {
           }`}>
             {gatewayRestartNotice.ok ? <CheckCircle2 size={14} aria-hidden="true" /> : <AlertTriangle size={14} aria-hidden="true" />}
           </span>
-          <span className="whitespace-nowrap">{gatewayRestartNotice.message}</span>
+          <span className="min-w-0 text-left leading-5">{gatewayRestartNotice.message}</span>
         </button>
       )}
       
@@ -555,20 +588,48 @@ export default function App({ onLogout }: AppProps) {
       </PanelErrorBoundary>
       
       <div className="flex-1 flex gap-3 overflow-hidden min-h-0 px-2 pb-2 sm:px-4 sm:pb-3">
-        {/* File tree — far left, collapsible; hidden (not unmounted) in kanban to preserve state */}
-        <div className={viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0'}>
-          <PanelErrorBoundary name="File Explorer">
-            <FileTreePanel
-              onOpenFile={openFile}
-              lastChangedPath={lastChangedPath}
-              onRemapOpenPaths={remapOpenPaths}
-              onCloseOpenPaths={closeOpenPathsByPrefix}
-              isCompactLayout={isCompactLayout}
-              collapsed={fileBrowserCollapsed}
-              onCollapseChange={setFileBrowserCollapsed}
+        {/* File tree — desktop inline, mobile drawer */}
+        {!isCompactLayout && (
+          <div className={viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0'}>
+            <PanelErrorBoundary name="File Explorer">
+              <FileTreePanel
+                onOpenFile={openFile}
+                lastChangedPath={lastChangedPath}
+                onRemapOpenPaths={remapOpenPaths}
+                onCloseOpenPaths={closeOpenPathsByPrefix}
+                isCompactLayout={false}
+                collapsed={fileBrowserCollapsed}
+                onCollapseChange={setFileBrowserCollapsed}
+              />
+            </PanelErrorBoundary>
+          </div>
+        )}
+
+        {showCompactFileBrowser && (
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-30 bg-black/48 backdrop-blur-sm sm:hidden"
+              onClick={() => setFileBrowserCollapsed(true)}
+              aria-label="Close file explorer"
             />
-          </PanelErrorBoundary>
-        </div>
+            <div className="pointer-events-none fixed inset-0 z-40 flex px-2 pt-[4.5rem] pb-[4.25rem] sm:hidden">
+              <div className="pointer-events-auto h-full w-[min(86vw,320px)] max-w-full animate-in slide-in-from-left-4 duration-200">
+                <PanelErrorBoundary name="File Explorer">
+                  <FileTreePanel
+                    onOpenFile={openFile}
+                    lastChangedPath={lastChangedPath}
+                    onRemapOpenPaths={remapOpenPaths}
+                    onCloseOpenPaths={closeOpenPathsByPrefix}
+                    isCompactLayout={true}
+                    collapsed={false}
+                    onCollapseChange={setFileBrowserCollapsed}
+                  />
+                </PanelErrorBoundary>
+              </div>
+            </div>
+          </>
+        )}
 
         {/*
          * Chat panel is always rendered but hidden when kanban is active.
@@ -594,6 +655,8 @@ export default function App({ onLogout }: AppProps) {
               onResize={setPanelRatio}
               minLeftPercent={30}
               maxLeftPercent={75}
+              rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
+              onRightWidthChange={fileBrowserCollapsed ? undefined : setDesktopRightPanelWidth}
               leftClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
               rightClassName="boot-panel flex flex-col"
               left={chatContent}

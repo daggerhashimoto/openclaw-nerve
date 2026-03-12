@@ -20,6 +20,8 @@ const COLLAPSED_WIDTH = 0;
 
 const WIDTH_STORAGE_KEY = 'nerve-file-tree-width';
 const MENU_VIEWPORT_PADDING = 8;
+const MENU_CURSOR_OFFSET = 6;
+const MENU_ROW_TOP_OFFSET = 2;
 const UNDO_TOAST_TTL_MS = 10_000;
 
 /** Load persisted file tree width from localStorage. */
@@ -78,6 +80,7 @@ export function FileTreePanel({
   onRemapOpenPaths,
   onCloseOpenPaths,
   lastChangedPath,
+  isCompactLayout = false,
   onCollapseChange,
   collapsed,
 }: FileTreePanelProps) {
@@ -334,7 +337,10 @@ export function FileTreePanel({
   const handleContextMenu = useCallback((entry: TreeEntry, event: React.MouseEvent) => {
     event.preventDefault();
     selectFile(entry.path);
-    setContextMenu({ x: event.clientX, y: event.clientY, entry });
+    const targetRect = event.currentTarget.getBoundingClientRect();
+    const nextX = Math.min(event.clientX + MENU_CURSOR_OFFSET, targetRect.right - MENU_VIEWPORT_PADDING);
+    const nextY = targetRect.top + MENU_ROW_TOP_OFFSET;
+    setContextMenu({ x: nextX, y: nextY, entry });
   }, [selectFile]);
 
   const startRename = useCallback((entry: TreeEntry) => {
@@ -531,8 +537,8 @@ export function FileTreePanel({
   return (
     <div
       ref={panelRef}
-      className="shell-panel relative flex h-full min-h-0 shrink-0 flex-col overflow-hidden rounded-[28px]"
-      style={{ width }}
+      className="shell-panel relative flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden rounded-[28px]"
+      style={isCompactLayout ? undefined : { width }}
       onContextMenu={(e) => {
         // Right-click on empty panel area closes any open context menu.
         if (e.target === e.currentTarget) {
@@ -675,7 +681,7 @@ export function FileTreePanel({
 
       {/* Toast */}
       {toast && (
-        <div className="shell-panel fixed bottom-4 left-4 z-[70] flex w-fit min-w-[320px] max-w-[min(92vw,680px)] items-center gap-3 rounded-2xl px-4 py-3 text-xs">
+        <div className="shell-panel fixed bottom-4 left-2 right-2 z-[70] flex w-auto min-w-0 max-w-[min(92vw,680px)] items-center gap-3 rounded-2xl px-4 py-3 text-xs sm:left-4 sm:right-auto sm:min-w-[320px]">
           <span className={`flex-1 ${toast.type === 'error' ? 'text-destructive' : 'text-foreground'}`}>
             {toast.message}
           </span>
@@ -698,16 +704,18 @@ export function FileTreePanel({
       )}
 
       {/* Resize handle */}
-      <div
-        className="absolute top-0 right-0 z-10 flex h-full w-3 cursor-col-resize items-stretch justify-center"
-        onMouseDown={handleMouseDown}
-        onDoubleClick={handleDoubleClickResize}
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize file explorer"
-      >
-        <div className="pointer-events-none my-4 w-px rounded-full bg-border" />
-      </div>
+      {!isCompactLayout && (
+        <div
+          className="absolute top-0 right-0 z-10 flex h-full w-3 cursor-col-resize items-stretch justify-center"
+          onMouseDown={handleMouseDown}
+          onDoubleClick={handleDoubleClickResize}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize file explorer"
+        >
+          <div className="pointer-events-none my-4 w-px rounded-full bg-border" />
+        </div>
+      )}
 
       {/* Permanent delete confirmation dialog */}
       {deleteConfirmation && (

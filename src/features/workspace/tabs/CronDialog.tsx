@@ -256,12 +256,12 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
       onCancel={handleClose}
       onClick={handleDialogClick}
       aria-labelledby="cron-dialog-title"
-      className="fixed inset-0 z-50 m-auto max-h-[calc(100vh-2rem)] w-[1040px] max-w-[94vw] overflow-y-auto rounded-[30px] border border-border/80 bg-card/96 p-0 shadow-[0_36px_90px_rgba(0,0,0,0.38)] backdrop:bg-black/52 backdrop:backdrop-blur-sm"
+      className="fixed inset-0 z-50 m-auto max-h-[calc(100dvh-1rem)] w-[min(1040px,calc(100vw-1rem))] overflow-y-auto rounded-[24px] border border-border/80 bg-card/96 p-0 shadow-[0_36px_90px_rgba(0,0,0,0.38)] backdrop:bg-black/52 backdrop:backdrop-blur-sm sm:max-h-[calc(100dvh-2rem)] sm:rounded-[30px]"
       style={{ overscrollBehavior: 'contain' }}
     >
       <form onSubmit={handleSubmit} onClick={e => e.stopPropagation()} className="flex flex-col">
         {/* Header */}
-        <div className="border-b border-border/70 bg-secondary/42 px-5 py-3.5">
+        <div className="border-b border-border/70 bg-secondary/42 px-4 py-3 sm:px-5 sm:py-3.5">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
               <div className="cockpit-kicker">
@@ -283,7 +283,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
           </div>
         </div>
 
-        <div className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">
+        <div className="grid gap-3 px-3 py-3 sm:gap-4 sm:px-4 sm:py-4 lg:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">
           <div className="space-y-4">
             <SectionShell
               eyebrow="Identity"
@@ -523,7 +523,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
               <div className="cockpit-note" data-tone="danger">{error}</div>
             )}
 
-            <div className="flex items-center justify-between gap-4 rounded-[24px] border border-border/70 bg-secondary/28 px-4 py-3.5">
+            <div className="flex flex-col items-stretch gap-3 rounded-[24px] border border-border/70 bg-secondary/28 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <p className="text-sm leading-5 text-muted-foreground">
                 {isEdit
                   ? 'Save when the timing and delivery look right.'
@@ -532,7 +532,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
               <button
                 type="submit"
                 disabled={submitting}
-                className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-2xl bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-transform hover:-translate-y-px hover:bg-primary/95 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-10 items-center justify-center rounded-2xl bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-transform hover:-translate-y-px hover:bg-primary/95 disabled:cursor-not-allowed disabled:opacity-50 sm:shrink-0"
               >
                 {submitting ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save Changes' : 'Create Cron')}
               </button>

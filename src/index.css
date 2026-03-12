@@ -482,6 +482,31 @@
     linear-gradient(180deg, color-mix(in srgb, var(--color-destructive) 7%, transparent), color-mix(in srgb, var(--color-card) 88%, transparent));
 }
 
+@media (max-width: 640px) {
+  .shell-chip,
+  .shell-icon-button,
+  .cockpit-toolbar-button {
+    min-height: 40px;
+  }
+
+  .cockpit-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 13px 14px;
+  }
+
+  .cockpit-input,
+  .cockpit-select,
+  .cockpit-textarea {
+    font-size: 16px;
+  }
+
+  .cockpit-note {
+    padding: 11px 12px;
+  }
+}
+
 .cockpit-field {
   display: flex;
   flex-direction: column;
@@ -847,6 +872,17 @@
 }
 .code-block-wrapper:hover .code-block-actions {
   opacity: 1;
+}
+
+@media (hover: none) {
+  .code-block-wrapper .code-block-actions {
+    opacity: 1;
+  }
+
+  .code-block-actions .code-action-btn {
+    min-height: 34px;
+    min-width: 34px;
+  }
 }
 .code-block-actions .code-action-btn {
   background: color-mix(in srgb, var(--color-card) 92%, transparent);

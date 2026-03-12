@@ -172,7 +172,7 @@ export function ConfirmDeleteDialog({
           <Button
             type="button"
             onClick={handleConfirm}
-            disabled={isLoading || contentLoading}
+            disabled={isLoading}
             variant="destructive"
             className="text-xs"
           >

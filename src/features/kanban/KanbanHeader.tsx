@@ -192,7 +192,7 @@ export const KanbanHeader = memo(function KanbanHeader({
 
             {/* Inbox popover */}
             {showInbox && (
-              <div className="shell-panel absolute right-0 top-full z-50 mt-2 w-[360px] overflow-hidden rounded-3xl">
+              <div className="shell-panel absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] overflow-hidden rounded-3xl">
                 <div className="border-b border-border/50 bg-secondary/38 px-4 py-3">
                   <span className="cockpit-kicker text-[9px]">
                     <span className="text-primary">◆</span>

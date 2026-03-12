@@ -604,11 +604,11 @@ export default function App({ onLogout }: AppProps) {
           <>
             <button
               type="button"
-              className="fixed inset-0 z-30 bg-black/48 backdrop-blur-sm sm:hidden"
+              className="fixed inset-0 z-30 hidden bg-black/48 backdrop-blur-sm max-[900px]:block"
               onClick={() => setFileBrowserCollapsed(true)}
               aria-label="Close file explorer"
             />
-            <div className="pointer-events-none fixed inset-0 z-40 flex px-2 pt-[4.5rem] pb-[4.25rem] sm:hidden">
+            <div className="pointer-events-none fixed inset-0 z-40 hidden px-2 pt-[4.5rem] pb-[4.25rem] max-[900px]:flex">
               <div className="pointer-events-auto h-full w-[min(86vw,320px)] max-w-full animate-in slide-in-from-left-4 duration-200">
                 <PanelErrorBoundary name="File Explorer">
                   <FileTreePanel

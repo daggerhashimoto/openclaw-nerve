@@ -119,8 +119,8 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
           // Refresh drawer fields with latest server state so user can retry
           setEditTitle(latest.title);
           setEditDescription(latest.description || '');
-          setEditStatus(latest.status);
-          setEditPriority(latest.priority);
+          setEditStatus(getTaskStatus(latest.status));
+          setEditPriority(getTaskPriority(latest.priority));
           setEditLabels(latest.labels.join(', '));
           setEditAssignee(latest.assignee || '');
           setEditVersion(latest.version);

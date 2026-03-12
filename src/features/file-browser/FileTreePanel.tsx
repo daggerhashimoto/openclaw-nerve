@@ -6,7 +6,7 @@
  */
 
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { PanelLeftClose, PanelLeftOpen, RefreshCw, Pencil, Trash2, RotateCcw, X } from 'lucide-react';
+import { PanelLeftClose, RefreshCw, Pencil, Trash2, RotateCcw, X } from 'lucide-react';
 import { FileTreeNode } from './FileTreeNode';
 import { useFileTree } from './hooks/useFileTree';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -15,7 +15,7 @@ import type { TreeEntry } from './types';
 const MIN_WIDTH = 160;
 const MAX_WIDTH = 400;
 const DEFAULT_WIDTH = 220;
-/** Sentinel value for width state when collapsed; actual desktop collapsed UI uses w-9 (36px) */
+/** Sentinel value for width state when collapsed. */
 const COLLAPSED_WIDTH = 0;
 
 const WIDTH_STORAGE_KEY = 'nerve-file-tree-width';
@@ -53,7 +53,7 @@ interface FileTreePanelProps {
   onCloseOpenPaths?: (pathPrefix: string) => void;
   /** Called externally when a file changes (SSE) — refreshes affected directory */
   lastChangedPath?: string | null;
-  /** Mobile layout flag - when true, collapsed panel is completely hidden */
+  /** Layout hint retained for compatibility with existing callers. */
   isCompactLayout?: boolean;
   /** Callback to notify parent of collapse state changes */
   onCollapseChange: (collapsed: boolean) => void;
@@ -78,7 +78,6 @@ export function FileTreePanel({
   onRemapOpenPaths,
   onCloseOpenPaths,
   lastChangedPath,
-  isCompactLayout = false,
   onCollapseChange,
   collapsed,
 }: FileTreePanelProps) {
@@ -510,25 +509,9 @@ export function FileTreePanel({
     void runMove(source.path, '');
   }, [canDropToTarget, dragSource, runMove]);
 
-  // Mobile collapsed state - completely hide panel, on desktop show narrow collapsed panel
+  // Collapsed state - hide the panel and let the chat header host the reopen control.
   if (collapsed) {
-    if (isCompactLayout) {
-      // On mobile, return null to completely hide the panel
-      return null;
-    }
-    // On desktop, show the collapsed panel with expand button
-    return (
-      <div className="shell-panel flex w-11 shrink-0 flex-col items-center rounded-[24px] py-3">
-        <button
-          onClick={toggleCollapsed}
-          className="shell-icon-button size-9 px-0"
-          title="Open file explorer (Ctrl+B)"
-          aria-label="Open file explorer"
-        >
-          <PanelLeftOpen size={16} />
-        </button>
-      </div>
-    );
+    return null;
   }
 
   const menuEntry = contextMenu?.entry;
@@ -567,19 +550,19 @@ export function FileTreePanel({
         <div className="flex items-center gap-2">
           <button
             onClick={refresh}
-            className="shell-icon-button size-8 px-0"
+            className="shell-icon-button size-10 px-0"
             title="Refresh file tree"
             aria-label="Refresh file tree"
           >
-            <RefreshCw size={12} />
+            <RefreshCw size={16} />
           </button>
           <button
             onClick={toggleCollapsed}
-            className="shell-icon-button size-8 px-0"
+            className="shell-icon-button size-10 px-0"
             title="Close file explorer (Ctrl+B)"
             aria-label="Close file explorer"
           >
-            <PanelLeftClose size={12} />
+            <PanelLeftClose size={16} />
           </button>
         </div>
       </div>

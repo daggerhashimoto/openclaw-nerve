@@ -53,22 +53,22 @@ export function ProcessingIndicator({
     (stage === 'thinking' ? 'Reasoning...' : null);
 
   return (
-    <div className="px-4 py-3 flex flex-col gap-1">
+    <div className="flex flex-col gap-2 px-4 py-3">
       {/* Row 1: heartbeat + stage label + elapsed + dots */}
       <div className="flex items-center gap-3">
-        <span className="text-[13px] font-bold tracking-[1px] uppercase flex items-center gap-2">
+        <span className="flex items-center gap-2 text-[12px] font-semibold text-foreground">
           <HeartbeatPulse lastEventTimestamp={lastEventTimestamp} stage={stage} />
           <span className={`text-[10px] ${stage === 'tool_use' ? 'text-green' : 'text-primary'}`}>◆</span>
           {stage === 'thinking' && (
-            <span className="text-primary animate-pulse">THINKING</span>
+            <span className="cockpit-badge animate-pulse" data-tone="primary">Thinking</span>
           )}
           {stage === 'tool_use' && (
-            <span className="text-green">USING TOOLS</span>
+            <span className="cockpit-badge" data-tone="success">Using tools</span>
           )}
           {(!stage || stage === 'streaming') && (
-            <span className="text-primary">PROCESSING</span>
+            <span className="cockpit-badge" data-tone="primary">Processing</span>
           )}
-          <span className="text-muted-foreground mx-1">──</span>
+          <span className="mx-1 text-muted-foreground">──</span>
           <span className="font-mono tabular-nums text-muted-foreground">{formatElapsed(elapsedMs)}</span>
         </span>
         <ThinkingDots stage={stage} />
@@ -77,7 +77,7 @@ export function ProcessingIndicator({
       {/* Row 2: description line (indented to align past diamond) */}
       {descriptionText && (
         <div
-          className="text-muted-foreground break-all"
+          className="break-all text-[12px] text-muted-foreground"
           style={{ fontSize: '11px', paddingLeft: '2rem' }}
         >
           {descriptionText}
@@ -109,7 +109,7 @@ export function ProcessingIndicator({
         <div
           className="text-primary"
           style={{
-            fontSize: '10px',
+            fontSize: '11px',
             paddingLeft: '2rem',
           }}
         >
@@ -122,7 +122,7 @@ export function ProcessingIndicator({
         <div
           className="text-orange"
           style={{
-            fontSize: '10px',
+            fontSize: '11px',
             paddingLeft: '2rem',
             animation: 'stale-pulse 2s ease-in-out infinite',
           }}

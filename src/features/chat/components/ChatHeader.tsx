@@ -6,7 +6,7 @@ interface ChatHeaderProps {
   onReset?: () => void;
   onAbort: () => void;
   isGenerating: boolean;
-  /** Mobile file browser expand button - show when file browser is collapsed on mobile */
+  /** Explorer expand button shown whenever the file browser is collapsed. */
   onToggleFileBrowser?: () => void;
 }
 
@@ -34,29 +34,31 @@ export function ChatHeader({
   } = useModelEffort();
 
   return (
-    <div className="flex items-center gap-1.5 sm:gap-2.5 px-2 sm:px-3 py-2 bg-secondary border-b border-border/60 shrink-0 border-l-[3px] border-l-primary">
-      {/* Mobile file browser expand button */}
-      {/* Layered: CSS (lg:hidden) + JS (isCompactLayout@900px). JS prop gating is primary control. */}
+    <div className="panel-header border-l-[3px] border-l-primary/70 gap-2.5 px-3">
+      {/* Explorer expand button */}
       {onToggleFileBrowser && (
         <button
           onClick={onToggleFileBrowser}
-          className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors lg:hidden"
+          className="shell-icon-button size-10 shrink-0 px-0"
           title="Open file explorer (Ctrl+B)"
           aria-label="Open file explorer"
         >
-          <PanelLeftOpen size={16} />
+          <PanelLeftOpen size={18} />
         </button>
       )}
-      <span className="text-[11px] font-bold tracking-[2px] text-primary uppercase flex items-center gap-1.5">
-        <span className="text-[8px]">◆</span>
-        COMMS
-      </span>
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="cockpit-badge" data-tone="primary">
+          <span className="text-[8px]">◆</span>
+          Comms
+        </span>
+        <span className="hidden text-xs text-muted-foreground md:inline">Model and response controls</span>
+      </div>
 
       {/* Model + Effort selectors on the right */}
       <div className="flex items-center gap-1 sm:gap-2 ml-auto min-w-0">
         {uiError && (
           <span
-            className="hidden md:inline text-red text-[9px] tracking-wide max-w-[180px] truncate"
+            className="hidden max-w-[220px] truncate text-[11px] text-red md:inline"
             title={uiError}
             role="status"
             aria-live="polite"
@@ -66,28 +68,29 @@ export function ChatHeader({
         )}
         <div className="flex items-center gap-1 min-w-0">
           <Cpu size={12} className="text-foreground/70 shrink-0" aria-hidden="true" />
-          <span className="text-[10px] text-foreground/70 font-mono uppercase hidden sm:inline">Model</span>
+          <span className="hidden text-[11px] text-muted-foreground sm:inline">Model</span>
           <InlineSelect
             value={selectedModel}
             onChange={handleModelChange}
             ariaLabel="Model"
             disabled={controlsDisabled}
             title={controlsDisabled ? 'Connect to gateway to change model' : undefined}
-            triggerClassName="max-w-[94px] sm:max-w-[160px]"
-            menuClassName="min-w-[180px] sm:min-w-[200px]"
+            triggerClassName="max-w-[110px] rounded-xl border-border/75 bg-background/65 px-2.5 py-1 text-[11px] font-sans text-foreground sm:max-w-[180px]"
+            menuClassName="min-w-[180px] rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_50px_rgba(0,0,0,0.28)] sm:min-w-[220px]"
             options={modelOptions}
           />
         </div>
         <div className="flex items-center gap-1 min-w-0">
           <Gauge size={12} className="text-foreground/70 shrink-0" aria-hidden="true" />
-          <span className="text-[10px] text-foreground/70 font-mono uppercase hidden sm:inline">Effort</span>
+          <span className="hidden text-[11px] text-muted-foreground sm:inline">Effort</span>
           <InlineSelect
             value={selectedEffort}
             onChange={handleEffortChange}
             ariaLabel="Effort"
             disabled={controlsDisabled}
             title={controlsDisabled ? 'Connect to gateway to change effort' : undefined}
-            triggerClassName="max-w-[70px] sm:max-w-none"
+            triggerClassName="max-w-[84px] rounded-xl border-border/75 bg-background/65 px-2.5 py-1 text-[11px] font-sans text-foreground sm:max-w-none"
+            menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_50px_rgba(0,0,0,0.28)]"
             options={effortOptions}
           />
         </div>
@@ -96,7 +99,8 @@ export function ChatHeader({
             onClick={onAbort}
             aria-label="Stop generating"
             title="Stop generating"
-            className="bg-transparent border border-red text-red text-[10px] w-7 sm:w-auto px-0 sm:px-1.5 py-0.5 cursor-pointer hover:text-red hover:border-red font-mono uppercase tracking-wide flex items-center justify-center gap-1"
+            className="cockpit-toolbar-button"
+            data-tone="danger"
           >
             <span aria-hidden="true">⏹</span>
             <span className="hidden sm:inline">Stop</span>
@@ -107,7 +111,8 @@ export function ChatHeader({
             onClick={() => onReset()}
             title="Reset session (start fresh)"
             aria-label="Reset session"
-            className="bg-transparent border border-red/50 text-red/70 text-[10px] w-7 sm:w-auto px-0 sm:px-1.5 py-0.5 cursor-pointer hover:text-red hover:border-red font-mono uppercase tracking-wide flex items-center justify-center gap-1"
+            className="cockpit-toolbar-button"
+            data-tone="danger"
           >
             <span aria-hidden="true">↺</span>
             <span className="hidden sm:inline">Reset</span>

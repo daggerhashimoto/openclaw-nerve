@@ -372,7 +372,7 @@ export default function App({ onLogout }: AppProps) {
             agentName={currentSessionDisplayName}
             loadMore={loadMore}
             hasMore={hasMore}
-            onToggleFileBrowser={isCompactLayout && fileBrowserCollapsed ? handleToggleFileBrowser : undefined}
+            onToggleFileBrowser={fileBrowserCollapsed ? handleToggleFileBrowser : undefined}
           />
         </PanelErrorBoundary>
       }
@@ -547,7 +547,7 @@ export default function App({ onLogout }: AppProps) {
       
       <div className="flex-1 flex gap-3 overflow-hidden min-h-0 px-2 pb-2 sm:px-4 sm:pb-3">
         {/* File tree — far left, collapsible; hidden (not unmounted) in kanban to preserve state */}
-        <div className={viewMode === 'kanban' ? 'hidden' : 'h-full min-h-0'}>
+        <div className={viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0'}>
           <PanelErrorBoundary name="File Explorer">
             <FileTreePanel
               onOpenFile={openFile}

@@ -122,7 +122,7 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
           role="status"
           aria-live="polite"
           aria-atomic="true"
-          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold uppercase tracking-[0.16em] ${statusColor} animate-status-flash`}
+          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] ${statusColor} animate-status-flash`}
         >
           <span className="text-[8px]" aria-hidden="true">●</span>
           <span>{statusLabel}</span>

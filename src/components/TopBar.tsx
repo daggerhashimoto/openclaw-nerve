@@ -1,15 +1,47 @@
-import { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense, type ReactNode } from 'react';
-import { Activity, BarChart3, Settings, Radio, Users, Brain, MessageSquare, LayoutGrid } from 'lucide-react';
-import type { ViewMode } from '@/features/command-palette/commands';
-import type { AgentLogEntry, EventEntry, TokenData } from '@/types';
-import NerveLogo from './NerveLogo';
+import {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useMemo,
+  lazy,
+  Suspense,
+  type ReactNode,
+} from "react";
+import {
+  Activity,
+  BarChart3,
+  Settings,
+  Radio,
+  Users,
+  Brain,
+  MessageSquare,
+  LayoutGrid,
+} from "lucide-react";
+import type { ViewMode } from "@/features/command-palette/commands";
+import type { AgentLogEntry, EventEntry, TokenData } from "@/types";
+import NerveLogo from "./NerveLogo";
 
-const AgentLog = lazy(() => import('@/features/activity/AgentLog').then(m => ({ default: m.AgentLog })));
-const EventLog = lazy(() => import('@/features/activity/EventLog').then(m => ({ default: m.EventLog })));
-const TokenUsage = lazy(() => import('@/features/dashboard/TokenUsage').then(m => ({ default: m.TokenUsage })));
+const AgentLog = lazy(() =>
+  import("@/features/activity/AgentLog").then((m) => ({ default: m.AgentLog })),
+);
+const EventLog = lazy(() =>
+  import("@/features/activity/EventLog").then((m) => ({ default: m.EventLog })),
+);
+const TokenUsage = lazy(() =>
+  import("@/features/dashboard/TokenUsage").then((m) => ({
+    default: m.TokenUsage,
+  })),
+);
 
 /** Identifies which dropdown panel is currently open, or `null` for none. */
-type PanelId = 'agent-log' | 'usage' | 'events' | 'sessions' | 'workspace' | null;
+type PanelId =
+  | "agent-log"
+  | "usage"
+  | "events"
+  | "sessions"
+  | "workspace"
+  | null;
 
 type PanelConfig = {
   boxClass: string;
@@ -17,36 +49,36 @@ type PanelConfig = {
   contentClass: string;
 };
 
-const PANEL_CONFIG: Record<Exclude<PanelId, null> | 'default', PanelConfig> = {
+const PANEL_CONFIG: Record<Exclude<PanelId, null> | "default", PanelConfig> = {
   sessions: {
-    boxClass: 'w-[440px] max-w-[calc(100vw-1rem)]',
-    heightClass: 'max-h-[70vh] opacity-100',
-    contentClass: 'max-h-[65vh] overflow-y-auto',
+    boxClass: "w-[440px] max-w-[calc(100vw-1rem)]",
+    heightClass: "max-h-[70vh] opacity-100",
+    contentClass: "max-h-[65vh] overflow-y-auto",
   },
   workspace: {
-    boxClass: 'w-[600px] max-w-[calc(100vw-1rem)]',
-    heightClass: 'max-h-[75vh] opacity-100',
-    contentClass: 'h-[70vh] max-h-[70vh] overflow-hidden',
+    boxClass: "w-[600px] max-w-[calc(100vw-1rem)]",
+    heightClass: "max-h-[75vh] opacity-100",
+    contentClass: "h-[70vh] max-h-[70vh] overflow-hidden",
   },
-  'agent-log': {
-    boxClass: 'w-[480px] max-w-[calc(100vw-1rem)]',
-    heightClass: 'max-h-[400px] opacity-100',
-    contentClass: 'max-h-[400px] overflow-y-auto',
+  "agent-log": {
+    boxClass: "w-[480px] max-w-[calc(100vw-1rem)]",
+    heightClass: "max-h-[400px] opacity-100",
+    contentClass: "max-h-[400px] overflow-y-auto",
   },
   usage: {
-    boxClass: 'w-[480px] max-w-[calc(100vw-1rem)]',
-    heightClass: 'max-h-[400px] opacity-100',
-    contentClass: 'max-h-[400px] overflow-y-auto',
+    boxClass: "w-[480px] max-w-[calc(100vw-1rem)]",
+    heightClass: "max-h-[400px] opacity-100",
+    contentClass: "max-h-[400px] overflow-y-auto",
   },
   events: {
-    boxClass: 'w-[480px] max-w-[calc(100vw-1rem)]',
-    heightClass: 'max-h-[400px] opacity-100',
-    contentClass: 'max-h-[400px] overflow-y-auto',
+    boxClass: "w-[480px] max-w-[calc(100vw-1rem)]",
+    heightClass: "max-h-[400px] opacity-100",
+    contentClass: "max-h-[400px] overflow-y-auto",
   },
   default: {
-    boxClass: 'w-[480px] max-w-[calc(100vw-1rem)]',
-    heightClass: 'max-h-[400px] opacity-100',
-    contentClass: 'max-h-[400px] overflow-y-auto',
+    boxClass: "w-[480px] max-w-[calc(100vw-1rem)]",
+    heightClass: "max-h-[400px] opacity-100",
+    contentClass: "max-h-[400px] overflow-y-auto",
   },
 };
 
@@ -96,7 +128,7 @@ export function TopBar({
   mobilePanelButtonsVisible = false,
   sessionsPanel,
   workspacePanel,
-  viewMode = 'chat',
+  viewMode = "chat",
   onViewModeChange,
 }: TopBarProps) {
   const [activePanel, setActivePanel] = useState<PanelId>(null);
@@ -104,17 +136,28 @@ export function TopBar({
   const buttonsRef = useRef<HTMLDivElement>(null);
 
   const togglePanel = useCallback((panel: PanelId) => {
-    setActivePanel(prev => prev === panel ? null : panel);
+    setActivePanel((prev) => (prev === panel ? null : panel));
   }, []);
 
-  const isPanelAvailable = useCallback((panel: PanelId) => {
-    if (!panel) return true;
-    if (panel === 'events') return eventsVisible;
-    if (panel === 'agent-log') return logVisible;
-    if (panel === 'sessions') return mobilePanelButtonsVisible && Boolean(sessionsPanel);
-    if (panel === 'workspace') return mobilePanelButtonsVisible && Boolean(workspacePanel);
-    return true;
-  }, [eventsVisible, logVisible, mobilePanelButtonsVisible, sessionsPanel, workspacePanel]);
+  const isPanelAvailable = useCallback(
+    (panel: PanelId) => {
+      if (!panel) return true;
+      if (panel === "events") return eventsVisible;
+      if (panel === "agent-log") return logVisible;
+      if (panel === "sessions")
+        return mobilePanelButtonsVisible && Boolean(sessionsPanel);
+      if (panel === "workspace")
+        return mobilePanelButtonsVisible && Boolean(workspacePanel);
+      return true;
+    },
+    [
+      eventsVisible,
+      logVisible,
+      mobilePanelButtonsVisible,
+      sessionsPanel,
+      workspacePanel,
+    ],
+  );
 
   const visiblePanel = useMemo<PanelId>(() => {
     if (!activePanel) return null;
@@ -133,35 +176,43 @@ export function TopBar({
     if (!visiblePanel) return;
     function handleClick(e: MouseEvent) {
       const targetNode = e.target as Node;
-      if (panelRef.current?.contains(targetNode) || buttonsRef.current?.contains(targetNode)) return;
+      if (
+        panelRef.current?.contains(targetNode) ||
+        buttonsRef.current?.contains(targetNode)
+      )
+        return;
 
       const targetElement = e.target instanceof Element ? e.target : null;
       // Keep topbar panel open while interacting with modal/portal content
       // launched from inside the panel (e.g., Spawn Agent, Add Memory dialogs).
-      if (targetElement?.closest('[data-slot="dialog-content"], [data-slot="dialog-overlay"], [role="dialog"], [data-radix-popper-content-wrapper]')) {
+      if (
+        targetElement?.closest(
+          '[data-slot="dialog-content"], [data-slot="dialog-overlay"], [role="dialog"], [data-radix-popper-content-wrapper]',
+        )
+      ) {
         return;
       }
 
       setActivePanel(null);
     }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
   }, [visiblePanel]);
 
   // Escape to close
   useEffect(() => {
     if (!visiblePanel) return;
     function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setActivePanel(null);
+      if (e.key === "Escape") setActivePanel(null);
     }
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
   }, [visiblePanel]);
 
   const totalCost = useMemo(() => {
     if (!tokenData) return null;
     const cost = tokenData.persistent?.totalCost ?? tokenData.totalCost ?? 0;
-    return '$' + cost.toFixed(2);
+    return "$" + cost.toFixed(2);
   }, [tokenData]);
 
   const panelConfig = useMemo(() => {
@@ -170,10 +221,12 @@ export function TopBar({
   }, [visiblePanel]);
 
   const panelBoxClass = panelConfig.boxClass;
-  const panelHeightClass = visiblePanel ? panelConfig.heightClass : 'max-h-0 opacity-0 pointer-events-none';
+  const panelHeightClass = visiblePanel
+    ? panelConfig.heightClass
+    : "max-h-0 opacity-0 pointer-events-none";
   const panelContentClass = panelConfig.contentClass;
 
-  const buttonBase = 'shell-icon-button min-w-9 px-2.5 sm:px-3';
+  const buttonBase = "shell-icon-button min-w-9 px-2.5 sm:px-3";
 
   return (
     <div className="relative z-40 px-2 pt-2 sm:px-4 sm:pt-3">
@@ -187,12 +240,9 @@ export function TopBar({
               <span className="truncate text-sm font-semibold uppercase tracking-[0.34em] text-primary sm:text-base">
                 Nerve
               </span>
-              <span className="hidden lg:inline text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground/70">
-                OpenClaw cockpit
-              </span>
             </div>
             <div className="hidden xl:block text-[11px] text-muted-foreground/80">
-              Live control surface for sessions, workspace state, and telemetry
+              OpenClaw Cockpit{" "}
             </div>
           </div>
 
@@ -200,22 +250,22 @@ export function TopBar({
           {onViewModeChange && (
             <div className="ml-2 hidden items-center gap-2 sm:flex">
               <button
-                onClick={() => onViewModeChange('chat')}
+                onClick={() => onViewModeChange("chat")}
                 title="Chat View"
                 aria-label="Switch to chat view"
-                aria-pressed={viewMode === 'chat'}
-                data-active={viewMode === 'chat'}
+                aria-pressed={viewMode === "chat"}
+                data-active={viewMode === "chat"}
                 className="shell-chip text-[11px] uppercase tracking-[0.14em]"
               >
                 <MessageSquare size={13} aria-hidden="true" />
                 <span>Chat</span>
               </button>
               <button
-                onClick={() => onViewModeChange('kanban')}
+                onClick={() => onViewModeChange("kanban")}
                 title="Tasks View"
                 aria-label="Switch to tasks view"
-                aria-pressed={viewMode === 'kanban'}
-                data-active={viewMode === 'kanban'}
+                aria-pressed={viewMode === "kanban"}
+                data-active={viewMode === "kanban"}
                 className="shell-chip text-[11px] uppercase tracking-[0.14em]"
               >
                 <LayoutGrid size={13} aria-hidden="true" />
@@ -228,13 +278,13 @@ export function TopBar({
           {/* Compact layout launchers (chat-first mode) */}
           {mobilePanelButtonsVisible && sessionsPanel && (
             <button
-              onClick={() => togglePanel('sessions')}
+              onClick={() => togglePanel("sessions")}
               title="Sessions"
               aria-label="Toggle sessions panel"
-              aria-expanded={visiblePanel === 'sessions'}
+              aria-expanded={visiblePanel === "sessions"}
               aria-haspopup="true"
               aria-controls="topbar-panel"
-              data-active={visiblePanel === 'sessions'}
+              data-active={visiblePanel === "sessions"}
               className={buttonBase}
             >
               <Users size={14} aria-hidden="true" />
@@ -244,13 +294,13 @@ export function TopBar({
 
           {mobilePanelButtonsVisible && workspacePanel && (
             <button
-              onClick={() => togglePanel('workspace')}
+              onClick={() => togglePanel("workspace")}
               title="Workspace"
               aria-label="Toggle workspace panel"
-              aria-expanded={visiblePanel === 'workspace'}
+              aria-expanded={visiblePanel === "workspace"}
               aria-haspopup="true"
               aria-controls="topbar-panel"
-              data-active={visiblePanel === 'workspace'}
+              data-active={visiblePanel === "workspace"}
               className={buttonBase}
             >
               <Brain size={14} aria-hidden="true" />
@@ -261,16 +311,20 @@ export function TopBar({
           {/* Agent Log button */}
           {logVisible && (
             <button
-              onClick={() => togglePanel('agent-log')}
+              onClick={() => togglePanel("agent-log")}
               title="Agent Log"
               aria-label="Toggle agent log panel"
-              aria-expanded={visiblePanel === 'agent-log'}
+              aria-expanded={visiblePanel === "agent-log"}
               aria-haspopup="true"
               aria-controls="topbar-panel"
-              data-active={visiblePanel === 'agent-log'}
+              data-active={visiblePanel === "agent-log"}
               className={buttonBase}
             >
-              <Activity size={14} className={logGlow ? 'text-green' : ''} aria-hidden="true" />
+              <Activity
+                size={14}
+                className={logGlow ? "text-green" : ""}
+                aria-hidden="true"
+              />
               <span className="hidden sm:inline">Log</span>
               {agentLogEntries.length > 0 && (
                 <span className="hidden min-w-5 items-center justify-center rounded-full bg-background/80 px-1.5 py-0.5 text-[9px] tabular-nums text-foreground/80 md:inline-flex">
@@ -283,13 +337,13 @@ export function TopBar({
           {/* Events button */}
           {eventsVisible && (
             <button
-              onClick={() => togglePanel('events')}
+              onClick={() => togglePanel("events")}
               title="Events"
               aria-label="Toggle events panel"
-              aria-expanded={visiblePanel === 'events'}
+              aria-expanded={visiblePanel === "events"}
               aria-haspopup="true"
               aria-controls="topbar-panel"
-              data-active={visiblePanel === 'events'}
+              data-active={visiblePanel === "events"}
               className={buttonBase}
             >
               <Radio size={14} aria-hidden="true" />
@@ -304,13 +358,13 @@ export function TopBar({
 
           {/* Usage button */}
           <button
-            onClick={() => togglePanel('usage')}
+            onClick={() => togglePanel("usage")}
             title="Token Usage"
             aria-label="Toggle usage panel"
-            aria-expanded={visiblePanel === 'usage'}
+            aria-expanded={visiblePanel === "usage"}
             aria-haspopup="true"
             aria-controls="topbar-panel"
-            data-active={visiblePanel === 'usage'}
+            data-active={visiblePanel === "usage"}
             className={buttonBase}
           >
             <BarChart3 size={14} aria-hidden="true" />
@@ -342,15 +396,21 @@ export function TopBar({
         aria-label={visiblePanel ? `${visiblePanel} panel` : undefined}
         hidden={!visiblePanel}
         className={`shell-panel absolute right-0 mt-2 overflow-hidden rounded-2xl transition-all duration-200 ease-out ${panelBoxClass} ${panelHeightClass}`}
-        style={{ top: '100%' }}
+        style={{ top: "100%" }}
       >
         <div className={panelContentClass}>
-          <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading…</div>}>
-            {visiblePanel === 'agent-log' && <AgentLog entries={agentLogEntries} glow={logGlow} />}
-            {visiblePanel === 'events' && <EventLog entries={eventEntries} />}
-            {visiblePanel === 'usage' && <TokenUsage data={tokenData} />}
-            {visiblePanel === 'sessions' && sessionsPanel}
-            {visiblePanel === 'workspace' && workspacePanel}
+          <Suspense
+            fallback={
+              <div className="p-4 text-muted-foreground text-xs">Loading…</div>
+            }
+          >
+            {visiblePanel === "agent-log" && (
+              <AgentLog entries={agentLogEntries} glow={logGlow} />
+            )}
+            {visiblePanel === "events" && <EventLog entries={eventEntries} />}
+            {visiblePanel === "usage" && <TokenUsage data={tokenData} />}
+            {visiblePanel === "sessions" && sessionsPanel}
+            {visiblePanel === "workspace" && workspacePanel}
           </Suspense>
         </div>
       </div>

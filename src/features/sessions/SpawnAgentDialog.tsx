@@ -118,83 +118,85 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v && !spawning) handleCancel(); }}>
-      <DialogContent className="bg-card border-border max-w-md overflow-visible">
+      <DialogContent className="max-w-xl overflow-visible">
         <DialogHeader>
-          <DialogTitle className="text-primary font-mono text-sm tracking-wider uppercase">
-            Launch Subagent
+          <div className="cockpit-kicker">
+            <span className="text-primary">◆</span>
+            Session Control
+          </div>
+          <DialogTitle className="text-[1.35rem] font-semibold tracking-[-0.03em] text-foreground">
+            Launch subagent
           </DialogTitle>
-          <DialogDescription className="text-muted-foreground text-xs">
-            Spawn a new subagent session with a specific task.
+          <DialogDescription className="text-sm text-muted-foreground">
+            Give a focused task, choose the model, and let the new session run in parallel.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
           <div>
-            <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Task / Prompt</label>
+            <label className="cockpit-field-label mb-2 block">Task / Prompt</label>
             <textarea
               value={task}
               onChange={(e) => setTask(e.target.value)}
               placeholder="What should this agent do?"
               rows={3}
-              className="w-full bg-background border border-border/60 text-foreground text-xs font-mono px-2 py-1.5 resize-y focus:outline-none focus:border-primary placeholder:text-muted-foreground/50"
+              className="cockpit-textarea min-h-[132px]"
             />
           </div>
           <div>
-            <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Label (optional)</label>
+            <label className="cockpit-field-label mb-2 block">Label (optional)</label>
             <input
               type="text"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="e.g. refactor-auth"
-              className="w-full bg-background border border-border/60 text-foreground text-xs font-mono px-2 py-1.5 focus:outline-none focus:border-primary placeholder:text-muted-foreground/50"
+              className="cockpit-input cockpit-input-mono"
             />
           </div>
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Model</label>
+              <label className="cockpit-field-label mb-2 block">Model</label>
               <InlineSelect
                 value={model}
                 onChange={setModel}
                 options={modelOptions}
                 ariaLabel="Select model"
                 disabled={spawning}
-                triggerClassName="w-full justify-between"
+                triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
+                menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
                 inline
               />
             </div>
             <div className="flex-1">
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Thinking</label>
+              <label className="cockpit-field-label mb-2 block">Thinking</label>
               <InlineSelect
                 value={thinking}
                 onChange={setThinking}
                 options={THINKING_LEVELS}
                 ariaLabel="Select thinking level"
                 disabled={spawning}
-                triggerClassName="w-full justify-between"
+                triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
+                menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
                 inline
               />
             </div>
           </div>
           {spawnError && (
-            <p className="text-[10px] text-red font-mono">{spawnError}</p>
+            <p className="cockpit-note" data-tone="danger">{spawnError}</p>
           )}
           {spawning && (
-            <p className="text-[10px] text-muted-foreground animate-pulse">
-              ⏳ Waiting for agent to spawn subagent…
-            </p>
+            <p className="cockpit-note animate-pulse">Waiting for the new session to come online...</p>
           )}
           {!spawning && !spawnError && (
-            <p className="text-[10px] text-muted-foreground/70">
-              💡 Tip: You can also ask your main agent to create and manage subagents for you.
-            </p>
+            <p className="cockpit-note">Tip: ask the main agent to manage subagents when you want orchestration instead of manual spawning.</p>
           )}
         </div>
 
         <DialogFooter className="gap-2">
-          <Button type="button" variant="outline" onClick={handleCancel} disabled={spawning} className="font-mono text-xs">
+          <Button type="button" variant="outline" onClick={handleCancel} disabled={spawning} className="text-xs">
             Cancel
           </Button>
-          <Button type="button" onClick={handleLaunch} disabled={spawning || !task.trim()} className="font-mono text-xs bg-primary text-primary-foreground hover:bg-primary/90 min-w-[90px]">
+          <Button type="button" onClick={handleLaunch} disabled={spawning || !task.trim()} className="min-w-[118px] text-xs">
             {spawning ? (
               <span className="flex items-center gap-1.5">
                 <span className="inline-block w-3 h-3 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />

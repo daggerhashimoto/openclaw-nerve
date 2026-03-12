@@ -18,22 +18,30 @@ export function AppearanceSettings() {
 
   return (
     <div className="space-y-4">
-      <h3 className="text-[10px] font-bold tracking-[1.5px] uppercase text-muted-foreground flex items-center gap-2">
-        <span className="text-purple">◆</span>
-        APPEARANCE
-      </h3>
+      <div className="space-y-1.5">
+        <span className="cockpit-kicker">
+          <span className="text-primary">◆</span>
+          Appearance
+        </span>
+        <p className="cockpit-copy max-w-[34ch]">
+          Shape the cockpit tone, typography, and supporting telemetry without changing the core workflow.
+        </p>
+      </div>
 
       {/* Theme selector */}
-      <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
-        <div className="flex items-center gap-3">
+      <div className="cockpit-row items-start justify-between">
+        <div className="flex min-w-0 items-start gap-3">
           <Monitor size={14} className="text-primary" />
-          <span className="text-[12px]">Theme</span>
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground">Theme</span>
+            <span className="text-xs text-muted-foreground">Swap the full cockpit palette in one move.</span>
+          </div>
         </div>
-        <div className="relative">
+        <div className="relative shrink-0">
           <select
             value={theme}
             onChange={handleThemeChange}
-            className="appearance-none bg-secondary border border-border/60 text-[11px] font-mono uppercase tracking-wide px-3 py-1.5 pr-7 cursor-pointer hover:border-primary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors"
+            className="cockpit-select min-w-[148px] appearance-none pr-9 text-sm"
             aria-label="Select theme"
           >
             {themeNames.map((name) => (
@@ -47,19 +55,19 @@ export function AppearanceSettings() {
       </div>
 
       {/* Font selector */}
-      <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
-        <div className="flex items-center gap-3">
+      <div className="cockpit-row items-start justify-between">
+        <div className="flex min-w-0 items-start gap-3">
           <Type size={14} className="text-primary" />
           <div className="flex flex-col">
-            <span className="text-[12px]">Font</span>
-            <span className="text-[10px] text-muted-foreground">Code blocks stay monospace</span>
+            <span className="text-sm font-medium text-foreground">UI font</span>
+            <span className="text-xs text-muted-foreground">Code blocks stay monospace</span>
           </div>
         </div>
-        <div className="relative">
+        <div className="relative shrink-0">
           <select
             value={font}
             onChange={handleFontChange}
-            className="appearance-none bg-secondary border border-border/60 text-[11px] font-mono uppercase tracking-wide px-3 py-1.5 pr-7 cursor-pointer hover:border-primary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors"
+            className="cockpit-select min-w-[148px] appearance-none pr-9 text-sm"
             aria-label="Select font"
           >
             {fontNames.map((name) => (
@@ -73,12 +81,12 @@ export function AppearanceSettings() {
       </div>
 
       {/* Events Panel Visibility */}
-      <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
+      <div className="cockpit-row items-start justify-between">
         <div className="flex items-center gap-3">
-          <Eye size={14} className={eventsVisible ? 'text-purple' : 'text-muted-foreground'} aria-hidden="true" />
+          <Eye size={14} className={eventsVisible ? 'text-primary' : 'text-muted-foreground'} aria-hidden="true" />
           <div className="flex flex-col">
-            <span className="text-[12px]" id="events-label">Display Events</span>
-            <span className="text-[10px] text-muted-foreground">Show event log in telemetry row</span>
+            <span className="text-sm font-medium text-foreground" id="events-label">Show events</span>
+            <span className="text-xs text-muted-foreground">Keep the event rail visible in the telemetry row.</span>
           </div>
         </div>
         <Switch
@@ -89,12 +97,12 @@ export function AppearanceSettings() {
       </div>
 
       {/* Log Panel Visibility */}
-      <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
+      <div className="cockpit-row items-start justify-between">
         <div className="flex items-center gap-3">
           <Activity size={14} className={logVisible ? 'text-green' : 'text-muted-foreground'} aria-hidden="true" />
           <div className="flex flex-col">
-            <span className="text-[12px]" id="log-label">Display Log</span>
-            <span className="text-[10px] text-muted-foreground">Show agent activity log in top bar</span>
+            <span className="text-sm font-medium text-foreground" id="log-label">Show activity log</span>
+            <span className="text-xs text-muted-foreground">Surface agent activity in the top chrome.</span>
           </div>
         </div>
         <Switch

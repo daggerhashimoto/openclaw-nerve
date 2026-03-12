@@ -14,9 +14,14 @@
   html {
     background: var(--color-background);
     color-scheme: dark light;
+    scrollbar-gutter: stable both-edges;
   }
   * {
     @apply border-border/60 outline-ring/50;
+    scrollbar-width: auto;
+    scrollbar-color:
+      color-mix(in srgb, var(--color-primary) 48%, var(--color-scrollbar-hover))
+      color-mix(in srgb, var(--color-secondary) 52%, var(--color-background));
   }
   body {
     @apply bg-background text-foreground font-sans text-[15px] antialiased;
@@ -53,15 +58,47 @@
 }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: color-mix(in srgb, var(--color-secondary) 35%, transparent); }
-::-webkit-scrollbar-thumb {
-  background: var(--color-scrollbar);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
+:where([class*="overflow-y-auto"], [class*="overflow-x-auto"], [class*="overflow-auto"]) {
+  scrollbar-gutter: stable both-edges;
 }
-::-webkit-scrollbar-thumb:hover { background: var(--color-scrollbar-hover); }
+
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-secondary) 62%, transparent),
+      color-mix(in srgb, var(--color-background) 72%, transparent)
+    );
+  border-radius: 999px;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--color-border) 70%, transparent),
+    inset 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-primary) 34%, var(--color-scrollbar-hover)),
+      color-mix(in srgb, var(--color-primary) 18%, var(--color-scrollbar))
+    );
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--color-background) 82%, transparent);
+  background-clip: padding-box;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--color-border) 36%, transparent);
+  min-height: 38px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-primary) 48%, var(--color-scrollbar-hover)),
+      color-mix(in srgb, var(--color-primary) 28%, var(--color-scrollbar-hover))
+    );
+}
+::-webkit-scrollbar-corner { background: transparent; }
 
 /* Animations */
 @keyframes pulse-dot {
@@ -75,10 +112,6 @@
 @keyframes dot-fade {
   0%, 80%, 100% { opacity: 0; }
   40% { opacity: 1; }
-}
-@keyframes prompt-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
 }
 @keyframes status-flash {
   0% { background-color: color-mix(in srgb, var(--color-primary) 30%, transparent); }
@@ -98,7 +131,6 @@
 .animate-pulse-dot { animation: pulse-dot 1s infinite; }
 .animate-blink { animation: blink 0.7s step-end infinite; }
 .animate-alive { animation: blink 1s step-end infinite; }
-.animate-prompt-pulse { animation: prompt-pulse 2s ease-in-out infinite; }
 .animate-status-flash { animation: status-flash 0.3s ease-out; }
 
 /* === Realtime Chat Animations === */
@@ -373,6 +405,323 @@
   border-color: color-mix(in srgb, var(--color-primary) 44%, var(--color-border));
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+}
+
+.cockpit-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-primary) 74%, var(--color-muted-foreground));
+}
+
+.cockpit-title {
+  font-size: clamp(1.05rem, 0.95rem + 0.45vw, 1.35rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--color-foreground);
+}
+
+.cockpit-copy {
+  font-size: 13px;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--color-foreground) 72%, var(--color-muted-foreground));
+}
+
+.cockpit-divider {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-border) 88%, transparent) 18%,
+    color-mix(in srgb, var(--color-border) 88%, transparent) 82%,
+    transparent
+  );
+}
+
+.cockpit-surface {
+  border: 1px solid color-mix(in srgb, var(--color-border) 86%, transparent);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-card) 96%, transparent), color-mix(in srgb, var(--color-secondary) 86%, transparent));
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(18px);
+}
+
+.cockpit-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-background) 54%, transparent), color-mix(in srgb, var(--color-card) 86%, transparent));
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.cockpit-row:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+  transform: translateY(-1px);
+}
+
+.cockpit-row[data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--color-destructive) 28%, var(--color-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-destructive) 7%, transparent), color-mix(in srgb, var(--color-card) 88%, transparent));
+}
+
+.cockpit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cockpit-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.cockpit-field-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--color-muted-foreground) 88%, transparent);
+}
+
+.cockpit-input,
+.cockpit-select,
+.cockpit-textarea {
+  width: 100%;
+  min-width: 0;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
+  background: color-mix(in srgb, var(--color-background) 66%, transparent);
+  color: var(--color-foreground);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease,
+    transform 0.15s ease;
+  outline: none;
+}
+
+.cockpit-input,
+.cockpit-select {
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.cockpit-textarea {
+  min-height: 120px;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.cockpit-input::placeholder,
+.cockpit-textarea::placeholder {
+  color: color-mix(in srgb, var(--color-muted-foreground) 84%, transparent);
+}
+
+.cockpit-input:focus-visible,
+.cockpit-select:focus-visible,
+.cockpit-textarea:focus-visible {
+  border-color: color-mix(in srgb, var(--color-primary) 56%, var(--color-border));
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--color-primary) 14%, transparent),
+    0 18px 36px rgba(0, 0, 0, 0.16);
+}
+
+.cockpit-input-mono,
+.cockpit-select-mono,
+.cockpit-code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.cockpit-note {
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+  background: color-mix(in srgb, var(--color-background) 48%, transparent);
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--color-foreground) 74%, var(--color-muted-foreground));
+}
+
+.cockpit-note[data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--color-destructive) 26%, var(--color-border));
+  background: color-mix(in srgb, var(--color-destructive) 8%, transparent);
+  color: color-mix(in srgb, var(--color-foreground) 82%, var(--color-destructive));
+}
+
+.cockpit-note[data-tone="primary"] {
+  border-color: color-mix(in srgb, var(--color-primary) 24%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+
+.cockpit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  background: color-mix(in srgb, var(--color-background) 48%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-muted-foreground);
+}
+
+.cockpit-badge[data-tone="primary"] {
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: color-mix(in srgb, var(--color-primary) 82%, var(--color-foreground));
+}
+
+.cockpit-badge[data-tone="success"] {
+  border-color: color-mix(in srgb, var(--color-green) 32%, var(--color-border));
+  background: color-mix(in srgb, var(--color-green) 10%, transparent);
+  color: color-mix(in srgb, var(--color-green) 78%, var(--color-foreground));
+}
+
+.cockpit-badge[data-tone="warning"] {
+  border-color: color-mix(in srgb, var(--color-orange) 32%, var(--color-border));
+  background: color-mix(in srgb, var(--color-orange) 10%, transparent);
+  color: color-mix(in srgb, var(--color-orange) 78%, var(--color-foreground));
+}
+
+.cockpit-badge[data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--color-destructive) 34%, var(--color-border));
+  background: color-mix(in srgb, var(--color-destructive) 10%, transparent);
+  color: color-mix(in srgb, var(--color-destructive) 76%, var(--color-foreground));
+}
+
+.cockpit-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  background: color-mix(in srgb, var(--color-background) 70%, transparent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-muted-foreground);
+}
+
+.cockpit-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
+  background: color-mix(in srgb, var(--color-background) 42%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.cockpit-toolbar-button:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 32%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  color: var(--color-foreground);
+  transform: translateY(-1px);
+}
+
+.cockpit-toolbar-button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-primary) 16%, transparent),
+    0 12px 28px rgba(0, 0, 0, 0.2);
+}
+
+.cockpit-toolbar-button[data-active="true"] {
+  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+
+.cockpit-toolbar-button[data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--color-destructive) 24%, var(--color-border));
+  color: color-mix(in srgb, var(--color-destructive) 72%, var(--color-foreground));
+}
+
+.cockpit-toolbar-button[data-tone="danger"]:hover {
+  border-color: color-mix(in srgb, var(--color-destructive) 48%, var(--color-border));
+  background: color-mix(in srgb, var(--color-destructive) 10%, transparent);
+  color: color-mix(in srgb, var(--color-destructive) 84%, var(--color-foreground));
+}
+
+.cockpit-command-shell {
+  border: 1px solid color-mix(in srgb, var(--color-border) 84%, transparent);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-card) 97%, transparent), color-mix(in srgb, var(--color-secondary) 90%, transparent));
+  box-shadow:
+    0 34px 90px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(22px);
+  overflow: hidden;
+}
+
+.cockpit-command-section {
+  padding: 10px 18px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.cockpit-command-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 18px;
+  text-align: left;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.cockpit-command-item:hover,
+.cockpit-command-item[data-active="true"] {
+  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
+}
+
+.cockpit-command-item[data-active="true"] {
+  color: var(--color-foreground);
 }
 
 /* Panel header chrome */
@@ -954,8 +1303,7 @@
   .animate-pulse,
   .animate-pulse-dot,
   .animate-blink,
-  .animate-alive,
-  .animate-prompt-pulse {
+  .animate-alive {
     animation: none !important;
   }
 

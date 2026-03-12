@@ -382,8 +382,8 @@ export default function App({ onLogout }: AppProps) {
   const renderRightPanels = (onSelect: (key: string) => Promise<void> | void) => (
     <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
       {/* Sessions + Memory stacked vertically */}
-      <div className="flex-1 flex flex-col gap-px min-h-0">
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-background">
+      <div className="flex-1 flex flex-col gap-3 min-h-0">
+        <div className="shell-panel flex-1 flex flex-col min-h-0 overflow-hidden rounded-[28px]">
           <PanelErrorBoundary name="Sessions">
             <SessionList
               sessions={sessions}
@@ -402,7 +402,7 @@ export default function App({ onLogout }: AppProps) {
             />
           </PanelErrorBoundary>
         </div>
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-background">
+        <div className="shell-panel flex-1 flex flex-col min-h-0 overflow-hidden rounded-[28px]">
           <PanelErrorBoundary name="Workspace">
             <WorkspacePanel memories={memories} onRefreshMemories={refreshMemories} memoriesLoading={memoriesLoading} onOpenBoard={() => setViewMode('kanban')} onOpenTask={openTaskInBoard} />
           </PanelErrorBoundary>
@@ -443,7 +443,7 @@ export default function App({ onLogout }: AppProps) {
   );
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden scan-lines" data-booted={booted}>
+    <div className="scan-lines relative h-screen flex flex-col overflow-hidden" data-booted={booted}>
       {/* Skip to main content link for keyboard navigation */}
       <a 
         href="#main-chat" 
@@ -545,7 +545,7 @@ export default function App({ onLogout }: AppProps) {
         </Suspense>
       </PanelErrorBoundary>
       
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      <div className="flex-1 flex gap-3 overflow-hidden min-h-0 px-2 pb-2 sm:px-4 sm:pb-3">
         {/* File tree — far left, collapsible; hidden (not unmounted) in kanban to preserve state */}
         <div className={viewMode === 'kanban' ? 'hidden' : 'h-full min-h-0'}>
           <PanelErrorBoundary name="File Explorer">
@@ -568,14 +568,14 @@ export default function App({ onLogout }: AppProps) {
          * See: https://github.com/.../issues/64
          */}
         {viewMode === 'kanban' && (
-          <div className="flex-1 flex flex-col min-w-0 min-h-0 boot-panel">
+          <div className="shell-panel boot-panel flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden rounded-[28px]">
             <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
               <KanbanPanel initialTaskId={pendingTaskId} onInitialTaskConsumed={() => setPendingTaskId(null)} />
             </Suspense>
           </div>
         )}
         {isCompactLayout ? (
-          <div className={`flex-1 min-w-0 min-h-0 boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
+          <div className={`shell-panel flex-1 min-w-0 min-h-0 overflow-hidden rounded-[28px] boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
             {chatContent}
           </div>
         ) : (
@@ -585,8 +585,8 @@ export default function App({ onLogout }: AppProps) {
               onResize={setPanelRatio}
               minLeftPercent={30}
               maxLeftPercent={75}
-              leftClassName="boot-panel"
-              rightClassName="boot-panel flex flex-col gap-px bg-border"
+              leftClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
+              rightClassName="boot-panel flex flex-col"
               left={chatContent}
               right={renderRightPanels(handleSessionChange)}
             />

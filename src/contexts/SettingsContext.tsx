@@ -81,8 +81,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     return saved && themeNames.includes(saved) ? saved : 'ayu-dark';
   });
   const [font, setFontState] = useState<FontName>(() => {
-    const saved = localStorage.getItem('oc-font') as FontName | null;
-    return saved && fontNames.includes(saved) ? saved : 'jetbrains-mono';
+    const saved = localStorage.getItem('oc-font');
+    if (saved === 'inter') return 'instrument-sans';
+    if (saved === 'system') return 'space-grotesk';
+    return saved && fontNames.includes(saved as FontName) ? saved as FontName : 'instrument-sans';
   });
   const { speak } = useTTS(soundEnabled, ttsProvider, ttsModel || undefined);
   const wakeWordToggleRef = useRef<(() => void) | null>(null);

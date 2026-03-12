@@ -518,10 +518,10 @@ export function FileTreePanel({
     }
     // On desktop, show the collapsed panel with expand button
     return (
-      <div className="shrink-0 border-r border-border bg-background flex flex-col items-center pt-2 w-9">
+      <div className="shell-panel flex w-11 shrink-0 flex-col items-center rounded-[24px] py-3">
         <button
           onClick={toggleCollapsed}
-          className="p-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+          className="shell-icon-button size-9 px-0"
           title="Open file explorer (Ctrl+B)"
           aria-label="Open file explorer"
         >
@@ -541,7 +541,7 @@ export function FileTreePanel({
   return (
     <div
       ref={panelRef}
-      className="shrink-0 border-r border-border bg-background flex flex-col h-full min-h-0 relative"
+      className="shell-panel relative flex h-full min-h-0 shrink-0 flex-col overflow-hidden rounded-[28px]"
       style={{ width }}
       onContextMenu={(e) => {
         // Right-click on empty panel area closes any open context menu.
@@ -553,7 +553,7 @@ export function FileTreePanel({
     >
       {/* Header */}
       <div
-        className={`flex items-center justify-between px-3 py-2 border-b border-border ${dropTargetPath === '.' ? 'bg-primary/15 ring-1 ring-primary/40' : ''}`}
+        className={`flex items-center justify-between border-b border-border/70 px-4 py-3 ${dropTargetPath === '.' ? 'bg-primary/12 ring-1 ring-inset ring-primary/35' : 'bg-gradient-to-r from-secondary/90 to-card/85'}`}
         onDragOver={handleRootDragOver}
         onDragLeave={(e) => {
           if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
@@ -561,13 +561,13 @@ export function FileTreePanel({
         }}
         onDrop={handleRootDrop}
       >
-        <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+        <span className="text-[10px] font-mono font-semibold uppercase tracking-[0.26em] text-muted-foreground">
           {workspaceInfo?.isCustomWorkspace ? workspaceInfo.rootPath : 'Workspace'}
         </span>
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-2">
           <button
             onClick={refresh}
-            className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+            className="shell-icon-button size-8 px-0"
             title="Refresh file tree"
             aria-label="Refresh file tree"
           >
@@ -575,7 +575,7 @@ export function FileTreePanel({
           </button>
           <button
             onClick={toggleCollapsed}
-            className="p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+            className="shell-icon-button size-8 px-0"
             title="Close file explorer (Ctrl+B)"
             aria-label="Close file explorer"
           >
@@ -639,7 +639,7 @@ export function FileTreePanel({
       {contextMenu && menuEntry && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 min-w-[160px] bg-card border border-border shadow-lg rounded-md py-1"
+          className="shell-panel fixed z-50 min-w-[180px] rounded-2xl py-1.5"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           {showRestore && (
@@ -685,7 +685,7 @@ export function FileTreePanel({
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-4 left-4 z-[70] w-fit min-w-[320px] max-w-[min(92vw,680px)] px-4 py-2.5 rounded-md border text-xs shadow-lg bg-card flex items-center gap-3">
+        <div className="shell-panel fixed bottom-4 left-4 z-[70] flex w-fit min-w-[320px] max-w-[min(92vw,680px)] items-center gap-3 rounded-2xl px-4 py-3 text-xs">
           <span className={`flex-1 ${toast.type === 'error' ? 'text-destructive' : 'text-foreground'}`}>
             {toast.message}
           </span>
@@ -709,13 +709,15 @@ export function FileTreePanel({
 
       {/* Resize handle */}
       <div
-        className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/50 active:bg-primary/50 transition-colors z-10"
+        className="absolute top-0 right-0 z-10 flex h-full w-3 cursor-col-resize items-stretch justify-center"
         onMouseDown={handleMouseDown}
         onDoubleClick={handleDoubleClickResize}
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize file explorer"
-      />
+      >
+        <div className="pointer-events-none my-4 w-px rounded-full bg-border" />
+      </div>
 
       {/* Permanent delete confirmation dialog */}
       {deleteConfirmation && (

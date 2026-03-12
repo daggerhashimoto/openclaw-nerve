@@ -1,6 +1,6 @@
 // Font definitions for Nerve UI
 
-export type FontName = 'inter' | 'jetbrains-mono' | 'system';
+export type FontName = 'instrument-sans' | 'space-grotesk' | 'jetbrains-mono';
 
 export interface Font {
   name: FontName;
@@ -10,22 +10,23 @@ export interface Font {
 }
 
 export const fonts: Record<FontName, Font> = {
-  'inter': {
-    name: 'inter',
-    label: 'Inter',
-    family: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-    googleFontsUrl: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
+  'instrument-sans': {
+    name: 'instrument-sans',
+    label: 'Instrument Sans',
+    family: "'Instrument Sans', 'Helvetica Neue', Arial, sans-serif",
+    googleFontsUrl: 'https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap',
+  },
+  'space-grotesk': {
+    name: 'space-grotesk',
+    label: 'Space Grotesk',
+    family: "'Space Grotesk', 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif",
+    googleFontsUrl: 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap',
   },
   'jetbrains-mono': {
     name: 'jetbrains-mono',
     label: 'JetBrains Mono',
     family: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
     googleFontsUrl: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap',
-  },
-  'system': {
-    name: 'system',
-    label: 'System Default',
-    family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   },
 };
 
@@ -68,5 +69,6 @@ export function applyFont(fontName: FontName): void {
   root.style.setProperty('--font-mono', monoFont);
 }
 
-// Initialize: load JetBrains Mono (default UI + code font)
+// Initialize fonts used in the default shell before settings hydrate
+loadGoogleFont(fonts['instrument-sans'].googleFontsUrl!);
 loadGoogleFont(fonts['jetbrains-mono'].googleFontsUrl!);

@@ -103,11 +103,10 @@ export function ResizablePanels({
       <div
         onMouseDown={handleMouseDown}
         onDoubleClick={handleDoubleClick}
-        className="w-1 bg-border hover:bg-primary/50 active:bg-primary/70 transition-colors cursor-col-resize shrink-0 group relative"
-        title="Drag to resize • Double-click to reset"
+        className="group relative flex w-3 cursor-col-resize shrink-0 items-stretch justify-center"
+        title="Drag to resize. Double click to reset"
       >
-        {/* Visual feedback line on hover */}
-        <div className="absolute inset-y-0 -left-0.5 -right-0.5 opacity-0 group-hover:opacity-100 bg-primary/20 transition-opacity pointer-events-none" />
+        <div className="pointer-events-none my-3 w-px rounded-full bg-border transition-colors group-hover:bg-primary/55 group-hover:shadow-[0_0_16px_rgba(0,0,0,0.22)] group-active:bg-primary/70" />
       </div>
       
       {/* Right panel */}

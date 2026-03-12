@@ -19,12 +19,12 @@ type PanelConfig = {
 
 const PANEL_CONFIG: Record<Exclude<PanelId, null> | 'default', PanelConfig> = {
   sessions: {
-    boxClass: 'w-[420px] max-w-[calc(100vw-1rem)]',
+    boxClass: 'w-[440px] max-w-[calc(100vw-1rem)]',
     heightClass: 'max-h-[70vh] opacity-100',
     contentClass: 'max-h-[65vh] overflow-y-auto',
   },
   workspace: {
-    boxClass: 'w-[560px] max-w-[calc(100vw-1rem)]',
+    boxClass: 'w-[600px] max-w-[calc(100vw-1rem)]',
     heightClass: 'max-h-[75vh] opacity-100',
     contentClass: 'h-[70vh] max-h-[70vh] overflow-hidden',
   },
@@ -173,53 +173,58 @@ export function TopBar({
   const panelHeightClass = visiblePanel ? panelConfig.heightClass : 'max-h-0 opacity-0 pointer-events-none';
   const panelContentClass = panelConfig.contentClass;
 
-  const buttonBase = 'bg-transparent border border-border/60 text-muted-foreground text-sm h-7 px-1.5 sm:px-2 cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 hover:text-foreground hover:border-muted-foreground transition-colors';
-  const buttonActive = 'text-primary border-primary/60 hover:text-primary';
+  const buttonBase = 'shell-icon-button min-w-9 px-2.5 sm:px-3';
 
   return (
-    <div className="relative z-40">
-      <header className="flex items-center justify-between px-2 sm:px-4 h-[42px] bg-card border-b border-border shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <NerveLogo size={24} />
-          <span className="hidden sm:inline text-sm sm:text-base font-bold text-primary tracking-[2px] sm:tracking-[4px] [text-shadow:0_0_12px_rgba(232,168,56,0.5),0_0_24px_rgba(232,168,56,0.2)] uppercase truncate">
-            NERVE
-          </span>
+    <div className="relative z-40 px-2 pt-2 sm:px-4 sm:pt-3">
+      <header className="shell-panel flex h-14 items-center justify-between rounded-2xl px-3 sm:px-4 shrink-0">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/20 bg-background/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <NerveLogo size={24} />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-sm font-semibold uppercase tracking-[0.34em] text-primary sm:text-base">
+                Nerve
+              </span>
+              <span className="hidden lg:inline text-[10px] font-mono uppercase tracking-[0.26em] text-muted-foreground/70">
+                OpenClaw cockpit
+              </span>
+            </div>
+            <div className="hidden xl:block text-[11px] text-muted-foreground/80">
+              Live control surface for sessions, workspace state, and telemetry
+            </div>
+          </div>
 
           {/* View mode toggle */}
           {onViewModeChange && (
-            <div className="flex items-center ml-3 border border-border/60 rounded-sm overflow-hidden">
+            <div className="ml-2 hidden items-center gap-2 sm:flex">
               <button
                 onClick={() => onViewModeChange('chat')}
                 title="Chat View"
                 aria-label="Switch to chat view"
                 aria-pressed={viewMode === 'chat'}
-                className={`flex items-center gap-1 px-2 h-6 text-[10px] transition-colors cursor-pointer ${
-                  viewMode === 'chat'
-                    ? 'bg-primary/15 text-primary border-r border-border/60'
-                    : 'text-muted-foreground hover:text-foreground border-r border-border/60'
-                }`}
+                data-active={viewMode === 'chat'}
+                className="shell-chip text-[11px] font-mono uppercase tracking-[0.18em]"
               >
-                <MessageSquare size={12} aria-hidden="true" />
-                <span className="hidden sm:inline">Chat</span>
+                <MessageSquare size={13} aria-hidden="true" />
+                <span>Chat</span>
               </button>
               <button
                 onClick={() => onViewModeChange('kanban')}
                 title="Tasks View"
                 aria-label="Switch to tasks view"
                 aria-pressed={viewMode === 'kanban'}
-                className={`flex items-center gap-1 px-2 h-6 text-[10px] transition-colors cursor-pointer ${
-                  viewMode === 'kanban'
-                    ? 'bg-primary/15 text-primary'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
+                data-active={viewMode === 'kanban'}
+                className="shell-chip text-[11px] font-mono uppercase tracking-[0.18em]"
               >
-                <LayoutGrid size={12} aria-hidden="true" />
-                <span className="hidden sm:inline">Tasks</span>
+                <LayoutGrid size={13} aria-hidden="true" />
+                <span>Tasks</span>
               </button>
             </div>
           )}
         </div>
-        <div ref={buttonsRef} className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+        <div ref={buttonsRef} className="flex items-center gap-2 shrink-0">
           {/* Compact layout launchers (chat-first mode) */}
           {mobilePanelButtonsVisible && sessionsPanel && (
             <button
@@ -229,10 +234,11 @@ export function TopBar({
               aria-expanded={visiblePanel === 'sessions'}
               aria-haspopup="true"
               aria-controls="topbar-panel"
-              className={`${buttonBase} ${visiblePanel === 'sessions' ? buttonActive : ''}`}
+              data-active={visiblePanel === 'sessions'}
+              className={buttonBase}
             >
               <Users size={14} aria-hidden="true" />
-              <span className="text-[10px] hidden sm:inline">Sessions</span>
+              <span className="hidden sm:inline">Sessions</span>
             </button>
           )}
 
@@ -244,10 +250,11 @@ export function TopBar({
               aria-expanded={visiblePanel === 'workspace'}
               aria-haspopup="true"
               aria-controls="topbar-panel"
-              className={`${buttonBase} ${visiblePanel === 'workspace' ? buttonActive : ''}`}
+              data-active={visiblePanel === 'workspace'}
+              className={buttonBase}
             >
               <Brain size={14} aria-hidden="true" />
-              <span className="text-[10px] hidden sm:inline">Workspace</span>
+              <span className="hidden sm:inline">Workspace</span>
             </button>
           )}
 
@@ -260,12 +267,15 @@ export function TopBar({
               aria-expanded={visiblePanel === 'agent-log'}
               aria-haspopup="true"
               aria-controls="topbar-panel"
-              className={`${buttonBase} ${visiblePanel === 'agent-log' ? buttonActive : ''}`}
+              data-active={visiblePanel === 'agent-log'}
+              className={buttonBase}
             >
               <Activity size={14} className={logGlow ? 'text-green' : ''} aria-hidden="true" />
-              <span className="text-[10px] hidden sm:inline">Log</span>
+              <span className="hidden sm:inline">Log</span>
               {agentLogEntries.length > 0 && (
-                <span className="text-[9px] bg-muted px-1 rounded-sm tabular-nums hidden md:inline-flex">{agentLogEntries.length}</span>
+                <span className="hidden min-w-5 items-center justify-center rounded-full bg-background/80 px-1.5 py-0.5 text-[9px] tabular-nums text-foreground/80 md:inline-flex">
+                  {agentLogEntries.length}
+                </span>
               )}
             </button>
           )}
@@ -279,12 +289,15 @@ export function TopBar({
               aria-expanded={visiblePanel === 'events'}
               aria-haspopup="true"
               aria-controls="topbar-panel"
-              className={`${buttonBase} ${visiblePanel === 'events' ? buttonActive : ''}`}
+              data-active={visiblePanel === 'events'}
+              className={buttonBase}
             >
               <Radio size={14} aria-hidden="true" />
-              <span className="text-[10px] hidden sm:inline">Events</span>
+              <span className="hidden sm:inline">Events</span>
               {eventEntries.length > 0 && (
-                <span className="text-[9px] bg-muted px-1 rounded-sm tabular-nums hidden md:inline-flex">{eventEntries.length}</span>
+                <span className="hidden min-w-5 items-center justify-center rounded-full bg-background/80 px-1.5 py-0.5 text-[9px] tabular-nums text-foreground/80 md:inline-flex">
+                  {eventEntries.length}
+                </span>
               )}
             </button>
           )}
@@ -297,12 +310,15 @@ export function TopBar({
             aria-expanded={visiblePanel === 'usage'}
             aria-haspopup="true"
             aria-controls="topbar-panel"
-            className={`${buttonBase} ${visiblePanel === 'usage' ? buttonActive : ''}`}
+            data-active={visiblePanel === 'usage'}
+            className={buttonBase}
           >
             <BarChart3 size={14} aria-hidden="true" />
-            <span className="text-[10px] hidden sm:inline">Usage</span>
+            <span className="hidden sm:inline">Usage</span>
             {totalCost && (
-              <span className="text-[9px] bg-muted px-1 rounded-sm tabular-nums hidden lg:inline-flex">{totalCost}</span>
+              <span className="hidden rounded-full bg-background/80 px-2 py-0.5 text-[9px] tabular-nums text-foreground/80 lg:inline-flex">
+                {totalCost}
+              </span>
             )}
           </button>
 
@@ -311,7 +327,7 @@ export function TopBar({
             onClick={onSettings}
             title="Settings"
             aria-label="Open settings"
-            className={`${buttonBase} w-7`}
+            className={`${buttonBase} size-9 px-0`}
           >
             <Settings size={14} aria-hidden="true" />
           </button>
@@ -325,7 +341,7 @@ export function TopBar({
         role="region"
         aria-label={visiblePanel ? `${visiblePanel} panel` : undefined}
         hidden={!visiblePanel}
-        className={`absolute right-2 bg-card border border-border rounded-b-lg shadow-lg overflow-hidden transition-all duration-200 ease-out ${panelBoxClass} ${panelHeightClass}`}
+        className={`shell-panel absolute right-0 mt-2 overflow-hidden rounded-2xl transition-all duration-200 ease-out ${panelBoxClass} ${panelHeightClass}`}
         style={{ top: '100%' }}
       >
         <div className={panelContentClass}>

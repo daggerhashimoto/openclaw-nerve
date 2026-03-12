@@ -453,7 +453,7 @@ export function AudioSettings({
     ? 'Tune language detection, wake phrases, and transcription before speech reaches the agent.'
     : section === 'output'
       ? 'Shape the speaking voice, model, and playback behavior for replies and announcements.'
-      : 'Tune both speech input and output so the cockpit sounds deliberate instead of improvised.';
+      : '';
   const { config, saved, updateField } = useTTSConfig();
   const { state: langState, support, isMultilingual, setLanguage } = useLanguage();
 
@@ -596,7 +596,7 @@ export function AudioSettings({
           <span className="text-primary">◆</span>
           {headingLabel}
         </span>
-        <p className="cockpit-copy max-w-[36ch]">{headingCopy}</p>
+        {headingCopy && <p className="cockpit-copy max-w-[36ch]">{headingCopy}</p>}
       </div>
 
       {/* Language Preference */}
@@ -882,7 +882,6 @@ export function AudioSettings({
             <span className="text-primary">◆</span>
             Speech to Text
           </span>
-          <p className="cockpit-copy max-w-[36ch]">Decide where recognition runs and how aggressively Nerve falls back when the browser transcript misses words.</p>
         </div>
       )}
 

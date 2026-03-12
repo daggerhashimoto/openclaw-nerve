@@ -47,9 +47,6 @@ export function ConnectionSettings({
           <span className="text-primary">◆</span>
           Gateway
         </span>
-        <p className="cockpit-copy max-w-[34ch]">
-          Point Nerve at the OpenClaw gateway and keep the session credentials within reach.
-        </p>
       </div>
 
       {/* Status indicator */}

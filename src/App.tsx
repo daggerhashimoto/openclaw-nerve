@@ -6,6 +6,7 @@
  * Dashboard data fetching is handled by useDashboardData.
  */
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import { AlertTriangle, CheckCircle2, RotateCw } from 'lucide-react';
 import { useGateway, loadConfig } from '@/contexts/GatewayContext';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { useChat } from '@/contexts/ChatContext';
@@ -458,40 +459,48 @@ export default function App({ onLogout }: AppProps) {
         defaultUrl={defaultUrl}
         defaultToken={editableToken}
       />
-      
-      {/* Reconnecting banner — mission control style */}
+
+      {/*
+       * Gateway state banners.
+       * Kept compact and centered so they read as transient shell notices instead of old alarm strips.
+       */}
       {connectionState === 'reconnecting' && !gatewayRestarting && (
-        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-red-900/90 to-orange-900/90 text-red-200 px-5 py-2 rounded-sm text-[11px] font-mono flex items-center gap-2 shadow-lg border border-red-700/60 uppercase tracking-wider">
-          <span className="text-red-400">⚠</span>
-          <span>SIGNAL LOST</span>
-          <span className="text-red-600">·</span>
-          <span>RECONNECTING{reconnectAttempt > 1 ? ` (ATTEMPT ${reconnectAttempt})` : ''}</span>
-          <span className="w-2 h-2 bg-red-400 rounded-full animate-pulse" />
+        <div className="fixed left-1/2 top-12 z-50 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-destructive/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+          <span className="inline-flex size-7 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+            <AlertTriangle size={14} aria-hidden="true" />
+          </span>
+          <span className="whitespace-nowrap">
+            Signal lost. Reconnecting{reconnectAttempt > 1 ? `, attempt ${reconnectAttempt}` : ''}.
+          </span>
+          <span className="size-2 rounded-full bg-destructive animate-pulse" aria-hidden="true" />
         </div>
       )}
 
-      {/* Gateway restarting banner */}
       {gatewayRestarting && (
-        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-amber-900/90 to-orange-900/90 text-amber-200 px-5 py-2 rounded-sm text-[11px] font-mono flex items-center gap-2 shadow-lg border border-amber-700/60 uppercase tracking-wider">
-          <span className="text-amber-400">⟳</span>
-          <span>GATEWAY RESTARTING</span>
-          <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+        <div className="fixed left-1/2 top-12 z-50 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-orange/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+          <span className="inline-flex size-7 items-center justify-center rounded-xl bg-orange/10 text-orange">
+            <RotateCw size={14} className="animate-spin" aria-hidden="true" />
+          </span>
+          <span className="whitespace-nowrap">Gateway restarting…</span>
         </div>
       )}
 
-      {/* Gateway restart result banner */}
       {!gatewayRestarting && gatewayRestartNotice && (
         <button
           type="button"
           onClick={dismissNotice}
-          className={`fixed top-12 left-1/2 -translate-x-1/2 z-50 px-5 py-2 rounded-sm text-[11px] font-mono flex items-center gap-2 shadow-lg uppercase tracking-wider cursor-pointer hover:opacity-90 transition-opacity ${
+          className={`fixed left-1/2 top-12 z-50 flex -translate-x-1/2 cursor-pointer items-center gap-2 rounded-2xl border px-4 py-2 text-xs font-medium shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-transform hover:-translate-x-1/2 hover:-translate-y-px ${
             gatewayRestartNotice.ok
-              ? 'bg-gradient-to-r from-green-900/90 to-emerald-900/90 text-green-200 border border-green-700/60'
-              : 'bg-gradient-to-r from-red-900/90 to-orange-900/90 text-red-200 border border-red-700/60'
+              ? 'border-green/25 bg-card/94 text-foreground'
+              : 'border-destructive/25 bg-card/94 text-foreground'
           }`}
         >
-          <span>{gatewayRestartNotice.ok ? '✓' : '⚠'}</span>
-          <span>{gatewayRestartNotice.message}</span>
+          <span className={`inline-flex size-7 items-center justify-center rounded-xl ${
+            gatewayRestartNotice.ok ? 'bg-green/10 text-green' : 'bg-destructive/10 text-destructive'
+          }`}>
+            {gatewayRestartNotice.ok ? <CheckCircle2 size={14} aria-hidden="true" /> : <AlertTriangle size={14} aria-hidden="true" />}
+          </span>
+          <span className="whitespace-nowrap">{gatewayRestartNotice.message}</span>
         </button>
       )}
       

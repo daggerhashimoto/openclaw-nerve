@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { buttonVariants } from '@/components/ui/button';
 
 /** Props for {@link ConfirmDialog}. */
 interface ConfirmDialogProps {
@@ -78,33 +79,46 @@ export function ConfirmDialog({
 
   if (!open) return null;
 
-  const confirmClass = variant === 'danger' 
-    ? 'bg-red text-white hover:bg-red/90' 
-    : 'bg-primary text-primary-foreground hover:opacity-90';
-
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 z-50" role="presentation" onClick={onCancel} />
+      <div className="fixed inset-0 z-50 bg-background/78 backdrop-blur-md" role="presentation" onClick={onCancel} />
       <div
         ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         aria-describedby="confirm-dialog-message"
-        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-card border border-border p-6 z-50 min-w-[300px] max-w-md"
+        className="fixed top-1/2 left-1/2 z-50 min-w-[320px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border/75 bg-card/94 p-6 shadow-[0_36px_90px_rgba(0,0,0,0.42)] backdrop-blur-xl"
       >
-        <div className="flex items-start gap-3 mb-4">
-          {variant !== 'default' && <AlertTriangle className={variant === 'danger' ? 'text-red' : 'text-orange'} size={20} aria-hidden="true" />}
+        <div className="mb-5 flex items-start gap-3">
+          {variant !== 'default' && (
+            <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-xl border ${
+              variant === 'danger'
+                ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                : 'border-orange/30 bg-orange/10 text-orange'
+            }`}>
+              <AlertTriangle size={18} aria-hidden="true" />
+            </span>
+          )}
           <div>
-            <h3 id="confirm-dialog-title" className="text-sm font-bold text-foreground mb-1">{title}</h3>
-            <p id="confirm-dialog-message" className="text-xs text-muted-foreground">{message}</p>
+            <h3 id="confirm-dialog-title" className="text-base font-semibold text-foreground">{title}</h3>
+            <p id="confirm-dialog-message" className="mt-1 text-sm leading-6 text-muted-foreground">{message}</p>
           </div>
         </div>
         <div className="flex justify-end gap-2">
-          <button ref={cancelButtonRef} onClick={onCancel} className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-muted-foreground">
+          <button
+            ref={cancelButtonRef}
+            type="button"
+            onClick={onCancel}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
             {cancelLabel}
           </button>
-          <button onClick={onConfirm} className={`px-3 py-1.5 text-xs font-bold ${confirmClass}`}>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className={buttonVariants({ variant: variant === 'danger' ? 'destructive' : 'default', size: 'sm' })}
+          >
             {confirmLabel}
           </button>
         </div>

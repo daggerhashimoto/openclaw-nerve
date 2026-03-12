@@ -197,7 +197,7 @@ export function SettingsDrawer({
         {/* Content */}
         <div className="flex-1 overflow-hidden flex flex-col">
           <div className="shrink-0 border-b border-border/60 bg-background/24 px-4 py-3">
-            <div className="flex gap-2 overflow-x-auto" role="tablist" aria-label="Settings categories">
+            <div className="-mx-0.5 flex gap-2 overflow-x-auto px-0.5 py-1" role="tablist" aria-label="Settings categories">
               {SETTINGS_CATEGORIES.map((category) => {
                 const Icon = category.icon;
                 const isActive = currentCategory === category.key;

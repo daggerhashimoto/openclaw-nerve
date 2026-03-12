@@ -23,9 +23,6 @@ export function AppearanceSettings() {
           <span className="text-primary">◆</span>
           Appearance
         </span>
-        <p className="cockpit-copy max-w-[34ch]">
-          Shape the cockpit tone, typography, and supporting telemetry without changing the core workflow.
-        </p>
       </div>
 
       {/* Theme selector */}

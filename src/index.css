@@ -588,6 +588,7 @@
   background: color-mix(in srgb, var(--color-background) 48%, transparent);
   font-size: 11px;
   font-weight: 600;
+  line-height: 1;
   color: var(--color-muted-foreground);
 }
 
@@ -836,10 +837,10 @@
 }
 .code-block-wrapper .code-block-actions {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 8px;
+  right: 8px;
   display: flex;
-  gap: 2px;
+  gap: 6px;
   opacity: 0;
   transition: opacity 0.15s ease;
   z-index: 10;
@@ -848,29 +849,34 @@
   opacity: 1;
 }
 .code-block-actions .code-action-btn {
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-card) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 84%, transparent);
   color: var(--color-muted-foreground);
-  font-size: 11px;
   line-height: 1;
-  padding: 3px 6px;
-  border-radius: 0;
+  min-height: 30px;
+  min-width: 30px;
+  padding: 0;
+  border-radius: 10px;
   cursor: pointer;
-  font-family: var(--font-mono);
-  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s, background-color 0.15s, transform 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
+  backdrop-filter: blur(12px);
 }
 .code-block-actions .code-action-btn:hover {
   color: var(--color-primary);
-  border-color: var(--color-primary);
-  box-shadow: 0 0 6px var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-card));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);
+}
+.code-block-actions .code-action-btn svg {
+  width: 14px;
+  height: 14px;
 }
 .code-block-actions .code-action-feedback {
-  font-size: 11px;
   color: var(--color-green);
-  letter-spacing: 0.3px;
 }
 .code-diff-view {
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;

@@ -173,19 +173,26 @@ export function FileTreePanel({
     };
   }, [contextMenu]);
 
-  // Clamp context menu within viewport after render.
+  // Clamp context menu within the file explorer bounds after render.
   useEffect(() => {
     if (!contextMenu || !contextMenuRef.current) return;
 
     const menuEl = contextMenuRef.current;
     const width = menuEl.offsetWidth;
     const height = menuEl.offsetHeight;
+    const panelRect = panelRef.current?.getBoundingClientRect();
 
-    const maxX = Math.max(MENU_VIEWPORT_PADDING, window.innerWidth - width - MENU_VIEWPORT_PADDING);
-    const maxY = Math.max(MENU_VIEWPORT_PADDING, window.innerHeight - height - MENU_VIEWPORT_PADDING);
+    const minX = panelRect ? panelRect.left + MENU_VIEWPORT_PADDING : MENU_VIEWPORT_PADDING;
+    const minY = panelRect ? panelRect.top + MENU_VIEWPORT_PADDING : MENU_VIEWPORT_PADDING;
+    const maxX = panelRect
+      ? Math.max(minX, panelRect.right - width - MENU_VIEWPORT_PADDING)
+      : Math.max(MENU_VIEWPORT_PADDING, window.innerWidth - width - MENU_VIEWPORT_PADDING);
+    const maxY = panelRect
+      ? Math.max(minY, panelRect.bottom - height - MENU_VIEWPORT_PADDING)
+      : Math.max(MENU_VIEWPORT_PADDING, window.innerHeight - height - MENU_VIEWPORT_PADDING);
 
-    const nextX = Math.min(Math.max(contextMenu.x, MENU_VIEWPORT_PADDING), maxX);
-    const nextY = Math.min(Math.max(contextMenu.y, MENU_VIEWPORT_PADDING), maxY);
+    const nextX = Math.min(Math.max(contextMenu.x, minX), maxX);
+    const nextY = Math.min(Math.max(contextMenu.y, minY), maxY);
 
     if (nextX !== contextMenu.x || nextY !== contextMenu.y) {
       setContextMenu((prev) => (prev ? { ...prev, x: nextX, y: nextY } : prev));

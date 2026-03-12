@@ -88,8 +88,8 @@ export function ConfigTab() {
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="flex items-center border-b border-border/40">
-        <div className="flex-1 px-2 py-1">
+      <div className="flex items-center gap-2 border-b border-border/60 bg-gradient-to-r from-secondary/84 to-card/80 px-3 py-3">
+        <div className="min-w-0 flex-1">
           <InlineSelect
             inline
             value={selectedKey}
@@ -103,16 +103,18 @@ export function ConfigTab() {
             }}
             options={FILE_OPTIONS.map(f => ({ value: f.key, label: f.label }))}
             ariaLabel="Select config file"
+            triggerClassName="min-h-10 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+            menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
           />
         </div>
         <button
           onClick={() => load(selectedKey)}
           disabled={isLoading}
-          className="shrink-0 px-2 py-1.5 bg-transparent border-0 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+          className="shell-icon-button size-10 shrink-0 px-0 disabled:cursor-not-allowed disabled:opacity-50"
           title="Refresh"
           aria-label="Refresh file"
         >
-          <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
+          <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
         </button>
       </div>
 
@@ -147,14 +149,14 @@ export function ConfigTab() {
 
         {exists && !editing && content !== null && (
           <div className="relative">
-            <div className="absolute top-1 right-1 z-10">
+            <div className="absolute top-2 right-2 z-10">
               <button
                 onClick={handleEdit}
-                className="bg-transparent border border-border/60 text-muted-foreground w-6 h-6 cursor-pointer flex items-center justify-center hover:text-purple hover:border-purple transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+                className="shell-icon-button size-9 px-0"
                 title="Edit"
                 aria-label="Edit file"
               >
-                <Pencil size={10} />
+                <Pencil size={14} />
               </button>
             </div>
             <pre className="px-3 py-2 text-[11px] text-foreground whitespace-pre-wrap font-mono leading-relaxed">

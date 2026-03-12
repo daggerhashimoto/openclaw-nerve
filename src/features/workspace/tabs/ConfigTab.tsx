@@ -5,6 +5,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { RefreshCw, Pencil, Save, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { InlineSelect } from '@/components/ui/InlineSelect';
+import { Button } from '@/components/ui/button';
 import { useWorkspaceFile } from '../hooks/useWorkspaceFile';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 
@@ -174,20 +175,23 @@ export function ConfigTab() {
               className="flex-1 w-full px-3 py-2 text-[11px] font-mono bg-background text-foreground border-0 resize-none outline-none focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 focus-visible:ring-inset"
               spellCheck={false}
             />
-            <div className="flex items-center gap-1 px-3 py-1.5 border-t border-border/40">
-              <button
+            <div className="flex items-center gap-2 border-t border-border/60 bg-secondary/28 px-3 py-2">
+              <Button
                 onClick={handleSave}
                 disabled={isLoading}
-                className="bg-transparent border border-purple/60 text-purple text-[10px] px-2 py-1 cursor-pointer flex items-center gap-1 hover:bg-purple/10 transition-colors disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+                size="sm"
+                className="text-[11px] uppercase tracking-[0.12em]"
               >
-                <Save size={10} /> Save
-              </button>
-              <button
+                <Save size={12} /> Save
+              </Button>
+              <Button
                 onClick={handleCancel}
-                className="bg-transparent border border-border/60 text-muted-foreground text-[10px] px-2 py-1 cursor-pointer flex items-center gap-1 hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+                variant="outline"
+                size="sm"
+                className="text-[11px] uppercase tracking-[0.12em]"
               >
-                <X size={10} /> Cancel
-              </button>
+                <X size={12} /> Cancel
+              </Button>
             </div>
           </div>
         )}

@@ -214,6 +214,22 @@ const STATUS_ORDER: Record<TaskStatus, number> = {
   cancelled: 5,
 };
 
+const VALID_TASK_STATUSES = new Set<TaskStatus>(['backlog', 'todo', 'in-progress', 'review', 'done', 'cancelled']);
+const VALID_TASK_PRIORITIES = new Set<TaskPriority>(['critical', 'high', 'normal', 'low']);
+
+function normalizeTaskStatus(value: unknown): TaskStatus {
+  return typeof value === 'string' && VALID_TASK_STATUSES.has(value as TaskStatus)
+    ? (value as TaskStatus)
+    : DEFAULT_CONFIG.defaults.status;
+}
+
+function normalizeTaskPriority(value: unknown): TaskPriority {
+  if (value === 'medium') return 'normal';
+  return typeof value === 'string' && VALID_TASK_PRIORITIES.has(value as TaskPriority)
+    ? (value as TaskPriority)
+    : DEFAULT_CONFIG.defaults.priority;
+}
+
 const DEFAULT_CONFIG: KanbanBoardConfig = {
   columns: [
     { key: 'backlog', title: 'Backlog', visible: true },
@@ -317,6 +333,8 @@ export class KanbanStore {
     if (!data.config.defaults || !data.config.defaults.status) {
       data.config.defaults = structuredClone(DEFAULT_CONFIG.defaults);
     }
+    data.config.defaults.status = normalizeTaskStatus(data.config.defaults.status);
+    data.config.defaults.priority = normalizeTaskPriority(data.config.defaults.priority);
     if (!data.config.proposalPolicy) {
       data.config.proposalPolicy = 'confirm';
     }
@@ -329,6 +347,11 @@ export class KanbanStore {
     if (data.config.quickViewLimit === undefined) {
       data.config.quickViewLimit = DEFAULT_CONFIG.quickViewLimit;
     }
+    data.tasks = data.tasks.map((task) => ({
+      ...task,
+      status: normalizeTaskStatus(task.status),
+      priority: normalizeTaskPriority(task.priority),
+    }));
     data.meta.schemaVersion = CURRENT_SCHEMA_VERSION;
     return data;
   }

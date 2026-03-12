@@ -5,33 +5,40 @@ import type { TaskStatus, TaskPriority } from './types';
 import type { KanbanFilters } from './hooks/useKanban';
 import { ProposalInbox } from './ProposalInbox';
 import type { KanbanProposal } from './hooks/useProposals';
+import { TASK_PRIORITY_TONE, TASK_STATUS_TONE } from './tone';
 
 /* ── Stats chip ── */
-function StatChip({ label, count, accent }: { label: string; count: number; accent: string }) {
+function StatChip({ label, count, status }: { label: string; count: number; status: TaskStatus }) {
+  const tone = TASK_STATUS_TONE[status];
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-medium ${accent}`}>
+    <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-medium ${tone.statClass}`}>
       <span>{label}</span>
-      <span className="rounded-full bg-black/12 px-1.5 py-0.5 font-mono text-[10px] tabular-nums">{count}</span>
+      <span className="rounded-full bg-background/55 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-current">
+        {count}
+      </span>
     </span>
   );
 }
 
 /* ── Priority filter pill ── */
 function FilterPill({
+  priority,
   label,
   active,
   onClick,
 }: {
+  priority: TaskPriority;
   label: string;
   active: boolean;
   onClick: () => void;
 }) {
+  const tone = TASK_PRIORITY_TONE[priority];
   return (
     <button
       onClick={onClick}
       className={`h-8 rounded-full border px-3 text-[11px] font-medium transition-colors cursor-pointer ${
         active
-          ? 'border-primary/40 bg-primary/14 text-primary'
+          ? tone.badgeClass
           : 'border-border/70 bg-background/40 text-muted-foreground hover:border-primary/24 hover:text-foreground'
       }`}
     >
@@ -124,10 +131,10 @@ export const KanbanHeader = memo(function KanbanHeader({
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Tasks</h1>
             <div className="hidden sm:flex items-center gap-1.5">
-              <StatChip label="To Do" count={statusCounts.todo} accent="border-blue-400/20 bg-blue-400/8 text-blue-300" />
-              <StatChip label="In Progress" count={statusCounts['in-progress']} accent="border-cyan-400/20 bg-cyan-400/8 text-cyan-300" />
-              <StatChip label="Review" count={statusCounts.review} accent="border-amber-400/20 bg-amber-400/8 text-amber-300" />
-              <StatChip label="Done" count={statusCounts.done} accent="border-green-400/20 bg-green-400/8 text-green-300" />
+              <StatChip label="To Do" count={statusCounts.todo} status="todo" />
+              <StatChip label="In Progress" count={statusCounts['in-progress']} status="in-progress" />
+              <StatChip label="Review" count={statusCounts.review} status="review" />
+              <StatChip label="Done" count={statusCounts.done} status="done" />
             </div>
           </div>
         </div>
@@ -219,6 +226,7 @@ export const KanbanHeader = memo(function KanbanHeader({
           {(['critical', 'high', 'normal', 'low'] as TaskPriority[]).map(p => (
             <FilterPill
               key={p}
+              priority={p}
               label={p.charAt(0).toUpperCase() + p.slice(1)}
               active={filters.priority.includes(p)}
               onClick={() => togglePriority(p)}

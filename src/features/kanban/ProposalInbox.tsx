@@ -2,19 +2,20 @@ import { memo, useState, useEffect } from 'react';
 import { Check, X, ArrowUpCircle, PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { KanbanProposal } from './hooks/useProposals';
+import { TASK_STATUS_TONE } from './tone';
 
 /* ── Type badge ── */
 function TypeBadge({ type }: { type: 'create' | 'update' }) {
   if (type === 'create') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-300">
+      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${TASK_STATUS_TONE.done.badgeClass}`}>
         <PlusCircle size={10} />
         Create
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-1 text-[10px] font-semibold text-blue-300">
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${TASK_STATUS_TONE.todo.badgeClass}`}>
       <ArrowUpCircle size={10} />
       Update
     </span>
@@ -127,7 +128,7 @@ function ProposalRow({
           disabled={acting}
           title="Approve"
           aria-label="Approve proposal"
-          className="border-emerald-500/20 bg-emerald-500/8 text-emerald-300 hover:bg-emerald-500/14"
+          className="border-green/30 bg-green/8 text-green hover:bg-green/12"
         >
           <Check size={14} />
           <span className="hidden sm:inline">Approve</span>

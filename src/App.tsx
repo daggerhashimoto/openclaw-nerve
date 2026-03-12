@@ -105,22 +105,42 @@ export default function App({ onLogout }: AppProps) {
   })();
 
   // File browser collapse state for mobile optimization
-  const [fileBrowserCollapsed, setFileBrowserCollapsed] = useState(() => (
+  const [fileBrowserCollapsed, setFileBrowserCollapsedState] = useState(() => (
     initialCompactLayout ? true : initialDesktopFileBrowserCollapsed
   ));
-  const desktopFileBrowserCollapsedRef = useRef(initialDesktopFileBrowserCollapsed);
+  const [desktopFileBrowserCollapsed, setDesktopFileBrowserCollapsed] = useState(initialDesktopFileBrowserCollapsed);
 
-  // Sync localStorage when state changes
-  useEffect(() => {
+  // Responsive layout state (chat-first on smaller viewports)
+  const [isCompactLayout, setIsCompactLayout] = useState(initialCompactLayout);
+
+  const persistDesktopFileBrowserCollapsed = useCallback((collapsed: boolean) => {
+    setDesktopFileBrowserCollapsed(collapsed);
+
     try {
-      localStorage.setItem('nerve-file-tree-collapsed', String(fileBrowserCollapsed));
-    } catch { /* ignore */ }
-  }, [fileBrowserCollapsed]);
+      localStorage.setItem('nerve-file-tree-collapsed', String(collapsed));
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  const setFileBrowserCollapsed = useCallback((nextCollapsed: boolean | ((prev: boolean) => boolean)) => {
+    setFileBrowserCollapsedState(prevCollapsed => {
+      const resolvedCollapsed = typeof nextCollapsed === 'function'
+        ? nextCollapsed(prevCollapsed)
+        : nextCollapsed;
+
+      if (!isCompactLayout) {
+        persistDesktopFileBrowserCollapsed(resolvedCollapsed);
+      }
+
+      return resolvedCollapsed;
+    });
+  }, [isCompactLayout, persistDesktopFileBrowserCollapsed]);
 
   /** Toggle file browser collapse state (mobile). */
   const handleToggleFileBrowser = useCallback(() => {
     setFileBrowserCollapsed(prev => !prev);
-  }, []);
+  }, [setFileBrowserCollapsed]);
 
   // File browser state
   const {
@@ -172,9 +192,6 @@ export default function App({ onLogout }: AppProps) {
     dismissNotice,
   } = useGatewayRestart();
 
-  // Responsive layout state (chat-first on smaller viewports)
-  const [isCompactLayout, setIsCompactLayout] = useState(initialCompactLayout);
-
   // Command palette state
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -197,7 +214,7 @@ export default function App({ onLogout }: AppProps) {
     }
 
     try { localStorage.setItem('nerve:viewMode', mode); } catch { /* ignore */ }
-  }, [isCompactLayout]);
+  }, [isCompactLayout, setFileBrowserCollapsed]);
   const openTaskInBoard = useCallback((taskId: string) => {
     setPendingTaskId(taskId);
     setViewMode('kanban');
@@ -296,7 +313,7 @@ export default function App({ onLogout }: AppProps) {
   useEffect(() => {
     const currentCount = agentLogEntries.length;
     if (currentCount > prevLogCount.current) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- valid: UI feedback for external change
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: transient UI glow follows external log updates
       setLogGlow(true);
       const timer = setTimeout(() => setLogGlow(false), 500);
       prevLogCount.current = currentCount;
@@ -307,15 +324,15 @@ export default function App({ onLogout }: AppProps) {
 
   const handleCompactLayoutChange = useCallback((nextIsCompactLayout: boolean) => {
     setIsCompactLayout(nextIsCompactLayout);
-    setFileBrowserCollapsed(prevCollapsed => {
+    setFileBrowserCollapsedState(prevCollapsed => {
       if (nextIsCompactLayout) {
-        desktopFileBrowserCollapsedRef.current = prevCollapsed;
+        persistDesktopFileBrowserCollapsed(prevCollapsed);
         return true;
       }
 
-      return desktopFileBrowserCollapsedRef.current;
+      return desktopFileBrowserCollapsed;
     });
-  }, []);
+  }, [desktopFileBrowserCollapsed, persistDesktopFileBrowserCollapsed]);
 
   // Responsive mode: switch to chat-first layout on smaller screens
   useEffect(() => {

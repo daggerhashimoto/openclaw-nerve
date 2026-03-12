@@ -118,7 +118,13 @@ export function ConfirmDeleteDialog({
         <div className="py-4 space-y-3">
           <div className="cockpit-note" data-tone="danger">
             <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-destructive/80">
-              {isSection ? 'Section to delete:' : isDaily ? `Daily entry (${memoryDate}):` : 'Memory to delete:'}
+              {isSection
+                ? 'Section to delete:'
+                : isDaily
+                ? memoryDate
+                  ? `Daily entry (${memoryDate}):`
+                  : 'Daily entry to delete:'
+                : 'Memory to delete:'}
             </p>
             <p className="text-sm text-foreground">
               {isSection ? `§ ${displayText}` : isDaily ? `📅 ${displayText}` : displayText}

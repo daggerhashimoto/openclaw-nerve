@@ -330,6 +330,7 @@
       color-mix(in srgb, var(--color-secondary) 88%, transparent)
     );
   border: 1px solid color-mix(in srgb, var(--color-border) 84%, transparent);
+  border-radius: 10px !important;
   box-shadow:
     0 24px 58px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.035);
@@ -342,7 +343,7 @@
   gap: 6px;
   min-height: 36px;
   padding: 0 12px;
-  border-radius: 12px;
+  border-radius: 6px !important;
   border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
   background: color-mix(in srgb, var(--color-background) 42%, transparent);
   color: var(--color-muted-foreground);
@@ -382,7 +383,7 @@
   gap: 6px;
   min-height: 36px;
   padding: 0 12px;
-  border-radius: 12px;
+  border-radius: 6px !important;
   border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
   background: color-mix(in srgb, var(--color-background) 42%, transparent);
   color: var(--color-muted-foreground);

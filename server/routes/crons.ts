@@ -40,6 +40,7 @@ const cronJobSchema = z.object({
     payload: payloadSchema.optional(),
     delivery: deliverySchema,
     sessionTarget: z.enum(['main', 'isolated']).optional(),
+    sessionKey: z.string().max(200).optional(),
     enabled: z.boolean().optional(),
     notify: z.boolean().optional(),
     // Legacy compat — Nerve may send these flat fields
@@ -57,6 +58,7 @@ const cronPatchSchema = z.object({
     payload: payloadSchema.optional(),
     delivery: deliverySchema,
     sessionTarget: z.enum(['main', 'isolated']).optional(),
+    sessionKey: z.string().max(200).optional(),
     enabled: z.boolean().optional(),
     notify: z.boolean().optional(),
     prompt: z.string().max(10000).optional(),

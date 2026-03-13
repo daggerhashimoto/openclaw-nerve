@@ -599,7 +599,7 @@ export default function App({ onLogout }: AppProps) {
         </Suspense>
       </PanelErrorBoundary>
       
-      <div className="flex-1 flex gap-3 overflow-hidden min-h-0 px-2 pt-1.5 pb-2 sm:px-4 sm:pt-2 sm:pb-3">
+      <div className="flex-1 flex gap-3 overflow-hidden min-h-0 px-2 pt-1.5 pb-2 sm:px-4 sm:pt-2 sm:pb-2">
         {/* File tree — desktop inline, mobile drawer */}
         {!isCompactLayout && (
           <div className={viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0'}>

@@ -1,38 +1,45 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
-import { Search, Filter, Plus, X, Inbox } from 'lucide-react';
+import { Filter, Plus, X, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TaskStatus, TaskPriority } from './types';
 import type { KanbanFilters } from './hooks/useKanban';
 import { ProposalInbox } from './ProposalInbox';
 import type { KanbanProposal } from './hooks/useProposals';
+import { TASK_PRIORITY_TONE, TASK_STATUS_TONE } from './tone';
 
 /* ── Stats chip ── */
-function StatChip({ label, count, accent }: { label: string; count: number; accent: string }) {
+function StatChip({ label, count, status }: { label: string; count: number; status: TaskStatus }) {
+  const tone = TASK_STATUS_TONE[status];
   return (
-    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-sm ${accent}`}>
+    <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-medium ${tone.statClass}`}>
       <span>{label}</span>
-      <span className="bg-white/15 px-1 rounded-sm tabular-nums">{count}</span>
+      <span className="rounded-full bg-background/55 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-current">
+        {count}
+      </span>
     </span>
   );
 }
 
 /* ── Priority filter pill ── */
 function FilterPill({
+  priority,
   label,
   active,
   onClick,
 }: {
+  priority: TaskPriority;
   label: string;
   active: boolean;
   onClick: () => void;
 }) {
+  const tone = TASK_PRIORITY_TONE[priority];
   return (
     <button
       onClick={onClick}
-      className={`h-6 px-2 text-[10px] font-semibold rounded-full border transition-colors cursor-pointer ${
+      className={`h-8 rounded-full border px-3 text-[11px] font-medium transition-colors cursor-pointer ${
         active
-          ? 'bg-primary/20 text-primary border-primary/40'
-          : 'bg-transparent text-muted-foreground border-border/60 hover:text-foreground hover:border-muted-foreground'
+          ? tone.badgeClass
+          : 'border-border/70 bg-background/40 text-muted-foreground hover:border-primary/24 hover:text-foreground'
       }`}
     >
       {label}
@@ -112,36 +119,43 @@ export const KanbanHeader = memo(function KanbanHeader({
   const hasActiveFilters = filters.q || filters.priority.length > 0 || filters.assignee || filters.labels.length > 0;
 
   return (
-    <div className="shrink-0 px-4 pt-3 pb-2 space-y-2">
+    <div className="shrink-0 space-y-3 border-b border-border/50 px-4 py-4">
       {/* Row 1: title + stats + actions */}
       <div className="flex items-center gap-3 flex-wrap">
         {/* Left: title + stats */}
-        <h1 className="text-sm font-bold text-foreground tracking-wide uppercase">Tasks</h1>
-        <div className="hidden sm:flex items-center gap-1.5">
-          <StatChip label="To Do" count={statusCounts.todo} accent="text-blue-400" />
-          <StatChip label="In Progress" count={statusCounts['in-progress']} accent="text-cyan-400" />
-          <StatChip label="Review" count={statusCounts.review} accent="text-amber-400" />
-          <StatChip label="Done" count={statusCounts.done} accent="text-green-400" />
+        <div className="min-w-0 space-y-2">
+          <div className="cockpit-kicker">
+            <span className="text-primary">◆</span>
+            Task board
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Tasks</h1>
+            <div className="hidden sm:flex items-center gap-1.5">
+              <StatChip label="To Do" count={statusCounts.todo} status="todo" />
+              <StatChip label="In Progress" count={statusCounts['in-progress']} status="in-progress" />
+              <StatChip label="Review" count={statusCounts.review} status="review" />
+              <StatChip label="Done" count={statusCounts.done} status="done" />
+            </div>
+          </div>
         </div>
 
         <div className="flex-1" />
 
         {/* Right: search + filter toggle + create */}
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
           {/* Search */}
-          <div className="relative">
-            <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <div className="relative min-w-0 flex-1 sm:flex-none">
             <input
               type="text"
               value={searchValue}
               onChange={e => handleSearchChange(e.target.value)}
               placeholder="Search tasks…"
-              className="h-8 w-[180px] sm:w-[240px] pl-7 pr-2 text-xs rounded-md border border-input bg-transparent placeholder:text-muted-foreground text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
+              className="cockpit-input h-10 w-full min-w-0 px-4 pr-12 text-sm sm:w-[280px]"
             />
             {searchValue && (
               <button
                 onClick={() => handleSearchChange('')}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground"
               >
                 <X size={12} />
               </button>
@@ -154,6 +168,7 @@ export const KanbanHeader = memo(function KanbanHeader({
             size="icon-sm"
             onClick={() => setShowFilters(!showFilters)}
             title="Toggle filters"
+            className={showFilters ? 'border-primary/30 bg-primary/12 text-primary' : ''}
           >
             <Filter size={14} />
           </Button>
@@ -165,6 +180,7 @@ export const KanbanHeader = memo(function KanbanHeader({
               size="icon-sm"
               onClick={() => setShowInbox(!showInbox)}
               title="Agent proposals"
+              className={showInbox ? 'border-primary/30 bg-primary/12 text-primary' : ''}
             >
               <Inbox size={14} />
               {pendingProposalCount > 0 && (
@@ -176,11 +192,14 @@ export const KanbanHeader = memo(function KanbanHeader({
 
             {/* Inbox popover */}
             {showInbox && (
-              <div className="absolute right-0 top-full mt-1 w-[340px] bg-popover border border-border rounded-lg shadow-lg z-50">
-                <div className="px-3 py-2 border-b border-border/40">
-                  <span className="text-xs font-semibold text-foreground">Agent Proposals</span>
+              <div className="shell-panel absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] overflow-hidden rounded-3xl">
+                <div className="border-b border-border/50 bg-secondary/38 px-4 py-3">
+                  <span className="cockpit-kicker text-[9px]">
+                    <span className="text-primary">◆</span>
+                    Agent proposals
+                  </span>
                   {pendingProposalCount > 0 && (
-                    <span className="ml-2 text-[10px] text-muted-foreground">{pendingProposalCount} pending</span>
+                    <span className="ml-2 text-[11px] text-muted-foreground">{pendingProposalCount} pending</span>
                   )}
                 </div>
                 <ProposalInbox
@@ -202,11 +221,12 @@ export const KanbanHeader = memo(function KanbanHeader({
 
       {/* Row 2: Filter controls (collapsible) */}
       {showFilters && (
-        <div className="flex items-center gap-2 flex-wrap pt-1">
-          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Priority:</span>
+        <div className="cockpit-note flex flex-wrap items-center gap-2" data-tone="primary">
+          <span className="text-[11px] font-medium text-foreground">Priority</span>
           {(['critical', 'high', 'normal', 'low'] as TaskPriority[]).map(p => (
             <FilterPill
               key={p}
+              priority={p}
               label={p.charAt(0).toUpperCase() + p.slice(1)}
               active={filters.priority.includes(p)}
               onClick={() => togglePriority(p)}
@@ -216,7 +236,7 @@ export const KanbanHeader = memo(function KanbanHeader({
           {hasActiveFilters && (
             <button
               onClick={clearFilters}
-              className="text-[10px] text-muted-foreground hover:text-foreground underline ml-2"
+              className="ml-2 text-[11px] text-muted-foreground underline hover:text-foreground"
             >
               Clear all
             </button>

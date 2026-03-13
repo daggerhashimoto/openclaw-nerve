@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Globe, Plus, Trash2, Mic, Send, XCircle } from 'lucide-react';
+import { Globe, Plus, Trash2, Mic, Send, XCircle, Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 
 interface VoicePhrasesModalProps {
   open: boolean;
@@ -65,35 +66,40 @@ function PhraseList({
   placeholder: string;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       {phrases.map((phrase, i) => (
         <div key={phrase.id} className="flex items-center gap-2">
           <input
             type="text"
             value={phrase.value}
             onChange={e => onChange(i, e.target.value)}
-            className="flex-1 px-3 py-1.5 text-[12px] bg-background border border-border/60 focus:border-primary outline-none transition-colors rounded-sm"
+            className="cockpit-input h-10 flex-1 rounded-xl px-3 text-sm"
             placeholder={`${placeholder} ${i + 1}...`}
             dir="auto"
           />
           {phrases.length > 1 && (
-            <button
+            <Button
               type="button"
               onClick={() => onRemove(i)}
               aria-label={`Remove ${placeholder.toLowerCase()} ${i + 1}`}
-              className="p-1 text-muted-foreground hover:text-red-400 transition-colors"
+              variant="ghost"
+              size="icon-xs"
+              className="size-8 rounded-lg text-muted-foreground hover:text-destructive"
             >
               <Trash2 size={12} />
-            </button>
+            </Button>
           )}
         </div>
       ))}
-      <button
+      <Button
+        type="button"
         onClick={onAdd}
-        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+        variant="outline"
+        size="xs"
+        className="w-fit"
       >
         <Plus size={10} /> Add
-      </button>
+      </Button>
     </div>
   );
 }
@@ -194,7 +200,7 @@ export function VoicePhrasesModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="sm:max-w-md bg-background border-border">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Globe size={16} className="text-primary" />
@@ -206,37 +212,37 @@ export function VoicePhrasesModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5 max-h-[55vh] overflow-y-auto pr-1">
+        <div className="space-y-4 max-h-[58vh] overflow-y-auto pr-1">
             {/* Wake Phrase */}
-            <div className="space-y-2">
+            <section className="cockpit-surface p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <Mic size={12} className="text-blue-400" />
-                <label className="text-[11px] font-semibold tracking-wide uppercase text-blue-400">
+                <Mic size={14} className="text-primary" />
+                <label className="cockpit-field-label text-primary">
                   Wake Phrase
                 </label>
               </div>
-              <span className="text-[10px] text-muted-foreground block">
+              <span className="cockpit-field-hint block">
                 One wake phrase per language. Leave empty to use the default phrase for this language.
               </span>
               <input
                 type="text"
                 value={wakePhrase}
                 onChange={(e) => setWakePhrase(e.target.value)}
-                className="w-full px-3 py-1.5 text-[12px] bg-background border border-border/60 focus:border-primary outline-none transition-colors rounded-sm"
+                className="cockpit-input h-11 rounded-xl px-3 text-sm"
                 placeholder="Wake phrase"
                 dir="auto"
               />
-            </div>
+            </section>
 
             {/* Stop (Send) Phrases */}
-            <div className="space-y-2">
+            <section className="cockpit-surface p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Send size={12} className="text-green" />
-                <label className="text-[11px] font-semibold tracking-wide uppercase text-green">
+                <label className="cockpit-field-label text-green">
                   Send Phrases
                 </label>
               </div>
-              <span className="text-[10px] text-muted-foreground block">
+              <span className="cockpit-field-hint block">
                 Say any of these to send your message.
               </span>
               <PhraseList
@@ -246,17 +252,17 @@ export function VoicePhrasesModal({
                 onRemove={(i) => removePhrase('stop', i)}
                 placeholder="Send phrase"
               />
-            </div>
+            </section>
 
             {/* Cancel Phrases */}
-            <div className="space-y-2">
+            <section className="cockpit-surface p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <XCircle size={12} className="text-orange" />
-                <label className="text-[11px] font-semibold tracking-wide uppercase text-orange">
+                <label className="cockpit-field-label text-orange">
                   Cancel Phrases
                 </label>
               </div>
-              <span className="text-[10px] text-muted-foreground block">
+              <span className="cockpit-field-hint block">
                 Say any of these to discard your message.
               </span>
               <PhraseList
@@ -266,26 +272,32 @@ export function VoicePhrasesModal({
                 onRemove={(i) => removePhrase('cancel', i)}
                 placeholder="Cancel phrase"
               />
-            </div>
+            </section>
           </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter className="mt-1 items-center gap-2">
           {saveError && (
-            <span className="text-[10px] text-red-400 sm:mr-auto">{saveError}</span>
+            <span className="text-[11px] text-destructive sm:mr-auto">{saveError}</span>
           )}
-          <button
+          <Button
+            type="button"
             onClick={onClose}
-            className="px-4 py-2 text-[11px] font-mono uppercase tracking-wide border border-border/60 text-muted-foreground hover:border-muted-foreground transition-colors"
+            variant="outline"
+            size="sm"
+            disabled={saving}
           >
-            {languageCode ? 'Close' : 'Skip'}
-          </button>
-          <button
+            Cancel
+          </Button>
+          <Button
+            type="button"
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 text-[11px] font-mono uppercase tracking-wide bg-primary/20 border border-primary text-primary hover:bg-primary/30 transition-colors disabled:opacity-50"
+            size="sm"
+            className="min-w-[132px]"
           >
+            {saving && <Loader2 size={14} className="animate-spin" />}
             {saving ? 'Saving...' : 'Save Phrases'}
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

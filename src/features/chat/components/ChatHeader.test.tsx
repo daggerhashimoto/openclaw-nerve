@@ -1,4 +1,4 @@
-/** Tests for ChatHeader component - mobile file browser expand button. */
+/** Tests for ChatHeader component and collapsed explorer reopen control. */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ChatHeader } from './ChatHeader';
@@ -47,12 +47,12 @@ describe('ChatHeader', () => {
       />
     );
 
-    expect(screen.getByText('COMMS')).toBeInTheDocument();
+    expect(screen.getByText('Comms')).toBeInTheDocument();
     expect(screen.getByText('GPT-4')).toBeInTheDocument();
     expect(screen.getByText('Balanced')).toBeInTheDocument();
   });
 
-  it('shows mobile file browser expand button when provided', () => {
+  it('shows the file browser expand button when provided', () => {
     const mockUseModelEffort = vi.mocked(useModelEffort);
     mockUseModelEffort.mockReturnValue(defaultMockHook);
 
@@ -71,7 +71,7 @@ describe('ChatHeader', () => {
     expect(expandButton).toHaveAttribute('title', 'Open file explorer (Ctrl+B)');
   });
 
-  it('does not show mobile expand button when not provided', () => {
+  it('does not show the expand button when not provided', () => {
     const mockUseModelEffort = vi.mocked(useModelEffort);
     mockUseModelEffort.mockReturnValue(defaultMockHook);
 

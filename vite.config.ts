@@ -6,11 +6,12 @@ import { readFileSync, existsSync } from 'fs'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
-// HTTPS is enabled only if both cert files exist
+// HTTPS is enabled only if both cert files exist, unless explicitly disabled for tunneled/local dev.
 const certPath = './certs/cert.pem'
 const keyPath = './certs/key.pem'
 const certsExist = existsSync(certPath) && existsSync(keyPath)
-const httpsConfig = certsExist
+const httpsEnabled = process.env.VITE_DISABLE_HTTPS !== 'true' && certsExist
+const httpsConfig = httpsEnabled
   ? { key: readFileSync(keyPath), cert: readFileSync(certPath) }
   : undefined
 

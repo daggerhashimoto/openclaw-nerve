@@ -43,6 +43,33 @@ interface SettingsContextValue {
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
+const FONT_REFRESH_STORAGE_KEY = 'nerve:font-refresh-20260312';
+
+function resolveInitialFont(): FontName {
+  const saved = localStorage.getItem('oc-font');
+  const hasRefreshedFont = localStorage.getItem(FONT_REFRESH_STORAGE_KEY) === 'true';
+
+  if (!hasRefreshedFont) {
+    const shouldAdoptInstrumentSans =
+      saved === null ||
+      saved === 'inter' ||
+      saved === 'system' ||
+      saved === 'jetbrains-mono';
+
+    localStorage.setItem(FONT_REFRESH_STORAGE_KEY, 'true');
+
+    if (shouldAdoptInstrumentSans) {
+      localStorage.setItem('oc-font', 'instrument-sans');
+      return 'instrument-sans';
+    }
+
+    if (saved && fontNames.includes(saved as FontName)) {
+      return saved as FontName;
+    }
+  }
+
+  return saved && fontNames.includes(saved as FontName) ? saved as FontName : 'instrument-sans';
+}
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [soundEnabled, setSoundEnabled] = useState(localStorage.getItem('oc-sound') === 'true');
@@ -80,10 +107,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const saved = localStorage.getItem('oc-theme') as ThemeName | null;
     return saved && themeNames.includes(saved) ? saved : 'ayu-dark';
   });
-  const [font, setFontState] = useState<FontName>(() => {
-    const saved = localStorage.getItem('oc-font') as FontName | null;
-    return saved && fontNames.includes(saved) ? saved : 'jetbrains-mono';
-  });
+  const [font, setFontState] = useState<FontName>(resolveInitialFont);
   const { speak } = useTTS(soundEnabled, ttsProvider, ttsModel || undefined);
   const wakeWordToggleRef = useRef<(() => void) | null>(null);
 

@@ -536,10 +536,10 @@ describe('FileTreePanel', () => {
       expect(screen.getByText('package.json')).toBeInTheDocument();
     });
 
-    it('shows collapsed sidebar on desktop when collapsed', () => {
+    it('hides completely on desktop when collapsed', () => {
       mockUseFileTree.mockReturnValue(defaultMockHook);
 
-      render(
+      const { container } = render(
         <FileTreePanel
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
@@ -550,10 +550,10 @@ describe('FileTreePanel', () => {
         />
       );
 
-      // Should show collapsed panel with expand button
-      expect(screen.getByRole('button', { name: /open file explorer/i })).toBeInTheDocument();
+      // Reopen control lives in the chat header, so the panel itself should disappear.
       expect(screen.queryByText('src')).not.toBeInTheDocument();
       expect(screen.queryByText('package.json')).not.toBeInTheDocument();
+      expect(container.firstChild).toBeNull();
     });
 
     it('hides completely on mobile when collapsed', () => {
@@ -596,7 +596,7 @@ describe('FileTreePanel', () => {
       expect(screen.getByText('package.json')).toBeInTheDocument();
     });
 
-    it('calls onCollapseChange when expand button is clicked', () => {
+    it('calls onCollapseChange when the close button is clicked', () => {
       mockUseFileTree.mockReturnValue(defaultMockHook);
 
       render(
@@ -604,22 +604,22 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
-          collapsed={true}
+          collapsed={false}
           onCollapseChange={mockOnCollapseChange}
           isCompactLayout={false}
         />
       );
 
-      const expandButton = screen.getByRole('button', { name: /open file explorer/i });
-      fireEvent.click(expandButton);
+      const collapseButton = screen.getByRole('button', { name: /close file explorer/i });
+      fireEvent.click(collapseButton);
 
-      expect(mockOnCollapseChange).toHaveBeenCalledWith(false);
+      expect(mockOnCollapseChange).toHaveBeenCalledWith(true);
     });
 
-    it('switches to collapsed desktop UI when collapsed prop changes', () => {
+    it('hides completely on desktop when collapsed prop changes', () => {
       mockUseFileTree.mockReturnValue(defaultMockHook);
 
-      const { rerender } = render(
+      const { container, rerender } = render(
         <FileTreePanel
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
@@ -633,7 +633,7 @@ describe('FileTreePanel', () => {
       // Initially should show normal width
       expect(screen.getByText('src')).toBeInTheDocument();
 
-      // Collapse should switch to desktop collapsed sidebar state
+      // Collapse should fully hide the panel. Reopen lives in the chat header.
       rerender(
         <FileTreePanel
           onOpenFile={mockOnOpenFile}
@@ -645,9 +645,8 @@ describe('FileTreePanel', () => {
         />
       );
 
-      // Should show collapsed state
-      expect(screen.getByRole('button', { name: /open file explorer/i })).toBeInTheDocument();
       expect(screen.queryByText('src')).not.toBeInTheDocument();
+      expect(container.firstChild).toBeNull();
     });
   });
 });

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, type ReactNode } from 'react';
 
 /** Props for {@link ResizablePanels}. */
 interface ResizablePanelsProps {
@@ -18,6 +18,10 @@ interface ResizablePanelsProps {
   leftClassName?: string;
   /** Additional class names for the right pane wrapper. */
   rightClassName?: string;
+  /** Fixed pixel width for the right pane. When set, the left pane absorbs remaining width. */
+  rightWidthPx?: number | null;
+  /** Reports the computed right pane width while ratio mode is active. */
+  onRightWidthChange?: (width: number) => void;
 }
 
 /**
@@ -36,6 +40,8 @@ export function ResizablePanels({
   maxLeftPercent = 75,
   leftClassName = '',
   rightClassName = '',
+  rightWidthPx = null,
+  onRightWidthChange,
 }: ResizablePanelsProps) {
   const [localPercent, setLocalPercent] = useState(leftPercent);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,6 +54,25 @@ export function ResizablePanels({
       setLocalPercent(leftPercent);
     }
   }, [leftPercent]);
+
+  useLayoutEffect(() => {
+    if (!containerRef.current || rightWidthPx !== null || !onRightWidthChange) return;
+
+    const reportWidth = () => {
+      if (!containerRef.current) return;
+      const containerWidth = containerRef.current.getBoundingClientRect().width;
+      const width = containerWidth * ((100 - localPercent) / 100);
+      onRightWidthChange(width);
+    };
+
+    reportWidth();
+
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(() => reportWidth());
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [localPercent, onRightWidthChange, rightWidthPx]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -94,26 +119,31 @@ export function ResizablePanels({
       {/* Left panel */}
       <div
         className={`min-h-0 overflow-hidden ${leftClassName}`}
-        style={{ flex: `${localPercent} 1 0%`, minWidth: 0 }}
+        style={rightWidthPx !== null ? { flex: '1 1 auto', minWidth: 0 } : { flex: `${localPercent} 1 0%`, minWidth: 0 }}
       >
         {left}
       </div>
       
       {/* Resize handle */}
-      <div
-        onMouseDown={handleMouseDown}
-        onDoubleClick={handleDoubleClick}
-        className="w-1 bg-border hover:bg-primary/50 active:bg-primary/70 transition-colors cursor-col-resize shrink-0 group relative"
-        title="Drag to resize • Double-click to reset"
-      >
-        {/* Visual feedback line on hover */}
-        <div className="absolute inset-y-0 -left-0.5 -right-0.5 opacity-0 group-hover:opacity-100 bg-primary/20 transition-opacity pointer-events-none" />
-      </div>
+      {rightWidthPx === null ? (
+        <div
+          onMouseDown={handleMouseDown}
+          onDoubleClick={handleDoubleClick}
+          className="group relative flex w-3 cursor-col-resize shrink-0 items-stretch justify-center"
+          title="Drag to resize. Double click to reset"
+        >
+          <div className="pointer-events-none my-3 w-px rounded-full bg-border transition-colors group-hover:bg-primary/55 group-hover:shadow-[0_0_16px_rgba(0,0,0,0.22)] group-active:bg-primary/70" />
+        </div>
+      ) : (
+        <div className="relative flex w-3 shrink-0 items-stretch justify-center" aria-hidden="true">
+          <div className="pointer-events-none my-3 w-px rounded-full bg-border" />
+        </div>
+      )}
       
       {/* Right panel */}
       <div
         className={`min-h-0 overflow-hidden ${rightClassName}`}
-        style={{ flex: `${100 - localPercent} 1 0%`, minWidth: 0 }}
+        style={rightWidthPx !== null ? { flex: '0 0 auto', width: `${Math.max(0, rightWidthPx)}px`, minWidth: 0 } : { flex: `${100 - localPercent} 1 0%`, minWidth: 0 }}
       >
         {right}
       </div>

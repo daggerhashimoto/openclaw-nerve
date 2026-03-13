@@ -21,10 +21,10 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  connected: 'CONNECTED',
-  connecting: 'CONNECTING...',
-  reconnecting: 'RECONNECTING...',
-  disconnected: 'DISCONNECTED',
+  connected: 'Connected',
+  connecting: 'Connecting...',
+  reconnecting: 'Reconnecting...',
+  disconnected: 'Disconnected',
 };
 
 /** Settings section for gateway URL, auth token, reconnection, and gateway restart. */
@@ -42,77 +42,95 @@ export function ConnectionSettings({
 
   return (
     <div className="space-y-4">
-      <h3 className="text-[10px] font-bold tracking-[1.5px] uppercase text-muted-foreground flex items-center gap-2">
-        <span className="text-primary">◆</span>
-        CONNECTION
-      </h3>
+      <div className="space-y-1.5">
+        <span className="cockpit-kicker">
+          <span className="text-primary">◆</span>
+          Gateway
+        </span>
+      </div>
 
       {/* Status indicator */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-background border border-border/60">
-        <span className={`w-2 h-2 shrink-0 ${STATUS_COLORS[connectionState]}`} />
-        <span className="text-[11px] font-mono tracking-wide">{STATUS_LABELS[connectionState]}</span>
+      <div className="cockpit-row">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${STATUS_COLORS[connectionState]}`} />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">Gateway status</p>
+            <p className="text-xs text-muted-foreground">{STATUS_LABELS[connectionState]}</p>
+          </div>
+        </div>
         <button
           onClick={onReconnect}
           disabled={connectionState === 'connecting' || connectionState === 'reconnecting'}
-          className="ml-auto p-1 text-muted-foreground hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
-          title="Reconnect"
+          className="cockpit-toolbar-button w-full justify-center sm:ml-auto sm:w-auto"
+          title="Reconnect to gateway"
         >
-          <RefreshCw size={12} className={connectionState === 'reconnecting' ? 'animate-spin' : ''} />
+          <RefreshCw size={14} className={connectionState === 'reconnecting' ? 'animate-spin' : ''} />
+          <span className="hidden sm:inline">Reconnect</span>
         </button>
       </div>
 
       {/* Gateway URL */}
-      <label className="flex flex-col gap-1.5">
-        <span className="text-[10px] text-muted-foreground uppercase tracking-[1px]">Gateway URL</span>
+      <label className="cockpit-field">
+        <span className="cockpit-field-label">Gateway URL</span>
         <input
           type="text"
           value={url}
           onChange={e => onUrlChange(e.target.value)}
           spellCheck={false}
-          className="bg-background border border-border/60 px-3 py-2 text-[12px] font-mono text-foreground focus:border-primary outline-none"
+          className="cockpit-input cockpit-input-mono"
           placeholder={DEFAULT_GATEWAY_WS}
         />
+        <span className="cockpit-field-hint">Use the local gateway or paste a remote relay endpoint.</span>
       </label>
 
       {/* Auth Token */}
-      <label className="flex flex-col gap-1.5">
-        <span className="text-[10px] text-muted-foreground uppercase tracking-[1px]">Auth Token</span>
+      <label className="cockpit-field">
+        <span className="cockpit-field-label">Auth Token</span>
         <div className="relative">
           <input
             type={showToken ? 'text' : 'password'}
             value={token}
             onChange={e => onTokenChange(e.target.value)}
             spellCheck={false}
-            className="w-full bg-background border border-border/60 px-3 py-2 pr-10 text-[12px] font-mono text-foreground focus:border-primary outline-none"
+            className="cockpit-input cockpit-input-mono pr-12"
             placeholder="••••••••"
           />
           <button
             type="button"
             onClick={() => setShowToken(!showToken)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-primary"
+            className="cockpit-toolbar-button absolute right-2 top-1/2 min-h-8 -translate-y-1/2 px-2.5"
+            title={showToken ? 'Hide token' : 'Show token'}
           >
             {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
         </div>
+        <span className="cockpit-field-hint">Leave blank for unsecured local development.</span>
       </label>
       {/* Gateway Service */}
       {onGatewayRestart && (
         <>
-          <div className="border-t border-border/40 my-4" />
-          <h3 className="text-[10px] font-bold tracking-[1.5px] uppercase text-muted-foreground flex items-center gap-2">
-            <span className="text-primary">◆</span>
-            GATEWAY SERVICE
-          </h3>
-          <button
-            type="button"
-            onClick={onGatewayRestart}
-            disabled={gatewayRestarting}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-[11px] font-mono text-muted-foreground hover:text-orange-400 hover:bg-orange-400/10 border border-border hover:border-orange-400/30 rounded-sm transition-colors uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <RotateCw size={12} aria-hidden="true" className={gatewayRestarting ? 'animate-spin' : ''} />
-            {gatewayRestarting ? 'Restarting…' : 'Restart Gateway'}
-          </button>
-
+          <div className="cockpit-divider my-2" />
+          <div className="cockpit-row">
+            <div className="min-w-0 flex-1">
+              <span className="cockpit-kicker text-[9px]">
+                <span className="text-primary">◆</span>
+                Gateway Service
+              </span>
+              <p className="mt-2 text-sm font-medium text-foreground">Restart the local gateway</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Useful when pairing, models, or background workers need a clean reload.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onGatewayRestart}
+              disabled={gatewayRestarting}
+              className="cockpit-toolbar-button w-full justify-center sm:w-auto"
+            >
+              <RotateCw size={14} aria-hidden="true" className={gatewayRestarting ? 'animate-spin' : ''} />
+              {gatewayRestarting ? 'Restarting...' : 'Restart'}
+            </button>
+          </div>
         </>
       )}
     </div>

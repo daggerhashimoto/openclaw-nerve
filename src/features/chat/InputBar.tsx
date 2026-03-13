@@ -367,30 +367,32 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     <>
       {/* Drag overlay — rendered by parent via dragHandlers */}
       {isDragging && (
-        <div className="absolute inset-0 z-50 bg-primary/10 border-2 border-dashed border-primary flex items-center justify-center pointer-events-none">
-          <span className="text-primary font-bold text-lg">Drop image here</span>
+        <div className="absolute inset-0 z-50 flex items-center justify-center border-2 border-dashed border-primary/60 bg-primary/12 backdrop-blur-sm pointer-events-none">
+          <div className="cockpit-note" data-tone="primary">
+            Drop images to attach them to the next message.
+          </div>
         </div>
       )}
 
       {/* Pending images preview */}
       {pendingImages.length > 0 && (
-        <div className="flex gap-2 px-4 py-2 bg-card border-t border-border flex-wrap">
+        <div className="flex flex-wrap gap-3 border-t border-border/60 bg-card/72 px-4 py-3">
           {pendingImages.map(img => (
-            <div key={img.id} className="relative group">
-              <img src={img.preview} alt={img.name} className="w-16 h-16 object-cover rounded border border-border" />
+            <div key={img.id} className="relative group rounded-2xl border border-border/75 bg-background/60 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <img src={img.preview} alt={img.name} className="h-16 w-16 rounded-xl border border-border/70 object-cover" />
               <button
                 onClick={() => removePendingImage(img.id)}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center text-[10px] opacity-80 hover:opacity-100 cursor-pointer"
+                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-white opacity-85 transition-opacity hover:opacity-100 cursor-pointer"
               >
                 <X size={10} />
               </button>
-              <span className="text-[9px] text-muted-foreground block text-center truncate max-w-[64px]">{img.name}</span>
+              <span className="mt-2 block max-w-[64px] truncate text-center text-[10px] text-muted-foreground">{img.name}</span>
             </div>
           ))}
         </div>
       )}
       {attachmentError && (
-        <div className="px-4 pb-1.5 text-[10px] text-destructive bg-card">{attachmentError}</div>
+        <div className="border-t border-border/60 bg-card/72 px-4 py-2 text-[11px] text-destructive">{attachmentError}</div>
       )}
       <input
         ref={fileInputRef}
@@ -402,23 +404,28 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       />
       {/* Input row */}
       <div
-        className={`flex items-center gap-0 border-t shrink-0 bg-card focus-within:border-t-primary/40 focus-within:shadow-[0_-1px_8px_rgba(232,168,56,0.1)] ${voiceState === 'recording' ? 'border-t-red-500 shadow-[0_-1px_12px_rgba(239,68,68,0.3)]' : 'border-border'}`}
+        className={`flex items-end gap-1.5 border-t px-2.5 py-2.5 shrink-0 bg-card/92 focus-within:border-t-primary/40 focus-within:shadow-[0_-1px_10px_rgba(232,168,56,0.12)] sm:gap-2 sm:px-3 sm:py-3 ${voiceState === 'recording' ? 'border-t-red-500 shadow-[0_-1px_12px_rgba(239,68,68,0.24)]' : 'border-border/70'}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         {voiceState === 'recording' ? (
-          <span className="pl-3.5 shrink-0 flex items-center gap-1.5">
+          <span className="cockpit-badge shrink-0 self-center" data-tone="danger">
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             <Mic size={14} className="text-red-500" />
           </span>
         ) : voiceState === 'transcribing' ? (
-          <span className="pl-3.5 shrink-0 flex items-center gap-1.5">
+          <span className="cockpit-badge shrink-0 self-center" data-tone="primary">
             <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
             <Mic size={14} className="text-primary" />
           </span>
         ) : (
-          <span className="text-primary text-base font-bold pl-3.5 shrink-0 animate-prompt-pulse">›</span>
+          <span
+            className="flex h-10 w-5 shrink-0 select-none items-center justify-center self-center font-mono text-[17px] font-semibold leading-none text-primary/78"
+            aria-hidden="true"
+          >
+            &gt;
+          </span>
         )}
         {/* Uncontrolled textarea — value is read/written via inputRef.
             This is intentional: useTabCompletion and history navigation
@@ -432,11 +439,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           placeholder="Message..."
           aria-label="Message input"
           rows={1}
-          className="flex-1 font-mono text-[13px] bg-transparent text-foreground border-none px-2.5 py-3 resize-none outline-none min-h-[42px] max-h-[160px]"
+          className="min-h-[46px] max-h-[160px] flex-1 resize-none border-none bg-transparent px-1 py-2 text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[15px]"
         />
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="bg-transparent border-none text-muted-foreground hover:text-primary cursor-pointer px-2 self-stretch flex items-center"
+          className="cockpit-toolbar-button min-h-11 self-stretch px-3"
           title="Attach image"
           aria-label="Attach image"
         >
@@ -447,20 +454,31 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           disabled={isGenerating}
           aria-label={isGenerating ? "Generating response..." : "Send message"}
           aria-busy={isGenerating}
-          className={`send-btn font-mono bg-primary text-primary-foreground border-none px-4.5 text-sm cursor-pointer font-bold self-stretch flex items-center justify-center transition-transform ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110 active:scale-95'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
+          className={`send-btn flex min-h-11 items-center justify-center gap-2 self-stretch rounded-2xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-transform sm:px-4 ${isGenerating ? 'cursor-not-allowed opacity-50' : 'hover:-translate-y-px hover:bg-primary/95 active:scale-95'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
         >
           {isGenerating ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ArrowUp size={16} aria-hidden="true" />}
+          <span className="hidden sm:inline">{isGenerating ? 'Sending' : 'Send'}</span>
         </button>
       </div>
-      <div className="text-[10px] text-muted-foreground px-4 pb-1.5 pl-10 bg-card">
+      <div className="bg-card/92 px-3 pb-2 text-[11px] text-muted-foreground sm:px-4">
         {voiceState === 'recording'
-          ? 'Recording… Left Shift to send · Double Left Shift to discard'
+          ? (
+            <>
+              <span className="sm:hidden">Recording… Shift to send · Double Shift to discard</span>
+              <span className="hidden sm:inline">Recording… Left Shift to send · Double Left Shift to discard</span>
+            </>
+          )
           : voiceState === 'transcribing'
           ? 'Transcribing…'
-          : 'Enter or ⌘Enter to send · Shift+Enter for newline · Double Left Shift for voice · Ctrl+F search'}
+          : (
+            <>
+              <span className="sm:hidden">Enter to send · Shift+Enter newline · Double Shift voice</span>
+              <span className="hidden sm:inline">Enter or ⌘Enter to send · Shift+Enter for newline · Double Left Shift for voice · Ctrl+F search</span>
+            </>
+          )}
       </div>
       {voiceError && (
-        <div className="text-[10px] text-destructive px-4 pb-1.5 pl-10 bg-card" role="alert">
+        <div className="bg-card/92 px-4 pb-3 text-[11px] text-destructive" role="alert">
           {voiceError}
         </div>
       )}

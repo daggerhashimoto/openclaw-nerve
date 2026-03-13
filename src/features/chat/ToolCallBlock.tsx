@@ -47,15 +47,15 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
   return (
     <div className="msg msg-tool relative max-w-full break-words mx-4 my-1.5">
       <Collapsible open={!isCollapsed} onOpenChange={() => onToggleCollapse(index)}>
-        <Card className="py-0 gap-0 rounded-lg border-border/40 bg-card/60 shadow-none overflow-hidden border-l-[3px] border-l-primary/60">
-          <CollapsibleTrigger className="w-full flex items-center gap-2 px-3 py-2 text-left cursor-pointer hover:bg-foreground/[0.03] transition-colors">
+        <Card className="overflow-hidden rounded-2xl border-border/50 bg-card/62 py-0 shadow-none">
+          <CollapsibleTrigger className="flex w-full items-center gap-2 px-3.5 py-3 text-left transition-colors cursor-pointer hover:bg-primary/[0.04]">
             <ChevronRight size={14} className={`text-muted-foreground shrink-0 transition-transform duration-200 ${!isCollapsed ? 'rotate-90' : ''}`} />
-            <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-sm bg-muted-foreground/20 text-muted-foreground shrink-0">SYSTEM</span>
-            <span className="text-[11px] font-mono text-muted-foreground truncate flex-1">{highlightText(toolPreview, searchQuery)}</span>
-            <span className="text-muted-foreground text-[10px] shrink-0">{timeStr}</span>
+            <span className="cockpit-badge shrink-0">Tool</span>
+            <span className="flex-1 truncate text-[12px] text-foreground/78">{highlightText(toolPreview, searchQuery)}</span>
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{timeStr}</span>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <CardContent className="px-3 py-2 border-t border-border/30 bg-background/50">
+            <CardContent className="border-t border-border/40 bg-background/42 px-3 py-3">
               {editBlocks.length > 0 ? (
                 <div className="space-y-2">
                   {editBlocks.map((block, i) => (

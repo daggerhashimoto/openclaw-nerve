@@ -48,17 +48,43 @@ export function InlineSelect({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const listboxRef = useRef<HTMLUListElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
+
+  const getHiddenMenuStyle = useCallback((): React.CSSProperties => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    const viewportPadding = 8;
+
+    return {
+      position: 'fixed',
+      left: rect?.left ?? viewportPadding,
+      top: (rect?.bottom ?? viewportPadding) + 4,
+      minWidth: rect?.width,
+      maxWidth: window.innerWidth - viewportPadding * 2,
+      maxHeight: 320,
+      visibility: 'hidden',
+      zIndex: 9999,
+    };
+  }, []);
 
   const openWithHighlight = useCallback(() => {
     const currentIndex = options.findIndex((o) => o.value === value);
     setHighlightedIndex(currentIndex >= 0 ? currentIndex : 0);
+
+    if (!inline) {
+      setMenuStyle(getHiddenMenuStyle());
+    }
+
     setOpen(true);
-  }, [options, value]);
+  }, [getHiddenMenuStyle, inline, options, value]);
 
   const close = useCallback(() => {
     setHighlightedIndex(-1);
     setOpen(false);
-  }, []);
+    if (!inline) {
+      setMenuStyle({});
+    }
+  }, [inline]);
 
   const onPointerDown = useCallback((event: PointerEvent) => {
     const target = event.target as Node;
@@ -135,32 +161,47 @@ export function InlineSelect({
     ? `inline-select-option-${options[highlightedIndex]?.value}`
     : undefined;
 
-  // ── Fixed-position dropdown to escape overflow:hidden/auto ancestors ──
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
-
   useLayoutEffect(() => {
     if (open && triggerRef.current && !inline) {
       const rect = triggerRef.current.getBoundingClientRect();
-      if (dropUp) {
+      const menuEl = listboxRef.current;
+      const viewportPadding = 8;
+      const menuWidth = Math.max(rect.width, menuEl?.offsetWidth ?? 0);
+      const maxLeft = Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding);
+      const left = Math.min(Math.max(rect.left, viewportPadding), maxLeft);
+      const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+      const spaceAbove = rect.top - viewportPadding;
+      const shouldDropUp = dropUp || (spaceBelow < 220 && spaceAbove > spaceBelow);
+      const availableHeight = Math.max(
+        120,
+        Math.min(320, shouldDropUp ? spaceAbove - 4 : spaceBelow - 4),
+      );
+
+      if (shouldDropUp) {
         setMenuStyle({
           position: 'fixed',
-          left: rect.left,
+          left,
           bottom: window.innerHeight - rect.top + 4,
           minWidth: rect.width,
+          maxWidth: window.innerWidth - viewportPadding * 2,
+          maxHeight: availableHeight,
+          visibility: 'visible',
           zIndex: 9999,
         });
       } else {
         setMenuStyle({
           position: 'fixed',
-          left: rect.left,
+          left,
           top: rect.bottom + 4,
           minWidth: rect.width,
+          maxWidth: window.innerWidth - viewportPadding * 2,
+          maxHeight: availableHeight,
+          visibility: 'visible',
           zIndex: 9999,
         });
       }
     }
-  }, [open, dropUp, inline]);
+  }, [open, dropUp, inline, options.length, value]);
 
   const menuContent = open && !disabled ? (
     <ul
@@ -185,7 +226,7 @@ export function InlineSelect({
             role="option"
             aria-selected={active}
             className={cn(
-              'w-full text-left px-2 py-1 text-[10px] font-mono cursor-pointer',
+              'w-full text-left px-2 py-1 text-[11px] font-mono cursor-pointer sm:text-[10px]',
               highlighted ? 'bg-secondary/80 text-foreground' : active ? 'bg-secondary text-foreground' : 'text-foreground/80',
               'hover:bg-secondary/80 hover:text-foreground'
             )}
@@ -218,7 +259,7 @@ export function InlineSelect({
         title={title}
         onClick={() => open ? close() : openWithHighlight()}
         onKeyDown={handleKeyDown}
-        className={cn('font-mono text-[10px] bg-background/40 text-foreground/80 border border-border/60 px-1.5 py-0.5 outline-none disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1 min-w-0', triggerClassName)}
+        className={cn('font-mono text-[11px] bg-background/40 text-foreground/80 border border-border/60 px-1.5 py-0.5 outline-none disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1 min-w-0 sm:text-[10px]', triggerClassName)}
       >
         <span className="truncate">{selected?.label ?? value}</span>
         <span className="text-muted-foreground">▾</span>

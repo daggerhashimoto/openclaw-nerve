@@ -85,10 +85,10 @@ export function createCommands(actions: CommandActions): Command[] {
     },
     {
       id: 'new-session',
-      label: 'Spawn subagent',
+      label: 'Create session',
       action: actions.onNewSession,
       category: 'actions',
-      keywords: ['new', 'session', 'agent', 'spawn', 'create', 'launch'],
+      keywords: ['new', 'session', 'agent', 'subagent', 'spawn', 'create', 'launch'],
     },
     {
       id: 'reset',

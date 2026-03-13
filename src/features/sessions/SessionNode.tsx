@@ -37,6 +37,7 @@ interface SessionNodeProps {
   label: string;
   isExpanded: boolean;
   hasChildren: boolean;
+  isRootAgent: boolean;
   isSubagent: boolean;
   isCron: boolean;
   isCronRun: boolean;
@@ -44,7 +45,6 @@ interface SessionNodeProps {
   isRenaming: boolean;
   renameValue: string;
   renameInputRef: React.RefObject<HTMLInputElement | null>;
-  agentName: string;
   granularStatus?: GranularAgentState;
   onSelect: (key: string) => void;
   onToggleExpand: (key: string) => void;
@@ -70,6 +70,7 @@ function arePropsEqual(prev: SessionNodeProps, next: SessionNodeProps): boolean 
     prev.label === next.label &&
     prev.isExpanded === next.isExpanded &&
     prev.hasChildren === next.hasChildren &&
+    prev.isRootAgent === next.isRootAgent &&
     prev.isSubagent === next.isSubagent &&
     prev.isCron === next.isCron &&
     prev.isCronRun === next.isCronRun &&
@@ -91,6 +92,7 @@ export const SessionNode = memo(function SessionNode({
   label,
   isExpanded,
   hasChildren,
+  isRootAgent,
   isSubagent,
   isCron,
   isCronRun,
@@ -141,7 +143,7 @@ export const SessionNode = memo(function SessionNode({
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsRef = useRef<HTMLDivElement>(null);
 
-  const canRenameDelete = isSubagent || isCron || isCronRun;
+  const canRenameDelete = isRootAgent || isSubagent || isCron || isCronRun;
   const hasAbortAction = Boolean(onAbort && running);
   const hasRenameAction = Boolean(canRenameDelete && onStartRename && !isRenaming);
   const hasDeleteAction = Boolean(canRenameDelete && onDelete);

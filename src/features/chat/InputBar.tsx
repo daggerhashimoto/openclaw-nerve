@@ -6,6 +6,7 @@ import { useInputHistory } from '@/hooks/useInputHistory';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '@/lib/constants';
+import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
 import { compressImage } from './image-compress';
 import type { ImageAttachment } from './types';
 
@@ -35,23 +36,16 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const inputHistory = useInputHistory();
 
   // Tab completion for session names
-  const { sessions, agentName: ctxAgentName } = useSessionContext();
+  const { sessions, currentSession, agentName: ctxAgentName } = useSessionContext();
   const { liveTranscriptionPreview, sttInputMode, sttProvider } = useSettings();
   const getSessionLabels = useMemo(() => {
     // Build a closure that returns current session labels
-    const labels = sessions.map((s) => {
-      const sessionKey = s.sessionKey || s.key || s.id || '';
-      return (
-        s.label ||
-        (sessionKey === 'agent:main:main'
-          ? `${ctxAgentName} (main)`
-          : sessionKey.split(':').pop()?.slice(0, 10) || sessionKey)
-      );
-    });
+    const labels = sessions.map((session) => getSessionDisplayLabel(session, ctxAgentName));
     return () => labels;
   }, [sessions, ctxAgentName]);
 
   const { handleKeyDown: handleTabKey, reset: resetTabCompletion } = useTabCompletion(getSessionLabels, inputRef);
+  const hasActiveSession = Boolean(currentSession);
 
   // Expose focus method to parent
   useImperativeHandle(ref, () => ({
@@ -250,6 +244,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   }, [wakeWordEnabled, toggleWakeWord, onWakeWordState]);
 
   const handleSend = () => {
+    if (!hasActiveSession) {
+      setAttachmentError('Create or select an agent session before sending a message.');
+      setSendError(true);
+      setTimeout(() => setSendError(false), 400);
+      return;
+    }
     const text = inputRef.current?.value.trim();
     if (!text && pendingImages.length === 0) {
       // Shake on empty send attempt
@@ -436,13 +436,15 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           ref={inputRef}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
-          placeholder="Message..."
+          placeholder={hasActiveSession ? 'Message...' : 'Create or select an agent to start chatting'}
           aria-label="Message input"
           rows={1}
+          disabled={!hasActiveSession}
           className="min-h-[46px] max-h-[160px] flex-1 resize-none border-none bg-transparent px-1 py-2 text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[15px]"
         />
         <button
           onClick={() => fileInputRef.current?.click()}
+          disabled={!hasActiveSession}
           className="cockpit-toolbar-button min-h-11 self-end px-3"
           title="Attach image"
           aria-label="Attach image"
@@ -451,17 +453,23 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         </button>
         <button
           onClick={handleSend}
-          disabled={isGenerating}
-          aria-label={isGenerating ? "Generating response..." : "Send message"}
+          disabled={isGenerating || !hasActiveSession}
+          aria-label={
+            !hasActiveSession
+              ? 'Create or select an agent session before sending'
+              : isGenerating ? 'Generating response...' : 'Send message'
+          }
           aria-busy={isGenerating}
-          className={`send-btn flex min-h-11 items-center justify-center gap-2 self-end rounded-2xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-transform sm:px-4 ${isGenerating ? 'cursor-not-allowed opacity-50' : 'hover:-translate-y-px hover:bg-primary/95 active:scale-95'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
+          className={`send-btn flex min-h-11 items-center justify-center gap-2 self-end rounded-2xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-transform sm:px-4 ${(isGenerating || !hasActiveSession) ? 'cursor-not-allowed opacity-50' : 'hover:-translate-y-px hover:bg-primary/95 active:scale-95'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
         >
           {isGenerating ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ArrowUp size={16} aria-hidden="true" />}
           <span className="hidden sm:inline">{isGenerating ? 'Sending' : 'Send'}</span>
         </button>
       </div>
       <div className="bg-card/92 px-3 pb-2 text-[11px] text-muted-foreground sm:px-4">
-        {voiceState === 'recording'
+        {!hasActiveSession
+          ? 'Create a top-level agent to start a new branch, or select an existing session to continue.'
+          : voiceState === 'recording'
           ? (
             <>
               <span className="sm:hidden">Recording… Shift to send · Double Shift to discard</span>

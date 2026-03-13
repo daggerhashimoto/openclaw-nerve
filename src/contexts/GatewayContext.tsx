@@ -2,6 +2,7 @@
 import { createContext, useContext, useCallback, useRef, useEffect, useState, useMemo, type ReactNode } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import type { GatewayEvent } from '@/types';
+import { isTopLevelAgentSessionKey } from '@/features/sessions/sessionKeys';
 
 type EventHandler = (msg: GatewayEvent) => void;
 
@@ -100,10 +101,11 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
         try {
           const sr = await currentRpc('sessions.list', { activeMinutes: SESSIONS_ACTIVE_MINUTES, limit: SESSIONS_LIMIT }) as Record<string, unknown>;
           const list = (sr?.sessions as Array<{ sessionKey?: string; key?: string; model?: string; thinking?: string }>) || [];
-          const main = list.find(s => (s.sessionKey || s.key) === 'agent:main:main');
-          if (clean === '--' && main?.model) clean = normalizeModel(main.model);
-          if (!hasThinking && main?.thinking) {
-            setThinking(main.thinking.toLowerCase());
+          const primarySession = list.find(s => (s.sessionKey || s.key) === 'agent:main:main')
+            || list.find(s => isTopLevelAgentSessionKey(s.sessionKey || s.key || ''));
+          if (clean === '--' && primarySession?.model) clean = normalizeModel(primarySession.model);
+          if (!hasThinking && primarySession?.thinking) {
+            setThinking(primarySession.thinking.toLowerCase());
           }
         } catch { /* fallback to '--' */ }
       }

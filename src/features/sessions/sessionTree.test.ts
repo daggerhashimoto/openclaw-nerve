@@ -105,6 +105,22 @@ describe('buildSessionTree', () => {
     expect(tree[0].key).toBe('agent:main:subagent:orphan');
   });
 
+  it('builds multiple top-level roots with their own children', () => {
+    const sessions = [
+      session('agent:main:main'),
+      session('agent:reviewer:main'),
+      session('agent:main:subagent:a'),
+      session('agent:reviewer:subagent:b'),
+    ];
+    const tree = buildSessionTree(sessions);
+
+    expect(tree).toHaveLength(2);
+    expect(tree[0].key).toBe('agent:main:main');
+    expect(tree[1].key).toBe('agent:reviewer:main');
+    expect(tree[0].children[0].key).toBe('agent:main:subagent:a');
+    expect(tree[1].children[0].key).toBe('agent:reviewer:subagent:b');
+  });
+
   it('sorts cron-runs by most recent first', () => {
     const sessions = [
       session('agent:main:main'),

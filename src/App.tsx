@@ -29,6 +29,7 @@ import { createCommands } from '@/features/command-palette/commands';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { FileTreePanel, TabbedContentArea, useOpenFiles } from '@/features/file-browser';
+import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
 
 // Lazy-loaded features (not needed in initial bundle)
 const SettingsDrawer = lazy(() => import('@/features/settings/SettingsDrawer').then(m => ({ default: m.SettingsDrawer })));
@@ -54,7 +55,7 @@ export default function App({ onLogout }: AppProps) {
   // Session state
   const {
     sessions, sessionsLoading, currentSession, setCurrentSession,
-    busyState, agentStatus, unreadSessions, refreshSessions, deleteSession, abortSession, spawnAgent, renameSession,
+    busyState, agentStatus, unreadSessions, refreshSessions, deleteSession, abortSession, spawnSession, renameSession,
     agentLogEntries, eventEntries,
     agentName,
   } = useSessionContext();
@@ -63,7 +64,7 @@ export default function App({ onLogout }: AppProps) {
   const {
     messages, isGenerating, stream, processingStage,
     lastEventTimestamp, activityLog, currentToolDescription,
-    handleSend, handleAbort, handleReset, loadHistory,
+    handleSend, handleAbort, handleReset,
     loadMore, hasMore,
     showResetConfirm, confirmReset, cancelReset,
   } = useChat();
@@ -287,9 +288,9 @@ export default function App({ onLogout }: AppProps) {
 
   // Get display name for current session (agent name for main, label for subagents)
   const currentSessionDisplayName = useMemo(() => {
-    if (currentSession === 'agent:main:main') return agentName;
-    return currentSessionData?.label || agentName;
-  }, [currentSession, currentSessionData, agentName]);
+    if (currentSessionData) return getSessionDisplayLabel(currentSessionData, agentName);
+    return agentName;
+  }, [currentSessionData, agentName]);
 
   const contextTokens = currentSessionData?.totalTokens ?? 0;
   const contextLimit = currentSessionData?.contextTokens || getContextLimit(model);
@@ -356,10 +357,9 @@ export default function App({ onLogout }: AppProps) {
   }, [handleCompactLayoutChange]);
 
   // Handler for session changes
-  const handleSessionChange = useCallback(async (key: string) => {
+  const handleSessionChange = useCallback((key: string) => {
     setCurrentSession(key);
-    await loadHistory(key);
-  }, [setCurrentSession, loadHistory]);
+  }, [setCurrentSession]);
 
   // Handlers for TTS provider/model changes
   const handleTtsProviderChange = useCallback((provider: TTSProvider) => {
@@ -437,7 +437,7 @@ export default function App({ onLogout }: AppProps) {
               onSelect={onSelect}
               onRefresh={refreshSessions}
               onDelete={deleteSession}
-              onSpawn={spawnAgent}
+              onSpawn={spawnSession}
               onRename={renameSession}
               onAbort={abortSession}
               isLoading={sessionsLoading}
@@ -466,7 +466,7 @@ export default function App({ onLogout }: AppProps) {
           onSelect={handleSessionChange}
           onRefresh={refreshSessions}
           onDelete={deleteSession}
-          onSpawn={spawnAgent}
+          onSpawn={spawnSession}
           onRename={renameSession}
           onAbort={abortSession}
           isLoading={sessionsLoading}
@@ -729,7 +729,7 @@ export default function App({ onLogout }: AppProps) {
       <SpawnAgentDialog
         open={spawnDialogOpen}
         onOpenChange={setSpawnDialogOpen}
-        onSpawn={spawnAgent}
+        onSpawn={spawnSession}
       />
     </div>
   );

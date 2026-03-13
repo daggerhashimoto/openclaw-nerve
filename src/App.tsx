@@ -86,7 +86,7 @@ export default function App({ onLogout }: AppProps) {
     editableUrl, setEditableUrl,
     editableToken, setEditableToken,
     handleConnect, handleReconnect,
-    authEnabled,
+    serverSideAuth,
   } = useConnectionManager();
 
   // Track last changed file path for tree refresh
@@ -458,7 +458,7 @@ export default function App({ onLogout }: AppProps) {
         error={connectError}
         defaultUrl={defaultUrl}
         defaultToken={editableToken}
-        authEnabled={authEnabled}
+        serverSideAuth={serverSideAuth}
       />
       
       {/* Reconnecting banner — mission control style */}

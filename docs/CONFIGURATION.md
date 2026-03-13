@@ -103,6 +103,16 @@ GATEWAY_TOKEN=your-token-here
 GATEWAY_URL=http://127.0.0.1:18789
 ```
 
+### Token Injection
+
+Nerve performs **server-side token injection**. When a connection is established through the WebSocket proxy, Nerve automatically injects the configured `GATEWAY_TOKEN` into the connection request if the client is considered **trusted**.
+
+**Trust is granted if:**
+1. The connection is from a **local loopback address** (`127.0.0.1` or `::1`), accounting for `X-Forwarded-For` and `X-Real-IP` when behind a [Trusted Proxy](#trusted-proxies).
+2. OR, the connection has a valid **authenticated session** (`NERVE_AUTH=true`).
+
+This allows the browser UI to connect without having to manually enter or store the gateway token in the browser's persistent storage. If a connection is not trusted (e.g., remote access without authentication), the token field in the UI must be filled manually.
+
 > **Note:** `OPENCLAW_GATEWAY_TOKEN` is also accepted as a fallback for `GATEWAY_TOKEN`.
 >
 > **Token detection order:** The setup wizard finds the gateway token from: (1) systemd service file (`OPENCLAW_GATEWAY_TOKEN` env var in the unit), (2) `~/.openclaw/openclaw.json`, (3) `OPENCLAW_GATEWAY_TOKEN` shell env var. The systemd source takes priority because the gateway process reads the env var over the config file — a known issue where `openclaw onboard` writes different tokens to each location.

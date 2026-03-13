@@ -37,7 +37,7 @@ Nerve is designed as a **local-first** web UI for an AI agent. Its security mode
 | **Abuse / resource exhaustion** | Per-IP rate limiting on all API endpoints. Global body size limits. Rate limit store capped at 10,000 entries. |
 | **Directory traversal** | Resolved absolute paths checked against strict prefix allowlists. Symlinks resolved and re-checked. |
 | **Symlink escape** | `/api/files` resolves symlinks via `fs.realpathSync()` and re-validates the real path against allowed prefixes. |
-| **Gateway token exfiltration** | Token only returned via `/api/connect-defaults` to loopback clients. Remote clients receive `null`. |
+| **Gateway token exfiltration** | Token is never sent to the client; it is injected server-side specifically for trusted (local/authenticated) connections. |
 | **Spoofed client IPs** | Rate limiter uses the real TCP socket address. `X-Forwarded-For` only trusted from configured `TRUSTED_PROXIES`. |
 | **MIME sniffing** | `X-Content-Type-Options: nosniff` on all responses. |
 | **CSP directive injection** | `CSP_CONNECT_EXTRA` is sanitised: semicolons and newlines stripped, only `http(s)://` and `ws(s)://` schemes accepted. |
@@ -61,7 +61,7 @@ Security is enforced through network-level controls:
 
 1. **Localhost binding** — The server binds to `127.0.0.1` by default. Only local processes can connect.
 2. **CORS allowlist** — Browsers enforce the Origin check. Only configured origins receive CORS headers.
-3. **Gateway token isolation** — The sensitive `GATEWAY_TOKEN` is only exposed to loopback clients via `/api/connect-defaults`.
+3. **Gateway token isolation** — The sensitive `GATEWAY_TOKEN` is never sent to the browser. Instead, Nerve injects it server-side into the WebSocket connection upgrade for trusted clients.
 4. **Session storage** — The frontend stores the gateway token in `sessionStorage` (cleared when the tab closes), not `localStorage`.
 
 ### When Auth is Enabled
@@ -292,6 +292,19 @@ WS_ALLOWED_HOSTS=my-server.tailnet.ts.net,100.64.0.5
 ```
 
 This prevents the proxy from being used to connect to arbitrary external hosts.
+
+### Token Injection
+
+Nerve performs **server-side token injection** to provide a zero-config connection experience for local and authenticated users without exposing the `GATEWAY_TOKEN` to the browser storage.
+
+**Injection Logic:**
+1. The WebSocket proxy identifies if a connection is **trusted**.
+   - **Local Trusted**: The client IP (resolved via `TRUSTED_PROXIES` if applicable) is a loopback address (`127.0.0.1` / `::1`).
+   - **Session Trusted**: The request carries a valid session cookie (`NERVE_AUTH=true`).
+2. If trusted and a `GATEWAY_TOKEN` is configured, Nerve intercept's the client's `connect` request.
+3. If the client did not provide a token, Nerve injects the server's `GATEWAY_TOKEN`.
+
+This allows the UI to hide the "Auth Token" field and auto-connect fortrusted users while keeping the token strictly on the server.
 
 ### Device Identity & Gateway Scopes
 

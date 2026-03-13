@@ -9,11 +9,11 @@ interface ConnectDialogProps {
   error: string;
   defaultUrl: string;
   defaultToken?: string;
-  authEnabled?: boolean;
+  serverSideAuth?: boolean;
 }
 
 /** Initial connection dialog for entering the gateway URL and token. */
-export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken = '', authEnabled }: ConnectDialogProps) {
+export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken = '', serverSideAuth }: ConnectDialogProps) {
   const [url, setUrl] = useState(defaultUrl);
   const [token, setToken] = useState(defaultToken);
   const [connecting, setConnecting] = useState(false);
@@ -28,10 +28,16 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
 
   const handleConnect = async () => {
     const isDefaultHost = url.trim() === defaultUrl.trim();
-    if (!url.trim() || (!token.trim() && (!authEnabled || !isDefaultHost))) return;
+    if (!url.trim() || (!token.trim() && (!serverSideAuth || !isDefaultHost))) return;
+
+    // Force empty token when in server-side auth mode for the default host.
+    // This allows the proxy to perform injection and prevents stale/hidden local tokens
+    // from overriding server-side credentials.
+    const effectiveToken = (serverSideAuth && isDefaultHost) ? '' : token.trim();
+
     setConnecting(true);
     try {
-      await onConnect(url.trim(), token.trim());
+      await onConnect(url.trim(), effectiveToken);
     } catch (err) {
       console.debug('[ConnectDialog] Connection failed:', err);
     }
@@ -56,7 +62,7 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
               className="bg-background border-border text-foreground font-mono text-[13px]"
             />
           </label>
-          {(!authEnabled || url.trim() !== defaultUrl.trim()) && (
+          {(!serverSideAuth || url.trim() !== defaultUrl.trim()) && (
             <label className="flex flex-col gap-1 text-[11px] text-muted-foreground uppercase tracking-[1px]">
               Auth Token
               <Input

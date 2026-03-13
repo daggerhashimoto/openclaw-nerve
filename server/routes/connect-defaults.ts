@@ -13,6 +13,8 @@
 import { Hono } from 'hono';
 import { config } from '../lib/config.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
+import { canInjectGatewayToken } from '../lib/trust-utils.js';
+import { getConnInfo } from '@hono/node-server/conninfo';
 
 const app = new Hono();
 
@@ -28,11 +30,23 @@ app.get('/api/connect-defaults', rateLimitGeneral, (c) => {
     wsUrl = gwUrl.replace(/^http/, 'ws');
   }
 
+  let remoteAddress: string | undefined;
+  try {
+    const info = getConnInfo(c);
+    remoteAddress = info.remote.address;
+  } catch {
+    // getConnInfo may fail in test environments
+  }
+
   return c.json({
     wsUrl,
     token: null, // Token injection moved server-side (ws-proxy.ts)
     agentName: config.agentName,
     authEnabled: config.auth,
+    serverSideAuth: canInjectGatewayToken({
+      socket: { remoteAddress },
+      headers: c.req.header(),
+    }),
   });
 });
 

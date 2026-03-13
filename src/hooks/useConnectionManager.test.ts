@@ -31,10 +31,15 @@ describe('useConnectionManager', () => {
     vi.restoreAllMocks();
   });
 
-  it('auto-connects without token when server authEnabled is true and wsUrl is provided', async () => {
+  it('auto-connects without token when serverSideAuth is true and wsUrl is provided', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ wsUrl: 'ws://127.0.0.1:18789/ws', token: null, authEnabled: true }),
+      json: async () => ({ 
+        wsUrl: 'ws://127.0.0.1:18789/ws', 
+        token: null, 
+        authEnabled: true,
+        serverSideAuth: true 
+      }),
     });
 
     const mod = await import('./useConnectionManager');
@@ -45,6 +50,22 @@ describe('useConnectionManager', () => {
     });
 
     expect(connectMock).toHaveBeenCalledWith('ws://127.0.0.1:18789/ws', '');
-    expect(result.current.authEnabled).toBe(true);
+    expect(result.current.serverSideAuth).toBe(true);
+  });
+
+  it('does NOT auto-connect if user has a custom saved URL', async () => {
+    const { loadConfig } = await import('../contexts/GatewayContext');
+    vi.mocked(loadConfig).mockReturnValue({ url: 'ws://custom.host:1234/ws', token: 'saved-token' });
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ wsUrl: 'ws://default:1234/ws', serverSideAuth: true }),
+    });
+
+    const mod = await import('./useConnectionManager');
+    renderHook(() => mod.useConnectionManager());
+
+    // Should not connect because url/token already exist in config
+    expect(connectMock).not.toHaveBeenCalled();
   });
 });

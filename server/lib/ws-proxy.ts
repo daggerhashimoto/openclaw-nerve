@@ -25,6 +25,7 @@ import { config, WS_ALLOWED_HOSTS, SESSION_COOKIE_NAME } from './config.js';
 import { verifySession, parseSessionCookie } from './session.js';
 import { createDeviceBlock, getDeviceIdentity } from './device-identity.js';
 import { resolveOpenclawBin } from './openclaw-bin.js';
+import { canInjectGatewayToken } from './trust-utils.js';
 
 /** @internal — exported for test overrides */
 export const _internals = { challengeTimeoutMs: 5_000 };
@@ -39,8 +40,6 @@ const RESTRICTED_METHODS = new Set([
   'sessions.reset',
   'sessions.compact',
 ]);
-
-const LOOPBACK_RE = /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/;
 
 /**
  * Execute a gateway RPC call via the CLI, bypassing webchat restrictions.
@@ -141,14 +140,13 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
       return;
     }
 
-    // Forward origin header for gateway auth
     const isEncrypted = !!(req.socket as unknown as { encrypted?: boolean }).encrypted;
     const scheme = isEncrypted ? 'https' : 'http';
     const clientOrigin = req.headers.origin || `${scheme}://${req.headers.host}`;
 
-    // Determine if the client is trusted: authenticated session or local loopback
-    const isLoopback = LOOPBACK_RE.test(req.socket.remoteAddress || '');
-    const isTrusted = config.auth || isLoopback;
+    // Determine if the client is trusted enough for token injection.
+    // canInjectGatewayToken accounts for both auth state and loopback detection (proxy-aware).
+    const isTrusted = canInjectGatewayToken(req);
 
     createGatewayRelay(clientWs, targetUrl, clientOrigin, connId, isTrusted);
   });

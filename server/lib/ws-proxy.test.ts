@@ -638,6 +638,44 @@ describe('ws-proxy', () => {
         await new Promise<void>((resolve) => delayedServer.close(() => resolve()));
       }
     });
+
+    it('denies token injection for external users behind a local reverse proxy', async () => {
+      mockGw.clearReceived();
+
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+        {
+          headers: {
+            // Spoof/forward an external IP. Since the direct connection is 127.0.0.1,
+            // the proxy will resolve the client IP to this external address.
+            'X-Forwarded-For': '203.0.113.5',
+          },
+        },
+      );
+
+      await new Promise<void>((resolve) => ws.on('open', resolve));
+      ws.send(JSON.stringify({
+        type: 'req',
+        method: 'connect',
+        id: 'c-proxy-1',
+        params: { client: { id: 'nerve-ui' } },
+      }));
+
+      // Wait for connect response
+      await waitForMessage(ws);
+
+      const connectMsg = mockGw.received.find((m) => {
+        const d = m.data as Record<string, unknown>;
+        return d.type === 'req' && d.method === 'connect';
+      });
+      expect(connectMsg).toBeTruthy();
+      const params = (connectMsg!.data as Record<string, unknown>).params as Record<string, unknown>;
+      const auth = (params.auth as Record<string, unknown> | undefined) ?? {};
+      // Should NOT have injected the token because the resolved IP is not loopback
+      expect(auth.token).toBeUndefined();
+
+      ws.close();
+    });
   });
 });
 

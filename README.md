@@ -140,7 +140,7 @@ Nerve binds to `127.0.0.1` (localhost) by default — only you can access it. Wh
 - **Session cookies** — `HttpOnly`, `SameSite=Strict`, HMAC-SHA256 signed
 - **Password storage** — scrypt with 32-byte salt
 - **WebSocket auth** — cookie verified on upgrade
-- **Gateway token fallback** — works as a password with zero config
+- **Gateway token injection** — Automatically injected server-side for trusted connections
 
 See [Security](docs/SECURITY.md) for the full threat model.
 

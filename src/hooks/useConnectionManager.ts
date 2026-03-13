@@ -21,7 +21,7 @@ export interface ConnectionManagerState {
   setEditableToken: (token: string) => void;
   handleConnect: (url: string, token: string) => Promise<void>;
   handleReconnect: () => Promise<void>;
-  authEnabled: boolean;
+  serverSideAuth: boolean;
 }
 
 /** Create an AbortSignal that times out after `ms` milliseconds. */
@@ -34,7 +34,7 @@ function timeoutSignal(ms: number): AbortSignal {
 }
 
 /** Fetch gateway connection defaults from the Nerve server. */
-async function fetchConnectDefaults(): Promise<{ wsUrl: string; token: string | null; authEnabled?: boolean } | null> {
+async function fetchConnectDefaults(): Promise<{ wsUrl: string; token: string | null; authEnabled?: boolean; serverSideAuth?: boolean } | null> {
   try {
     const resp = await fetch('/api/connect-defaults', { signal: timeoutSignal(3000) });
     if (!resp.ok) return null;
@@ -53,8 +53,8 @@ export function useConnectionManager(): ConnectionManagerState {
   // Lazy initializers avoid re-parsing sessionStorage on every render
   const [editableUrl, setEditableUrl] = useState(() => loadConfig().url || DEFAULT_GATEWAY_WS);
   const [editableToken, setEditableToken] = useState(() => loadConfig().token || '');
-
-  const [authEnabled, setAuthEnabled] = useState(false);
+  const [serverSideAuth, setServerSideAuth] = useState(false);
+  const [officialUrl, setOfficialUrl] = useState<string | null>(null);
 
   // Track if we've attempted auto-connect to avoid re-running
   const autoConnectAttempted = useRef(false);
@@ -76,14 +76,17 @@ export function useConnectionManager(): ConnectionManagerState {
 
     // No saved config — try to get defaults from the server to pre-fill
     fetchConnectDefaults().then((defaults) => {
-      const serverAuthEnabled = defaults?.authEnabled ?? false;
-      setAuthEnabled(serverAuthEnabled);
+      const isServerSideAuth = defaults?.serverSideAuth ?? false;
+      setServerSideAuth(isServerSideAuth);
 
-      if (defaults?.wsUrl) setEditableUrl(defaults.wsUrl);
+      if (defaults?.wsUrl) {
+        setEditableUrl(defaults.wsUrl);
+        setOfficialUrl(defaults.wsUrl);
+      }
       if (defaults?.token) setEditableToken(defaults.token);
 
-      // Auto-connect without token when auth is enabled and URL is known!
-      if (serverAuthEnabled && defaults?.wsUrl && !saved.url) {
+      // Auto-connect without token when server-side auth is supported and URL is new
+      if (isServerSideAuth && defaults?.wsUrl && !saved.url) {
         handleConnect(defaults.wsUrl, '').catch(() => {
           // Auto-connect failed - user can manually connect via dialog
         });
@@ -97,7 +100,8 @@ export function useConnectionManager(): ConnectionManagerState {
       return;
     }
 
-    if (editableUrl && (editableToken || authEnabled)) {
+    const isOfficialUrl = editableUrl.trim() === officialUrl?.trim();
+    if (editableUrl && (editableToken || (serverSideAuth && isOfficialUrl))) {
       // Save the new config first
       saveConfig(editableUrl, editableToken);
       // Disconnect cleanly, then reconnect
@@ -112,7 +116,7 @@ export function useConnectionManager(): ConnectionManagerState {
     } else {
       setDialogOpen(true);
     }
-  }, [connect, disconnect, editableUrl, editableToken, connectionState, authEnabled]);
+  }, [connect, disconnect, editableUrl, editableToken, connectionState, serverSideAuth, officialUrl]);
 
   return {
     dialogOpen,
@@ -123,6 +127,6 @@ export function useConnectionManager(): ConnectionManagerState {
     setEditableToken,
     handleConnect,
     handleReconnect,
-    authEnabled,
+    serverSideAuth,
   };
 }

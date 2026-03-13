@@ -27,6 +27,12 @@ describe('GET /api/connect-defaults', () => {
       rateLimitGeneral: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
     }));
 
+    vi.doMock('@hono/node-server/conninfo', () => ({
+      getConnInfo: vi.fn(() => ({
+        remote: { address: '127.0.0.1' },
+      })),
+    }));
+
     const mod = await import('./connect-defaults.js');
     const app = new Hono();
     app.route('/', mod.default);
@@ -38,11 +44,12 @@ describe('GET /api/connect-defaults', () => {
     const res = await app.request('/api/connect-defaults');
     expect(res.status).toBe(200);
 
-    const json = (await res.json()) as { wsUrl: string; token: string | null; agentName: string; authEnabled: boolean };
+    const json = (await res.json()) as { wsUrl: string; token: string | null; agentName: string; authEnabled: boolean; serverSideAuth: boolean };
     expect(json.wsUrl).toBe('ws://localhost:18789/ws');
     expect(json.token).toBeNull();
     expect(json.agentName).toBe('test-agent');
     expect(json.authEnabled).toBe(false);
+    expect(json.serverSideAuth).toBe(true); // default mock has token and it's loopback
   });
 
   it('derives wsUrl from an https gatewayUrl as wss://', async () => {
@@ -57,9 +64,17 @@ describe('GET /api/connect-defaults', () => {
   it('includes authEnabled reflecting server config', async () => {
     const app = await buildApp({ auth: true });
     const res = await app.request('/api/connect-defaults');
-    const json = (await res.json()) as { authEnabled: boolean; token: string | null };
+    const json = (await res.json()) as { authEnabled: boolean; serverSideAuth: boolean };
 
     expect(json.authEnabled).toBe(true);
-    expect(json.token).toBeNull();
+    expect(json.serverSideAuth).toBe(true); // auth: true -> trusted -> serverSideAuth: true
+  });
+
+  it('sets serverSideAuth: false when gateway token is missing', async () => {
+    const app = await buildApp({ gatewayToken: '' });
+    const res = await app.request('/api/connect-defaults');
+    const json = (await res.json()) as { serverSideAuth: boolean };
+
+    expect(json.serverSideAuth).toBe(false);
   });
 });

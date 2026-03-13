@@ -27,7 +27,7 @@ describe('ConnectDialog', () => {
     vi.restoreAllMocks();
   });
 
-  it('shows token field when auth is disabled', () => {
+  it('shows token field when serverSideAuth is disabled', () => {
     render(
       <ConnectDialog
         open
@@ -35,14 +35,14 @@ describe('ConnectDialog', () => {
         error=""
         defaultUrl="ws://localhost:1234/ws"
         defaultToken=""
-        authEnabled={false}
+        serverSideAuth={false}
       />,
     );
 
-    expect(screen.getByText('Auth Token')).toBeInTheDocument();
+    expect(screen.getByLabelText('Auth Token')).toBeTruthy();
   });
 
-  it('hides token field when auth is enabled and url is the default', () => {
+  it('hides token field when serverSideAuth is active and url is the default', () => {
     render(
       <ConnectDialog
         open
@@ -50,14 +50,14 @@ describe('ConnectDialog', () => {
         error=""
         defaultUrl="ws://localhost:1234/ws"
         defaultToken=""
-        authEnabled
+        serverSideAuth
       />,
     );
 
-    expect(screen.queryByText('Auth Token')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Auth Token')).toBeFalsy();
   });
 
-  it('shows token field when auth is enabled but user changes url away from default', () => {
+  it('shows token field when serverSideAuth is active but user changes url away from default', () => {
     render(
       <ConnectDialog
         open
@@ -65,13 +65,32 @@ describe('ConnectDialog', () => {
         error=""
         defaultUrl="ws://localhost:1234/ws"
         defaultToken=""
-        authEnabled
+        serverSideAuth
       />,
     );
 
-    const urlInput = screen.getByDisplayValue('ws://localhost:1234/ws');
+    const urlInput = screen.getByLabelText('WebSocket URL');
     fireEvent.change(urlInput, { target: { value: 'ws://example.com:1234/ws' } });
 
-    expect(screen.getByText('Auth Token')).toBeInTheDocument();
+    expect(screen.getByLabelText('Auth Token')).toBeTruthy();
+  });
+
+  it('forces empty token when serverSideAuth is active for default host', async () => {
+    const onConnect = vi.fn();
+    render(
+      <ConnectDialog
+        open
+        onConnect={onConnect}
+        error=""
+        defaultUrl="ws://localhost:1234/ws"
+        defaultToken="stale-token"
+        serverSideAuth
+      />,
+    );
+
+    const connectButton = screen.getByText('CONNECT');
+    fireEvent.click(connectButton);
+
+    expect(onConnect).toHaveBeenCalledWith('ws://localhost:1234/ws', '');
   });
 });

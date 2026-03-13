@@ -9,10 +9,11 @@ interface ConnectDialogProps {
   error: string;
   defaultUrl: string;
   defaultToken?: string;
+  authEnabled?: boolean;
 }
 
 /** Initial connection dialog for entering the gateway URL and token. */
-export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken = '' }: ConnectDialogProps) {
+export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken = '', authEnabled }: ConnectDialogProps) {
   const [url, setUrl] = useState(defaultUrl);
   const [token, setToken] = useState(defaultToken);
   const [connecting, setConnecting] = useState(false);
@@ -26,7 +27,8 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
   }, [defaultUrl, defaultToken, open]);
 
   const handleConnect = async () => {
-    if (!url.trim() || !token.trim()) return;
+    const isDefaultHost = url.trim() === defaultUrl.trim();
+    if (!url.trim() || (!token.trim() && (!authEnabled || !isDefaultHost))) return;
     setConnecting(true);
     try {
       await onConnect(url.trim(), token.trim());
@@ -54,17 +56,19 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
               className="bg-background border-border text-foreground font-mono text-[13px]"
             />
           </label>
-          <label className="flex flex-col gap-1 text-[11px] text-muted-foreground uppercase tracking-[1px]">
-            Auth Token
-            <Input
-              type="password"
-              value={token}
-              onChange={e => setToken(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleConnect()}
-              spellCheck={false}
-              className="bg-background border-border text-foreground font-mono text-[13px]"
-            />
-          </label>
+          {(!authEnabled || url.trim() !== defaultUrl.trim()) && (
+            <label className="flex flex-col gap-1 text-[11px] text-muted-foreground uppercase tracking-[1px]">
+              Auth Token
+              <Input
+                type="password"
+                value={token}
+                onChange={e => setToken(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleConnect()}
+                spellCheck={false}
+                className="bg-background border-border text-foreground font-mono text-[13px]"
+              />
+            </label>
+          )}
           <Button
             onClick={handleConnect}
             disabled={connecting}

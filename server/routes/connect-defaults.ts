@@ -6,30 +6,17 @@
  * this endpoint exposes the server's configured gateway URL and token
  * so the frontend can pre-fill (or auto-connect).
  *
- * Security: The gateway token is only returned to loopback clients.
- * Remote clients receive the wsUrl and agentName but token is null.
+ * Security: The token field is always null; token injection is handled server-side
+ * by the WebSocket proxy for trusted clients (authenticated sessions or loopback).
  */
 
 import { Hono } from 'hono';
-import { getConnInfo } from '@hono/node-server/conninfo';
 import { config } from '../lib/config.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
-
-const LOOPBACK_RE = /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/;
 
 const app = new Hono();
 
 app.get('/api/connect-defaults', rateLimitGeneral, (c) => {
-  // Determine if the request originates from loopback
-  let remoteIp = '';
-  try {
-    const info = getConnInfo(c);
-    remoteIp = info.remote?.address ?? '';
-  } catch {
-    // fallback: not available in some test environments
-  }
-  const isLoopback = LOOPBACK_RE.test(remoteIp);
-
   // Derive WebSocket URL from the HTTP gateway URL
   const gwUrl = config.gatewayUrl;
   let wsUrl = '';
@@ -43,8 +30,9 @@ app.get('/api/connect-defaults', rateLimitGeneral, (c) => {
 
   return c.json({
     wsUrl,
-    token: isLoopback ? (config.gatewayToken || null) : null,
+    token: null, // Token injection moved server-side (ws-proxy.ts)
     agentName: config.agentName,
+    authEnabled: config.auth,
   });
 });
 

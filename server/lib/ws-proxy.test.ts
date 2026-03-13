@@ -274,6 +274,96 @@ describe('ws-proxy', () => {
   describe('challenge-nonce timing', () => {
     const mockedCreateDeviceBlock = createDeviceBlock as ReturnType<typeof vi.fn>;
 
+    it('injects gateway token when connect params omit token for authenticated clients', async () => {
+      mockedConfig.auth = true;
+      mockedParseSessionCookie.mockReturnValue('good-token');
+      mockedVerifySession.mockReturnValue({ exp: Date.now() + 60000, iat: Date.now() });
+      mockGw.clearReceived();
+
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+        { headers: { Cookie: 'nerve_session_3080=good-token' } },
+      );
+
+      await new Promise<void>((resolve) => ws.on('open', resolve));
+      ws.send(JSON.stringify({
+        type: 'req',
+        method: 'connect',
+        id: 'c-token-1',
+        params: { client: { id: 'nerve-ui', mode: 'webchat' } },
+      }));
+
+      // Wait for connect response
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout waiting for connect response')), 5000);
+        ws.on('message', (data) => {
+          try {
+            const msg = JSON.parse(data.toString());
+            if (msg.type === 'res' && msg.id === 'c-token-1') {
+              clearTimeout(timer);
+              resolve();
+            }
+          } catch { /* ignore */ }
+        });
+      });
+
+      const connectMsg = mockGw.received.find((m) => {
+        const d = m.data as Record<string, unknown>;
+        return d.type === 'req' && d.method === 'connect';
+      });
+      expect(connectMsg).toBeTruthy();
+      const params = (connectMsg!.data as Record<string, unknown>).params as Record<string, unknown>;
+      const auth = (params.auth as Record<string, unknown> | undefined) ?? {};
+      expect(auth.token).toBe('test-token');
+
+      ws.close();
+    });
+
+    it('injects gateway token when connect params provide empty token for authenticated clients', async () => {
+      mockedConfig.auth = true;
+      mockedParseSessionCookie.mockReturnValue('good-token');
+      mockedVerifySession.mockReturnValue({ exp: Date.now() + 60000, iat: Date.now() });
+      mockGw.clearReceived();
+
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+        { headers: { Cookie: 'nerve_session_3080=good-token' } },
+      );
+
+      await new Promise<void>((resolve) => ws.on('open', resolve));
+      ws.send(JSON.stringify({
+        type: 'req',
+        method: 'connect',
+        id: 'c-token-2',
+        params: { auth: { token: '' }, client: { id: 'nerve-ui', mode: 'webchat' } },
+      }));
+
+      // Wait for connect response
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout waiting for connect response')), 5000);
+        ws.on('message', (data) => {
+          try {
+            const msg = JSON.parse(data.toString());
+            if (msg.type === 'res' && msg.id === 'c-token-2') {
+              clearTimeout(timer);
+              resolve();
+            }
+          } catch { /* ignore */ }
+        });
+      });
+
+      const connectMsg = mockGw.received.find((m) => {
+        const d = m.data as Record<string, unknown>;
+        return d.type === 'req' && d.method === 'connect';
+      });
+      expect(connectMsg).toBeTruthy();
+      const params = (connectMsg!.data as Record<string, unknown>).params as Record<string, unknown>;
+      const auth = (params.auth as Record<string, unknown> | undefined) ?? {};
+      expect(auth.token).toBe('test-token');
+
+      ws.close();
+    });
+
     it('injects device identity when connect is buffered before gateway opens', async () => {
       mockGw.clearReceived();
 

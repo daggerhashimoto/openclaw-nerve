@@ -40,6 +40,8 @@ const RESTRICTED_METHODS = new Set([
   'sessions.compact',
 ]);
 
+const LOOPBACK_RE = /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/;
+
 /**
  * Execute a gateway RPC call via the CLI, bypassing webchat restrictions.
  */
@@ -144,7 +146,11 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
     const scheme = isEncrypted ? 'https' : 'http';
     const clientOrigin = req.headers.origin || `${scheme}://${req.headers.host}`;
 
-    createGatewayRelay(clientWs, targetUrl, clientOrigin, connId);
+    // Determine if the client is trusted: authenticated session or local loopback
+    const isLoopback = LOOPBACK_RE.test(req.socket.remoteAddress || '');
+    const isTrusted = config.auth || isLoopback;
+
+    createGatewayRelay(clientWs, targetUrl, clientOrigin, connId, isTrusted);
   });
 }
 
@@ -165,6 +171,7 @@ function createGatewayRelay(
   targetUrl: URL,
   clientOrigin: string,
   connId: string,
+  isTrusted: boolean,
 ): void {
   const tag = `[ws-proxy:${connId}]`;
   const connStartTime = Date.now();
@@ -254,10 +261,27 @@ function createGatewayRelay(
     if (gwWs.readyState !== WebSocket.OPEN) return;
     connectSent = true;
     clearChallengeTimer();
-    const modified = (useDeviceIdentity && nonce)
-      ? injectDeviceIdentity(savedConnectMsg, nonce)
-      : savedConnectMsg;
-    gwWs.send(JSON.stringify(modified));
+
+    let modified = savedConnectMsg;
+    // Inject gateway token proxy-side for trusted clients if not provided by browser
+    if (isTrusted && config.gatewayToken && !(modified.params as ConnectParams)?.auth?.token) {
+      modified = {
+        ...modified,
+        params: {
+          ...(modified.params as object),
+          auth: {
+            ...((modified.params as ConnectParams)?.auth as object),
+            token: config.gatewayToken,
+          },
+        },
+      };
+    }
+
+    const final = (useDeviceIdentity && nonce)
+      ? injectDeviceIdentity(modified, nonce)
+      : modified;
+
+    gwWs.send(JSON.stringify(final));
     handshakeComplete = true;
     flushPending();
   }

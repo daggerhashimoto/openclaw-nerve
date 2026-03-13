@@ -1,19 +1,25 @@
-import { Monitor, Eye, ChevronDown, Type, Activity } from 'lucide-react';
+import { Monitor, Eye, Type, Activity } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useSettings } from '@/contexts/SettingsContext';
 import { themes, themeNames, type ThemeName } from '@/lib/themes';
 import { fonts, fontNames, type FontName } from '@/lib/fonts';
+
+const INLINE_SELECT_TRIGGER_CLASS =
+  'min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-left text-sm font-sans text-foreground sm:min-w-[148px]';
+const INLINE_SELECT_MENU_CLASS =
+  'rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]';
 
 /** Settings section for theme, font, and panel visibility. */
 export function AppearanceSettings() {
   const { eventsVisible, toggleEvents, logVisible, toggleLog, theme, setTheme, font, setFont } = useSettings();
 
-  const handleThemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setTheme(e.target.value as ThemeName);
+  const handleThemeChange = (next: string) => {
+    setTheme(next as ThemeName);
   };
 
-  const handleFontChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setFont(e.target.value as FontName);
+  const handleFontChange = (next: string) => {
+    setFont(next as FontName);
   };
 
   return (
@@ -35,19 +41,14 @@ export function AppearanceSettings() {
           </div>
         </div>
         <div className="relative w-full sm:w-auto">
-          <select
+          <InlineSelect
             value={theme}
             onChange={handleThemeChange}
-            className="cockpit-select w-full appearance-none pr-9 text-sm sm:min-w-[148px]"
-            aria-label="Select theme"
-          >
-            {themeNames.map((name) => (
-              <option key={name} value={name} className="bg-card text-foreground">
-                {themes[name].label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
+            options={themeNames.map((name) => ({ value: name, label: themes[name].label }))}
+            ariaLabel="Select theme"
+            triggerClassName={INLINE_SELECT_TRIGGER_CLASS}
+            menuClassName={INLINE_SELECT_MENU_CLASS}
+          />
         </div>
       </div>
 
@@ -61,19 +62,14 @@ export function AppearanceSettings() {
           </div>
         </div>
         <div className="relative w-full sm:w-auto">
-          <select
+          <InlineSelect
             value={font}
             onChange={handleFontChange}
-            className="cockpit-select w-full appearance-none pr-9 text-sm sm:min-w-[148px]"
-            aria-label="Select font"
-          >
-            {fontNames.map((name) => (
-              <option key={name} value={name} className="bg-card text-foreground">
-                {fonts[name].label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
+            options={fontNames.map((name) => ({ value: name, label: fonts[name].label }))}
+            ariaLabel="Select font"
+            triggerClassName={INLINE_SELECT_TRIGGER_CLASS}
+            menuClassName={INLINE_SELECT_MENU_CLASS}
+          />
         </div>
       </div>
 

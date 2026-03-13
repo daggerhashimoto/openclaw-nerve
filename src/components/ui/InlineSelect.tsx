@@ -48,17 +48,43 @@ export function InlineSelect({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const listboxRef = useRef<HTMLUListElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
+
+  const getHiddenMenuStyle = useCallback((): React.CSSProperties => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    const viewportPadding = 8;
+
+    return {
+      position: 'fixed',
+      left: rect?.left ?? viewportPadding,
+      top: (rect?.bottom ?? viewportPadding) + 4,
+      minWidth: rect?.width,
+      maxWidth: window.innerWidth - viewportPadding * 2,
+      maxHeight: 320,
+      visibility: 'hidden',
+      zIndex: 9999,
+    };
+  }, []);
 
   const openWithHighlight = useCallback(() => {
     const currentIndex = options.findIndex((o) => o.value === value);
     setHighlightedIndex(currentIndex >= 0 ? currentIndex : 0);
+
+    if (!inline) {
+      setMenuStyle(getHiddenMenuStyle());
+    }
+
     setOpen(true);
-  }, [options, value]);
+  }, [getHiddenMenuStyle, inline, options, value]);
 
   const close = useCallback(() => {
     setHighlightedIndex(-1);
     setOpen(false);
-  }, []);
+    if (!inline) {
+      setMenuStyle({});
+    }
+  }, [inline]);
 
   const onPointerDown = useCallback((event: PointerEvent) => {
     const target = event.target as Node;
@@ -135,10 +161,6 @@ export function InlineSelect({
     ? `inline-select-option-${options[highlightedIndex]?.value}`
     : undefined;
 
-  // ── Fixed-position dropdown to escape overflow:hidden/auto ancestors ──
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
-
   useLayoutEffect(() => {
     if (open && triggerRef.current && !inline) {
       const rect = triggerRef.current.getBoundingClientRect();
@@ -163,6 +185,7 @@ export function InlineSelect({
           minWidth: rect.width,
           maxWidth: window.innerWidth - viewportPadding * 2,
           maxHeight: availableHeight,
+          visibility: 'visible',
           zIndex: 9999,
         });
       } else {
@@ -173,6 +196,7 @@ export function InlineSelect({
           minWidth: rect.width,
           maxWidth: window.innerWidth - viewportPadding * 2,
           maxHeight: availableHeight,
+          visibility: 'visible',
           zIndex: 9999,
         });
       }

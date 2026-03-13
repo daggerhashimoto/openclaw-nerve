@@ -1,6 +1,6 @@
 /** Tests for useConnectionManager hook. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 
 // Mock GatewayContext exports used by useConnectionManager
 const connectMock = vi.fn(async () => {});
@@ -63,9 +63,58 @@ describe('useConnectionManager', () => {
     });
 
     const mod = await import('./useConnectionManager');
+    const { result } = renderHook(() => mod.useConnectionManager());
+
+    await waitFor(() => {
+      expect(result.current.serverSideAuth).toBe(true);
+    });
+
+    // Should not connect because url already exists and is different from default
+    expect(connectMock).not.toHaveBeenCalled();
+    expect(result.current.editableUrl).toBe('ws://custom.host:1234/ws');
+  });
+
+  it('auto-connects if saved URL matches official URL but token is missing (Managed Upgrade)', async () => {
+    const { loadConfig } = await import('../contexts/GatewayContext');
+    // User has the official URL saved, but no token (e.g. fresh install or they cleared it)
+    vi.mocked(loadConfig).mockReturnValue({ url: 'ws://official:18789/ws', token: '' });
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ wsUrl: 'ws://official:18789/ws', serverSideAuth: true }),
+    });
+
+    const mod = await import('./useConnectionManager');
     renderHook(() => mod.useConnectionManager());
 
-    // Should not connect because url/token already exist in config
-    expect(connectMock).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(connectMock).toHaveBeenCalledWith('ws://official:18789/ws', '');
+    });
+  });
+
+  it('forces empty token on reconnect when serverSideAuth is active for official URL', async () => {
+    const { loadConfig, saveConfig } = await import('../contexts/GatewayContext');
+    vi.mocked(loadConfig).mockReturnValue({ url: 'ws://official:18789/ws', token: 'stale-token' });
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ wsUrl: 'ws://official:18789/ws', serverSideAuth: true }),
+    });
+
+    const mod = await import('./useConnectionManager');
+    const { result } = renderHook(() => mod.useConnectionManager());
+
+    await waitFor(() => {
+      expect(result.current.serverSideAuth).toBe(true);
+    });
+
+    // Manually trigger reconnect
+    await act(async () => {
+      await result.current.handleReconnect();
+    });
+
+    expect(saveConfig).toHaveBeenCalledWith('ws://official:18789/ws', '');
+    expect(connectMock).toHaveBeenCalledWith('ws://official:18789/ws', '');
+    expect(result.current.editableToken).toBe('');
   });
 });

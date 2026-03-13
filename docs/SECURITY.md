@@ -301,10 +301,10 @@ Nerve performs **server-side token injection** to provide a zero-config connecti
 1. The WebSocket proxy identifies if a connection is **trusted**.
    - **Local Trusted**: The client IP (resolved via `TRUSTED_PROXIES` if applicable) is a loopback address (`127.0.0.1` / `::1`).
    - **Session Trusted**: The request carries a valid session cookie (`NERVE_AUTH=true`).
-2. If trusted and a `GATEWAY_TOKEN` is configured, Nerve intercept's the client's `connect` request.
+2. If trusted and a `GATEWAY_TOKEN` is configured, Nerve intercepts the client's `connect` request.
 3. If the client did not provide a token, Nerve injects the server's `GATEWAY_TOKEN`.
 
-This allows the UI to hide the "Auth Token" field and auto-connect fortrusted users while keeping the token strictly on the server.
+This allows the UI to hide the "Auth Token" field and auto-connect for trusted users while keeping the token strictly on the server.
 
 ### Device Identity & Gateway Scopes
 

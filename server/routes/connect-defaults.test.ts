@@ -12,7 +12,10 @@ describe('GET /api/connect-defaults', () => {
   });
 
   /** Build a Hono app with mocked config for testing. */
-  async function buildApp(configOverrides: Record<string, unknown> = {}) {
+  async function buildApp(
+    configOverrides: Record<string, unknown> = {},
+    remoteAddress: string = '127.0.0.1',
+  ) {
     vi.doMock('../lib/config.js', () => ({
       config: {
         gatewayUrl: 'http://127.0.0.1:18789',
@@ -29,7 +32,7 @@ describe('GET /api/connect-defaults', () => {
 
     vi.doMock('@hono/node-server/conninfo', () => ({
       getConnInfo: vi.fn(() => ({
-        remote: { address: '127.0.0.1' },
+        remote: { address: remoteAddress },
       })),
     }));
 
@@ -72,6 +75,14 @@ describe('GET /api/connect-defaults', () => {
 
   it('sets serverSideAuth: false when gateway token is missing', async () => {
     const app = await buildApp({ gatewayToken: '' });
+    const res = await app.request('/api/connect-defaults');
+    const json = (await res.json()) as { serverSideAuth: boolean };
+
+    expect(json.serverSideAuth).toBe(false);
+  });
+
+  it('sets serverSideAuth: false for external IP when auth is disabled', async () => {
+    const app = await buildApp({ auth: false }, '203.0.113.5');
     const res = await app.request('/api/connect-defaults');
     const json = (await res.json()) as { serverSideAuth: boolean };
 

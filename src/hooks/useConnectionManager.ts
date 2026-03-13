@@ -66,28 +66,43 @@ export function useConnectionManager(): ConnectionManagerState {
     setDialogOpen(false);
   }, [connect]);
 
-  // Fetch server defaults when no saved config exists (async, can't run in initializer)
+  // Fetch server defaults (async, can't run in initializer)
   useEffect(() => {
     if (autoConnectAttempted.current) return;
     autoConnectAttempted.current = true;
 
     const saved = loadConfig();
-    if (saved.url && saved.token) return; // Already pre-filled by useState initializers
 
-    // No saved config — try to get defaults from the server to pre-fill
+    // Always fetch defaults once on mount to establish serverSideAuth and officialUrl
     fetchConnectDefaults().then((defaults) => {
       const isServerSideAuth = defaults?.serverSideAuth ?? false;
       setServerSideAuth(isServerSideAuth);
 
-      if (defaults?.wsUrl) {
-        setEditableUrl(defaults.wsUrl);
-        setOfficialUrl(defaults.wsUrl);
-      }
-      if (defaults?.token) setEditableToken(defaults.token);
+      const savedUrl = saved.url?.trim();
+      const officialWsUrl = defaults?.wsUrl?.trim();
 
-      // Auto-connect without token when server-side auth is supported and URL is new
-      if (isServerSideAuth && defaults?.wsUrl && !saved.url) {
-        handleConnect(defaults.wsUrl, '').catch(() => {
+      if (officialWsUrl) {
+        setOfficialUrl(officialWsUrl);
+        // Only override editableUrl if it's currently empty
+        if (!savedUrl) {
+          setEditableUrl(officialWsUrl);
+        }
+      }
+
+      // Only override editableToken if it's currently empty
+      if (!saved.token && defaults?.token) {
+        setEditableToken(defaults.token);
+      }
+
+      // Auto-connect if server-side auth is supported and:
+      // 1. No URL is saved yet
+      // 2. OR the saved URL is the official one and there is no saved token
+      if (
+        isServerSideAuth &&
+        officialWsUrl &&
+        (!savedUrl || (savedUrl === officialWsUrl && !saved.token))
+      ) {
+        handleConnect(officialWsUrl, '').catch(() => {
           // Auto-connect failed - user can manually connect via dialog
         });
       }
@@ -102,14 +117,20 @@ export function useConnectionManager(): ConnectionManagerState {
 
     const isOfficialUrl = editableUrl.trim() === officialUrl?.trim();
     if (editableUrl && (editableToken || (serverSideAuth && isOfficialUrl))) {
+      // Force empty token if server side auth is active for this URL
+      const token = serverSideAuth && isOfficialUrl ? '' : editableToken;
+      if (token !== editableToken) {
+        setEditableToken('');
+      }
+
       // Save the new config first
-      saveConfig(editableUrl, editableToken);
+      saveConfig(editableUrl, token);
       // Disconnect cleanly, then reconnect
       disconnect();
       // Small delay to ensure clean disconnect
       await new Promise(r => setTimeout(r, 100));
       try {
-        await connect(editableUrl, editableToken);
+        await connect(editableUrl, token);
       } catch {
         // Connection failed - don't loop, just stay disconnected
       }

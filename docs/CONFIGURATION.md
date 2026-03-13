@@ -108,7 +108,7 @@ GATEWAY_URL=http://127.0.0.1:18789
 Nerve performs **server-side token injection**. When a connection is established through the WebSocket proxy, Nerve automatically injects the configured `GATEWAY_TOKEN` into the connection request if the client is considered **trusted**.
 
 **Trust is granted if:**
-1. The connection is from a **local loopback address** (`127.0.0.1` or `::1`), accounting for `X-Forwarded-For` and `X-Real-IP` when behind a [Trusted Proxy](#trusted-proxies).
+1. The connection is from a **local loopback address** (`127.0.0.1` or `::1`), accounting for `X-Forwarded-For` and `X-Real-IP` when behind a trusted proxy (see `TRUSTED_PROXIES`).
 2. OR, the connection has a valid **authenticated session** (`NERVE_AUTH=true`).
 
 This allows the browser UI to connect without having to manually enter or store the gateway token in the browser's persistent storage. If a connection is not trusted (e.g., remote access without authentication), the token field in the UI must be filled manually.

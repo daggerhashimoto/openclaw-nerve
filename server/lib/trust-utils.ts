@@ -32,8 +32,14 @@ export function getRealClientIp(req: {
 
 /**
  * Determine if a request is trusted for server-side token injection.
+ * 
+ * NOTE: When config.auth is enabled, this function assumes the caller has
+ * independently verified the session (as the WebSocket upgrade handler does).
+ * In unauthenticated contexts like connect-defaults, it reflects the server's
+ * CAPABILITY to inject tokens once trust is established.
+ * 
  * A request is trusted if:
- * 1. Global auth is enabled (assumes upgrade guard or middleware has verified the session).
+ * 1. Global auth is enabled (requires independent session verification for injection).
  * 2. OR the resolved client IP is a local loopback (local development).
  */
 export function isRequestTrusted(req: { 

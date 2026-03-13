@@ -661,8 +661,8 @@ describe('ws-proxy', () => {
         params: { client: { id: 'nerve-ui' } },
       }));
 
-      // Wait for connect response
-      await waitForMessage(ws);
+      // Wait for the connect request to be received by the gateway
+      await mockGw.expectMessages(1);
 
       const connectMsg = mockGw.received.find((m) => {
         const d = m.data as Record<string, unknown>;

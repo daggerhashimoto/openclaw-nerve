@@ -198,6 +198,28 @@ describe('gateway routes', () => {
       // Verify the gateway was invoked with the correct tool
       expect(invokedCalls.some(c => c.tool === 'sessions_list')).toBe(true);
     });
+
+    it('falls back to the first top-level root when main is absent', async () => {
+      setDefaults();
+      invokeGatewayImpl = (tool: string) => {
+        if (tool === 'sessions_list') {
+          return {
+            sessions: [{
+              sessionKey: 'agent:reviewer:main',
+              model: 'anthropic/claude-sonnet-4',
+              thinking: 'medium',
+            }],
+          };
+        }
+        return {};
+      };
+      const app = buildApp();
+      const res = await app.request('/api/gateway/session-info');
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as Record<string, unknown>;
+      expect(json.model).toBe('anthropic/claude-sonnet-4');
+      expect(json.thinking).toBe('medium');
+    });
   });
 
   describe('POST /api/gateway/session-patch', () => {
@@ -225,6 +247,34 @@ describe('gateway routes', () => {
       const json = (await res.json()) as Record<string, unknown>;
       expect(json.ok).toBe(true);
       expect(json.model).toBe('anthropic/claude-opus-4');
+    });
+
+    it('uses the first top-level root when sessionKey is omitted and main is absent', async () => {
+      setDefaults();
+      const invokedCalls: Array<{ tool: string; args: Record<string, unknown> }> = [];
+      invokeGatewayImpl = (tool: string, args: Record<string, unknown>) => {
+        invokedCalls.push({ tool, args });
+        if (tool === 'sessions_list') {
+          return {
+            sessions: [
+              { sessionKey: 'agent:reviewer:main' },
+              { sessionKey: 'agent:reviewer:subagent:123' },
+            ],
+          };
+        }
+        return {};
+      };
+      const app = buildApp();
+      const res = await app.request('/api/gateway/session-patch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'openai/gpt-4o' }),
+      });
+      expect(res.status).toBe(200);
+      expect(invokedCalls).toContainEqual({
+        tool: 'session_status',
+        args: { model: 'openai/gpt-4o', sessionKey: 'agent:reviewer:main' },
+      });
     });
 
     it('returns 501 for thinking-only changes', async () => {

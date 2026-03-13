@@ -445,7 +445,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
               </div>
               <div className="cockpit-note" data-tone="primary">
                 {payloadKind === 'agentTurn'
-                  ? 'Agent tasks run in a private cron session beneath the selected root and keep that main thread clean.'
+                  ? 'Agent tasks run in a private cron session beneath the selected root and keep that root thread clean.'
                   : 'System events post directly into the selected root thread and suit reminders or lightweight alerts.'}
               </div>
             </SectionShell>

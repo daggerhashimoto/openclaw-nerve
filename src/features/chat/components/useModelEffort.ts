@@ -267,7 +267,7 @@ export function useModelEffort(): UseModelEffortReturn {
         }
       }
 
-      // For non-main sessions, resolve the actual model from cron payload or transcript
+      // For child sessions, resolve the actual model from cron payload or transcript
       if (!currentSession) return;
       const sessionType = getSessionType(currentSession);
       if (sessionType === 'main') return;

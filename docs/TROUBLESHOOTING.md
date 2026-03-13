@@ -407,7 +407,7 @@ MEMORY_PATH=/path/to/.openclaw/workspace/MEMORY.md
 
 ### Sessions don't appear in sidebar
 
-**Symptom:** Session list is empty or shows only the main session.
+**Symptom:** Session list is empty or only shows one recent root session.
 
 **Cause:** Sessions are fetched via gateway RPC `sessions.list` with `activeMinutes: 120` filter.
 
@@ -420,11 +420,11 @@ MEMORY_PATH=/path/to/.openclaw/workspace/MEMORY.md
 
 **Symptom:** "Timed out waiting for subagent to spawn" error.
 
-**Cause:** Spawning uses a polling approach — sends a `[spawn-subagent]` chat message to the main session, then polls `sessions.list` every 2s for up to 30s waiting for a new subagent session to appear.
+**Cause:** Spawning uses a polling approach — sends a `[spawn-subagent]` chat message to the selected root session, then polls `sessions.list` every 2s for up to 30s waiting for a new subagent session to appear.
 
 **Fix:**
-- The main agent must be running and able to process the spawn request
-- Check that the main session isn't busy with another task
+- The selected root agent must be running and able to process the spawn request
+- Check that the selected root session isn't busy with another task
 - Check gateway logs for spawn errors
 
 ### Session status stuck on "THINKING"

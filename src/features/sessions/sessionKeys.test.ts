@@ -9,6 +9,7 @@ import {
   isRootChildSession,
   isTopLevelAgentSessionKey,
   pickDefaultSessionKey,
+  resolveParentSessionKey,
 } from './sessionKeys';
 
 function session(sessionKey: string, extra: Partial<Session> = {}): Session {
@@ -52,10 +53,17 @@ describe('sessionKeys', () => {
     expect(pickDefaultSessionKey(sessions)).toBe('agent:main:main');
   });
 
-  it('builds display labels from displayName, label, then root id', () => {
+  it('builds display labels from label, displayName, then root id', () => {
+    expect(getSessionDisplayLabel(session('agent:reviewer:main', { label: 'Reviewer', displayName: 'webchat:reviewer' }), 'Nerve')).toBe('Reviewer');
     expect(getSessionDisplayLabel(session('agent:reviewer:main', { displayName: 'Reviewer Prime' }), 'Nerve')).toBe('Reviewer Prime');
     expect(getSessionDisplayLabel(session('agent:reviewer:main', { label: 'Reviewer' }), 'Nerve')).toBe('Reviewer');
     expect(getSessionDisplayLabel(session('agent:reviewer:main'), 'Nerve')).toBe('Agent reviewer');
     expect(getSessionDisplayLabel(session('agent:main:main'), 'Nerve')).toBe('Nerve (main)');
+  });
+
+  it('falls back to inferred parent when explicit parentId is outside the current window', () => {
+    const knownKeys = new Set(['agent:reviewer:main', 'agent:reviewer:subagent:child']);
+    const child = session('agent:reviewer:subagent:child', { parentId: 'agent:missing:main' });
+    expect(resolveParentSessionKey(child, knownKeys)).toBe('agent:reviewer:main');
   });
 });

@@ -22,6 +22,7 @@ const IDLE_STATES = new Set(['idle', 'done', 'error', 'final', 'aborted', 'compl
 // Wider window + higher cap avoids dropping subagents from the sidebar in busy workspaces.
 const SESSIONS_ACTIVE_MINUTES = 24 * 60; // 24h
 const SESSIONS_LIMIT = 200;
+const FULL_SESSIONS_LIMIT = 1000;
 const SUBAGENT_DISCOVERY_TIMEOUT_MS = 60_000;
 const SUBAGENT_DISCOVERY_POLL_MS = 1_000;
 
@@ -135,8 +136,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     currentSessionRef.current = currentSession;
   }, [currentSession]);
 
-  const findDescendantSessionKeys = useCallback((sessionKey: string) => {
-    const roots = buildSessionTree(sessionsRef.current);
+  const findDescendantSessionKeys = useCallback((sessionKey: string, sourceSessions: Session[] = sessionsRef.current) => {
+    const roots = buildSessionTree(sourceSessions);
     const queue = [...roots];
     let targetNode: (typeof roots)[number] | null = null;
 
@@ -160,6 +161,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     return descendants;
   }, []);
+
+  const listAuthoritativeSessions = useCallback(async () => {
+    if (connectionState !== 'connected') return sessionsRef.current;
+    try {
+      const res = await rpc('sessions.list', { limit: FULL_SESSIONS_LIMIT }) as SessionsListResponse;
+      return res?.sessions ?? [];
+    } catch (err) {
+      console.debug('[SessionContext] Failed to fetch authoritative session list:', err);
+      return sessionsRef.current;
+    }
+  }, [connectionState, rpc]);
 
   const setGranularStatus = useCallback((sessionKey: string, state: GranularAgentState) => {
     if (!sessionKey) return;
@@ -618,7 +630,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteSession = useCallback(async (sessionKey: string) => {
-    const descendants = findDescendantSessionKeys(sessionKey);
+    const authoritativeSessions = await listAuthoritativeSessions();
+    const descendants = findDescendantSessionKeys(sessionKey, authoritativeSessions);
     const keysToDelete = [...descendants, sessionKey];
     const shouldReplaceCurrent = keysToDelete.includes(currentSessionRef.current);
     const remaining = sessionsRef.current.filter(s => !keysToDelete.includes(getSessionKey(s)));
@@ -642,16 +655,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setCurrentSessionRaw('');
       }
     }
-  }, [findDescendantSessionKeys, rpc, setCurrentSession]);
+  }, [findDescendantSessionKeys, listAuthoritativeSessions, rpc, setCurrentSession]);
 
   const spawnSession = useCallback(async (opts: SpawnSessionOpts) => {
-    const before = new Set(sessionsRef.current.map(getSessionKey));
+    const authoritativeSessions = await listAuthoritativeSessions();
+    const before = new Set(authoritativeSessions.map(getSessionKey));
 
     if (opts.kind === 'root') {
       const rootName = opts.agentName?.trim();
       if (!rootName) throw new Error('Agent name is required');
 
-      const sessionKey = buildAgentRootSessionKey(rootName, before);
+      const sessionKey = buildAgentRootSessionKey(
+        rootName,
+        authoritativeSessions.map(getSessionKey),
+      );
       const thinkingLevel = opts.thinking && opts.thinking !== 'off' ? opts.thinking : null;
 
       await rpc('sessions.patch', {
@@ -710,7 +727,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     await refreshSessions();
     throw new Error('Timed out waiting for the new subagent session to appear');
-  }, [rpc, refreshSessions, setCurrentSession]);
+  }, [listAuthoritativeSessions, rpc, refreshSessions, setCurrentSession]);
 
   const renameSession = useCallback(async (sessionKey: string, label: string) => {
     await rpc('sessions.patch', { key: sessionKey, label });

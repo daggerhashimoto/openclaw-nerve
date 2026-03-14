@@ -53,7 +53,7 @@ function findNodeByKey(nodes: ReturnType<typeof buildSessionTree>, key: string):
 
 /** Sidebar list of agent sessions with tree structure and context menus. */
 export function SessionList({ sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
-  const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string; descendantCount: number } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string; descendantCount: number; isRootAgent: boolean } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
@@ -142,6 +142,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
       key,
       label,
       descendantCount: targetNode ? countDescendants(targetNode) : 0,
+      isRootAgent: isTopLevelAgentSessionKey(key),
     });
   }, [tree]);
 
@@ -239,7 +240,9 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
               {deleteTarget?.descendantCount ? 'Delete Session Tree' : 'Delete Session'}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground text-xs">
-              {deleteTarget?.descendantCount
+              {deleteTarget?.isRootAgent
+                ? 'This will permanently delete this root session and any nested child sessions attached to it.'
+                : deleteTarget?.descendantCount
                 ? `This will permanently delete this session and ${deleteTarget.descendantCount} nested child session${deleteTarget.descendantCount === 1 ? '' : 's'}.`
                 : 'This will permanently delete the session and archive its transcript.'}
             </DialogDescription>

@@ -95,6 +95,18 @@ describe('buildSessionTree', () => {
     expect(tree[0].children[0].key).toBe('agent:main:subagent:child');
   });
 
+  it('falls back to inferred parent when parentId is stale', () => {
+    const sessions = [
+      session('agent:reviewer:main'),
+      session('agent:reviewer:subagent:child', { parentId: 'agent:missing:main' }),
+    ];
+    const tree = buildSessionTree(sessions);
+    expect(tree).toHaveLength(1);
+    expect(tree[0].key).toBe('agent:reviewer:main');
+    expect(tree[0].children).toHaveLength(1);
+    expect(tree[0].children[0].key).toBe('agent:reviewer:subagent:child');
+  });
+
   it('orphans sessions whose parent is not in the list', () => {
     const sessions = [
       session('agent:main:subagent:orphan', { parentId: 'agent:other:main' }),

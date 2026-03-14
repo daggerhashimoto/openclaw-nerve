@@ -80,7 +80,6 @@ export function resolveParentSessionKey(session: Session, knownKeys?: Set<string
 
   if (session.parentId) {
     if (!knownKeys || knownKeys.has(session.parentId)) return session.parentId;
-    return null;
   }
 
   const inferred = inferParentSessionKey(sessionKey);
@@ -120,8 +119,8 @@ export function getTopLevelAgentSessions(sessions: Session[]): Session[] {
 export function getSessionDisplayLabel(session: Session, agentName = 'Agent'): string {
   const sessionKey = getSessionKey(session);
 
-  if (session.displayName?.trim()) return session.displayName.trim();
   if (session.label?.trim()) return session.label.trim();
+  if (session.displayName?.trim()) return session.displayName.trim();
 
   if (isTopLevelAgentSessionKey(sessionKey)) {
     const rootId = getRootAgentId(sessionKey);

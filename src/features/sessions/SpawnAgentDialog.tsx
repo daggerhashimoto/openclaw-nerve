@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { ArrowRight, Bot, GitBranch } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -192,34 +193,97 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
 
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!value) handleCancel(); }}>
-      <DialogContent className="max-w-xl overflow-visible">
+      <DialogContent
+        className={
+          mode === null
+            ? 'max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain sm:max-h-[min(100dvh-4rem,54rem)] sm:overflow-visible sm:max-w-4xl lg:max-w-[72rem]'
+            : 'max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain sm:max-h-[min(100dvh-4rem,48rem)] sm:overflow-visible sm:max-w-xl'
+        }
+      >
         {mode === null ? (
           <>
             <DialogHeader>
-              <div className="cockpit-kicker">
-                <span className="text-primary">◆</span>
-                Session Control
+              <div className="cockpit-surface overflow-hidden border-border/80 bg-secondary/34 p-4 sm:p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1.5">
+                    <div className="cockpit-kicker">
+                      <span className="text-primary">◆</span>
+                      Session Control
+                    </div>
+                    <DialogTitle className="text-[1.45rem] font-semibold tracking-[-0.035em] text-foreground">
+                      Choose the kind of agent you want to start
+                    </DialogTitle>
+                    <DialogDescription className="max-w-[42ch] text-sm leading-6 text-muted-foreground">
+                      Pick whether this is a new top-level agent with its own chat and subagents, or a focused subagent that plugs into an existing top-level agent.
+                    </DialogDescription>
+                  </div>
+                  <div className="hidden min-w-[170px] rounded-[20px] border border-border/70 bg-background/60 p-3 sm:block">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground/80">2-step flow</div>
+                    <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-2 text-foreground">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/18 text-[10px] font-semibold text-primary">1</span>
+                        Choose agent type
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted/70 text-[10px] font-semibold text-muted-foreground">2</span>
+                        Configure the runtime
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <DialogTitle className="text-[1.35rem] font-semibold tracking-[-0.03em] text-foreground">
-                Create session
-              </DialogTitle>
-              <DialogDescription className="text-sm text-muted-foreground">
-                Start a fresh top-level agent, or hand a focused job to an existing root.
-              </DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-[1.06fr_0.94fr]">
               <button
                 type="button"
                 onClick={() => setMode('root')}
-                className="shell-chip flex min-h-[164px] flex-col items-start gap-3 rounded-[24px] border border-border/70 bg-background/40 p-5 text-left transition-transform hover:-translate-y-px hover:border-primary/60"
+                className="group relative overflow-hidden rounded-[26px] border border-border/80 bg-card/88 p-0 text-left transition-transform hover:-translate-y-px hover:border-primary/60"
               >
-                <span className="cockpit-badge" data-tone="success">Top-level</span>
-                <div>
-                  <div className="text-base font-semibold text-foreground">New agent</div>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    Create another root session with its own chat thread and its own subagent branch.
-                  </p>
+                <span className="pointer-events-none absolute -right-10 top-0 h-28 w-28 rounded-full bg-primary/10 blur-2xl transition-opacity group-hover:opacity-100" />
+                <span className="pointer-events-none absolute left-0 top-0 h-full w-1.5 bg-primary/60" />
+                <div className="relative flex min-h-[218px] flex-col gap-4 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-[16px] border border-primary/25 bg-primary/12 text-primary">
+                        <Bot size={20} />
+                      </span>
+                      <div className="space-y-1">
+                        <span className="cockpit-badge" data-tone="success">Top-level agent</span>
+                        <div className="text-base font-semibold tracking-[-0.02em] text-foreground">New agent</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground/80">Independent</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="max-w-[30ch] text-sm leading-6 text-muted-foreground">
+                      Create another top-level agent with its own chat, its own subagents, and its own scheduled work.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2 text-[12px] text-muted-foreground sm:grid-cols-2">
+                    <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
+                      Own root conversation
+                    </div>
+                    <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
+                      Own subagents
+                    </div>
+                    <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
+                      Rename or delete later
+                    </div>
+                    <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
+                      Good for separate roles
+                    </div>
+                  </div>
+
+                  <div className="mt-auto flex items-center justify-between border-t border-border/70 pt-3 text-sm">
+                    <span className="font-medium text-foreground">Start a new top-level agent</span>
+                    <span className="flex items-center gap-1 text-primary transition-transform group-hover:translate-x-0.5">
+                      Continue
+                      <ArrowRight size={15} />
+                    </span>
+                  </div>
                 </div>
               </button>
 
@@ -230,21 +294,62 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                   setMode('subagent');
                 }}
                 disabled={!hasRootAgents}
-                className="shell-chip flex min-h-[164px] flex-col items-start gap-3 rounded-[24px] border border-border/70 bg-background/40 p-5 text-left transition-transform hover:-translate-y-px hover:border-primary/60 disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:translate-y-0 disabled:hover:border-border/70"
+                className="group relative overflow-hidden rounded-[26px] border border-border/80 bg-card/84 p-0 text-left transition-transform hover:-translate-y-px hover:border-primary/60 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:border-border/80"
               >
-                <span className="cockpit-badge" data-tone="info">Attached</span>
-                <div>
-                  <div className="text-base font-semibold text-foreground">New subagent</div>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    {hasRootAgents
-                      ? 'Pick a root agent first, then launch a focused child session beneath it.'
-                      : 'Create a top-level agent first, then attach focused child sessions beneath it.'}
-                  </p>
+                <span className="pointer-events-none absolute -left-8 bottom-0 h-24 w-24 rounded-full bg-info/10 blur-2xl transition-opacity group-hover:opacity-100" />
+                <span className="pointer-events-none absolute left-0 top-0 h-full w-1.5 bg-info/55" />
+                <div className="relative flex min-h-[218px] flex-col gap-4 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-[16px] border border-info/25 bg-info/12 text-info">
+                        <GitBranch size={20} />
+                      </span>
+                      <div className="space-y-1">
+                        <span className="cockpit-badge" data-tone="info">Attached child</span>
+                        <div className="text-base font-semibold tracking-[-0.02em] text-foreground">New subagent</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground/80">Focused</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="max-w-[30ch] text-sm leading-6 text-muted-foreground">
+                      Spin up a focused subagent under an existing top-level agent so the result stays attached to that agent.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2 text-[12px] text-muted-foreground">
+                    <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
+                      Pick which root owns the work
+                    </div>
+                    <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
+                      Best for audits, one-off tasks, and parallel help
+                    </div>
+                  </div>
+
+                  <div className="mt-auto flex items-center justify-between border-t border-border/70 pt-3 text-sm">
+                    <span className="font-medium text-foreground">
+                      {hasRootAgents ? 'Attach work to an existing agent' : 'Needs a top-level agent first'}
+                    </span>
+                    <span className="flex items-center gap-1 text-info transition-transform group-hover:translate-x-0.5">
+                      {hasRootAgents ? 'Continue' : 'Locked'}
+                      <ArrowRight size={15} />
+                    </span>
+                  </div>
+
+                  {!hasRootAgents && (
+                    <div className="rounded-[16px] border border-border/70 bg-background/58 px-3 py-2 text-[12px] leading-5 text-muted-foreground">
+                      Create a top-level agent first, then come back here to launch attached subagents.
+                    </div>
+                  )}
                 </div>
               </button>
             </div>
 
-            <DialogFooter className="gap-2">
+            <DialogFooter className="items-center justify-between gap-3 sm:flex-row">
+              <p className="text-[12px] leading-5 text-muted-foreground">
+                Top-level agents are full sessions. Subagents are short-lived specialists that stay under one of those agents.
+              </p>
               <Button type="button" variant="outline" onClick={handleCancel} className="text-xs">
                 Cancel
               </Button>
@@ -267,8 +372,8 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
               </DialogTitle>
               <DialogDescription className="text-sm text-muted-foreground">
                 {mode === 'root'
-                  ? 'Name the new root agent, then give it the opening task and runtime defaults.'
-                  : 'Choose which root should own the new child session, then set the task and runtime defaults.'}
+                  ? 'Name the new top-level agent, then give it the opening task and runtime defaults.'
+                  : 'Choose which top-level agent should own the new subagent, then set the task and runtime defaults.'}
               </DialogDescription>
             </DialogHeader>
 
@@ -284,7 +389,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                     className="cockpit-input"
                   />
                   <p className="cockpit-note mt-2">
-                    This becomes the root session label and the stable session branch for child agents.
+                    This becomes the top-level session label and the stable agent identity for its subagents.
                   </p>
                 </div>
               ) : (
@@ -301,7 +406,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                     inline
                   />
                   <p className="cockpit-note mt-2">
-                    Subagents stay attached to the selected root and report back into that branch.
+                    Subagents stay attached to the selected top-level agent and report back into that session.
                   </p>
                 </div>
               )}

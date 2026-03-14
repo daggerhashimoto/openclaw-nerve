@@ -16,7 +16,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Plus } from 'lucide-react';
+import { AlertTriangle, Plus, RefreshCw } from 'lucide-react';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
 
 interface SessionListProps {
@@ -153,16 +153,16 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
           <span className="panel-diamond">◆</span>
           AGENTS
         </span>
-        <div className="flex items-center gap-1 ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           {onSpawn && (
             <button
               type="button"
               onClick={() => setSpawnOpen(true)}
               aria-label="Create session"
               title="Create session"
-              className="bg-transparent border border-border/60 text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-muted-foreground"
+              className="shell-icon-button size-10 px-0"
             >
-              <Plus size={14} />
+              <Plus size={16} />
             </button>
           )}
           <button
@@ -170,9 +170,9 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
             onClick={onRefresh}
             aria-label="Refresh sessions"
             title="Refresh sessions"
-            className="bg-transparent border border-border/60 text-muted-foreground text-sm w-7 h-7 cursor-pointer flex items-center justify-center hover:text-foreground hover:border-muted-foreground"
+            className="shell-icon-button size-10 px-0"
           >
-            <span aria-hidden="true">↻</span>
+            <RefreshCw size={16} aria-hidden="true" className={isLoading ? 'animate-spin' : undefined} />
           </button>
         </div>
       </div>

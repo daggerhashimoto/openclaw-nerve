@@ -22,6 +22,8 @@ const IDLE_STATES = new Set(['idle', 'done', 'error', 'final', 'aborted', 'compl
 // Wider window + higher cap avoids dropping subagents from the sidebar in busy workspaces.
 const SESSIONS_ACTIVE_MINUTES = 24 * 60; // 24h
 const SESSIONS_LIMIT = 200;
+const SUBAGENT_DISCOVERY_TIMEOUT_MS = 60_000;
+const SUBAGENT_DISCOVERY_POLL_MS = 1_000;
 
 export interface SpawnSessionOpts {
   kind: 'root' | 'subagent';
@@ -687,10 +689,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const idempotencyKey = `spawn-subagent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     await rpc('chat.send', { sessionKey: parentSessionKey, message: lines.join('\n'), idempotencyKey });
 
-    // Poll until a new subagent session appears (max 30s)
-    const deadline = Date.now() + 30_000;
+    // A spawned child can take a while to appear in sessions.list for non-main
+    // roots, even after the parent agent accepts the request.
+    const deadline = Date.now() + SUBAGENT_DISCOVERY_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 2000));
       try {
         const res = await rpc('sessions.list', { activeMinutes: SESSIONS_ACTIVE_MINUTES, limit: SESSIONS_LIMIT }) as SessionsListResponse;
         const fresh = res?.sessions ?? [];
@@ -704,9 +706,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           return;
         }
       } catch { /* keep polling */ }
+      await new Promise(r => setTimeout(r, SUBAGENT_DISCOVERY_POLL_MS));
     }
     await refreshSessions();
-    throw new Error('Timed out waiting for subagent to spawn');
+    throw new Error('Timed out waiting for the new subagent session to appear');
   }, [rpc, refreshSessions, setCurrentSession]);
 
   const renameSession = useCallback(async (sessionKey: string, label: string) => {

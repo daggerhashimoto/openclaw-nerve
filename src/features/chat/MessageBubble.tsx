@@ -60,15 +60,15 @@ const bgClass = (role: string) => {
 
 function RoleBadge({ role, agentName = 'Agent' }: { role: string; agentName?: string }) {
   if (role === 'user') {
-    return <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-sm bg-primary/20 text-primary">OPERATOR</span>;
+    return <span className="cockpit-badge" data-tone="primary">Operator</span>;
   }
   if (role === 'assistant') {
-    return <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-sm bg-green/20 text-green">{agentName.toUpperCase()}</span>;
+    return <span className="cockpit-badge" data-tone="success">{agentName}</span>;
   }
   if (role === 'event') {
-    return <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-sm bg-orange/20 text-orange">EVENT</span>;
+    return <span className="cockpit-badge" data-tone="warning">Event</span>;
   }
-  return <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-sm bg-muted-foreground/20 text-muted-foreground">SYSTEM</span>;
+  return <span className="cockpit-badge">System</span>;
 }
 
 function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, firstMessageTime, searchQuery, isCurrentMatch, agentName }: MessageBubbleProps) {
@@ -102,15 +102,15 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           type="button"
           onClick={() => setSysExpanded(!sysExpanded)}
           aria-expanded={sysExpanded}
-          className="w-full flex items-center gap-2 px-4 py-1.5 text-[10px] text-muted-foreground hover:bg-secondary/50 transition-colors cursor-pointer bg-transparent border-0"
+          className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-4 py-2 text-[11px] text-muted-foreground transition-colors hover:bg-secondary/50"
         >
           <span className={`shrink-0 w-3 transition-transform ${sysExpanded ? 'rotate-90' : ''}`}>›</span>
           <span>{statusIcon}</span>
-          <span className="font-mono tracking-wide uppercase truncate text-info">{msg.systemLabel || 'System notification'}</span>
-          <span className="ml-auto text-[9px] text-info/40 shrink-0">{timeStr}</span>
+          <span className="truncate font-medium text-info">{msg.systemLabel || 'System notification'}</span>
+          <span className="ml-auto shrink-0 font-mono text-[10px] text-info/40">{timeStr}</span>
         </button>
         {sysExpanded && (
-          <div className="px-8 py-2 text-[11px] text-muted-foreground bg-secondary/30 border-t border-border/20 max-h-[300px] overflow-y-auto">
+          <div className="max-h-[300px] overflow-y-auto border-t border-border/20 bg-secondary/30 px-8 py-3 text-[12px] text-muted-foreground">
             <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{msg.rawText}</pre>
           </div>
         )}
@@ -164,29 +164,29 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           role="button"
           tabIndex={0}
           aria-expanded={!isCollapsed}
-          className="flex items-start gap-2 cursor-pointer select-none hover:bg-purple-500/[0.03] hover:border-purple-500/10 transition-colors py-1 px-2 rounded border border-transparent"
+          className="flex items-start gap-2 rounded-2xl border border-primary/10 bg-primary/[0.03] px-3 py-2 transition-colors cursor-pointer select-none hover:border-primary/18 hover:bg-primary/[0.05]"
           onClick={() => onToggleCollapse(index)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleCollapse(index); } }}
         >
-          <span className={`text-purple-400/60 text-[10px] shrink-0 w-3 mt-0.5 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}>›</span>
-          <span className="text-purple-400/60 text-[10px] shrink-0 mt-0.5">💭</span>
-          <span className="text-purple-400/70 text-[11px] shrink-0 font-medium">Thinking</span>
+          <span className={`mt-0.5 w-3 shrink-0 text-[10px] text-primary/60 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}>›</span>
+          <span className="mt-0.5 shrink-0 text-[10px] text-primary/60">💭</span>
+          <span className="shrink-0 text-[11px] font-medium text-primary/78">Thinking</span>
           {msg.thinkingDurationMs && (
-            <span className="text-purple-400/50 text-[10px] tabular-nums shrink-0">
+            <span className="shrink-0 text-[10px] tabular-nums text-primary/52">
               • {msg.thinkingDurationMs >= 1000
                 ? `${(msg.thinkingDurationMs / 1000).toFixed(1)}s`
                 : `${msg.thinkingDurationMs}ms`}
             </span>
           )}
           {isCollapsed && (
-            <span className="text-purple-400/40 text-[10px] truncate flex-1 min-w-0 italic">
+            <span className="min-w-0 flex-1 truncate text-[10px] italic text-primary/44">
               {msg.rawText.slice(0, 100)}{msg.rawText.length > 100 ? '…' : ''}
             </span>
           )}
-          <span className="text-purple-400/30 text-[10px] shrink-0 tabular-nums mt-0.5">{timeStr}</span>
+          <span className="mt-0.5 shrink-0 font-mono text-[10px] tabular-nums text-primary/36">{timeStr}</span>
         </div>
         {!isCollapsed && (
-          <div className="text-purple-300/60 text-[12px] px-2 pb-2 pl-7 border-l border-purple-500/10 ml-2 msg-body-intermediate">
+          <div className="ml-3 border-l border-primary/12 px-3 pb-2 pt-1 text-[12px] text-foreground/70 msg-body-intermediate">
             <Suspense fallback={<span className="text-muted-foreground text-xs">…</span>}>
               <MarkdownRenderer content={msg.rawText} searchQuery={searchQuery} />
             </Suspense>
@@ -277,9 +277,9 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           )}
           <div className={`msg-body text-foreground ${isUser ? 'inline-block text-left max-w-[1120px] overflow-x-auto' : ''} ${isAssistant ? (isStructuredMarkdown(msg.rawText) ? 'max-w-[1120px]' : 'max-w-[68ch]') : ''}`}>
             {isVoiceMessage && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-mono font-medium px-1.5 py-0.5 mr-1.5 bg-purple-500/15 text-purple-400 border border-purple-500/25 align-middle translate-y-[-1px]">
+              <span className="cockpit-badge mr-2 inline-flex align-middle" data-tone="primary">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-                VOICE
+                Voice
               </span>
             )}
             {displayContent && (
@@ -313,7 +313,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
             <div className="absolute top-0 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               {/* Copy button */}
               <button
-                className="text-[10px] cursor-pointer bg-background border border-border/60 text-muted-foreground px-1.5 py-0.5 font-mono transition-colors hover:text-primary hover:border-primary/50"
+                className="cockpit-toolbar-button min-h-7 px-2 text-[10px]"
                 aria-label="Copy message to clipboard"
                 onClick={handleCopy}
               >

@@ -2,10 +2,16 @@
  * CronDialog — Modal for creating or editing cron jobs.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { X } from 'lucide-react';
-import { InlineSelect } from '@/components/ui/InlineSelect';
+import { useState, useCallback, useRef, useEffect, useMemo, type SelectHTMLAttributes } from 'react';
+import { ChevronDown, X } from 'lucide-react';
 import type { CronJob } from '../hooks/useCrons';
+import { useSessionContext } from '@/contexts/SessionContext';
+import { getSessionKey } from '@/types';
+import {
+  getRootAgentSessionKey,
+  getSessionDisplayLabel,
+  getTopLevelAgentSessions,
+} from '@/features/sessions/sessionKeys';
 
 interface CronDialogProps {
   open: boolean;
@@ -74,9 +80,68 @@ function isoToLocal(iso: string): string {
   }
 }
 
+function SectionShell({
+  eyebrow,
+  title,
+  description,
+  children,
+  className = '',
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`cockpit-surface p-3.5 ${className}`}>
+      <div className="space-y-0.5">
+        <div className="cockpit-kicker text-[9px]">
+          <span className="text-primary">◆</span>
+          {eyebrow}
+        </div>
+        <div className="text-base font-semibold tracking-[-0.03em] text-foreground">{title}</div>
+        <p className="text-[12.5px] leading-5 text-muted-foreground">{description}</p>
+      </div>
+      <div className="mt-3 space-y-2.5">{children}</div>
+    </section>
+  );
+}
+
+function CronSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
+  const { className = '', children, ...rest } = props;
+
+  return (
+    <div className="relative">
+      <select
+        {...rest}
+        className={`cockpit-select h-11 appearance-none pr-12 text-sm ${className}`.trim()}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        size={15}
+        aria-hidden="true"
+        className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+      />
+    </div>
+  );
+}
+
 /** Modal dialog for creating or editing a cron job (schedule, prompt, model, channel). */
 export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronDialogProps) {
   const prefill = mode === 'edit' && initialData ? initialData : null;
+  const { sessions, currentSession, agentName } = useSessionContext();
+  const rootSessions = useMemo(() => getTopLevelAgentSessions(sessions), [sessions]);
+  const fallbackRootSessionKey = prefill?.sessionKey
+    || getRootAgentSessionKey(currentSession)
+    || (rootSessions[0] ? getSessionKey(rootSessions[0]) : '');
+  const rootOptions = useMemo(() => rootSessions.map((session) => ({
+    value: getSessionKey(session),
+    label: getSessionDisplayLabel(session, agentName),
+  })), [agentName, rootSessions]);
+  const hasRootAgents = rootOptions.length > 0;
+
   const [name, setName] = useState(() => prefill?.name || '');
   const [scheduleKind, setScheduleKind] = useState<ScheduleKind>(() => prefill?.scheduleKind || 'every');
   const [cronExpr, setCronExpr] = useState(() => prefill?.schedule || '0 9 * * *');
@@ -84,6 +149,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
   const [everyMs, setEveryMs] = useState(() => prefill?.everyMs?.toString() || '3600000');
   const [atTime, setAtTime] = useState(() => prefill?.at ? isoToLocal(prefill.at) : '');
   const [payloadKind, setPayloadKind] = useState<PayloadKind>(() => prefill?.payloadKind || 'agentTurn');
+  const [targetRootSessionKey, setTargetRootSessionKey] = useState(() => fallbackRootSessionKey);
   const [message, setMessage] = useState(() => prefill ? stripDeliveryInstruction(prefill.message || '') : '');
   const [model, setModel] = useState(() => prefill?.model || '');
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>(() => prefill?.delivery?.mode === 'announce' ? 'announce' : 'none');
@@ -94,6 +160,9 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const effectiveTargetRootSessionKey = targetRootSessionKey && rootOptions.some((option) => option.value === targetRootSessionKey)
+    ? targetRootSessionKey
+    : fallbackRootSessionKey;
 
   // Fetch available models and configured channels when dialog opens
   useEffect(() => {
@@ -122,7 +191,6 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
         setAvailableChannels(ch);
       })
       .catch(() => setAvailableChannels([]));
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- only run on open
   }, [open]);
 
   // Form state is initialized from props via useState initializers above.
@@ -151,6 +219,11 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
 
     if (!message.trim()) {
       setError('Message/prompt is required');
+      return;
+    }
+
+    if (!effectiveTargetRootSessionKey.trim()) {
+      setError('Select which top-level agent should own this job');
       return;
     }
 
@@ -202,6 +275,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
       schedule,
       payload,
       sessionTarget,
+      sessionKey: effectiveTargetRootSessionKey,
       delivery,
       enabled: true,
     };
@@ -216,233 +290,305 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
     } else {
       setError(`Failed to ${mode === 'edit' ? 'update' : 'create'} cron job`);
     }
-  }, [name, scheduleKind, cronExpr, cronTz, everyMs, atTime, payloadKind, message, model, deliveryMode, deliveryChannel, deliveryTo, onSubmit, handleClose, mode]);
+  }, [name, scheduleKind, cronExpr, cronTz, everyMs, atTime, payloadKind, effectiveTargetRootSessionKey, message, model, deliveryMode, deliveryChannel, deliveryTo, onSubmit, handleClose, mode, availableChannels.length]);
 
   if (!open) return null;
 
   const isEdit = mode === 'edit';
-
   return (
     <dialog
       ref={dialogRef}
       onCancel={handleClose}
       onClick={handleDialogClick}
       aria-labelledby="cron-dialog-title"
-      className="fixed inset-0 z-50 m-auto w-[400px] max-w-[90vw] max-h-[85vh] overflow-y-auto bg-background border border-border shadow-xl p-0 backdrop:bg-black/50"
+      className="fixed inset-0 z-50 m-auto max-h-[calc(100dvh-1rem)] w-[min(1040px,calc(100vw-1rem))] overflow-y-auto rounded-[24px] border border-border/80 bg-card/96 p-0 shadow-[0_36px_90px_rgba(0,0,0,0.38)] backdrop:bg-black/52 backdrop:backdrop-blur-sm sm:max-h-[calc(100dvh-2rem)] sm:rounded-[30px]"
       style={{ overscrollBehavior: 'contain' }}
     >
       <form onSubmit={handleSubmit} onClick={e => e.stopPropagation()} className="flex flex-col">
         {/* Header */}
-        <div className="panel-header border-l-[3px] border-l-purple flex items-center">
-          <span id="cron-dialog-title" className="panel-label text-purple">
-            <span className="panel-diamond">◆</span>
-            {isEdit ? 'EDIT CRON' : 'NEW CRON'}
-          </span>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="ml-auto bg-transparent border-0 text-muted-foreground cursor-pointer hover:text-foreground p-1 focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
-            aria-label="Close"
-          >
-            <X size={14} />
-          </button>
+        <div className="border-b border-border/70 bg-secondary/42 px-4 py-3 sm:px-5 sm:py-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="cockpit-kicker">
+                <span className="text-primary">◆</span>
+                Scheduler
+              </div>
+              <h2 id="cron-dialog-title" className="cockpit-title text-[1.15rem]">
+                {isEdit ? 'Edit cron job' : 'Create cron job'}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="shell-icon-button min-h-9 px-3"
+              aria-label="Close"
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
 
-        <div className="p-4 flex flex-col gap-3">
-          {/* Name */}
-          <div className="flex flex-col gap-1">
-            <label htmlFor="cron-name" className="text-[10px] uppercase tracking-wider text-muted-foreground">Name (optional)</label>
-            <input
-              id="cron-name"
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="My daily check…"
-              className="font-mono text-[11px] bg-background border border-border/60 text-foreground px-2 py-1.5 outline-none focus:border-purple focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-            />
-          </div>
+        <div className="grid gap-3 px-3 py-3 sm:gap-4 sm:px-4 sm:py-4 lg:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">
+          <div className="space-y-4">
+            <SectionShell
+              eyebrow="Identity"
+              title="Name and timing"
+              description="Name the job and choose the cadence it should follow."
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="cron-name" className="cockpit-field-label">Name (optional)</label>
+                  <input
+                    id="cron-name"
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="Morning status digest"
+                    className="cockpit-input"
+                  />
+                </div>
 
-          {/* Schedule Kind */}
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Schedule</span>
-            <InlineSelect inline
-              value={scheduleKind}
-              onChange={v => setScheduleKind(v as ScheduleKind)}
-              options={[
-                { value: 'every', label: 'Recurring interval' },
-                { value: 'cron', label: 'Cron expression' },
-                { value: 'at', label: 'One-shot at time' },
-              ]}
-              ariaLabel="Schedule type"
-            />
-          </div>
-
-          {/* Schedule details */}
-          {scheduleKind === 'cron' && (
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-col gap-1">
-                <label htmlFor="cron-expr" className="text-[10px] uppercase tracking-wider text-muted-foreground">Cron expression</label>
-                <input
-                  id="cron-expr"
-                  type="text"
-                  value={cronExpr}
-                  onChange={e => setCronExpr(e.target.value)}
-                  placeholder="0 9 * * * (min hour dom mon dow)"
-                  className="font-mono text-[11px] bg-background border border-border/60 text-foreground px-2 py-1.5 outline-none focus:border-purple focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label htmlFor="cron-tz" className="text-[10px] uppercase tracking-wider text-muted-foreground">Timezone (optional)</label>
-                <input
-                  id="cron-tz"
-                  type="text"
-                  value={cronTz}
-                  onChange={e => setCronTz(e.target.value)}
-                  placeholder="Europe/Istanbul…"
-                  className="font-mono text-[11px] bg-background border border-border/60 text-foreground px-2 py-1.5 outline-none focus:border-purple focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-                />
-              </div>
-            </div>
-          )}
-          {scheduleKind === 'every' && (
-            <InlineSelect inline
-              value={everyMs}
-              onChange={setEveryMs}
-              options={INTERVAL_PRESETS}
-              ariaLabel="Interval"
-            />
-          )}
-          {scheduleKind === 'at' && (
-            <div className="flex flex-col gap-1">
-              <label htmlFor="cron-at-time" className="text-[10px] uppercase tracking-wider text-muted-foreground">Date &amp; time</label>
-              <input
-                id="cron-at-time"
-                type="datetime-local"
-                value={atTime}
-                onChange={e => setAtTime(e.target.value)}
-                style={{ colorScheme: 'dark' }}
-                className="font-mono text-[11px] bg-background border border-border/60 text-foreground px-2 py-1.5 outline-none focus:border-purple focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 [&::-webkit-calendar-picker-indicator]:brightness-[5] [&::-webkit-calendar-picker-indicator]:opacity-60 [&::-webkit-calendar-picker-indicator]:hover:opacity-100"
-              />
-            </div>
-          )}
-
-          {/* Payload Kind */}
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Type</span>
-            <InlineSelect inline
-              value={payloadKind}
-              onChange={v => setPayloadKind(v as PayloadKind)}
-              options={[
-                { value: 'agentTurn', label: 'Agent task (isolated)' },
-                { value: 'systemEvent', label: 'System event (main session)' },
-              ]}
-              ariaLabel="Payload type"
-            />
-          </div>
-
-          {/* Message */}
-          <div className="flex flex-col gap-1">
-            <label htmlFor="cron-message" className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              {payloadKind === 'agentTurn' ? 'Prompt' : 'Event text'}
-            </label>
-            <textarea
-              id="cron-message"
-              value={message}
-              onChange={e => setMessage(e.target.value)}
-              rows={3}
-              placeholder={payloadKind === 'agentTurn' ? 'Check my inbox and summarize…' : 'Reminder: standup in 10 minutes…'}
-              className="font-mono text-[11px] bg-background border border-border/60 text-foreground px-2 py-1.5 outline-none focus:border-purple focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 resize-y"
-            />
-          </div>
-
-          {/* Model (agent turn only) */}
-          {payloadKind === 'agentTurn' && models.length > 0 && (
-            <div className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Model</span>
-              <InlineSelect inline
-                value={model}
-                onChange={setModel}
-                options={models}
-                ariaLabel="Model"
-                menuClassName="min-w-[200px]"
-                dropUp
-              />
-            </div>
-          )}
-
-          {/* Delivery */}
-          {payloadKind === 'agentTurn' && (
-            <>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">When done</span>
-                <InlineSelect inline
-                  value={deliveryMode}
-                  onChange={v => setDeliveryMode(v as DeliveryMode)}
-                  options={[
-                    { value: 'announce', label: 'Send result to a channel' },
-                    { value: 'none', label: 'Run silently' },
-                  ]}
-                  ariaLabel="Delivery mode"
-                />
-                {deliveryMode === 'none' && (
-                  <span className="text-[9px] text-muted-foreground/60 mt-0.5">Result stays in the session transcript — check it anytime in Nerve.</span>
-                )}
+                <div className="flex flex-col gap-1">
+                  <span className="cockpit-field-label">Schedule type</span>
+                  <CronSelect
+                    value={scheduleKind}
+                    onChange={e => setScheduleKind(e.target.value as ScheduleKind)}
+                    aria-label="Schedule type"
+                  >
+                    <option value="every">Recurring interval</option>
+                    <option value="cron">Cron expression</option>
+                    <option value="at">One-shot at time</option>
+                  </CronSelect>
+                </div>
               </div>
 
-              {deliveryMode === 'announce' && (
-                <div className="flex flex-col gap-2">
-                  {availableChannels.length === 0 ? (
-                    <div className="text-[10px] text-orange">
-                      No messaging channels configured. Set up a channel in OpenClaw config first, or switch to "Run silently".
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Send via</span>
-                      <InlineSelect inline
-                        value={deliveryChannel}
-                        onChange={setDeliveryChannel}
-                        options={[
-                          { value: '', label: 'Select channel…' },
-                          ...availableChannels.map(ch => ({
-                            value: ch,
-                            label: CHANNEL_LABELS[ch] || ch,
-                          })),
-                        ]}
-                        ariaLabel="Delivery channel"
-                      />
-                    </div>
-                  )}
-                  {deliveryChannel && (
-                    <div className="flex flex-col gap-1">
-                      <label htmlFor="cron-deliver-to" className="text-[10px] uppercase tracking-wider text-muted-foreground">Send to</label>
-                      <input
-                        id="cron-deliver-to"
-                        type="text"
-                        value={deliveryTo}
-                        onChange={e => setDeliveryTo(e.target.value)}
-                        placeholder={CHANNEL_PLACEHOLDERS[deliveryChannel] || 'recipient ID'}
-                        className="font-mono text-[11px] bg-background border border-border/60 text-foreground px-2 py-1.5 outline-none focus:border-purple focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-                      />
-                    </div>
-                  )}
+              {scheduleKind === 'cron' && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor="cron-expr" className="cockpit-field-label">Cron expression</label>
+                    <input
+                      id="cron-expr"
+                      type="text"
+                      value={cronExpr}
+                      onChange={e => setCronExpr(e.target.value)}
+                      placeholder="0 9 * * *"
+                      className="cockpit-input cockpit-input-mono"
+                    />
+                    <span className="cockpit-field-hint">Minute, hour, day, month, weekday.</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor="cron-tz" className="cockpit-field-label">Timezone (optional)</label>
+                    <input
+                      id="cron-tz"
+                      type="text"
+                      value={cronTz}
+                      onChange={e => setCronTz(e.target.value)}
+                      placeholder="Europe/Berlin"
+                      className="cockpit-input cockpit-input-mono"
+                    />
+                    <span className="cockpit-field-hint">Blank uses the server timezone.</span>
+                  </div>
                 </div>
               )}
-            </>
-          )}
 
-          {/* Error */}
-          {error && (
-            <div className="text-[10px] text-red">{error}</div>
-          )}
+              {scheduleKind === 'every' && (
+                <div className="flex flex-col gap-1">
+                  <span className="cockpit-field-label">Interval</span>
+                  <CronSelect
+                    value={everyMs}
+                    onChange={e => setEveryMs(e.target.value)}
+                    aria-label="Interval"
+                  >
+                    {INTERVAL_PRESETS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </CronSelect>
+                  <span className="cockpit-field-hint">Best for recurring checks and summaries.</span>
+                </div>
+              )}
 
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="mt-1 text-[11px] uppercase tracking-wider bg-purple text-white border-0 px-4 py-2 cursor-pointer hover:opacity-90 disabled:opacity-50 transition-opacity focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-          >
-            {submitting ? (isEdit ? 'Saving…' : 'Creating…') : (isEdit ? 'Save Changes' : 'Create Cron')}
-          </button>
+              {scheduleKind === 'at' && (
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="cron-at-time" className="cockpit-field-label">Date &amp; time</label>
+                  <input
+                    id="cron-at-time"
+                    type="datetime-local"
+                    value={atTime}
+                    onChange={e => setAtTime(e.target.value)}
+                    style={{ colorScheme: 'dark' }}
+                    className="cockpit-input cockpit-input-mono [&::-webkit-calendar-picker-indicator]:brightness-[2.8] [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100"
+                  />
+                  <span className="cockpit-field-hint">Use this for a single future run.</span>
+                </div>
+              )}
+            </SectionShell>
+
+            <SectionShell
+              eyebrow="Execution"
+              title="Where it runs"
+              description="Choose which root agent owns the schedule, then decide whether the work runs privately or posts into that root thread."
+            >
+              <div className="flex flex-col gap-1">
+                <span className="cockpit-field-label">Target agent</span>
+                <CronSelect
+                  value={effectiveTargetRootSessionKey}
+                  onChange={e => setTargetRootSessionKey(e.target.value)}
+                  aria-label="Target agent"
+                  disabled={!hasRootAgents}
+                >
+                  {(hasRootAgents ? rootOptions : [{ value: '', label: 'No top-level agents available' }]).map((option) => (
+                    <option key={option.value || 'none'} value={option.value}>{option.label}</option>
+                  ))}
+                </CronSelect>
+                <span className="cockpit-field-hint">
+                  {hasRootAgents
+                    ? 'Cron sessions, reminders, and follow-up events stay under the selected root branch.'
+                    : 'Create a top-level agent first, then attach scheduled work to it.'}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="cockpit-field-label">Execution type</span>
+                <CronSelect
+                  value={payloadKind}
+                  onChange={e => setPayloadKind(e.target.value as PayloadKind)}
+                  aria-label="Payload type"
+                >
+                  <option value="agentTurn">Agent task (private run)</option>
+                  <option value="systemEvent">System event (post into root)</option>
+                </CronSelect>
+              </div>
+              <div className="cockpit-note" data-tone="primary">
+                {payloadKind === 'agentTurn'
+                  ? 'Agent tasks run in a private cron session beneath the selected root and keep that root thread clean.'
+                  : 'System events post directly into the selected root thread and suit reminders or lightweight alerts.'}
+              </div>
+            </SectionShell>
+          </div>
+
+          <div className="space-y-4">
+            <SectionShell
+              eyebrow="Payload"
+              title={payloadKind === 'agentTurn' ? 'What the agent should do' : 'What the event should say'}
+              description={payloadKind === 'agentTurn'
+                ? 'Write the task the same way you would brief a teammate.'
+                : 'Write the message that should appear when the schedule fires.'}
+            >
+              <div className="flex flex-col gap-1">
+                <label htmlFor="cron-message" className="cockpit-field-label">
+                  {payloadKind === 'agentTurn' ? 'Prompt' : 'Event text'}
+                </label>
+                <textarea
+                  id="cron-message"
+                  value={message}
+                  onChange={e => setMessage(e.target.value)}
+                  rows={3}
+                  placeholder={payloadKind === 'agentTurn' ? 'Check my inbox, summarize the important items, and flag anything that needs a reply.' : 'Reminder: standup in 10 minutes.'}
+                  className="cockpit-textarea min-h-[118px]"
+                />
+              </div>
+
+              {payloadKind === 'agentTurn' && models.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <span className="cockpit-field-label">Model</span>
+                  <CronSelect
+                    value={model}
+                    onChange={e => setModel(e.target.value)}
+                    aria-label="Model"
+                  >
+                    {models.map((option) => (
+                      <option key={option.value || 'default-model'} value={option.value}>{option.label}</option>
+                    ))}
+                  </CronSelect>
+                  <span className="cockpit-field-hint">Leave this on default unless the job needs a specific model.</span>
+                </div>
+              )}
+            </SectionShell>
+
+            {payloadKind === 'agentTurn' && (
+              <SectionShell
+                eyebrow="Delivery"
+                title="What happens after it finishes"
+                description="Choose whether the result stays in Nerve or gets sent out."
+              >
+                <div className="flex flex-col gap-1">
+                  <span className="cockpit-field-label">Result handling</span>
+                  <CronSelect
+                    value={deliveryMode}
+                    onChange={e => setDeliveryMode(e.target.value as DeliveryMode)}
+                    aria-label="Delivery mode"
+                  >
+                    <option value="announce">Send result to a channel</option>
+                    <option value="none">Keep it inside Nerve</option>
+                  </CronSelect>
+                </div>
+
+                {deliveryMode === 'none' && (
+                  <div className="cockpit-note">
+                    The result stays in the session transcript for later review.
+                  </div>
+                )}
+
+                {deliveryMode === 'announce' && (
+                  <div className="space-y-2.5">
+                    {availableChannels.length === 0 ? (
+                      <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-[11px] text-orange/85">
+                        No messaging channels are configured yet. Set one up in OpenClaw first, or keep the job inside Nerve.
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="flex flex-col gap-1">
+                          <span className="cockpit-field-label">Channel</span>
+                          <CronSelect
+                            value={deliveryChannel}
+                            onChange={e => setDeliveryChannel(e.target.value)}
+                            aria-label="Delivery channel"
+                          >
+                            <option value="">Select channel…</option>
+                            {availableChannels.map((channel) => (
+                              <option key={channel} value={channel}>{CHANNEL_LABELS[channel] || channel}</option>
+                            ))}
+                          </CronSelect>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label htmlFor="cron-deliver-to" className="cockpit-field-label">Recipient / destination</label>
+                          <input
+                            id="cron-deliver-to"
+                            type="text"
+                            value={deliveryTo}
+                            onChange={e => setDeliveryTo(e.target.value)}
+                            placeholder={CHANNEL_PLACEHOLDERS[deliveryChannel] || 'recipient ID'}
+                            className="cockpit-input cockpit-input-mono"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <div className="cockpit-note" data-tone="primary">
+                      Nerve appends the delivery instruction so the agent can send the result directly when it finishes.
+                    </div>
+                  </div>
+                )}
+              </SectionShell>
+            )}
+
+            {error && (
+              <div className="cockpit-note" data-tone="danger">{error}</div>
+            )}
+
+            <div className="flex flex-col items-stretch gap-3 rounded-[24px] border border-border/70 bg-secondary/28 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <p className="text-sm leading-5 text-muted-foreground">
+                {isEdit
+                  ? 'Save when the timing and delivery look right.'
+                  : 'Create the job when the timing and delivery look right.'}
+              </p>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="inline-flex min-h-10 items-center justify-center rounded-2xl bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-transform hover:-translate-y-px hover:bg-primary/95 disabled:cursor-not-allowed disabled:opacity-50 sm:shrink-0"
+              >
+                {submitting ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save Changes' : 'Create Cron')}
+              </button>
+            </div>
+          </div>
         </div>
       </form>
     </dialog>

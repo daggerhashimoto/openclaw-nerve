@@ -82,6 +82,7 @@ export const config = {
   memoryDir: process.env.MEMORY_DIR || path.join(HOME, '.openclaw', 'workspace', 'memory'),
   sessionsDir: process.env.SESSIONS_DIR || path.join(HOME, '.openclaw', 'agents', 'main', 'sessions'),
   usageFile: process.env.USAGE_FILE || path.join(HOME, '.openclaw', 'token-usage.json'),
+  workspaceWatchRecursive: process.env.NERVE_WATCH_WORKSPACE_RECURSIVE === 'true',
   certPath: path.join(PROJECT_ROOT, 'certs', 'cert.pem'),
   keyPath: path.join(PROJECT_ROOT, 'certs', 'key.pem'),
   bunPath: path.join(HOME, '.bun', 'bin', 'bunx'),

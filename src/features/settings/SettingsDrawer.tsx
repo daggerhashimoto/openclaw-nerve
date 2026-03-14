@@ -160,7 +160,7 @@ export function SettingsDrawer({
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/60 z-40 animate-fade-in"
+        className="fixed inset-0 z-40 animate-fade-in bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
 
@@ -170,31 +170,34 @@ export function SettingsDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
-        className="fixed right-0 top-0 h-full w-full sm:w-[375px] sm:max-w-[94vw] bg-card border-l border-border z-50 overflow-hidden flex flex-col animate-slide-in-right"
+        className="fixed right-0 top-0 z-50 flex h-full w-full flex-col overflow-hidden border-l border-border/80 bg-card/92 shadow-[0_32px_90px_rgba(0,0,0,0.36)] backdrop-blur-2xl animate-slide-in-right sm:w-[410px] sm:max-w-[94vw]"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
-          <div className="flex items-center gap-2">
-            <Settings size={14} className="text-primary" aria-hidden="true" />
-            <span id="settings-title" className="text-[11px] font-bold tracking-[2px] uppercase text-primary">
-              SETTINGS
-            </span>
+        <div className="shrink-0 border-b border-border/70 bg-secondary/45 px-5 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-2">
+              <span className="cockpit-kicker" id="settings-title">
+                <Settings size={14} className="text-primary" aria-hidden="true" />
+                Control Room
+              </span>
+              <div className="cockpit-title text-[1.1rem]">Settings</div>
+            </div>
+            <button
+              ref={closeButtonRef}
+              onClick={onClose}
+              className="shell-icon-button min-h-9 px-3"
+              title="Close (Esc)"
+              aria-label="Close settings"
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
           </div>
-          <button
-            ref={closeButtonRef}
-            onClick={onClose}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-background/50 transition-colors"
-            title="Close (Esc)"
-            aria-label="Close settings"
-          >
-            <X size={16} aria-hidden="true" />
-          </button>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-hidden flex flex-col">
-          <div className="border-b border-border/50 bg-background/30 p-2 shrink-0">
-            <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Settings categories">
+          <div className="shrink-0 border-b border-border/60 bg-background/24 px-4 py-3">
+            <div className="-mx-0.5 flex gap-2 overflow-x-auto px-0.5 py-1" role="tablist" aria-label="Settings categories">
               {SETTINGS_CATEGORIES.map((category) => {
                 const Icon = category.icon;
                 const isActive = currentCategory === category.key;
@@ -206,13 +209,10 @@ export function SettingsDrawer({
                     aria-selected={isActive}
                     disabled={disabled}
                     onClick={() => setActiveCategory(category.key)}
-                    className={`shrink-0 flex items-center gap-2 px-2.5 py-2 text-[11px] font-mono uppercase tracking-wide border transition-colors whitespace-nowrap ${
-                      isActive
-                        ? 'bg-primary/20 border-primary text-primary'
-                        : 'bg-card border-border/60 text-muted-foreground hover:border-muted-foreground hover:text-foreground'
-                    } ${disabled ? 'opacity-50 cursor-not-allowed hover:border-border/60 hover:text-muted-foreground' : ''}`}
+                    data-active={isActive}
+                    className={`shell-chip shrink-0 whitespace-nowrap px-3.5 text-[12px] font-medium ${disabled ? 'cursor-not-allowed opacity-45 hover:translate-y-0 hover:border-border/80 hover:text-muted-foreground' : ''}`}
                   >
-                    <Icon size={12} aria-hidden="true" />
+                      <Icon size={12} aria-hidden="true" />
                     <span>{category.label}</span>
                   </button>
                 );
@@ -220,7 +220,7 @@ export function SettingsDrawer({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto px-4 py-5">
             {currentCategory === 'audio' && (
               <AudioSettings
                 section="all"
@@ -262,18 +262,20 @@ export function SettingsDrawer({
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-border bg-card shrink-0 space-y-2">
+        <div className="shrink-0 space-y-3 border-t border-border/70 bg-secondary/35 px-4 py-4">
           {onLogout && (
             <button
               onClick={onLogout}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-[11px] font-mono text-muted-foreground hover:text-red-400 hover:bg-red-400/10 border border-border hover:border-red-400/30 rounded-sm transition-colors uppercase tracking-wider"
+              className="cockpit-toolbar-button w-full justify-center"
+              data-tone="danger"
             >
-              <LogOut size={12} aria-hidden="true" />
+              <LogOut size={14} aria-hidden="true" />
               Sign Out
             </button>
           )}
-          <div className="text-center text-muted-foreground/40 text-[10px] font-mono tracking-wide">
-            NERVE v{__APP_VERSION__}
+          <div className="flex items-center justify-between gap-3 px-1 text-[11px] text-muted-foreground/70">
+            <span>OpenClaw Nerve</span>
+            <span className="font-mono text-[10px] tracking-[0.08em]">v{__APP_VERSION__}</span>
           </div>
         </div>
       </div>

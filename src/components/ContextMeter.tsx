@@ -72,7 +72,7 @@ export function ContextMeter({ used, limit }: ContextMeterProps) {
 
   return (
     <div
-      className="flex items-center gap-1.5 cursor-default"
+      className="flex items-center gap-2 cursor-default"
       title={tooltipText}
     >
       {/* Warning icon - only show when warning/critical */}
@@ -84,9 +84,9 @@ export function ContextMeter({ used, limit }: ContextMeterProps) {
       )}
 
       {/* Progress bar with smooth width and color transitions */}
-      <div className="w-12 h-1.5 bg-background border border-border/60 overflow-hidden">
+      <div className="h-2 w-16 overflow-hidden rounded-full border border-border/60 bg-background/80">
         <div
-          className={`h-full ${colors.bar}`}
+          className={`h-full rounded-full ${colors.bar}`}
           style={{ 
             width: `${percent}%`,
             boxShadow,
@@ -99,13 +99,13 @@ export function ContextMeter({ used, limit }: ContextMeterProps) {
       <AnimatedNumber 
         value={used} 
         format={fmtK}
-        className={`text-[9px] ${colors.text}`}
+        className={`font-mono text-[10px] ${colors.text}`}
         duration={700}
       />
 
       {/* Label - changes based on state */}
-      <span className={`text-[8px] uppercase tracking-wider ${colors.text}`}>
-        CTX
+      <span className={`font-mono text-[9px] uppercase tracking-[0.2em] ${colors.text}`}>
+        Context
       </span>
     </div>
   );

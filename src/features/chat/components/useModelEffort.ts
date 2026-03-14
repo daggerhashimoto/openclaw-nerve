@@ -267,7 +267,7 @@ export function useModelEffort(): UseModelEffortReturn {
         }
       }
 
-      // For non-main sessions, resolve the actual model from cron payload or transcript
+      // For child sessions, resolve the actual model from cron payload or transcript
       if (!currentSession) return;
       const sessionType = getSessionType(currentSession);
       if (sessionType === 'main') return;
@@ -297,8 +297,8 @@ export function useModelEffort(): UseModelEffortReturn {
           try {
             const res = await fetch(`/api/sessions/${sessionId}/model`);
             if (signal.cancelled) return;
-            const data = await res.json();
-            if (data.ok && data.model) resolvedModel = data.model;
+            const data = await res.json() as { ok: boolean; model?: string | null; missing?: boolean };
+            if (data.ok && data.model != null) resolvedModel = data.model;
           } catch { /* ignore */ }
         }
       }

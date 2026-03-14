@@ -85,11 +85,13 @@ app.get('/api/sessions/:id/model', rateLimitGeneral, async (c) => {
 
   const transcriptPath = await findTranscript(sessionId);
   if (!transcriptPath) {
-    return c.json({ ok: false, error: 'Transcript not found' }, 404);
+    // Avoid 404 noise in the UI when hovering sessions that no longer have transcripts
+    // (e.g. one-shot cron runs that were cleaned up).
+    return c.json({ ok: true, model: null, missing: true }, 200);
   }
 
   const modelId = await readModelFromTranscript(transcriptPath);
-  return c.json({ ok: true, model: modelId });
+  return c.json({ ok: true, model: modelId, missing: false });
 });
 
 export default app;

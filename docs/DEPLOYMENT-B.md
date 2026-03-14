@@ -46,7 +46,7 @@ When prompted:
 
 If your gateway hostname isn't localhost, add it to `.env`:
 
-```env
+```bash
 WS_ALLOWED_HOSTS=<gateway-hostname-or-ip>
 ```
 

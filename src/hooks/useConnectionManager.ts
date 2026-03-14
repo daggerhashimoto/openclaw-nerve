@@ -1,6 +1,6 @@
 /**
  * useConnectionManager - Handles gateway connection lifecycle
- * 
+ *
  * Extracted from App.tsx to separate connection concerns from layout.
  * Manages auto-connect on mount and reconnect logic.
  *
@@ -11,16 +11,19 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useGateway, loadConfig, saveConfig } from '@/contexts/GatewayContext';
 import { DEFAULT_GATEWAY_WS } from '@/lib/constants';
+import { areGatewayUrlsEquivalent } from '@/lib/gatewayUrls';
 
 export interface ConnectionManagerState {
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
   editableUrl: string;
   setEditableUrl: (url: string) => void;
+  officialUrl: string | null;
   editableToken: string;
   setEditableToken: (token: string) => void;
   handleConnect: (url: string, token: string) => Promise<void>;
   handleReconnect: () => Promise<void>;
+  serverSideAuth: boolean;
 }
 
 /** Create an AbortSignal that times out after `ms` milliseconds. */
@@ -33,7 +36,7 @@ function timeoutSignal(ms: number): AbortSignal {
 }
 
 /** Fetch gateway connection defaults from the Nerve server. */
-async function fetchConnectDefaults(): Promise<{ wsUrl: string; token: string | null } | null> {
+async function fetchConnectDefaults(): Promise<{ wsUrl: string; token: string | null; authEnabled?: boolean; serverSideAuth?: boolean } | null> {
   try {
     const resp = await fetch('/api/connect-defaults', { signal: timeoutSignal(3000) });
     if (!resp.ok) return null;
@@ -45,69 +48,118 @@ async function fetchConnectDefaults(): Promise<{ wsUrl: string; token: string | 
 
 export function useConnectionManager(): ConnectionManagerState {
   const { connectionState, connect, disconnect } = useGateway();
-  
+
   const [dialogOpen, setDialogOpen] = useState(true);
-  
+
   // Editable connection settings (local state for settings drawer)
   // Lazy initializers avoid re-parsing sessionStorage on every render
   const [editableUrl, setEditableUrl] = useState(() => loadConfig().url || DEFAULT_GATEWAY_WS);
   const [editableToken, setEditableToken] = useState(() => loadConfig().token || '');
-  
+  const [serverSideAuth, setServerSideAuth] = useState(false);
+  const [officialUrl, setOfficialUrl] = useState<string | null>(null);
+
   // Track if we've attempted auto-connect to avoid re-running
   const autoConnectAttempted = useRef(false);
 
-  // Fetch server defaults when no saved config exists (async, can't run in initializer)
-  useEffect(() => {
-    if (autoConnectAttempted.current) return;
-    autoConnectAttempted.current = true;
-
-    const saved = loadConfig();
-    if (saved.url && saved.token) return; // Already pre-filled by useState initializers
-
-    // No saved config — try to get defaults from the server to pre-fill
-    fetchConnectDefaults().then((defaults) => {
-      if (defaults?.wsUrl) setEditableUrl(defaults.wsUrl);
-      if (defaults?.token) setEditableToken(defaults.token);
-    });
-  }, []);
-
+  /** Connect to the gateway, save config, and close the dialog. */
   const handleConnect = useCallback(async (url: string, token: string) => {
     saveConfig(url, token);
     await connect(url, token);
     setDialogOpen(false);
   }, [connect]);
 
+  // Fetch server defaults (async, can't run in initializer)
+  useEffect(() => {
+    if (autoConnectAttempted.current) return;
+    autoConnectAttempted.current = true;
+
+    const saved = loadConfig();
+
+    // Always fetch defaults once on mount to establish serverSideAuth and officialUrl
+    fetchConnectDefaults().then((defaults) => {
+      const isServerSideAuth = defaults?.serverSideAuth ?? false;
+      setServerSideAuth(isServerSideAuth);
+
+      const savedUrl = saved.url?.trim();
+      const officialWsUrl = defaults?.wsUrl?.trim();
+      const savedMatchesOfficial = areGatewayUrlsEquivalent(savedUrl, officialWsUrl);
+
+      if (officialWsUrl) {
+        setOfficialUrl(officialWsUrl);
+        // Canonicalize the managed URL path so stale localhost aliases
+        // do not keep the app in manual-connect mode.
+        if (!savedUrl || savedMatchesOfficial) {
+          setEditableUrl(officialWsUrl);
+        }
+      }
+
+      // Only override editableToken if it's currently empty
+      if (!saved.token && defaults?.token) {
+        setEditableToken(defaults.token);
+      }
+
+      if (isServerSideAuth && officialWsUrl && (!savedUrl || savedMatchesOfficial)) {
+        setEditableToken('');
+      }
+
+      // Auto-connect if server-side auth is supported and the saved gateway is
+      // either empty or the same official gateway under a loopback alias.
+      if (
+        isServerSideAuth &&
+        officialWsUrl &&
+        (!savedUrl || savedMatchesOfficial)
+      ) {
+        handleConnect(officialWsUrl, '').catch(() => {
+          // Auto-connect failed - user can manually connect via dialog
+        });
+      }
+    });
+  }, [handleConnect]);
+
   const handleReconnect = useCallback(async () => {
     // Don't reconnect if already connecting
     if (connectionState === 'connecting' || connectionState === 'reconnecting') {
       return;
     }
-    
-    if (editableUrl && editableToken) {
+
+    const isOfficialUrl = areGatewayUrlsEquivalent(editableUrl, officialUrl);
+    if (editableUrl && (editableToken || (serverSideAuth && isOfficialUrl))) {
+      // Force empty token if server side auth is active for this URL
+      const token = serverSideAuth && isOfficialUrl ? '' : editableToken;
+      if (token !== editableToken) {
+        setEditableToken('');
+      }
+      const targetUrl = isOfficialUrl && officialUrl ? officialUrl.trim() : editableUrl.trim();
+      if (targetUrl !== editableUrl) {
+        setEditableUrl(targetUrl);
+      }
+
       // Save the new config first
-      saveConfig(editableUrl, editableToken);
+      saveConfig(targetUrl, token);
       // Disconnect cleanly, then reconnect
       disconnect();
       // Small delay to ensure clean disconnect
       await new Promise(r => setTimeout(r, 100));
       try {
-        await connect(editableUrl, editableToken);
+        await connect(targetUrl, token);
       } catch {
         // Connection failed - don't loop, just stay disconnected
       }
     } else {
       setDialogOpen(true);
     }
-  }, [connect, disconnect, editableUrl, editableToken, connectionState]);
+  }, [connect, disconnect, editableUrl, editableToken, connectionState, serverSideAuth, officialUrl]);
 
   return {
     dialogOpen,
     setDialogOpen,
     editableUrl,
     setEditableUrl,
+    officialUrl,
     editableToken,
     setEditableToken,
     handleConnect,
     handleReconnect,
+    serverSideAuth,
   };
 }

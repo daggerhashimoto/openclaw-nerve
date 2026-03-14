@@ -2,21 +2,22 @@ import { memo, useState, useEffect } from 'react';
 import { Check, X, ArrowUpCircle, PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { KanbanProposal } from './hooks/useProposals';
+import { TASK_STATUS_TONE } from './tone';
 
 /* ── Type badge ── */
 function TypeBadge({ type }: { type: 'create' | 'update' }) {
   if (type === 'create') {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-sm bg-emerald-500/15 text-emerald-400">
+      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${TASK_STATUS_TONE.done.badgeClass}`}>
         <PlusCircle size={10} />
-        CREATE
+        Create
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-sm bg-blue-500/15 text-blue-400">
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${TASK_STATUS_TONE.todo.badgeClass}`}>
       <ArrowUpCircle size={10} />
-      UPDATE
+      Update
     </span>
   );
 }
@@ -111,7 +112,7 @@ function ProposalRow({
   };
 
   return (
-    <div className="flex items-start gap-2 py-2 px-3 border-b border-border/40 last:border-b-0 hover:bg-muted/30 transition-colors">
+    <div className="flex items-start gap-3 border-b border-border/40 px-4 py-3 transition-colors last:border-b-0 hover:bg-primary/[0.04]">
       <div className="flex flex-col items-start gap-1 shrink-0 pt-0.5">
         <TypeBadge type={proposal.type} />
         <RelativeTime ts={proposal.proposedAt} />
@@ -121,26 +122,28 @@ function ProposalRow({
 
       <div className="flex items-center gap-1 shrink-0">
         <Button
-          variant="ghost"
-          size="icon-sm"
+          variant="outline"
+          size="xs"
           onClick={handleApprove}
           disabled={acting}
           title="Approve"
           aria-label="Approve proposal"
-          className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
+          className="border-green/30 bg-green/8 text-green hover:bg-green/12"
         >
           <Check size={14} />
+          <span className="hidden sm:inline">Approve</span>
         </Button>
         <Button
-          variant="ghost"
-          size="icon-sm"
+          variant="outline"
+          size="xs"
           onClick={handleReject}
           disabled={acting}
           title="Reject"
           aria-label="Reject proposal"
-          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+          className="border-destructive/22 bg-destructive/8 text-destructive hover:bg-destructive/14"
         >
           <X size={14} />
+          <span className="hidden sm:inline">Reject</span>
         </Button>
       </div>
     </div>
@@ -161,8 +164,9 @@ export const ProposalInbox = memo(function ProposalInbox({
 }: ProposalInboxProps) {
   if (proposals.length === 0) {
     return (
-      <div className="py-6 px-4 text-center text-xs text-muted-foreground">
-        No pending proposals
+      <div className="px-4 py-8 text-center">
+        <div className="cockpit-badge mx-auto w-fit">Inbox clear</div>
+        <p className="mt-3 text-sm text-muted-foreground">No pending proposals right now.</p>
       </div>
     );
   }

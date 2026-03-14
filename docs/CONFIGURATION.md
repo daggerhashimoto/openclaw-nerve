@@ -85,7 +85,7 @@ The wizard backs up existing `.env` files (e.g. `.env.bak.1708100000000`) before
 
 > **⚠️ Network exposure:** Setting `HOST=0.0.0.0` exposes all endpoints to the network. Enable authentication (`NERVE_AUTH=true`) and set a password via the setup wizard before binding to a non-loopback address. Without auth, anyone with network access can read/write agent memory, modify config files, and control sessions. See [Security](SECURITY.md) for the full threat model.
 
-```env
+```bash
 PORT=3080
 SSL_PORT=3443
 HOST=127.0.0.1
@@ -98,10 +98,20 @@ HOST=127.0.0.1
 | `GATEWAY_TOKEN` | — | **Yes** | Authentication token for the OpenClaw gateway. The setup wizard auto-detects this. See note below |
 | `GATEWAY_URL` | `http://127.0.0.1:18789` | No | Gateway HTTP endpoint URL |
 
-```env
+```bash
 GATEWAY_TOKEN=your-token-here
 GATEWAY_URL=http://127.0.0.1:18789
 ```
+
+### Token Injection
+
+Nerve performs **server-side token injection**. When a connection is established through the WebSocket proxy, Nerve automatically injects the configured `GATEWAY_TOKEN` into the connection request if the client is considered **trusted**.
+
+**Trust is granted if:**
+1. The connection is from a **local loopback address** (`127.0.0.1` or `::1`), accounting for `X-Forwarded-For` and `X-Real-IP` when behind a trusted proxy (see `TRUSTED_PROXIES`).
+2. OR, the connection has a valid **authenticated session** (`NERVE_AUTH=true`).
+
+This allows the browser UI to connect without having to manually enter or store the gateway token in the browser's persistent storage. If a connection is not trusted (e.g., remote access without authentication), the token field in the UI must be filled manually.
 
 > **Note:** `OPENCLAW_GATEWAY_TOKEN` is also accepted as a fallback for `GATEWAY_TOKEN`.
 >
@@ -113,7 +123,7 @@ GATEWAY_URL=http://127.0.0.1:18789
 |----------|---------|-------------|
 | `AGENT_NAME` | `Agent` | Display name shown in the UI header and server info |
 
-```env
+```bash
 AGENT_NAME=Friday
 ```
 
@@ -124,7 +134,7 @@ AGENT_NAME=Friday
 | `OPENAI_API_KEY` | Enables OpenAI TTS (multiple voices) and Whisper audio transcription |
 | `REPLICATE_API_TOKEN` | Enables Replicate-hosted TTS models (e.g. Qwen TTS). Requires `ffmpeg` for WAV→MP3 |
 
-```env
+```bash
 OPENAI_API_KEY=sk-...
 REPLICATE_API_TOKEN=r8_...
 ```
@@ -144,7 +154,7 @@ TTS provider fallback chain (when no explicit provider is requested):
 | `NERVE_LANGUAGE` | `en` | Preferred voice language (ISO 639-1). Legacy `LANGUAGE` is still accepted but deprecated |
 | `EDGE_VOICE_GENDER` | `female` | Edge TTS voice gender: `female` or `male` |
 
-```env
+```bash
 # Use local speech-to-text (no API key needed)
 STT_PROVIDER=local
 WHISPER_MODEL=tiny
@@ -168,7 +178,7 @@ Voice phrase overrides (stop/cancel/wake words) are stored at `~/.nerve/voice-ph
 | `WS_ALLOWED_HOSTS` | `localhost,127.0.0.1,::1` | Additional WebSocket proxy allowed hostnames, comma-separated |
 | `TRUSTED_PROXIES` | `127.0.0.1,::1,::ffff:127.0.0.1` | IP addresses trusted to set `X-Forwarded-For` / `X-Real-IP` headers, comma-separated |
 
-```env
+```bash
 # Tailscale example
 ALLOWED_ORIGINS=http://100.64.0.5:3080
 CSP_CONNECT_EXTRA=http://100.64.0.5:3080 ws://100.64.0.5:3080
@@ -189,7 +199,7 @@ Nerve includes a built-in authentication layer that protects all API endpoints, 
 | `NERVE_SESSION_SECRET` | *(auto-generated)* | 32-byte hex string for HMAC-SHA256 cookie signing. Auto-generated during setup. If not set, an ephemeral secret is generated at startup (sessions won't survive restarts) |
 | `NERVE_SESSION_TTL` | `2592000000` (30 days) | Session lifetime in milliseconds |
 
-```env
+```bash
 NERVE_AUTH=true
 NERVE_PASSWORD_HASH=<generated-by-setup>
 NERVE_SESSION_SECRET=<generated-by-setup>
@@ -199,13 +209,13 @@ NERVE_SESSION_SECRET=<generated-by-setup>
 
 When `HOST=0.0.0.0` and `NERVE_AUTH=false`, the server **refuses to start** to prevent accidentally exposing all endpoints without authentication. Set `NERVE_ALLOW_INSECURE=true` to override this safety check. **Not recommended for production.**
 
-```env
+```bash
 NERVE_ALLOW_INSECURE=true
 ```
 
 **Quick enable (with gateway token as password):**
 
-```env
+```bash
 NERVE_AUTH=true
 NERVE_SESSION_SECRET=$(openssl rand -hex 32)
 # No NERVE_PASSWORD_HASH needed — your GATEWAY_TOKEN works as the password
@@ -229,7 +239,7 @@ Override these for proxies, self-hosted endpoints, or API-compatible alternative
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL |
 | `REPLICATE_BASE_URL` | `https://api.replicate.com/v1` | Replicate API base URL |
 
-```env
+```bash
 OPENAI_BASE_URL=https://api.openai.com/v1
 REPLICATE_BASE_URL=https://api.replicate.com/v1
 ```
@@ -250,14 +260,16 @@ REPLICATE_BASE_URL=https://api.replicate.com/v1
 | `SESSIONS_DIR` | `~/.openclaw/agents/main/sessions/` | Session transcript directory (scanned for token usage) |
 | `USAGE_FILE` | `~/.openclaw/token-usage.json` | Persistent cumulative token usage data |
 | `NERVE_VOICE_PHRASES_PATH` | `~/.nerve/voice-phrases.json` | Override location for per-language voice phrase overrides |
+| `NERVE_WATCH_WORKSPACE_RECURSIVE` | `false` | Enables recursive `fs.watch` for the entire workspace (legacy behavior). Disabled by default to prevent Linux inotify `ENOSPC` watcher exhaustion. |
 | `WORKSPACE_ROOT` | *(auto-detected)* | Allowed base directory for git workdir registration. Auto-derived from `git worktree list` or parent of `process.cwd()` |
 
-```env
+```bash
 FILE_BROWSER_ROOT=/home/user
 MEMORY_PATH=/custom/path/MEMORY.md
 MEMORY_DIR=/custom/path/memory/
 SESSIONS_DIR=/custom/path/sessions/
 NERVE_VOICE_PHRASES_PATH=/custom/path/voice-phrases.json
+NERVE_WATCH_WORKSPACE_RECURSIVE=false
 ```
 
 ### TTS Cache
@@ -267,7 +279,7 @@ NERVE_VOICE_PHRASES_PATH=/custom/path/voice-phrases.json
 | `TTS_CACHE_TTL_MS` | `3600000` (1 hour) | Time-to-live for cached TTS audio in milliseconds |
 | `TTS_CACHE_MAX` | `200` | Maximum number of cached TTS entries (in-memory LRU) |
 
-```env
+```bash
 TTS_CACHE_TTL_MS=7200000
 TTS_CACHE_MAX=500
 ```
@@ -370,7 +382,7 @@ Or use the setup wizard's Custom access mode, which generates them automatically
 
 ## Minimal `.env` Example
 
-```env
+```bash
 GATEWAY_TOKEN=abc123def456
 ```
 
@@ -378,7 +390,7 @@ Everything else uses defaults. This is sufficient for local-only usage.
 
 ## Full `.env` Example
 
-```env
+```bash
 # Gateway (required)
 GATEWAY_TOKEN=abc123def456
 GATEWAY_URL=http://127.0.0.1:18789

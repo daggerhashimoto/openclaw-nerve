@@ -1,8 +1,8 @@
 /**
  * File watcher for workspace files.
  *
- * Watches `MEMORY.md`, the `memory/` directory, and the full workspace
- * directory for changes. Broadcasts SSE events so the UI can react:
+ * Watches `MEMORY.md`, the `memory/` directory, and optionally the full
+ * workspace directory for changes. Broadcasts SSE events so the UI can react:
  * - `memory.changed` — for backward compat (memory panel refresh)
  * - `file.changed` — for file browser (editor reload / AI lock)
  *
@@ -86,34 +86,39 @@ export function startFileWatcher(): void {
     }
   }
 
-  // Watch entire workspace directory (recursive where supported)
-  if (existsSync(workspaceRoot)) {
-    try {
-      workspaceWatcher = watch(workspaceRoot, { recursive: true }, (_eventType, filename) => {
-        if (!filename) return;
+  // Watch entire workspace directory only when explicitly enabled.
+  // Default is off to avoid inotify watcher exhaustion (ENOSPC) on large Linux workspaces.
+  if (config.workspaceWatchRecursive) {
+    if (existsSync(workspaceRoot)) {
+      try {
+        workspaceWatcher = watch(workspaceRoot, { recursive: true }, (_eventType, filename) => {
+          if (!filename) return;
 
-        // Normalize path separators (Windows compat)
-        const normalized = filename.replace(/\\/g, '/');
+          // Normalize path separators (Windows compat)
+          const normalized = filename.replace(/\\/g, '/');
 
-        // Skip excluded directories/files and binaries
-        const segments = normalized.split('/');
-        if (segments.some(seg => seg && (isExcluded(seg) || seg.startsWith('.')))) return;
-        if (isBinary(normalized)) return;
+          // Skip excluded directories/files and binaries
+          const segments = normalized.split('/');
+          if (segments.some(seg => seg && (isExcluded(seg) || seg.startsWith('.')))) return;
+          if (isBinary(normalized)) return;
 
-        // Skip memory files — already handled by dedicated watchers above
-        if (normalized === 'MEMORY.md' || normalized.startsWith('memory/')) return;
+          // Skip memory files — already handled by dedicated watchers above
+          if (normalized === 'MEMORY.md' || normalized.startsWith('memory/')) return;
 
-        if (shouldBroadcast(`workspace:${normalized}`)) {
-          console.log(`[file-watcher] workspace: ${normalized} changed`);
-          broadcast('file.changed', { path: normalized });
-        }
-      });
-      console.log('[file-watcher] Watching workspace directory (recursive)');
-    } catch (err) {
-      // recursive: true may not be supported on all Linux kernels
-      console.warn('[file-watcher] Recursive workspace watch failed (expected on some Linux versions):', (err as Error).message);
-      console.warn('[file-watcher] File browser will still work — reload manually or via Ctrl+S');
+          if (shouldBroadcast(`workspace:${normalized}`)) {
+            console.log(`[file-watcher] workspace: ${normalized} changed`);
+            broadcast('file.changed', { path: normalized });
+          }
+        });
+        console.log('[file-watcher] Watching workspace directory (recursive)');
+      } catch (err) {
+        // recursive: true may not be supported on all Linux kernels
+        console.warn('[file-watcher] Recursive workspace watch failed:', (err as Error).message);
+        console.warn('[file-watcher] File browser still works — use manual refresh for non-memory file updates.');
+      }
     }
+  } else {
+    console.log('[file-watcher] Workspace recursive watch disabled (default). Set NERVE_WATCH_WORKSPACE_RECURSIVE=true to re-enable SSE file.changed events outside memory/.');
   }
 }
 

@@ -49,13 +49,15 @@ describe('GET /api/sessions/:id/model', () => {
     expect(json.error).toContain('Invalid session ID');
   });
 
-  it('returns 404 when transcript does not exist', async () => {
+  it('returns 200 with missing=true when transcript does not exist', async () => {
     const app = await buildApp();
     const uuid = '12345678-1234-1234-1234-123456789abc';
     const res = await app.request(`/api/sessions/${uuid}/model`);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
     const json = (await res.json()) as Record<string, unknown>;
-    expect(json.ok).toBe(false);
+    expect(json.ok).toBe(true);
+    expect(json.model).toBeNull();
+    expect(json.missing).toBe(true);
   });
 
   it('returns model from transcript with model_change entry', async () => {
@@ -73,6 +75,7 @@ describe('GET /api/sessions/:id/model', () => {
     const json = (await res.json()) as Record<string, unknown>;
     expect(json.ok).toBe(true);
     expect(json.model).toBe('anthropic/claude-opus-4');
+    expect(json.missing).toBe(false);
   });
 
   it('returns model: null when transcript has no model_change', async () => {
@@ -89,6 +92,7 @@ describe('GET /api/sessions/:id/model', () => {
     const json = (await res.json()) as Record<string, unknown>;
     expect(json.ok).toBe(true);
     expect(json.model).toBeNull();
+    expect(json.missing).toBe(false);
   });
 
   it('finds deleted transcripts', async () => {
@@ -102,5 +106,6 @@ describe('GET /api/sessions/:id/model', () => {
     const json = (await res.json()) as Record<string, unknown>;
     expect(json.ok).toBe(true);
     expect(json.model).toBe('openai/gpt-4o');
+    expect(json.missing).toBe(false);
   });
 });

@@ -31,6 +31,8 @@ import {
   resolvePublishedGatewayPort,
 } from './docker-instances.js';
 import { parseInstanceId } from './instance-routing.js';
+import { canInjectGatewayToken } from './trust-utils.js';
+import { isAllowedOrigin } from './origin-utils.js';
 
 /** @internal — exported for test overrides */
 export const _internals = { challengeTimeoutMs: 5_000 };
@@ -96,6 +98,13 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
 
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     if (req.url?.startsWith('/ws')) {
+      const originHeader = Array.isArray(req.headers.origin) ? req.headers.origin[0] : req.headers.origin;
+      if (!isAllowedOrigin(originHeader)) {
+        socket.write('HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nOrigin not allowed');
+        socket.destroy();
+        return;
+      }
+
       // Auth check for WebSocket connections
       if (config.auth) {
         const token = parseSessionCookie(req.headers.cookie, SESSION_COOKIE_NAME);
@@ -173,15 +182,22 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
       }
     }
 
-    // Forward origin header for gateway auth.
-    // For instance-routed connections, use loopback origin expected by containerized
-    // multiclaw gateway controlUi allowlist to avoid origin mismatch on remote host URLs.
     const isEncrypted = !!(req.socket as unknown as { encrypted?: boolean }).encrypted;
     const scheme = isEncrypted ? 'https' : 'http';
-    const defaultOrigin = req.headers.origin || `${scheme}://${req.headers.host}`;
+    const defaultOrigin = (Array.isArray(req.headers.origin) ? req.headers.origin[0] : req.headers.origin)
+      || `${scheme}://${req.headers.host}`;
     const clientOrigin = requestedInstanceId ? 'http://127.0.0.1:3080' : defaultOrigin;
+    const isTrusted = !requestedInstanceId && canInjectGatewayToken(req);
 
-    createGatewayRelay(clientWs, targetUrl, clientOrigin, connId, authTokenOverride, !requestedInstanceId);
+    createGatewayRelay(
+      clientWs,
+      targetUrl,
+      clientOrigin,
+      connId,
+      authTokenOverride,
+      !requestedInstanceId,
+      isTrusted,
+    );
   });
 }
 
@@ -204,6 +220,7 @@ function createGatewayRelay(
   connId: string,
   authTokenOverride: string | null,
   useDeviceIdentityDefault = true,
+  isTrusted = false,
 ): void {
   const tag = `[ws-proxy:${connId}]`;
   const connStartTime = Date.now();
@@ -293,11 +310,26 @@ function createGatewayRelay(
     if (gwWs.readyState !== WebSocket.OPEN) return;
     connectSent = true;
     clearChallengeTimer();
-    const withAuth = overrideConnectAuthToken(savedConnectMsg, authTokenOverride);
-    const modified = (useDeviceIdentity && nonce)
-      ? injectDeviceIdentity(withAuth, nonce)
-      : withAuth;
-    gwWs.send(JSON.stringify(modified));
+    let modified = overrideConnectAuthToken(savedConnectMsg, authTokenOverride);
+    // Inject gateway token proxy-side for trusted clients if not provided by browser
+    if (isTrusted && config.gatewayToken && !(modified.params as ConnectParams)?.auth?.token) {
+      modified = {
+        ...modified,
+        params: {
+          ...(modified.params as object),
+          auth: {
+            ...((modified.params as ConnectParams)?.auth as object),
+            token: config.gatewayToken,
+          },
+        },
+      };
+    }
+
+    const final = (useDeviceIdentity && nonce)
+      ? injectDeviceIdentity(modified, nonce)
+      : modified;
+
+    gwWs.send(JSON.stringify(final));
     handshakeComplete = true;
     flushPending();
   }

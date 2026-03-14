@@ -69,7 +69,7 @@ describe('FileTreePanel', () => {
     vi.stubGlobal('fetch', vi.fn());
     // Use the statically imported mocked hook
     mockUseFileTree = vi.mocked(useFileTree);
-    
+
     // Mock localStorage
     const localStorageMock = {
       getItem: vi.fn(),
@@ -93,6 +93,7 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
@@ -113,6 +114,7 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
@@ -134,6 +136,7 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
@@ -148,6 +151,7 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
@@ -175,6 +179,7 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
@@ -208,6 +213,7 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
@@ -239,6 +245,7 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
@@ -270,13 +277,14 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
       // Open context menu and click "Permanently Delete"
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
-      
+
       const deleteButton = await screen.findByText('Permanently Delete');
       fireEvent.click(deleteButton);
 
@@ -316,13 +324,14 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
       // Open context menu and click "Permanently Delete"
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
-      
+
       const deleteButton = await screen.findByText('Permanently Delete');
       fireEvent.click(deleteButton);
 
@@ -358,13 +367,14 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
       // Trigger permanent deletion
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
-      
+
       const deleteButton = await screen.findByText('Permanently Delete');
       fireEvent.click(deleteButton);
 
@@ -391,13 +401,14 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
       // Trigger permanent deletion
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
-      
+
       const deleteButton = await screen.findByText('Permanently Delete');
       fireEvent.click(deleteButton);
 
@@ -421,19 +432,20 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
       // Verify custom workspace header is shown
       expect(screen.getByText('/custom/workspace')).toBeInTheDocument();
-      
+
       // Verify context menu shows permanent delete options
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
-      
+
       expect(screen.getByText('Permanently Delete')).toBeInTheDocument();
       expect(screen.queryByText('Move to Trash')).not.toBeInTheDocument();
-      
+
       // Close the context menu
       fireEvent.click(document.body);
     });
@@ -445,7 +457,7 @@ describe('FileTreePanel', () => {
         isCustomWorkspace: true,
         rootPath: '/home/user/project',
       };
-      
+
       mockUseFileTree.mockReturnValue({
         ...defaultMockHook,
         workspaceInfo: customWorkspaceInfo,
@@ -456,6 +468,7 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
@@ -468,6 +481,7 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
@@ -488,11 +502,151 @@ describe('FileTreePanel', () => {
           onOpenFile={mockOnOpenFile}
           onRemapOpenPaths={mockOnRemapOpenPaths}
           onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
         />
       );
 
       expect(screen.getByText('/new/custom/path')).toBeInTheDocument();
       expect(screen.queryByText('Workspace')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Mobile collapse behavior', () => {
+    const mockOnCollapseChange = vi.fn();
+
+    beforeEach(() => {
+      mockOnCollapseChange.mockClear();
+    });
+
+    it('renders normally when not collapsed', () => {
+      mockUseFileTree.mockReturnValue(defaultMockHook);
+
+      render(
+        <FileTreePanel
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={mockOnCollapseChange}
+          isCompactLayout={false}
+        />
+      );
+
+      expect(screen.getByText('src')).toBeInTheDocument();
+      expect(screen.getByText('package.json')).toBeInTheDocument();
+    });
+
+    it('hides completely on desktop when collapsed', () => {
+      mockUseFileTree.mockReturnValue(defaultMockHook);
+
+      const { container } = render(
+        <FileTreePanel
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={true}
+          onCollapseChange={mockOnCollapseChange}
+          isCompactLayout={false}
+        />
+      );
+
+      // Reopen control lives in the chat header, so the panel itself should disappear.
+      expect(screen.queryByText('src')).not.toBeInTheDocument();
+      expect(screen.queryByText('package.json')).not.toBeInTheDocument();
+      expect(container.firstChild).toBeNull();
+    });
+
+    it('hides completely on mobile when collapsed', () => {
+      mockUseFileTree.mockReturnValue(defaultMockHook);
+
+      const { container } = render(
+        <FileTreePanel
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={true}
+          onCollapseChange={mockOnCollapseChange}
+          isCompactLayout={true}
+        />
+      );
+
+      // Should render nothing (completely hidden)
+      expect(screen.queryByText('src')).not.toBeInTheDocument();
+      expect(screen.queryByText('package.json')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /open file explorer/i })).not.toBeInTheDocument();
+      expect(container.firstChild).toBeNull();
+    });
+
+    it('renders normally on mobile when expanded', () => {
+      mockUseFileTree.mockReturnValue(defaultMockHook);
+
+      render(
+        <FileTreePanel
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={mockOnCollapseChange}
+          isCompactLayout={true}
+        />
+      );
+
+      // Should show file entries even on mobile when expanded
+      expect(screen.getByText('src')).toBeInTheDocument();
+      expect(screen.getByText('package.json')).toBeInTheDocument();
+    });
+
+    it('calls onCollapseChange when the close button is clicked', () => {
+      mockUseFileTree.mockReturnValue(defaultMockHook);
+
+      render(
+        <FileTreePanel
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={mockOnCollapseChange}
+          isCompactLayout={false}
+        />
+      );
+
+      const collapseButton = screen.getByRole('button', { name: /close file explorer/i });
+      fireEvent.click(collapseButton);
+
+      expect(mockOnCollapseChange).toHaveBeenCalledWith(true);
+    });
+
+    it('hides completely on desktop when collapsed prop changes', () => {
+      mockUseFileTree.mockReturnValue(defaultMockHook);
+
+      const { container, rerender } = render(
+        <FileTreePanel
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={mockOnCollapseChange}
+          isCompactLayout={false}
+        />
+      );
+
+      // Initially should show normal width
+      expect(screen.getByText('src')).toBeInTheDocument();
+
+      // Collapse should fully hide the panel. Reopen lives in the chat header.
+      rerender(
+        <FileTreePanel
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={true}
+          onCollapseChange={mockOnCollapseChange}
+          isCompactLayout={false}
+        />
+      );
+
+      expect(screen.queryByText('src')).not.toBeInTheDocument();
+      expect(container.firstChild).toBeNull();
     });
   });
 });

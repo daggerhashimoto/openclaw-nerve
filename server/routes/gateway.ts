@@ -26,11 +26,21 @@ import { config } from '../lib/config.js';
 const app = new Hono();
 
 const GATEWAY_TIMEOUT_MS = 8_000;
+const SESSIONS_ACTIVE_MINUTES = 24 * 60;
+const SESSIONS_LIMIT = 200;
 
 export interface GatewayModelInfo {
   id: string;
   label: string;
   provider: string;
+}
+
+interface GatewaySessionSummary {
+  sessionKey?: string;
+  key?: string;
+  model?: string;
+  thinking?: string;
+  thinkingLevel?: string;
 }
 
 // ─── Model catalog via `openclaw models list` CLI ──────────────────────────────
@@ -230,14 +240,46 @@ function extractSessionModel(payload: unknown): string | null {
   return null;
 }
 
+function getGatewaySessionKey(session: GatewaySessionSummary): string {
+  return session.sessionKey || session.key || '';
+}
+
+function isTopLevelAgentSessionKey(sessionKey: string): boolean {
+  return /^agent:[^:]+:main$/.test(sessionKey);
+}
+
+function pickPreferredSessionKey(sessions: GatewaySessionSummary[]): string {
+  const explicitMain = sessions.find((session) => getGatewaySessionKey(session) === 'agent:main:main');
+  if (explicitMain) return 'agent:main:main';
+
+  const firstRoot = sessions.find((session) => isTopLevelAgentSessionKey(getGatewaySessionKey(session)));
+  if (firstRoot) return getGatewaySessionKey(firstRoot);
+
+  return getGatewaySessionKey(sessions[0] || {});
+}
+
 app.get('/api/gateway/session-info', rateLimitGeneral, async (c) => {
-  const sessionKey = c.req.query('sessionKey') || 'agent:main:main';
+  const requestedSessionKey = c.req.query('sessionKey')?.trim() || '';
   const info: { model?: string; thinking?: string } = {};
 
   // Primary: fetch per-session data from sessions.list (source of truth for per-session state)
   try {
-    const result = await invokeGatewayTool('sessions_list', { activeMinutes: 120, limit: 50 }, GATEWAY_TIMEOUT_MS) as Record<string, unknown>;
-    const sessions = (result?.sessions as Array<{ sessionKey?: string; key?: string; model?: string; thinking?: string; thinkingLevel?: string }>) || [];
+    const result = await invokeGatewayTool(
+      'sessions_list',
+      { activeMinutes: SESSIONS_ACTIVE_MINUTES, limit: SESSIONS_LIMIT },
+      GATEWAY_TIMEOUT_MS,
+    ) as Record<string, unknown>;
+
+    // sessions_list output shape may vary depending on gateway version:
+    // - { sessions: [...] }
+    // - { details: { sessions: [...] }, ... }
+    const r = result as unknown as { sessions?: unknown; details?: { sessions?: unknown } };
+    const sessions = (Array.isArray(r.sessions)
+      ? r.sessions
+      : Array.isArray(r.details?.sessions)
+        ? r.details?.sessions
+        : []) as GatewaySessionSummary[];
+    const sessionKey = requestedSessionKey || pickPreferredSessionKey(sessions);
     const session = sessions.find(s => (s.sessionKey || s.key) === sessionKey);
     if (session) {
       if (session.model) info.model = session.model;
@@ -300,8 +342,34 @@ app.post('/api/gateway/session-patch', rateLimitGeneral, async (c) => {
     return c.json({ ok: false, error: 'Invalid JSON body' }, 400);
   }
 
-  const sessionKey = body.sessionKey || 'agent:main:main';
+  let sessionKey = body.sessionKey?.trim() || '';
   const result: { ok: boolean; model?: string; thinking?: string; error?: string } = { ok: true };
+
+  if (!sessionKey) {
+    try {
+      const listResult = await invokeGatewayTool(
+        'sessions_list',
+        { activeMinutes: SESSIONS_ACTIVE_MINUTES, limit: SESSIONS_LIMIT },
+        GATEWAY_TIMEOUT_MS,
+      ) as Record<string, unknown>;
+      const r = listResult as { sessions?: unknown; details?: { sessions?: unknown } };
+      const sessions = (Array.isArray(r.sessions)
+        ? r.sessions
+        : Array.isArray(r.details?.sessions)
+          ? r.details?.sessions
+          : []) as GatewaySessionSummary[];
+      sessionKey = pickPreferredSessionKey(sessions);
+    } catch (err) {
+      console.warn('[gateway/session-patch] sessions_list fallback failed:', (err as Error).message);
+    }
+  }
+
+  if (!sessionKey) {
+    return c.json(
+      { ok: false, error: 'No active root session available. Provide sessionKey explicitly.' },
+      409,
+    );
+  }
 
   // Change model via session_status tool (reliable — uses HTTP tools/invoke)
   if (body.model) {

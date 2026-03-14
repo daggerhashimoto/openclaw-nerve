@@ -216,7 +216,7 @@ Cmd+K command palette.
 #### `features/connect/`
 | File | Purpose |
 |------|---------|
-| `ConnectDialog.tsx` | Initial gateway connection dialog with auto-connect from `/api/connect-defaults` |
+| `ConnectDialog.tsx` | Initial gateway connection dialog. Uses official gateway URL + `serverSideAuth` metadata from `/api/connect-defaults` to decide whether the token field is needed |
 
 #### `features/activity/`
 | File | Purpose |
@@ -260,7 +260,7 @@ Cmd+K command palette.
 | Hook | File | Purpose |
 |------|------|---------|
 | `useWebSocket` | `hooks/useWebSocket.ts` | Core WebSocket management — connect, RPC, auto-reconnect with exponential backoff |
-| `useConnectionManager` | `hooks/useConnectionManager.ts` | Auto-connect logic, credential persistence in `sessionStorage` |
+| `useConnectionManager` | `hooks/useConnectionManager.ts` | Auto-connect logic, official gateway resolution, `serverSideAuth` gating, and credential persistence in `localStorage` |
 | `useDashboardData` | `hooks/useDashboardData.ts` | Fetches memories and token data via REST + SSE |
 | `useServerEvents` | `hooks/useServerEvents.ts` | SSE client for `/api/events` |
 | `useInputHistory` | `hooks/useInputHistory.ts` | Up/down arrow input history |
@@ -319,7 +319,7 @@ Applied in order in `app.ts`:
 | `/api/auth/status` | `routes/auth.ts` | GET | Check whether auth is enabled and current session validity |
 | `/api/auth/login` | `routes/auth.ts` | POST | Authenticate with password, set signed session cookie |
 | `/api/auth/logout` | `routes/auth.ts` | POST | Clear session cookie |
-| `/api/connect-defaults` | `routes/connect-defaults.ts` | GET | Pre-fill gateway URL/token for browser. Token only returned for loopback clients |
+| `/api/connect-defaults` | `routes/connect-defaults.ts` | GET | Returns the official gateway WS URL plus `authEnabled` / `serverSideAuth` metadata. `token` is always `null`; trusted flows use server-side token injection |
 | `/api/events` | `routes/events.ts` | GET, POST | SSE stream for real-time push (memory.changed, tokens.updated, status.changed, ping). POST for test events |
 | `/api/tts` | `routes/tts.ts` | POST | Text-to-speech with provider auto-selection (OpenAI → Replicate → Edge). LRU cache with TTL |
 | `/api/tts/config` | `routes/tts.ts` | GET, PUT | TTS voice configuration per provider (read / partial update) |

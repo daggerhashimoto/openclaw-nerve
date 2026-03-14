@@ -25,6 +25,8 @@ export interface CronJob {
   payloadKind: 'agentTurn' | 'systemEvent';
   message?: string;       // agentTurn message or systemEvent text
   model?: string;
+  sessionTarget?: 'main' | 'isolated';
+  sessionKey?: string;
   // Delivery
   delivery?: CronDelivery;
   // State
@@ -42,7 +44,7 @@ export interface CronRun {
   summary?: string;
 }
 
-function normalizeJob(j: Record<string, unknown>): CronJob {
+export function normalizeCronJob(j: Record<string, unknown>): CronJob {
   const sched = (j.schedule || {}) as Record<string, unknown>;
   const payload = (j.payload || {}) as Record<string, unknown>;
   const state = (j.state || {}) as Record<string, unknown>;
@@ -65,6 +67,14 @@ function normalizeJob(j: Record<string, unknown>): CronJob {
     payloadKind: (payload.kind as string) === 'systemEvent' ? 'systemEvent' : 'agentTurn',
     message: (payload.message || payload.text || '') as string,
     model: payload.model as string | undefined,
+    sessionTarget:
+      (j.sessionTarget as string) === 'main' || (j.sessionTarget as string) === 'isolated'
+        ? (j.sessionTarget as 'main' | 'isolated')
+        : undefined,
+    sessionKey:
+      typeof j.sessionKey === 'string' && j.sessionKey.trim().length > 0
+        ? j.sessionKey
+        : undefined,
     // Delivery
     delivery: delivery?.mode ? delivery : undefined,
     // State
@@ -92,7 +102,7 @@ export function useCrons() {
       const data = await res.json() as { ok: boolean; result?: { jobs?: unknown[]; details?: { jobs?: unknown[] } }; error?: string };
       if (!data.ok) throw new Error(data.error || 'Failed to fetch crons');
       const rawJobs = data.result?.jobs || data.result?.details?.jobs || (Array.isArray(data.result) ? data.result : []);
-      setJobs((rawJobs as Record<string, unknown>[]).map(normalizeJob));
+      setJobs((rawJobs as Record<string, unknown>[]).map(normalizeCronJob));
     } catch (err) {
       setError((err as Error).message);
     } finally {

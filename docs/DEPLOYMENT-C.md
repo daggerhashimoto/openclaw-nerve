@@ -76,7 +76,7 @@ Follow the same-host steps for Nerve, then add:
 
 In `.env`:
 
-```env
+```bash
 GATEWAY_URL=<remote-gateway-url>
 WS_ALLOWED_HOSTS=<remote-gateway-hostname-or-ip>
 ```
@@ -115,9 +115,11 @@ In the browser: login screen appears, connect succeeds, sessions load, messages 
 
 ## Common issues
 
-### Remote clients don't get auto token prefill
+### Remote clients may still need manual credentials
 
-`/api/connect-defaults` only returns the token to loopback clients. Remote users must enter the gateway token manually in the connect dialog.
+Remote clients can still auto-connect when Nerve trusts the request and the browser is using the official gateway URL. In that case `/api/connect-defaults` reports `serverSideAuth=true`, the browser sends an empty token, and Nerve injects `GATEWAY_TOKEN` server-side during the WebSocket handshake.
+
+Manual token entry is only required for custom gateway URLs or untrusted access paths.
 
 ### Reverse proxy and trusted proxy settings
 

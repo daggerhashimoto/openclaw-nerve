@@ -110,8 +110,9 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
       if (sessionId && /^[0-9a-f-]{36}$/.test(sessionId)) {
         fetch(`/api/sessions/${sessionId}/model`)
           .then(r => r.json())
-          .then((data: { ok: boolean; model?: string }) => {
-            if (!cancelled && data.ok && data.model) setActualModel(data.model);
+          .then((data: { ok: boolean; model?: string | null; missing?: boolean }) => {
+            if (cancelled || !data.ok) return;
+            if (data.model != null) setActualModel(data.model);
           })
           .catch(() => { /* ignore */ });
       }

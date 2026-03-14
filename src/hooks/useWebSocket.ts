@@ -20,7 +20,6 @@ interface UseWebSocketReturn {
 
 const RECONNECT_BASE_DELAY = 1000;
 const RECONNECT_MAX_DELAY = 30000;
-const RECONNECT_MAX_ATTEMPTS = 50; // Give up after ~10 minutes of trying
 const INSTANCE_ID_STORAGE_KEY = 'oc-webchat-instance-id';
 
 function generateInstanceId(): string {
@@ -205,6 +204,7 @@ export function useWebSocket(activeInstanceId: string | null = null): UseWebSock
               const errMsg = 'Auth failed: ' + (response.error?.message || 'unknown');
               setConnectError(errMsg);
               setConnectionState('disconnected');
+              intentionalDisconnectRef.current = true; // prevent reconnect on auth failure
               ws.close();
               connectRejectRef.current?.(new Error(errMsg));
             }
@@ -253,12 +253,6 @@ export function useWebSocket(activeInstanceId: string | null = null): UseWebSock
         // Attempt auto-reconnect
         const attempt = ++reconnectAttemptRef.current;
         setReconnectAttempt(attempt);
-
-        if (attempt > RECONNECT_MAX_ATTEMPTS) {
-          setConnectError('Reconnect failed after ' + RECONNECT_MAX_ATTEMPTS + ' attempts');
-          setConnectionState('disconnected');
-          return;
-        }
 
         // Exponential backoff with jitter
         const delay = Math.min(

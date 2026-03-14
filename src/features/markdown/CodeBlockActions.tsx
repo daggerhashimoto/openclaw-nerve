@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { Check, Copy, Download } from 'lucide-react';
 import { getExtension } from '@/lib/highlight';
 
 interface CodeBlockActionsProps {
@@ -42,13 +43,13 @@ export function CodeBlockActions({ code, language }: CodeBlockActionsProps) {
       <button
         className="code-action-btn"
         onClick={handleCopy}
-        aria-label="Copy code"
-        title="Copy to clipboard"
+        aria-label={copied ? 'Code copied' : 'Copy code'}
+        title={copied ? 'Copied' : 'Copy to clipboard'}
       >
         {copied ? (
-          <span className="code-action-feedback">Copied!</span>
+          <Check size={14} className="code-action-feedback" aria-hidden="true" />
         ) : (
-          <span>📋</span>
+          <Copy size={14} aria-hidden="true" />
         )}
       </button>
       <button
@@ -57,7 +58,7 @@ export function CodeBlockActions({ code, language }: CodeBlockActionsProps) {
         aria-label="Save to file"
         title={`Save as code.${getExtension(language)}`}
       >
-        <span>💾</span>
+        <Download size={14} aria-hidden="true" />
       </button>
     </div>
   );

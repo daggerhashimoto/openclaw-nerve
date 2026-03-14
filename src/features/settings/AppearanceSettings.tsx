@@ -1,84 +1,85 @@
-import { Monitor, Eye, ChevronDown, Type, Activity } from 'lucide-react';
+import { Monitor, Eye, Type, Activity } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useSettings } from '@/contexts/SettingsContext';
 import { themes, themeNames, type ThemeName } from '@/lib/themes';
 import { fonts, fontNames, type FontName } from '@/lib/fonts';
+
+const INLINE_SELECT_TRIGGER_CLASS =
+  'min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-left text-sm font-sans text-foreground sm:min-w-[148px]';
+const INLINE_SELECT_MENU_CLASS =
+  'rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]';
 
 /** Settings section for theme, font, and panel visibility. */
 export function AppearanceSettings() {
   const { eventsVisible, toggleEvents, logVisible, toggleLog, theme, setTheme, font, setFont } = useSettings();
 
-  const handleThemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setTheme(e.target.value as ThemeName);
+  const handleThemeChange = (next: string) => {
+    setTheme(next as ThemeName);
   };
 
-  const handleFontChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setFont(e.target.value as FontName);
+  const handleFontChange = (next: string) => {
+    setFont(next as FontName);
   };
 
   return (
     <div className="space-y-4">
-      <h3 className="text-[10px] font-bold tracking-[1.5px] uppercase text-muted-foreground flex items-center gap-2">
-        <span className="text-purple">◆</span>
-        APPEARANCE
-      </h3>
+      <div className="space-y-1.5">
+        <span className="cockpit-kicker">
+          <span className="text-primary">◆</span>
+          Appearance
+        </span>
+      </div>
 
       {/* Theme selector */}
-      <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
-        <div className="flex items-center gap-3">
+      <div className="cockpit-row items-start justify-between">
+        <div className="flex min-w-0 items-start gap-3">
           <Monitor size={14} className="text-primary" />
-          <span className="text-[12px]">Theme</span>
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground">Theme</span>
+            <span className="text-xs text-muted-foreground">Swap the full cockpit palette in one move.</span>
+          </div>
         </div>
-        <div className="relative">
-          <select
+        <div className="relative w-full sm:w-auto">
+          <InlineSelect
             value={theme}
             onChange={handleThemeChange}
-            className="appearance-none bg-secondary border border-border/60 text-[11px] font-mono uppercase tracking-wide px-3 py-1.5 pr-7 cursor-pointer hover:border-primary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors"
-            aria-label="Select theme"
-          >
-            {themeNames.map((name) => (
-              <option key={name} value={name} className="bg-card text-foreground">
-                {themes[name].label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
+            options={themeNames.map((name) => ({ value: name, label: themes[name].label }))}
+            ariaLabel="Select theme"
+            triggerClassName={INLINE_SELECT_TRIGGER_CLASS}
+            menuClassName={INLINE_SELECT_MENU_CLASS}
+          />
         </div>
       </div>
 
       {/* Font selector */}
-      <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
-        <div className="flex items-center gap-3">
+      <div className="cockpit-row items-start justify-between">
+        <div className="flex min-w-0 items-start gap-3">
           <Type size={14} className="text-primary" />
           <div className="flex flex-col">
-            <span className="text-[12px]">Font</span>
-            <span className="text-[10px] text-muted-foreground">Code blocks stay monospace</span>
+            <span className="text-sm font-medium text-foreground">UI font</span>
+            <span className="text-xs text-muted-foreground">Code blocks stay monospace</span>
           </div>
         </div>
-        <div className="relative">
-          <select
+        <div className="relative w-full sm:w-auto">
+          <InlineSelect
             value={font}
             onChange={handleFontChange}
-            className="appearance-none bg-secondary border border-border/60 text-[11px] font-mono uppercase tracking-wide px-3 py-1.5 pr-7 cursor-pointer hover:border-primary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors"
-            aria-label="Select font"
-          >
-            {fontNames.map((name) => (
-              <option key={name} value={name} className="bg-card text-foreground">
-                {fonts[name].label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
+            options={fontNames.map((name) => ({ value: name, label: fonts[name].label }))}
+            ariaLabel="Select font"
+            triggerClassName={INLINE_SELECT_TRIGGER_CLASS}
+            menuClassName={INLINE_SELECT_MENU_CLASS}
+          />
         </div>
       </div>
 
       {/* Events Panel Visibility */}
-      <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
+      <div className="cockpit-row items-start justify-between">
         <div className="flex items-center gap-3">
-          <Eye size={14} className={eventsVisible ? 'text-purple' : 'text-muted-foreground'} aria-hidden="true" />
+          <Eye size={14} className={eventsVisible ? 'text-primary' : 'text-muted-foreground'} aria-hidden="true" />
           <div className="flex flex-col">
-            <span className="text-[12px]" id="events-label">Display Events</span>
-            <span className="text-[10px] text-muted-foreground">Show event log in telemetry row</span>
+            <span className="text-sm font-medium text-foreground" id="events-label">Show events</span>
+            <span className="text-xs text-muted-foreground">Keep the event rail visible in the telemetry row.</span>
           </div>
         </div>
         <Switch
@@ -89,12 +90,12 @@ export function AppearanceSettings() {
       </div>
 
       {/* Log Panel Visibility */}
-      <div className="flex items-center justify-between px-3 py-2.5 bg-background border border-border/60 hover:border-muted-foreground transition-colors">
+      <div className="cockpit-row items-start justify-between">
         <div className="flex items-center gap-3">
           <Activity size={14} className={logVisible ? 'text-green' : 'text-muted-foreground'} aria-hidden="true" />
           <div className="flex flex-col">
-            <span className="text-[12px]" id="log-label">Display Log</span>
-            <span className="text-[10px] text-muted-foreground">Show agent activity log in top bar</span>
+            <span className="text-sm font-medium text-foreground" id="log-label">Show activity log</span>
+            <span className="text-xs text-muted-foreground">Surface agent activity in the top chrome.</span>
           </div>
         </div>
         <Switch

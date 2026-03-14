@@ -6,6 +6,11 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { RefreshCw, Play, Plus, Trash2, Pencil, ChevronDown, ChevronRight, CheckCircle, XCircle, AlertTriangle, Circle, Loader2 } from 'lucide-react';
 import { useCrons, type CronJob, type CronRun } from '../hooks/useCrons';
 import { CronDialog } from './CronDialog';
+import { useSessionContext } from '@/contexts/SessionContext';
+import { getRootAgentId, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
+import { getSessionKey } from '@/types';
+
+type CronRowJob = CronJob & { targetLabel?: string };
 
 /** Convert cron-like schedule to human-readable string */
 function humanSchedule(job: CronJob): string {
@@ -60,7 +65,7 @@ function relativeTime(ts: string): string {
 }
 
 function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
-  job: CronJob;
+  job: CronRowJob;
   onToggle: (id: string, enabled: boolean) => void;
   onRun: (id: string) => Promise<boolean | undefined>;
   onDelete: (id: string) => void;
@@ -105,6 +110,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   }, [confirmingDelete, job.id, onDelete]);
 
   const name = job.name || job.label || job.id;
+  const targetLabel = job.targetLabel;
   const isSuccess = job.lastStatus === 'success' || job.lastStatus === 'ok' || job.lastStatus === 'finished';
   // Detect delivery-only failures: task ran but delivery failed
   const errorLower = job.lastError?.toLowerCase() ?? '';
@@ -132,6 +138,11 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
         <div className="flex-1 min-w-0">
           <div className="text-[11px] text-foreground leading-tight truncate">{name}</div>
           <div className="text-[10px] text-muted-foreground mt-0.5">{humanSchedule(job)}</div>
+          {targetLabel && (
+            <div className="text-[10px] text-muted-foreground mt-0.5">
+              Target: {targetLabel} · {job.payloadKind === 'agentTurn' ? 'private run' : 'root event'}
+            </div>
+          )}
           {job.lastRun && (
             <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
               <span>Last run: {relativeTime(job.lastRun)}</span>
@@ -241,6 +252,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
 /** Workspace tab listing cron jobs with create/edit/delete/toggle controls. */
 export function CronsTab() {
   const { jobs, isLoading, error, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
+  const { sessions, agentName } = useSessionContext();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
   const [editingJob, setEditingJob] = useState<CronJob | null>(null);
@@ -316,17 +328,29 @@ export function CronsTab() {
             No scheduled tasks yet
           </div>
         )}
-        {jobs.map(job => (
-          <CronRow
-            key={job.id}
-            job={job}
-            onToggle={toggleJob}
-            onRun={runJob}
-            onDelete={deleteJob}
-            onEdit={handleEdit}
-            onFetchRuns={fetchRuns}
-          />
-        ))}
+        {jobs.map(job => {
+          const targetSession = sessions.find((session) => getSessionKey(session) === job.sessionKey);
+          const fallbackRootId = job.sessionKey ? getRootAgentId(job.sessionKey) : null;
+          const targetLabel = targetSession
+            ? getSessionDisplayLabel(targetSession, agentName)
+            : fallbackRootId === 'main'
+              ? `${agentName} (main)`
+              : fallbackRootId
+                ? `Agent ${fallbackRootId}`
+                : 'Unassigned';
+
+          return (
+            <CronRow
+              key={job.id}
+              job={{ ...job, targetLabel }}
+              onToggle={toggleJob}
+              onRun={runJob}
+              onDelete={deleteJob}
+              onEdit={handleEdit}
+              onFetchRuns={fetchRuns}
+            />
+          );
+        })}
       </div>
 
       <CronDialog

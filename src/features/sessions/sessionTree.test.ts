@@ -95,6 +95,18 @@ describe('buildSessionTree', () => {
     expect(tree[0].children[0].key).toBe('agent:main:subagent:child');
   });
 
+  it('falls back to inferred parent when parentId is stale', () => {
+    const sessions = [
+      session('agent:reviewer:main'),
+      session('agent:reviewer:subagent:child', { parentId: 'agent:missing:main' }),
+    ];
+    const tree = buildSessionTree(sessions);
+    expect(tree).toHaveLength(1);
+    expect(tree[0].key).toBe('agent:reviewer:main');
+    expect(tree[0].children).toHaveLength(1);
+    expect(tree[0].children[0].key).toBe('agent:reviewer:subagent:child');
+  });
+
   it('orphans sessions whose parent is not in the list', () => {
     const sessions = [
       session('agent:main:subagent:orphan', { parentId: 'agent:other:main' }),
@@ -103,6 +115,22 @@ describe('buildSessionTree', () => {
     // Orphan should appear at root level
     expect(tree).toHaveLength(1);
     expect(tree[0].key).toBe('agent:main:subagent:orphan');
+  });
+
+  it('builds multiple top-level roots with their own children', () => {
+    const sessions = [
+      session('agent:main:main'),
+      session('agent:reviewer:main'),
+      session('agent:main:subagent:a'),
+      session('agent:reviewer:subagent:b'),
+    ];
+    const tree = buildSessionTree(sessions);
+
+    expect(tree).toHaveLength(2);
+    expect(tree[0].key).toBe('agent:main:main');
+    expect(tree[1].key).toBe('agent:reviewer:main');
+    expect(tree[0].children[0].key).toBe('agent:main:subagent:a');
+    expect(tree[1].children[0].key).toBe('agent:reviewer:subagent:b');
   });
 
   it('sorts cron-runs by most recent first', () => {

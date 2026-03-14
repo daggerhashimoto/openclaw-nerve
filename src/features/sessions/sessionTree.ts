@@ -1,5 +1,6 @@
 import type { Session } from '@/types';
 import { getSessionKey } from '@/types';
+import { getSessionType, isTopLevelAgentSessionKey, resolveParentSessionKey } from './sessionKeys';
 
 export interface TreeNode {
   session: Session;
@@ -10,33 +11,7 @@ export interface TreeNode {
   isExpanded: boolean;
 }
 
-/** Classify a session key by type. */
-export function getSessionType(sessionKey: string): 'main' | 'subagent' | 'cron' | 'cron-run' {
-  if (/:cron:[^:]+:run:/.test(sessionKey)) return 'cron-run';
-  if (/:cron:/.test(sessionKey)) return 'cron';
-  if (/:subagent:/.test(sessionKey)) return 'subagent';
-  return 'main';
-}
-
-/**
- * Parse a session key to infer its parent key.
- * "agent:main:main" → null (root)
- * "agent:main:subagent:abc123" → "agent:main:main" (child of root)
- * "agent:main:cron:abc123" → "agent:main:main" (child of root)
- * "agent:main:cron:abc123:run:def456" → "agent:main:cron:abc123" (child of cron)
- */
-function inferParentKey(sessionKey: string): string | null {
-  // Cron run → parent is the cron job
-  const cronRunMatch = sessionKey.match(/^(.+:cron:[^:]+):run:.+$/);
-  if (cronRunMatch) return cronRunMatch[1];
-  // Subagent → parent is main
-  const subMatch = sessionKey.match(/^(agent:[^:]+):subagent:.+$/);
-  if (subMatch) return `${subMatch[1]}:main`;
-  // Cron job → parent is main
-  const cronMatch = sessionKey.match(/^(agent:[^:]+):cron:.+$/);
-  if (cronMatch) return `${cronMatch[1]}:main`;
-  return null;
-}
+export { getSessionType } from './sessionKeys';
 
 /**
  * Build a hierarchical tree from a flat list of sessions.
@@ -55,20 +30,13 @@ export function buildSessionTree(sessions: Session[]): TreeNode[] {
   for (const s of sessions) {
     keyMap.set(getSessionKey(s), s);
   }
+  const knownKeys = new Set(keyMap.keys());
 
   // Determine parent for each session
   const parentMap = new Map<string, string | null>();
   for (const s of sessions) {
     const sk = getSessionKey(s);
-    if (s.parentId) {
-      // Prefer explicit parentId from the gateway API
-      parentMap.set(sk, keyMap.has(s.parentId) ? s.parentId : null);
-    } else {
-      // Fallback: infer from key structure
-      const inferred = inferParentKey(sk);
-      // Only set parent if the parent session actually exists in our list
-      parentMap.set(sk, inferred && keyMap.has(inferred) ? inferred : null);
-    }
+    parentMap.set(sk, resolveParentSessionKey(s, knownKeys));
   }
 
   // Group children by parent key
@@ -92,17 +60,32 @@ export function buildSessionTree(sessions: Session[]): TreeNode[] {
     // Sort: subagents first, then crons, then alphabetically
     const typeOrder = { main: 0, subagent: 1, cron: 2, 'cron-run': 3 };
     const sorted = [...children].sort((a, b) => {
+      const keyA = getSessionKey(a);
+      const keyB = getSessionKey(b);
+
+      if (parentKey === null) {
+        if (keyA === 'agent:main:main') return -1;
+        if (keyB === 'agent:main:main') return 1;
+      }
+
       const ta = typeOrder[getSessionType(getSessionKey(a))] ?? 9;
       const tb = typeOrder[getSessionType(getSessionKey(b))] ?? 9;
       if (ta !== tb) return ta - tb;
+
+      if (parentKey === null && isTopLevelAgentSessionKey(keyA) && isTopLevelAgentSessionKey(keyB)) {
+        const displayA = (a.displayName || a.label || keyA).toLowerCase();
+        const displayB = (b.displayName || b.label || keyB).toLowerCase();
+        return displayA.localeCompare(displayB);
+      }
+
       // Within cron-runs, sort by most recent first
       if (ta === 3) {
         const timeA = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
         const timeB = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
         return timeB - timeA;
       }
-      const la = (a.label || getSessionKey(a)).toLowerCase();
-      const lb = (b.label || getSessionKey(b)).toLowerCase();
+      const la = (a.displayName || a.label || keyA).toLowerCase();
+      const lb = (b.displayName || b.label || keyB).toLowerCase();
       return la.localeCompare(lb);
     });
 

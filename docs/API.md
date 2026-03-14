@@ -221,29 +221,39 @@ Returns the application name and version from `package.json`.
 
 ### `GET /api/connect-defaults`
 
-Provides gateway WebSocket URL and auth token for the frontend's auto-connect feature. **The gateway token is only returned to loopback clients** — remote clients receive `null`.
+Provides the official gateway WebSocket URL and trust metadata for the frontend's auto-connect flow. The `token` field is always `null`; when `serverSideAuth` is `true`, Nerve expects the browser to connect with an empty token and injects `GATEWAY_TOKEN` server-side during the WebSocket handshake.
 
-**Rate Limit:** None
+**Rate Limit:** General (`60 requests / minute`)
 
-**Response (loopback):**
-
-```json
-{
-  "wsUrl": "ws://127.0.0.1:18789/ws",
-  "token": "your-gateway-token",
-  "agentName": "Agent"
-}
-```
-
-**Response (remote):**
+**Response (trusted / auto-connect path):**
 
 ```json
 {
   "wsUrl": "ws://127.0.0.1:18789/ws",
   "token": null,
-  "agentName": "Agent"
+  "agentName": "Agent",
+  "authEnabled": false,
+  "serverSideAuth": true
 }
 ```
+
+**Response (manual token still required):**
+
+```json
+{
+  "wsUrl": "ws://127.0.0.1:18789/ws",
+  "token": null,
+  "agentName": "Agent",
+  "authEnabled": true,
+  "serverSideAuth": false
+}
+```
+
+`serverSideAuth` becomes `true` when Nerve can safely inject the configured gateway token for this request, such as:
+- loopback / tunneled local access to the official gateway URL
+- authenticated sessions on a network-exposed Nerve instance
+
+If the browser is pointed at a custom gateway URL, or the request is not trusted for server-side injection, the connect dialog keeps the token field visible and the user must supply it manually.
 
 ---
 

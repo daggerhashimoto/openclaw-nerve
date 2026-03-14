@@ -48,6 +48,21 @@ function mergeChildren(
   });
 }
 
+/** Clear cached children for a directory entry and reset to unloaded state */
+function clearEntryFromTree(entries: TreeEntry[], targetPath: string): TreeEntry[] {
+  return entries.map((entry) => {
+    if (entry.path === targetPath && entry.type === 'directory') {
+      // Reset to unloaded state
+      return { ...entry, children: null };
+    }
+    if (entry.children && entry.type === 'directory') {
+      // Recursively process children
+      return { ...entry, children: clearEntryFromTree(entry.children, targetPath) };
+    }
+    return entry;
+  });
+}
+
 /** Hook for managing file tree state with workspace info and persistence. */
 export function useFileTree() {
   const instances = useInstancesOptional();
@@ -86,6 +101,24 @@ export function useFileTree() {
       const requestPath = `/api/files/tree${params}`;
       const res = await fetch(requestPath);
       if (!res.ok) {
+        if (dirPath && (res.status === 400 || res.status === 404)) {
+          // Evict this path from expandedPaths and clear cached children
+          setExpandedPaths(prev => {
+            const next = new Set(prev);
+            // Remove the path and all descendants
+            for (const path of next) {
+              if (path === dirPath || path.startsWith(`${dirPath}/`)) {
+                next.delete(path);
+              }
+            }
+            return next;
+          });
+
+          // Clear cached children for this entry
+          setEntries(prev => {
+            return clearEntryFromTree(prev, dirPath);
+          });
+        }
         setDebug({
           instanceId: activeInstanceId,
           lastPath: requestPath,

@@ -6,7 +6,8 @@
  * Dashboard data fetching is handled by useDashboardData.
  */
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { useGateway, loadConfig } from '@/contexts/GatewayContext';
+import { AlertTriangle, CheckCircle2, RotateCw } from 'lucide-react';
+import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { useChat } from '@/contexts/ChatContext';
 import { useSettings, type STTInputMode } from '@/contexts/SettingsContext';
@@ -23,12 +24,13 @@ import { ChatPanel, type ChatPanelHandle } from '@/features/chat/ChatPanel';
 import type { TTSProvider } from '@/features/tts/useTTS';
 import type { ViewMode } from '@/features/command-palette/commands';
 import { ResizablePanels } from '@/components/ResizablePanels';
-import { getContextLimit, DEFAULT_GATEWAY_WS } from '@/lib/constants';
+import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { createCommands } from '@/features/command-palette/commands';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { FileTreePanel, TabbedContentArea, useOpenFiles } from '@/features/file-browser';
+import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
 
 // Lazy-loaded features (not needed in initial bundle)
 const SettingsDrawer = lazy(() => import('@/features/settings/SettingsDrawer').then(m => ({ default: m.SettingsDrawer })));
@@ -54,7 +56,7 @@ export default function App({ onLogout }: AppProps) {
   // Session state
   const {
     sessions, sessionsLoading, currentSession, setCurrentSession,
-    busyState, agentStatus, unreadSessions, refreshSessions, deleteSession, abortSession, spawnAgent, renameSession,
+    busyState, agentStatus, unreadSessions, refreshSessions, deleteSession, abortSession, spawnSession, renameSession,
     agentLogEntries, eventEntries,
     agentName,
   } = useSessionContext();
@@ -63,7 +65,7 @@ export default function App({ onLogout }: AppProps) {
   const {
     messages, isGenerating, stream, processingStage,
     lastEventTimestamp, activityLog, currentToolDescription,
-    handleSend, handleAbort, handleReset, loadHistory,
+    handleSend, handleAbort, handleReset,
     loadMore, hasMore,
     showResetConfirm, confirmReset, cancelReset,
   } = useChat();
@@ -88,12 +90,64 @@ export default function App({ onLogout }: AppProps) {
   const {
     dialogOpen,
     editableUrl, setEditableUrl,
+    officialUrl,
     editableToken, setEditableToken,
     handleConnect, handleReconnect,
+    serverSideAuth,
   } = useConnectionManager();
 
   // Track last changed file path for tree refresh
   const [lastChangedPath, setLastChangedPath] = useState<string | null>(null);
+
+  const initialCompactLayout = typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches;
+  const initialDesktopFileBrowserCollapsed = (() => {
+    try {
+      const saved = localStorage.getItem('nerve-file-tree-collapsed');
+      if (saved !== null) return saved === 'true';
+    } catch {
+      // ignore storage errors and fall back to desktop default
+    }
+
+    return false;
+  })();
+
+  // File browser collapse state for mobile optimization
+  const [fileBrowserCollapsed, setFileBrowserCollapsedState] = useState(() => (
+    initialCompactLayout ? true : initialDesktopFileBrowserCollapsed
+  ));
+  const [desktopFileBrowserCollapsed, setDesktopFileBrowserCollapsed] = useState(initialDesktopFileBrowserCollapsed);
+
+  // Responsive layout state (chat-first on smaller viewports)
+  const [isCompactLayout, setIsCompactLayout] = useState(initialCompactLayout);
+
+  const persistDesktopFileBrowserCollapsed = useCallback((collapsed: boolean) => {
+    setDesktopFileBrowserCollapsed(collapsed);
+
+    try {
+      localStorage.setItem('nerve-file-tree-collapsed', String(collapsed));
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  const setFileBrowserCollapsed = useCallback((nextCollapsed: boolean | ((prev: boolean) => boolean)) => {
+    setFileBrowserCollapsedState(prevCollapsed => {
+      const resolvedCollapsed = typeof nextCollapsed === 'function'
+        ? nextCollapsed(prevCollapsed)
+        : nextCollapsed;
+
+      if (!isCompactLayout) {
+        persistDesktopFileBrowserCollapsed(resolvedCollapsed);
+      }
+
+      return resolvedCollapsed;
+    });
+  }, [isCompactLayout, persistDesktopFileBrowserCollapsed]);
+
+  /** Toggle file browser collapse state (mobile). */
+  const handleToggleFileBrowser = useCallback(() => {
+    setFileBrowserCollapsed(prev => !prev);
+  }, [setFileBrowserCollapsed]);
 
   // File browser state
   const {
@@ -130,6 +184,7 @@ export default function App({ onLogout }: AppProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [booted, setBooted] = useState(false);
   const [logGlow, setLogGlow] = useState(false);
+  const [desktopRightPanelWidth, setDesktopRightPanelWidth] = useState<number | null>(null);
   const prevLogCount = useRef(0);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
@@ -143,12 +198,6 @@ export default function App({ onLogout }: AppProps) {
     confirmGatewayRestart,
     dismissNotice,
   } = useGatewayRestart();
-
-  // Responsive layout state (chat-first on smaller viewports)
-  const [isCompactLayout, setIsCompactLayout] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return window.matchMedia('(max-width: 900px)').matches;
-  });
 
   // Command palette state
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -166,8 +215,13 @@ export default function App({ onLogout }: AppProps) {
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const setViewMode = useCallback((mode: ViewMode) => {
     setViewModeRaw(mode);
+
+    if (mode === 'kanban' && isCompactLayout) {
+      setFileBrowserCollapsed(true);
+    }
+
     try { localStorage.setItem('nerve:viewMode', mode); } catch { /* ignore */ }
-  }, []);
+  }, [isCompactLayout, setFileBrowserCollapsed]);
   const openTaskInBoard = useCallback((taskId: string) => {
     setPendingTaskId(taskId);
     setViewMode('kanban');
@@ -225,6 +279,7 @@ export default function App({ onLogout }: AppProps) {
   // Global keyboard shortcuts
   useKeyboardShortcuts([
     { key: 'k', meta: true, handler: handleOpenPalette },
+    { key: 'b', meta: true, handler: handleToggleFileBrowser },  // Cmd+B → toggle file browser
     { key: 'f', meta: true, handler: toggleSearch, skipInEditor: true },  // Cmd+F → chat search (yields to CodeMirror search in editor)
     { key: 'c', ctrl: true, handler: handleCtrlC, preventDefault: false },  // Ctrl+C → abort (when generating), allow copy to still work
     { key: 'Escape', handler: handleEscape, skipInEditor: true },
@@ -237,9 +292,9 @@ export default function App({ onLogout }: AppProps) {
 
   // Get display name for current session (agent name for main, label for subagents)
   const currentSessionDisplayName = useMemo(() => {
-    if (currentSession === 'agent:main:main') return agentName;
-    return currentSessionData?.label || agentName;
-  }, [currentSession, currentSessionData, agentName]);
+    if (currentSessionData) return getSessionDisplayLabel(currentSessionData, agentName);
+    return agentName;
+  }, [currentSessionData, agentName]);
 
   const contextTokens = currentSessionData?.totalTokens ?? 0;
   const contextLimit = currentSessionData?.contextTokens || getContextLimit(model);
@@ -265,7 +320,7 @@ export default function App({ onLogout }: AppProps) {
   useEffect(() => {
     const currentCount = agentLogEntries.length;
     if (currentCount > prevLogCount.current) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- valid: UI feedback for external change
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: transient UI glow follows external log updates
       setLogGlow(true);
       const timer = setTimeout(() => setLogGlow(false), 500);
       prevLogCount.current = currentCount;
@@ -274,13 +329,25 @@ export default function App({ onLogout }: AppProps) {
     prevLogCount.current = currentCount;
   }, [agentLogEntries.length]);
 
+  const handleCompactLayoutChange = useCallback((nextIsCompactLayout: boolean) => {
+    setIsCompactLayout(nextIsCompactLayout);
+    setFileBrowserCollapsedState(prevCollapsed => {
+      if (nextIsCompactLayout) {
+        persistDesktopFileBrowserCollapsed(prevCollapsed);
+        return true;
+      }
+
+      return desktopFileBrowserCollapsed;
+    });
+  }, [desktopFileBrowserCollapsed, persistDesktopFileBrowserCollapsed]);
+
   // Responsive mode: switch to chat-first layout on smaller screens
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const mq = window.matchMedia('(max-width: 900px)');
     const onChange = (event: MediaQueryListEvent) => {
-      setIsCompactLayout(event.matches);
+      handleCompactLayoutChange(event.matches);
     };
 
     if (mq.addEventListener) {
@@ -291,13 +358,12 @@ export default function App({ onLogout }: AppProps) {
     // Safari fallback
     mq.addListener(onChange);
     return () => mq.removeListener(onChange);
-  }, []);
+  }, [handleCompactLayoutChange]);
 
   // Handler for session changes
-  const handleSessionChange = useCallback(async (key: string) => {
+  const handleSessionChange = useCallback((key: string) => {
     setCurrentSession(key);
-    await loadHistory(key);
-  }, [setCurrentSession, loadHistory]);
+  }, [setCurrentSession]);
 
   // Handlers for TTS provider/model changes
   const handleTtsProviderChange = useCallback((provider: TTSProvider) => {
@@ -319,9 +385,6 @@ export default function App({ onLogout }: AppProps) {
   const handleSttModelChange = useCallback((model: string) => {
     setSttModel(model);
   }, [setSttModel]);
-
-  const savedConfig = useMemo(() => loadConfig(), []);
-  const defaultUrl = savedConfig.url || DEFAULT_GATEWAY_WS;
 
   const chatContent = (
     <TabbedContentArea
@@ -356,6 +419,7 @@ export default function App({ onLogout }: AppProps) {
             agentName={currentSessionDisplayName}
             loadMore={loadMore}
             hasMore={hasMore}
+            onToggleFileBrowser={fileBrowserCollapsed ? handleToggleFileBrowser : undefined}
           />
         </PanelErrorBoundary>
       }
@@ -365,8 +429,8 @@ export default function App({ onLogout }: AppProps) {
   const renderRightPanels = (onSelect: (key: string) => Promise<void> | void) => (
     <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
       {/* Sessions + Memory stacked vertically */}
-      <div className="flex-1 flex flex-col gap-px min-h-0">
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-background">
+      <div className="flex-1 flex flex-col gap-3 min-h-0">
+        <div className="shell-panel flex-1 flex flex-col min-h-0 overflow-hidden rounded-[28px]">
           <PanelErrorBoundary name="Sessions">
             <SessionList
               instances={instances}
@@ -382,7 +446,7 @@ export default function App({ onLogout }: AppProps) {
               onSelect={onSelect}
               onRefresh={refreshSessions}
               onDelete={deleteSession}
-              onSpawn={spawnAgent}
+              onSpawn={spawnSession}
               onRename={renameSession}
               onAbort={abortSession}
               isLoading={sessionsLoading}
@@ -390,7 +454,7 @@ export default function App({ onLogout }: AppProps) {
             />
           </PanelErrorBoundary>
         </div>
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-background">
+        <div className="shell-panel flex-1 flex flex-col min-h-0 overflow-hidden rounded-[28px]">
           <PanelErrorBoundary name="Workspace">
             <WorkspacePanel memories={memories} onRefreshMemories={refreshMemories} memoriesLoading={memoriesLoading} onOpenBoard={() => setViewMode('kanban')} onOpenTask={openTaskInBoard} />
           </PanelErrorBoundary>
@@ -416,7 +480,7 @@ export default function App({ onLogout }: AppProps) {
           onSelect={handleSessionChange}
           onRefresh={refreshSessions}
           onDelete={deleteSession}
-          onSpawn={spawnAgent}
+          onSpawn={spawnSession}
           onRename={renameSession}
           onAbort={abortSession}
           isLoading={sessionsLoading}
@@ -435,8 +499,10 @@ export default function App({ onLogout }: AppProps) {
     </Suspense>
   );
 
+  const showCompactFileBrowser = isCompactLayout && viewMode !== 'kanban' && !fileBrowserCollapsed;
+
   return (
-    <div className="h-screen flex flex-col overflow-hidden scan-lines" data-booted={booted}>
+    <div className="scan-lines relative h-screen flex flex-col overflow-hidden" data-booted={booted}>
       {/* Skip to main content link for keyboard navigation */}
       <a 
         href="#main-chat" 
@@ -448,43 +514,53 @@ export default function App({ onLogout }: AppProps) {
         open={dialogOpen && connectionState !== 'connected' && connectionState !== 'reconnecting'}
         onConnect={handleConnect}
         error={connectError}
-        defaultUrl={defaultUrl}
+        defaultUrl={editableUrl}
         defaultToken={editableToken}
+        officialUrl={officialUrl}
+        serverSideAuth={serverSideAuth}
       />
-      
-      {/* Reconnecting banner — mission control style */}
+
+      {/*
+       * Gateway state banners.
+       * Kept compact and centered so they read as transient shell notices instead of old alarm strips.
+       */}
       {connectionState === 'reconnecting' && !gatewayRestarting && (
-        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-red-900/90 to-orange-900/90 text-red-200 px-5 py-2 rounded-sm text-[11px] font-mono flex items-center gap-2 shadow-lg border border-red-700/60 uppercase tracking-wider">
-          <span className="text-red-400">⚠</span>
-          <span>SIGNAL LOST</span>
-          <span className="text-red-600">·</span>
-          <span>RECONNECTING{reconnectAttempt > 1 ? ` (ATTEMPT ${reconnectAttempt})` : ''}</span>
-          <span className="w-2 h-2 bg-red-400 rounded-full animate-pulse" />
+        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-destructive/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+          <span className="inline-flex size-7 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+            <AlertTriangle size={14} aria-hidden="true" />
+          </span>
+          <span className="min-w-0 text-left leading-5">
+            Signal lost. Reconnecting{reconnectAttempt > 1 ? `, attempt ${reconnectAttempt}` : ''}.
+          </span>
+          <span className="size-2 rounded-full bg-destructive animate-pulse" aria-hidden="true" />
         </div>
       )}
 
-      {/* Gateway restarting banner */}
       {gatewayRestarting && (
-        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-amber-900/90 to-orange-900/90 text-amber-200 px-5 py-2 rounded-sm text-[11px] font-mono flex items-center gap-2 shadow-lg border border-amber-700/60 uppercase tracking-wider">
-          <span className="text-amber-400">⟳</span>
-          <span>GATEWAY RESTARTING</span>
-          <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-orange/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+          <span className="inline-flex size-7 items-center justify-center rounded-xl bg-orange/10 text-orange">
+            <RotateCw size={14} className="animate-spin" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 text-left leading-5">Gateway restarting…</span>
         </div>
       )}
 
-      {/* Gateway restart result banner */}
       {!gatewayRestarting && gatewayRestartNotice && (
         <button
           type="button"
           onClick={dismissNotice}
-          className={`fixed top-12 left-1/2 -translate-x-1/2 z-50 px-5 py-2 rounded-sm text-[11px] font-mono flex items-center gap-2 shadow-lg uppercase tracking-wider cursor-pointer hover:opacity-90 transition-opacity ${
+          className={`fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 cursor-pointer items-start gap-2 rounded-2xl border px-4 py-2 text-xs font-medium shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-transform hover:-translate-x-1/2 hover:-translate-y-px ${
             gatewayRestartNotice.ok
-              ? 'bg-gradient-to-r from-green-900/90 to-emerald-900/90 text-green-200 border border-green-700/60'
-              : 'bg-gradient-to-r from-red-900/90 to-orange-900/90 text-red-200 border border-red-700/60'
+              ? 'border-green/25 bg-card/94 text-foreground'
+              : 'border-destructive/25 bg-card/94 text-foreground'
           }`}
         >
-          <span>{gatewayRestartNotice.ok ? '✓' : '⚠'}</span>
-          <span>{gatewayRestartNotice.message}</span>
+          <span className={`inline-flex size-7 items-center justify-center rounded-xl ${
+            gatewayRestartNotice.ok ? 'bg-green/10 text-green' : 'bg-destructive/10 text-destructive'
+          }`}>
+            {gatewayRestartNotice.ok ? <CheckCircle2 size={14} aria-hidden="true" /> : <AlertTriangle size={14} aria-hidden="true" />}
+          </span>
+          <span className="min-w-0 text-left leading-5">{gatewayRestartNotice.message}</span>
         </button>
       )}
       
@@ -538,19 +614,51 @@ export default function App({ onLogout }: AppProps) {
         </Suspense>
       </PanelErrorBoundary>
       
-      <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* File tree — far left, collapsible; hidden in kanban */}
-        <div className={viewMode === 'kanban' ? 'hidden' : 'h-full min-h-0'}>
-          <PanelErrorBoundary name="File Explorer">
-            <FileTreePanel
-              key={`file-tree-${activeInstanceId || 'master'}`}
-              onOpenFile={openFile}
-              lastChangedPath={lastChangedPath}
-              onRemapOpenPaths={remapOpenPaths}
-              onCloseOpenPaths={closeOpenPathsByPrefix}
+      <div className="flex-1 flex gap-3 overflow-hidden min-h-0 px-2 pt-1.5 pb-2 sm:px-4 sm:pt-2 sm:pb-2">
+        {/* File tree — desktop inline, mobile drawer */}
+        {!isCompactLayout && (
+          <div className={viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0'}>
+            <PanelErrorBoundary name="File Explorer">
+              <FileTreePanel
+                key={`file-tree-${activeInstanceId || 'master'}`}
+                onOpenFile={openFile}
+                lastChangedPath={lastChangedPath}
+                onRemapOpenPaths={remapOpenPaths}
+                onCloseOpenPaths={closeOpenPathsByPrefix}
+                isCompactLayout={false}
+                collapsed={fileBrowserCollapsed}
+                onCollapseChange={setFileBrowserCollapsed}
+              />
+            </PanelErrorBoundary>
+          </div>
+        )}
+
+        {showCompactFileBrowser && (
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-30 hidden bg-black/48 backdrop-blur-sm max-[900px]:block"
+              onClick={() => setFileBrowserCollapsed(true)}
+              aria-label="Close file explorer"
             />
-          </PanelErrorBoundary>
-        </div>
+            <div className="pointer-events-none fixed inset-0 z-40 hidden px-2 pt-[4.5rem] pb-[4.25rem] max-[900px]:flex">
+              <div className="pointer-events-auto h-full w-[min(86vw,320px)] max-w-full animate-in slide-in-from-left-4 duration-200">
+                <PanelErrorBoundary name="File Explorer">
+                  <FileTreePanel
+                    key={`file-tree-${activeInstanceId || 'master'}-compact`}
+                    onOpenFile={openFile}
+                    lastChangedPath={lastChangedPath}
+                    onRemapOpenPaths={remapOpenPaths}
+                    onCloseOpenPaths={closeOpenPathsByPrefix}
+                    isCompactLayout={true}
+                    collapsed={false}
+                    onCollapseChange={setFileBrowserCollapsed}
+                  />
+                </PanelErrorBoundary>
+              </div>
+            </div>
+          </>
+        )}
 
         {/*
          * Chat panel is always rendered but hidden when kanban is active.
@@ -559,14 +667,14 @@ export default function App({ onLogout }: AppProps) {
          * See: https://github.com/.../issues/64
          */}
         {viewMode === 'kanban' && (
-          <div className="flex-1 flex flex-col min-w-0 min-h-0 boot-panel">
+          <div className="shell-panel boot-panel flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden rounded-[28px]">
             <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
               <KanbanPanel initialTaskId={pendingTaskId} onInitialTaskConsumed={() => setPendingTaskId(null)} />
             </Suspense>
           </div>
         )}
         {isCompactLayout ? (
-          <div className={`flex-1 min-w-0 min-h-0 boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
+          <div className={`shell-panel flex-1 min-w-0 min-h-0 overflow-hidden rounded-[28px] boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
             {chatContent}
           </div>
         ) : (
@@ -576,8 +684,10 @@ export default function App({ onLogout }: AppProps) {
               onResize={setPanelRatio}
               minLeftPercent={30}
               maxLeftPercent={75}
-              leftClassName="boot-panel"
-              rightClassName="boot-panel flex flex-col gap-px bg-border"
+              rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
+              onRightWidthChange={fileBrowserCollapsed ? undefined : setDesktopRightPanelWidth}
+              leftClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
+              rightClassName="boot-panel flex flex-col"
               left={chatContent}
               right={renderRightPanels(handleSessionChange)}
             />
@@ -635,7 +745,7 @@ export default function App({ onLogout }: AppProps) {
       <SpawnAgentDialog
         open={spawnDialogOpen}
         onOpenChange={setSpawnDialogOpen}
-        onSpawn={spawnAgent}
+        onSpawn={spawnSession}
       />
     </div>
   );

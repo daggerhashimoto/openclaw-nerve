@@ -7,7 +7,7 @@ import { RefreshCw, Play, Plus, Trash2, Pencil, ChevronDown, ChevronRight, Check
 import { useCrons, type CronJob, type CronRun } from '../hooks/useCrons';
 import { CronDialog } from './CronDialog';
 import { useSessionContext } from '@/contexts/SessionContext';
-import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
+import { getRootAgentId, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
 import { getSessionKey } from '@/types';
 
 type CronRowJob = CronJob & { targetLabel?: string };
@@ -330,9 +330,14 @@ export function CronsTab() {
         )}
         {jobs.map(job => {
           const targetSession = sessions.find((session) => getSessionKey(session) === job.sessionKey);
+          const fallbackRootId = job.sessionKey ? getRootAgentId(job.sessionKey) : null;
           const targetLabel = targetSession
             ? getSessionDisplayLabel(targetSession, agentName)
-            : job.sessionKey?.split(':')[1] || 'Main';
+            : fallbackRootId === 'main'
+              ? `${agentName} (main)`
+              : fallbackRootId
+                ? `Agent ${fallbackRootId}`
+                : 'Unassigned';
 
           return (
             <CronRow

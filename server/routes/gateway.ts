@@ -342,7 +342,7 @@ app.post('/api/gateway/session-patch', rateLimitGeneral, async (c) => {
     return c.json({ ok: false, error: 'Invalid JSON body' }, 400);
   }
 
-  let sessionKey = body.sessionKey || '';
+  let sessionKey = body.sessionKey?.trim() || '';
   const result: { ok: boolean; model?: string; thinking?: string; error?: string } = { ok: true };
 
   if (!sessionKey) {
@@ -364,7 +364,12 @@ app.post('/api/gateway/session-patch', rateLimitGeneral, async (c) => {
     }
   }
 
-  sessionKey ||= 'agent:main:main';
+  if (!sessionKey) {
+    return c.json(
+      { ok: false, error: 'No active root session available. Provide sessionKey explicitly.' },
+      409,
+    );
+  }
 
   // Change model via session_status tool (reliable — uses HTTP tools/invoke)
   if (body.model) {

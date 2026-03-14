@@ -33,6 +33,8 @@ const deliverySchema = z.object({
   bestEffort: z.boolean().optional(),
 }).optional();
 
+const sessionAgentIdSchema = z.string().max(200).optional();
+
 const cronJobSchema = z.object({
   job: z.object({
     name: z.string().min(1).max(200).optional(),
@@ -41,6 +43,7 @@ const cronJobSchema = z.object({
     delivery: deliverySchema,
     sessionTarget: z.enum(['main', 'isolated']).optional(),
     sessionKey: z.string().max(200).optional(),
+    agentId: sessionAgentIdSchema,
     enabled: z.boolean().optional(),
     notify: z.boolean().optional(),
     // Legacy compat — Nerve may send these flat fields
@@ -59,6 +62,7 @@ const cronPatchSchema = z.object({
     delivery: deliverySchema,
     sessionTarget: z.enum(['main', 'isolated']).optional(),
     sessionKey: z.string().max(200).optional(),
+    agentId: sessionAgentIdSchema,
     enabled: z.boolean().optional(),
     notify: z.boolean().optional(),
     prompt: z.string().max(10000).optional(),
@@ -71,6 +75,18 @@ const cronPatchSchema = z.object({
 const app = new Hono();
 
 const GATEWAY_RUN_TIMEOUT_MS = 60_000;
+
+function deriveAgentIdFromSessionKey(sessionKey?: string): string | undefined {
+  if (!sessionKey) return undefined;
+  const match = sessionKey.match(/^agent:([^:]+):/);
+  return match?.[1];
+}
+
+function normalizeCronTarget<T extends { sessionKey?: string; agentId?: string }>(job: T): T {
+  const agentId = deriveAgentIdFromSessionKey(job.sessionKey);
+  if (!agentId) return job;
+  return { ...job, agentId };
+}
 
 app.get('/api/crons', rateLimitGeneral, async (c) => {
   try {
@@ -91,11 +107,12 @@ app.post('/api/crons', rateLimitGeneral, async (c) => {
     const parsed = cronJobSchema.safeParse(raw);
     if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
     const body = parsed.data;
+    const normalizedJob = normalizeCronTarget(body.job);
     console.log('[crons] add raw input:', JSON.stringify(raw, null, 2));
-    console.log('[crons] add parsed job:', JSON.stringify(body.job, null, 2));
+    console.log('[crons] add parsed job:', JSON.stringify(normalizedJob, null, 2));
     const result = await invokeGatewayTool('cron', {
       action: 'add',
-      job: body.job,
+      job: normalizedJob,
     });
     return c.json({ ok: true, result });
   } catch (err) {
@@ -111,10 +128,11 @@ app.patch('/api/crons/:id', rateLimitGeneral, async (c) => {
     const parsed = cronPatchSchema.safeParse(raw);
     if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
     const body = parsed.data;
+    const normalizedPatch = normalizeCronTarget(body.patch);
     const result = await invokeGatewayTool('cron', {
       action: 'update',
       jobId: id,
-      patch: body.patch,
+      patch: normalizedPatch,
     });
     return c.json({ ok: true, result });
   } catch (err) {

@@ -2,9 +2,8 @@
  * CronDialog — Modal for creating or editing cron jobs.
  */
 
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { X } from 'lucide-react';
-import { InlineSelect } from '@/components/ui/InlineSelect';
+import { useState, useCallback, useRef, useEffect, useMemo, type SelectHTMLAttributes } from 'react';
+import { ChevronDown, X } from 'lucide-react';
 import type { CronJob } from '../hooks/useCrons';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { getSessionKey } from '@/types';
@@ -106,6 +105,26 @@ function SectionShell({
       </div>
       <div className="mt-3 space-y-2.5">{children}</div>
     </section>
+  );
+}
+
+function CronSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
+  const { className = '', children, ...rest } = props;
+
+  return (
+    <div className="relative">
+      <select
+        {...rest}
+        className={`cockpit-select h-11 appearance-none pr-12 text-sm ${className}`.trim()}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        size={15}
+        aria-hidden="true"
+        className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+      />
+    </div>
   );
 }
 
@@ -276,7 +295,6 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
   if (!open) return null;
 
   const isEdit = mode === 'edit';
-
   return (
     <dialog
       ref={dialogRef}
@@ -332,18 +350,15 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
 
                 <div className="flex flex-col gap-1">
                   <span className="cockpit-field-label">Schedule type</span>
-                  <InlineSelect inline
+                  <CronSelect
                     value={scheduleKind}
-                    onChange={v => setScheduleKind(v as ScheduleKind)}
-                    options={[
-                      { value: 'every', label: 'Recurring interval' },
-                      { value: 'cron', label: 'Cron expression' },
-                      { value: 'at', label: 'One-shot at time' },
-                    ]}
-                    ariaLabel="Schedule type"
-                    triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
-                    menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
-                  />
+                    onChange={e => setScheduleKind(e.target.value as ScheduleKind)}
+                    aria-label="Schedule type"
+                  >
+                    <option value="every">Recurring interval</option>
+                    <option value="cron">Cron expression</option>
+                    <option value="at">One-shot at time</option>
+                  </CronSelect>
                 </div>
               </div>
 
@@ -379,14 +394,15 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
               {scheduleKind === 'every' && (
                 <div className="flex flex-col gap-1">
                   <span className="cockpit-field-label">Interval</span>
-                  <InlineSelect inline
+                  <CronSelect
                     value={everyMs}
-                    onChange={setEveryMs}
-                    options={INTERVAL_PRESETS}
-                    ariaLabel="Interval"
-                    triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
-                    menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
-                  />
+                    onChange={e => setEveryMs(e.target.value)}
+                    aria-label="Interval"
+                  >
+                    {INTERVAL_PRESETS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </CronSelect>
                   <span className="cockpit-field-hint">Best for recurring checks and summaries.</span>
                 </div>
               )}
@@ -414,15 +430,16 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
             >
               <div className="flex flex-col gap-1">
                 <span className="cockpit-field-label">Target agent</span>
-                <InlineSelect inline
+                <CronSelect
                   value={effectiveTargetRootSessionKey}
-                  onChange={setTargetRootSessionKey}
-                  options={hasRootAgents ? rootOptions : [{ value: '', label: 'No top-level agents available' }]}
-                  ariaLabel="Target agent"
+                  onChange={e => setTargetRootSessionKey(e.target.value)}
+                  aria-label="Target agent"
                   disabled={!hasRootAgents}
-                  triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
-                  menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
-                />
+                >
+                  {(hasRootAgents ? rootOptions : [{ value: '', label: 'No top-level agents available' }]).map((option) => (
+                    <option key={option.value || 'none'} value={option.value}>{option.label}</option>
+                  ))}
+                </CronSelect>
                 <span className="cockpit-field-hint">
                   {hasRootAgents
                     ? 'Cron sessions, reminders, and follow-up events stay under the selected root branch.'
@@ -431,17 +448,14 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
               </div>
               <div className="flex flex-col gap-1">
                 <span className="cockpit-field-label">Execution type</span>
-                <InlineSelect inline
+                <CronSelect
                   value={payloadKind}
-                  onChange={v => setPayloadKind(v as PayloadKind)}
-                  options={[
-                    { value: 'agentTurn', label: 'Agent task (private run)' },
-                    { value: 'systemEvent', label: 'System event (post into root)' },
-                  ]}
-                  ariaLabel="Payload type"
-                  triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
-                  menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
-                />
+                  onChange={e => setPayloadKind(e.target.value as PayloadKind)}
+                  aria-label="Payload type"
+                >
+                  <option value="agentTurn">Agent task (private run)</option>
+                  <option value="systemEvent">System event (post into root)</option>
+                </CronSelect>
               </div>
               <div className="cockpit-note" data-tone="primary">
                 {payloadKind === 'agentTurn'
@@ -476,15 +490,15 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
               {payloadKind === 'agentTurn' && models.length > 0 && (
                 <div className="flex flex-col gap-1">
                   <span className="cockpit-field-label">Model</span>
-                  <InlineSelect inline
+                  <CronSelect
                     value={model}
-                    onChange={setModel}
-                    options={models}
-                    ariaLabel="Model"
-                    triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
-                    menuClassName="min-w-[200px] rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
-                    dropUp
-                  />
+                    onChange={e => setModel(e.target.value)}
+                    aria-label="Model"
+                  >
+                    {models.map((option) => (
+                      <option key={option.value || 'default-model'} value={option.value}>{option.label}</option>
+                    ))}
+                  </CronSelect>
                   <span className="cockpit-field-hint">Leave this on default unless the job needs a specific model.</span>
                 </div>
               )}
@@ -498,17 +512,14 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
               >
                 <div className="flex flex-col gap-1">
                   <span className="cockpit-field-label">Result handling</span>
-                  <InlineSelect inline
+                  <CronSelect
                     value={deliveryMode}
-                    onChange={v => setDeliveryMode(v as DeliveryMode)}
-                    options={[
-                      { value: 'announce', label: 'Send result to a channel' },
-                      { value: 'none', label: 'Keep it inside Nerve' },
-                    ]}
-                    ariaLabel="Delivery mode"
-                    triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
-                    menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
-                  />
+                    onChange={e => setDeliveryMode(e.target.value as DeliveryMode)}
+                    aria-label="Delivery mode"
+                  >
+                    <option value="announce">Send result to a channel</option>
+                    <option value="none">Keep it inside Nerve</option>
+                  </CronSelect>
                 </div>
 
                 {deliveryMode === 'none' && (
@@ -527,20 +538,16 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div className="flex flex-col gap-1">
                           <span className="cockpit-field-label">Channel</span>
-                          <InlineSelect inline
+                          <CronSelect
                             value={deliveryChannel}
-                            onChange={setDeliveryChannel}
-                            options={[
-                              { value: '', label: 'Select channel…' },
-                              ...availableChannels.map(ch => ({
-                                value: ch,
-                                label: CHANNEL_LABELS[ch] || ch,
-                              })),
-                            ]}
-                            ariaLabel="Delivery channel"
-                            triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
-                            menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
-                          />
+                            onChange={e => setDeliveryChannel(e.target.value)}
+                            aria-label="Delivery channel"
+                          >
+                            <option value="">Select channel…</option>
+                            {availableChannels.map((channel) => (
+                              <option key={channel} value={channel}>{CHANNEL_LABELS[channel] || channel}</option>
+                            ))}
+                          </CronSelect>
                         </div>
                         <div className="flex flex-col gap-1">
                           <label htmlFor="cron-deliver-to" className="cockpit-field-label">Recipient / destination</label>

@@ -24,7 +24,7 @@ describe('normalizeCronJob', () => {
     expect(job.message).toBe('Reminder');
   });
 
-  it('defaults legacy jobs without a session key back to the main root', () => {
+  it('leaves legacy jobs without a session key unassigned', () => {
     const job = normalizeCronJob({
       id: 'cron-2',
       payload: {
@@ -38,7 +38,7 @@ describe('normalizeCronJob', () => {
       enabled: true,
     });
 
-    expect(job.sessionTarget).toBe('isolated');
-    expect(job.sessionKey).toBe('agent:main:main');
+    expect(job.sessionTarget).toBeUndefined();
+    expect(job.sessionKey).toBeUndefined();
   });
 });

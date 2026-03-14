@@ -162,10 +162,11 @@ export function InlineSelect({
     : undefined;
 
   useLayoutEffect(() => {
-    if (open && triggerRef.current && !inline) {
+    if (open && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       const menuEl = listboxRef.current;
       const viewportPadding = 8;
+
       const menuWidth = Math.max(rect.width, menuEl?.offsetWidth ?? 0);
       const maxLeft = Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding);
       const left = Math.min(Math.max(rect.left, viewportPadding), maxLeft);

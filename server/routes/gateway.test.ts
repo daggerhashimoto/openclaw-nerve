@@ -241,7 +241,7 @@ describe('gateway routes', () => {
       const res = await app.request('/api/gateway/session-patch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'anthropic/claude-opus-4' }),
+        body: JSON.stringify({ model: 'anthropic/claude-opus-4', sessionKey: 'agent:main:main' }),
       });
       expect(res.status).toBe(200);
       const json = (await res.json()) as Record<string, unknown>;
@@ -277,13 +277,60 @@ describe('gateway routes', () => {
       });
     });
 
+    it('treats whitespace-only sessionKey as missing and falls back to discovery', async () => {
+      setDefaults();
+      const invokedCalls: Array<{ tool: string; args: Record<string, unknown> }> = [];
+      invokeGatewayImpl = (tool: string, args: Record<string, unknown>) => {
+        invokedCalls.push({ tool, args });
+        if (tool === 'sessions_list') {
+          return {
+            sessions: [
+              { sessionKey: 'agent:reviewer:main' },
+            ],
+          };
+        }
+        return {};
+      };
+      const app = buildApp();
+      const res = await app.request('/api/gateway/session-patch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'openai/gpt-4o', sessionKey: '   ' }),
+      });
+      expect(res.status).toBe(200);
+      expect(invokedCalls).toContainEqual({
+        tool: 'session_status',
+        args: { model: 'openai/gpt-4o', sessionKey: 'agent:reviewer:main' },
+      });
+    });
+
+    it('returns 409 when no root session can be resolved', async () => {
+      setDefaults();
+      invokeGatewayImpl = (tool: string) => {
+        if (tool === 'sessions_list') {
+          return { sessions: [] };
+        }
+        return {};
+      };
+      const app = buildApp();
+      const res = await app.request('/api/gateway/session-patch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'openai/gpt-4o' }),
+      });
+      expect(res.status).toBe(409);
+      const json = (await res.json()) as Record<string, unknown>;
+      expect(json.ok).toBe(false);
+      expect(json.error).toBe('No active root session available. Provide sessionKey explicitly.');
+    });
+
     it('returns 501 for thinking-only changes', async () => {
       setDefaults();
       const app = buildApp();
       const res = await app.request('/api/gateway/session-patch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ thinkingLevel: 'high' }),
+        body: JSON.stringify({ thinkingLevel: 'high', sessionKey: 'agent:main:main' }),
       });
       expect(res.status).toBe(501);
     });
@@ -295,7 +342,7 @@ describe('gateway routes', () => {
       const res = await app.request('/api/gateway/session-patch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'openai/gpt-4o' }),
+        body: JSON.stringify({ model: 'openai/gpt-4o', sessionKey: 'agent:main:main' }),
       });
       expect(res.status).toBe(502);
     });

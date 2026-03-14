@@ -67,8 +67,14 @@ export function normalizeCronJob(j: Record<string, unknown>): CronJob {
     payloadKind: (payload.kind as string) === 'systemEvent' ? 'systemEvent' : 'agentTurn',
     message: (payload.message || payload.text || '') as string,
     model: payload.model as string | undefined,
-    sessionTarget: ((j.sessionTarget as string) === 'main' ? 'main' : 'isolated'),
-    sessionKey: (j.sessionKey as string) || 'agent:main:main',
+    sessionTarget:
+      (j.sessionTarget as string) === 'main' || (j.sessionTarget as string) === 'isolated'
+        ? (j.sessionTarget as 'main' | 'isolated')
+        : undefined,
+    sessionKey:
+      typeof j.sessionKey === 'string' && j.sessionKey.trim().length > 0
+        ? j.sessionKey
+        : undefined,
     // Delivery
     delivery: delivery?.mode ? delivery : undefined,
     // State

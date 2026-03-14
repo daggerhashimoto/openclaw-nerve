@@ -47,6 +47,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const { handleKeyDown: handleTabKey, reset: resetTabCompletion } = useTabCompletion(getSessionLabels, inputRef);
   const hasActiveSession = Boolean(currentSession);
 
+  const indicateMissingSession = useCallback(() => {
+    setAttachmentError('Create or select an agent session before sending a message.');
+    setSendError(true);
+    setTimeout(() => setSendError(false), 400);
+  }, []);
+
   // Expose focus method to parent
   useImperativeHandle(ref, () => ({
     focus: () => {
@@ -101,6 +107,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const effectiveSttInputMode = sttProvider === 'openai' ? 'local' : sttInputMode;
 
   const { voiceState, interimTranscript, wakeWordEnabled, toggleWakeWord, error: voiceError, clearError: clearVoiceError } = useVoiceInput((text) => {
+    if (!hasActiveSession) {
+      indicateMissingSession();
+      return;
+    }
     const input = inputRef.current;
     if (input) {
       input.value = '';
@@ -245,9 +255,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   const handleSend = () => {
     if (!hasActiveSession) {
-      setAttachmentError('Create or select an agent session before sending a message.');
-      setSendError(true);
-      setTimeout(() => setSendError(false), 400);
+      indicateMissingSession();
       return;
     }
     const text = inputRef.current?.value.trim();

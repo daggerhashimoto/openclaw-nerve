@@ -784,3 +784,81 @@
     transition-duration: 0.001s !important;
   }
 }
+
+/* ============================================
+   MOBILE OPTIMIZATIONS
+   Fixes for issue #110 - Mobile usability
+   ============================================ */
+
+/* Use dynamic viewport height to handle mobile keyboard properly */
+@supports (height: 100dvh) {
+  .h-screen {
+    height: 100dvh;
+  }
+  
+  .min-h-screen {
+    min-height: 100dvh;
+  }
+  
+  .max-h-screen {
+    max-height: 100dvh;
+  }
+}
+
+/* Ensure body/html allow scrolling on mobile */
+html, body {
+  overflow: hidden;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Mobile-specific fixes for dialogs and overlays */
+@media (max-width: 640px) {
+  /* Ensure dialogs are scrollable on small screens */
+  [role="dialog"] {
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  
+  /* Fix for iOS input zoom on focus */
+  input, textarea, select {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+  
+  /* Ensure dropdowns don't overflow viewport */
+  .dropdown-panel, [data-dropdown] {
+    max-width: calc(100vw - 1rem);
+    width: auto;
+  }
+  
+  /* Better touch targets on mobile */
+  button, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Prevent horizontal scroll on mobile */
+  body {
+    overflow-x: hidden;
+  }
+}
+
+/* Safe area insets for notched phones */
+@supports (padding: max(0px)) {
+  .safe-area-inset {
+    padding-left: max(0.5rem, env(safe-area-inset-left));
+    padding-right: max(0.5rem, env(safe-area-inset-right));
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+  
+  .safe-area-top {
+    padding-top: max(0.5rem, env(safe-area-inset-top));
+  }
+}
+
+/* Fix for virtual keyboard viewport changes */
+@supports (height: 100svh) {
+  .use-small-viewport {
+    height: 100svh;
+  }
+}

@@ -38,13 +38,16 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
 
   return (
     <Dialog open={open}>
-      <DialogContent className="bg-card border-border font-mono max-w-[380px] [&>button]:hidden" showCloseButton={false}>
-        <DialogHeader>
+      <DialogContent 
+        className="bg-card border-border font-mono max-w-[min(380px,calc(100vw-2rem))] max-h-[90vh] overflow-y-auto [&>button]:hidden" 
+        showCloseButton={false}
+      >
+        <DialogHeader className="shrink-0">
           <DialogTitle className="text-primary text-xs font-bold tracking-[2px] uppercase">
             // CONNECT TO GATEWAY
           </DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-3.5">
+        <div className="flex flex-col gap-3.5 min-h-0 overflow-y-auto">
           <label className="flex flex-col gap-1 text-[11px] text-muted-foreground uppercase tracking-[1px]">
             WebSocket URL
             <Input
@@ -68,7 +71,7 @@ export function ConnectDialog({ open, onConnect, error, defaultUrl, defaultToken
           <Button
             onClick={handleConnect}
             disabled={connecting}
-            className="bg-primary text-primary-foreground font-mono text-xs font-bold tracking-[1px] uppercase"
+            className="bg-primary text-primary-foreground font-mono text-xs font-bold tracking-[1px] uppercase shrink-0"
           >
             {connecting ? 'CONNECTING…' : 'CONNECT'}
           </Button>

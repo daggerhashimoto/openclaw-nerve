@@ -81,6 +81,19 @@ export function MultiAgentTopBar({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [agentSelectorOpen]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!activePanel) return;
+    function handleClick(e: MouseEvent) {
+      const target = e.target as Node;
+      if (panelRef.current?.contains(target)) return;
+      if (buttonsRef.current?.contains(target)) return;
+      setActivePanel(null);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [activePanel]);
+
   const totalCost = useMemo(() => {
     if (!tokenData) return null;
     const cost = tokenData.persistent?.totalCost ?? tokenData.totalCost ?? 0;
@@ -103,18 +116,18 @@ export function MultiAgentTopBar({
           <div className="relative ml-2">
             <button
               onClick={() => setAgentSelectorOpen(!agentSelectorOpen)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-secondary/50 hover:bg-secondary border border-border rounded-md text-sm transition-colors"
+              className="flex items-center gap-2 px-2 sm:px-3 py-1.5 bg-secondary/50 hover:bg-secondary border border-border rounded-md text-sm transition-colors"
               disabled={agentsLoading}
             >
-              <Brain className="w-4 h-4 text-primary" />
-              <span className="hidden sm:inline font-medium">
+              <Brain className="w-4 h-4 text-primary shrink-0" />
+              <span className="hidden sm:inline font-medium truncate max-w-[120px]">
                 {agentsLoading ? 'Loading...' : currentAgentData?.name || 'Select Agent'}
               </span>
-              <ChevronDown className="w-3 h-3 text-muted-foreground" />
+              <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
             </button>
 
             {agentSelectorOpen && (
-              <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 min-w-[200px] max-h-[400px] overflow-y-auto">
+              <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 w-[calc(100vw-1rem)] sm:w-auto sm:min-w-[200px] max-w-[280px] max-h-[60vh] overflow-y-auto">
                 <div className="p-2 space-y-1">
                   {visibleAgents.map(agent => (
                     <button
@@ -129,11 +142,11 @@ export function MultiAgentTopBar({
                           : 'hover:bg-secondary'
                       }`}
                     >
-                      <div>
-                        <div className="font-medium">{agent.name}</div>
-                        <div className="text-xs text-muted-foreground">{agent.role}</div>
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{agent.name}</div>
+                        <div className="text-xs text-muted-foreground truncate">{agent.role}</div>
                       </div>
-                      <div className={`w-2 h-2 rounded-full ${
+                      <div className={`w-2 h-2 rounded-full shrink-0 ml-2 ${
                         agent.connectionStatus === 'connected' ? 'bg-green-500' : 'bg-gray-500'
                       }`} />
                     </button>
@@ -156,13 +169,13 @@ export function MultiAgentTopBar({
 
           {/* View mode toggle */}
           {onViewModeChange && (
-            <div className="flex items-center ml-3 border border-border/60 rounded-sm overflow-hidden">
+            <div className="flex items-center ml-2 border border-border/60 rounded-sm overflow-hidden shrink-0">
               <button
                 onClick={() => onViewModeChange('chat')}
                 title="Chat View"
                 aria-label="Switch to chat view"
                 aria-pressed={viewMode === 'chat'}
-                className={`flex items-center gap-1 px-2 h-6 text-[10px] transition-colors cursor-pointer ${
+                className={`flex items-center gap-1 px-1.5 sm:px-2 h-6 text-[10px] transition-colors cursor-pointer ${
                   viewMode === 'chat'
                     ? 'bg-primary/15 text-primary border-r border-border/60'
                     : 'text-muted-foreground hover:text-foreground border-r border-border/60'
@@ -176,7 +189,7 @@ export function MultiAgentTopBar({
                 title="Tasks View"
                 aria-label="Switch to tasks view"
                 aria-pressed={viewMode === 'kanban'}
-                className={`flex items-center gap-1 px-2 h-6 text-[10px] transition-colors cursor-pointer ${
+                className={`flex items-center gap-1 px-1.5 sm:px-2 h-6 text-[10px] transition-colors cursor-pointer ${
                   viewMode === 'kanban'
                     ? 'bg-primary/15 text-primary'
                     : 'text-muted-foreground hover:text-foreground'
@@ -273,22 +286,27 @@ export function MultiAgentTopBar({
           <button
             onClick={onSettings}
             title="Settings"
-            className={`${buttonBase} w-7`}
+            className={`${buttonBase} w-7 sm:w-auto sm:px-2`}
           >
             <Settings size={14} />
           </button>
         </div>
       </header>
 
-      {/* Dropdown panel */}
+      {/* Dropdown panel - mobile optimized */}
       <div
         ref={panelRef}
-        className={`absolute right-2 bg-card border border-border rounded-b-lg shadow-lg overflow-hidden transition-all duration-200 ease-out w-[600px] max-w-[calc(100vw-1rem)] max-h-[70vh] opacity-100 ${
-          activePanel ? 'max-h-[70vh] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
+        className={`fixed sm:absolute inset-x-2 sm:inset-x-auto sm:right-2 top-[50px] sm:top-full bg-card border border-border rounded-lg shadow-lg overflow-hidden transition-all duration-200 ease-out z-50 ${
+          activePanel 
+            ? 'opacity-100 pointer-events-auto max-h-[calc(100vh-70px)] sm:max-h-[70vh]' 
+            : 'opacity-0 pointer-events-none max-h-0'
         }`}
-        style={{ top: '100%' }}
+        style={{ 
+          width: 'calc(100% - 1rem)',
+          maxWidth: '600px'
+        }}
       >
-        <div className="max-h-[65vh] overflow-y-auto">
+        <div className="max-h-[calc(100vh-80px)] sm:max-h-[65vh] overflow-y-auto">
           <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading…</div>}>
             {activePanel === 'agent-log' && <AgentLog entries={agentLogEntries} glow={logGlow} />}
             {activePanel === 'events' && <EventLog entries={eventEntries} />}

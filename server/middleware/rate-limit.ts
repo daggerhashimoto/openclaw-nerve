@@ -53,12 +53,13 @@ cleanupInterval.unref(); // don't keep process alive just for cleanup
  */
 const TRUSTED_PROXIES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
-// Allow additional trusted proxies via env
+// Allow additional trusted proxies via env (validated IP format)
+const IP_RE = /^(\d{1,3}\.){3}\d{1,3}$|^::?[0-9a-f:]+$/i;
 const extraProxies = process.env.TRUSTED_PROXIES;
 if (extraProxies) {
   for (const ip of extraProxies.split(',')) {
     const trimmed = ip.trim();
-    if (trimmed) TRUSTED_PROXIES.add(trimmed);
+    if (trimmed && IP_RE.test(trimmed)) TRUSTED_PROXIES.add(trimmed);
   }
 }
 

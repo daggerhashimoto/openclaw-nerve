@@ -15,7 +15,7 @@ import { useConnectionManager } from '@/hooks/useConnectionManager';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { useGatewayRestart } from '@/hooks/useGatewayRestart';
 import { ConnectDialog } from '@/features/connect/ConnectDialog';
-import { TopBar } from '@/components/TopBar';
+import { MultiAgentTopBar } from '@/components/MultiAgentTopBar';
 import { StatusBar } from '@/components/StatusBar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ChatPanel, type ChatPanelHandle } from '@/features/chat/ChatPanel';
@@ -90,6 +90,9 @@ export default function App({ onLogout }: AppProps) {
 
   // Track last changed file path for tree refresh
   const [lastChangedPath, setLastChangedPath] = useState<string | null>(null);
+
+  // Multi-agent support
+  const [currentAgent, setCurrentAgent] = useState('JARVIS');
 
   // File browser state
   const {
@@ -474,7 +477,7 @@ export default function App({ onLogout }: AppProps) {
         </button>
       )}
       
-      <TopBar
+      <MultiAgentTopBar
         onSettings={openSettings}
         agentLogEntries={agentLogEntries}
         tokenData={tokenData}
@@ -487,6 +490,8 @@ export default function App({ onLogout }: AppProps) {
         workspacePanel={compactWorkspacePanel}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        currentAgent={currentAgent}
+        onAgentChange={setCurrentAgent}
       />
       
       <PanelErrorBoundary name="Settings">

@@ -1,0 +1,11 @@
+{
+  "name": "CODEX - Nightly Development",
+  "agent": "CODEX",
+  "schedule": "0 23 * * *",
+  "enabled": true,
+  "task": "Review the codebase and work on planned features, bug fixes, and improvements. Check the kanban board for pending tasks. Implement features, fix bugs, and improve code quality. Commit changes with clear messages.",
+  "model": "gpt-5.3-codex",
+  "priority": "normal",
+  "outputFile": ".brain/development/nightly-{{timestamp}}.md",
+  "description": "Nightly automated development and maintenance"
+}

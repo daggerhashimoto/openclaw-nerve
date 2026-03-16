@@ -1,0 +1,11 @@
+{
+  "name": "SENTINEL - Bi-hourly Health Check",
+  "agent": "SENTINEL",
+  "schedule": "0 */2 * * *",
+  "enabled": true,
+  "task": "Perform a comprehensive health check of the codebase. Scan for bugs, security vulnerabilities, performance issues, and code quality problems. Review recent commits for potential issues. Output a health report with prioritized recommendations.",
+  "model": "claude-sonnet",
+  "priority": "high",
+  "outputFile": ".brain/sentinel/health-{{timestamp}}.md",
+  "description": "Bi-hourly code health and security monitoring"
+}

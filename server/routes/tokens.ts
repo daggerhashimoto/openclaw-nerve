@@ -71,8 +71,13 @@ async function scanSessionCosts(): Promise<SessionCostData> {
 
     for (const file of files) {
       try {
+        const filePath = path.join(config.sessionsDir, file);
+        const realPath = await fs.realpath(filePath);
+        const sessionsRealDir = await fs.realpath(config.sessionsDir);
+        if (!realPath.startsWith(sessionsRealDir + path.sep) && realPath !== sessionsRealDir) continue;
+
         const rl = readline.createInterface({
-          input: createReadStream(path.join(config.sessionsDir, file)),
+          input: createReadStream(realPath),
           crlfDelay: Infinity,
         });
 

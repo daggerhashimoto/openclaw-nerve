@@ -83,9 +83,10 @@ app.post(
 
       // Cache key includes provider + model + voice for proper isolation
       const hash = crypto
-        .createHash('md5')
+        .createHash('sha256')
         .update(`${effectiveProvider}:${model || ''}:${voice}:${text}`)
-        .digest('hex');
+        .digest('hex')
+        .slice(0, 32);
 
       const cached = getTtsCache(hash);
       if (cached) {

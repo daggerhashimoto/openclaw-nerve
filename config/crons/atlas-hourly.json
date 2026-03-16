@@ -1,0 +1,11 @@
+{
+  "name": "ATLAS - Hourly Research Report",
+  "agent": "ATLAS",
+  "schedule": "0 * * * *",
+  "enabled": true,
+  "task": "Generate a research report on the latest industry trends, news, and developments. Focus on AI, agent technology, and relevant market signals. Output a structured summary with key findings, sources, and actionable insights.",
+  "model": "glm-4.7",
+  "priority": "normal",
+  "outputFile": ".brain/research/hourly-{{timestamp}}.md",
+  "description": "Hourly automated research report generation"
+}

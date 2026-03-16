@@ -44,7 +44,7 @@ async function getGatewayStartedAt(): Promise<number | null> {
 
   try {
     const pidStr = await new Promise<string>((resolve, reject) => {
-      execFile('pgrep', ['-f', 'openclaw-gatewa'], { timeout: 2000 }, (err, stdout) => {
+      execFile('pgrep', ['-x', 'openclaw-gateway', '-o'], { timeout: 2000 }, (err, stdout) => {
         if (err) return reject(err);
         resolve(stdout.trim().split('\n')[0] || '');
       });

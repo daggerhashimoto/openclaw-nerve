@@ -1,0 +1,11 @@
+{
+  "name": "SCRIBE - Tri-hourly Content Draft",
+  "agent": "SCRIBE",
+  "schedule": "0 */3 * * *",
+  "enabled": true,
+  "task": "Review the latest research from ATLAS and trends from TRENDY. Draft content pieces (blog posts, social media posts, newsletters) based on the most interesting findings. Read VOICE.md first to match the user's writing style. Output drafts ready for review.",
+  "model": "glm-4.7",
+  "priority": "normal",
+  "outputFile": ".brain/drafts/content-{{timestamp}}.md",
+  "description": "Tri-hourly content drafting from research and trends"
+}

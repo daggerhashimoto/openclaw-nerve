@@ -305,6 +305,9 @@ app.post('/api/gateway/session-patch', rateLimitGeneral, async (c) => {
 
   // Change model via session_status tool (reliable — uses HTTP tools/invoke)
   if (body.model) {
+    if (!/^[a-zA-Z0-9._\/-]+$/.test(body.model)) {
+      return c.json({ ok: false, error: 'Invalid model name' }, 400);
+    }
     try {
       const statusResult = await invokeGatewayTool(
         'session_status',

@@ -9,6 +9,7 @@ import { GatewayProvider } from '@/contexts/GatewayContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
 import { SessionProvider } from '@/contexts/SessionContext';
 import { ChatProvider } from '@/contexts/ChatContext';
+import { AgentRegistryProvider } from '@/contexts/AgentRegistryContext';
 import { LoginPage } from './LoginPage';
 import { useAuth } from './useAuth';
 
@@ -32,7 +33,9 @@ export function AuthGate() {
       <SettingsProvider>
         <SessionProvider>
           <ChatProvider>
-            <App onLogout={logout} />
+            <AgentRegistryProvider>
+              <App onLogout={logout} />
+            </AgentRegistryProvider>
           </ChatProvider>
         </SessionProvider>
       </SettingsProvider>

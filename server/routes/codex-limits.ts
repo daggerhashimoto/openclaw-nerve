@@ -156,9 +156,12 @@ async function parseLocalSessions(): Promise<RateLimits | null> {
     try {
       const entries = await fs.promises.readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
+        if (entry.isSymbolicLink()) continue; // skip symlinks to prevent escape
         const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) await findJsonlFiles(fullPath);
-        else if (entry.isFile() && entry.name.endsWith('.jsonl')) sessionFiles.push(fullPath);
+        const realPath = await fs.promises.realpath(fullPath);
+        if (!realPath.startsWith(codexDir)) continue; // boundary check
+        if (entry.isDirectory()) await findJsonlFiles(realPath);
+        else if (entry.isFile() && entry.name.endsWith('.jsonl')) sessionFiles.push(realPath);
       }
     } catch { /* ignore permission errors */ }
   }

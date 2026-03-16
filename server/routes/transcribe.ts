@@ -52,6 +52,21 @@ app.post('/api/transcribe', rateLimitTranscribe, async (c) => {
 
     const arrayBuf = await file.arrayBuffer();
     const fileData = Buffer.from(arrayBuf);
+
+    // Validate magic bytes to prevent polyglot file attacks
+    if (fileData.length >= 4) {
+      const head = fileData.subarray(0, 12);
+      const isRIFF = head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46; // WAV
+      const isID3  = head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33;                     // MP3 (ID3)
+      const isMP3  = head[0] === 0xFF && (head[1] & 0xE0) === 0xE0;                                // MP3 (sync)
+      const isOgg  = head[0] === 0x4F && head[1] === 0x67 && head[2] === 0x67 && head[3] === 0x53; // OGG
+      const isFLAC = head[0] === 0x66 && head[1] === 0x4C && head[2] === 0x61 && head[3] === 0x43; // FLAC
+      const isFtyp = head.length >= 8 && head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70; // MP4/M4A
+      const isWebM = head.length >= 4 && head[0] === 0x1A && head[1] === 0x45 && head[2] === 0xDF && head[3] === 0xA3; // WebM/MKV
+      if (!isRIFF && !isID3 && !isMP3 && !isOgg && !isFLAC && !isFtyp && !isWebM) {
+        return c.text('File content does not match a supported audio format', 415);
+      }
+    }
     const filename = file.name || 'audio.webm';
 
     // Route to configured STT provider (pass language hint)

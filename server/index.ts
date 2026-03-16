@@ -17,6 +17,7 @@ import { releaseWhisperContext } from './services/whisper-local.js';
 import { config, validateConfig, printStartupBanner, probeGateway } from './lib/config.js';
 import { setupWebSocketProxy, closeAllWebSockets } from './lib/ws-proxy.js';
 import { startFileWatcher, stopFileWatcher } from './lib/file-watcher.js';
+import { gatewayPool } from './lib/gateway-pool.js';
 
 // ── Startup banner + validation ──────────────────────────────────────
 
@@ -30,6 +31,12 @@ validateConfig();
 // ── Start file watchers ──────────────────────────────────────────────
 
 startFileWatcher();
+
+// ── Start gateway pool ──────────────────────────────────────────────
+
+gatewayPool.start().catch((err) => {
+  console.error('[index] Failed to start gateway pool:', err);
+});
 
 // ── HTTP server ──────────────────────────────────────────────────────
 
@@ -162,6 +169,7 @@ function shutdown(signal: string) {
   stopFileWatcher();
   closeAllWebSockets();
   releaseWhisperContext().catch(() => {});
+  gatewayPool.stop();
 
   httpServer.close(() => {
     console.log('[openclaw-ui] HTTP server closed');

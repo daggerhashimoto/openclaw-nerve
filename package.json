@@ -34,6 +34,7 @@
     "start:server": "tsx server/index.ts",
     "prod": "npm run build && node server-dist/index.js",
     "setup": "tsx scripts/setup.ts",
+    "init-agents": "tsx scripts/init-agents.ts",
     "test": "vitest",
     "test:coverage": "vitest --coverage",
     "postinstall": "node -e \"try{require('fs').accessSync('.env')}catch{console.log('\\n  Run \\x1b[33mnpm run setup\\x1b[0m to configure Nerve.\\n')}\""

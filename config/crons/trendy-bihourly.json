@@ -1,0 +1,11 @@
+{
+  "name": "TRENDY - Bi-hourly Trend Scout",
+  "agent": "TRENDY",
+  "schedule": "0 */2 * * *",
+  "enabled": true,
+  "task": "Scan Twitter/X, Reddit, and news sources for trending topics related to AI, agents, automation, and our industry. Identify emerging trends, viral discussions, and potential opportunities. Output a trend summary with links and engagement metrics.",
+  "model": "glm-4.7",
+  "priority": "normal",
+  "outputFile": ".brain/trends/scout-{{timestamp}}.md",
+  "description": "Bi-hourly trend scouting across social media and news"
+}

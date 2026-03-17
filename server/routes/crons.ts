@@ -138,6 +138,77 @@ function sortCronRunEntries(entries: Record<string, unknown>[]): Record<string, 
   });
 }
 
+async function mergeManualRunStateIntoJobs(jobs: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+  return Promise.all(jobs.map(async (job) => {
+    const jobId = typeof job.id === 'string'
+      ? job.id
+      : typeof job.jobId === 'string'
+        ? job.jobId
+        : '';
+    if (!jobId) return job;
+
+    const latestManualEntry = sortCronRunEntries(await readManualCronRunEntries(jobId))[0];
+    const latestManualTs = Number(latestManualEntry?.ts || latestManualEntry?.runAtMs || 0);
+    if (!latestManualTs) return job;
+
+    const state = ((job.state as Record<string, unknown> | undefined) ?? {});
+    const gatewayLastRunTs = typeof state.lastRunAtMs === 'number' ? state.lastRunAtMs : 0;
+    if (gatewayLastRunTs >= latestManualTs) return job;
+
+    return {
+      ...job,
+      state: {
+        ...state,
+        lastRunAtMs: latestManualTs,
+      },
+    };
+  }));
+}
+
+function replaceCronJobsInResult(result: unknown, jobs: Record<string, unknown>[]): unknown {
+  const r = result as {
+    jobs?: unknown;
+    details?: Record<string, unknown>;
+    content?: Array<{ type?: string; text?: string }>;
+  };
+  const syncContent = (nextResult: Record<string, unknown>) => {
+    if (!Array.isArray(r?.content)) return nextResult;
+    const nextContent = r.content.map((item) => {
+      if (item?.type !== 'text' || typeof item.text !== 'string') return item;
+      try {
+        const parsed = JSON.parse(item.text) as Record<string, unknown>;
+        if (!Array.isArray(parsed.jobs)) return item;
+        return {
+          ...item,
+          text: JSON.stringify({ ...parsed, jobs }, null, 2),
+        };
+      } catch {
+        return item;
+      }
+    });
+    return {
+      ...nextResult,
+      content: nextContent,
+    };
+  };
+  if (Array.isArray(r?.jobs)) {
+    return syncContent({ ...r, jobs });
+  }
+  if (Array.isArray(r?.details?.jobs)) {
+    return syncContent({
+      ...r,
+      details: {
+        ...r.details,
+        jobs,
+      },
+    });
+  }
+  if (Array.isArray(result)) {
+    return jobs;
+  }
+  return result;
+}
+
 async function getGatewayCronRunEntries(jobId: string): Promise<Record<string, unknown>[]> {
   try {
     const gatewayResult = await invokeGatewayTool('cron', {
@@ -186,7 +257,9 @@ app.get('/api/crons', rateLimitGeneral, async (c) => {
       action: 'list',
       includeDisabled: true,
     });
-    return c.json({ ok: true, result });
+    const jobs = getCronJobsFromResult(result);
+    const mergedJobs = jobs.length > 0 ? await mergeManualRunStateIntoJobs(jobs) : jobs;
+    return c.json({ ok: true, result: replaceCronJobsInResult(result, mergedJobs) });
   } catch (err) {
     console.error('[crons] list error:', (err as Error).message);
     return c.json({ ok: false, error: (err as Error).message }, 502);

@@ -144,6 +144,12 @@ export function useCrons() {
       const res = await fetch(`/api/crons/${encodeURIComponent(id)}/run`, { method: 'POST' });
       const data = await res.json() as { ok: boolean; error?: string };
       if (!data.ok) throw new Error(data.error || 'Failed to run');
+      const nowIso = new Date().toISOString();
+      setJobs(prev => prev.map(job => (
+        job.id === id
+          ? { ...job, lastRun: nowIso }
+          : job
+      )));
       return true;
     } catch (err) {
       setError((err as Error).message);

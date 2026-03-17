@@ -190,6 +190,69 @@ describe('cron routes', () => {
     expect(data.result.entries[1]?.summary).toBe('Gateway entry');
   });
 
+  it('merges manual last-run timestamps into cron list state', async () => {
+    const { app, invokeGatewayTool, tempHome } = await buildApp();
+    invokeGatewayTool.mockImplementation(async (tool: string, args: Record<string, unknown>) => {
+      if (tool === 'cron' && args.action === 'list') {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              jobs: [{
+                id: 'job-123',
+                agentId: 'main',
+                sessionKey: 'agent:main:main',
+                name: 'test cron',
+                enabled: true,
+                schedule: { kind: 'every', everyMs: 300000 },
+                sessionTarget: 'isolated',
+                payload: { kind: 'agentTurn', message: 'say hello' },
+                state: {},
+              }],
+            }, null, 2),
+          }],
+          details: {
+            jobs: [{
+              id: 'job-123',
+              agentId: 'main',
+              sessionKey: 'agent:main:main',
+              name: 'test cron',
+              enabled: true,
+              schedule: { kind: 'every', everyMs: 300000 },
+              sessionTarget: 'isolated',
+              payload: { kind: 'agentTurn', message: 'say hello' },
+              state: {},
+            }],
+          },
+        };
+      }
+      return { ok: true };
+    });
+    await fs.mkdir(join(tempHome, '.openclaw', 'cron', 'nerve-manual-runs'), { recursive: true });
+    await fs.writeFile(
+      join(tempHome, '.openclaw', 'cron', 'nerve-manual-runs', 'job-123.jsonl'),
+      '{"ts":2000,"jobId":"job-123","action":"spawned","status":"ok","summary":"Manual run started in a separate cron session.","runAtMs":2000,"manual":true}\n',
+      'utf8',
+    );
+
+    const res = await app.request('/api/crons');
+    const data = await res.json() as {
+      ok: boolean;
+      result: {
+        details?: { jobs?: Array<{ state?: { lastRunAtMs?: number } }> };
+        content?: Array<{ type?: string; text?: string }>;
+      };
+    };
+
+    expect(res.status).toBe(200);
+    expect(data.ok).toBe(true);
+    expect(data.result.details?.jobs?.[0]?.state?.lastRunAtMs).toBe(2000);
+    const contentText = data.result.content?.[0]?.text;
+    expect(contentText).toBeTruthy();
+    const parsedContent = JSON.parse(contentText as string) as { jobs?: Array<{ state?: { lastRunAtMs?: number } }> };
+    expect(parsedContent.jobs?.[0]?.state?.lastRunAtMs).toBe(2000);
+  });
+
   it('still returns success when manual run history cannot be persisted', async () => {
     const { app, invokeGatewayTool } = await buildApp();
     invokeGatewayTool.mockImplementation(async (tool: string, args: Record<string, unknown>) => {

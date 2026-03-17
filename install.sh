@@ -81,6 +81,11 @@ check_port() {
   return 0
 }
 
+repo_has_local_changes() {
+  local repo_dir="$1"
+  git -C "$repo_dir" status --porcelain --untracked-files=normal 2>/dev/null | grep -q .
+}
+
 # Animated dots while a background process runs
 # Usage: run_with_dots "message" command arg1 arg2 ...
 # Sets RWD_EXIT to the command's exit code after completion.
@@ -248,11 +253,11 @@ fi
 # ── Detect interactive mode ───────────────────────────────────────────
 # When piped via curl | bash, stdin is the pipe — but /dev/tty still
 # provides access to the controlling terminal for interactive prompts.
-# We check readable+writable (like OpenClaw's installer does).
+# Only treat it as interactive when that controlling terminal is real.
 INTERACTIVE=false
 if [[ -t 0 ]]; then
   INTERACTIVE=true
-elif [[ -r /dev/tty && -w /dev/tty ]]; then
+elif tty -s < /dev/tty 2>/dev/null; then
   INTERACTIVE=true
 fi
 
@@ -535,6 +540,7 @@ fi
 if [[ "$DRY_RUN" == "true" ]]; then
   if [[ -d "$INSTALL_DIR/.git" ]]; then
     dry "Would update existing installation in ${INSTALL_DIR}"
+    dry "Would warn before overwriting local repo changes"
     dry "Would checkout ${TARGET_REF}"
   else
     dry "Would clone ${REPO}"
@@ -543,6 +549,27 @@ if [[ "$DRY_RUN" == "true" ]]; then
   fi
 else
   if [[ -d "$INSTALL_DIR/.git" ]]; then
+    if repo_has_local_changes "$INSTALL_DIR"; then
+      warn "Existing installation has local repo changes"
+      info "Updating will discard tracked edits in ${INSTALL_DIR}"
+      if [[ "$INTERACTIVE" == "true" ]]; then
+        printf "  ${RAIL}  ${YELLOW}?${NC} Continue and overwrite local changes? (y/N) "
+        if read -r answer < /dev/tty 2>/dev/null; then
+          if [[ "$(echo "$answer" | tr "[:upper:]" "[:lower:]")" != "y" ]]; then
+            fail "Aborted to avoid overwriting local changes"
+            exit 1
+          fi
+        else
+          fail "Cannot confirm destructive update safely"
+          exit 1
+        fi
+      else
+        fail "Refusing to overwrite a dirty install in non-interactive mode"
+        info "Commit, stash, or back up ${INSTALL_DIR}, then rerun the installer"
+        exit 1
+      fi
+    fi
+
     cd "$INSTALL_DIR"
 
     if [[ "$TARGET_REF_KIND" == "branch" || "$TARGET_REF_KIND" == "branch-fallback" ]]; then
@@ -576,7 +603,6 @@ stage "Install & Build"
 if [[ "$DRY_RUN" == "true" ]]; then
   dry "Would run: npm ci"
   dry "Would run: npm run build"
-  dry "Would run: npm run build:server"
 else
   npm_log=$(mktemp /tmp/nerve-npm-install-XXXXXX)
 
@@ -635,11 +661,11 @@ else
 
   build_log=$(mktemp /tmp/nerve-build-XXXXXX)
 
-  run_with_dots "Building client" bash -c "npm run build > '$build_log' 2>&1"
+  run_with_dots "Building project" bash -c "npm run build > '$build_log' 2>&1"
   if [[ $RWD_EXIT -eq 0 ]]; then
-    ok "Client built"
+    ok "Client and server built"
   else
-    fail "Client build failed"
+    fail "Build failed"
     # Rollback to previous build output if available
     if [[ -n "${BUILD_BACKUP:-}" ]]; then
       rm -rf dist server-dist 2>/dev/null
@@ -657,32 +683,6 @@ else
     hint "Troubleshooting:"
     echo -e "  ${RAIL}  ${DIM}1. Check the full log: cat ${build_log}${NC}"
     echo -e "  ${RAIL}  ${DIM}2. Try rebuilding: npm run build${NC}"
-    echo ""
-    exit 1
-  fi
-
-  run_with_dots "Building server" bash -c "npm run build:server >> '$build_log' 2>&1"
-  if [[ $RWD_EXIT -eq 0 ]]; then
-    ok "Server built"
-  else
-    fail "Server build failed"
-    # Rollback to previous build output if available
-    if [[ -n "${BUILD_BACKUP:-}" ]]; then
-      rm -rf dist server-dist 2>/dev/null
-      [[ -d "$BUILD_BACKUP/dist" ]] && cp -a "$BUILD_BACKUP/dist" dist
-      [[ -d "$BUILD_BACKUP/server-dist" ]] && cp -a "$BUILD_BACKUP/server-dist" server-dist
-      warn "Restored previous build output"
-    fi
-    echo ""
-    echo -e "  ${RAIL}  ${DIM}── Last 10 lines ──${NC}"
-    tail -10 "$build_log" | while IFS= read -r line; do
-      echo -e "  ${RAIL}  ${DIM}${line}${NC}"
-    done
-    echo -e "  ${RAIL}  ${DIM}── Full log: ${build_log} ──${NC}"
-    echo ""
-    hint "Troubleshooting:"
-    echo -e "  ${RAIL}  ${DIM}1. Check the full log: cat ${build_log}${NC}"
-    echo -e "  ${RAIL}  ${DIM}2. Try rebuilding: npm run build:server${NC}"
     echo ""
     exit 1
   fi
@@ -787,13 +787,17 @@ generate_env_from_gateway() {
   if [[ -n "$gw_token" ]]; then
     local nerve_port=3080
     if ! check_port "$nerve_port"; then
-      if [[ "$NON_INTERACTIVE" == "true" ]]; then
+      if [[ "$INTERACTIVE" != "true" ]]; then
         fail "Port ${nerve_port} is already in use. Set a different PORT in .env or free the port."
+        exit 1
       else
         warn "Port ${nerve_port} is already in use"
         while true; do
           printf "  ${RAIL}  ${CYAN}→${NC} Enter an available port: "
-          read -r nerve_port < /dev/tty || fail "Cannot read from terminal"
+          if ! read -r nerve_port < /dev/tty 2>/dev/null; then
+            fail "Cannot read from terminal"
+            exit 1
+          fi
           if [[ ! "$nerve_port" =~ ^[0-9]+$ ]] || (( nerve_port < 1 || nerve_port > 65535 )); then
             warn "Invalid port number"
             continue
@@ -1200,6 +1204,10 @@ fi
 echo ""
 
 # Exit code reflects actual readiness
+if [[ "$DRY_RUN" == "true" ]]; then
+  exit 0
+fi
+
 if [[ "$ENV_MISSING" == "true" ]] || [[ ! -f "${INSTALL_DIR}/.env" ]]; then
   warn "Install complete but Nerve is not fully configured"
   info "Run: cd ${INSTALL_DIR} && npm run setup"

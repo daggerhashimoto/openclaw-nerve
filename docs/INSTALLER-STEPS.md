@@ -96,6 +96,7 @@ The script runs these checks in order:
   - Debian:
     - when running as root, auto-installs `build-essential` (unless dry-run)
     - when running as a normal user, exits with the explicit `sudo apt install build-essential` command
+    - dry-run mirrors that split instead of pretending non-root installs would succeed automatically
   - macOS: triggers Xcode CLI tools install and waits
   - otherwise: prints manual install commands and exits
 
@@ -295,6 +296,7 @@ Determines service user/home by:
 ### 5B.1 Wrapper script creation
 Creates `<INSTALL_DIR>/start.sh` that:
 
+- changes into `<INSTALL_DIR>` first so manual invocation resolves `.env` the same way as the service
 - sets `NODE_ENV=production`
 - executes `node server-dist/index.js`
 

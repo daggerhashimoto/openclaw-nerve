@@ -257,7 +257,7 @@ fi
 INTERACTIVE=false
 if [[ -t 0 ]]; then
   INTERACTIVE=true
-elif tty -s < /dev/tty 2>/dev/null; then
+elif { tty -s < /dev/tty; } 2>/dev/null; then
   INTERACTIVE=true
 fi
 
@@ -421,7 +421,11 @@ check_build_tools() {
   # Auto-install on Debian/Ubuntu
   if command -v apt-get &>/dev/null; then
     if [[ "$DRY_RUN" == "true" ]]; then
-      dry "Would install build-essential via apt"
+      if [[ $EUID -eq 0 ]]; then
+        dry "Would install build-essential via apt"
+      else
+        dry "Would require manual install: sudo apt install build-essential"
+      fi
       return 0
     fi
     if [[ $EUID -eq 0 ]]; then
@@ -1014,6 +1018,7 @@ setup_launchd() {
 #!/bin/bash
 # Nerve start wrapper — .env is loaded by the Node server at runtime.
 SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+cd "\${SCRIPT_DIR}"
 export PATH="${node_dir_escaped}:\${PATH}"
 export NODE_ENV=production
 exec node "\${SCRIPT_DIR}/server-dist/index.js"

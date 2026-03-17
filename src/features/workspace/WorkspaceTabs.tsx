@@ -45,12 +45,12 @@ export function WorkspaceTabs({ activeTab, onTabChange, cronCount, kanbanCount }
 
   return (
     <div
-      className="panel-header border-l-[3px] border-l-purple flex items-center gap-0"
+      className="panel-header border-l-[3px] border-l-purple flex items-stretch gap-0 sm:items-center"
       role="tablist"
       aria-label="Workspace tabs"
       onKeyDown={handleKeyDown}
     >
-      <div className="flex items-center gap-0 flex-1 min-w-0">
+      <div className="flex flex-1 min-w-0 flex-wrap items-stretch gap-1.5 sm:flex-nowrap sm:items-center sm:gap-0">
       {TABS.map((tab, i) => {
         const isActive = tab.id === activeTab;
         const badge = tab.id === 'crons' && cronCount ? cronCount
@@ -66,12 +66,12 @@ export function WorkspaceTabs({ activeTab, onTabChange, cronCount, kanbanCount }
             id={`workspace-tab-${tab.id}`}
             tabIndex={isActive ? 0 : -1}
             onClick={() => onTabChange(tab.id)}
-            className={`panel-label cursor-pointer transition-colors bg-transparent flex items-center gap-1 border-0 px-0 focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm ${
-              i > 0 ? 'ml-3' : ''
+            className={`panel-label flex min-h-11 min-w-[calc(50%-0.375rem)] flex-1 items-center justify-center gap-1 rounded-md border border-border/60 bg-background/35 px-2.5 text-center transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 sm:min-h-0 sm:min-w-0 sm:flex-none sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 ${
+              i > 0 ? 'sm:ml-3' : ''
             } ${
               isActive
-                ? 'text-purple'
-                : 'text-muted-foreground hover:text-foreground opacity-60 hover:opacity-100'
+                ? 'border-purple/45 bg-purple/8 text-purple'
+                : 'text-muted-foreground opacity-70 hover:text-foreground hover:opacity-100'
             }`}
             data-active={isActive}
           >

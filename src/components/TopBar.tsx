@@ -226,18 +226,18 @@ export function TopBar({
     : "max-h-0 opacity-0 pointer-events-none";
   const panelContentClass = panelConfig.contentClass;
 
-  const buttonBase = "shell-icon-button h-10 min-w-10 px-2.5 sm:min-w-9 sm:px-3";
+  const buttonBase = "shell-icon-button h-11 min-w-11 px-3 max-[371px]:h-[38px] max-[371px]:min-w-[38px] max-[371px]:gap-0.5 max-[371px]:px-2 max-[371px]:[&_svg]:size-3 sm:h-10 sm:min-w-9 sm:px-3";
 
   return (
     <div className="relative z-40 px-2 pt-2 sm:px-4 sm:pt-3">
-      <header className="shell-panel flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl px-3 py-2 shrink-0 sm:flex-nowrap sm:px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/20 bg-background/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <header className="topbar-mobile-compact shell-panel flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl px-3 py-2 shrink-0 max-[371px]:gap-x-1.5 max-[371px]:px-2 sm:flex-nowrap sm:px-4">
+        <div className="flex min-w-0 items-center gap-3 max-[371px]:gap-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/20 bg-background/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] max-[371px]:h-9 max-[371px]:w-9">
             <NerveLogo size={24} />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-semibold uppercase tracking-[0.34em] text-primary sm:text-base">
+              <span className="truncate text-sm font-semibold uppercase tracking-[0.34em] text-primary max-[371px]:text-xs max-[371px]:tracking-[0.22em] sm:text-base">
                 Nerve
               </span>
             </div>
@@ -248,14 +248,14 @@ export function TopBar({
         </div>
         {/* View mode toggle */}
         {onViewModeChange && (
-          <div className="order-3 flex w-full items-center gap-2 sm:order-none sm:ml-2 sm:w-auto">
+          <div className="order-3 flex w-full items-center gap-2 max-[371px]:gap-1 sm:order-none sm:ml-2 sm:w-auto">
             <button
               onClick={() => onViewModeChange("chat")}
               title="Chat View"
               aria-label="Switch to chat view"
               aria-pressed={viewMode === "chat"}
               data-active={viewMode === "chat"}
-              className="shell-chip min-h-10 flex-1 justify-center text-[11px] uppercase tracking-[0.14em] sm:flex-none"
+              className="shell-chip min-h-11 flex-1 justify-center text-[11px] uppercase tracking-[0.14em] max-[371px]:min-h-[38px] max-[371px]:gap-1 max-[371px]:px-2 max-[371px]:text-[10px] max-[371px]:tracking-[0.08em] max-[371px]:[&_svg]:size-3 sm:min-h-10 sm:flex-none"
             >
               <MessageSquare size={13} aria-hidden="true" />
               <span>Chat</span>
@@ -266,14 +266,14 @@ export function TopBar({
               aria-label="Switch to tasks view"
               aria-pressed={viewMode === "kanban"}
               data-active={viewMode === "kanban"}
-              className="shell-chip min-h-10 flex-1 justify-center text-[11px] uppercase tracking-[0.14em] sm:flex-none"
+              className="shell-chip min-h-11 flex-1 justify-center text-[11px] uppercase tracking-[0.14em] max-[371px]:min-h-[38px] max-[371px]:gap-1 max-[371px]:px-2 max-[371px]:text-[10px] max-[371px]:tracking-[0.08em] max-[371px]:[&_svg]:size-3 sm:min-h-10 sm:flex-none"
             >
               <LayoutGrid size={13} aria-hidden="true" />
               <span>Tasks</span>
             </button>
           </div>
         )}
-        <div ref={buttonsRef} className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-1.5 overflow-x-auto pb-1 sm:max-w-none sm:gap-2 sm:overflow-visible sm:pb-0">
+        <div ref={buttonsRef} className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-1.5 overflow-x-auto pb-1 max-[371px]:gap-0.5 sm:max-w-none sm:gap-2 sm:overflow-visible sm:pb-0">
           {/* Compact layout launchers (chat-first mode) */}
           {mobilePanelButtonsVisible && sessionsPanel && (
             <button
@@ -380,7 +380,7 @@ export function TopBar({
             onClick={onSettings}
             title="Settings"
             aria-label="Open settings"
-            className="shell-icon-button size-10 px-0"
+            className="shell-icon-button size-11 px-0 max-[371px]:size-[38px] max-[371px]:[&_svg]:size-3 sm:size-10"
           >
             <Settings size={14} aria-hidden="true" />
           </button>

@@ -12,11 +12,38 @@ import { Hono } from 'hono';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
-import { access, readdir } from 'node:fs/promises';
+import { access, readdir, readFile } from 'node:fs/promises';
 import { config } from '../lib/config.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 
 const app = new Hono();
+const CRON_SESSION_RE = /^agent:[^:]+:cron:[^:]+(?::run:.+)?$/;
+
+interface StoredSessionSummary {
+  sessionId?: string;
+  label?: string;
+  displayName?: string;
+  updatedAt?: number;
+  model?: string;
+  thinking?: string;
+  thinkingLevel?: string;
+  totalTokens?: number;
+  contextTokens?: number;
+}
+
+function isCronLikeSessionKey(sessionKey: string): boolean {
+  return CRON_SESSION_RE.test(sessionKey);
+}
+
+function inferParentSessionKey(sessionKey: string): string | null {
+  const cronRunMatch = sessionKey.match(/^(.+:cron:[^:]+):run:.+$/);
+  if (cronRunMatch) return cronRunMatch[1];
+
+  const cronMatch = sessionKey.match(/^((?:agent:[^:]+)):cron:[^:]+$/);
+  if (cronMatch) return `${cronMatch[1]}:main`;
+
+  return null;
+}
 
 /** Resolve the transcript path for a session ID, checking both active and deleted files. */
 async function findTranscript(sessionId: string): Promise<string | null> {
@@ -74,6 +101,58 @@ async function readModelFromTranscript(filePath: string): Promise<string | null>
     rl.on('error', () => done(null));
   });
 }
+
+app.get('/api/sessions/hidden', rateLimitGeneral, async (c) => {
+  const activeMinutesRaw = c.req.query('activeMinutes');
+  const limitRaw = c.req.query('limit');
+
+  const activeMinutes = Number.isFinite(Number(activeMinutesRaw)) && Number(activeMinutesRaw) > 0
+    ? Number(activeMinutesRaw)
+    : 24 * 60;
+  const limit = Number.isFinite(Number(limitRaw)) && Number(limitRaw) > 0
+    ? Math.min(Number(limitRaw), 2000)
+    : 200;
+
+  const sessionsFile = join(config.sessionsDir, 'sessions.json');
+  const cutoffMs = Date.now() - activeMinutes * 60_000;
+
+  try {
+    const raw = await readFile(sessionsFile, 'utf-8');
+    const store = JSON.parse(raw) as Record<string, StoredSessionSummary | undefined>;
+
+    const sessions = Object.entries(store)
+      .filter(([sessionKey, session]) => {
+        if (!isCronLikeSessionKey(sessionKey) || !session) return false;
+        const updatedAt = typeof session.updatedAt === 'number' ? session.updatedAt : 0;
+        return updatedAt >= cutoffMs;
+      })
+      .sort(([, a], [, b]) => {
+        const updatedA = typeof a?.updatedAt === 'number' ? a.updatedAt : 0;
+        const updatedB = typeof b?.updatedAt === 'number' ? b.updatedAt : 0;
+        return updatedB - updatedA;
+      })
+      .slice(0, limit)
+      .map(([sessionKey, session]) => ({
+        key: sessionKey,
+        sessionKey,
+        id: session?.sessionId,
+        label: session?.label,
+        displayName: session?.displayName || session?.label,
+        updatedAt: session?.updatedAt,
+        model: session?.model,
+        thinking: session?.thinking,
+        thinkingLevel: session?.thinkingLevel,
+        totalTokens: session?.totalTokens,
+        contextTokens: session?.contextTokens,
+        parentId: inferParentSessionKey(sessionKey),
+      }));
+
+    return c.json({ ok: true, sessions });
+  } catch (err) {
+    console.debug('[sessions] hidden list failed:', (err as Error).message);
+    return c.json({ ok: true, sessions: [] });
+  }
+});
 
 app.get('/api/sessions/:id/model', rateLimitGeneral, async (c) => {
   const sessionId = c.req.param('id');

@@ -30,6 +30,7 @@ export interface CronJob {
   // Delivery
   delivery?: CronDelivery;
   // State
+  nextRun?: string;
   lastRun?: string;
   lastStatus?: string;
   lastError?: string;
@@ -78,6 +79,9 @@ export function normalizeCronJob(j: Record<string, unknown>): CronJob {
     // Delivery
     delivery: delivery?.mode ? delivery : undefined,
     // State
+    nextRun: state.nextRunAtMs
+      ? new Date(state.nextRunAtMs as number).toISOString()
+      : undefined,
     lastRun: state.lastRunAtMs
       ? new Date(state.lastRunAtMs as number).toISOString()
       : undefined,
@@ -140,6 +144,12 @@ export function useCrons() {
       const res = await fetch(`/api/crons/${encodeURIComponent(id)}/run`, { method: 'POST' });
       const data = await res.json() as { ok: boolean; error?: string };
       if (!data.ok) throw new Error(data.error || 'Failed to run');
+      const nowIso = new Date().toISOString();
+      setJobs(prev => prev.map(job => (
+        job.id === id
+          ? { ...job, lastRun: nowIso }
+          : job
+      )));
       return true;
     } catch (err) {
       setError((err as Error).message);
@@ -150,9 +160,13 @@ export function useCrons() {
   const fetchRuns = useCallback(async (id: string): Promise<CronRun[]> => {
     try {
       const res = await fetch(`/api/crons/${encodeURIComponent(id)}/runs`);
-      const data = await res.json() as { ok: boolean; result?: { runs?: unknown[]; details?: { entries?: unknown[] } }; error?: string };
+      const data = await res.json() as {
+        ok: boolean;
+        result?: { entries?: unknown[]; runs?: unknown[]; details?: { entries?: unknown[] } };
+        error?: string;
+      };
       if (!data.ok) throw new Error(data.error || 'Failed to fetch runs');
-      const rawRuns = data.result?.runs || data.result?.details?.entries || (Array.isArray(data.result) ? data.result : []);
+      const rawRuns = data.result?.entries || data.result?.runs || data.result?.details?.entries || (Array.isArray(data.result) ? data.result : []);
       return (rawRuns as Record<string, unknown>[]).map(r => ({
         timestamp: r.timestamp as string || (r.ts ? new Date(r.ts as number).toISOString() : ''),
         status: (r.status as string) || 'unknown',

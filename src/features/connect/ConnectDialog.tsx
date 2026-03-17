@@ -58,8 +58,11 @@ export function ConnectDialog({
 
   return (
     <Dialog open={open}>
-      <DialogContent className="shell-panel max-w-[min(92vw,560px)] p-0 overflow-hidden [&>button]:hidden" showCloseButton={false}>
-        <div className="border-b border-border/70 bg-gradient-to-r from-primary/12 via-transparent to-info/6 px-5 py-4 sm:px-6">
+      <DialogContent
+        className="shell-panel inset-x-2 top-2 bottom-2 left-2 right-2 flex w-auto max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden p-0 [&>button]:hidden sm:top-[50%] sm:bottom-auto sm:left-[50%] sm:right-auto sm:w-full sm:max-w-[min(92vw,560px)] sm:-translate-x-1/2 sm:-translate-y-1/2"
+        showCloseButton={false}
+      >
+        <div className="shrink-0 border-b border-border/70 bg-gradient-to-r from-primary/12 via-transparent to-info/6 px-4 py-4 sm:px-6">
           <DialogHeader className="gap-3 text-left">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/20 bg-background/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
@@ -67,7 +70,7 @@ export function ConnectDialog({
               </div>
               <div>
                 <div className="text-[10px] font-medium uppercase tracking-[0.3em] text-primary/80">Gateway Handshake</div>
-                <DialogTitle className="mt-1 text-xl font-semibold tracking-[-0.03em] text-foreground">
+                <DialogTitle className="mt-1 text-lg font-semibold tracking-[-0.03em] text-foreground sm:text-xl">
                   Connect Nerve to your OpenClaw gateway
                 </DialogTitle>
               </div>
@@ -78,8 +81,8 @@ export function ConnectDialog({
           </DialogHeader>
         </div>
 
-        <div className="flex flex-col gap-5 px-5 py-5 sm:px-6 sm:py-6">
-          <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:gap-5 sm:px-6 sm:py-6">
+          <div className="hidden gap-4 sm:grid sm:grid-cols-2">
             <div className="shell-panel rounded-2xl px-4 py-3">
               <div className="text-[10px] font-medium uppercase tracking-[0.24em] text-muted-foreground">Connection</div>
               <div className="mt-2 text-sm font-medium text-foreground">Secure local bridge</div>
@@ -127,7 +130,7 @@ export function ConnectDialog({
             )}
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-auto flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="max-w-[34ch] text-xs leading-5 text-muted-foreground">
               Keep Nerve bound to localhost unless you explicitly want remote access.
             </p>

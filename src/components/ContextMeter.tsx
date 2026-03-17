@@ -72,19 +72,19 @@ export function ContextMeter({ used, limit }: ContextMeterProps) {
 
   return (
     <div
-      className="flex items-center gap-2 cursor-default"
+      className="flex cursor-default items-center gap-2 max-[378px]:gap-1.5"
       title={tooltipText}
     >
       {/* Warning icon - only show when warning/critical */}
       {(isWarning || isCritical) && (
         <AlertTriangle
           size={10}
-          className={`${colors.text} ${isCritical ? 'animate-pulse' : ''}`}
+          className={`${colors.text} max-[378px]:size-[9px] ${isCritical ? 'animate-pulse' : ''}`}
         />
       )}
 
       {/* Progress bar with smooth width and color transitions */}
-      <div className="h-2 w-16 overflow-hidden rounded-full border border-border/60 bg-background/80">
+      <div className="h-2 w-16 overflow-hidden rounded-full border border-border/60 bg-background/80 max-[378px]:h-1.5 max-[378px]:w-12">
         <div
           className={`h-full rounded-full ${colors.bar}`}
           style={{ 
@@ -99,12 +99,12 @@ export function ContextMeter({ used, limit }: ContextMeterProps) {
       <AnimatedNumber 
         value={used} 
         format={fmtK}
-        className={`font-mono text-[10px] ${colors.text}`}
+        className={`font-mono text-[10px] max-[378px]:text-[9px] ${colors.text}`}
         duration={700}
       />
 
       {/* Label - changes based on state */}
-      <span className={`font-mono text-[9px] uppercase tracking-[0.2em] ${colors.text}`}>
+      <span className={`font-mono text-[9px] uppercase tracking-[0.2em] max-[378px]:text-[8px] max-[378px]:tracking-[0.14em] ${colors.text}`}>
         Context
       </span>
     </div>

@@ -197,7 +197,7 @@ export function SettingsDrawer({
         {/* Content */}
         <div className="flex-1 overflow-hidden flex flex-col">
           <div className="shrink-0 border-b border-border/60 bg-background/24 px-4 py-3">
-            <div className="-mx-0.5 flex gap-2 overflow-x-auto px-0.5 py-1" role="tablist" aria-label="Settings categories">
+            <div className="-mx-0.5 flex flex-wrap gap-2 px-0.5 py-1 sm:flex-nowrap sm:overflow-x-auto" role="tablist" aria-label="Settings categories">
               {SETTINGS_CATEGORIES.map((category) => {
                 const Icon = category.icon;
                 const isActive = currentCategory === category.key;
@@ -210,7 +210,7 @@ export function SettingsDrawer({
                     disabled={disabled}
                     onClick={() => setActiveCategory(category.key)}
                     data-active={isActive}
-                    className={`shell-chip shrink-0 whitespace-nowrap px-3.5 text-[12px] font-medium ${disabled ? 'cursor-not-allowed opacity-45 hover:translate-y-0 hover:border-border/80 hover:text-muted-foreground' : ''}`}
+                    className={`shell-chip min-h-11 min-w-[calc(50%-0.25rem)] flex-1 justify-center whitespace-nowrap px-3.5 text-[12px] font-medium sm:min-h-10 sm:min-w-0 sm:flex-none sm:justify-start ${disabled ? 'cursor-not-allowed opacity-45 hover:translate-y-0 hover:border-border/80 hover:text-muted-foreground' : ''}`}
                   >
                       <Icon size={12} aria-hidden="true" />
                     <span>{category.label}</span>

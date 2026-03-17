@@ -12,7 +12,7 @@ export function ScrollToBottomButton({ onClick, unreadCount }: ScrollToBottomBut
       onClick={onClick}
       aria-label={unreadCount > 0 ? `Scroll to bottom, ${unreadCount} unread messages` : "Scroll to bottom"}
       title="Scroll to bottom"
-      className="absolute bottom-[120px] right-4 w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center cursor-pointer shadow-lg z-10 hover:bg-primary/90 transition-colors text-sm font-bold"
+      className="absolute bottom-[148px] right-3 z-10 flex size-11 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 sm:bottom-[120px] sm:right-4 sm:size-9"
     >
       <span aria-hidden="true">↓</span>
       {unreadCount > 0 && (

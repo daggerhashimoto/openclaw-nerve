@@ -424,12 +424,21 @@ check_build_tools() {
       dry "Would install build-essential via apt"
       return 0
     fi
-    run_with_dots "Installing build tools" bash -c "DEBIAN_FRONTEND=noninteractive apt-get update -qq &>/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential &>/dev/null"
-    if command -v make &>/dev/null && command -v g++ &>/dev/null; then
-      ok "Build tools installed"
-      return 0
+    if [[ $EUID -eq 0 ]]; then
+      run_with_dots "Installing build tools" bash -c "DEBIAN_FRONTEND=noninteractive apt-get update -qq &>/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential &>/dev/null"
+      if command -v make &>/dev/null && command -v g++ &>/dev/null; then
+        ok "Build tools installed"
+        return 0
+      else
+        fail "Failed to install build-essential"
+      fi
     else
-      fail "Failed to install build-essential"
+      warn "Build tools can be auto-installed only when running as root"
+      echo ""
+      hint "Install build tools:"
+      cmd "sudo apt install build-essential"
+      echo ""
+      exit 1
     fi
   fi
 
@@ -993,8 +1002,9 @@ setup_launchd() {
 
   mkdir -p "$plist_dir"
 
-  # Create a wrapper script that sources .env at runtime (not baked at install time)
-  # This way token/config changes in .env take effect on next service restart
+  # Create a wrapper script that launches the built server from the install dir.
+  # server/lib/config.ts loads .env at runtime, so the wrapper should not source it
+  # directly (raw .env values are dotenv-compatible but not necessarily shell-safe).
   local start_script="${working_dir}/start.sh"
   # The plist sets PATH in EnvironmentVariables, but the wrapper also needs
   # to find node if run manually. Bake the current node path as a fallback.
@@ -1002,15 +1012,9 @@ setup_launchd() {
   node_dir_escaped=$(dirname "${node_bin}")
   cat > "$start_script" <<STARTEOF
 #!/bin/bash
-# Nerve start wrapper — sources .env at runtime so config changes
-# take effect on restart without touching the plist
+# Nerve start wrapper — .env is loaded by the Node server at runtime.
 SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
 export PATH="${node_dir_escaped}:\${PATH}"
-if [[ -f "\${SCRIPT_DIR}/.env" ]]; then
-  set -a
-  source "\${SCRIPT_DIR}/.env"
-  set +a
-fi
 export NODE_ENV=production
 exec node "\${SCRIPT_DIR}/server-dist/index.js"
 STARTEOF

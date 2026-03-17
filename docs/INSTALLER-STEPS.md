@@ -93,7 +93,9 @@ The script runs these checks in order:
 ### 1.4 `check_build_tools`
 - Checks for `make` and `g++` (needed for native modules like `node-pty`).
 - If missing:
-  - Debian: auto-installs `build-essential` (unless dry-run)
+  - Debian:
+    - when running as root, auto-installs `build-essential` (unless dry-run)
+    - when running as a normal user, exits with the explicit `sudo apt install build-essential` command
   - macOS: triggers Xcode CLI tools install and waits
   - otherwise: prints manual install commands and exits
 
@@ -293,11 +295,10 @@ Determines service user/home by:
 ### 5B.1 Wrapper script creation
 Creates `<INSTALL_DIR>/start.sh` that:
 
-- sources `.env` at runtime
 - sets `NODE_ENV=production`
 - executes `node server-dist/index.js`
 
-This allows config updates by restarting service (no plist rewrite needed).
+The Node server loads `.env` at runtime, so config updates still take effect on restart without rewriting the plist.
 
 ### 5B.2 Plist creation
 Writes `~/Library/LaunchAgents/com.nerve.server.plist` with:

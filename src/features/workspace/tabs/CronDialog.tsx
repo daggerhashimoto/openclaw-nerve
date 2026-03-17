@@ -2,16 +2,10 @@
  * CronDialog — Modal for creating or editing cron jobs.
  */
 
-import { useState, useCallback, useRef, useEffect, useMemo, type SelectHTMLAttributes } from 'react';
+import { useState, useCallback, useRef, useEffect, type SelectHTMLAttributes } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import type { CronJob } from '../hooks/useCrons';
 import { useSessionContext } from '@/contexts/SessionContext';
-import { getSessionKey } from '@/types';
-import {
-  getRootAgentSessionKey,
-  getSessionDisplayLabel,
-  getTopLevelAgentSessions,
-} from '@/features/sessions/sessionKeys';
 
 interface CronDialogProps {
   open: boolean;
@@ -63,6 +57,8 @@ const CHANNEL_PLACEHOLDERS: Record<string, string> = {
   googlechat: 'space-id',
   imessage: '+905551234567',
 };
+
+const MAIN_ROOT_SESSION_KEY = 'agent:main:main';
 
 /** Strip the auto-appended delivery instruction from a prompt for clean editing */
 function stripDeliveryInstruction(msg: string): string {
@@ -131,16 +127,7 @@ function CronSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
 /** Modal dialog for creating or editing a cron job (schedule, prompt, model, channel). */
 export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronDialogProps) {
   const prefill = mode === 'edit' && initialData ? initialData : null;
-  const { sessions, currentSession, agentName } = useSessionContext();
-  const rootSessions = useMemo(() => getTopLevelAgentSessions(sessions), [sessions]);
-  const fallbackRootSessionKey = prefill?.sessionKey
-    || getRootAgentSessionKey(currentSession)
-    || (rootSessions[0] ? getSessionKey(rootSessions[0]) : '');
-  const rootOptions = useMemo(() => rootSessions.map((session) => ({
-    value: getSessionKey(session),
-    label: getSessionDisplayLabel(session, agentName),
-  })), [agentName, rootSessions]);
-  const hasRootAgents = rootOptions.length > 0;
+  const { agentName } = useSessionContext();
 
   const [name, setName] = useState(() => prefill?.name || '');
   const [scheduleKind, setScheduleKind] = useState<ScheduleKind>(() => prefill?.scheduleKind || 'every');
@@ -149,7 +136,6 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
   const [everyMs, setEveryMs] = useState(() => prefill?.everyMs?.toString() || '3600000');
   const [atTime, setAtTime] = useState(() => prefill?.at ? isoToLocal(prefill.at) : '');
   const [payloadKind, setPayloadKind] = useState<PayloadKind>(() => prefill?.payloadKind || 'agentTurn');
-  const [targetRootSessionKey, setTargetRootSessionKey] = useState(() => fallbackRootSessionKey);
   const [message, setMessage] = useState(() => prefill ? stripDeliveryInstruction(prefill.message || '') : '');
   const [model, setModel] = useState(() => prefill?.model || '');
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>(() => prefill?.delivery?.mode === 'announce' ? 'announce' : 'none');
@@ -160,9 +146,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const effectiveTargetRootSessionKey = targetRootSessionKey && rootOptions.some((option) => option.value === targetRootSessionKey)
-    ? targetRootSessionKey
-    : fallbackRootSessionKey;
+  const effectiveTargetRootSessionKey = MAIN_ROOT_SESSION_KEY;
 
   // Fetch available models and configured channels when dialog opens
   useEffect(() => {
@@ -219,11 +203,6 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
 
     if (!message.trim()) {
       setError('Message/prompt is required');
-      return;
-    }
-
-    if (!effectiveTargetRootSessionKey.trim()) {
-      setError('Select which top-level agent should own this job');
       return;
     }
 
@@ -425,27 +404,9 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
 
             <SectionShell
               eyebrow="Execution"
-              title="Where it runs"
-              description="Choose which root agent owns the schedule, then decide whether the work runs privately or posts into that root thread."
+              title="How it runs"
+              description={`Cron jobs currently run under ${agentName}'s main agent. Choose whether the work happens in a private cron session or posts into the main thread.`}
             >
-              <div className="flex flex-col gap-1">
-                <span className="cockpit-field-label">Target agent</span>
-                <CronSelect
-                  value={effectiveTargetRootSessionKey}
-                  onChange={e => setTargetRootSessionKey(e.target.value)}
-                  aria-label="Target agent"
-                  disabled={!hasRootAgents}
-                >
-                  {(hasRootAgents ? rootOptions : [{ value: '', label: 'No top-level agents available' }]).map((option) => (
-                    <option key={option.value || 'none'} value={option.value}>{option.label}</option>
-                  ))}
-                </CronSelect>
-                <span className="cockpit-field-hint">
-                  {hasRootAgents
-                    ? 'Cron sessions, reminders, and follow-up events stay under the selected root branch.'
-                    : 'Create a top-level agent first, then attach scheduled work to it.'}
-                </span>
-              </div>
               <div className="flex flex-col gap-1">
                 <span className="cockpit-field-label">Execution type</span>
                 <CronSelect
@@ -459,8 +420,8 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
               </div>
               <div className="cockpit-note" data-tone="primary">
                 {payloadKind === 'agentTurn'
-                  ? 'Agent tasks run in a private cron session beneath the selected root and keep that root thread clean.'
-                  : 'System events post directly into the selected root thread and suit reminders or lightweight alerts.'}
+                  ? `Agent tasks run in their own private cron session beneath ${agentName}'s main agent and keep the main thread clean.`
+                  : `System events post directly into ${agentName}'s main thread and suit reminders or lightweight alerts.`}
               </div>
             </SectionShell>
           </div>

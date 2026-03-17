@@ -2,15 +2,13 @@
  * CronsTab — Visual cron job management.
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { RefreshCw, Play, Plus, Trash2, Pencil, ChevronDown, ChevronRight, CheckCircle, XCircle, AlertTriangle, Circle, Loader2 } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { RefreshCw, Play, Plus, Trash2, Pencil, ChevronDown, ChevronRight, CheckCircle, XCircle, Circle, Loader2, Settings2, Clock3 } from 'lucide-react';
 import { useCrons, type CronJob, type CronRun } from '../hooks/useCrons';
 import { CronDialog } from './CronDialog';
 import { useSessionContext } from '@/contexts/SessionContext';
-import { getRootAgentId, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
-import { getSessionKey } from '@/types';
 
-type CronRowJob = CronJob & { targetLabel?: string };
+type CronRowJob = CronJob;
 
 /** Convert cron-like schedule to human-readable string */
 function humanSchedule(job: CronJob): string {
@@ -64,6 +62,23 @@ function relativeTime(ts: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function relativeUntil(ts: string): string {
+  const diff = new Date(ts).getTime() - Date.now();
+  if (Number.isNaN(diff)) return 'unknown';
+  if (diff <= 0) return 'due now';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'in <1m';
+  if (mins < 60) return `in ${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) {
+    const remMins = mins % 60;
+    return remMins === 0 ? `in ${hours}h` : `in ${hours}h ${remMins}m`;
+  }
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return remHours === 0 ? `in ${days}d` : `in ${days}d ${remHours}h`;
+}
+
 function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   job: CronRowJob;
   onToggle: (id: string, enabled: boolean) => void;
@@ -76,10 +91,35 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   const [runs, setRuns] = useState<CronRun[]>([]);
   const [running, setRunning] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const actionsRef = useRef<HTMLDivElement>(null);
 
   // Cleanup delete confirmation timer
   useEffect(() => () => clearTimeout(deleteTimerRef.current), []);
+
+  useEffect(() => {
+    if (!actionsOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!actionsRef.current?.contains(event.target as Node)) {
+        setActionsOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActionsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [actionsOpen]);
 
   const handleExpand = useCallback(async () => {
     if (!expanded) {
@@ -92,16 +132,21 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   const handleRun = useCallback(async () => {
     setRunning(true);
     try {
-      await onRun(job.id);
+      const ok = await onRun(job.id);
+      if (ok && expanded) {
+        const r = await onFetchRuns(job.id);
+        setRuns(r);
+      }
     } finally {
       setRunning(false);
     }
-  }, [job.id, onRun]);
+  }, [expanded, job.id, onFetchRuns, onRun]);
 
   const handleDeleteClick = useCallback(() => {
     if (confirmingDelete) {
       clearTimeout(deleteTimerRef.current);
       setConfirmingDelete(false);
+      setActionsOpen(false);
       onDelete(job.id);
     } else {
       setConfirmingDelete(true);
@@ -110,7 +155,6 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   }, [confirmingDelete, job.id, onDelete]);
 
   const name = job.name || job.label || job.id;
-  const targetLabel = job.targetLabel;
   const isSuccess = job.lastStatus === 'success' || job.lastStatus === 'ok' || job.lastStatus === 'finished';
   // Detect delivery-only failures: task ran but delivery failed
   const errorLower = job.lastError?.toLowerCase() ?? '';
@@ -120,131 +164,162 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
     || errorLower.includes('delivery')
   );
   const taskSucceeded = isSuccess || isDeliveryFailure;
+  const executionLabel = job.payloadKind === 'agentTurn' ? 'Private session' : 'Main thread event';
+  const targetTone = job.payloadKind === 'agentTurn' ? 'primary' : 'warning';
 
   return (
-    <div className="border-b border-border/40">
-      <div className="px-3 py-2 flex items-start gap-2">
-        <button
-          onClick={() => onToggle(job.id, !job.enabled)}
-          className="flex-shrink-0 mt-1 bg-transparent border-0 cursor-pointer p-0 focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
-          title={job.enabled ? 'Disable' : 'Enable'}
-          aria-label={`${job.enabled ? 'Disable' : 'Enable'} ${name}`}
-        >
-          {job.enabled
-            ? <Circle size={8} fill="currentColor" className="text-green" />
-            : <Circle size={8} className="text-muted-foreground" />
-          }
-        </button>
-        <div className="flex-1 min-w-0">
-          <div className="text-[11px] text-foreground leading-tight truncate">{name}</div>
-          <div className="text-[10px] text-muted-foreground mt-0.5">{humanSchedule(job)}</div>
-          {targetLabel && (
-            <div className="text-[10px] text-muted-foreground mt-0.5">
-              Target: {targetLabel} · {job.payloadKind === 'agentTurn' ? 'private run' : 'root event'}
+    <div className="cockpit-surface p-2.5 sm:p-3">
+      <div className="flex flex-col gap-2">
+        <div className="flex items-start gap-2.5">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="flex items-start justify-between gap-2.5">
+              <div className="min-w-0 flex items-start gap-2">
+              <button
+                onClick={() => onToggle(job.id, !job.enabled)}
+                className="shell-chip min-h-8 shrink-0 rounded-lg px-2.5 text-[10px]"
+                data-active={job.enabled ? 'true' : 'false'}
+                title={job.enabled ? 'Pause job' : 'Enable job'}
+                aria-label={`${job.enabled ? 'Pause' : 'Enable'} ${name}`}
+              >
+                <Circle
+                  size={8}
+                  fill={job.enabled ? 'currentColor' : 'none'}
+                  className={job.enabled ? 'text-green' : 'text-muted-foreground'}
+                />
+                <span>{job.enabled ? 'Live' : 'Off'}</span>
+              </button>
+                <div className="min-w-0 space-y-0.5">
+                  <div className="text-[12.5px] font-semibold leading-tight text-foreground break-words">{name}</div>
+                  <div className="text-[10.5px] leading-4.5 text-muted-foreground">{humanSchedule(job)}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 self-start">
+                <button
+                  onClick={handleRun}
+                  disabled={running}
+                  className="shell-icon-button size-9 px-0 disabled:cursor-wait disabled:opacity-60"
+                  data-active={running ? 'true' : 'false'}
+                  title={running ? 'Running…' : 'Run now'}
+                  aria-label={`Run ${name}`}
+                >
+                  {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                </button>
+                <button
+                  onClick={handleExpand}
+                  className="shell-icon-button size-9 px-0"
+                  title={expanded ? 'Hide history' : 'Show history'}
+                  aria-label={expanded ? 'Hide history' : 'Show history'}
+                >
+                  {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                </button>
+                <div ref={actionsRef} className="relative">
+                  <button
+                    onClick={() => setActionsOpen((open) => !open)}
+                    className="shell-icon-button size-9 px-0"
+                    title="Cron settings"
+                    aria-label={`Cron settings for ${name}`}
+                    aria-expanded={actionsOpen}
+                  >
+                    <Settings2 size={13} />
+                  </button>
+                  {actionsOpen && (
+                    <div className="shell-panel absolute right-0 top-full z-20 mt-1.5 min-w-[132px] rounded-xl p-1">
+                      <button
+                        onClick={() => {
+                          setActionsOpen(false);
+                          onEdit(job);
+                        }}
+                        className="flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[10.5px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+                        aria-label={`Edit ${name}`}
+                      >
+                        <Pencil size={12} />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        onClick={handleDeleteClick}
+                        className={`flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[10.5px] font-medium transition-colors ${
+                          confirmingDelete
+                            ? 'text-red hover:bg-red/10 hover:text-red'
+                            : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-red'
+                        }`}
+                        aria-label={confirmingDelete ? `Confirm delete ${name}` : `Delete ${name}`}
+                      >
+                        <Trash2 size={12} />
+                        <span>{confirmingDelete ? 'Confirm delete' : 'Delete'}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          )}
-          {job.lastRun && (
-            <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
-              <span>Last run: {relativeTime(job.lastRun)}</span>
-              {job.lastStatus && (
-                isDeliveryFailure ? (
-                  <span className="flex items-center gap-0.5 text-orange" title="Task completed but delivery failed">
-                    — <CheckCircle size={9} className="text-green" /> <AlertTriangle size={9} /> delivery failed
-                  </span>
-                ) : (
-                  <span className={`flex items-center gap-0.5 ${isSuccess ? 'text-green' : 'text-red'}`}>
-                    — {isSuccess ? <CheckCircle size={9} /> : <XCircle size={9} />} {job.lastStatus}
-                  </span>
-                )
+
+            <div className="flex items-center justify-between gap-2">
+              <span className="cockpit-badge min-h-6 px-2 text-[10px]" data-tone={targetTone}>
+                {executionLabel}
+              </span>
+              <span className="min-w-0 truncate text-right text-[10px] text-muted-foreground">
+                {job.lastRun ? `Last ${relativeTime(job.lastRun)}` : 'No runs yet'}
+              </span>
+            </div>
+
+            <div aria-live="polite" aria-atomic="true" className="space-y-1">
+              {running && (
+                <div className="text-[10.5px] text-primary flex items-center gap-1.5">
+                  <Loader2 size={10} className="animate-spin" />
+                  <span>Running now.</span>
+                </div>
+              )}
+              {job.lastError && !taskSucceeded && !running && (
+                <div className="text-[10.5px] text-red/80 truncate" title={job.lastError}>
+                  {job.lastError}
+                </div>
+              )}
+              {isDeliveryFailure && !running && (
+                <div className="text-[10.5px] text-orange/80 truncate" title={job.lastError}>
+                  Delivery failed. Check cron settings.
+                </div>
               )}
             </div>
-          )}
-          {/* aria-live region for running status and errors */}
-          <div aria-live="polite" aria-atomic="true">
-            {running && (
-              <div className="text-[10px] text-purple mt-0.5 flex items-center gap-1">
-                <Loader2 size={8} className="animate-spin" />
-                <span>Running…</span>
-              </div>
-            )}
-            {job.lastError && !taskSucceeded && !running && (
-              <div className="text-[10px] text-red/70 mt-0.5 truncate" title={job.lastError}>
-                {job.lastError}
-              </div>
-            )}
-            {isDeliveryFailure && !running && (
-              <div className="text-[10px] text-orange/70 mt-0.5 truncate" title={job.lastError}>
-                Delivery failed — check channel config in cron settings
-              </div>
-            )}
           </div>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {!job.enabled && (
-            <span className="text-[10px] text-muted-foreground">Disabled</span>
-          )}
-          <button
-            onClick={() => onEdit(job)}
-            className="bg-transparent border border-border/60 text-muted-foreground w-6 h-6 cursor-pointer flex items-center justify-center hover:text-purple hover:border-purple transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-            title="Edit"
-            aria-label={`Edit ${name}`}
-          >
-            <Pencil size={10} />
-          </button>
-          <button
-            onClick={handleRun}
-            disabled={running}
-            className={`bg-transparent border border-border/60 w-6 h-6 cursor-pointer flex items-center justify-center transition-colors disabled:cursor-wait focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 ${running ? 'text-purple border-purple' : 'text-muted-foreground hover:text-purple hover:border-purple'}`}
-            title={running ? 'Running…' : 'Run now'}
-            aria-label={`Run ${name}`}
-          >
-            {running ? <Loader2 size={10} className="animate-spin" /> : <Play size={10} />}
-          </button>
-          <button
-            onClick={handleDeleteClick}
-            className={`bg-transparent border w-6 h-6 cursor-pointer flex items-center justify-center transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 ${
-              confirmingDelete
-                ? 'border-red bg-red/20 text-red'
-                : 'border-border/60 text-muted-foreground hover:text-red hover:border-red'
-            }`}
-            title={confirmingDelete ? 'Click again to confirm' : 'Delete'}
-            aria-label={confirmingDelete ? `Confirm delete ${name}` : `Delete ${name}`}
-          >
-            {confirmingDelete
-              ? <span className="text-[8px] font-bold">Sure?</span>
-              : <Trash2 size={10} />
-            }
-          </button>
-          <button
-            onClick={handleExpand}
-            className="bg-transparent border border-transparent text-muted-foreground cursor-pointer p-0.5 focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
-            aria-label={expanded ? 'Hide history' : 'Show history'}
-          >
-            {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-          </button>
-        </div>
-      </div>
-      {expanded && (
-        <div className="px-3 pb-2 pl-8">
-          {!runs.length && <div className="text-[10px] text-muted-foreground">No run history</div>}
-          {runs.map((r, i) => {
-            const runOk = r.status === 'success' || r.status === 'ok' || r.status === 'finished';
-            return (
-              <div key={i} className="text-[10px] text-muted-foreground py-1 border-b border-border/20 last:border-0">
-                <div className="flex gap-2 items-center">
-                  <span className="tabular-nums">{r.timestamp ? new Date(r.timestamp).toLocaleString() : '—'}</span>
-                  <span className={`flex items-center gap-0.5 ${runOk ? 'text-green' : 'text-red'}`}>
-                    {runOk ? <CheckCircle size={8} /> : <XCircle size={8} />} {r.status}
-                  </span>
-                  {r.duration !== undefined && <span className="tabular-nums">{Math.round(r.duration / 1000)}s</span>}
+        {expanded && (
+          <div className="space-y-1.5">
+            <div className="cockpit-divider" />
+            <div className="space-y-1.5">
+              {!runs.length && (
+                <div className="text-[10.5px] text-muted-foreground">
+                  No run history yet.
                 </div>
-                {r.error && <div className="text-red mt-0.5 truncate" title={r.error}>{r.error}</div>}
-                {r.summary && <div className="text-foreground/60 mt-0.5 line-clamp-2">{r.summary.slice(0, 150)}{r.summary.length > 150 ? '…' : ''}</div>}
-              </div>
-            );
-          })}
-        </div>
-      )}
+              )}
+              {runs.map((r, i) => {
+                const runOk = r.status === 'success' || r.status === 'ok' || r.status === 'finished';
+                return (
+                  <div key={i} className="rounded-lg border border-border/60 bg-background/30 px-2.5 py-2">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <span className="tabular-nums">{r.timestamp ? new Date(r.timestamp).toLocaleString() : '—'}</span>
+                        <span className="cockpit-badge min-h-6 px-2 text-[10px]" data-tone={runOk ? 'success' : 'danger'}>
+                          {runOk ? <CheckCircle size={10} /> : <XCircle size={10} />}
+                          {r.status}
+                        </span>
+                        {r.duration !== undefined && (
+                          <span className="cockpit-badge min-h-6 px-2 text-[10px] tabular-nums">{Math.round(r.duration / 1000)}s</span>
+                        )}
+                      </div>
+                      {r.error && (
+                        <div className="text-[10.5px] text-red/80 break-words" title={r.error}>{r.error}</div>
+                      )}
+                      {r.summary && (
+                        <div className="text-[10.5px] leading-4.5 text-foreground/70 line-clamp-2">{r.summary.slice(0, 150)}{r.summary.length > 150 ? '…' : ''}</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -252,10 +327,33 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
 /** Workspace tab listing cron jobs with create/edit/delete/toggle controls. */
 export function CronsTab() {
   const { jobs, isLoading, error, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
-  const { sessions, agentName } = useSessionContext();
+  const { refreshSessions } = useSessionContext();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
   const [editingJob, setEditingJob] = useState<CronJob | null>(null);
+
+  const toolbarSummary = useMemo(() => {
+    const enabledJobs = jobs.filter((job) => job.enabled);
+    const failedCount = enabledJobs.filter((job) => {
+      const status = job.lastStatus?.toLowerCase();
+      return Boolean(status) && !['success', 'ok', 'finished'].includes(status!);
+    }).length;
+    const nextJob = enabledJobs
+      .filter((job) => job.nextRun)
+      .sort((a, b) => new Date(a.nextRun as string).getTime() - new Date(b.nextRun as string).getTime())[0];
+
+    const nextRelative = nextJob?.nextRun ? relativeUntil(nextJob.nextRun) : null;
+
+    return {
+      failedCount,
+      enabledCount: enabledJobs.length,
+      nextRelative,
+    };
+  }, [jobs]);
+
+  const hasToolbarMeta = toolbarSummary.failedCount > 0
+    || Boolean(toolbarSummary.nextRelative)
+    || toolbarSummary.enabledCount > 0;
 
   const handleAdd = useCallback(() => {
     setDialogMode('create');
@@ -276,81 +374,112 @@ export function CronsTab() {
     return addJob(jobData);
   }, [dialogMode, editingJob, addJob, updateJob]);
 
+  const handleRun = useCallback(async (id: string) => {
+    const ok = await runJob(id);
+    if (ok) {
+      await Promise.all([refreshSessions(), fetchJobs()]);
+    }
+    return ok;
+  }, [fetchJobs, refreshSessions, runJob]);
+
   return (
     <div className="h-full flex flex-col min-h-0">
       <div className="flex-1 overflow-y-auto">
-        {/* aria-live region for error display */}
-        <div aria-live="polite" aria-atomic="true">
-          {error && (
-            <div className="px-3 py-2 text-[10px] text-red bg-red/10">{error}</div>
+        <div className="space-y-2 px-2.5 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex items-center gap-1.5 overflow-hidden">
+              {hasToolbarMeta ? (
+                <>
+                  {toolbarSummary.failedCount > 0 && (
+                    <span className="cockpit-badge min-h-6 px-2 text-[10px]" data-tone="danger">
+                      {toolbarSummary.failedCount} failed
+                    </span>
+                  )}
+                  {toolbarSummary.nextRelative ? (
+                    <div className="shell-panel flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1">
+                      <span className="cockpit-kicker shrink-0 text-[7.5px] tracking-[0.16em]">
+                        <Clock3 size={10} className="text-primary" />
+                        Next run
+                      </span>
+                      <span className="cockpit-badge min-h-5 shrink-0 px-1.5 text-[9px]" data-tone="primary">
+                        {toolbarSummary.nextRelative}
+                      </span>
+                    </div>
+                  ) : toolbarSummary.enabledCount > 0 ? (
+                    <span className="cockpit-badge min-h-6 px-2 text-[10px]" data-tone="success">
+                      {toolbarSummary.enabledCount} live
+                    </span>
+                  ) : (
+                    <span className="text-[10.5px] text-muted-foreground">
+                      No live crons
+                    </span>
+                  )}
+                </>
+              ) : null}
+            </div>
+            <div className="shell-panel inline-flex items-center gap-1 rounded-xl px-1 py-1">
+              <button
+                type="button"
+                onClick={handleAdd}
+                aria-label="Add cron job"
+                title="Add cron job"
+                className="shell-chip min-h-8 rounded-lg px-2.5 text-[10.5px] font-medium"
+              >
+                <Plus size={13} />
+                <span>New cron</span>
+              </button>
+              <button
+                type="button"
+                onClick={fetchJobs}
+                disabled={isLoading}
+                aria-label="Refresh crons"
+                title="Refresh crons"
+                className="shell-icon-button size-8 px-0 disabled:opacity-60"
+              >
+                <RefreshCw size={13} className={isLoading ? 'animate-spin' : undefined} />
+              </button>
+            </div>
+          </div>
+
+          <div aria-live="polite" aria-atomic="true">
+            {error && (
+              <div className="cockpit-note px-3 py-2 text-[11px]" data-tone="danger">{error}</div>
+            )}
+          </div>
+
+          {isLoading && !jobs.length && !error && (
+            <div className="space-y-2">
+              <div className="cockpit-surface h-20 animate-pulse" />
+              <div className="cockpit-surface h-20 animate-pulse" />
+              <div className="cockpit-surface h-20 animate-pulse" />
+            </div>
           )}
-        </div>
 
-        {/* Loading skeleton */}
-        {isLoading && !jobs.length && !error && (
-          <div className="space-y-2 py-2">
-            <div className="h-10 bg-muted/20 animate-pulse rounded mx-3" />
-            <div className="h-10 bg-muted/20 animate-pulse rounded mx-3" />
-            <div className="h-10 bg-muted/20 animate-pulse rounded mx-3" />
-          </div>
-        )}
+          {!isLoading && !jobs.length && !error && (
+            <div className="cockpit-surface px-4 py-5 text-center">
+              <div className="space-y-1">
+                <div className="text-[12.5px] font-medium text-foreground">No scheduled tasks yet</div>
+                <p className="text-[11px] leading-4.5 text-muted-foreground">
+                  Create one to schedule a private task or a main-thread reminder.
+                </p>
+              </div>
+            </div>
+          )}
 
-        {/* Add + Refresh row */}
-        {!isLoading && (
-          <div className="flex items-center border-b border-border/40">
-            <button
-              onClick={handleAdd}
-              className="group flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-foreground/[0.02] transition-colors cursor-pointer flex-1 bg-transparent border-0 text-left focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-              aria-label="Add cron job"
-            >
-              <span className="shrink-0 text-muted-foreground group-hover:text-purple transition-colors">
-                <Plus size={12} />
-              </span>
-              <span className="text-muted-foreground group-hover:text-purple transition-colors">
-                Add cron
-              </span>
-            </button>
-            <button
-              onClick={fetchJobs}
-              disabled={isLoading}
-              className="shrink-0 px-2 py-1.5 bg-transparent border-0 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-              title="Refresh crons"
-              aria-label="Refresh crons"
-            >
-              <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
-            </button>
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!isLoading && !jobs.length && !error && (
-          <div className="text-muted-foreground px-3 py-6 text-center text-[11px]">
-            No scheduled tasks yet
-          </div>
-        )}
-        {jobs.map(job => {
-          const targetSession = sessions.find((session) => getSessionKey(session) === job.sessionKey);
-          const fallbackRootId = job.sessionKey ? getRootAgentId(job.sessionKey) : null;
-          const targetLabel = targetSession
-            ? getSessionDisplayLabel(targetSession, agentName)
-            : fallbackRootId === 'main'
-              ? `${agentName} (main)`
-              : fallbackRootId
-                ? `Agent ${fallbackRootId}`
-                : 'Unassigned';
-
+          {jobs.map(job => {
           return (
             <CronRow
               key={job.id}
-              job={{ ...job, targetLabel }}
+              job={job}
               onToggle={toggleJob}
-              onRun={runJob}
+              onRun={handleRun}
               onDelete={deleteJob}
               onEdit={handleEdit}
               onFetchRuns={fetchRuns}
             />
           );
-        })}
+          })}
+        </div>
       </div>
 
       <CronDialog

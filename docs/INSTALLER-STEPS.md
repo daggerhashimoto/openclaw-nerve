@@ -28,6 +28,7 @@ It initializes defaults such as:
 - `VERSION` (optional pinned release version)
 - `BRANCH_EXPLICIT` (tracks whether `--branch` was set)
 - `GATEWAY_TOKEN` (optional CLI override)
+- `ACCESS_MODE` (optional explicit setup mode such as `tailscale-ip` or `tailscale-serve`)
 - `ENV_MISSING` (tracks partial installs)
 
 ### 0.3 OS family detection
@@ -54,7 +55,18 @@ Supported flags:
 - `--skip-setup`
 - `--dry-run`
 - `--gateway-token <token>`
+- `--access-mode <mode>`
 - `--help`
+
+Supported `--access-mode` values:
+- `local`
+- `network`
+- `custom`
+- `tailscale-ip`
+- `tailscale-serve`
+
+Backward compatibility:
+- legacy `tailscale` is normalized to `tailscale-ip`
 
 `--version` and `--branch` are mutually exclusive.
 
@@ -216,9 +228,46 @@ If token exists but port `3080` is already occupied:
   - run setup wizard
   - if wizard fails, fallback to auto-generate `.env`
 
+Inside the interactive setup wizard, access mode now splits Tailscale into two explicit choices:
+- `tailnet IP`
+- `Tailscale Serve`
+
+Behavior by interactive profile:
+- `tailnet IP`
+  - configures direct tailnet-IP access
+  - keeps Nerve network-reachable
+  - patches gateway allowed origins using the tailnet IP origin
+- `Tailscale Serve`
+  - keeps Nerve on `127.0.0.1`
+  - asks whether to run `tailscale serve --bg 443 http://127.0.0.1:<PORT>`
+  - detects the resulting `https://<node>.tail<id>.ts.net` origin
+  - patches both Nerve and the gateway for that `*.ts.net` origin
+  - if Serve cannot be confirmed, asks whether to fall back to `tailnet IP` or stop
+
+If Tailscale is installed but not logged in:
+- setup guides the operator to run the browser URL login flow with `tailscale up`
+- setup can wait and re-check, or exit and let the user rerun later
+
+If Tailscale is missing:
+- setup explains that clearly
+- prints the install/login next steps
+- exits instead of pretending setup succeeded
+
 #### Non-interactive mode (no `--skip-setup`)
 - If `.env` exists: keep it.
-- If no `.env`: auto-generate from gateway.
+- If no `.env` and no explicit `--access-mode`: auto-generate from gateway.
+- If `--access-mode` is provided:
+  - route through `npm run setup -- --defaults --access-mode <mode>`
+  - do not bypass setup with raw `.env` generation
+
+Non-interactive Tailscale behavior:
+- `--access-mode tailscale-ip`
+  - attempts direct tailnet-IP setup if Tailscale state is usable
+  - otherwise keeps the safest supported config and prints exact follow-up steps
+- `--access-mode tailscale-serve`
+  - never hangs waiting for login or Serve activation
+  - if a usable `*.ts.net` origin is not confirmed, falls back to `tailscale-ip`
+  - if even `tailscale-ip` is not ready, keeps localhost-only config and prints exact follow-up steps
 
 ### 4.3 Gateway config patching (inside setup wizard)
 
@@ -228,7 +277,9 @@ After `.env` is written, the setup wizard detects and applies pending OpenClaw g
 1. **Device scopes** — bootstraps `~/.openclaw/devices/paired.json` with full operator scopes if missing or incomplete
 2. **Pre-pair Nerve device** — registers Nerve's Ed25519 identity in `paired.json` so it can connect without manual `openclaw devices approve`
 3. **Tools allow** — adds `"cron"` and `"gateway"` to `gateway.tools.allow` in `~/.openclaw/openclaw.json` (required for OpenClaw ≥2026.2.23 which denies these tools on `/tools/invoke` by default)
-4. **Allowed origins** — adds Nerve's HTTP/HTTPS origins to `gateway.controlUi.allowedOrigins` (network access modes only)
+4. **Allowed origins** — adds all required Nerve browser origins to `gateway.controlUi.allowedOrigins`
+   - LAN or tailnet-IP mode: `http://<ip>:<port>`
+   - Tailscale Serve mode: `https://<node>.tail<id>.ts.net`
 
 #### Interactive mode:
 - Shows a numbered list of all pending changes
@@ -238,8 +289,10 @@ After `.env` is written, the setup wizard detects and applies pending OpenClaw g
 
 #### `--defaults` mode:
 - All changes applied silently (implicit consent)
-- Origins computed automatically from `HOST` and `PORT`
-- Treats any non-loopback HOST as network mode
+- Allowed origins come from the computed setup access plan, not just `HOST` and `PORT`
+- `--access-mode tailscale-ip` and `--access-mode tailscale-serve` are supported explicitly
+- legacy `--access-mode tailscale` maps to `tailscale-ip`
+- if `tailscale-serve` cannot confirm a usable `*.ts.net` origin, defaults mode falls back to the safest supported path and prints follow-up steps
 
 #### Post-apply:
 - Single gateway restart after all patches

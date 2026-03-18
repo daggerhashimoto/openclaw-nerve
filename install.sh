@@ -37,6 +37,7 @@ NODE_MIN=22
 SKIP_SETUP=false
 DRY_RUN=false
 GATEWAY_TOKEN=""
+ACCESS_MODE=""
 ENV_MISSING=false
 
 # ── Colors ────────────────────────────────────────────────────────────
@@ -227,18 +228,20 @@ while [[ $# -gt 0 ]]; do
     --skip-setup) SKIP_SETUP=true; shift ;;
     --dry-run)    DRY_RUN=true; shift ;;
     --gateway-token) [[ $# -ge 2 ]] || { echo "Missing value for --gateway-token"; exit 1; }; GATEWAY_TOKEN="$2"; shift 2 ;;
+    --access-mode) [[ $# -ge 2 ]] || { echo "Missing value for --access-mode"; exit 1; }; ACCESS_MODE="$2"; shift 2 ;;
     --help|-h)
       echo "Nerve Installer"
       echo ""
       echo "Options:"
-      echo "  --dir <path>       Install directory (default: ~/nerve)"
-      echo "  --version <vX.Y.Z> Install a specific release version"
-      echo "  --branch <name>    Install from a branch (dev override; bypasses release mode)"
-      echo "  --repo <url>       Git repo URL"
-      echo "  --skip-setup       Skip the interactive setup wizard"
-      echo "  --gateway-token <t> Gateway token (for non-interactive installs)"
-      echo "  --dry-run          Simulate the install without changing anything"
-      echo "  --help             Show this help"
+      echo "  --dir <path>         Install directory (default: ~/nerve)"
+      echo "  --version <vX.Y.Z>   Install a specific release version"
+      echo "  --branch <name>      Install from a branch (dev override; bypasses release mode)"
+      echo "  --repo <url>         Git repo URL"
+      echo "  --skip-setup         Skip the interactive setup wizard"
+      echo "  --gateway-token <t>  Gateway token (for non-interactive installs)"
+      echo "  --access-mode <m>    Setup access mode: local|network|custom|tailscale-ip|tailscale-serve"
+      echo "  --dry-run            Simulate the install without changing anything"
+      echo "  --help               Show this help"
       exit 0
       ;;
     *) echo "Unknown option: $1"; exit 1 ;;
@@ -249,6 +252,21 @@ if [[ -n "$VERSION" && "$BRANCH_EXPLICIT" == "true" ]]; then
   fail "Use either --version or --branch, not both"
   exit 1
 fi
+
+normalize_access_mode() {
+  case "$1" in
+    "") echo "" ;;
+    tailscale) echo "tailscale-ip" ;;
+    local|network|custom|tailscale-ip|tailscale-serve) echo "$1" ;;
+    *)
+      fail "Invalid --access-mode: $1"
+      echo "  Supported values: local, network, custom, tailscale-ip, tailscale-serve"
+      exit 1
+      ;;
+  esac
+}
+
+ACCESS_MODE=$(normalize_access_mode "$ACCESS_MODE")
 
 # ── Detect interactive mode ───────────────────────────────────────────
 # When piped via curl | bash, stdin is the pipe — but /dev/tty still
@@ -841,6 +859,8 @@ stage "Configure"
 if [[ "$DRY_RUN" == "true" ]]; then
   if [[ "$SKIP_SETUP" == "true" ]]; then
     dry "Would skip setup wizard (--skip-setup)"
+  elif [[ -n "$ACCESS_MODE" ]]; then
+    dry "Would run non-interactive setup wizard (--defaults --access-mode ${ACCESS_MODE})"
   else
     dry "Would launch interactive setup wizard"
     dry "Would prompt for: gateway token, port, TTS config"
@@ -854,8 +874,8 @@ else
       generate_env_from_gateway
     fi
   else
-    if [[ "$INTERACTIVE" == "true" ]]; then
-      if [[ -f .env ]]; then
+    if [[ -f .env ]]; then
+      if [[ "$INTERACTIVE" == "true" && -z "$ACCESS_MODE" ]]; then
         ok "Existing .env found"
         printf "  ${RAIL}  ${YELLOW}?${NC} Run setup wizard anyway? (y/N) "
         if read -r answer < /dev/tty 2>/dev/null; then
@@ -871,18 +891,22 @@ else
           warn "Cannot read input — run ${CYAN}npm run setup${NC} manually to reconfigure"
         fi
       else
-        NERVE_INSTALLER=1 npm run setup < /dev/tty 2>/dev/null || {
-          warn "Setup wizard failed — attempting auto-config from gateway..."
-          generate_env_from_gateway
-        }
-      fi
-    else
-      if [[ -f .env ]]; then
         ok "Existing .env found — keeping current configuration"
-      else
-        info "Non-interactive mode — generating .env from gateway config..."
-        generate_env_from_gateway
       fi
+    elif [[ -n "$ACCESS_MODE" ]]; then
+      info "Explicit access mode requested — running non-interactive setup wizard..."
+      NERVE_INSTALLER=1 npm run setup -- --defaults --access-mode "$ACCESS_MODE" || {
+        fail "Setup failed for --access-mode ${ACCESS_MODE}"
+        exit 1
+      }
+    elif [[ "$INTERACTIVE" == "true" ]]; then
+      NERVE_INSTALLER=1 npm run setup < /dev/tty 2>/dev/null || {
+        warn "Setup wizard failed — attempting auto-config from gateway..."
+        generate_env_from_gateway
+      }
+    else
+      info "Non-interactive mode — generating .env from gateway config..."
+      generate_env_from_gateway
     fi
   fi
 fi

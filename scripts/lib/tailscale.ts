@@ -46,11 +46,19 @@ export function extractServeOrigins(json: unknown): string[] {
     const key = rawKey.trim();
     if (!key) continue;
 
-    const hostPart = key.replace(/:\d+$/, '');
+    const portMatch = key.match(/:(\d+)$/);
+    const port = portMatch?.[1] || null;
+    const hostPart = portMatch ? key.slice(0, -portMatch[0].length) : key;
     const host = normalizeDnsName(hostPart);
-    if (!host || host === ':443') continue;
+    if (!host) continue;
 
-    origins.add(`https://${host}`);
+    if (port === '80') {
+      origins.add(`http://${host}`);
+    } else if (!port || port === '443') {
+      origins.add(`https://${host}`);
+    } else {
+      origins.add(`https://${host}:${port}`);
+    }
   }
 
   return [...origins];

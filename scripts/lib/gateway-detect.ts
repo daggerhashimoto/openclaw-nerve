@@ -745,18 +745,21 @@ export function detectNeededConfigChanges(opts: {
     });
   }
 
+  const trimmedNerveOrigin = opts.nerveOrigin?.trim() || undefined;
+  const trimmedNerveHttpsOrigin = opts.nerveHttpsOrigin?.trim() || undefined;
+
   const origins = [...new Set([
     ...(opts.allowedOrigins || []),
-    opts.nerveOrigin,
-    opts.nerveHttpsOrigin,
-  ].filter((origin): origin is string => Boolean(origin && origin.trim())))];
+    trimmedNerveOrigin,
+    trimmedNerveHttpsOrigin,
+  ].map(origin => origin?.trim()).filter((origin): origin is string => Boolean(origin)))];
 
   for (const origin of origins) {
     if (!needsOriginPatch(origin)) continue;
 
     let id = `allowed-origins:${origin}`;
-    if (origin === opts.nerveOrigin) id = 'allowed-origins';
-    else if (origin === opts.nerveHttpsOrigin) id = 'allowed-origins-https';
+    if (origin === trimmedNerveOrigin) id = 'allowed-origins';
+    else if (origin === trimmedNerveHttpsOrigin) id = 'allowed-origins-https';
 
     changes.push({
       id,

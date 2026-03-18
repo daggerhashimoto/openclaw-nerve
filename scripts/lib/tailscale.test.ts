@@ -23,7 +23,7 @@ describe('normalizeDnsName', () => {
 });
 
 describe('extractServeOrigins', () => {
-  it('returns https origins for Serve web listeners', () => {
+  it('returns https origins for default HTTPS listeners', () => {
     expect(extractServeOrigins({
       Web: {
         [`${EXAMPLE_TS_DNS}:443`]: {
@@ -33,6 +33,22 @@ describe('extractServeOrigins', () => {
         },
       },
     })).toEqual([`https://${EXAMPLE_TS_DNS}`]);
+  });
+
+  it('maps port 80 listeners to http origins', () => {
+    expect(extractServeOrigins({
+      Web: {
+        [`${EXAMPLE_TS_DNS}:80`]: { Handlers: {} },
+      },
+    })).toEqual([`http://${EXAMPLE_TS_DNS}`]);
+  });
+
+  it('preserves non-standard HTTPS ports in the origin', () => {
+    expect(extractServeOrigins({
+      Web: {
+        [`${EXAMPLE_TS_DNS}:8443`]: { Handlers: {} },
+      },
+    })).toEqual([`https://${EXAMPLE_TS_DNS}:8443`]);
   });
 
   it('dedupes duplicate hosts and ignores invalid entries', () => {

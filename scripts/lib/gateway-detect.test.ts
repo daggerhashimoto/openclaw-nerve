@@ -70,7 +70,7 @@ describe('detectNeededConfigChanges', () => {
     const changes = detectNeededConfigChanges({
       gatewayToken: 'test-token',
       allowedOrigins: [
-        `http://${EXAMPLE_TS_IPV4}:3080`,
+        `  http://${EXAMPLE_TS_IPV4}:3080  `,
         `https://${EXAMPLE_TS_DNS}`,
       ],
     });
@@ -89,5 +89,6 @@ describe('detectNeededConfigChanges', () => {
       `http://${EXAMPLE_TS_IPV4}:3080`,
       `https://${EXAMPLE_TS_DNS}`,
     ]));
+    expect(updated.gateway.controlUi.allowedOrigins).not.toContain(`  http://${EXAMPLE_TS_IPV4}:3080  `);
   });
 });

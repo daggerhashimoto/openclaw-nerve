@@ -616,10 +616,28 @@ async function collectInteractive(
 
     if (configureServe) {
       try {
-        execSync(`tailscale serve --bg 443 http://127.0.0.1:${port}`, { stdio: 'pipe', timeout: 15000 });
+        execSync(`tailscale serve --bg 443 http://127.0.0.1:${port}`, { stdio: 'pipe', timeout: 15000, encoding: 'utf8' });
         success(`Tailscale Serve configured for http://127.0.0.1:${port}`);
       } catch (err) {
-        warn(`Failed to configure Tailscale Serve automatically: ${err instanceof Error ? err.message : String(err)}`);
+        const execErr = err as {
+          stderr?: string | Buffer;
+          message?: string;
+          status?: number;
+          signal?: string | null;
+        };
+        const stderr = typeof execErr.stderr === 'string'
+          ? execErr.stderr.trim()
+          : Buffer.isBuffer(execErr.stderr)
+            ? execErr.stderr.toString('utf8').trim()
+            : '';
+        const status = typeof execErr.status === 'number'
+          ? ` (exit ${execErr.status})`
+          : execErr.signal
+            ? ` (signal ${execErr.signal})`
+            : '';
+        const detail = stderr || execErr.message || String(err);
+        const detailWithStatus = status && !detail.includes(status.trim()) ? `${detail}${status}` : detail;
+        warn(`Failed to configure Tailscale Serve automatically: ${detailWithStatus}`);
       }
     } else {
       dim(`Run later: tailscale serve --bg 443 http://127.0.0.1:${port}`);

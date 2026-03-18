@@ -188,6 +188,8 @@ WS_ALLOWED_HOSTS=100.64.0.5
 TRUSTED_PROXIES=127.0.0.1,::1,10.0.0.1
 ```
 
+If you are retrofitting Tailscale onto an existing install, see [Add Tailscale to an Existing Nerve Install](TAILSCALE.md).
+
 ### Authentication
 
 Nerve includes a built-in authentication layer that protects all API endpoints, WebSocket connections, and SSE streams with a session cookie. Auth is opt-in for localhost users and auto-prompted during setup when binding to a network interface.

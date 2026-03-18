@@ -20,6 +20,10 @@ Use this folder as the docs hub for Nerve.
 - [Use a cloud Gateway with Nerve on your laptop](./DEPLOYMENT-B.md)
 - [Run both Nerve and Gateway in the cloud](./DEPLOYMENT-C.md)
 
+## How-to Guides
+
+- [Add Tailscale to an existing Nerve install](./TAILSCALE.md)
+
 ## Release Notes
 
 - [Changelog](../CHANGELOG.md)

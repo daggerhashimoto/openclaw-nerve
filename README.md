@@ -151,6 +151,7 @@ See [Security](docs/SECURITY.md) for the full threat model.
 | **[Architecture](docs/ARCHITECTURE.md)** | How the codebase is organized |
 | **[Configuration](docs/CONFIGURATION.md)** | Every `.env` variable explained |
 | **[Deployment Guides](docs/README.md#deployment-guides)** | Practical guides for local, remote Gateway, and cloud setups |
+| **[Tailscale Guide](docs/TAILSCALE.md)** | Add Tailscale to an existing install, with tailnet IP and Serve paths |
 | **[Agent Markers](docs/AGENT-MARKERS.md)** | TTS markers, inline charts, and how agents render rich UI |
 | **[Security](docs/SECURITY.md)** | What's locked down and how |
 | **[API](docs/API.md)** | REST and WebSocket endpoints |

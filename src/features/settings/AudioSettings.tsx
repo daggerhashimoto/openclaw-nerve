@@ -8,6 +8,7 @@ import { useTTSConfig } from '@/features/tts/useTTSConfig';
 import { VoicePhrasesModal } from './VoicePhrasesModal';
 import { buildPrimaryWakePhrase } from '@/lib/constants';
 import { shouldDeferEdgeVoiceAutoSwitch } from './audioSettingsUtils';
+import { getWakeWordSupport } from '@/features/voice/wakeWordSupport';
 
 // ─── Language types ──────────────────────────────────────────────────────────
 
@@ -448,6 +449,9 @@ export function AudioSettings({
   const models = PROVIDER_MODELS[ttsProvider] || [];
   const showInput = section === 'all' || section === 'input';
   const showOutput = section === 'all' || section === 'output';
+  const wakeWordSupport = useMemo(() => getWakeWordSupport(), []);
+  const wakeWordSupported = wakeWordSupport.supported;
+  const effectiveWakeWordEnabled = wakeWordSupported ? wakeWordEnabled : false;
   const headingLabel = section === 'input' ? 'Input Capture' : section === 'output' ? 'Voice Output' : 'Audio';
   const headingCopy = section === 'input'
     ? 'Tune language detection, wake phrases, and transcription before speech reaches the agent.'
@@ -857,19 +861,27 @@ export function AudioSettings({
       {showInput && (
         <div className="cockpit-row items-start justify-between">
           <div className="flex items-center gap-3">
-            {wakeWordEnabled ? (
+            {effectiveWakeWordEnabled ? (
               <Mic size={14} className="text-green" aria-hidden="true" />
             ) : (
               <MicOff size={14} className="text-muted-foreground" aria-hidden="true" />
             )}
             <div className="flex flex-col">
               <span className="text-sm font-medium text-foreground" id="wake-word-label">Wake word</span>
-              <span className="text-xs text-muted-foreground">Say "{wakePhraseDisplay}" to activate.</span>
+              {wakeWordSupported ? (
+                <span className="text-xs text-muted-foreground">Say "{wakePhraseDisplay}" to activate.</span>
+              ) : (
+                <>
+                  <span className="text-xs text-muted-foreground">Wake word isn't supported on mobile web.</span>
+                  <span className="text-xs text-muted-foreground">Use the manual mic trigger instead.</span>
+                </>
+              )}
             </div>
           </div>
           <Switch
-            checked={wakeWordEnabled}
+            checked={effectiveWakeWordEnabled}
             onCheckedChange={onToggleWakeWord}
+            disabled={!wakeWordSupported}
             aria-label="Toggle wake word detection"
           />
         </div>

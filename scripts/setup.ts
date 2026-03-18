@@ -12,6 +12,7 @@
 // Show token in prompts so users can verify what they entered
 
 import { existsSync, readdirSync, mkdirSync, copyFileSync, lstatSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { resolve, join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -36,6 +37,8 @@ import {
 } from './lib/env-writer.js';
 import { generateSelfSignedCert } from './lib/cert-gen.js';
 import { detectGatewayConfig, getEnvGatewayToken, restartGateway, approveAllPendingDevices, detectNeededConfigChanges, type ConfigChange } from './lib/gateway-detect.js';
+import { applyAccessPlanToConfig, buildAccessPlan, type InstallerAccessProfile } from './lib/access-plan.js';
+import { getTailscaleState, type TailscaleState } from './lib/tailscale.js';
 
 const PROJECT_ROOT = resolve(process.cwd());
 const ENV_PATH = resolve(PROJECT_ROOT, '.env');
@@ -47,6 +50,32 @@ const args = process.argv.slice(2);
 const isHelp = args.includes('--help') || args.includes('-h');
 const isCheck = args.includes('--check');
 const isDefaults = args.includes('--defaults');
+
+type AccessMode = 'local' | 'network' | 'custom' | 'tailscale-ip' | 'tailscale-serve';
+
+function getArgValue(flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  if (index === -1) return undefined;
+  return args[index + 1];
+}
+
+function normalizeAccessMode(value?: string | null): AccessMode | undefined {
+  if (!value) return undefined;
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized === 'tailscale') return 'tailscale-ip';
+
+  if (normalized === 'local' || normalized === 'network' || normalized === 'custom' || normalized === 'tailscale-ip' || normalized === 'tailscale-serve') {
+    return normalized;
+  }
+
+  fail(`Invalid --access-mode value: ${value}`);
+  console.log('  Supported values: local, network, custom, tailscale-ip, tailscale-serve');
+  process.exit(1);
+}
+
+const requestedAccessMode = normalizeAccessMode(getArgValue('--access-mode'));
 
 function detectPrimaryIpv4(): string | null {
   const nets = networkInterfaces();
@@ -63,31 +92,8 @@ function isLoopback(host: string): boolean {
   return !host || host === '127.0.0.1' || host === 'localhost' || host === '::1';
 }
 
-function computeGatewayOrigins(config: EnvConfig, accessMode: string): {
-  nerveOrigin?: string;
-  nerveHttpsOrigin?: string;
-} {
-  if (accessMode === 'local') return {};
-
-  const nervePort = config.PORT || DEFAULTS.PORT;
-  let accessIp = config.HOST === '0.0.0.0'
-    ? (config.ALLOWED_ORIGINS?.split(',')[0]?.trim()?.replace(/^https?:\/\//, '').replace(/:\d+$/, '') || '0.0.0.0')
-    : (config.HOST || 'localhost');
-
-  if (accessIp === '0.0.0.0') {
-    accessIp = detectPrimaryIpv4() || '';
-  }
-
-  // If we couldn't resolve a usable IP, skip origin generation
-  if (!accessIp || accessIp === '0.0.0.0') {
-    return {};
-  }
-
-  const nerveOrigin = `http://${accessIp}:${nervePort}`;
-  const sslPort = config.SSL_PORT;
-  const nerveHttpsOrigin = sslPort ? `https://${accessIp}:${sslPort}` : undefined;
-
-  return { nerveOrigin, nerveHttpsOrigin };
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolveTimer => setTimeout(resolveTimer, ms));
 }
 
 /**
@@ -203,22 +209,31 @@ async function main(): Promise<void> {
   Usage: npm run setup [options]
 
   Options:
-    --check      Validate existing .env config and test gateway connection
-    --defaults   Non-interactive setup using auto-detected values
-    --help, -h   Show this help message
+    --check                   Validate existing .env config and test gateway connection
+    --defaults                Non-interactive setup using auto-detected values
+    --access-mode <mode>      Explicit non-interactive access mode
+    --help, -h                Show this help message
+
+  Access modes:
+    local             Localhost only
+    network           LAN-reachable
+    custom            Manual bind and HTTPS choices
+    tailscale-ip      Direct tailnet IP access
+    tailscale-serve   Loopback + Tailscale Serve hostname
 
   The setup wizard guides you through 6 steps:
     1. Gateway Connection — connect to your OpenClaw gateway
     2. Agent Identity     — set your agent's display name
-    3. Access Mode        — local, Tailscale, LAN, or custom
+    3. Access Mode        — local, Tailscale IP, Tailscale Serve, LAN, or custom
     4. Authentication     — password protection (network mode)
     5. TTS Configuration  — optional text-to-speech API keys
     6. Advanced Settings  — custom file paths (most users skip this)
 
   Examples:
-    npm run setup               # Interactive setup
-    npm run setup -- --check    # Validate existing config
-    npm run setup -- --defaults # Auto-configure with detected values
+    npm run setup                                     # Interactive setup
+    npm run setup -- --check                          # Validate existing config
+    npm run setup -- --defaults                       # Auto-configure with detected values
+    npm run setup -- --defaults --access-mode tailscale-serve
 `);
     return;
   }
@@ -254,7 +269,7 @@ async function main(): Promise<void> {
 
   // --defaults mode: non-interactive
   if (isDefaults) {
-    await runDefaults(existing);
+    await runDefaults(existing, prereqs);
     return;
   }
 
@@ -429,22 +444,23 @@ async function collectInteractive(
 
   section(3, TOTAL_SECTIONS, 'How will you access Nerve?');
 
-  // Build access mode choices dynamically
-  type AccessMode = 'local' | 'tailscale' | 'network' | 'custom';
   const accessChoices: { name: string; value: AccessMode; description: string }[] = [
-    { name: 'This machine only (localhost)', value: 'local', description: 'Safest — only accessible from this computer' },
-  ];
-  if (prereqs.tailscaleIp) {
-    accessChoices.push({
-      name: `Via Tailscale (${prereqs.tailscaleIp})`,
-      value: 'tailscale',
-      description: 'Access from any device on your Tailscale network — secure, no port forwarding needed',
-    });
-  }
-  accessChoices.push(
-    { name: 'From other devices on my network', value: 'network', description: 'Opens to LAN — you may need to configure your firewall' },
+    { name: 'This machine only (localhost)', value: 'local', description: 'Safest, only accessible from this computer' },
+    {
+      name: prereqs.tailscale.ipv4 ? `Via Tailscale tailnet IP (${prereqs.tailscale.ipv4})` : 'Via Tailscale tailnet IP',
+      value: 'tailscale-ip',
+      description: prereqs.tailscale.installed
+        ? 'Direct access from other devices on your tailnet'
+        : 'Requires Tailscale on this machine',
+    },
+    {
+      name: prereqs.tailscale.dnsName ? `Via Tailscale Serve (${prereqs.tailscale.dnsName})` : 'Via Tailscale Serve',
+      value: 'tailscale-serve',
+      description: 'Private by default, Nerve stays on 127.0.0.1 and is exposed through *.ts.net',
+    },
+    { name: 'From other devices on my network', value: 'network', description: 'Opens to LAN, you may need to configure your firewall' },
     { name: 'Custom setup (I know what I\'m doing)', value: 'custom', description: 'Manual port, bind address, HTTPS, CORS configuration' },
-  );
+  ];
 
   const accessMode = await select<AccessMode>({
     theme: promptTheme,
@@ -452,11 +468,20 @@ async function collectInteractive(
     choices: accessChoices,
   });
 
-  const port = existing.PORT || DEFAULTS.PORT;
+  let port = existing.PORT || DEFAULTS.PORT;
   config.PORT = port;
+  let sslPort: string | undefined;
+  let accessPlan = buildAccessPlan({ profile: 'local', port });
+  let tailscaleState: TailscaleState = prereqs.tailscale;
 
-  // Helper: offer HTTPS setup for non-localhost access modes (voice input needs secure context)
-  async function offerHttpsSetup(remoteIp: string): Promise<void> {
+  function printFollowUpSteps(steps: string[]): void {
+    if (steps.length === 0) return;
+    for (const step of steps) {
+      dim(`  • ${step}`);
+    }
+  }
+
+  async function offerHttpsSetup(remoteHost: string): Promise<string | undefined> {
     console.log('');
     warn('Voice input (microphone) requires HTTPS on non-localhost connections.');
     dim('Browsers block microphone access over plain HTTP for security.');
@@ -468,64 +493,179 @@ async function collectInteractive(
       default: true,
     });
 
-    if (enableHttps) {
-      let certsReady = false;
-      if (prereqs.opensslOk) {
-        const certResult = generateSelfSignedCert(PROJECT_ROOT);
-        if (certResult.ok) {
-          success(certResult.message);
-          certsReady = true;
-        } else {
-          fail(certResult.message);
-        }
-      } else {
-        warn('openssl not found — cannot generate self-signed certificate');
-        dim('Install openssl and run: mkdir -p certs && openssl req -x509 -newkey rsa:2048 \\');
-        dim('  -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=localhost"');
-      }
+    if (!enableHttps) {
+      dim('Voice input will only work when accessing Nerve from localhost');
+      return undefined;
+    }
 
-      if (certsReady) {
-        const sslPort = existing.SSL_PORT || DEFAULTS.SSL_PORT;
-        config.SSL_PORT = sslPort;
-        // Add HTTPS origins to CORS and CSP
-        const httpsUrl = `https://${remoteIp}:${sslPort}`;
-        const existingOrigins = config.ALLOWED_ORIGINS || '';
-        config.ALLOWED_ORIGINS = existingOrigins ? `${existingOrigins},${httpsUrl}` : httpsUrl;
-        const existingCsp = config.CSP_CONNECT_EXTRA || '';
-        config.CSP_CONNECT_EXTRA = existingCsp
-          ? `${existingCsp} ${httpsUrl} wss://${remoteIp}:${sslPort}`
-          : `${httpsUrl} wss://${remoteIp}:${sslPort}`;
-        success(`HTTPS will be available at ${httpsUrl}`);
-        dim('Note: Self-signed certs will show a browser warning on first visit — click "Advanced" → "Proceed"');
+    let certsReady = false;
+    if (prereqs.opensslOk) {
+      const certResult = generateSelfSignedCert(PROJECT_ROOT);
+      if (certResult.ok) {
+        success(certResult.message);
+        certsReady = true;
       } else {
-        warn('HTTPS disabled — voice input will only work on localhost');
+        fail(certResult.message);
       }
     } else {
-      dim('Voice input will only work when accessing Nerve from localhost');
+      warn('openssl not found, cannot generate self-signed certificate');
+      dim('Install openssl and run: mkdir -p certs && openssl req -x509 -newkey rsa:2048 \\');
+      dim('  -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=localhost"');
     }
+
+    if (!certsReady) {
+      warn('HTTPS disabled, voice input will only work on localhost');
+      return undefined;
+    }
+
+    const selectedSslPort = await input({
+      theme: promptTheme,
+      message: 'SSL port',
+      default: existing.SSL_PORT || DEFAULTS.SSL_PORT,
+      validate: (val) => {
+        const n = parseInt(val, 10);
+        if (!isValidPort(n)) return 'Please enter a valid port (1–65535)';
+        if (n === parseInt(port, 10)) return 'SSL port must differ from HTTP port';
+        return true;
+      },
+    });
+
+    success(`HTTPS will be available at https://${remoteHost}:${selectedSslPort}`);
+    dim('Note: Self-signed certs will show a browser warning on first visit, click "Advanced" then "Proceed"');
+    return selectedSslPort;
+  }
+
+  async function ensureInteractiveTailscale(): Promise<TailscaleState> {
+    let state = tailscaleState;
+
+    if (!state.installed) {
+      console.log('');
+      warn('Tailscale is not installed on this machine.');
+      dim('Install it first, then complete browser login with: tailscale up');
+      dim('Download: https://tailscale.com/download/linux');
+      console.log('\n  Re-run: \x1b[36mnpm run setup\x1b[0m\n');
+      process.exit(1);
+    }
+
+    if (state.authenticated) {
+      return state;
+    }
+
+    console.log('');
+    warn('Tailscale is installed but not connected.');
+    dim('In another terminal, start the browser URL login flow with: tailscale up');
+    console.log('');
+
+    const nextAction = await select<'wait' | 'exit'>({
+      theme: promptTheme,
+      message: 'How should setup continue?',
+      choices: [
+        { name: 'Wait and continue automatically once Tailscale is connected', value: 'wait' },
+        { name: 'Exit and re-run setup later', value: 'exit' },
+      ],
+    });
+
+    if (nextAction === 'exit') {
+      console.log('\n  Finish login with: \x1b[36mtailscale up\x1b[0m');
+      console.log('  Then re-run: \x1b[36mnpm run setup\x1b[0m\n');
+      process.exit(1);
+    }
+
+    process.stdout.write('  Waiting for Tailscale login... ');
+    for (let attempt = 0; attempt < 60; attempt++) {
+      await sleep(2000);
+      state = getTailscaleState();
+      if (state.authenticated) {
+        tailscaleState = state;
+        console.log(`\x1b[32m✓\x1b[0m ${state.dnsName || state.ipv4 || 'Connected'}`);
+        return state;
+      }
+    }
+
+    console.log('\x1b[31m✗\x1b[0m Timed out waiting for Tailscale login');
+    dim('Finish login with: tailscale up');
+    console.log('');
+    process.exit(1);
   }
 
   if (accessMode === 'local') {
-    config.HOST = '127.0.0.1';
+    accessPlan = buildAccessPlan({ profile: 'local', port });
     success(`Nerve will be available at http://localhost:${port}`);
 
-  } else if (accessMode === 'tailscale') {
-    config.HOST = '0.0.0.0';
-    const tsIp = prereqs.tailscaleIp!;
-    const tsUrl = `http://${tsIp}:${port}`;
-    config.ALLOWED_ORIGINS = tsUrl;
-    config.WS_ALLOWED_HOSTS = tsIp;
-    config.CSP_CONNECT_EXTRA = `${tsUrl} ws://${tsIp}:${port}`;
-    success(`Nerve will be available at ${tsUrl}`);
+  } else if (accessMode === 'tailscale-ip') {
+    tailscaleState = await ensureInteractiveTailscale();
+    accessPlan = buildAccessPlan({ profile: 'tailscale-ip', port, tailscale: tailscaleState });
+    if (accessPlan.followUpSteps.length > 0) {
+      warn('Tailscale tailnet IP access is not ready yet.');
+      printFollowUpSteps(accessPlan.followUpSteps);
+      console.log('');
+      process.exit(1);
+    }
+    success(`Nerve will be available at ${accessPlan.browserOrigins[0]}`);
     dim('Accessible from any device on your Tailscale network');
-    await offerHttpsSetup(tsIp);
+
+  } else if (accessMode === 'tailscale-serve') {
+    tailscaleState = await ensureInteractiveTailscale();
+
+    console.log('');
+    const configureServe = await confirm({
+      theme: promptTheme,
+      message: `Configure Tailscale Serve now? (tailscale serve --bg 443 http://127.0.0.1:${port})`,
+      default: true,
+    });
+
+    if (configureServe) {
+      try {
+        execSync(`tailscale serve --bg 443 http://127.0.0.1:${port}`, { stdio: 'pipe', timeout: 15000 });
+        success(`Tailscale Serve configured for http://127.0.0.1:${port}`);
+      } catch (err) {
+        warn(`Failed to configure Tailscale Serve automatically: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } else {
+      dim(`Run later: tailscale serve --bg 443 http://127.0.0.1:${port}`);
+    }
+
+    tailscaleState = getTailscaleState();
+    accessPlan = buildAccessPlan({ profile: 'tailscale-serve', port, tailscale: tailscaleState });
+
+    if (accessPlan.followUpSteps.length > 0) {
+      console.log('');
+      warn('Could not confirm a usable Tailscale Serve hostname.');
+      printFollowUpSteps(accessPlan.followUpSteps);
+      console.log('');
+
+      const fallback = await select<'tailscale-ip' | 'stop'>({
+        theme: promptTheme,
+        message: 'How should setup continue?',
+        choices: [
+          { name: 'Continue with tailnet IP access instead', value: 'tailscale-ip' },
+          { name: 'Stop setup and finish Tailscale Serve manually', value: 'stop' },
+        ],
+      });
+
+      if (fallback === 'stop') {
+        console.log('\n  Finish Tailscale Serve setup, then re-run: \x1b[36mnpm run setup\x1b[0m\n');
+        process.exit(1);
+      }
+
+      accessPlan = buildAccessPlan({ profile: 'tailscale-ip', port, tailscale: tailscaleState });
+      if (accessPlan.followUpSteps.length > 0) {
+        warn('Tailnet IP fallback is also unavailable.');
+        printFollowUpSteps(accessPlan.followUpSteps);
+        console.log('');
+        process.exit(1);
+      }
+
+      success(`Falling back to tailnet IP access at ${accessPlan.browserOrigins[0]}`);
+    } else {
+      success(`Nerve will be available at ${accessPlan.browserOrigins[0]}`);
+      dim('Nerve will stay private on 127.0.0.1 and be reached through Tailscale Serve');
+    }
 
   } else if (accessMode === 'network') {
-    config.HOST = '0.0.0.0';
-    // Auto-detect LAN IP
     const detectedIp = detectPrimaryIpv4();
     const lanIp = await input({
-    theme: promptTheme,
+      theme: promptTheme,
       message: 'Your LAN IP address',
       default: detectedIp || '',
       validate: (val) => {
@@ -535,19 +675,15 @@ async function collectInteractive(
       },
     });
     const ip = lanIp.trim();
-    const lanUrl = `http://${ip}:${port}`;
-    config.ALLOWED_ORIGINS = lanUrl;
-    config.WS_ALLOWED_HOSTS = ip;
-    config.CSP_CONNECT_EXTRA = `${lanUrl} ws://${ip}:${port}`;
-    success(`Nerve will be available at ${lanUrl}`);
-    dim('Make sure your firewall allows traffic on port ' + port);
+    sslPort = await offerHttpsSetup(ip);
+    accessPlan = buildAccessPlan({ profile: 'network', port, remoteHost: ip, sslPort });
+    success(`Nerve will be available at http://${ip}:${port}`);
+    dim(`Make sure your firewall allows traffic on port ${port}`);
     dim('Need access from multiple devices? Add more origins to ALLOWED_ORIGINS in .env');
-    await offerHttpsSetup(ip);
 
   } else {
-    // Custom — full manual control
-    const portStr = await input({
-    theme: promptTheme,
+    port = await input({
+      theme: promptTheme,
       message: 'HTTP port',
       default: existing.PORT || DEFAULTS.PORT,
       validate: (val) => {
@@ -556,74 +692,35 @@ async function collectInteractive(
         return true;
       },
     });
-    config.PORT = portStr;
+    config.PORT = port;
 
-    config.HOST = await input({
-    theme: promptTheme,
+    const customHost = await input({
+      theme: promptTheme,
       message: 'Bind address (127.0.0.1 = local only, 0.0.0.0 = all interfaces)',
       default: existing.HOST || DEFAULTS.HOST,
     });
 
-    // HTTPS
-    const enableHttps = await confirm({
-    theme: promptTheme,
-      message: 'Enable HTTPS? (needed for microphone access over network)',
-      default: false,
-    });
-
-    if (enableHttps) {
-      let certsReady = false;
-      if (prereqs.opensslOk) {
-        const certResult = generateSelfSignedCert(PROJECT_ROOT);
-        if (certResult.ok) {
-          success(certResult.message);
-          certsReady = true;
-        } else {
-          fail(certResult.message);
-        }
-      } else {
-        warn('openssl not found — cannot generate self-signed certificate');
-        dim('Install openssl and run: mkdir -p certs && openssl req -x509 -newkey rsa:2048 \\');
-        dim('  -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj "/CN=localhost"');
-      }
-
-      if (certsReady) {
-        config.SSL_PORT = await input({
-    theme: promptTheme,
-          message: 'SSL port',
-          default: existing.SSL_PORT || DEFAULTS.SSL_PORT,
-          validate: (val) => {
-            const n = parseInt(val, 10);
-            if (!isValidPort(n)) return 'Please enter a valid port (1–65535)';
-            if (n === parseInt(config.PORT || DEFAULTS.PORT, 10)) return 'SSL port must differ from HTTP port';
-            return true;
-          },
-        });
-        // Add HTTPS/WSS origins to CORS and CSP when bound to a non-loopback address
-        const customHost = config.HOST || DEFAULTS.HOST;
-        if (customHost !== '127.0.0.1' && customHost !== 'localhost' && customHost !== '::1') {
-          const httpsUrl = `https://${customHost}:${config.SSL_PORT}`;
-          config.ALLOWED_ORIGINS = config.ALLOWED_ORIGINS
-            ? `${config.ALLOWED_ORIGINS},${httpsUrl}`
-            : httpsUrl;
-          config.CSP_CONNECT_EXTRA = config.CSP_CONNECT_EXTRA
-            ? `${config.CSP_CONNECT_EXTRA} ${httpsUrl} wss://${customHost}:${config.SSL_PORT}`
-            : `${httpsUrl} wss://${customHost}:${config.SSL_PORT}`;
-        }
-      } else {
-        warn('HTTPS disabled — no certificates available');
-        dim('You can generate certs manually and add SSL_PORT to .env later');
-      }
+    if (!isLoopback(customHost)) {
+      sslPort = await offerHttpsSetup(customHost);
+    } else {
+      delete config.SSL_PORT;
     }
+
+    accessPlan = buildAccessPlan({ profile: 'custom', port, remoteHost: customHost, sslPort });
+    success(`Nerve will be available at http://${customHost}:${port}`);
   }
+
+  delete config.ALLOWED_ORIGINS;
+  delete config.CSP_CONNECT_EXTRA;
+  delete config.WS_ALLOWED_HOSTS;
+  delete config.SSL_PORT;
+  Object.assign(config, applyAccessPlanToConfig(config, accessPlan));
+  if (sslPort) config.SSL_PORT = sslPort;
 
   // ── Gateway config updates ─────────────────────────────────────────
 
-  const { nerveOrigin, nerveHttpsOrigin } = computeGatewayOrigins(config, accessMode);
-
   const neededChanges = detectNeededConfigChanges({
-    nerveOrigin,
-    nerveHttpsOrigin,
+    allowedOrigins: accessPlan.gatewayAllowedOrigins,
     gatewayToken: config.GATEWAY_TOKEN,
   });
 
@@ -655,10 +752,6 @@ async function collectInteractive(
           dim('  • Pre-pair: run `openclaw devices approve` after starting Nerve');
         } else if (change.id === 'tools-allow') {
           dim('  • HTTP tools: add "cron" and "gateway" to gateway.tools.allow in ~/.openclaw/openclaw.json');
-        } else if (change.id === 'allowed-origins' && nerveOrigin) {
-          dim(`  • Origins: add ${nerveOrigin} to gateway.controlUi.allowedOrigins in ~/.openclaw/openclaw.json`);
-        } else if (change.id === 'allowed-origins-https' && nerveHttpsOrigin) {
-          dim(`  • Origins: add ${nerveHttpsOrigin} to gateway.controlUi.allowedOrigins in ~/.openclaw/openclaw.json`);
         } else if (change.id.startsWith('allowed-origins')) {
           dim('  • Origins: add the required origin(s) to gateway.controlUi.allowedOrigins in ~/.openclaw/openclaw.json');
         }
@@ -1004,12 +1097,19 @@ async function runCheck(config: EnvConfig): Promise<void> {
 
 // ── --defaults mode ──────────────────────────────────────────────────
 
-async function runDefaults(existing: EnvConfig): Promise<void> {
+async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<void> {
   console.log('');
   info('Non-interactive mode — using defaults where possible');
   console.log('');
 
   const config: EnvConfig = { ...existing };
+  const followUpSteps: string[] = [];
+
+  function appendFollowUp(steps: string[]): void {
+    for (const step of steps) {
+      if (step && !followUpSteps.includes(step)) followUpSteps.push(step);
+    }
+  }
 
   // Try to auto-detect gateway token
   if (!config.GATEWAY_TOKEN) {
@@ -1028,11 +1128,46 @@ async function runDefaults(existing: EnvConfig): Promise<void> {
     }
   }
 
-  // Apply defaults for everything else
   if (!config.GATEWAY_URL) config.GATEWAY_URL = DEFAULTS.GATEWAY_URL;
   if (!config.AGENT_NAME) config.AGENT_NAME = DEFAULTS.AGENT_NAME;
   if (!config.PORT) config.PORT = DEFAULTS.PORT;
   if (!config.HOST) config.HOST = DEFAULTS.HOST;
+
+  if (requestedAccessMode) {
+    let accessPlan = buildAccessPlan({
+      profile: requestedAccessMode as InstallerAccessProfile,
+      port: config.PORT,
+      sslPort: config.SSL_PORT,
+      remoteHost: !isLoopback(config.HOST || '') ? config.HOST : detectPrimaryIpv4() || config.HOST || DEFAULTS.HOST,
+      tailscale: prereqs.tailscale,
+    });
+
+    if (requestedAccessMode === 'tailscale-serve' && accessPlan.followUpSteps.length > 0) {
+      warn('Tailscale Serve could not be confirmed in non-interactive mode. Falling back to tailnet IP support only.');
+      appendFollowUp(accessPlan.followUpSteps);
+      accessPlan = buildAccessPlan({
+        profile: 'tailscale-ip',
+        port: config.PORT,
+        tailscale: prereqs.tailscale,
+      });
+    }
+
+    if ((requestedAccessMode === 'tailscale-ip' || requestedAccessMode === 'tailscale-serve') && accessPlan.followUpSteps.length > 0) {
+      warn('Requested Tailscale access mode is not ready in non-interactive mode. Keeping localhost-only access for now.');
+      appendFollowUp(accessPlan.followUpSteps);
+      accessPlan = buildAccessPlan({ profile: 'local', port: config.PORT });
+    }
+
+    delete config.ALLOWED_ORIGINS;
+    delete config.CSP_CONNECT_EXTRA;
+    delete config.WS_ALLOWED_HOSTS;
+    Object.assign(config, applyAccessPlanToConfig(config, accessPlan));
+
+    success(`Using access mode: ${accessPlan.profile}`);
+    if (accessPlan.browserOrigins[0]) {
+      dim(`Primary origin: ${accessPlan.browserOrigins[0]}`);
+    }
+  }
 
   // Auth: auto-enable when network-exposed with gateway token, generate session secret
   if (!config.NERVE_SESSION_SECRET) {
@@ -1047,7 +1182,6 @@ async function runDefaults(existing: EnvConfig): Promise<void> {
     }
   }
 
-  // Write
   if (existsSync(ENV_PATH)) {
     const backupPath = backupExistingEnv(ENV_PATH);
     info(`Previous config backed up to ${backupPath.replace(PROJECT_ROOT + '/', '')}`);
@@ -1056,23 +1190,25 @@ async function runDefaults(existing: EnvConfig): Promise<void> {
 
   success('Configuration written to .env');
 
-  // Install bundled agent skills
   installBundledSkills();
 
   printSummary(config);
 
-  // Apply all gateway config patches silently (non-interactive = implicit consent)
-  const defaultsAccessMode = isLoopback(config.HOST || '') ? 'local' : 'network';
-  const { nerveOrigin, nerveHttpsOrigin } = computeGatewayOrigins(config, defaultsAccessMode);
-
   const changes = detectNeededConfigChanges({
-    nerveOrigin,
-    nerveHttpsOrigin,
+    allowedOrigins: config.ALLOWED_ORIGINS?.split(',').map(origin => origin.trim()).filter(Boolean),
     gatewayToken: config.GATEWAY_TOKEN,
   });
 
   if (changes.length > 0) {
     await applyConfigChanges(changes);
+  }
+
+  if (followUpSteps.length > 0) {
+    console.log('');
+    warn('Additional follow-up is required:');
+    for (const step of followUpSteps) {
+      dim(`  • ${step}`);
+    }
   }
 
   console.log('');

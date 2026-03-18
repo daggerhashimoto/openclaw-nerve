@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { buildPrimaryWakePhrase, buildStopPhrasesRegex } from '@/lib/constants';
 import { playWakePing, playSubmitPing, playCancelPing, ensureAudioContext } from './audio-feedback';
 import type { STTInputMode } from '@/contexts/SettingsContext';
+import { getWakeWordSupport } from './wakeWordSupport';
 
 // ─── Phrases from server config ──────────────────────────────────────────────
 
@@ -161,15 +162,22 @@ export function useVoiceInput(
 
   // Single persistent recognition instance
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const wakeWordEnabledRef = useRef(false);
-  const [wakeWordEnabled, setWakeWordEnabled] = useState(() => {
+  const wakeWordSupport = useMemo(() => getWakeWordSupport(), []);
+  const wakeWordSupported = wakeWordSupport.supported;
+  const [storedWakeWordEnabled, setStoredWakeWordEnabled] = useState(() => {
     try { return localStorage.getItem(WAKE_WORD_KEY) === 'true'; } catch { return false; }
   });
-  
-  // Persist wake word state to localStorage
+  const wakeWordEnabled = wakeWordSupported ? storedWakeWordEnabled : false;
+  const wakeWordEnabledRef = useRef(wakeWordEnabled);
+
   useEffect(() => {
-    try { localStorage.setItem(WAKE_WORD_KEY, String(wakeWordEnabled)); } catch { /* noop */ }
+    wakeWordEnabledRef.current = wakeWordEnabled;
   }, [wakeWordEnabled]);
+
+  // Persist raw desktop preference to localStorage without mutating it on unsupported mobile web.
+  useEffect(() => {
+    try { localStorage.setItem(WAKE_WORD_KEY, String(storedWakeWordEnabled)); } catch { /* noop */ }
+  }, [storedWakeWordEnabled]);
 
   // Single primary wake phrase based on agent name + selected language.
   const defaultWakePhrase = useMemo(() => buildPrimaryWakePhrase(agentName, language), [agentName, language]);
@@ -256,7 +264,7 @@ export function useVoiceInput(
       console.warn('[VOICE] SpeechRecognition not available');
       if (mode === 'wake') {
         wakeWordEnabledRef.current = false;
-        setWakeWordEnabled(false);
+        setStoredWakeWordEnabled(false);
         if (stateRef.current === 'listening') {
           setVoiceState('idle');
         }
@@ -504,11 +512,19 @@ export function useVoiceInput(
   }, [resetBrowserTranscript, stopStream, setVoiceState, transcribeWithBackend, waitForBrowserTranscript]);
 
   const startWakeWordListener = useCallback(() => {
+    if (!wakeWordSupported) {
+      wakeWordEnabledRef.current = false;
+      if (stateRef.current === 'listening') {
+        setVoiceState('idle');
+      }
+      return;
+    }
+
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
       console.warn('[VOICE] SpeechRecognition not available');
       wakeWordEnabledRef.current = false;
-      setWakeWordEnabled(false);
+      setStoredWakeWordEnabled(false);
       setVoiceState('idle');
       setError('Speech recognition is not supported in this browser');
       return;
@@ -516,21 +532,23 @@ export function useVoiceInput(
     // Initialize AudioContext on user interaction
     ensureAudioContext();
     wakeWordEnabledRef.current = true;
-    setWakeWordEnabled(true);
+    setStoredWakeWordEnabled(true);
     setVoiceState('listening');
     ensureRecognitionRef.current('wake');
-  }, [setVoiceState]);
+  }, [setVoiceState, wakeWordSupported]);
 
   const stopWakeWordListener = useCallback(() => {
     wakeWordEnabledRef.current = false;
-    setWakeWordEnabled(false);
     intentionalStopRef.current = true;
     try { recognitionRef.current?.abort(); } catch { /* already stopped */ }
     recognitionRef.current = null;
     if (stateRef.current === 'listening') {
       setVoiceState('idle');
     }
-  }, [setVoiceState]);
+    if (wakeWordSupported) {
+      setStoredWakeWordEnabled(false);
+    }
+  }, [setVoiceState, wakeWordSupported]);
 
   const toggleWakeWord = useCallback(() => {
     if (wakeWordEnabledRef.current) stopWakeWordListener();
@@ -548,13 +566,13 @@ export function useVoiceInput(
   const startWakeWordRef = useRef(startWakeWordListener);
   startWakeWordRef.current = startWakeWordListener;
   useEffect(() => {
-    if (!wakeWordEnabled || wakeWordEnabledRef.current) return;
+    if (!wakeWordSupported || !wakeWordEnabled || wakeWordEnabledRef.current) return;
     // Only auto-start if mic permission was previously granted (avoid surprise prompts)
     navigator.permissions?.query({ name: 'microphone' as PermissionName }).then((result) => {
       if (result.state === 'granted') {
         startWakeWordRef.current();
       } else {
-        // Permission not granted — clear persisted state so toggle shows off
+        // Permission not granted — clear persisted state so toggle shows off on supported environments
         try { localStorage.removeItem(WAKE_WORD_KEY); } catch { /* noop */ }
       }
     }).catch(() => {

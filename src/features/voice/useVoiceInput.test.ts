@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi, Mock } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { LANG_TO_BCP47, resolveRecognitionLang, useVoiceInput } from './useVoiceInput';
 import * as audioFeedback from './audio-feedback';
+import * as wakeWordSupport from './wakeWordSupport';
 import { buildWakePhrases, buildStopPhrasesRegex } from '@/lib/constants';
 
 // Mock audio feedback module
@@ -10,6 +11,11 @@ vi.mock('./audio-feedback', () => ({
   playSubmitPing: vi.fn(),
   playCancelPing: vi.fn(),
   ensureAudioContext: vi.fn(),
+}));
+
+vi.mock('./wakeWordSupport', () => ({
+  getWakeWordSupport: vi.fn(() => ({ supported: true, reason: null })),
+  isWakeWordSupportedEnvironment: vi.fn(() => true),
 }));
 
 // Mock SpeechRecognition
@@ -82,6 +88,11 @@ function hasTranscribeRequest(fetchMock: Mock) {
   return fetchMock.mock.calls.some(([url]) => url === '/api/transcribe');
 }
 
+function mockWakeWordSupport(result: { supported: boolean; reason: 'mobile-web' | null }) {
+  (wakeWordSupport.getWakeWordSupport as Mock).mockReturnValue(result);
+  (wakeWordSupport.isWakeWordSupportedEnvironment as Mock).mockReturnValue(result.supported);
+}
+
 describe('useVoiceInput', () => {
   let mockRecognition: MockSpeechRecognition | null = null;
   let originalFetch: typeof fetch;
@@ -137,6 +148,8 @@ describe('useVoiceInput', () => {
     }) as typeof fetch;
 
     vi.clearAllMocks();
+    localStorage.clear();
+    mockWakeWordSupport({ supported: true, reason: null });
   });
 
   afterEach(() => {
@@ -215,6 +228,46 @@ describe('useVoiceInput', () => {
         result.current.toggleWakeWord();
       });
       expect(result.current.wakeWordEnabled).toBe(false);
+    });
+
+    it('keeps wake word effectively off on mobile web even when persisted on', () => {
+      localStorage.setItem('nerve:wakeWordEnabled', 'true');
+      mockWakeWordSupport({ supported: false, reason: 'mobile-web' });
+
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription));
+
+      expect(result.current.wakeWordEnabled).toBe(false);
+      expect(result.current.voiceState).toBe('idle');
+      expect(localStorage.getItem('nerve:wakeWordEnabled')).toBe('true');
+    });
+
+    it('does not start wake listening on mobile web', () => {
+      mockWakeWordSupport({ supported: false, reason: 'mobile-web' });
+
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription));
+
+      act(() => {
+        result.current.startWakeWordListener();
+      });
+
+      expect(result.current.voiceState).toBe('idle');
+      expect(result.current.wakeWordEnabled).toBe(false);
+      expect(audioFeedback.ensureAudioContext).not.toHaveBeenCalled();
+    });
+
+    it('still allows manual recording on mobile web', async () => {
+      mockWakeWordSupport({ supported: false, reason: 'mobile-web' });
+
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription));
+
+      await act(async () => {
+        await result.current.startRecording();
+      });
+
+      expect(result.current.voiceState).toBe('recording');
     });
 
     it('should handle missing SpeechRecognition API gracefully', async () => {

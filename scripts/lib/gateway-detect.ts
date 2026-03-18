@@ -709,6 +709,7 @@ function needsOriginPatch(origin: string): boolean {
 export function detectNeededConfigChanges(opts: {
   nerveOrigin?: string;
   nerveHttpsOrigin?: string;
+  allowedOrigins?: string[];
   gatewayToken?: string;
 }): ConfigChange[] {
   const changes: ConfigChange[] = [];
@@ -744,23 +745,24 @@ export function detectNeededConfigChanges(opts: {
     });
   }
 
-  if (opts.nerveOrigin && needsOriginPatch(opts.nerveOrigin)) {
-    changes.push({
-      id: 'allowed-origins',
-      description: `Add ${opts.nerveOrigin} to allowed origins (needed for WebSocket)`,
-      apply: () => {
-        const r = patchGatewayAllowedOrigins(opts.nerveOrigin!);
-        return { ok: r.ok, message: r.message, needsRestart: r.ok };
-      },
-    });
-  }
+  const origins = [...new Set([
+    ...(opts.allowedOrigins || []),
+    opts.nerveOrigin,
+    opts.nerveHttpsOrigin,
+  ].filter((origin): origin is string => Boolean(origin && origin.trim())))];
 
-  if (opts.nerveHttpsOrigin && needsOriginPatch(opts.nerveHttpsOrigin)) {
+  for (const origin of origins) {
+    if (!needsOriginPatch(origin)) continue;
+
+    let id = `allowed-origins:${origin}`;
+    if (origin === opts.nerveOrigin) id = 'allowed-origins';
+    else if (origin === opts.nerveHttpsOrigin) id = 'allowed-origins-https';
+
     changes.push({
-      id: 'allowed-origins-https',
-      description: `Add ${opts.nerveHttpsOrigin} to allowed origins (needed for HTTPS WebSocket)`,
+      id,
+      description: `Add ${origin} to allowed origins (needed for WebSocket)`,
       apply: () => {
-        const r = patchGatewayAllowedOrigins(opts.nerveHttpsOrigin!);
+        const r = patchGatewayAllowedOrigins(origin);
         return { ok: r.ok, message: r.message, needsRestart: r.ok };
       },
     });

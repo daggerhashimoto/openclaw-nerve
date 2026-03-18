@@ -4,6 +4,7 @@
 
 import { execSync } from 'node:child_process';
 import { success, warn, fail } from './banner.js';
+import { getTailscaleState, type TailscaleState } from './tailscale.js';
 
 export interface PrereqResult {
   nodeOk: boolean;
@@ -13,6 +14,7 @@ export interface PrereqResult {
   opensslOk: boolean;
   tailscaleOk: boolean;
   tailscaleIp: string | null;
+  tailscale: TailscaleState;
 }
 
 /** Check all prerequisites and print results. */
@@ -48,19 +50,16 @@ export function checkPrerequisites(opts?: { quiet?: boolean }): PrereqResult {
     else warn('openssl not found (optional — needed for self-signed HTTPS certs)');
   }
 
-  const tailscaleOk = commandExists('tailscale');
-  let tailscaleIp: string | null = null;
-  if (tailscaleOk) {
-    try {
-      tailscaleIp = execSync('tailscale ip -4 2>/dev/null', { timeout: 3000 }).toString().trim() || null;
-    } catch { /* not connected */ }
-    if (!quiet) {
-      if (tailscaleIp) success(`Tailscale detected (${tailscaleIp})`);
-      else warn('Tailscale installed but not connected');
-    }
+  const tailscale = getTailscaleState();
+  const tailscaleOk = tailscale.installed;
+  const tailscaleIp = tailscale.ipv4;
+  if (!quiet && tailscaleOk) {
+    if (tailscaleIp) success(`Tailscale detected (${tailscaleIp})`);
+    else if (tailscale.authenticated && tailscale.dnsName) success(`Tailscale detected (${tailscale.dnsName})`);
+    else warn('Tailscale installed but not connected');
   }
 
-  return { nodeOk, nodeVersion, npmOk, ffmpegOk, opensslOk, tailscaleOk, tailscaleIp };
+  return { nodeOk, nodeVersion, npmOk, ffmpegOk, opensslOk, tailscaleOk, tailscaleIp, tailscale };
 }
 
 /** Check if a command exists on the system. */

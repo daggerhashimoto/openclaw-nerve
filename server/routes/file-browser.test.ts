@@ -420,6 +420,20 @@ describe('file-browser routes', () => {
       expect(names).not.toContain('main-only.md');
     });
 
+    it('reads files from the requested agent workspace', async () => {
+      await fs.mkdir(researchWorkspace, { recursive: true });
+      await fs.writeFile(path.join(tmpDir, 'notes.md'), 'main notes');
+      await fs.writeFile(path.join(researchWorkspace, 'notes.md'), 'research notes');
+
+      const app = await buildApp();
+      const res = await app.request('/api/files/read?agentId=research&path=notes.md');
+
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; content: string };
+      expect(json.ok).toBe(true);
+      expect(json.content).toBe('research notes');
+    });
+
     it('serves raw assets from the requested agent workspace', async () => {
       await fs.mkdir(researchWorkspace, { recursive: true });
       const mainBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]);
@@ -448,6 +462,19 @@ describe('file-browser routes', () => {
       expect(res.status).toBe(200);
       await expect(fs.readFile(path.join(researchWorkspace, 'notes.md'), 'utf-8')).resolves.toBe('research notes');
       await expect(fs.readFile(path.join(tmpDir, 'notes.md'), 'utf-8')).resolves.toBe('main notes');
+    });
+
+    it('bootstraps the first write into a fresh agent workspace', async () => {
+      const app = await buildApp();
+      const res = await app.request('/api/files/write', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: 'research', path: 'notes.md', content: 'research notes' }),
+      });
+
+      expect(res.status).toBe(200);
+      await expect(fs.readFile(path.join(researchWorkspace, 'notes.md'), 'utf-8')).resolves.toBe('research notes');
+      await expect(fs.access(path.join(tmpDir, 'notes.md'))).rejects.toThrow();
     });
 
     it('keeps rename, move, trash, and restore scoped to the requested agent workspace', async () => {

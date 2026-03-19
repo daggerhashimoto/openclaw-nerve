@@ -126,17 +126,36 @@ export async function resolveWorkspacePathForRoot(
     // File doesn't exist
     if (!options?.allowNonExistent) return null;
 
-    // For new files, validate the parent directory
-    const parent = path.dirname(resolved);
+    // Walk up until we find an existing ancestor. This allows creating the
+    // first file in a fresh workspace, or nested paths whose parents will be
+    // created later via mkdir({ recursive: true }).
+    let current = path.dirname(resolved);
+    while (current !== root) {
+      try {
+        const realCurrent = await fs.realpath(current);
+        if (!realCurrent.startsWith(rootPrefix) && realCurrent !== root) {
+          return null;
+        }
+        return resolved;
+      } catch {
+        const next = path.dirname(current);
+        if (next === current) {
+          return null;
+        }
+        current = next;
+      }
+    }
+
     try {
-      const realParent = await fs.realpath(parent);
-      if (!realParent.startsWith(rootPrefix) && realParent !== root) {
+      const realRoot = await fs.realpath(root);
+      if (!realRoot.startsWith(rootPrefix) && realRoot !== root) {
         return null;
       }
-      return resolved;
     } catch {
-      return null;
+      // Fresh workspace root does not exist yet. That's fine.
     }
+
+    return resolved;
   }
 }
 

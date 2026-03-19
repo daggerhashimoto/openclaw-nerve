@@ -54,9 +54,10 @@ export function startFileWatcher(): void {
       memoryWatcher = watch(config.memoryPath, (eventType) => {
         if (eventType === 'change' && shouldBroadcast('MEMORY.md')) {
           console.log('[file-watcher] MEMORY.md changed');
-          broadcast('memory.changed', { 
-            source: 'file', 
-            file: 'MEMORY.md' 
+          broadcast('memory.changed', {
+            source: 'file',
+            file: 'MEMORY.md',
+            agentId: 'main',
           });
           broadcast('file.changed', { path: 'MEMORY.md' });
         }
@@ -73,9 +74,10 @@ export function startFileWatcher(): void {
       memoryDirWatcher = watch(config.memoryDir, (eventType, filename) => {
         if (filename?.endsWith('.md') && shouldBroadcast(`daily:${filename}`)) {
           console.log(`[file-watcher] ${filename} changed`);
-          broadcast('memory.changed', { 
-            source: 'file', 
-            file: filename 
+          broadcast('memory.changed', {
+            source: 'file',
+            file: filename,
+            agentId: 'main',
           });
           broadcast('file.changed', { path: `memory/${filename}` });
         }

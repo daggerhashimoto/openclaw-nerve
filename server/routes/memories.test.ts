@@ -57,6 +57,42 @@ describe('memories routes', () => {
     return app;
   }
 
+  async function loadFileWatcher() {
+    vi.resetModules();
+
+    vi.doMock('../lib/config.js', () => ({
+      config: {
+        auth: false, port: 3000, host: '127.0.0.1', sslPort: 3443,
+        home: homeDir,
+        memoryPath,
+        memoryDir,
+        workspaceWatchRecursive: false,
+      },
+      SESSION_COOKIE_NAME: 'nerve_session_3000',
+    }));
+    vi.doMock('../routes/events.js', () => ({
+      broadcast: broadcastMock,
+    }));
+
+    return import('../lib/file-watcher.js');
+  }
+
+  async function waitForBroadcast(
+    matcher: (call: Array<unknown>) => boolean,
+    timeoutMs = 2000,
+  ) {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      if (broadcastMock.mock.calls.some((call) => matcher(call as Array<unknown>))) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    throw new Error(`Timed out waiting for broadcast. Calls: ${JSON.stringify(broadcastMock.mock.calls)}`);
+  }
+
   describe('GET /api/memories', () => {
     it('returns empty array when no memories exist', async () => {
       const app = await buildApp();
@@ -345,6 +381,45 @@ describe('memories routes', () => {
         body: JSON.stringify({ title: 'Missing', content: 'stuff' }),
       });
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe('file watcher broadcasts', () => {
+    it('includes agentId when MEMORY.md changes on disk', async () => {
+      await fs.writeFile(memoryPath, '# MEMORY.md\n');
+      const { startFileWatcher, stopFileWatcher } = await loadFileWatcher();
+
+      startFileWatcher();
+      await fs.writeFile(memoryPath, '# MEMORY.md\n\n## Facts\n- Updated\n');
+
+      await waitForBroadcast(([event, payload]) => (
+        event === 'memory.changed'
+        && payload !== null
+        && typeof payload === 'object'
+        && (payload as { file?: string; agentId?: string }).file === 'MEMORY.md'
+        && (payload as { file?: string; agentId?: string }).agentId === 'main'
+      ));
+
+      stopFileWatcher();
+    });
+
+    it('includes agentId when daily memory files change on disk', async () => {
+      const dailyPath = path.join(memoryDir, '2026-02-26.md');
+      await fs.writeFile(dailyPath, '## Morning\n- First\n');
+      const { startFileWatcher, stopFileWatcher } = await loadFileWatcher();
+
+      startFileWatcher();
+      await fs.writeFile(dailyPath, '## Morning\n- Updated\n');
+
+      await waitForBroadcast(([event, payload]) => (
+        event === 'memory.changed'
+        && payload !== null
+        && typeof payload === 'object'
+        && (payload as { file?: string; agentId?: string }).file === '2026-02-26.md'
+        && (payload as { file?: string; agentId?: string }).agentId === 'main'
+      ));
+
+      stopFileWatcher();
     });
   });
 });

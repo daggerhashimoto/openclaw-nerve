@@ -680,7 +680,7 @@ export default function App({ onLogout }: AppProps) {
               leftPercent={panelRatio}
               onResize={setPanelRatio}
               minLeftPercent={30}
-              maxLeftPercent={75}
+              maxLeftPercent={85}
               rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
               onRightWidthChange={fileBrowserCollapsed ? undefined : setDesktopRightPanelWidth}
               leftClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"

@@ -14,6 +14,7 @@ import {
   pickDefaultSessionKey,
   isRootChildSession,
 } from '@/features/sessions/sessionKeys';
+import { buildSpawnSubagentMessage, type SubagentCleanupMode } from '@/features/sessions/buildSpawnSubagentMessage';
 
 const BUSY_STATES = new Set(['running', 'thinking', 'tool_use', 'delta', 'started']);
 const IDLE_STATES = new Set(['idle', 'done', 'error', 'final', 'aborted', 'completed']);
@@ -32,6 +33,7 @@ export interface SpawnSessionOpts {
   model?: string;
   thinking?: string;
   label?: string;
+  cleanup?: SubagentCleanupMode;
   agentName?: string;
   parentSessionKey?: string;
 }
@@ -732,13 +734,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!parentSessionKey) {
       throw new Error('Create a top-level agent before launching a subagent');
     }
-    const lines = ['[spawn-subagent]'];
-    lines.push(`task: ${opts.task}`);
-    if (opts.label) lines.push(`label: ${opts.label}`);
-    if (opts.model) lines.push(`model: ${opts.model}`);
-    if (opts.thinking && opts.thinking !== 'off') lines.push(`thinking: ${opts.thinking}`);
+    const message = buildSpawnSubagentMessage({
+      task: opts.task,
+      label: opts.label,
+      model: opts.model,
+      thinking: opts.thinking,
+      cleanup: opts.cleanup,
+    });
     const idempotencyKey = `spawn-subagent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    await rpc('chat.send', { sessionKey: parentSessionKey, message: lines.join('\n'), idempotencyKey });
+    await rpc('chat.send', { sessionKey: parentSessionKey, message, idempotencyKey });
 
     // A spawned child can take a while to appear in sessions.list for non-main
     // roots, even after the parent agent accepts the request.

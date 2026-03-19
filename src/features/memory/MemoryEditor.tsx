@@ -5,9 +5,10 @@
  * save/cancel actions.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Save, X, Loader2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { clearPersistedDraft, encodeDraftPart, readPersistedDraft, writePersistedDraft } from '@/features/workspace/persistedDrafts';
 
 interface MemoryEditorProps {
   agentId: string;
@@ -17,43 +18,106 @@ interface MemoryEditorProps {
   onCancel: () => void;
 }
 
+interface MemoryEditorDraft {
+  content: string;
+  originalContent: string;
+}
+
+function getMemoryDraftKind(title: string, date?: string): string {
+  const draftTitle = encodeDraftPart(title);
+  const draftDate = date ? encodeDraftPart(date) : 'root';
+  return `memory-editor:${draftDate}:${draftTitle}`;
+}
+
 /** Inline editor for modifying a memory entry's content. */
 export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryEditorProps) {
-  const [content, setContent] = useState('');
-  const [originalContent, setOriginalContent] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  const draftKind = useMemo(() => getMemoryDraftKind(title, date), [title, date]);
+  const initialDraft = useMemo(
+    () => readPersistedDraft<MemoryEditorDraft>(draftKind, agentId),
+    [draftKind, agentId],
+  );
+  const [content, setContent] = useState(() => initialDraft?.content ?? '');
+  const [originalContent, setOriginalContent] = useState(() => initialDraft?.originalContent ?? '');
+  const [isLoading, setIsLoading] = useState(() => initialDraft === null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const requestVersionRef = useRef(0);
+  const activeEditorKeyRef = useRef('');
 
-  // Fetch the section content on mount
+  const editorKey = useMemo(
+    () => `${agentId}:${date ?? 'root'}:${title}`,
+    [agentId, date, title],
+  );
+
+  const clearDraft = useCallback(() => {
+    clearPersistedDraft(draftKind, agentId);
+  }, [draftKind, agentId]);
+
   useEffect(() => {
-    const fetchContent = async () => {
-      setIsLoading(true);
+    activeEditorKeyRef.current = editorKey;
+  }, [editorKey]);
+
+  // Load persisted draft immediately, otherwise fetch the latest section content.
+  useEffect(() => {
+    const storedDraft = readPersistedDraft<MemoryEditorDraft>(draftKind, agentId);
+    setIsSaving(false);
+
+    if (storedDraft) {
+      setContent(storedDraft.content);
+      setOriginalContent(storedDraft.originalContent);
+      setIsLoading(false);
       setError(null);
+      return;
+    }
+
+    const requestVersion = ++requestVersionRef.current;
+    const controller = new AbortController();
+
+    setContent('');
+    setOriginalContent('');
+    setIsLoading(true);
+    setError(null);
+
+    const fetchContent = async () => {
       try {
         const params = new URLSearchParams({ title, agentId });
         if (date) params.set('date', date);
 
-        const res = await fetch(`/api/memories/section?${params.toString()}`);
-        const data = await res.json();
+        const res = await fetch(`/api/memories/section?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        const data = await res.json() as { ok: boolean; content?: string; error?: string };
+
+        if (controller.signal.aborted || requestVersionRef.current !== requestVersion || activeEditorKeyRef.current !== editorKey) {
+          return;
+        }
 
         if (!data.ok) {
           setError(data.error || 'Failed to load section');
           return;
         }
 
-        setContent(data.content || '');
-        setOriginalContent(data.content || '');
+        const nextContent = data.content || '';
+        setContent(nextContent);
+        setOriginalContent(nextContent);
       } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+        if (requestVersionRef.current !== requestVersion || activeEditorKeyRef.current !== editorKey) {
+          return;
+        }
         setError((err as Error).message);
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted && requestVersionRef.current === requestVersion && activeEditorKeyRef.current === editorKey) {
+          setIsLoading(false);
+        }
       }
     };
 
-    fetchContent();
-  }, [agentId, title, date]);
+    void fetchContent();
+
+    return () => controller.abort();
+  }, [agentId, title, date, draftKind, editorKey]);
 
   // Focus textarea after loading
   useEffect(() => {
@@ -64,8 +128,22 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
 
   const hasChanges = content !== originalContent;
 
+  useEffect(() => {
+    if (isLoading) return;
+
+    if (hasChanges) {
+      writePersistedDraft(draftKind, agentId, { content, originalContent });
+      return;
+    }
+
+    clearDraft();
+  }, [agentId, clearDraft, content, draftKind, hasChanges, isLoading, originalContent]);
+
   const handleSave = async () => {
     if (!hasChanges || isSaving) return;
+
+    const requestVersion = ++requestVersionRef.current;
+    const requestEditorKey = editorKey;
 
     setIsSaving(true);
     setError(null);
@@ -77,26 +155,36 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
         body: JSON.stringify({ title, content, date, agentId }),
       });
 
-      const data = await res.json();
+      const data = await res.json() as { ok: boolean; error?: string };
+
+      if (requestVersionRef.current !== requestVersion || activeEditorKeyRef.current !== requestEditorKey) {
+        return;
+      }
 
       if (!data.ok) {
         setError(data.error || 'Failed to save');
         return;
       }
 
+      clearDraft();
       onSave();
     } catch (err) {
+      if (requestVersionRef.current !== requestVersion || activeEditorKeyRef.current !== requestEditorKey) {
+        return;
+      }
       setError((err as Error).message);
     } finally {
-      setIsSaving(false);
+      if (requestVersionRef.current === requestVersion && activeEditorKeyRef.current === requestEditorKey) {
+        setIsSaving(false);
+      }
     }
   };
 
   const handleCancel = () => {
     if (hasChanges) {
-      // Simple confirm - could use ConfirmDialog component for consistency
       const confirmed = window.confirm('Discard unsaved changes?');
       if (!confirmed) return;
+      clearDraft();
     }
     onCancel();
   };

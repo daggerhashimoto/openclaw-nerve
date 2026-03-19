@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { useWorkspaceFile } from '../hooks/useWorkspaceFile';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getWorkspaceStorageKey } from '../workspaceScope';
+import { clearPersistedDraft, readPersistedDraft, writePersistedDraft } from '../persistedDrafts';
 
 const FILE_OPTIONS = [
   { key: 'soul', label: 'SOUL.md' },
@@ -38,6 +39,10 @@ function getInitialSelectedKey(agentId: string): string {
   return DEFAULT_CONFIG_KEY;
 }
 
+function getConfigDraftKind(fileKey: string): string {
+  return `config-editor:${fileKey}`;
+}
+
 interface ConfigTabProps {
   agentId: string;
 }
@@ -46,15 +51,25 @@ interface ConfigTabProps {
 export function ConfigTab({ agentId }: ConfigTabProps) {
   const [selectedKey, setSelectedKey] = useState(() => getInitialSelectedKey(agentId));
   const { content, isLoading, error, exists, load, save } = useWorkspaceFile(agentId);
-  const [editing, setEditing] = useState(false);
-  const [editContent, setEditContent] = useState('');
+  const initialDraft = readPersistedDraft<string>(getConfigDraftKind(getInitialSelectedKey(agentId)), agentId);
+  const [editing, setEditing] = useState(() => initialDraft !== null);
+  const [editContent, setEditContent] = useState(() => initialDraft ?? '');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [pendingSwitchKey, setPendingSwitchKey] = useState<string | null>(null);
   const feedbackTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const draftKind = getConfigDraftKind(selectedKey);
+  const clearDraft = useCallback((fileKey = selectedKey) => {
+    clearPersistedDraft(getConfigDraftKind(fileKey), agentId);
+  }, [agentId, selectedKey]);
+
   // Clean up feedback timer on unmount
   useEffect(() => () => clearTimeout(feedbackTimer.current), []);
+
+  useEffect(() => {
+    setSelectedKey(getInitialSelectedKey(agentId));
+  }, [agentId]);
 
   useEffect(() => {
     try {
@@ -63,6 +78,18 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
       // ignore storage errors
     }
   }, [agentId, selectedKey]);
+
+  useEffect(() => {
+    const storedDraft = readPersistedDraft<string>(draftKind, agentId);
+    if (storedDraft !== null) {
+      setEditContent(storedDraft);
+      setEditing(true);
+      return;
+    }
+
+    setEditContent('');
+    setEditing(false);
+  }, [agentId, draftKind]);
 
   // Load file when key changes. Reset editing by keying on selectedKey.
   const loadFile = useCallback(() => {
@@ -73,6 +100,20 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
     loadFile();
   }, [loadFile]);
 
+  useEffect(() => {
+    if (!editing) {
+      clearDraft();
+      return;
+    }
+
+    if (editContent === (content ?? '')) {
+      clearDraft();
+      return;
+    }
+
+    writePersistedDraft(draftKind, agentId, editContent);
+  }, [agentId, clearDraft, content, draftKind, editContent, editing]);
+
   const showFeedback = useCallback((type: 'success' | 'error', message: string) => {
     clearTimeout(feedbackTimer.current);
     setFeedback({ type, message });
@@ -80,25 +121,28 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
   }, []);
 
   const handleEdit = useCallback(() => {
-    setEditContent(content || '');
+    const storedDraft = readPersistedDraft<string>(draftKind, agentId);
+    setEditContent(storedDraft ?? content ?? '');
     setEditing(true);
     // Focus textarea after render
     setTimeout(() => textareaRef.current?.focus(), 50);
-  }, [content]);
+  }, [agentId, content, draftKind]);
 
   const handleSave = useCallback(async () => {
     const success = await save(selectedKey, editContent);
     if (success) {
+      clearDraft();
       showFeedback('success', 'File saved');
       setEditing(false);
     } else {
       showFeedback('error', 'Failed to save');
     }
-  }, [selectedKey, editContent, save, showFeedback]);
+  }, [clearDraft, selectedKey, editContent, save, showFeedback]);
 
   const handleCancel = useCallback(() => {
+    clearDraft();
     setEditing(false);
-  }, []);
+  }, [clearDraft]);
 
   const handleCreate = useCallback(async () => {
     const label = FILE_OPTIONS.find(f => f.key === selectedKey)?.label || selectedKey;
@@ -237,6 +281,7 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
         confirmLabel="Discard"
         cancelLabel="Cancel"
         onConfirm={() => {
+          clearDraft();
           if (pendingSwitchKey) {
             setSelectedKey(pendingSwitchKey);
             setEditing(false);

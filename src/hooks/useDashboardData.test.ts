@@ -1,0 +1,151 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderHook, waitFor, act } from '@testing-library/react';
+import { useDashboardData } from './useDashboardData';
+import type { ServerEvent } from '@/hooks/useServerEvents';
+
+type FetchResponse = {
+  ok: boolean;
+  status?: number;
+  json: () => Promise<unknown>;
+};
+
+function jsonResponse(data: unknown, init: { ok?: boolean; status?: number } = {}): FetchResponse {
+  return {
+    ok: init.ok ?? true,
+    status: init.status ?? 200,
+    json: async () => data,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+const subscribeMock = vi.fn(() => () => {});
+let sseHandler: ((event: ServerEvent) => void) | undefined;
+
+vi.mock('@/contexts/GatewayContext', () => ({
+  useGateway: () => ({
+    subscribe: subscribeMock,
+    connectionState: 'disconnected',
+  }),
+}));
+
+vi.mock('@/hooks/useServerEvents', () => ({
+  useServerEvents: (handler: (event: ServerEvent) => void) => {
+    sseHandler = handler;
+    return { connected: true, reconnectAttempts: 0, lastEvent: null };
+  },
+}));
+
+describe('useDashboardData', () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    subscribeMock.mockClear();
+    sseHandler = undefined;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('threads scoped memory fetches and ignores stale responses from the previous agent', async () => {
+    const alphaMemories = deferred<FetchResponse>();
+    const bravoMemories = deferred<FetchResponse>();
+
+    globalThis.fetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input);
+      if (url === '/api/tokens') {
+        return Promise.resolve(jsonResponse({ totalTokens: 0 }));
+      }
+      if (url === '/api/memories?agentId=alpha') {
+        return alphaMemories.promise;
+      }
+      if (url === '/api/memories?agentId=bravo') {
+        return bravoMemories.promise;
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof globalThis.fetch;
+
+    const { result, rerender } = renderHook(
+      ({ agentId }) => useDashboardData({ agentId }),
+      { initialProps: { agentId: 'alpha' } },
+    );
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith('/api/memories?agentId=alpha', expect.any(Object));
+    });
+
+    rerender({ agentId: 'bravo' });
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith('/api/memories?agentId=bravo', expect.any(Object));
+    });
+
+    await act(async () => {
+      bravoMemories.resolve(jsonResponse([{ type: 'section', text: 'Bravo memory' }]));
+    });
+
+    await waitFor(() => {
+      expect(result.current.memories).toEqual([{ type: 'section', text: 'Bravo memory' }]);
+      expect(result.current.memoriesLoading).toBe(false);
+    });
+
+    await act(async () => {
+      alphaMemories.resolve(jsonResponse([{ type: 'section', text: 'Alpha memory' }]));
+    });
+
+    await waitFor(() => {
+      expect(result.current.memories).toEqual([{ type: 'section', text: 'Bravo memory' }]);
+    });
+  });
+
+  it('refreshes memories only for matching SSE agent scopes and still forwards file.changed', async () => {
+    const onFileChanged = vi.fn();
+
+    globalThis.fetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input);
+      if (url === '/api/tokens') {
+        return Promise.resolve(jsonResponse({ totalTokens: 0 }));
+      }
+      if (url === '/api/memories?agentId=alpha') {
+        return Promise.resolve(jsonResponse([{ type: 'section', text: 'Alpha memory' }]));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof globalThis.fetch;
+
+    renderHook(() => useDashboardData({ agentId: 'alpha', onFileChanged }));
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith('/api/memories?agentId=alpha', expect.any(Object));
+    });
+
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockClear();
+
+    act(() => {
+      sseHandler?.({ event: 'memory.changed', data: { agentId: 'bravo' }, ts: Date.now() });
+    });
+
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/memories?agentId=alpha', expect.any(Object));
+
+    act(() => {
+      sseHandler?.({ event: 'memory.changed', data: { agentId: 'alpha' }, ts: Date.now() });
+      sseHandler?.({ event: 'file.changed', data: { path: 'memory/2026-03-19.md' }, ts: Date.now() });
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/memories?agentId=alpha', expect.any(Object));
+    });
+    expect(onFileChanged).toHaveBeenCalledWith('memory/2026-03-19.md');
+  });
+});

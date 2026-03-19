@@ -111,6 +111,38 @@ describe('useWebSocket', () => {
   });
 
   describe('Connect handshake payload', () => {
+    it('should identify as the OpenClaw control UI client', async () => {
+      const wsInstances: MockWebSocket[] = [];
+      const OriginalMockWS = MockWebSocket;
+      (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket = class extends OriginalMockWS {
+        constructor(url: string) {
+          super(url);
+          wsInstances.push(this);
+        }
+      };
+
+      const { result } = renderHook(() => useWebSocket());
+
+      act(() => {
+        result.current.connect('ws://localhost:8080', 'test-token');
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      const ws = wsInstances[0];
+      act(() => {
+        ws.simulateMessage({ type: 'event', event: 'connect.challenge', payload: { nonce: 'n0' } });
+      });
+
+      const connectReq = getConnectRequest(ws);
+      const client = (connectReq?.params as { client?: { id?: string; mode?: string } } | undefined)?.client;
+
+      expect(client?.id).toBe('openclaw-control-ui');
+      expect(client?.mode).toBe('webchat');
+    });
+
     it('should include a stable per-tab client.instanceId in connect params', async () => {
       const wsInstances: MockWebSocket[] = [];
       const OriginalMockWS = MockWebSocket;

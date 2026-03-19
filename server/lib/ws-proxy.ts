@@ -41,6 +41,7 @@ const RESTRICTED_METHODS = new Set([
   'sessions.reset',
   'sessions.compact',
 ]);
+const CONTROL_UI_CLIENT_ID = 'openclaw-control-ui';
 
 /**
  * Execute a gateway RPC call via the CLI, bypassing webchat restrictions.
@@ -221,6 +222,8 @@ function createGatewayRelay(
   let savedConnectMsg: Record<string, unknown> | null = null;
   /** Whether the saved connect message has been dispatched to the gateway */
   let connectSent = false;
+  /** Whether this connection is using the privileged OpenClaw control UI client id */
+  let isControlUiClient = false;
   /** Timeout handle for challenge nonce deadline */
   let challengeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -257,6 +260,11 @@ function createGatewayRelay(
       clearTimeout(challengeTimer);
       challengeTimer = null;
     }
+  }
+
+  function updateClientKindFromConnect(msg: Record<string, unknown>): void {
+    const params = (msg.params || {}) as ConnectParams;
+    isControlUiClient = params.client?.id === CONTROL_UI_CLIENT_ID;
   }
 
   /**
@@ -397,6 +405,7 @@ function createGatewayRelay(
           const msg = JSON.parse(data.toString());
           if (msg.type === 'req' && msg.method === 'connect' && msg.params) {
             savedConnectMsg = msg;
+            updateClientKindFromConnect(msg);
             return; // Do NOT add to pending buffer
           }
         } catch { /* pass through */ }
@@ -418,6 +427,7 @@ function createGatewayRelay(
           if (msg.type === 'req' && msg.method === 'connect' && msg.params) {
             // Last-write-wins if multiple connect frames arrive before dispatch.
             savedConnectMsg = msg;
+            updateClientKindFromConnect(msg);
             if (challengeNonce) {
               dispatchConnect(challengeNonce);
             } else {
@@ -442,6 +452,7 @@ function createGatewayRelay(
         // Intercept connect request — defer until challenge nonce arrives
         if (!handshakeComplete && msg.type === 'req' && msg.method === 'connect' && msg.params) {
           savedConnectMsg = msg;
+          updateClientKindFromConnect(msg);
           if (challengeNonce) {
             dispatchConnect(challengeNonce);
           } else {
@@ -450,8 +461,9 @@ function createGatewayRelay(
           return;
         }
 
-        // Intercept restricted RPC methods — proxy via CLI (full scopes)
-        if (msg.type === 'req' && RESTRICTED_METHODS.has(msg.method)) {
+        // Intercept restricted RPC methods for plain webchat clients only.
+        // Control UI clients are allowed to call these directly on the gateway.
+        if (msg.type === 'req' && RESTRICTED_METHODS.has(msg.method) && !isControlUiClient) {
           const reqId = msg.id;
           gatewayCall(msg.method, msg.params || {})
             .then((result) => {

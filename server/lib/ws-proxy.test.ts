@@ -195,6 +195,52 @@ describe('ws-proxy', () => {
   });
 
   describe('message relaying', () => {
+    it('forwards restricted session mutations for control-ui clients instead of intercepting them', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      const challenge = await waitForMessage(ws);
+      expect(JSON.parse(challenge).event).toBe('connect.challenge');
+
+      ws.send(JSON.stringify({
+        type: 'req',
+        method: 'connect',
+        id: 'c-control-1',
+        params: { auth: { token: 'test-token' }, client: { id: 'openclaw-control-ui', mode: 'webchat' } },
+      }));
+
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout waiting for connect response')), 5000);
+        ws.on('message', (data) => {
+          try {
+            const msg = JSON.parse(data.toString());
+            if (msg.type === 'res' && msg.id === 'c-control-1') {
+              clearTimeout(timer);
+              resolve();
+            }
+          } catch { /* ignore */ }
+        });
+      });
+
+      mockGw.clearReceived();
+      ws.send(JSON.stringify({
+        type: 'req',
+        method: 'sessions.delete',
+        id: 'delete-1',
+        params: { key: 'agent:main:subagent:test', deleteTranscript: true },
+      }));
+
+      await mockGw.expectMessages(1);
+      const deleteMsg = mockGw.received.find((m) => {
+        const d = m.data as Record<string, unknown>;
+        return d.type === 'req' && d.method === 'sessions.delete';
+      });
+      expect(deleteMsg).toBeTruthy();
+
+      ws.close();
+    });
+
     it('relays gateway messages to client', async () => {
       const ws = new WebSocket(
         `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,

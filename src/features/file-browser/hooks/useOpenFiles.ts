@@ -74,6 +74,10 @@ function buildReadUrl(filePath: string, agentId: string): string {
   return `/api/files/read?${params.toString()}`;
 }
 
+function getAgentScopedPathKey(agentId: string, filePath: string): string {
+  return `${normalizeAgentId(agentId)}::${filePath}`;
+}
+
 function getRestoredActiveTab(persistedTab: string, files: OpenFile[]): string {
   if (persistedTab === 'chat') return 'chat';
   return files.some((file) => file.path === persistedTab)
@@ -98,9 +102,10 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
   const [activeTab, setActiveTabState] = useState<string>(() => loadPersistedTab(scopedAgentId));
   const restoreRequestRef = useRef(0);
 
-  // Track mtimes from our own saves so we can ignore the SSE bounce-back
+  // Track mtimes from our own saves so we can ignore the SSE bounce-back.
+  // Keys are agent-scoped so same relative paths in different workspaces stay isolated.
   const recentSaveMtimes = useRef<Map<string, number>>(new Map());
-  /** Paths currently being saved, blocks lock overlay during the save round-trip */
+  /** Paths currently being saved, blocks lock overlay during the save round-trip. */
   const savingPaths = useRef<Set<string>>(new Set());
 
   const openFilesRef = useRef<OpenFile[]>([]);
@@ -363,8 +368,10 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     const file = target ?? openFilesRef.current.find((openFile) => openFile.path === filePath);
     if (!file) return { ok: false };
 
+    const scopedPathKey = getAgentScopedPathKey(requestAgentId, filePath);
+
     try {
-      savingPaths.current.add(filePath);
+      savingPaths.current.add(scopedPathKey);
 
       const res = await fetch('/api/files/write', {
         method: 'PUT',
@@ -379,8 +386,8 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       const data = await res.json();
 
       if (data.ok) {
-        recentSaveMtimes.current.set(filePath, data.mtime);
-        setTimeout(() => recentSaveMtimes.current.delete(filePath), 2000);
+        recentSaveMtimes.current.set(scopedPathKey, data.mtime);
+        setTimeout(() => recentSaveMtimes.current.delete(scopedPathKey), 2000);
         clearDirtyFileSnapshot(requestAgentId, filePath);
 
         if (agentIdRef.current === requestAgentId) {
@@ -395,19 +402,19 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
           });
         }
 
-        savingPaths.current.delete(filePath);
+        savingPaths.current.delete(scopedPathKey);
         return { ok: true };
       }
 
       if (res.status === 409) {
-        savingPaths.current.delete(filePath);
+        savingPaths.current.delete(scopedPathKey);
         return { ok: false, conflict: true };
       }
 
-      savingPaths.current.delete(filePath);
+      savingPaths.current.delete(scopedPathKey);
       return { ok: false };
     } catch {
-      savingPaths.current.delete(filePath);
+      savingPaths.current.delete(scopedPathKey);
       return { ok: false };
     }
   }, [clearDirtyFileSnapshot, rememberDirtyFiles]);
@@ -475,8 +482,11 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
    * - Lock clears automatically after a short delay.
    */
   const handleFileChanged = useCallback((changedPath: string) => {
-    if (recentSaveMtimes.current.has(changedPath)) return;
-    if (savingPaths.current.has(changedPath)) return;
+    const requestAgentId = agentIdRef.current;
+    const scopedPathKey = getAgentScopedPathKey(requestAgentId, changedPath);
+
+    if (recentSaveMtimes.current.has(scopedPathKey)) return;
+    if (savingPaths.current.has(scopedPathKey)) return;
 
     const isOpen = openFilesRef.current.some((file) => file.path === changedPath);
     if (!isOpen) return;
@@ -486,16 +496,20 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     )));
 
     void reloadFile(changedPath).then(() => {
-      const existing = unlockTimers.current.get(changedPath);
+      if (agentIdRef.current !== requestAgentId) return;
+
+      const existing = unlockTimers.current.get(scopedPathKey);
       if (existing) clearTimeout(existing);
 
       const timer = window.setTimeout(() => {
-        unlockTimers.current.delete(changedPath);
+        unlockTimers.current.delete(scopedPathKey);
+        if (agentIdRef.current !== requestAgentId) return;
+
         setOpenFiles((prev) => prev.map((file) => (
           file.path === changedPath ? { ...file, locked: false } : file
         )));
       }, 5000);
-      unlockTimers.current.set(changedPath, timer);
+      unlockTimers.current.set(scopedPathKey, timer);
     });
   }, [reloadFile]);
 

@@ -580,6 +580,102 @@ describe('FileTreePanel', () => {
     });
   });
 
+  describe('external file change refreshes', () => {
+    it('refreshes the same relative path again when the agent changes', () => {
+      const { rerender } = render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+          lastChangedEvent={{ path: 'docs/shared.md', agentId: 'agent-a', sequence: 1 }}
+        />
+      );
+
+      expect(defaultMockHook.handleFileChange).toHaveBeenCalledTimes(1);
+      expect(defaultMockHook.handleFileChange).toHaveBeenLastCalledWith('docs/shared.md');
+
+      rerender(
+        <FileTreePanel
+          workspaceAgentId="agent-b"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+          lastChangedEvent={{ path: 'docs/shared.md', agentId: 'agent-b', sequence: 2 }}
+        />
+      );
+
+      expect(defaultMockHook.handleFileChange).toHaveBeenCalledTimes(2);
+      expect(defaultMockHook.handleFileChange).toHaveBeenLastCalledWith('docs/shared.md');
+    });
+
+    it('refreshes repeated same-path events for the same agent when the sequence changes', () => {
+      const { rerender } = render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+          lastChangedEvent={{ path: 'docs/shared.md', agentId: 'agent-a', sequence: 1 }}
+        />
+      );
+
+      expect(defaultMockHook.handleFileChange).toHaveBeenCalledTimes(1);
+      expect(defaultMockHook.handleFileChange).toHaveBeenLastCalledWith('docs/shared.md');
+
+      rerender(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+          lastChangedEvent={{ path: 'docs/shared.md', agentId: 'agent-a', sequence: 2 }}
+        />
+      );
+
+      expect(defaultMockHook.handleFileChange).toHaveBeenCalledTimes(2);
+      expect(defaultMockHook.handleFileChange).toHaveBeenLastCalledWith('docs/shared.md');
+    });
+
+    it('ignores stale file change events from another agent after a switch', () => {
+      const { rerender } = render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+          lastChangedEvent={{ path: 'docs/shared.md', agentId: 'agent-a', sequence: 1 }}
+        />
+      );
+
+      expect(defaultMockHook.handleFileChange).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <FileTreePanel
+          workspaceAgentId="agent-b"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+          lastChangedEvent={{ path: 'docs/shared.md', agentId: 'agent-a', sequence: 1 }}
+        />
+      );
+
+      expect(defaultMockHook.handleFileChange).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('Mobile collapse behavior', () => {
     const mockOnCollapseChange = vi.fn();
 

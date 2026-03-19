@@ -28,7 +28,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { createCommands } from '@/features/command-palette/commands';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
-import { FileTreePanel, TabbedContentArea, useOpenFiles } from '@/features/file-browser';
+import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
 import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
 import { getWorkspaceAgentId } from '@/features/workspace/workspaceScope';
 
@@ -93,8 +93,9 @@ export default function App({ onLogout }: AppProps) {
     serverSideAuth,
   } = useConnectionManager();
 
-  // Track last changed file path for tree refresh
-  const [lastChangedPath, setLastChangedPath] = useState<string | null>(null);
+  // Track file change events for tree refresh. Sequence keeps repeated same-path updates visible.
+  const [lastChangedEvent, setLastChangedEvent] = useState<FileTreeChangeEvent | null>(null);
+  const fileTreeChangeSequenceRef = useRef(0);
 
   const initialCompactLayout = typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches;
   const initialDesktopFileBrowserCollapsed = (() => {
@@ -170,11 +171,15 @@ export default function App({ onLogout }: AppProps) {
     }
   }, [saveFile]);
 
-  // Single file.changed handler — feeds both open files and tree refresh
+  // Single file.changed handler, feeds both open files and tree refresh.
   const onFileChanged = useCallback((path: string) => {
     handleFileChanged(path);
-    setLastChangedPath(path);
-  }, [handleFileChanged]);
+    setLastChangedEvent({
+      path,
+      agentId: workspaceAgentId,
+      sequence: ++fileTreeChangeSequenceRef.current,
+    });
+  }, [handleFileChanged, workspaceAgentId]);
 
   // Dashboard data (extracted hook) — single SSE connection handles all events
   const { memories, memoriesLoading, tokenData, refreshMemories } = useDashboardData({
@@ -636,7 +641,7 @@ export default function App({ onLogout }: AppProps) {
               <FileTreePanel
                 workspaceAgentId={workspaceAgentId}
                 onOpenFile={openFile}
-                lastChangedPath={lastChangedPath}
+                lastChangedEvent={lastChangedEvent}
                 onRemapOpenPaths={remapOpenPaths}
                 onCloseOpenPaths={closeOpenPathsByPrefix}
                 isCompactLayout={false}
@@ -661,7 +666,7 @@ export default function App({ onLogout }: AppProps) {
                   <FileTreePanel
                     workspaceAgentId={workspaceAgentId}
                     onOpenFile={openFile}
-                    lastChangedPath={lastChangedPath}
+                    lastChangedEvent={lastChangedEvent}
                     onRemapOpenPaths={remapOpenPaths}
                     onCloseOpenPaths={closeOpenPathsByPrefix}
                     isCompactLayout={true}

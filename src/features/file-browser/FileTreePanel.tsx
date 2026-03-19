@@ -49,13 +49,19 @@ function isTrashItemPath(filePath: string): boolean {
   return filePath.startsWith('.trash/') && filePath !== '.trash';
 }
 
+export interface FileTreeChangeEvent {
+  path: string;
+  agentId: string;
+  sequence: number;
+}
+
 interface FileTreePanelProps {
   workspaceAgentId: string;
   onOpenFile: (path: string) => void;
   onRemapOpenPaths?: (fromPath: string, toPath: string, targetAgentId?: string) => void;
   onCloseOpenPaths?: (pathPrefix: string, targetAgentId?: string) => void;
-  /** Called externally when a file changes (SSE) — refreshes affected directory */
-  lastChangedPath?: string | null;
+  /** Called externally when a file changes (SSE) — refreshes affected directory. */
+  lastChangedEvent?: FileTreeChangeEvent | null;
   /** Layout hint retained for compatibility with existing callers. */
   isCompactLayout?: boolean;
   /** Callback to notify parent of collapse state changes */
@@ -79,11 +85,11 @@ type FileTreeToastPayload =
 type FileTreeToast = FileTreeToastPayload & { agentId: string };
 
 export function FileTreePanel({
-  workspaceAgentId,
+  workspaceAgentId = 'main',
   onOpenFile,
   onRemapOpenPaths,
   onCloseOpenPaths,
-  lastChangedPath,
+  lastChangedEvent,
   isCompactLayout = false,
   onCollapseChange,
   collapsed,
@@ -93,14 +99,17 @@ export function FileTreePanel({
     loadingPaths, workspaceInfo, toggleDirectory, selectFile, refresh, handleFileChange,
   } = useFileTree(workspaceAgentId);
 
-  // React to external file changes
-  const prevChangedPath = useRef<string | null>(null);
+  // React to external file changes. Sequence keeps repeated same-path events distinct,
+  // and agentId prevents a stale event from one workspace from replaying in another.
+  const lastHandledChangeSequenceRef = useRef<number | null>(null);
   useEffect(() => {
-    if (lastChangedPath && lastChangedPath !== prevChangedPath.current) {
-      prevChangedPath.current = lastChangedPath;
-      handleFileChange(lastChangedPath);
-    }
-  }, [lastChangedPath, handleFileChange]);
+    if (!lastChangedEvent) return;
+    if (lastChangedEvent.agentId !== workspaceAgentId) return;
+    if (lastHandledChangeSequenceRef.current === lastChangedEvent.sequence) return;
+
+    lastHandledChangeSequenceRef.current = lastChangedEvent.sequence;
+    handleFileChange(lastChangedEvent.path);
+  }, [handleFileChange, lastChangedEvent, workspaceAgentId]);
 
   const panelRef = useRef<HTMLDivElement>(null);
   const widthRef = useRef(loadWidth());

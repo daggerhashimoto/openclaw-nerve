@@ -128,6 +128,91 @@ describe('useOpenFiles', () => {
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('agentId=research'));
   });
 
+  it('preserves dirty file state for each agent when switching away and back', async () => {
+    const { store, mock } = createLocalStorageMock({
+      [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['draft.md']),
+      [getWorkspaceStorageKey('active-tab', 'main')]: 'draft.md',
+      [getWorkspaceStorageKey('open-files', 'research')]: JSON.stringify(['notes.md']),
+      [getWorkspaceStorageKey('active-tab', 'research')]: 'notes.md',
+    });
+    vi.stubGlobal('localStorage', mock);
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = getRequestUrl(input);
+      if (url.pathname !== '/api/files/read') {
+        return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+      }
+
+      const path = url.searchParams.get('path');
+      const agentId = url.searchParams.get('agentId') || 'main';
+
+      if (path === 'draft.md' && agentId === 'main') {
+        return createJsonResponse({ ok: true, content: 'main original', mtime: 11 });
+      }
+
+      if (path === 'notes.md' && agentId === 'research') {
+        return createJsonResponse({ ok: true, content: 'research original', mtime: 22 });
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result, rerender } = renderHook(
+      ({ agentId }) => useOpenFiles(agentId),
+      { initialProps: { agentId: 'main' } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'draft.md',
+        content: 'main original',
+        savedContent: 'main original',
+        dirty: false,
+      });
+      expect(result.current.activeTab).toBe('draft.md');
+    });
+
+    act(() => {
+      result.current.updateContent('draft.md', 'main unsaved draft');
+    });
+
+    expect(result.current.openFiles[0]).toMatchObject({
+      path: 'draft.md',
+      content: 'main unsaved draft',
+      savedContent: 'main original',
+      dirty: true,
+    });
+    expect(result.current.hasDirtyFiles).toBe(true);
+
+    rerender({ agentId: 'research' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'notes.md',
+        content: 'research original',
+        savedContent: 'research original',
+        dirty: false,
+      });
+      expect(result.current.activeTab).toBe('notes.md');
+    });
+
+    rerender({ agentId: 'main' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'draft.md',
+        content: 'main unsaved draft',
+        savedContent: 'main original',
+        dirty: true,
+      });
+      expect(result.current.activeTab).toBe('draft.md');
+      expect(result.current.hasDirtyFiles).toBe(true);
+    });
+
+    expect(store.get(getWorkspaceStorageKey('open-files', 'main'))).toBe(JSON.stringify(['draft.md']));
+    expect(store.get(getWorkspaceStorageKey('active-tab', 'main'))).toBe('draft.md');
+  });
+
   it('reports dirty files through helper accessors', async () => {
     const { mock } = createLocalStorageMock();
     vi.stubGlobal('localStorage', mock);

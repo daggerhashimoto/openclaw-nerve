@@ -105,6 +105,7 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID) {
   const [workspaceInfo, setWorkspaceInfo] = useState<{ isCustomWorkspace: boolean; rootPath: string } | null>(null);
   const mountedRef = useRef(true);
   const agentIdRef = useRef(scopedAgentId);
+  const stateOwnerAgentRef = useRef(scopedAgentId);
   const requestVersionRef = useRef(0);
 
   useEffect(() => {
@@ -120,11 +121,13 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID) {
 
   // Persist expanded paths
   useEffect(() => {
+    if (stateOwnerAgentRef.current !== scopedAgentId) return;
     saveExpandedPaths(scopedAgentId, expandedPaths);
   }, [expandedPaths, scopedAgentId]);
 
   // Persist selected path
   useEffect(() => {
+    if (stateOwnerAgentRef.current !== scopedAgentId) return;
     saveSelectedPath(scopedAgentId, selectedPath);
   }, [scopedAgentId, selectedPath]);
 
@@ -169,6 +172,7 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID) {
     const persistedExpandedPaths = loadExpandedPaths(requestAgentId);
     const persistedSelectedPath = loadSelectedPath(requestAgentId);
 
+    stateOwnerAgentRef.current = requestAgentId;
     setLoading(true);
     setError(null);
     setEntries([]);

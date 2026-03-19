@@ -77,6 +77,12 @@ function getRestoredActiveTab(persistedTab: string, files: OpenFile[]): string {
     : files.at(-1)?.path ?? 'chat';
 }
 
+interface DirtyFileSnapshot {
+  content: string;
+  savedContent: string;
+  mtime: number;
+}
+
 export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
   const scopedAgentId = normalizeAgentId(agentId);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
@@ -93,21 +99,55 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
   openFilesRef.current = openFiles;
 
   const agentIdRef = useRef(scopedAgentId);
+  const stateOwnerAgentRef = useRef(scopedAgentId);
+  const restoringAgentIdRef = useRef<string | null>(null);
+  const dirtyFilesByAgentRef = useRef<Map<string, Map<string, DirtyFileSnapshot>>>(new Map());
   useEffect(() => {
     agentIdRef.current = scopedAgentId;
   }, [scopedAgentId]);
 
   const unlockTimers = useRef<Map<string, number>>(new Map());
 
+  const rememberDirtyFiles = useCallback((targetAgentId: string, files: OpenFile[]) => {
+    const dirtyFiles = new Map<string, DirtyFileSnapshot>();
+
+    for (const file of files) {
+      if (!file.dirty) continue;
+      dirtyFiles.set(file.path, {
+        content: file.content,
+        savedContent: file.savedContent,
+        mtime: file.mtime,
+      });
+    }
+
+    dirtyFilesByAgentRef.current.set(targetAgentId, dirtyFiles);
+  }, []);
+
+  useEffect(() => {
+    if (stateOwnerAgentRef.current !== scopedAgentId) return;
+    if (restoringAgentIdRef.current === scopedAgentId) return;
+    rememberDirtyFiles(scopedAgentId, openFiles);
+  }, [openFiles, rememberDirtyFiles, scopedAgentId]);
+
   const restorePersistedFiles = useCallback(async (targetAgentId = scopedAgentId) => {
     const requestId = ++restoreRequestRef.current;
     const persistedPaths = loadPersistedFiles(targetAgentId);
     const persistedTab = loadPersistedTab(targetAgentId);
+    const dirtyFiles = dirtyFilesByAgentRef.current.get(targetAgentId);
+    const clearRestore = () => {
+      if (restoringAgentIdRef.current === targetAgentId) {
+        restoringAgentIdRef.current = null;
+      }
+    };
 
+    stateOwnerAgentRef.current = targetAgentId;
+    restoringAgentIdRef.current = targetAgentId;
     setOpenFiles([]);
     setActiveTabState(persistedTab);
 
     if (persistedPaths.length === 0) {
+      dirtyFilesByAgentRef.current.set(targetAgentId, new Map());
+      clearRestore();
       persistFiles(targetAgentId, []);
       persistTab(targetAgentId, 'chat');
       setActiveTabState('chat');
@@ -121,14 +161,16 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
         if (!res.ok) continue;
         const data = await res.json();
         if (!data.ok) continue;
+
+        const dirtySnapshot = dirtyFiles?.get(path);
         files.push({
           path,
           name: basename(path),
-          content: data.content,
-          savedContent: data.content,
-          dirty: false,
+          content: dirtySnapshot?.content ?? data.content,
+          savedContent: dirtySnapshot?.savedContent ?? data.content,
+          dirty: dirtySnapshot ? dirtySnapshot.content !== dirtySnapshot.savedContent : false,
           locked: false,
-          mtime: data.mtime,
+          mtime: dirtySnapshot?.mtime ?? data.mtime,
           loading: false,
         });
       } catch {
@@ -136,15 +178,18 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       }
 
       if (restoreRequestRef.current !== requestId || agentIdRef.current !== targetAgentId) {
+        clearRestore();
         return;
       }
     }
 
     if (restoreRequestRef.current !== requestId || agentIdRef.current !== targetAgentId) {
+      clearRestore();
       return;
     }
 
     const nextActiveTab = getRestoredActiveTab(persistedTab, files);
+    clearRestore();
     setOpenFiles(files);
     setActiveTabState(nextActiveTab);
     persistFiles(targetAgentId, files);

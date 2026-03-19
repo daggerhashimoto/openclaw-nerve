@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import type { InlineSelectOption } from '@/components/ui/InlineSelect';
 import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
+import { type SubagentCleanupMode } from './buildSpawnSubagentMessage';
 import { getSessionKey } from '@/types';
 import {
   getRootAgentSessionKey,
@@ -29,6 +30,10 @@ const THINKING_LEVELS: InlineSelectOption[] = [
   { value: 'low', label: 'low' },
   { value: 'medium', label: 'medium' },
   { value: 'high', label: 'high' },
+];
+const AFTER_RUN_OPTIONS: InlineSelectOption[] = [
+  { value: 'keep', label: 'Keep' },
+  { value: 'delete', label: 'Delete' },
 ];
 
 type ModelEntry = { id: string; alias?: string };
@@ -55,6 +60,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
   const [parentRootKey, setParentRootKey] = useState('');
   const [model, setModel] = useState<string>('');
   const [thinking, setThinking] = useState<string>('medium');
+  const [cleanup, setCleanup] = useState<SubagentCleanupMode>('keep');
   const [spawning, setSpawning] = useState(false);
   const [fetchedModels, setFetchedModels] = useState<ModelEntry[]>([]);
   const [spawnError, setSpawnError] = useState('');
@@ -133,6 +139,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
     setParentRootKey(currentRootKey);
     setModel(defaultModelId);
     setThinking('medium');
+    setCleanup('keep');
     setSpawnError('');
   }, [currentRootKey, defaultModelId]);
 
@@ -160,6 +167,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
           label: label.trim() || undefined,
           model,
           thinking,
+          cleanup,
         });
       }
       reset();
@@ -170,7 +178,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
     } finally {
       setSpawning(false);
     }
-  }, [agentNameInput, label, mode, model, onOpenChange, onSpawn, parentRootKey, reset, task, thinking]);
+  }, [agentNameInput, cleanup, label, mode, model, onOpenChange, onSpawn, parentRootKey, reset, task, thinking]);
 
   const handleCancel = useCallback(() => {
     if (spawning) return;
@@ -434,6 +442,25 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                     placeholder="e.g. audit-auth-flow"
                     className="cockpit-input cockpit-input-mono"
                   />
+                </div>
+              )}
+
+              {mode === 'subagent' && (
+                <div>
+                  <label className="cockpit-field-label mb-2 block">After run</label>
+                  <InlineSelect
+                    value={cleanup}
+                    onChange={(value) => setCleanup(value as SubagentCleanupMode)}
+                    options={AFTER_RUN_OPTIONS}
+                    ariaLabel="After run"
+                    disabled={spawning}
+                    triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
+                    menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
+                    inline
+                  />
+                  <p className="cockpit-note mt-2">
+                    Keep leaves the finished subagent visible. Delete removes it automatically after the run ends.
+                  </p>
                 </div>
               )}
 

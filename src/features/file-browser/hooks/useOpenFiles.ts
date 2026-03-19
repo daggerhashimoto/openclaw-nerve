@@ -181,7 +181,6 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     const requestId = ++restoreRequestRef.current;
     const persistedPaths = loadPersistedFiles(targetAgentId);
     const persistedTab = loadPersistedTab(targetAgentId);
-    const dirtyFiles = dirtyFilesByAgentRef.current.get(targetAgentId);
     const clearRestore = () => {
       if (restoringAgentIdRef.current === targetAgentId) {
         restoringAgentIdRef.current = null;
@@ -210,7 +209,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
         const data = await res.json();
         if (!data.ok) continue;
 
-        const dirtySnapshot = dirtyFiles?.get(path);
+        const dirtySnapshot = dirtyFilesByAgentRef.current.get(targetAgentId)?.get(path);
         files.push({
           path,
           name: basename(path),
@@ -245,8 +244,6 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
   }, [scopedAgentId]);
 
   useEffect(() => {
-    recentSaveMtimes.current.clear();
-    savingPaths.current.clear();
     for (const timer of unlockTimers.current.values()) {
       clearTimeout(timer);
     }

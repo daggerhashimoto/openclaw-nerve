@@ -12,7 +12,7 @@ import crypto from 'node:crypto';
 import {
   getWorkspaceRoot,
   isExcluded,
-  resolveWorkspacePath,
+  resolveWorkspacePathForRoot,
 } from './file-utils.js';
 import { config } from './config.js';
 import { withMutex } from './mutex.js';
@@ -63,12 +63,16 @@ function toPosix(rel: string): string {
   return rel.replace(/\\/g, '/');
 }
 
-function workspaceRoot(): string {
-  return getWorkspaceRoot();
+function normalizeWorkspaceRoot(workspaceRoot: string): string {
+  return getWorkspaceRoot(workspaceRoot);
 }
 
-function toWorkspaceRelative(absPath: string): string {
-  const rel = path.relative(workspaceRoot(), absPath);
+function toWorkspaceRelative(absPath: string, workspaceRoot: string): string {
+  const root = normalizeWorkspaceRoot(workspaceRoot);
+  const rel = path.relative(root, absPath);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new FileOpError(403, 'invalid_path', 'Invalid or excluded path');
+  }
   return toPosix(rel || '.');
 }
 
@@ -129,16 +133,8 @@ function assertValidNewName(newName: string): void {
   }
 }
 
-async function resolveExistingPathOrThrow(relPath: string): Promise<string> {
-  const resolved = await resolveWorkspacePath(relPath);
-  if (!resolved) {
-    throw new FileOpError(403, 'invalid_path', 'Invalid or excluded path');
-  }
-  return resolved;
-}
-
-async function resolvePathAllowNewOrThrow(relPath: string): Promise<string> {
-  const resolved = await resolveWorkspacePath(relPath, { allowNonExistent: true });
+async function resolvePathAllowNewOrThrow(workspaceRoot: string, relPath: string): Promise<string> {
+  const resolved = await resolveWorkspacePathForRoot(workspaceRoot, relPath, { allowNonExistent: true });
   if (!resolved) {
     throw new FileOpError(403, 'invalid_path', 'Invalid or excluded path');
   }
@@ -170,28 +166,31 @@ async function assertTargetNotExists(targetAbs: string): Promise<void> {
   }
 }
 
-function trashDirAbs(): string {
-  return path.join(workspaceRoot(), TRASH_DIR);
+function trashDirAbs(workspaceRoot: string): string {
+  return path.join(normalizeWorkspaceRoot(workspaceRoot), TRASH_DIR);
 }
 
-function trashIndexAbs(): string {
-  return path.join(trashDirAbs(), TRASH_INDEX);
+function trashIndexAbs(workspaceRoot: string): string {
+  return path.join(trashDirAbs(workspaceRoot), TRASH_INDEX);
 }
 
-async function ensureTrashInfra(): Promise<void> {
+async function ensureTrashInfra(workspaceRoot: string): Promise<void> {
+  const trashDir = trashDirAbs(workspaceRoot);
+
   try {
-    await fs.mkdir(trashDirAbs(), { recursive: true });
+    await fs.mkdir(trashDir, { recursive: true });
   } catch {
     throw new FileOpError(422, 'trash_path_conflict', 'Reserved .trash path is not a directory');
   }
 
-  const trashStat = await fs.stat(trashDirAbs()).catch(() => null);
+  const trashStat = await fs.stat(trashDir).catch(() => null);
   if (!trashStat || !trashStat.isDirectory()) {
     throw new FileOpError(422, 'trash_path_conflict', 'Reserved .trash path is not a directory');
   }
 
-  if (!(await exists(trashIndexAbs()))) {
-    await fs.writeFile(trashIndexAbs(), JSON.stringify(EMPTY_INDEX, null, 2) + '\n', 'utf-8');
+  const indexPath = trashIndexAbs(workspaceRoot);
+  if (!(await exists(indexPath))) {
+    await fs.writeFile(indexPath, JSON.stringify(EMPTY_INDEX, null, 2) + '\n', 'utf-8');
   }
 }
 
@@ -206,9 +205,9 @@ function isValidTrashIndexItem(item: unknown): item is TrashIndexItem {
   );
 }
 
-async function readTrashIndex(): Promise<TrashIndexDoc> {
+async function readTrashIndex(workspaceRoot: string): Promise<TrashIndexDoc> {
   try {
-    const raw = await fs.readFile(trashIndexAbs(), 'utf-8');
+    const raw = await fs.readFile(trashIndexAbs(workspaceRoot), 'utf-8');
     const parsed = JSON.parse(raw) as Partial<TrashIndexDoc>;
     if (parsed && parsed.version === 1 && parsed.items && typeof parsed.items === 'object') {
       const validItems: Record<string, TrashIndexItem> = {};
@@ -228,8 +227,8 @@ async function readTrashIndex(): Promise<TrashIndexDoc> {
   }
 }
 
-async function writeTrashIndex(index: TrashIndexDoc): Promise<void> {
-  const indexPath = trashIndexAbs();
+async function writeTrashIndex(workspaceRoot: string, index: TrashIndexDoc): Promise<void> {
+  const indexPath = trashIndexAbs(workspaceRoot);
   const dirPath = path.dirname(indexPath);
   const tempPath = path.join(dirPath, `${TRASH_INDEX}.${process.pid}.${Date.now()}.${randomId()}.tmp`);
   const payload = JSON.stringify(index, null, 2) + '\n';
@@ -264,7 +263,11 @@ function randomId(): string {
   return crypto.randomBytes(4).toString('hex');
 }
 
-async function buildUniqueTrashTarget(sourceAbs: string, sourceIsDirectory: boolean): Promise<string> {
+async function buildUniqueTrashTarget(
+  workspaceRoot: string,
+  sourceAbs: string,
+  sourceIsDirectory: boolean,
+): Promise<string> {
   const base = path.basename(sourceAbs);
   const parsed = path.parse(base);
 
@@ -276,7 +279,7 @@ async function buildUniqueTrashTarget(sourceAbs: string, sourceIsDirectory: bool
         ? `${parsed.name}--${id}${parsed.ext}`
         : `${base}--${id}`;
 
-    const candidateAbs = path.join(trashDirAbs(), candidateName);
+    const candidateAbs = path.join(trashDirAbs(workspaceRoot), candidateName);
     if (!(await exists(candidateAbs))) {
       return candidateAbs;
     }
@@ -285,14 +288,18 @@ async function buildUniqueTrashTarget(sourceAbs: string, sourceIsDirectory: bool
   throw new FileOpError(500, 'trash_name_generation_failed', 'Failed to allocate trash path');
 }
 
-async function updateTrashIndexAfterMove(fromRel: string, toRel: string): Promise<void> {
+async function updateTrashIndexAfterMove(
+  workspaceRoot: string,
+  fromRel: string,
+  toRel: string,
+): Promise<void> {
   const fromInTrash = isInTrash(fromRel);
   const toInTrash = isInTrash(toRel);
 
   if (!fromInTrash && !toInTrash) return;
 
-  await ensureTrashInfra();
-  const index = await readTrashIndex();
+  await ensureTrashInfra(workspaceRoot);
+  const index = await readTrashIndex(workspaceRoot);
 
   // Move/rename inside trash => rename key.
   if (fromInTrash && toInTrash) {
@@ -300,7 +307,7 @@ async function updateTrashIndexAfterMove(fromRel: string, toRel: string): Promis
     if (item) {
       delete index.items[fromRel];
       index.items[toRel] = item;
-      await writeTrashIndex(index);
+      await writeTrashIndex(workspaceRoot, index);
     }
     return;
   }
@@ -309,146 +316,153 @@ async function updateTrashIndexAfterMove(fromRel: string, toRel: string): Promis
   if (fromInTrash && !toInTrash) {
     if (index.items[fromRel]) {
       delete index.items[fromRel];
-      await writeTrashIndex(index);
+      await writeTrashIndex(workspaceRoot, index);
     }
-    return;
   }
 }
 
-export async function renameEntry(params: { path: string; newName: string }): Promise<FileOpResult> {
+export async function renameEntry(params: {
+  workspaceRoot: string;
+  sourceAbs: string;
+  newName: string;
+}): Promise<FileOpResult> {
   return withFileOpsLock(async () => {
     assertValidNewName(params.newName);
 
-    const sourceAbs = await resolveExistingPathOrThrow(params.path);
-    const sourceRel = toWorkspaceRelative(sourceAbs);
+    const workspaceRoot = normalizeWorkspaceRoot(params.workspaceRoot);
+    const sourceRel = toWorkspaceRelative(params.sourceAbs, workspaceRoot);
     assertNotProtected(sourceRel);
 
-    await statOrThrow(sourceAbs);
+    await statOrThrow(params.sourceAbs);
 
     const targetAbs = await resolvePathAllowNewOrThrow(
+      workspaceRoot,
       toPosix(path.join(path.dirname(sourceRel), params.newName.trim())),
     );
-    const targetRel = toWorkspaceRelative(targetAbs);
+    const targetRel = toWorkspaceRelative(targetAbs, workspaceRoot);
     assertNotProtectedTarget(targetRel);
 
-    if (sourceAbs === targetAbs) {
+    if (params.sourceAbs === targetAbs) {
       return { from: sourceRel, to: targetRel };
     }
 
     await assertTargetNotExists(targetAbs);
-    await fs.rename(sourceAbs, targetAbs);
-    await updateTrashIndexAfterMove(sourceRel, targetRel);
+    await fs.rename(params.sourceAbs, targetAbs);
+    await updateTrashIndexAfterMove(workspaceRoot, sourceRel, targetRel);
 
     return { from: sourceRel, to: targetRel };
   });
 }
 
-export async function moveEntry(params: { sourcePath: string; targetDirPath: string }): Promise<FileOpResult> {
+export async function moveEntry(params: {
+  workspaceRoot: string;
+  sourceAbs: string;
+  targetDirAbs?: string;
+}): Promise<FileOpResult> {
   return withFileOpsLock(async () => {
-    const sourceAbs = await resolveExistingPathOrThrow(params.sourcePath);
-    const sourceRel = toWorkspaceRelative(sourceAbs);
+    const workspaceRoot = normalizeWorkspaceRoot(params.workspaceRoot);
+    const sourceRel = toWorkspaceRelative(params.sourceAbs, workspaceRoot);
     assertNotProtected(sourceRel);
 
-    const sourceStat = await statOrThrow(sourceAbs);
-
-    let targetDirAbs: string;
-    if (!params.targetDirPath) {
-      targetDirAbs = workspaceRoot();
-    } else {
-      targetDirAbs = await resolveExistingPathOrThrow(params.targetDirPath);
-    }
+    const sourceStat = await statOrThrow(params.sourceAbs);
+    const targetDirAbs = params.targetDirAbs || workspaceRoot;
+    toWorkspaceRelative(targetDirAbs, workspaceRoot);
 
     const targetDirStat = await statOrThrow(targetDirAbs);
     if (!targetDirStat.isDirectory()) {
       throw new FileOpError(400, 'target_not_directory', 'Target must be a directory');
     }
 
-    const targetAbs = path.join(targetDirAbs, path.basename(sourceAbs));
-    const targetRel = toWorkspaceRelative(targetAbs);
+    const targetAbs = path.join(targetDirAbs, path.basename(params.sourceAbs));
+    const targetRel = toWorkspaceRelative(targetAbs, workspaceRoot);
     assertNotProtectedTarget(targetRel);
 
     // Allow moves to .trash in custom workspaces (treated as regular directory)
     if (!isInTrash(sourceRel) && isInTrash(targetRel)) {
-      const customRoot = config.fileBrowserRoot;
-      if (customRoot && customRoot.trim() !== '') {
-        // Custom workspace: allow .trash moves
-      } else {
+      const customRoot = (config.fileBrowserRoot || '').trim();
+      if (!customRoot) {
         throw new FileOpError(422, 'use_trash_api', 'Use the trash action for deleting items');
       }
     }
 
-    if (sourceAbs === targetAbs) {
+    if (params.sourceAbs === targetAbs) {
       return { from: sourceRel, to: targetRel };
     }
 
-    assertNotMovingDirIntoSelf(sourceAbs, targetAbs, sourceStat.isDirectory());
+    assertNotMovingDirIntoSelf(params.sourceAbs, targetAbs, sourceStat.isDirectory());
     await assertTargetNotExists(targetAbs);
 
-    await fs.rename(sourceAbs, targetAbs);
-    await updateTrashIndexAfterMove(sourceRel, targetRel);
+    await fs.rename(params.sourceAbs, targetAbs);
+    await updateTrashIndexAfterMove(workspaceRoot, sourceRel, targetRel);
 
     return { from: sourceRel, to: targetRel };
   });
 }
 
-export async function trashEntry(params: { path: string }): Promise<FileOpResult & { undoTtlMs: number }> {
+export async function trashEntry(params: {
+  workspaceRoot: string;
+  sourceAbs: string;
+}): Promise<FileOpResult & { undoTtlMs: number }> {
   return withFileOpsLock(async () => {
-    const sourceAbs = await resolveExistingPathOrThrow(params.path);
-    const sourceRel = toWorkspaceRelative(sourceAbs);
+    const workspaceRoot = normalizeWorkspaceRoot(params.workspaceRoot);
+    const sourceRel = toWorkspaceRelative(params.sourceAbs, workspaceRoot);
 
     assertNotProtected(sourceRel);
     if (isInTrash(sourceRel)) {
       throw new FileOpError(422, 'already_in_trash', 'Path is already in trash');
     }
 
-    const sourceStat = await statOrThrow(sourceAbs);
+    const sourceStat = await statOrThrow(params.sourceAbs);
 
-    await ensureTrashInfra();
-    const targetAbs = await buildUniqueTrashTarget(sourceAbs, sourceStat.isDirectory());
-    const targetRel = toWorkspaceRelative(targetAbs);
+    await ensureTrashInfra(workspaceRoot);
+    const targetAbs = await buildUniqueTrashTarget(workspaceRoot, params.sourceAbs, sourceStat.isDirectory());
+    const targetRel = toWorkspaceRelative(targetAbs, workspaceRoot);
 
-    await fs.rename(sourceAbs, targetAbs);
+    await fs.rename(params.sourceAbs, targetAbs);
 
-    const index = await readTrashIndex();
+    const index = await readTrashIndex(workspaceRoot);
     index.items[targetRel] = {
       id: randomId(),
       originalPath: sourceRel,
       deletedAtMs: Date.now(),
       type: sourceStat.isDirectory() ? 'directory' : 'file',
     };
-    await writeTrashIndex(index);
+    await writeTrashIndex(workspaceRoot, index);
 
     return { from: sourceRel, to: targetRel, undoTtlMs: TRASH_UNDO_TTL_MS };
   });
 }
 
-export async function restoreEntry(params: { path: string }): Promise<FileOpResult> {
+export async function restoreEntry(params: {
+  workspaceRoot: string;
+  sourceAbs: string;
+}): Promise<FileOpResult> {
   return withFileOpsLock(async () => {
-    const sourceAbs = await resolveExistingPathOrThrow(params.path);
-    const sourceRel = toWorkspaceRelative(sourceAbs);
+    const workspaceRoot = normalizeWorkspaceRoot(params.workspaceRoot);
+    const sourceRel = toWorkspaceRelative(params.sourceAbs, workspaceRoot);
 
     if (!isInTrash(sourceRel) || isTrashRoot(sourceRel)) {
       throw new FileOpError(422, 'not_restorable', 'Only trashed items can be restored');
     }
 
-    await ensureTrashInfra();
-    const index = await readTrashIndex();
+    await ensureTrashInfra(workspaceRoot);
+    const index = await readTrashIndex(workspaceRoot);
     const item = index.items[sourceRel];
 
     if (!item) {
       throw new FileOpError(404, 'restore_metadata_missing', 'Restore metadata not found for this item');
     }
 
-    const targetAbs = await resolvePathAllowNewOrThrow(item.originalPath);
-    const targetRel = toWorkspaceRelative(targetAbs);
+    const targetAbs = await resolvePathAllowNewOrThrow(workspaceRoot, item.originalPath);
+    const targetRel = toWorkspaceRelative(targetAbs, workspaceRoot);
     assertNotProtectedTarget(targetRel);
 
     await assertTargetNotExists(targetAbs);
     await fs.mkdir(path.dirname(targetAbs), { recursive: true });
-    await fs.rename(sourceAbs, targetAbs);
+    await fs.rename(params.sourceAbs, targetAbs);
 
     delete index.items[sourceRel];
-    await writeTrashIndex(index);
+    await writeTrashIndex(workspaceRoot, index);
 
     return { from: sourceRel, to: targetRel };
   });

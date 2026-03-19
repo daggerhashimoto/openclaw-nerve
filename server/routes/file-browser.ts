@@ -16,7 +16,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
   getWorkspaceRoot,
-  resolveWorkspacePath,
+  resolveWorkspacePathForRoot,
   isExcluded,
   isBinary,
   MAX_FILE_SIZE,
@@ -29,6 +29,7 @@ import {
   restoreEntry,
   trashEntry,
 } from '../lib/file-ops.js';
+import { InvalidAgentIdError, resolveAgentWorkspace } from '../lib/agent-workspace.js';
 
 const app = new Hono();
 
@@ -44,7 +45,39 @@ interface TreeEntry {
   children?: TreeEntry[] | null; // null = not loaded, [] = empty dir
 }
 
+interface ScopedWorkspace {
+  agentId: string;
+  workspaceRoot: string;
+  isCustomWorkspace: boolean;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
+
+function resolveScopedWorkspace(agentId?: string): ScopedWorkspace {
+  const customRoot = (config.fileBrowserRoot || '').trim();
+  if (customRoot) {
+    return {
+      agentId: 'main',
+      workspaceRoot: getWorkspaceRoot(),
+      isCustomWorkspace: true,
+    };
+  }
+
+  const workspace = resolveAgentWorkspace(agentId);
+  return {
+    agentId: workspace.agentId,
+    workspaceRoot: workspace.workspaceRoot,
+    isCustomWorkspace: false,
+  };
+}
+
+function handleAgentWorkspaceError(c: Context, err: unknown) {
+  if (err instanceof InvalidAgentIdError) {
+    return c.json({ ok: false, error: err.message }, 400);
+  }
+  const message = err instanceof Error ? err.message : 'Invalid workspace request';
+  return c.json({ ok: false, error: message }, 500);
+}
 
 async function listDirectory(
   dirPath: string,
@@ -124,14 +157,21 @@ function handleFileOpError(c: Context, err: unknown) {
 // ── GET /api/files/tree ──────────────────────────────────────────────
 
 app.get('/api/files/tree', async (c) => {
-  const root = getWorkspaceRoot();
+  let workspace: ScopedWorkspace;
+  try {
+    workspace = resolveScopedWorkspace(c.req.query('agentId'));
+  } catch (err) {
+    return handleAgentWorkspaceError(c, err);
+  }
+
+  const root = workspace.workspaceRoot;
   const subPath = c.req.query('path') || '';
   const depth = Math.min(Math.max(Number(c.req.query('depth')) || 1, 1), 5);
 
   // Resolve the target directory
   let targetDir: string;
   if (subPath) {
-    const resolved = await resolveWorkspacePath(subPath);
+    const resolved = await resolveWorkspacePathForRoot(root, subPath);
     if (!resolved) {
       return c.json({ ok: false, error: 'Invalid path' }, 400);
     }
@@ -152,14 +192,14 @@ app.get('/api/files/tree', async (c) => {
 
   const entries = await listDirectory(targetDir, subPath, depth);
 
-  return c.json({ 
-    ok: true, 
-    root: subPath || '.', 
+  return c.json({
+    ok: true,
+    root: subPath || '.',
     entries,
     workspaceInfo: {
-      isCustomWorkspace: !!config.fileBrowserRoot,
-      rootPath: getWorkspaceRoot(),
-    }
+      isCustomWorkspace: workspace.isCustomWorkspace,
+      rootPath: root,
+    },
   });
 });
 
@@ -171,7 +211,14 @@ app.get('/api/files/read', async (c) => {
     return c.json({ ok: false, error: 'Missing path parameter' }, 400);
   }
 
-  const resolved = await resolveWorkspacePath(filePath);
+  let workspace: ScopedWorkspace;
+  try {
+    workspace = resolveScopedWorkspace(c.req.query('agentId'));
+  } catch (err) {
+    return handleAgentWorkspaceError(c, err);
+  }
+
+  const resolved = await resolveWorkspacePathForRoot(workspace.workspaceRoot, filePath);
   if (!resolved) {
     return c.json({ ok: false, error: 'Invalid or excluded path' }, 403);
   }
@@ -213,7 +260,7 @@ app.get('/api/files/read', async (c) => {
 // ── PUT /api/files/write ─────────────────────────────────────────────
 
 app.put('/api/files/write', async (c) => {
-  let body: { path?: string; content?: string; expectedMtime?: number };
+  let body: { path?: string; content?: string; expectedMtime?: number; agentId?: string };
   try {
     body = await c.req.json();
   } catch {
@@ -232,7 +279,14 @@ app.put('/api/files/write', async (c) => {
     return c.json({ ok: false, error: 'Content too large (max 1MB)' }, 413);
   }
 
-  const resolved = await resolveWorkspacePath(filePath, { allowNonExistent: true });
+  let workspace: ScopedWorkspace;
+  try {
+    workspace = resolveScopedWorkspace(body.agentId ?? c.req.query('agentId'));
+  } catch (err) {
+    return handleAgentWorkspaceError(c, err);
+  }
+
+  const resolved = await resolveWorkspacePathForRoot(workspace.workspaceRoot, filePath, { allowNonExistent: true });
   if (!resolved) {
     return c.json({ ok: false, error: 'Invalid or excluded path' }, 403);
   }
@@ -277,7 +331,7 @@ app.put('/api/files/write', async (c) => {
 // ── POST /api/files/rename ────────────────────────────────────────────
 
 app.post('/api/files/rename', async (c) => {
-  let body: { path?: string; newName?: string };
+  let body: { path?: string; newName?: string; agentId?: string };
   try {
     body = await c.req.json();
   } catch {
@@ -291,8 +345,24 @@ app.post('/api/files/rename', async (c) => {
     return c.json({ ok: false, error: 'Missing newName' }, 400);
   }
 
+  let workspace: ScopedWorkspace;
   try {
-    const result = await renameEntry({ path: body.path, newName: body.newName });
+    workspace = resolveScopedWorkspace(body.agentId ?? c.req.query('agentId'));
+  } catch (err) {
+    return handleAgentWorkspaceError(c, err);
+  }
+
+  const sourceAbs = await resolveWorkspacePathForRoot(workspace.workspaceRoot, body.path);
+  if (!sourceAbs) {
+    return c.json({ ok: false, error: 'Invalid or excluded path' }, 403);
+  }
+
+  try {
+    const result = await renameEntry({
+      workspaceRoot: workspace.workspaceRoot,
+      sourceAbs,
+      newName: body.newName,
+    });
     return c.json({ ok: true, ...result });
   } catch (err) {
     return handleFileOpError(c, err);
@@ -302,7 +372,7 @@ app.post('/api/files/rename', async (c) => {
 // ── POST /api/files/move ──────────────────────────────────────────────
 
 app.post('/api/files/move', async (c) => {
-  let body: { sourcePath?: string; targetDirPath?: string };
+  let body: { sourcePath?: string; targetDirPath?: string; agentId?: string };
   try {
     body = await c.req.json();
   } catch {
@@ -316,10 +386,30 @@ app.post('/api/files/move', async (c) => {
     return c.json({ ok: false, error: 'Missing targetDirPath' }, 400);
   }
 
+  let workspace: ScopedWorkspace;
+  try {
+    workspace = resolveScopedWorkspace(body.agentId ?? c.req.query('agentId'));
+  } catch (err) {
+    return handleAgentWorkspaceError(c, err);
+  }
+
+  const sourceAbs = await resolveWorkspacePathForRoot(workspace.workspaceRoot, body.sourcePath);
+  if (!sourceAbs) {
+    return c.json({ ok: false, error: 'Invalid or excluded path' }, 403);
+  }
+
+  const targetDirAbs = body.targetDirPath
+    ? await resolveWorkspacePathForRoot(workspace.workspaceRoot, body.targetDirPath)
+    : workspace.workspaceRoot;
+  if (!targetDirAbs) {
+    return c.json({ ok: false, error: 'Invalid or excluded path' }, 403);
+  }
+
   try {
     const result = await moveEntry({
-      sourcePath: body.sourcePath,
-      targetDirPath: body.targetDirPath,
+      workspaceRoot: workspace.workspaceRoot,
+      sourceAbs,
+      targetDirAbs,
     });
     return c.json({ ok: true, ...result });
   } catch (err) {
@@ -330,7 +420,7 @@ app.post('/api/files/move', async (c) => {
 // ── POST /api/files/trash ─────────────────────────────────────────────
 
 app.post('/api/files/trash', async (c) => {
-  let body: { path?: string };
+  let body: { path?: string; agentId?: string };
   try {
     body = await c.req.json();
   } catch {
@@ -341,31 +431,45 @@ app.post('/api/files/trash', async (c) => {
     return c.json({ ok: false, error: 'Missing path' }, 400);
   }
 
+  let workspace: ScopedWorkspace;
+  try {
+    workspace = resolveScopedWorkspace(body.agentId ?? c.req.query('agentId'));
+  } catch (err) {
+    return handleAgentWorkspaceError(c, err);
+  }
+
   try {
     // Custom directory browser root uses permanent deletion (no trash)
-    if (config.fileBrowserRoot) {
+    if (workspace.isCustomWorkspace) {
       const requestedPath = body.path.trim();
       if (requestedPath === '.' || requestedPath === './') {
         return c.json({ ok: false, error: 'Deleting workspace root is not allowed' }, 400);
       }
-      
-      const resolved = await resolveWorkspacePath(requestedPath);
+
+      const resolved = await resolveWorkspacePathForRoot(workspace.workspaceRoot, requestedPath);
       if (!resolved) {
         return c.json({ ok: false, error: 'Invalid or excluded path' }, 403);
       }
 
-      const rootRealPath = await fs.realpath(getWorkspaceRoot()).catch(() => getWorkspaceRoot());
+      const rootRealPath = await fs.realpath(workspace.workspaceRoot).catch(() => workspace.workspaceRoot);
       if (resolved === rootRealPath) {
         return c.json({ ok: false, error: 'Deleting workspace root is not allowed' }, 400);
       }
 
       await fs.rm(resolved, { recursive: true, force: true });
       return c.json({ ok: true, from: body.path, to: '' });
-    } else {
-      // Default workspace: use trash
-      const result = await trashEntry({ path: body.path });
-      return c.json({ ok: true, ...result });
     }
+
+    const sourceAbs = await resolveWorkspacePathForRoot(workspace.workspaceRoot, body.path);
+    if (!sourceAbs) {
+      return c.json({ ok: false, error: 'Invalid or excluded path' }, 403);
+    }
+
+    const result = await trashEntry({
+      workspaceRoot: workspace.workspaceRoot,
+      sourceAbs,
+    });
+    return c.json({ ok: true, ...result });
   } catch (err) {
     return handleFileOpError(c, err);
   }
@@ -374,7 +478,7 @@ app.post('/api/files/trash', async (c) => {
 // ── POST /api/files/restore ───────────────────────────────────────────
 
 app.post('/api/files/restore', async (c) => {
-  let body: { path?: string };
+  let body: { path?: string; agentId?: string };
   try {
     body = await c.req.json();
   } catch {
@@ -385,8 +489,23 @@ app.post('/api/files/restore', async (c) => {
     return c.json({ ok: false, error: 'Missing path' }, 400);
   }
 
+  let workspace: ScopedWorkspace;
   try {
-    const result = await restoreEntry({ path: body.path });
+    workspace = resolveScopedWorkspace(body.agentId ?? c.req.query('agentId'));
+  } catch (err) {
+    return handleAgentWorkspaceError(c, err);
+  }
+
+  const sourceAbs = await resolveWorkspacePathForRoot(workspace.workspaceRoot, body.path);
+  if (!sourceAbs) {
+    return c.json({ ok: false, error: 'Invalid or excluded path' }, 403);
+  }
+
+  try {
+    const result = await restoreEntry({
+      workspaceRoot: workspace.workspaceRoot,
+      sourceAbs,
+    });
     return c.json({ ok: true, ...result });
   } catch (err) {
     return handleFileOpError(c, err);
@@ -419,7 +538,14 @@ app.get('/api/files/raw', async (c) => {
     return c.json({ ok: false, error: 'Missing path parameter' }, 400);
   }
 
-  const resolved = await resolveWorkspacePath(filePath);
+  let workspace: ScopedWorkspace;
+  try {
+    workspace = resolveScopedWorkspace(c.req.query('agentId'));
+  } catch (err) {
+    return handleAgentWorkspaceError(c, err);
+  }
+
+  const resolved = await resolveWorkspacePathForRoot(workspace.workspaceRoot, filePath);
   if (!resolved) {
     return c.json({ ok: false, error: 'Invalid or excluded path' }, 403);
   }

@@ -38,14 +38,20 @@ const BINARY_EXTENSIONS = new Set([
 const EMPTY_EXCLUDED_NAMES = new Set<string>();
 const EMPTY_EXCLUDED_PATTERNS: RegExp[] = [];
 
+export interface ResolveWorkspacePathOptions {
+  allowNonExistent?: boolean;
+}
+
 /** Get exclusion names based on current config state */
 function getExcludedNames(): Set<string> {
-  return config.fileBrowserRoot && config.fileBrowserRoot.trim() !== '' ? EMPTY_EXCLUDED_NAMES : DEFAULT_EXCLUDED_NAMES;
+  const customRoot = (config.fileBrowserRoot || '').trim();
+  return customRoot ? EMPTY_EXCLUDED_NAMES : DEFAULT_EXCLUDED_NAMES;
 }
 
 /** Get exclusion patterns based on current config state */
 function getExcludedPatterns(): RegExp[] {
-  return config.fileBrowserRoot && config.fileBrowserRoot.trim() !== '' ? EMPTY_EXCLUDED_PATTERNS : DEFAULT_EXCLUDED_PATTERNS;
+  const customRoot = (config.fileBrowserRoot || '').trim();
+  return customRoot ? EMPTY_EXCLUDED_PATTERNS : DEFAULT_EXCLUDED_PATTERNS;
 }
 
 /** Check if a file/directory name should be excluded from the tree. */
@@ -54,7 +60,7 @@ export function isExcluded(name: string): boolean {
   const excludedPatterns = getExcludedPatterns();
 
   if (excludedNames.has(name)) return true;
-  return excludedPatterns.some(p => p.test(name));
+  return excludedPatterns.some((pattern) => pattern.test(name));
 }
 
 /** Check if a file extension indicates binary content. */
@@ -64,9 +70,13 @@ export function isBinary(name: string): boolean {
 
 // ── Workspace root ───────────────────────────────────────────────────
 
-/** Resolve the workspace root directory. Uses FILE_BROWSER_ROOT if set and valid, otherwise parent of MEMORY.md. */
-export function getWorkspaceRoot(): string {
-  const customRoot = config.fileBrowserRoot.trim();
+/** Resolve the workspace root directory. Uses the explicit root if provided, otherwise FILE_BROWSER_ROOT or parent of MEMORY.md. */
+export function getWorkspaceRoot(workspaceRoot?: string): string {
+  if (workspaceRoot && workspaceRoot.trim()) {
+    return path.resolve(workspaceRoot);
+  }
+
+  const customRoot = (config.fileBrowserRoot || '').trim();
   return customRoot ? path.resolve(customRoot) : path.dirname(config.memoryPath);
 }
 
@@ -76,21 +86,14 @@ export function getWorkspaceRoot(): string {
 export const MAX_FILE_SIZE = 1_048_576;
 
 /**
- * Validate and resolve a relative path to an absolute path within the workspace.
- *
- * Returns the resolved absolute path, or `null` if:
- * - The path escapes the workspace root (traversal)
- * - The path resolves through a symlink to outside the workspace
- * - The path is excluded
- *
- * For write operations where the file may not exist yet, the parent
- * directory is validated instead.
+ * Validate and resolve a relative path to an absolute path within an explicit workspace root.
  */
-export async function resolveWorkspacePath(
+export async function resolveWorkspacePathForRoot(
+  workspaceRoot: string,
   relativePath: string,
-  options?: { allowNonExistent?: boolean },
+  options?: ResolveWorkspacePathOptions,
 ): Promise<string | null> {
-  const root = getWorkspaceRoot();
+  const root = getWorkspaceRoot(workspaceRoot);
   const rootPrefix = root.endsWith(path.sep) ? root : root + path.sep;
 
   // Block obvious traversal attempts
@@ -101,7 +104,7 @@ export async function resolveWorkspacePath(
 
   // Check each path segment for exclusions
   const segments = normalized.split(path.sep);
-  if (segments.some(seg => seg && isExcluded(seg))) {
+  if (segments.some((segment) => segment && isExcluded(segment))) {
     return null;
   }
 
@@ -135,4 +138,14 @@ export async function resolveWorkspacePath(
       return null;
     }
   }
+}
+
+/**
+ * Validate and resolve a relative path to an absolute path within the default workspace.
+ */
+export async function resolveWorkspacePath(
+  relativePath: string,
+  options?: ResolveWorkspacePathOptions,
+): Promise<string | null> {
+  return resolveWorkspacePathForRoot(getWorkspaceRoot(), relativePath, options);
 }

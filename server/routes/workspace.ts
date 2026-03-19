@@ -7,17 +7,14 @@
  * Strict allowlist of keys → files. No directory traversal.
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { config } from '../lib/config.js';
 import { readText } from '../lib/files.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
+import { InvalidAgentIdError, resolveAgentWorkspace } from '../lib/agent-workspace.js';
 
 const app = new Hono();
-
-/** Workspace base directory — parent of memoryPath */
-const workspacePath = path.dirname(config.memoryPath);
 
 /** Strict allowlist mapping key → filename */
 const FILE_MAP: Record<string, string> = {
@@ -29,14 +26,33 @@ const FILE_MAP: Record<string, string> = {
   heartbeat: 'HEARTBEAT.md',
 };
 
-function resolveFile(key: string): string | null {
+function resolveFile(key: string, workspaceRoot: string): string | null {
   const filename = FILE_MAP[key];
   if (!filename) return null;
-  return path.join(workspacePath, filename);
+  return path.join(workspaceRoot, filename);
+}
+
+function getWorkspaceRoot(agentId?: string): string {
+  return resolveAgentWorkspace(agentId).workspaceRoot;
+}
+
+function handleAgentWorkspaceError(c: Context, err: unknown) {
+  if (err instanceof InvalidAgentIdError) {
+    return c.json({ ok: false, error: err.message }, 400);
+  }
+  const message = err instanceof Error ? err.message : 'Invalid workspace request';
+  return c.json({ ok: false, error: message }, 500);
 }
 
 app.get('/api/workspace/:key', rateLimitGeneral, async (c) => {
-  const filePath = resolveFile(c.req.param('key'));
+  let workspaceRoot: string;
+  try {
+    workspaceRoot = getWorkspaceRoot(c.req.query('agentId'));
+  } catch (err) {
+    return handleAgentWorkspaceError(c, err);
+  }
+
+  const filePath = resolveFile(c.req.param('key'), workspaceRoot);
   if (!filePath) return c.json({ ok: false, error: 'Unknown file key' }, 400);
 
   try {
@@ -50,10 +66,23 @@ app.get('/api/workspace/:key', rateLimitGeneral, async (c) => {
 });
 
 app.put('/api/workspace/:key', rateLimitGeneral, async (c) => {
-  const filePath = resolveFile(c.req.param('key'));
+  let body: { content?: string; agentId?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'Invalid JSON body' }, 400);
+  }
+
+  let workspaceRoot: string;
+  try {
+    workspaceRoot = getWorkspaceRoot(body.agentId ?? c.req.query('agentId'));
+  } catch (err) {
+    return handleAgentWorkspaceError(c, err);
+  }
+
+  const filePath = resolveFile(c.req.param('key'), workspaceRoot);
   if (!filePath) return c.json({ ok: false, error: 'Unknown file key' }, 400);
 
-  const body = await c.req.json<{ content: string }>();
   if (typeof body.content !== 'string') {
     return c.json({ ok: false, error: 'Missing content field' }, 400);
   }
@@ -73,14 +102,23 @@ app.put('/api/workspace/:key', rateLimitGeneral, async (c) => {
 
 /** List available workspace file keys and their existence status */
 app.get('/api/workspace', rateLimitGeneral, async (c) => {
+  let workspaceRoot: string;
+  try {
+    workspaceRoot = getWorkspaceRoot(c.req.query('agentId'));
+  } catch (err) {
+    return handleAgentWorkspaceError(c, err);
+  }
+
   const files: Array<{ key: string; filename: string; exists: boolean }> = [];
   for (const [key, filename] of Object.entries(FILE_MAP)) {
-    const filePath = path.join(workspacePath, filename);
+    const filePath = path.join(workspaceRoot, filename);
     let exists = false;
     try {
       await fs.access(filePath);
       exists = true;
-    } catch { /* not found */ }
+    } catch {
+      // not found
+    }
     files.push({ key, filename, exists });
   }
   return c.json({ ok: true, files });

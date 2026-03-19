@@ -6,27 +6,36 @@ import path from 'node:path';
 import os from 'node:os';
 
 describe('memories routes', () => {
+  let homeDir: string;
   let tmpDir: string;
+  let researchWorkspace: string;
   let memoryPath: string;
   let memoryDir: string;
+  let broadcastMock: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.resetModules();
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'memories-test-'));
+    homeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'memories-test-'));
+    tmpDir = path.join(homeDir, '.openclaw', 'workspace');
+    researchWorkspace = path.join(homeDir, '.openclaw', 'workspace-research');
     memoryDir = path.join(tmpDir, 'memory');
     memoryPath = path.join(tmpDir, 'MEMORY.md');
     await fs.mkdir(memoryDir, { recursive: true });
+    await fs.mkdir(researchWorkspace, { recursive: true });
+    broadcastMock = vi.fn();
   });
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    await fs.rm(homeDir, { recursive: true, force: true });
   });
 
   async function buildApp() {
+    vi.resetModules();
     vi.doMock('../lib/config.js', () => ({
       config: {
         auth: false, port: 3000, host: '127.0.0.1', sslPort: 3443,
+        home: homeDir,
         memoryPath,
         memoryDir,
       },
@@ -38,9 +47,8 @@ describe('memories routes', () => {
     vi.doMock('../lib/gateway-client.js', () => ({
       invokeGatewayTool: vi.fn(async () => ({})),
     }));
-    // Mock broadcast from events
     vi.doMock('./events.js', () => ({
-      broadcast: vi.fn(),
+      broadcast: broadcastMock,
     }));
 
     const mod = await import('./memories.js');
@@ -97,6 +105,49 @@ describe('memories routes', () => {
       expect(daily.length).toBeGreaterThanOrEqual(1);
       expect(daily[0].date).toBe('2026-02-26');
       expect(daily[0].text).toBe('Morning standup');
+    });
+  });
+
+  describe('agent-scoped memories', () => {
+    it('reads MEMORY.md from the requested agent workspace', async () => {
+      await fs.mkdir(researchWorkspace, { recursive: true });
+      await fs.writeFile(memoryPath, '# MEMORY.md\n\n## Main Facts\n- Main only\n');
+      await fs.writeFile(
+        path.join(researchWorkspace, 'MEMORY.md'),
+        '# MEMORY.md\n\n## Research Facts\n- Research only\n',
+      );
+
+      const app = await buildApp();
+      const res = await app.request('/api/memories?agentId=research');
+
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as Array<{ type: string; text: string }>;
+      const texts = json.map((item) => item.text);
+      expect(texts).toContain('Research Facts');
+      expect(texts).toContain('Research only');
+      expect(texts).not.toContain('Main Facts');
+      expect(texts).not.toContain('Main only');
+    });
+
+    it('writes memories into the requested agent workspace and broadcasts agentId', async () => {
+      await fs.mkdir(researchWorkspace, { recursive: true });
+      await fs.writeFile(memoryPath, '# MEMORY.md\n');
+      await fs.writeFile(path.join(researchWorkspace, 'MEMORY.md'), '# MEMORY.md\n');
+
+      const app = await buildApp();
+      const res = await app.request('/api/memories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: 'research', text: 'Research fact', section: 'Facts' }),
+      });
+
+      expect(res.status).toBe(200);
+      await expect(fs.readFile(path.join(researchWorkspace, 'MEMORY.md'), 'utf-8')).resolves.toContain('Research fact');
+      await expect(fs.readFile(memoryPath, 'utf-8')).resolves.not.toContain('Research fact');
+      expect(broadcastMock).toHaveBeenCalledWith(
+        'memory.changed',
+        expect.objectContaining({ agentId: 'research', action: 'create', section: 'Facts' }),
+      );
     });
   });
 

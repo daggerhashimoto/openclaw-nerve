@@ -5,7 +5,7 @@
  * Tab action buttons (add, refresh) render in the tab bar header.
  */
 
-import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
+import { useState, useCallback, lazy, Suspense } from 'react';
 import { WorkspaceTabs, type TabId } from './WorkspaceTabs';
 import { CronsTab, ConfigTab, SkillsTab } from './tabs';
 import { useCrons } from './hooks/useCrons';
@@ -57,10 +57,6 @@ interface ConfigWithSkillsProps {
 /** Combined Config tab with Files/Skills sub-view toggle. */
 function ConfigWithSkills({ agentId }: ConfigWithSkillsProps) {
   const [view, setView] = useState<ConfigView>(() => getInitialConfigView(agentId));
-
-  useEffect(() => {
-    setView(getInitialConfigView(agentId));
-  }, [agentId]);
 
   const switchView = useCallback((nextView: ConfigView) => {
     setView(nextView);
@@ -173,7 +169,7 @@ export function WorkspacePanel({
           )}
         </div>
         <div className={activeTab === 'config' ? 'h-full' : 'hidden'} hidden={activeTab !== 'config'} role="tabpanel" id="workspace-tabpanel-config" aria-labelledby="workspace-tab-config">
-          {visitedTabs.has('config') && <ConfigWithSkills agentId={workspaceAgentId} />}
+          {visitedTabs.has('config') && <ConfigWithSkills key={workspaceAgentId} agentId={workspaceAgentId} />}
         </div>
         <div className={activeTab === 'kanban' ? 'h-full' : 'hidden'} hidden={activeTab !== 'kanban'} role="tabpanel" id="workspace-tabpanel-kanban" aria-labelledby="workspace-tab-kanban">
           {visitedTabs.has('kanban') && (

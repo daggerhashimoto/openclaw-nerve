@@ -129,12 +129,15 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
   }, [agentId, content, draftKind]);
 
   const handleSave = useCallback(async () => {
-    const success = await save(selectedKey, editContent);
-    if (success) {
+    const result = await save(selectedKey, editContent);
+    if (result === 'saved') {
       clearDraft();
       showFeedback('success', 'File saved');
       setEditing(false);
-    } else {
+      return;
+    }
+
+    if (result === 'error') {
       showFeedback('error', 'Failed to save');
     }
   }, [clearDraft, selectedKey, editContent, save, showFeedback]);
@@ -147,8 +150,8 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
   const handleCreate = useCallback(async () => {
     const label = FILE_OPTIONS.find(f => f.key === selectedKey)?.label || selectedKey;
     const template = `# ${label}\n\n`;
-    const success = await save(selectedKey, template);
-    if (success) {
+    const result = await save(selectedKey, template);
+    if (result === 'saved') {
       showFeedback('success', 'File created');
     }
   }, [selectedKey, save, showFeedback]);

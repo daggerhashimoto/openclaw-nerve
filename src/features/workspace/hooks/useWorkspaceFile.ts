@@ -11,6 +11,8 @@ interface WorkspaceFileState {
   exists: boolean;
 }
 
+export type WorkspaceFileSaveResult = 'saved' | 'stale' | 'error';
+
 const INITIAL_STATE: WorkspaceFileState = {
   content: null,
   isLoading: false,
@@ -72,7 +74,7 @@ export function useWorkspaceFile(agentId: string) {
     }
   }, [agentId]);
 
-  const save = useCallback(async (key: string, content: string): Promise<boolean> => {
+  const save = useCallback(async (key: string, content: string): Promise<WorkspaceFileSaveResult> => {
     const requestAgentId = agentId;
     const requestVersion = ++requestVersionRef.current;
 
@@ -87,17 +89,17 @@ export function useWorkspaceFile(agentId: string) {
       if (!data.ok) throw new Error(data.error || 'Failed to save');
 
       if (requestVersionRef.current !== requestVersion || agentIdRef.current !== requestAgentId) {
-        return true;
+        return 'stale';
       }
 
       setState({ content, isLoading: false, error: null, exists: true });
-      return true;
+      return 'saved';
     } catch (err) {
       if (requestVersionRef.current !== requestVersion || agentIdRef.current !== requestAgentId) {
-        return false;
+        return 'stale';
       }
       setState(s => ({ ...s, isLoading: false, error: (err as Error).message }));
-      return false;
+      return 'error';
     }
   }, [agentId]);
 

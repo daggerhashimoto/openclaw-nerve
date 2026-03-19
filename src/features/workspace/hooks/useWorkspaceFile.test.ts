@@ -91,7 +91,7 @@ describe('useWorkspaceFile', () => {
     });
   });
 
-  it('threads scoped saves so an older agent response cannot overwrite the current file state', async () => {
+  it('returns stale for superseded saves so older agent responses cannot overwrite the current file state', async () => {
     const alphaSave = deferred<FetchResponse>();
     const bravoSave = deferred<FetchResponse>();
 
@@ -114,7 +114,7 @@ describe('useWorkspaceFile', () => {
       { initialProps: { agentId: 'alpha' } },
     );
 
-    let alphaSaveResult!: Promise<boolean>;
+    let alphaSaveResult!: Promise<unknown>;
     act(() => {
       alphaSaveResult = result.current.save('tools', 'alpha draft');
     });
@@ -128,7 +128,7 @@ describe('useWorkspaceFile', () => {
 
     rerender({ agentId: 'bravo' });
 
-    let bravoSaveResult!: Promise<boolean>;
+    let bravoSaveResult!: Promise<unknown>;
     act(() => {
       bravoSaveResult = result.current.save('tools', 'bravo draft');
     });
@@ -140,23 +140,89 @@ describe('useWorkspaceFile', () => {
       }));
     });
 
+    let latestSaveStatus: unknown;
     await act(async () => {
       bravoSave.resolve(jsonResponse({ ok: true }));
-      await bravoSaveResult;
+      latestSaveStatus = await bravoSaveResult;
     });
+
+    expect(latestSaveStatus).toBe('saved');
 
     await waitFor(() => {
       expect(result.current.content).toBe('bravo draft');
       expect(result.current.exists).toBe(true);
     });
 
+    let staleSaveStatus: unknown;
     await act(async () => {
       alphaSave.resolve(jsonResponse({ ok: true }));
-      await alphaSaveResult;
+      staleSaveStatus = await alphaSaveResult;
     });
+
+    expect(staleSaveStatus).toBe('stale');
 
     await waitFor(() => {
       expect(result.current.content).toBe('bravo draft');
     });
+  });
+
+  it('returns stale instead of surfacing an error when a superseded save fails after another file loads', async () => {
+    const saveRequest = deferred<FetchResponse>();
+    const loadRequest = deferred<FetchResponse>();
+
+    globalThis.fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === '/api/workspace/tools' && init?.method === 'PUT') {
+        return saveRequest.promise;
+      }
+      if (url === '/api/workspace/soul?agentId=alpha' && !init?.method) {
+        return loadRequest.promise;
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof globalThis.fetch;
+
+    const { result } = renderHook(() => useWorkspaceFile('alpha'));
+
+    let saveResult!: Promise<unknown>;
+    act(() => {
+      saveResult = result.current.save('tools', 'draft tools');
+    });
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith('/api/workspace/tools', expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ content: 'draft tools', agentId: 'alpha' }),
+      }));
+    });
+
+    act(() => {
+      void result.current.load('soul');
+    });
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith('/api/workspace/soul?agentId=alpha', expect.any(Object));
+    });
+
+    await act(async () => {
+      loadRequest.resolve(jsonResponse({ ok: true, content: 'fresh soul' }));
+    });
+
+    await waitFor(() => {
+      expect(result.current.content).toBe('fresh soul');
+      expect(result.current.error).toBeNull();
+    });
+
+    let staleSaveStatus: unknown;
+    await act(async () => {
+      saveRequest.resolve(jsonResponse({ ok: false, error: 'disk full' }));
+      staleSaveStatus = await saveResult;
+    });
+
+    expect(staleSaveStatus).toBe('stale');
+    expect(result.current.content).toBe('fresh soul');
+    expect(result.current.error).toBeNull();
+    expect(result.current.isLoading).toBe(false);
   });
 });

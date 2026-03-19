@@ -943,6 +943,210 @@ describe('useFileTree', () => {
       expect(store.get(getWorkspaceStorageKey('file-tree-expanded', 'research'))).toBe(JSON.stringify(['notes']));
       expect(store.get(getWorkspaceStorageKey('file-tree-selected', 'research'))).toBe('notes/todo.md');
     });
+
+    it('ignores stale refreshes from the previous agent after a workspace switch', async () => {
+      const { mock } = createLocalStorageMock({
+        [getWorkspaceStorageKey('file-tree-expanded', 'main')]: JSON.stringify(['src']),
+        [getWorkspaceStorageKey('file-tree-selected', 'main')]: 'src/index.ts',
+        [getWorkspaceStorageKey('file-tree-expanded', 'research')]: JSON.stringify(['notes']),
+        [getWorkspaceStorageKey('file-tree-selected', 'research')]: 'notes/todo.md',
+      });
+      vi.stubGlobal('localStorage', mock);
+
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockImplementation(async (input) => {
+        const url = getRequestUrl(input);
+        const agentId = url.searchParams.get('agentId') || 'main';
+        const path = url.searchParams.get('path');
+
+        if (!path && agentId === 'main') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'src', path: 'src', type: 'directory' as const, children: null },
+              ],
+              workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace-main' },
+            }),
+          } as Response;
+        }
+
+        if (path === 'src' && agentId === 'main') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'index.ts', path: 'src/index.ts', type: 'file' as const, children: null },
+              ],
+            }),
+          } as Response;
+        }
+
+        if (!path && agentId === 'research') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'notes', path: 'notes', type: 'directory' as const, children: null },
+              ],
+              workspaceInfo: { isCustomWorkspace: true, rootPath: '/workspace-research' },
+            }),
+          } as Response;
+        }
+
+        if (path === 'notes' && agentId === 'research') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'todo.md', path: 'notes/todo.md', type: 'file' as const, children: null },
+              ],
+            }),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({ ok: false, error: 'Not found' }),
+        } as Response;
+      });
+
+      const { result, rerender } = renderHook(
+        ({ agentId }) => useFileTree(agentId),
+        { initialProps: { agentId: 'main' } },
+      );
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+        expect(result.current.entries.map((entry) => entry.path)).toEqual(['src']);
+      });
+
+      const staleRefresh = result.current.refresh;
+
+      rerender({ agentId: 'research' });
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+        expect(result.current.entries.map((entry) => entry.path)).toEqual(['notes']);
+        expect(result.current.selectedPath).toBe('notes/todo.md');
+      });
+
+      const callsBeforeStaleRefresh = mockFetch.mock.calls.length;
+
+      act(() => {
+        staleRefresh('main');
+      });
+
+      expect(mockFetch.mock.calls).toHaveLength(callsBeforeStaleRefresh);
+      expect(result.current.loading).toBe(false);
+      expect(result.current.entries.map((entry) => entry.path)).toEqual(['notes']);
+      expect(result.current.selectedPath).toBe('notes/todo.md');
+    });
+
+    it('stores late file selections under the originating agent without changing the active tree', async () => {
+      const { store, mock } = createLocalStorageMock({
+        [getWorkspaceStorageKey('file-tree-expanded', 'main')]: JSON.stringify(['src']),
+        [getWorkspaceStorageKey('file-tree-selected', 'main')]: 'src/index.ts',
+        [getWorkspaceStorageKey('file-tree-expanded', 'research')]: JSON.stringify(['notes']),
+        [getWorkspaceStorageKey('file-tree-selected', 'research')]: 'notes/todo.md',
+      });
+      vi.stubGlobal('localStorage', mock);
+
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockImplementation(async (input) => {
+        const url = getRequestUrl(input);
+        const agentId = url.searchParams.get('agentId') || 'main';
+        const path = url.searchParams.get('path');
+
+        if (!path && agentId === 'main') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'src', path: 'src', type: 'directory' as const, children: null },
+              ],
+              workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace-main' },
+            }),
+          } as Response;
+        }
+
+        if (path === 'src' && agentId === 'main') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'index.ts', path: 'src/index.ts', type: 'file' as const, children: null },
+              ],
+            }),
+          } as Response;
+        }
+
+        if (!path && agentId === 'research') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'notes', path: 'notes', type: 'directory' as const, children: null },
+              ],
+              workspaceInfo: { isCustomWorkspace: true, rootPath: '/workspace-research' },
+            }),
+          } as Response;
+        }
+
+        if (path === 'notes' && agentId === 'research') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'todo.md', path: 'notes/todo.md', type: 'file' as const, children: null },
+              ],
+            }),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({ ok: false, error: 'Not found' }),
+        } as Response;
+      });
+
+      const { result, rerender } = renderHook(
+        ({ agentId }) => useFileTree(agentId),
+        { initialProps: { agentId: 'main' } },
+      );
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+        expect(result.current.selectedPath).toBe('src/index.ts');
+      });
+
+      const staleSelectFile = result.current.selectFile;
+
+      rerender({ agentId: 'research' });
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+        expect(result.current.selectedPath).toBe('notes/todo.md');
+      });
+
+      act(() => {
+        staleSelectFile('src/renamed.ts', 'main');
+      });
+
+      expect(result.current.selectedPath).toBe('notes/todo.md');
+      expect(store.get(getWorkspaceStorageKey('file-tree-selected', 'main'))).toBe('src/renamed.ts');
+      expect(store.get(getWorkspaceStorageKey('file-tree-selected', 'research'))).toBe('notes/todo.md');
+    });
   });
 
   describe('regression: existing behavior unchanged', () => {

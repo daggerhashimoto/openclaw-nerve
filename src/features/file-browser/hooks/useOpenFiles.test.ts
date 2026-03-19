@@ -213,6 +213,163 @@ describe('useOpenFiles', () => {
     expect(store.get(getWorkspaceStorageKey('active-tab', 'main'))).toBe('draft.md');
   });
 
+  it('remaps late path changes against the originating agent after a switch', async () => {
+    const { store, mock } = createLocalStorageMock({
+      [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['docs/guide.md']),
+      [getWorkspaceStorageKey('active-tab', 'main')]: 'docs/guide.md',
+      [getWorkspaceStorageKey('open-files', 'research')]: JSON.stringify(['docs/guide.md']),
+      [getWorkspaceStorageKey('active-tab', 'research')]: 'docs/guide.md',
+    });
+    vi.stubGlobal('localStorage', mock);
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = getRequestUrl(input);
+      if (url.pathname !== '/api/files/read') {
+        return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+      }
+
+      const path = url.searchParams.get('path');
+      const agentId = url.searchParams.get('agentId') || 'main';
+
+      if (path === 'docs/guide.md' && agentId === 'main') {
+        return createJsonResponse({ ok: true, content: 'main original', mtime: 11 });
+      }
+
+      if (path === 'archive/guide.md' && agentId === 'main') {
+        return createJsonResponse({ ok: true, content: 'main original', mtime: 11 });
+      }
+
+      if (path === 'docs/guide.md' && agentId === 'research') {
+        return createJsonResponse({ ok: true, content: 'research original', mtime: 22 });
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result, rerender } = renderHook(
+      ({ agentId }) => useOpenFiles(agentId),
+      { initialProps: { agentId: 'main' } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'docs/guide.md',
+        content: 'main original',
+        dirty: false,
+      });
+      expect(result.current.activeTab).toBe('docs/guide.md');
+    });
+
+    act(() => {
+      result.current.updateContent('docs/guide.md', 'main draft');
+    });
+
+    const staleRemapOpenPaths = result.current.remapOpenPaths;
+
+    rerender({ agentId: 'research' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'docs/guide.md',
+        content: 'research original',
+        dirty: false,
+      });
+      expect(result.current.activeTab).toBe('docs/guide.md');
+    });
+
+    act(() => {
+      staleRemapOpenPaths('docs', 'archive', 'main');
+    });
+
+    expect(result.current.openFiles[0]?.path).toBe('docs/guide.md');
+    expect(result.current.activeTab).toBe('docs/guide.md');
+    expect(store.get(getWorkspaceStorageKey('open-files', 'research'))).toBe(JSON.stringify(['docs/guide.md']));
+    expect(store.get(getWorkspaceStorageKey('active-tab', 'research'))).toBe('docs/guide.md');
+
+    rerender({ agentId: 'main' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'archive/guide.md',
+        content: 'main draft',
+        savedContent: 'main original',
+        dirty: true,
+      });
+      expect(result.current.activeTab).toBe('archive/guide.md');
+    });
+
+    expect(store.get(getWorkspaceStorageKey('open-files', 'main'))).toBe(JSON.stringify(['archive/guide.md']));
+    expect(store.get(getWorkspaceStorageKey('active-tab', 'main'))).toBe('archive/guide.md');
+  });
+
+  it('closes late path changes against the originating agent after a switch', async () => {
+    const { store, mock } = createLocalStorageMock({
+      [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['docs/guide.md']),
+      [getWorkspaceStorageKey('active-tab', 'main')]: 'docs/guide.md',
+      [getWorkspaceStorageKey('open-files', 'research')]: JSON.stringify(['docs/guide.md']),
+      [getWorkspaceStorageKey('active-tab', 'research')]: 'docs/guide.md',
+    });
+    vi.stubGlobal('localStorage', mock);
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = getRequestUrl(input);
+      if (url.pathname !== '/api/files/read') {
+        return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+      }
+
+      const path = url.searchParams.get('path');
+      const agentId = url.searchParams.get('agentId') || 'main';
+
+      if (path === 'docs/guide.md' && agentId === 'main') {
+        return createJsonResponse({ ok: true, content: 'main original', mtime: 11 });
+      }
+
+      if (path === 'docs/guide.md' && agentId === 'research') {
+        return createJsonResponse({ ok: true, content: 'research original', mtime: 22 });
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result, rerender } = renderHook(
+      ({ agentId }) => useOpenFiles(agentId),
+      { initialProps: { agentId: 'main' } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.openFiles.map((file) => file.path)).toEqual(['docs/guide.md']);
+      expect(result.current.activeTab).toBe('docs/guide.md');
+    });
+
+    const staleCloseOpenPathsByPrefix = result.current.closeOpenPathsByPrefix;
+
+    rerender({ agentId: 'research' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles.map((file) => file.path)).toEqual(['docs/guide.md']);
+      expect(result.current.activeTab).toBe('docs/guide.md');
+    });
+
+    act(() => {
+      staleCloseOpenPathsByPrefix('docs', 'main');
+    });
+
+    expect(result.current.openFiles.map((file) => file.path)).toEqual(['docs/guide.md']);
+    expect(result.current.activeTab).toBe('docs/guide.md');
+    expect(store.get(getWorkspaceStorageKey('open-files', 'research'))).toBe(JSON.stringify(['docs/guide.md']));
+    expect(store.get(getWorkspaceStorageKey('active-tab', 'research'))).toBe('docs/guide.md');
+
+    rerender({ agentId: 'main' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles).toEqual([]);
+      expect(result.current.activeTab).toBe('chat');
+    });
+
+    expect(store.get(getWorkspaceStorageKey('open-files', 'main'))).toBe(JSON.stringify([]));
+    expect(store.get(getWorkspaceStorageKey('active-tab', 'main'))).toBe('chat');
+  });
+
   it('reports dirty files through helper accessors', async () => {
     const { mock } = createLocalStorageMock();
     vi.stubGlobal('localStorage', mock);

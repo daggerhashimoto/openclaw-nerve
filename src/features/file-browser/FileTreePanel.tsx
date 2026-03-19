@@ -52,8 +52,8 @@ function isTrashItemPath(filePath: string): boolean {
 interface FileTreePanelProps {
   workspaceAgentId: string;
   onOpenFile: (path: string) => void;
-  onRemapOpenPaths?: (fromPath: string, toPath: string) => void;
-  onCloseOpenPaths?: (pathPrefix: string) => void;
+  onRemapOpenPaths?: (fromPath: string, toPath: string, targetAgentId?: string) => void;
+  onCloseOpenPaths?: (pathPrefix: string, targetAgentId?: string) => void;
   /** Called externally when a file changes (SSE) — refreshes affected directory */
   lastChangedPath?: string | null;
   /** Layout hint retained for compatibility with existing callers. */
@@ -281,16 +281,16 @@ export function FileTreePanel({
             sourcePath,
             targetDirPath: '.trash',
           });
-          refresh();
-          onRemapOpenPaths?.(result.from, result.to);
-          selectFile(result.to);
+          refresh(workspaceAgentId);
+          onRemapOpenPaths?.(result.from, result.to, workspaceAgentId);
+          selectFile(result.to, workspaceAgentId);
           showToast({ type: 'success', message: `Moved ${basename(result.from)} to .trash` }, 3000);
           return;
         }
 
         const result = await postFileOp<FileOpResult>('/api/files/trash', { path: sourcePath });
-        onCloseOpenPaths?.(result.from);
-        refresh();
+        onCloseOpenPaths?.(result.from, workspaceAgentId);
+        refresh(workspaceAgentId);
         showToast(
           {
             type: 'undo',
@@ -307,15 +307,15 @@ export function FileTreePanel({
         sourcePath,
         targetDirPath,
       });
-      refresh();
-      onRemapOpenPaths?.(result.from, result.to);
-      selectFile(result.to);
+      refresh(workspaceAgentId);
+      onRemapOpenPaths?.(result.from, result.to, workspaceAgentId);
+      selectFile(result.to, workspaceAgentId);
       showToast({ type: 'success', message: `Moved ${basename(result.from)}` }, 3000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Move failed';
       showToast({ type: 'error', message }, 4500);
     }
-  }, [onCloseOpenPaths, onRemapOpenPaths, postFileOp, refresh, selectFile, showToast, workspaceInfo]);
+  }, [onCloseOpenPaths, onRemapOpenPaths, postFileOp, refresh, selectFile, showToast, workspaceAgentId, workspaceInfo]);
 
   const canDropToTarget = useCallback((source: TreeEntry, targetDirPath: string): boolean => {
     if (source.path === '.trash') return false;
@@ -377,9 +377,9 @@ export function FileTreePanel({
         newName: nextName,
       });
       cancelRename();
-      refresh();
-      onRemapOpenPaths?.(result.from, result.to);
-      selectFile(result.to);
+      refresh(workspaceAgentId);
+      onRemapOpenPaths?.(result.from, result.to, workspaceAgentId);
+      selectFile(result.to, workspaceAgentId);
       showToast({ type: 'success', message: `Renamed to ${basename(result.to)}` }, 3000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Rename failed';
@@ -388,7 +388,7 @@ export function FileTreePanel({
     } finally {
       renameInFlightRef.current = false;
     }
-  }, [cancelRename, onRemapOpenPaths, postFileOp, refresh, renameTargetPath, renameValue, selectFile, showToast]);
+  }, [cancelRename, onRemapOpenPaths, postFileOp, refresh, renameTargetPath, renameValue, selectFile, showToast, workspaceAgentId]);
 
   const moveToTrash = useCallback(async (entry: TreeEntry) => {
     if (entry.path === '.trash' || entry.path.startsWith('.trash/')) {
@@ -407,8 +407,8 @@ export function FileTreePanel({
     // Normal trash behavior (no confirmation)
     try {
       const result = await postFileOp<FileOpResult>('/api/files/trash', { path: entry.path });
-      onCloseOpenPaths?.(result.from);
-      refresh();
+      onCloseOpenPaths?.(result.from, workspaceAgentId);
+      refresh(workspaceAgentId);
       setContextMenu(null);
       showToast(
         {
@@ -424,13 +424,13 @@ export function FileTreePanel({
       showToast({ type: 'error', message }, 4500);
       setContextMenu(null);
     }
-  }, [onCloseOpenPaths, postFileOp, refresh, showToast, workspaceInfo]);
+  }, [onCloseOpenPaths, postFileOp, refresh, showToast, workspaceAgentId, workspaceInfo]);
 
   const confirmPermanentDelete = useCallback(async (entry: TreeEntry) => {
     try {
       const result = await postFileOp<FileOpResult>('/api/files/trash', { path: entry.path });
-      onCloseOpenPaths?.(result.from);
-      refresh();
+      onCloseOpenPaths?.(result.from, workspaceAgentId);
+      refresh(workspaceAgentId);
       showToast(
         { type: 'success', message: `Permanently deleted ${basename(result.from)}` },
         3000
@@ -441,20 +441,20 @@ export function FileTreePanel({
     } finally {
       setDeleteConfirmation(null);
     }
-  }, [onCloseOpenPaths, postFileOp, refresh, showToast]);
+  }, [onCloseOpenPaths, postFileOp, refresh, showToast, workspaceAgentId]);
 
   const restoreEntry = useCallback(async (entryPath: string) => {
     try {
       const result = await postFileOp<FileOpResult>('/api/files/restore', { path: entryPath });
-      refresh();
-      onRemapOpenPaths?.(result.from, result.to);
-      selectFile(result.to);
+      refresh(workspaceAgentId);
+      onRemapOpenPaths?.(result.from, result.to, workspaceAgentId);
+      selectFile(result.to, workspaceAgentId);
       showToast({ type: 'success', message: `Restored ${basename(result.to)}` }, 3000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Restore failed';
       showToast({ type: 'error', message }, 4500);
     }
-  }, [onRemapOpenPaths, postFileOp, refresh, selectFile, showToast]);
+  }, [onRemapOpenPaths, postFileOp, refresh, selectFile, showToast, workspaceAgentId]);
 
   const handleUndoToast = useCallback(async () => {
     if (!toast || toast.type !== 'undo') return;
@@ -567,7 +567,7 @@ export function FileTreePanel({
           </span>
           <div className="flex items-center gap-2">
             <button
-              onClick={refresh}
+              onClick={() => refresh(workspaceAgentId)}
               className="shell-icon-button size-10 px-0"
               title="Refresh file tree"
               aria-label="Refresh file tree"
@@ -596,7 +596,7 @@ export function FileTreePanel({
             <div className="px-3 py-4 text-xs text-destructive">
               {error}
               <button
-                onClick={refresh}
+                onClick={() => refresh(workspaceAgentId)}
                 className="block mt-2 text-primary hover:underline"
               >
                 Retry

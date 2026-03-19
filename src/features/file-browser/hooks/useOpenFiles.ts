@@ -35,12 +35,16 @@ function loadPersistedTab(agentId: string): string {
   }
 }
 
-function persistFiles(agentId: string, files: OpenFile[]) {
+function persistFilePaths(agentId: string, filePaths: string[]) {
   try {
-    localStorage.setItem(getFilesStorageKey(agentId), JSON.stringify(files.map((file) => file.path)));
+    localStorage.setItem(getFilesStorageKey(agentId), JSON.stringify(filePaths));
   } catch {
     // ignore storage errors
   }
+}
+
+function persistFiles(agentId: string, files: OpenFile[]) {
+  persistFilePaths(agentId, files.map((file) => file.path));
 }
 
 function persistTab(agentId: string, tab: string) {
@@ -121,6 +125,34 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     }
 
     dirtyFilesByAgentRef.current.set(targetAgentId, dirtyFiles);
+  }, []);
+
+  const remapDirtyFiles = useCallback((targetAgentId: string, fromPath: string, toPath: string) => {
+    const dirtyFiles = dirtyFilesByAgentRef.current.get(targetAgentId);
+    if (!dirtyFiles) return;
+
+    const nextDirtyFiles = new Map<string, DirtyFileSnapshot>();
+    for (const [path, snapshot] of dirtyFiles.entries()) {
+      const nextPath = matchesPathPrefix(path, fromPath)
+        ? remapPathPrefix(path, fromPath, toPath)
+        : path;
+      nextDirtyFiles.set(nextPath, snapshot);
+    }
+
+    dirtyFilesByAgentRef.current.set(targetAgentId, nextDirtyFiles);
+  }, []);
+
+  const closeDirtyFilesByPrefix = useCallback((targetAgentId: string, pathPrefix: string) => {
+    const dirtyFiles = dirtyFilesByAgentRef.current.get(targetAgentId);
+    if (!dirtyFiles) return;
+
+    const nextDirtyFiles = new Map<string, DirtyFileSnapshot>();
+    for (const [path, snapshot] of dirtyFiles.entries()) {
+      if (matchesPathPrefix(path, pathPrefix)) continue;
+      nextDirtyFiles.set(path, snapshot);
+    }
+
+    dirtyFilesByAgentRef.current.set(targetAgentId, nextDirtyFiles);
   }, []);
 
   useEffect(() => {
@@ -451,10 +483,26 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
    * Remap open editor tabs when a file/folder path changes.
    * Supports prefix remaps for directory moves.
    */
-  const remapOpenPaths = useCallback((fromPath: string, toPath: string) => {
+  const remapOpenPaths = useCallback((fromPath: string, toPath: string, targetAgentId = scopedAgentId) => {
     if (!fromPath || !toPath || fromPath === toPath) return;
 
-    const requestAgentId = agentIdRef.current;
+    const requestAgentId = normalizeAgentId(targetAgentId);
+    remapDirtyFiles(requestAgentId, fromPath, toPath);
+
+    if (agentIdRef.current !== requestAgentId) {
+      const nextPaths = loadPersistedFiles(requestAgentId).map((filePath) => (
+        matchesPathPrefix(filePath, fromPath)
+          ? remapPathPrefix(filePath, fromPath, toPath)
+          : filePath
+      ));
+      persistFilePaths(requestAgentId, nextPaths);
+
+      const currentTab = loadPersistedTab(requestAgentId);
+      if (matchesPathPrefix(currentTab, fromPath)) {
+        persistTab(requestAgentId, remapPathPrefix(currentTab, fromPath, toPath));
+      }
+      return;
+    }
 
     setOpenFiles((prev) => {
       const next = prev.map((file) => {
@@ -466,6 +514,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
           name: basename(nextPath),
         };
       });
+      rememberDirtyFiles(requestAgentId, next);
       persistFiles(requestAgentId, next);
       return next;
     });
@@ -476,16 +525,30 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       persistTab(requestAgentId, nextTab);
       return nextTab;
     });
-  }, []);
+  }, [rememberDirtyFiles, remapDirtyFiles, scopedAgentId]);
 
   /** Close any open tabs under a path prefix (file or folder). */
-  const closeOpenPathsByPrefix = useCallback((pathPrefix: string) => {
+  const closeOpenPathsByPrefix = useCallback((pathPrefix: string, targetAgentId = scopedAgentId) => {
     if (!pathPrefix) return;
 
-    const requestAgentId = agentIdRef.current;
+    const requestAgentId = normalizeAgentId(targetAgentId);
+    closeDirtyFilesByPrefix(requestAgentId, pathPrefix);
+
+    if (agentIdRef.current !== requestAgentId) {
+      const nextPaths = loadPersistedFiles(requestAgentId).filter(
+        (filePath) => !matchesPathPrefix(filePath, pathPrefix),
+      );
+      persistFilePaths(requestAgentId, nextPaths);
+
+      if (matchesPathPrefix(loadPersistedTab(requestAgentId), pathPrefix)) {
+        persistTab(requestAgentId, 'chat');
+      }
+      return;
+    }
 
     setOpenFiles((prev) => {
       const next = prev.filter((file) => !matchesPathPrefix(file.path, pathPrefix));
+      rememberDirtyFiles(requestAgentId, next);
       persistFiles(requestAgentId, next);
       return next;
     });
@@ -495,7 +558,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       persistTab(requestAgentId, 'chat');
       return 'chat';
     });
-  }, []);
+  }, [closeDirtyFilesByPrefix, rememberDirtyFiles, scopedAgentId]);
 
   const getDirtyFilePaths = useCallback(() => (
     openFilesRef.current.filter((file) => file.dirty).map((file) => file.path)

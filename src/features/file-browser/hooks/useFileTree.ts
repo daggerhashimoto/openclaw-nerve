@@ -166,8 +166,10 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID) {
   }, []);
 
   // Initial load and agent changes
-  const loadRoot = useCallback(async () => {
-    const requestAgentId = scopedAgentId;
+  const loadRoot = useCallback(async (targetAgentId = scopedAgentId) => {
+    const requestAgentId = normalizeAgentId(targetAgentId);
+    if (agentIdRef.current !== requestAgentId) return;
+
     const requestVersion = ++requestVersionRef.current;
     const persistedExpandedPaths = loadExpandedPaths(requestAgentId);
     const persistedSelectedPath = loadSelectedPath(requestAgentId);
@@ -258,13 +260,19 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID) {
     }
   }, [entries, expandedPaths, fetchChildren]);
 
-  const selectFile = useCallback((filePath: string) => {
-    setSelectedPathState(filePath);
-  }, []);
+  const selectFile = useCallback((filePath: string, targetAgentId = scopedAgentId) => {
+    const requestAgentId = normalizeAgentId(targetAgentId);
+    if (agentIdRef.current !== requestAgentId) {
+      saveSelectedPath(requestAgentId, filePath);
+      return;
+    }
 
-  const refresh = useCallback(() => {
-    void loadRoot();
-  }, [loadRoot]);
+    setSelectedPathState(filePath);
+  }, [scopedAgentId]);
+
+  const refresh = useCallback((targetAgentId = scopedAgentId) => {
+    void loadRoot(targetAgentId);
+  }, [loadRoot, scopedAgentId]);
 
   /** Refresh a specific directory (or root) when a file changes externally. */
   const refreshDirectory = useCallback(async (dirPath: string) => {

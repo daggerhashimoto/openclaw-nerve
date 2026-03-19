@@ -2,7 +2,7 @@
  * SkillsTab — Browse installed skills and their status.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { RefreshCw, Circle, ExternalLink, ChevronDown, ChevronRight, Puzzle } from 'lucide-react';
 import { useSkills, type Skill, type SkillMissing } from '../hooks/useSkills';
 
@@ -111,10 +111,18 @@ function SkillRow({ skill }: { skill: Skill }) {
   );
 }
 
+interface SkillsTabProps {
+  agentId: string;
+}
+
 /** Workspace tab listing installed skills and flagging missing dependencies. */
-export function SkillsTab() {
-  const { skills, isLoading, error, refresh } = useSkills();
+export function SkillsTab({ agentId }: SkillsTabProps) {
+  const { skills, isLoading, error, refresh } = useSkills(agentId);
   const [showUnavailable, setShowUnavailable] = useState(false);
+
+  useEffect(() => {
+    setShowUnavailable(false);
+  }, [agentId]);
 
   const eligibleSkills = skills.filter(s => s.eligible);
   const unavailableSkills = skills.filter(s => !s.eligible);

@@ -1,6 +1,9 @@
 /** Tests for the skills API route (GET /api/skills). */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 interface ExecError extends Error {
   code?: string;
@@ -9,6 +12,12 @@ interface ExecError extends Error {
 }
 
 type ExecCb = (err: ExecError | null, stdout: string, stderr: string) => void;
+
+type ExecCall = {
+  bin: string;
+  args: string[];
+  opts: Record<string, unknown> | undefined;
+};
 
 let execFileImpl: (bin: string, args: string[], opts: unknown, cb: ExecCb) => void;
 
@@ -23,11 +32,6 @@ vi.mock('node:child_process', async (importOriginal) => {
   };
   return { ...mock, default: mock };
 });
-
-vi.mock('../lib/config.js', () => ({
-  config: { auth: false, port: 3000, host: '127.0.0.1', sslPort: 3443 },
-  SESSION_COOKIE_NAME: 'nerve_session_3000',
-}));
 
 vi.mock('../middleware/rate-limit.js', () => ({
   rateLimitGeneral: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
@@ -45,25 +49,81 @@ const RAW_SKILLS = [
 const GOOD_SKILLS_JSON = JSON.stringify({ skills: RAW_SKILLS });
 const GOOD_SKILLS_ARRAY_JSON = JSON.stringify(RAW_SKILLS);
 
-import skillsRoutes from './skills.js';
-
-function buildApp() {
-  const app = new Hono();
-  app.route('/', skillsRoutes);
-  return app;
+function findExecCall(calls: ExecCall[], args: string[]): ExecCall | undefined {
+  return calls.find((call) => call.args.length === args.length && call.args.every((value, index) => value === args[index]));
 }
 
 describe('GET /api/skills', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
+  let homeDir: string;
+  let mainWorkspace: string;
+  let researchWorkspace: string;
+  let memoryPath: string;
+  let memoryDir: string;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    homeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skills-routes-test-'));
+    mainWorkspace = path.join(homeDir, '.openclaw', 'workspace');
+    researchWorkspace = path.join(homeDir, '.openclaw', 'workspace-research');
+    memoryPath = path.join(mainWorkspace, 'MEMORY.md');
+    memoryDir = path.join(mainWorkspace, 'memory');
+
+    await fs.mkdir(memoryDir, { recursive: true });
+    await fs.mkdir(researchWorkspace, { recursive: true });
   });
 
-  it('returns skill list on success', async () => {
-    execFileImpl = (_bin, _args, _opts, cb) => {
-      cb(null, GOOD_SKILLS_JSON, '');
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(homeDir, { recursive: true, force: true });
+  });
+
+  async function buildApp() {
+    vi.resetModules();
+    vi.doMock('../lib/config.js', () => ({
+      config: {
+        auth: false,
+        port: 3000,
+        host: '127.0.0.1',
+        sslPort: 3443,
+        home: homeDir,
+        memoryPath,
+        memoryDir,
+      },
+      SESSION_COOKIE_NAME: 'nerve_session_3000',
+    }));
+
+    const mod = await import('./skills.js');
+    const app = new Hono();
+    app.route('/', mod.default);
+    return app;
+  }
+
+  function setupExec(stdout: string, stderr = '') {
+    const calls: ExecCall[] = [];
+
+    execFileImpl = (bin, args, opts, cb) => {
+      calls.push({ bin, args, opts: opts as Record<string, unknown> | undefined });
+
+      if (args[0] === 'config' && args[1] === 'set') {
+        cb(null, '', '');
+        return;
+      }
+
+      if (args[0] === 'skills' && args[1] === 'list' && args[2] === '--json') {
+        cb(null, stdout, stderr);
+        return;
+      }
+
+      cb(Object.assign(new Error(`Unexpected exec: ${args.join(' ')}`), { code: 'EINVAL' }), '', '');
     };
 
-    const app = buildApp();
+    return calls;
+  }
+
+  it('returns skill list on success', async () => {
+    setupExec(GOOD_SKILLS_JSON);
+
+    const app = await buildApp();
     const res = await app.request('/api/skills');
 
     expect(res.status).toBe(200);
@@ -73,12 +133,38 @@ describe('GET /api/skills', () => {
     expect(json.skills[0].name).toBe('weather');
   });
 
-  it('parses skills when warnings are printed before JSON', async () => {
-    execFileImpl = (_bin, _args, _opts, cb) => {
-      cb(null, `Config warnings: duplicate plugin id\n${GOOD_SKILLS_JSON}`, '');
-    };
+  it('executes the scoped skills listing against the requested agent workspace', async () => {
+    const calls = setupExec(GOOD_SKILLS_JSON);
 
-    const app = buildApp();
+    const app = await buildApp();
+    const res = await app.request('/api/skills?agentId=research');
+
+    expect(res.status).toBe(200);
+    const configSetCall = findExecCall(calls, ['config', 'set', 'agents.defaults.workspace', researchWorkspace]);
+    const skillsCall = findExecCall(calls, ['skills', 'list', '--json']);
+
+    expect(configSetCall).toBeDefined();
+    expect(skillsCall?.opts).toEqual(expect.objectContaining({ cwd: researchWorkspace }));
+  });
+
+  it('falls back to the main workspace when agentId is omitted', async () => {
+    const calls = setupExec(GOOD_SKILLS_JSON);
+
+    const app = await buildApp();
+    const res = await app.request('/api/skills');
+
+    expect(res.status).toBe(200);
+    const configSetCall = findExecCall(calls, ['config', 'set', 'agents.defaults.workspace', mainWorkspace]);
+    const skillsCall = findExecCall(calls, ['skills', 'list', '--json']);
+
+    expect(configSetCall).toBeDefined();
+    expect(skillsCall?.opts).toEqual(expect.objectContaining({ cwd: mainWorkspace }));
+  });
+
+  it('parses skills when warnings are printed before JSON', async () => {
+    setupExec(`Config warnings: duplicate plugin id\n${GOOD_SKILLS_JSON}`);
+
+    const app = await buildApp();
     const res = await app.request('/api/skills');
 
     expect(res.status).toBe(200);
@@ -88,11 +174,9 @@ describe('GET /api/skills', () => {
   });
 
   it('parses skills when warning prelude contains bracket characters', async () => {
-    execFileImpl = (_bin, _args, _opts, cb) => {
-      cb(null, `[warn] duplicate plugin id\n${GOOD_SKILLS_JSON}`, '');
-    };
+    setupExec(`[warn] duplicate plugin id\n${GOOD_SKILLS_JSON}`);
 
-    const app = buildApp();
+    const app = await buildApp();
     const res = await app.request('/api/skills');
 
     expect(res.status).toBe(200);
@@ -102,11 +186,9 @@ describe('GET /api/skills', () => {
   });
 
   it('parses top-level skills array when warnings are printed before JSON', async () => {
-    execFileImpl = (_bin, _args, _opts, cb) => {
-      cb(null, `Config warnings: noisy prelude\n${GOOD_SKILLS_ARRAY_JSON}`, '');
-    };
+    setupExec(`Config warnings: noisy prelude\n${GOOD_SKILLS_ARRAY_JSON}`);
 
-    const app = buildApp();
+    const app = await buildApp();
     const res = await app.request('/api/skills');
 
     expect(res.status).toBe(200);
@@ -117,12 +199,17 @@ describe('GET /api/skills', () => {
   });
 
   it('fails loud when openclaw binary is missing', async () => {
-    execFileImpl = (_bin, _args, _opts, cb) => {
+    execFileImpl = (_bin, args, _opts, cb) => {
+      if (args[0] === 'config' && args[1] === 'set') {
+        cb(null, '', '');
+        return;
+      }
+
       const err = Object.assign(new Error('spawn /usr/bin/openclaw ENOENT'), { code: 'ENOENT' });
       cb(err, '', '');
     };
 
-    const app = buildApp();
+    const app = await buildApp();
     const res = await app.request('/api/skills');
 
     expect(res.status).toBe(502);
@@ -132,11 +219,9 @@ describe('GET /api/skills', () => {
   });
 
   it('fails loud on invalid JSON output', async () => {
-    execFileImpl = (_bin, _args, _opts, cb) => {
-      cb(null, 'not json', '');
-    };
+    setupExec('not json');
 
-    const app = buildApp();
+    const app = await buildApp();
     const res = await app.request('/api/skills');
 
     expect(res.status).toBe(502);
@@ -146,11 +231,9 @@ describe('GET /api/skills', () => {
   });
 
   it('fails loud when JSON payload has no skills array', async () => {
-    execFileImpl = (_bin, _args, _opts, cb) => {
-      cb(null, JSON.stringify({ workspaceDir: '/tmp/workspace' }), '');
-    };
+    setupExec(JSON.stringify({ workspaceDir: '/tmp/workspace' }));
 
-    const app = buildApp();
+    const app = await buildApp();
     const res = await app.request('/api/skills');
 
     expect(res.status).toBe(502);
@@ -160,11 +243,9 @@ describe('GET /api/skills', () => {
   });
 
   it('includes skill detail fields in response', async () => {
-    execFileImpl = (_bin, _args, _opts, cb) => {
-      cb(null, GOOD_SKILLS_JSON, '');
-    };
+    setupExec(GOOD_SKILLS_JSON);
 
-    const app = buildApp();
+    const app = await buildApp();
     const res = await app.request('/api/skills');
 
     const json = (await res.json()) as { skills: Array<Record<string, unknown>> };

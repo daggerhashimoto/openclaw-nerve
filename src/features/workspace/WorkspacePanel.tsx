@@ -85,7 +85,7 @@ function ConfigWithSkills({ agentId }: ConfigWithSkillsProps) {
         ))}
       </div>
       <div className="flex-1 min-h-0 overflow-hidden">
-        {view === 'files' ? <ConfigTab key={agentId} agentId={agentId} /> : <SkillsTab />}
+        {view === 'files' ? <ConfigTab key={agentId} agentId={agentId} /> : <SkillsTab key={agentId} agentId={agentId} />}
       </div>
     </div>
   );

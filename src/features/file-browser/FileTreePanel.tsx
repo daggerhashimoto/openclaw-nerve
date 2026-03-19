@@ -72,9 +72,11 @@ interface FileOpResult {
   error?: string;
 }
 
-type FileTreeToast =
+type FileTreeToastPayload =
   | { type: 'success' | 'error'; message: string }
   | { type: 'undo'; message: string; trashPath: string; ttlMs: number };
+
+type FileTreeToast = FileTreeToastPayload & { agentId: string };
 
 export function FileTreePanel({
   workspaceAgentId,
@@ -125,6 +127,7 @@ export function FileTreePanel({
 
   const [toast, setToast] = useState<FileTreeToast | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const workspaceAgentIdRef = useRef(workspaceAgentId);
 
   // Permanent delete confirmation state
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ entry: TreeEntry } | null>(null);
@@ -141,16 +144,31 @@ export function FileTreePanel({
     setToast(null);
   }, [clearToastTimer]);
 
-  const showToast = useCallback((nextToast: FileTreeToast, timeoutMs?: number) => {
+  const showToastForAgent = useCallback((
+    targetAgentId: string,
+    nextToast: FileTreeToastPayload,
+    timeoutMs?: number,
+  ) => {
+    if (workspaceAgentIdRef.current !== targetAgentId) return;
+
     clearToastTimer();
-    setToast(nextToast);
+    const toastWithAgentId = { ...nextToast, agentId: targetAgentId } as FileTreeToast;
+    setToast(toastWithAgentId);
+
     if (timeoutMs && timeoutMs > 0) {
       toastTimerRef.current = window.setTimeout(() => {
-        setToast(null);
+        setToast((currentToast) => (currentToast === toastWithAgentId ? null : currentToast));
         toastTimerRef.current = null;
       }, timeoutMs);
     }
   }, [clearToastTimer]);
+
+  useEffect(() => {
+    workspaceAgentIdRef.current = workspaceAgentId;
+    if (toast && toast.agentId !== workspaceAgentId) {
+      dismissToast();
+    }
+  }, [dismissToast, toast, workspaceAgentId]);
 
   useEffect(() => () => clearToastTimer(), [clearToastTimer]);
 
@@ -250,11 +268,12 @@ export function FileTreePanel({
   const postFileOp = useCallback(async <T extends { ok?: boolean; error?: string }>(
     endpoint: string,
     body: Record<string, unknown>,
+    targetAgentId = workspaceAgentId,
   ): Promise<T> => {
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...body, agentId: workspaceAgentId }),
+      body: JSON.stringify({ ...body, agentId: targetAgentId }),
     });
 
     let data: T;
@@ -284,14 +303,15 @@ export function FileTreePanel({
           refresh(workspaceAgentId);
           onRemapOpenPaths?.(result.from, result.to, workspaceAgentId);
           selectFile(result.to, workspaceAgentId);
-          showToast({ type: 'success', message: `Moved ${basename(result.from)} to .trash` }, 3000);
+          showToastForAgent(workspaceAgentId, { type: 'success', message: `Moved ${basename(result.from)} to .trash` }, 3000);
           return;
         }
 
         const result = await postFileOp<FileOpResult>('/api/files/trash', { path: sourcePath });
         onCloseOpenPaths?.(result.from, workspaceAgentId);
         refresh(workspaceAgentId);
-        showToast(
+        showToastForAgent(
+          workspaceAgentId,
           {
             type: 'undo',
             message: `Moved ${basename(result.from)} to Trash`,
@@ -310,12 +330,12 @@ export function FileTreePanel({
       refresh(workspaceAgentId);
       onRemapOpenPaths?.(result.from, result.to, workspaceAgentId);
       selectFile(result.to, workspaceAgentId);
-      showToast({ type: 'success', message: `Moved ${basename(result.from)}` }, 3000);
+      showToastForAgent(workspaceAgentId, { type: 'success', message: `Moved ${basename(result.from)}` }, 3000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Move failed';
-      showToast({ type: 'error', message }, 4500);
+      showToastForAgent(workspaceAgentId, { type: 'error', message }, 4500);
     }
-  }, [onCloseOpenPaths, onRemapOpenPaths, postFileOp, refresh, selectFile, showToast, workspaceAgentId, workspaceInfo]);
+  }, [onCloseOpenPaths, onRemapOpenPaths, postFileOp, refresh, selectFile, showToastForAgent, workspaceAgentId, workspaceInfo]);
 
   const canDropToTarget = useCallback((source: TreeEntry, targetDirPath: string): boolean => {
     if (source.path === '.trash') return false;
@@ -347,13 +367,13 @@ export function FileTreePanel({
 
   const startRename = useCallback((entry: TreeEntry) => {
     if (entry.path === '.trash') {
-      showToast({ type: 'error', message: 'Cannot rename .trash root' }, 3500);
+      showToastForAgent(workspaceAgentId, { type: 'error', message: 'Cannot rename .trash root' }, 3500);
       return;
     }
     setRenameTargetPath(entry.path);
     setRenameValue(entry.name);
     setContextMenu(null);
-  }, [showToast]);
+  }, [showToastForAgent, workspaceAgentId]);
 
   const cancelRename = useCallback(() => {
     setRenameTargetPath(null);
@@ -365,7 +385,7 @@ export function FileTreePanel({
 
     const nextName = renameValue.trim();
     if (!nextName) {
-      showToast({ type: 'error', message: 'Name cannot be empty' }, 3000);
+      showToastForAgent(workspaceAgentId, { type: 'error', message: 'Name cannot be empty' }, 3000);
       cancelRename();
       return;
     }
@@ -380,19 +400,19 @@ export function FileTreePanel({
       refresh(workspaceAgentId);
       onRemapOpenPaths?.(result.from, result.to, workspaceAgentId);
       selectFile(result.to, workspaceAgentId);
-      showToast({ type: 'success', message: `Renamed to ${basename(result.to)}` }, 3000);
+      showToastForAgent(workspaceAgentId, { type: 'success', message: `Renamed to ${basename(result.to)}` }, 3000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Rename failed';
-      showToast({ type: 'error', message }, 4500);
+      showToastForAgent(workspaceAgentId, { type: 'error', message }, 4500);
       cancelRename();
     } finally {
       renameInFlightRef.current = false;
     }
-  }, [cancelRename, onRemapOpenPaths, postFileOp, refresh, renameTargetPath, renameValue, selectFile, showToast, workspaceAgentId]);
+  }, [cancelRename, onRemapOpenPaths, postFileOp, refresh, renameTargetPath, renameValue, selectFile, showToastForAgent, workspaceAgentId]);
 
   const moveToTrash = useCallback(async (entry: TreeEntry) => {
     if (entry.path === '.trash' || entry.path.startsWith('.trash/')) {
-      showToast({ type: 'error', message: 'Item is already in Trash' }, 3000);
+      showToastForAgent(workspaceAgentId, { type: 'error', message: 'Item is already in Trash' }, 3000);
       setContextMenu(null);
       return;
     }
@@ -410,7 +430,8 @@ export function FileTreePanel({
       onCloseOpenPaths?.(result.from, workspaceAgentId);
       refresh(workspaceAgentId);
       setContextMenu(null);
-      showToast(
+      showToastForAgent(
+        workspaceAgentId,
         {
           type: 'undo',
           message: `Moved ${basename(result.from)} to Trash`,
@@ -421,46 +442,47 @@ export function FileTreePanel({
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Move to Trash failed';
-      showToast({ type: 'error', message }, 4500);
+      showToastForAgent(workspaceAgentId, { type: 'error', message }, 4500);
       setContextMenu(null);
     }
-  }, [onCloseOpenPaths, postFileOp, refresh, showToast, workspaceAgentId, workspaceInfo]);
+  }, [onCloseOpenPaths, postFileOp, refresh, showToastForAgent, workspaceAgentId, workspaceInfo]);
 
   const confirmPermanentDelete = useCallback(async (entry: TreeEntry) => {
     try {
       const result = await postFileOp<FileOpResult>('/api/files/trash', { path: entry.path });
       onCloseOpenPaths?.(result.from, workspaceAgentId);
       refresh(workspaceAgentId);
-      showToast(
+      showToastForAgent(
+        workspaceAgentId,
         { type: 'success', message: `Permanently deleted ${basename(result.from)}` },
-        3000
+        3000,
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Permanent deletion failed';
-      showToast({ type: 'error', message }, 4500);
+      showToastForAgent(workspaceAgentId, { type: 'error', message }, 4500);
     } finally {
       setDeleteConfirmation(null);
     }
-  }, [onCloseOpenPaths, postFileOp, refresh, showToast, workspaceAgentId]);
+  }, [onCloseOpenPaths, postFileOp, refresh, showToastForAgent, workspaceAgentId]);
 
-  const restoreEntry = useCallback(async (entryPath: string) => {
+  const restoreEntry = useCallback(async (entryPath: string, targetAgentId = workspaceAgentId) => {
     try {
-      const result = await postFileOp<FileOpResult>('/api/files/restore', { path: entryPath });
-      refresh(workspaceAgentId);
-      onRemapOpenPaths?.(result.from, result.to, workspaceAgentId);
-      selectFile(result.to, workspaceAgentId);
-      showToast({ type: 'success', message: `Restored ${basename(result.to)}` }, 3000);
+      const result = await postFileOp<FileOpResult>('/api/files/restore', { path: entryPath }, targetAgentId);
+      refresh(targetAgentId);
+      onRemapOpenPaths?.(result.from, result.to, targetAgentId);
+      selectFile(result.to, targetAgentId);
+      showToastForAgent(targetAgentId, { type: 'success', message: `Restored ${basename(result.to)}` }, 3000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Restore failed';
-      showToast({ type: 'error', message }, 4500);
+      showToastForAgent(targetAgentId, { type: 'error', message }, 4500);
     }
-  }, [onRemapOpenPaths, postFileOp, refresh, selectFile, showToast, workspaceAgentId]);
+  }, [onRemapOpenPaths, postFileOp, refresh, selectFile, showToastForAgent, workspaceAgentId]);
 
   const handleUndoToast = useCallback(async () => {
     if (!toast || toast.type !== 'undo') return;
-    const trashPath = toast.trashPath;
+    const { trashPath, agentId: targetAgentId } = toast;
     dismissToast();
-    await restoreEntry(trashPath);
+    await restoreEntry(trashPath, targetAgentId);
   }, [dismissToast, restoreEntry, toast]);
 
   const handleDragStart = useCallback((entry: TreeEntry, event: React.DragEvent) => {

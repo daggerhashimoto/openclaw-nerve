@@ -31,6 +31,18 @@ function createLocalStorageMock(initial: Record<string, string> = {}) {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error?: unknown) => void;
+
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+}
+
 function getRequestUrl(input: RequestInfo | URL): URL {
   if (typeof input === 'string') return new URL(input, 'http://localhost');
   if (input instanceof URL) return new URL(input.toString(), 'http://localhost');
@@ -399,6 +411,175 @@ describe('useOpenFiles', () => {
 
     expect(result.current.hasDirtyFiles).toBe(true);
     expect(result.current.getDirtyFilePaths()).toEqual(['draft.md']);
+  });
+
+  it('clears a saved file from the originating agent after switching away before save resolves', async () => {
+    const { mock } = createLocalStorageMock({
+      [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['draft.md']),
+      [getWorkspaceStorageKey('active-tab', 'main')]: 'draft.md',
+      [getWorkspaceStorageKey('open-files', 'research')]: JSON.stringify(['notes.md']),
+      [getWorkspaceStorageKey('active-tab', 'research')]: 'notes.md',
+    });
+    vi.stubGlobal('localStorage', mock);
+
+    const fileContentsByAgent = new Map<string, Map<string, { content: string; mtime: number }>>([
+      ['main', new Map([['draft.md', { content: 'main original', mtime: 11 }]])],
+      ['research', new Map([['notes.md', { content: 'research original', mtime: 22 }]])],
+    ]);
+    const writeRequest = createDeferred<Response>();
+
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = getRequestUrl(input);
+
+      if (url.pathname === '/api/files/read') {
+        const agentId = url.searchParams.get('agentId') || 'main';
+        const path = url.searchParams.get('path') || '';
+        const fileEntry = fileContentsByAgent.get(agentId)?.get(path);
+        if (fileEntry) {
+          return createJsonResponse({ ok: true, ...fileEntry });
+        }
+      }
+
+      if (url.pathname === '/api/files/write') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as {
+          path: string;
+          content: string;
+          agentId?: string;
+        };
+        writeRequest.promise.then(() => {
+          const agentId = body.agentId || 'main';
+          fileContentsByAgent.get(agentId)?.set(body.path, { content: body.content, mtime: 99 });
+        });
+        return writeRequest.promise;
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result, rerender } = renderHook(
+      ({ agentId }) => useOpenFiles(agentId),
+      { initialProps: { agentId: 'main' } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'draft.md',
+        content: 'main original',
+        savedContent: 'main original',
+        dirty: false,
+        mtime: 11,
+      });
+    });
+
+    act(() => {
+      result.current.updateContent('draft.md', 'main saved draft');
+    });
+
+    let savePromise!: Promise<{ ok: boolean; conflict?: boolean }>;
+    act(() => {
+      savePromise = result.current.saveFile('draft.md');
+    });
+
+    rerender({ agentId: 'research' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'notes.md',
+        content: 'research original',
+        dirty: false,
+      });
+    });
+
+    writeRequest.resolve(createJsonResponse({ ok: true, mtime: 99 }));
+    await expect(savePromise).resolves.toEqual({ ok: true });
+
+    rerender({ agentId: 'main' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'draft.md',
+        content: 'main saved draft',
+        savedContent: 'main saved draft',
+        dirty: false,
+        mtime: 99,
+      });
+      expect(result.current.hasDirtyFiles).toBe(false);
+    });
+  });
+
+  it('keeps discard-all coherent when switching away immediately afterwards', async () => {
+    const { mock } = createLocalStorageMock({
+      [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['draft.md']),
+      [getWorkspaceStorageKey('active-tab', 'main')]: 'draft.md',
+      [getWorkspaceStorageKey('open-files', 'research')]: JSON.stringify(['notes.md']),
+      [getWorkspaceStorageKey('active-tab', 'research')]: 'notes.md',
+    });
+    vi.stubGlobal('localStorage', mock);
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = getRequestUrl(input);
+      if (url.pathname !== '/api/files/read') {
+        return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+      }
+
+      const path = url.searchParams.get('path');
+      const agentId = url.searchParams.get('agentId') || 'main';
+
+      if (path === 'draft.md' && agentId === 'main') {
+        return createJsonResponse({ ok: true, content: 'main original', mtime: 11 });
+      }
+
+      if (path === 'notes.md' && agentId === 'research') {
+        return createJsonResponse({ ok: true, content: 'research original', mtime: 22 });
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result, rerender } = renderHook(
+      ({ agentId }) => useOpenFiles(agentId),
+      { initialProps: { agentId: 'main' } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'draft.md',
+        content: 'main original',
+        dirty: false,
+      });
+    });
+
+    act(() => {
+      result.current.updateContent('draft.md', 'main unsaved draft');
+    });
+
+    expect(result.current.hasDirtyFiles).toBe(true);
+
+    act(() => {
+      result.current.discardAllDirtyFiles();
+      rerender({ agentId: 'research' });
+    });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'notes.md',
+        content: 'research original',
+        dirty: false,
+      });
+    });
+
+    rerender({ agentId: 'main' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'draft.md',
+        content: 'main original',
+        savedContent: 'main original',
+        dirty: false,
+      });
+      expect(result.current.hasDirtyFiles).toBe(false);
+      expect(result.current.getDirtyFilePaths()).toEqual([]);
+    });
   });
 
   it('discards dirty files back to their saved content', async () => {

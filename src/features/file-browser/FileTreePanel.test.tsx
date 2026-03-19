@@ -1,6 +1,6 @@
 /** Tests for FileTreePanel component - custom workspace UI and confirmation modal. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FileTreePanel } from './FileTreePanel';
 import { useFileTree } from './hooks/useFileTree';
 
@@ -39,6 +39,18 @@ vi.mock('./utils/fileIcons', () => ({
   FileIcon: ({ name }: { name: string }) => <div data-testid={`file-icon-${name}`} />,
   FolderIcon: ({ open }: { open: boolean }) => <div data-testid={`folder-icon-${open ? 'open' : 'closed'}`} />,
 }));
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error?: unknown) => void;
+
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+}
 
 const mockOnOpenFile = vi.fn();
 const mockOnRemapOpenPaths = vi.fn();
@@ -255,7 +267,9 @@ describe('FileTreePanel', () => {
 
       // Click "Move to Trash"
       const trashButton = await screen.findByText('Move to Trash');
-      fireEvent.click(trashButton);
+      await act(async () => {
+        fireEvent.click(trashButton);
+      });
 
       // Should NOT show confirmation modal
       expect(screen.queryByTestId('confirm-dialog')).not.toBeInTheDocument();
@@ -416,6 +430,61 @@ describe('FileTreePanel', () => {
       fireEvent.click(confirmButton);
 
       expect(await screen.findByText('Delete failed')).toBeInTheDocument();
+    });
+
+    it('drops a late trash undo toast after switching to another agent', async () => {
+      const trashRequest = createDeferred<Response>();
+      const mockFetch = vi.mocked(global.fetch);
+      mockFetch.mockImplementation(async (input) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url === '/api/files/trash') {
+          return trashRequest.promise;
+        }
+
+        return {
+          ok: true,
+          json: async () => ({ ok: true }),
+        } as Response;
+      });
+
+      const { rerender } = render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
+      fireEvent.contextMenu(screen.getByText('package.json'), contextMenuEvent);
+
+      const trashButton = await screen.findByText('Move to Trash');
+      fireEvent.click(trashButton);
+
+      rerender(
+        <FileTreePanel
+          workspaceAgentId="agent-b"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      await act(async () => {
+        trashRequest.resolve({
+          ok: true,
+          json: async () => ({ ok: true, from: 'package.json', to: '.trash/package.json', undoTtlMs: 10000 }),
+        } as Response);
+        await Promise.resolve();
+      });
+
+      expect(screen.queryByText('Moved package.json to Trash')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
     });
 
     it('renders correctly in custom workspace mode', async () => {

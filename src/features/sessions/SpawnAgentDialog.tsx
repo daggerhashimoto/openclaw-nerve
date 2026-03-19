@@ -413,7 +413,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                     menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
                     inline
                   />
-                  <p className="cockpit-note mt-2">
+                  <p className="cockpit-field-hint mt-2">
                     Subagents stay attached to the selected top-level agent and report back into that session.
                   </p>
                 </div>
@@ -458,7 +458,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                     menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
                     inline
                   />
-                  <p className="cockpit-note mt-2">
+                  <p className="cockpit-field-hint mt-2">
                     Keep leaves the finished subagent visible. Delete removes it automatically after the run ends.
                   </p>
                 </div>

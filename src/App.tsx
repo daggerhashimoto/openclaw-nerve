@@ -156,20 +156,68 @@ export default function App({ onLogout }: AppProps) {
     handleFileChanged, remapOpenPaths, closeOpenPathsByPrefix,
   } = useOpenFiles(workspaceAgentId);
 
-  // Save with conflict toast
-  const [saveToast, setSaveToast] = useState<{ path: string; type: 'conflict' | 'error' } | null>(null);
+  // Save with workspace-scoped conflict toast
+  const [saveToast, setSaveToast] = useState<{
+    agentId: string;
+    path: string;
+    type: 'conflict' | 'error';
+  } | null>(null);
+  const saveToastTimerRef = useRef<number | null>(null);
+  const workspaceAgentIdRef = useRef(workspaceAgentId);
+
+  const clearSaveToastTimer = useCallback(() => {
+    if (saveToastTimerRef.current !== null) {
+      window.clearTimeout(saveToastTimerRef.current);
+      saveToastTimerRef.current = null;
+    }
+  }, []);
+
+  const dismissSaveToast = useCallback(() => {
+    clearSaveToastTimer();
+    setSaveToast(null);
+  }, [clearSaveToastTimer]);
+
+  const showSaveToastForAgent = useCallback((
+    targetAgentId: string,
+    nextToast: { path: string; type: 'conflict' | 'error' },
+  ) => {
+    if (workspaceAgentIdRef.current !== targetAgentId) return;
+
+    clearSaveToastTimer();
+    const toastForAgent = { ...nextToast, agentId: targetAgentId };
+    setSaveToast(toastForAgent);
+    saveToastTimerRef.current = window.setTimeout(() => {
+      setSaveToast((currentToast) => (currentToast === toastForAgent ? null : currentToast));
+      saveToastTimerRef.current = null;
+    }, 5000);
+  }, [clearSaveToastTimer]);
+
+  useEffect(() => {
+    workspaceAgentIdRef.current = workspaceAgentId;
+    if (saveToast && saveToast.agentId !== workspaceAgentId) {
+      dismissSaveToast();
+    }
+  }, [dismissSaveToast, saveToast, workspaceAgentId]);
+
+  useEffect(() => () => clearSaveToastTimer(), [clearSaveToastTimer]);
+
   const handleSaveFile = useCallback(async (filePath: string) => {
+    const requestAgentId = workspaceAgentId;
     const result = await saveFile(filePath);
+
+    if (workspaceAgentIdRef.current !== requestAgentId) {
+      return;
+    }
+
     if (!result.ok) {
       if (result.conflict) {
-        setSaveToast({ path: filePath, type: 'conflict' });
-        // Auto-dismiss after 5s
-        setTimeout(() => setSaveToast(null), 5000);
+        showSaveToastForAgent(requestAgentId, { path: filePath, type: 'conflict' });
       }
-    } else {
-      setSaveToast(null);
+      return;
     }
-  }, [saveFile]);
+
+    dismissSaveToast();
+  }, [dismissSaveToast, saveFile, showSaveToastForAgent, workspaceAgentId]);
 
   // Single file.changed handler, feeds both open files and tree refresh.
   const onFileChanged = useCallback((path: string) => {
@@ -404,7 +452,7 @@ export default function App({ onLogout }: AppProps) {
       onContentChange={updateContent}
       onSaveFile={handleSaveFile}
       saveToast={saveToast}
-      onDismissToast={() => setSaveToast(null)}
+      onDismissToast={dismissSaveToast}
       onReloadFile={reloadFile}
       onRetryFile={reloadFile}
       chatPanel={

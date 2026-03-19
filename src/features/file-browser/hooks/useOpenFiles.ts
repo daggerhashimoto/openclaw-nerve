@@ -1,34 +1,54 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { getWorkspaceStorageKey } from '@/features/workspace/workspaceScope';
 import { isImageFile } from '../utils/fileTypes';
 import type { OpenFile } from '../types';
 
-const STORAGE_KEY_FILES = 'nerve-open-files';
-const STORAGE_KEY_TAB = 'nerve-active-tab';
+const DEFAULT_AGENT_ID = 'main';
 const MAX_OPEN_TABS = 20;
 
-function loadPersistedFiles(): string[] {
+function normalizeAgentId(agentId?: string): string {
+  return agentId?.trim() || DEFAULT_AGENT_ID;
+}
+
+function getFilesStorageKey(agentId: string): string {
+  return getWorkspaceStorageKey('open-files', normalizeAgentId(agentId));
+}
+
+function getActiveTabStorageKey(agentId: string): string {
+  return getWorkspaceStorageKey('active-tab', normalizeAgentId(agentId));
+}
+
+function loadPersistedFiles(agentId: string): string[] {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY_FILES);
+    const stored = localStorage.getItem(getFilesStorageKey(agentId));
     return stored ? JSON.parse(stored) : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
-function loadPersistedTab(): string {
+function loadPersistedTab(agentId: string): string {
   try {
-    return localStorage.getItem(STORAGE_KEY_TAB) || 'chat';
-  } catch { return 'chat'; }
+    return localStorage.getItem(getActiveTabStorageKey(agentId)) || 'chat';
+  } catch {
+    return 'chat';
+  }
 }
 
-function persistFiles(files: OpenFile[]) {
+function persistFiles(agentId: string, files: OpenFile[]) {
   try {
-    localStorage.setItem(STORAGE_KEY_FILES, JSON.stringify(files.map(f => f.path)));
-  } catch { /* ignore */ }
+    localStorage.setItem(getFilesStorageKey(agentId), JSON.stringify(files.map((file) => file.path)));
+  } catch {
+    // ignore storage errors
+  }
 }
 
-function persistTab(tab: string) {
+function persistTab(agentId: string, tab: string) {
   try {
-    localStorage.setItem(STORAGE_KEY_TAB, tab);
-  } catch { /* ignore */ }
+    localStorage.setItem(getActiveTabStorageKey(agentId), tab);
+  } catch {
+    // ignore storage errors
+  }
 }
 
 function basename(filePath: string): string {
@@ -45,34 +65,65 @@ function remapPathPrefix(candidatePath: string, fromPrefix: string, toPrefix: st
   return `${toPrefix}${candidatePath.slice(fromPrefix.length)}`;
 }
 
-export function useOpenFiles() {
+function buildReadUrl(filePath: string, agentId: string): string {
+  const params = new URLSearchParams({ path: filePath, agentId });
+  return `/api/files/read?${params.toString()}`;
+}
+
+function getRestoredActiveTab(persistedTab: string, files: OpenFile[]): string {
+  if (persistedTab === 'chat') return 'chat';
+  return files.some((file) => file.path === persistedTab)
+    ? persistedTab
+    : files.at(-1)?.path ?? 'chat';
+}
+
+export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
+  const scopedAgentId = normalizeAgentId(agentId);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
-  const [activeTab, setActiveTabState] = useState<string>(loadPersistedTab);
-  const initializedRef = useRef(false);
+  const [activeTab, setActiveTabState] = useState<string>(() => loadPersistedTab(scopedAgentId));
+  const restoreRequestRef = useRef(0);
 
   // Track mtimes from our own saves so we can ignore the SSE bounce-back
   const recentSaveMtimes = useRef<Map<string, number>>(new Map());
-  /** Paths currently being saved — blocks lock overlay during the save round-trip */
+  /** Paths currently being saved, blocks lock overlay during the save round-trip */
   const savingPaths = useRef<Set<string>>(new Set());
 
-  // Restore previously open files on first render
-  const initializeFiles = useCallback(async () => {
-    if (initializedRef.current) return;
-    initializedRef.current = true;
+  const openFilesRef = useRef<OpenFile[]>([]);
+  // eslint-disable-next-line react-hooks/immutability
+  openFilesRef.current = openFiles;
 
-    const paths = loadPersistedFiles();
-    if (paths.length === 0) return;
+  const agentIdRef = useRef(scopedAgentId);
+  useEffect(() => {
+    agentIdRef.current = scopedAgentId;
+  }, [scopedAgentId]);
+
+  const unlockTimers = useRef<Map<string, number>>(new Map());
+
+  const restorePersistedFiles = useCallback(async (targetAgentId = scopedAgentId) => {
+    const requestId = ++restoreRequestRef.current;
+    const persistedPaths = loadPersistedFiles(targetAgentId);
+    const persistedTab = loadPersistedTab(targetAgentId);
+
+    setOpenFiles([]);
+    setActiveTabState(persistedTab);
+
+    if (persistedPaths.length === 0) {
+      persistFiles(targetAgentId, []);
+      persistTab(targetAgentId, 'chat');
+      setActiveTabState('chat');
+      return;
+    }
 
     const files: OpenFile[] = [];
-    for (const p of paths) {
+    for (const path of persistedPaths) {
       try {
-        const res = await fetch(`/api/files/read?path=${encodeURIComponent(p)}`);
+        const res = await fetch(buildReadUrl(path, targetAgentId));
         if (!res.ok) continue;
         const data = await res.json();
         if (!data.ok) continue;
         files.push({
-          path: p,
-          name: basename(p),
+          path,
+          name: basename(path),
           content: data.content,
           savedContent: data.content,
           dirty: false,
@@ -83,43 +134,61 @@ export function useOpenFiles() {
       } catch {
         // Skip files that can't be loaded
       }
+
+      if (restoreRequestRef.current !== requestId || agentIdRef.current !== targetAgentId) {
+        return;
+      }
     }
 
-    if (files.length > 0) {
-      setOpenFiles(files);
+    if (restoreRequestRef.current !== requestId || agentIdRef.current !== targetAgentId) {
+      return;
     }
-  }, []);
+
+    const nextActiveTab = getRestoredActiveTab(persistedTab, files);
+    setOpenFiles(files);
+    setActiveTabState(nextActiveTab);
+    persistFiles(targetAgentId, files);
+    persistTab(targetAgentId, nextActiveTab);
+  }, [scopedAgentId]);
+
+  useEffect(() => {
+    recentSaveMtimes.current.clear();
+    savingPaths.current.clear();
+    for (const timer of unlockTimers.current.values()) {
+      clearTimeout(timer);
+    }
+    unlockTimers.current.clear();
+    void restorePersistedFiles(scopedAgentId);
+  }, [restorePersistedFiles, scopedAgentId]);
+
+  const initializeFiles = useCallback(async () => {
+    await restorePersistedFiles(scopedAgentId);
+  }, [restorePersistedFiles, scopedAgentId]);
 
   const setActiveTab = useCallback((tab: string) => {
+    const requestAgentId = agentIdRef.current;
     setActiveTabState(tab);
-    persistTab(tab);
+    persistTab(requestAgentId, tab);
   }, []);
 
   const openFile = useCallback(async (filePath: string) => {
-    // If already open, just switch tab -- do NOT refetch (would clobber dirty edits)
-    if (openFilesRef.current.some(f => f.path === filePath)) {
+    if (openFilesRef.current.some((file) => file.path === filePath)) {
       setActiveTab(filePath);
       return;
     }
 
+    const requestAgentId = agentIdRef.current;
+
     setOpenFiles((prev) => {
-      // Re-check inside updater in case of concurrent calls
-      const existing = prev.find(f => f.path === filePath);
+      const existing = prev.find((file) => file.path === filePath);
       if (existing) return prev;
 
-      // Enforce tab limit — close oldest non-dirty tab to make room
       let base = prev;
       if (base.length >= MAX_OPEN_TABS) {
-        const oldest = base.find(f => !f.dirty);
-        if (oldest) {
-          base = base.filter(f => f.path !== oldest.path);
-        } else {
-          // All dirty — close oldest anyway
-          base = base.slice(1);
-        }
+        const oldest = base.find((file) => !file.dirty);
+        base = oldest ? base.filter((file) => file.path !== oldest.path) : base.slice(1);
       }
 
-      // Add placeholder while loading
       const newFile: OpenFile = {
         path: filePath,
         name: basename(filePath),
@@ -131,91 +200,84 @@ export function useOpenFiles() {
         loading: true,
       };
       const next = [...base, newFile];
-      persistFiles(next);
+      persistFiles(requestAgentId, next);
       return next;
     });
 
     setActiveTab(filePath);
 
-    // Images don't need content — just mark as loaded
     if (isImageFile(basename(filePath))) {
-      setOpenFiles((prev) =>
-        prev.map((f) =>
-          f.path === filePath ? { ...f, loading: false } : f,
-        ),
-      );
+      setOpenFiles((prev) => prev.map((file) => (
+        file.path === filePath ? { ...file, loading: false } : file
+      )));
       return;
     }
 
-    // Fetch content for text files
     try {
-      const res = await fetch(`/api/files/read?path=${encodeURIComponent(filePath)}`);
+      const res = await fetch(buildReadUrl(filePath, requestAgentId));
       const data = await res.json();
 
-      setOpenFiles((prev) =>
-        prev.map((f) => {
-          if (f.path !== filePath) return f;
-          if (!data.ok) {
-            return { ...f, loading: false, error: data.error || 'Failed to load' };
-          }
-          return {
-            ...f,
-            content: data.content,
-            savedContent: data.content,
-            mtime: data.mtime,
-            loading: false,
-            error: undefined,
-          };
-        }),
-      );
+      if (agentIdRef.current !== requestAgentId) {
+        return;
+      }
+
+      setOpenFiles((prev) => prev.map((file) => {
+        if (file.path !== filePath) return file;
+        if (!data.ok) {
+          return { ...file, loading: false, error: data.error || 'Failed to load' };
+        }
+        return {
+          ...file,
+          content: data.content,
+          savedContent: data.content,
+          mtime: data.mtime,
+          loading: false,
+          error: undefined,
+        };
+      }));
     } catch {
-      setOpenFiles((prev) =>
-        prev.map((f) =>
-          f.path === filePath
-            ? { ...f, loading: false, error: 'Network error' }
-            : f,
-        ),
-      );
+      if (agentIdRef.current !== requestAgentId) {
+        return;
+      }
+
+      setOpenFiles((prev) => prev.map((file) => (
+        file.path === filePath
+          ? { ...file, loading: false, error: 'Network error' }
+          : file
+      )));
     }
   }, [setActiveTab]);
 
   const closeFile = useCallback((filePath: string) => {
+    const requestAgentId = agentIdRef.current;
+
     setOpenFiles((prev) => {
-      const next = prev.filter(f => f.path !== filePath);
-      persistFiles(next);
+      const next = prev.filter((file) => file.path !== filePath);
+      persistFiles(requestAgentId, next);
       return next;
     });
 
-    // If closing the active tab, switch to chat or previous tab
     setActiveTabState((currentTab) => {
       if (currentTab !== filePath) return currentTab;
-      const tab = 'chat';
-      persistTab(tab);
-      return tab;
+      persistTab(requestAgentId, 'chat');
+      return 'chat';
     });
   }, []);
 
   const updateContent = useCallback((filePath: string, content: string) => {
-    setOpenFiles((prev) =>
-      prev.map((f) => {
-        if (f.path !== filePath) return f;
-        return { ...f, content, dirty: content !== f.savedContent };
-      }),
-    );
+    setOpenFiles((prev) => prev.map((file) => {
+      if (file.path !== filePath) return file;
+      return { ...file, content, dirty: content !== file.savedContent };
+    }));
   }, []);
 
-  // Ref to always have current openFiles for saveFile (avoids stale closure)
-  const openFilesRef = useRef<OpenFile[]>([]);
-  // eslint-disable-next-line react-hooks/immutability
-  openFilesRef.current = openFiles;
-
   const saveFile = useCallback(async (filePath: string): Promise<{ ok: boolean; conflict?: boolean }> => {
-    const file = openFilesRef.current.find(f => f.path === filePath);
+    const file = openFilesRef.current.find((openFile) => openFile.path === filePath);
     if (!file) return { ok: false };
 
+    const requestAgentId = agentIdRef.current;
+
     try {
-      // Mark as saving BEFORE the request — prevents the SSE bounce-back
-      // from triggering the lock overlay while we wait for the response
       savingPaths.current.add(filePath);
 
       const res = await fetch('/api/files/write', {
@@ -225,28 +287,28 @@ export function useOpenFiles() {
           path: filePath,
           content: file.content,
           expectedMtime: file.mtime,
+          agentId: requestAgentId,
         }),
       });
       const data = await res.json();
 
       if (data.ok) {
-        // Track this mtime so we ignore the SSE bounce-back from our own save
         recentSaveMtimes.current.set(filePath, data.mtime);
         setTimeout(() => recentSaveMtimes.current.delete(filePath), 2000);
 
-        setOpenFiles((prev) =>
-          prev.map((f) =>
-            f.path === filePath
-              ? { ...f, savedContent: f.content, dirty: false, mtime: data.mtime }
-              : f,
-          ),
-        );
+        if (agentIdRef.current === requestAgentId) {
+          setOpenFiles((prev) => prev.map((openFile) => (
+            openFile.path === filePath
+              ? { ...openFile, savedContent: openFile.content, dirty: false, mtime: data.mtime }
+              : openFile
+          )));
+        }
         savingPaths.current.delete(filePath);
         return { ok: true };
       }
 
-      // 409 Conflict — file was modified externally
       if (res.status === 409) {
+        savingPaths.current.delete(filePath);
         return { ok: false, conflict: true };
       }
 
@@ -259,50 +321,43 @@ export function useOpenFiles() {
   }, []);
 
   const reloadFile = useCallback(async (filePath: string) => {
+    const requestAgentId = agentIdRef.current;
+
     try {
-      const res = await fetch(`/api/files/read?path=${encodeURIComponent(filePath)}`);
+      const res = await fetch(buildReadUrl(filePath, requestAgentId));
       const data = await res.json();
 
+      if (agentIdRef.current !== requestAgentId) {
+        return;
+      }
+
       if (!data.ok) {
-        // File was deleted or became inaccessible
         if (res.status === 404) {
-          setOpenFiles((prev) =>
-            prev.map((f) =>
-              f.path === filePath
-                ? { ...f, error: 'File was deleted', locked: false, loading: false }
-                : f,
-            ),
-          );
+          setOpenFiles((prev) => prev.map((file) => (
+            file.path === filePath
+              ? { ...file, error: 'File was deleted', locked: false, loading: false }
+              : file
+          )));
         }
         return;
       }
 
-      setOpenFiles((prev) =>
-        prev.map((f) =>
-          f.path === filePath
-            ? {
-                ...f,
-                content: data.content,
-                savedContent: data.content,
-                dirty: false,
-                // Preserve locked state — handleFileChanged manages lock lifecycle
-                mtime: data.mtime,
-                error: undefined,
-              }
-            : f,
-        ),
-      );
-    } catch { /* ignore */ }
+      setOpenFiles((prev) => prev.map((file) => (
+        file.path === filePath
+          ? {
+              ...file,
+              content: data.content,
+              savedContent: data.content,
+              dirty: false,
+              mtime: data.mtime,
+              error: undefined,
+            }
+          : file
+      )));
+    } catch {
+      // ignore reload failures
+    }
   }, []);
-
-  /**
-   * Handle an external file change event (from SSE `file.changed`).
-   *
-   * - If this was our own save → ignore (bounce-back dedup).
-   * - If the file is open → lock it and reload content from disk.
-   * - Lock clears automatically after a short delay (debounce rapid edits).
-   */
-  const unlockTimers = useRef<Map<string, number>>(new Map());
 
   // Clean up pending unlock timers on unmount
   useEffect(() => {
@@ -315,36 +370,33 @@ export function useOpenFiles() {
     };
   }, []);
 
+  /**
+   * Handle an external file change event (from SSE `file.changed`).
+   *
+   * - If this was our own save, ignore it.
+   * - If the file is open, lock it and reload content from disk.
+   * - Lock clears automatically after a short delay.
+   */
   const handleFileChanged = useCallback((changedPath: string) => {
-    // Ignore bounce-back from our own saves
     if (recentSaveMtimes.current.has(changedPath)) return;
     if (savingPaths.current.has(changedPath)) return;
 
-    // Check if file is open (use ref to avoid stale closure)
-    const isOpen = openFilesRef.current.some(f => f.path === changedPath);
+    const isOpen = openFilesRef.current.some((file) => file.path === changedPath);
     if (!isOpen) return;
 
-    // Lock the file immediately
-    setOpenFiles((prev) =>
-      prev.map(f =>
-        f.path === changedPath ? { ...f, locked: true } : f,
-      ),
-    );
+    setOpenFiles((prev) => prev.map((file) => (
+      file.path === changedPath ? { ...file, locked: true } : file
+    )));
 
-    // Reload content from disk
-    reloadFile(changedPath).then(() => {
-      // Clear any existing unlock timer (debounce rapid sequential edits)
+    void reloadFile(changedPath).then(() => {
       const existing = unlockTimers.current.get(changedPath);
       if (existing) clearTimeout(existing);
 
-      // Unlock after 5s of no further changes — gives slow models time
       const timer = window.setTimeout(() => {
         unlockTimers.current.delete(changedPath);
-        setOpenFiles((prev) =>
-          prev.map(f =>
-            f.path === changedPath ? { ...f, locked: false } : f,
-          ),
-        );
+        setOpenFiles((prev) => prev.map((file) => (
+          file.path === changedPath ? { ...file, locked: false } : file
+        )));
       }, 5000);
       unlockTimers.current.set(changedPath, timer);
     });
@@ -357,24 +409,26 @@ export function useOpenFiles() {
   const remapOpenPaths = useCallback((fromPath: string, toPath: string) => {
     if (!fromPath || !toPath || fromPath === toPath) return;
 
+    const requestAgentId = agentIdRef.current;
+
     setOpenFiles((prev) => {
-      const next = prev.map((f) => {
-        if (!matchesPathPrefix(f.path, fromPath)) return f;
-        const nextPath = remapPathPrefix(f.path, fromPath, toPath);
+      const next = prev.map((file) => {
+        if (!matchesPathPrefix(file.path, fromPath)) return file;
+        const nextPath = remapPathPrefix(file.path, fromPath, toPath);
         return {
-          ...f,
+          ...file,
           path: nextPath,
           name: basename(nextPath),
         };
       });
-      persistFiles(next);
+      persistFiles(requestAgentId, next);
       return next;
     });
 
     setActiveTabState((currentTab) => {
       if (!matchesPathPrefix(currentTab, fromPath)) return currentTab;
       const nextTab = remapPathPrefix(currentTab, fromPath, toPath);
-      persistTab(nextTab);
+      persistTab(requestAgentId, nextTab);
       return nextTab;
     });
   }, []);
@@ -383,18 +437,43 @@ export function useOpenFiles() {
   const closeOpenPathsByPrefix = useCallback((pathPrefix: string) => {
     if (!pathPrefix) return;
 
+    const requestAgentId = agentIdRef.current;
+
     setOpenFiles((prev) => {
-      const next = prev.filter((f) => !matchesPathPrefix(f.path, pathPrefix));
-      persistFiles(next);
+      const next = prev.filter((file) => !matchesPathPrefix(file.path, pathPrefix));
+      persistFiles(requestAgentId, next);
       return next;
     });
 
     setActiveTabState((currentTab) => {
       if (!matchesPathPrefix(currentTab, pathPrefix)) return currentTab;
-      persistTab('chat');
+      persistTab(requestAgentId, 'chat');
       return 'chat';
     });
   }, []);
+
+  const getDirtyFilePaths = useCallback(() => (
+    openFilesRef.current.filter((file) => file.dirty).map((file) => file.path)
+  ), []);
+
+  const discardAllDirtyFiles = useCallback(() => {
+    setOpenFiles((prev) => prev.map((file) => (
+      file.dirty
+        ? { ...file, content: file.savedContent, dirty: false, error: undefined }
+        : file
+    )));
+  }, []);
+
+  const saveAllDirtyFiles = useCallback(async (): Promise<{ ok: boolean; failedPath?: string; conflict?: boolean }> => {
+    const dirtyPaths = getDirtyFilePaths();
+    for (const dirtyPath of dirtyPaths) {
+      const result = await saveFile(dirtyPath);
+      if (!result.ok) {
+        return { ok: false, failedPath: dirtyPath, conflict: result.conflict };
+      }
+    }
+    return { ok: true };
+  }, [getDirtyFilePaths, saveFile]);
 
   return {
     openFiles,
@@ -409,5 +488,9 @@ export function useOpenFiles() {
     handleFileChanged,
     remapOpenPaths,
     closeOpenPathsByPrefix,
+    hasDirtyFiles: openFiles.some((file) => file.dirty),
+    getDirtyFilePaths,
+    saveAllDirtyFiles,
+    discardAllDirtyFiles,
   };
 }

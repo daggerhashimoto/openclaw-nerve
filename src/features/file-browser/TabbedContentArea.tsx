@@ -33,6 +33,7 @@ interface SaveToast {
 interface TabbedContentAreaProps {
   activeTab: string;
   openFiles: OpenFile[];
+  workspaceAgentId: string;
   onSelectTab: (id: string) => void;
   onCloseTab: (path: string) => void;
   onContentChange: (path: string, content: string) => void;
@@ -48,6 +49,7 @@ interface TabbedContentAreaProps {
 export function TabbedContentArea({
   activeTab,
   openFiles,
+  workspaceAgentId,
   onSelectTab,
   onCloseTab,
   onContentChange,
@@ -94,7 +96,7 @@ export function TabbedContentArea({
             aria-labelledby={`tab-${file.path}`}
           >
             {isImageFile(file.name) ? (
-              <ImageViewer file={file} />
+              <ImageViewer file={file} agentId={workspaceAgentId} />
             ) : (
               <Suspense fallback={<EditorFallback />}>
                 <FileEditor

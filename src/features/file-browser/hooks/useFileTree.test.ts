@@ -1,8 +1,9 @@
 /** Tests for useFileTree hook - workspace info handling and tree operations. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useFileTree } from './useFileTree';
 import type { TreeEntry } from '../types';
+import { getWorkspaceStorageKey } from '@/features/workspace/workspaceScope';
 
 // Mock fetch globally
 global.fetch = vi.fn();
@@ -245,7 +246,10 @@ describe('useFileTree', () => {
       await waitFor(() => {
         expect(result.current.expandedPaths.has('src')).toBe(true);
         expect(mockFetch).toHaveBeenCalledWith(
-          expect.stringContaining('?path=src&depth=1')
+          expect.stringContaining('path=src')
+        );
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.stringContaining('agentId=main')
         );
       });
     });
@@ -288,9 +292,9 @@ describe('useFileTree', () => {
         }),
       } as Response);
 
-      renderHook(() => useFileTree());
+      renderHook(() => useFileTree('main'));
 
-      expect(mockLocalStorage.getItem).toHaveBeenCalledWith('nerve-file-tree-expanded');
+      expect(mockLocalStorage.getItem).toHaveBeenCalledWith(getWorkspaceStorageKey('file-tree-expanded', 'main'));
     });
   });
 
@@ -552,7 +556,7 @@ describe('useFileTree', () => {
       await waitFor(() => {
         expect(mockLocalStorage.setItem.mock.calls.length).toBeGreaterThan(writesBeforeToggle);
         expect(mockLocalStorage.setItem).toHaveBeenLastCalledWith(
-          'nerve-file-tree-expanded',
+          getWorkspaceStorageKey('file-tree-expanded', 'main'),
           expect.not.stringContaining('src'),
         );
       });
@@ -682,6 +686,140 @@ describe('useFileTree', () => {
         expect(result.current.entries.find((entry) => entry.path === 'src')?.children).toHaveLength(1);
         expect(result.current.entries.find((entry) => entry.path === 'src')?.children?.[0]?.path).toBe('src/main.ts');
       });
+    });
+  });
+
+  describe('agent-scoped state', () => {
+    it('persists selected paths under an agent-scoped key', async () => {
+      const mockLocalStorage = vi.mocked(localStorage);
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          entries: [],
+          workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace' },
+        }),
+      } as Response);
+
+      const { result } = renderHook(() => useFileTree('main'));
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      act(() => {
+        result.current.selectFile('src/index.ts');
+      });
+
+      expect(mockLocalStorage.setItem).toHaveBeenCalledWith(
+        getWorkspaceStorageKey('file-tree-selected', 'main'),
+        'src/index.ts',
+      );
+    });
+
+    it('reloads scoped state and tree data when the agent changes', async () => {
+      const mockLocalStorage = vi.mocked(localStorage);
+      mockLocalStorage.getItem.mockImplementation((key: string) => {
+        if (key === getWorkspaceStorageKey('file-tree-expanded', 'main')) return JSON.stringify(['src']);
+        if (key === getWorkspaceStorageKey('file-tree-selected', 'main')) return 'src/index.ts';
+        if (key === getWorkspaceStorageKey('file-tree-expanded', 'research')) return JSON.stringify(['notes']);
+        if (key === getWorkspaceStorageKey('file-tree-selected', 'research')) return 'notes/todo.md';
+        return null;
+      });
+
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockImplementation(async (input) => {
+        const requestUrl = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+        const url = new URL(requestUrl, 'http://localhost');
+        const agentId = url.searchParams.get('agentId') || 'main';
+        const path = url.searchParams.get('path');
+
+        if (!path && agentId === 'main') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'src', path: 'src', type: 'directory' as const, children: null },
+              ],
+              workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace-main' },
+            }),
+          } as Response;
+        }
+
+        if (path === 'src' && agentId === 'main') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'index.ts', path: 'src/index.ts', type: 'file' as const, children: null },
+              ],
+            }),
+          } as Response;
+        }
+
+        if (!path && agentId === 'research') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'notes', path: 'notes', type: 'directory' as const, children: null },
+              ],
+              workspaceInfo: { isCustomWorkspace: true, rootPath: '/workspace-research' },
+            }),
+          } as Response;
+        }
+
+        if (path === 'notes' && agentId === 'research') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'todo.md', path: 'notes/todo.md', type: 'file' as const, children: null },
+              ],
+            }),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({ ok: false, error: 'Not found' }),
+        } as Response;
+      });
+
+      const { result, rerender } = renderHook(
+        ({ agentId }) => useFileTree(agentId),
+        { initialProps: { agentId: 'main' } },
+      );
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+        expect(result.current.entries.map((entry) => entry.path)).toEqual(['src']);
+        expect(result.current.expandedPaths.has('src')).toBe(true);
+        expect(result.current.selectedPath).toBe('src/index.ts');
+      });
+
+      rerender({ agentId: 'research' });
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+        expect(result.current.entries.map((entry) => entry.path)).toEqual(['notes']);
+        expect(result.current.expandedPaths.has('notes')).toBe(true);
+        expect(result.current.expandedPaths.has('src')).toBe(false);
+        expect(result.current.selectedPath).toBe('notes/todo.md');
+        expect(result.current.workspaceInfo).toEqual({
+          isCustomWorkspace: true,
+          rootPath: '/workspace-research',
+        });
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('agentId=main'));
+      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('agentId=research'));
     });
   });
 

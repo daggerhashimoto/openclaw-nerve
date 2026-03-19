@@ -146,12 +146,14 @@ export default function App({ onLogout }: AppProps) {
     setFileBrowserCollapsed(prev => !prev);
   }, [setFileBrowserCollapsed]);
 
+  const workspaceAgentId = useMemo(() => getWorkspaceAgentId(currentSession), [currentSession]);
+
   // File browser state
   const {
     openFiles, activeTab, setActiveTab,
     openFile, closeFile, updateContent, saveFile, reloadFile, initializeFiles,
     handleFileChanged, remapOpenPaths, closeOpenPathsByPrefix,
-  } = useOpenFiles();
+  } = useOpenFiles(workspaceAgentId);
 
   // Save with conflict toast
   const [saveToast, setSaveToast] = useState<{ path: string; type: 'conflict' | 'error' } | null>(null);
@@ -167,8 +169,6 @@ export default function App({ onLogout }: AppProps) {
       setSaveToast(null);
     }
   }, [saveFile]);
-
-  const workspaceAgentId = useMemo(() => getWorkspaceAgentId(currentSession), [currentSession]);
 
   // Single file.changed handler — feeds both open files and tree refresh
   const onFileChanged = useCallback((path: string) => {
@@ -400,6 +400,7 @@ export default function App({ onLogout }: AppProps) {
     <TabbedContentArea
       activeTab={activeTab}
       openFiles={openFiles}
+      workspaceAgentId={workspaceAgentId}
       onSelectTab={setActiveTab}
       onCloseTab={closeFile}
       onContentChange={updateContent}
@@ -640,6 +641,7 @@ export default function App({ onLogout }: AppProps) {
           <div className={viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0'}>
             <PanelErrorBoundary name="File Explorer">
               <FileTreePanel
+                workspaceAgentId={workspaceAgentId}
                 onOpenFile={openFile}
                 lastChangedPath={lastChangedPath}
                 onRemapOpenPaths={remapOpenPaths}
@@ -664,6 +666,7 @@ export default function App({ onLogout }: AppProps) {
               <div className="pointer-events-auto h-full w-[min(86vw,320px)] max-w-full animate-in slide-in-from-left-4 duration-200">
                 <PanelErrorBoundary name="File Explorer">
                   <FileTreePanel
+                    workspaceAgentId={workspaceAgentId}
                     onOpenFile={openFile}
                     lastChangedPath={lastChangedPath}
                     onRemapOpenPaths={remapOpenPaths}

@@ -50,6 +50,7 @@ function isTrashItemPath(filePath: string): boolean {
 }
 
 interface FileTreePanelProps {
+  workspaceAgentId: string;
   onOpenFile: (path: string) => void;
   onRemapOpenPaths?: (fromPath: string, toPath: string) => void;
   onCloseOpenPaths?: (pathPrefix: string) => void;
@@ -76,6 +77,7 @@ type FileTreeToast =
   | { type: 'undo'; message: string; trashPath: string; ttlMs: number };
 
 export function FileTreePanel({
+  workspaceAgentId,
   onOpenFile,
   onRemapOpenPaths,
   onCloseOpenPaths,
@@ -87,7 +89,7 @@ export function FileTreePanel({
   const {
     entries, loading, error, expandedPaths, selectedPath,
     loadingPaths, workspaceInfo, toggleDirectory, selectFile, refresh, handleFileChange,
-  } = useFileTree();
+  } = useFileTree(workspaceAgentId);
 
   // React to external file changes
   const prevChangedPath = useRef<string | null>(null);
@@ -247,12 +249,12 @@ export function FileTreePanel({
 
   const postFileOp = useCallback(async <T extends { ok?: boolean; error?: string }>(
     endpoint: string,
-    body: unknown,
+    body: Record<string, unknown>,
   ): Promise<T> => {
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, agentId: workspaceAgentId }),
     });
 
     let data: T;
@@ -267,7 +269,7 @@ export function FileTreePanel({
     }
 
     return data;
-  }, []);
+  }, [workspaceAgentId]);
 
   const runMove = useCallback(async (sourcePath: string, targetDirPath: string) => {
     try {

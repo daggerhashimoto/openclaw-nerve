@@ -12,7 +12,7 @@ interface ResizablePanelsProps {
   onResize: (leftPercent: number) => void;
   /** Minimum left-pane width percentage. @default 30 */
   minLeftPercent?: number;
-  /** Maximum left-pane width percentage. @default 75 */
+  /** Maximum left-pane width percentage. @default 85 */
   maxLeftPercent?: number;
   /** Additional class names for the left pane wrapper. */
   leftClassName?: string;
@@ -37,7 +37,7 @@ export function ResizablePanels({
   leftPercent,
   onResize,
   minLeftPercent = 30,
-  maxLeftPercent = 75,
+  maxLeftPercent = 85,
   leftClassName = '',
   rightClassName = '',
   rightWidthPx = null,

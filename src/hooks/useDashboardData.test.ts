@@ -109,7 +109,7 @@ describe('useDashboardData', () => {
     });
   });
 
-  it('refreshes memories only for matching SSE agent scopes and still forwards file.changed', async () => {
+  it('refreshes memories only for matching SSE agent scopes and forwards file.changed only for the active agent', async () => {
     const onFileChanged = vi.fn();
 
     globalThis.fetch = vi.fn((input: string | URL | Request) => {
@@ -131,16 +131,20 @@ describe('useDashboardData', () => {
 
     const fetchMock = vi.mocked(globalThis.fetch);
     fetchMock.mockClear();
+    onFileChanged.mockClear();
 
     act(() => {
       sseHandler?.({ event: 'memory.changed', data: { agentId: 'bravo' }, ts: Date.now() });
+      sseHandler?.({ event: 'file.changed', data: { path: 'memory/2026-03-19.md', agentId: 'bravo' }, ts: Date.now() });
+      sseHandler?.({ event: 'file.changed', data: { path: 'memory/2026-03-19.md' }, ts: Date.now() });
     });
 
     expect(fetchMock).not.toHaveBeenCalledWith('/api/memories?agentId=alpha', expect.any(Object));
+    expect(onFileChanged).not.toHaveBeenCalled();
 
     act(() => {
       sseHandler?.({ event: 'memory.changed', data: { agentId: 'alpha' }, ts: Date.now() });
-      sseHandler?.({ event: 'file.changed', data: { path: 'memory/2026-03-19.md' }, ts: Date.now() });
+      sseHandler?.({ event: 'file.changed', data: { path: 'memory/2026-03-19.md', agentId: 'alpha' }, ts: Date.now() });
     });
 
     await waitFor(() => {

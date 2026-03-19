@@ -41,6 +41,13 @@ function shouldBroadcast(source: string): boolean {
   return true;
 }
 
+function broadcastMainWorkspaceFileChanged(filePath: string): void {
+  broadcast('file.changed', {
+    path: filePath,
+    agentId: 'main',
+  });
+}
+
 /**
  * Start watching workspace files for changes.
  * Call this during server startup.
@@ -59,7 +66,7 @@ export function startFileWatcher(): void {
             file: 'MEMORY.md',
             agentId: 'main',
           });
-          broadcast('file.changed', { path: 'MEMORY.md' });
+          broadcastMainWorkspaceFileChanged('MEMORY.md');
         }
       });
       console.log('[file-watcher] Watching MEMORY.md');
@@ -79,7 +86,7 @@ export function startFileWatcher(): void {
             file: filename,
             agentId: 'main',
           });
-          broadcast('file.changed', { path: `memory/${filename}` });
+          broadcastMainWorkspaceFileChanged(`memory/${filename}`);
         }
       });
       console.log('[file-watcher] Watching memory/ directory');
@@ -109,7 +116,7 @@ export function startFileWatcher(): void {
 
           if (shouldBroadcast(`workspace:${normalized}`)) {
             console.log(`[file-watcher] workspace: ${normalized} changed`);
-            broadcast('file.changed', { path: normalized });
+            broadcastMainWorkspaceFileChanged(normalized);
           }
         });
         console.log('[file-watcher] Watching workspace directory (recursive)');

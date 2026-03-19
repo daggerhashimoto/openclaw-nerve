@@ -400,6 +400,14 @@ describe('memories routes', () => {
         && (payload as { file?: string; agentId?: string }).agentId === 'main'
       ));
 
+      await waitForBroadcast(([event, payload]) => (
+        event === 'file.changed'
+        && payload !== null
+        && typeof payload === 'object'
+        && (payload as { path?: string; agentId?: string }).path === 'MEMORY.md'
+        && (payload as { path?: string; agentId?: string }).agentId === 'main'
+      ));
+
       stopFileWatcher();
     });
 
@@ -417,6 +425,14 @@ describe('memories routes', () => {
         && typeof payload === 'object'
         && (payload as { file?: string; agentId?: string }).file === '2026-02-26.md'
         && (payload as { file?: string; agentId?: string }).agentId === 'main'
+      ));
+
+      await waitForBroadcast(([event, payload]) => (
+        event === 'file.changed'
+        && payload !== null
+        && typeof payload === 'object'
+        && (payload as { path?: string; agentId?: string }).path === 'memory/2026-02-26.md'
+        && (payload as { path?: string; agentId?: string }).agentId === 'main'
       ));
 
       stopFileWatcher();

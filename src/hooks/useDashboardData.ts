@@ -40,6 +40,11 @@ interface MemoryChangedEventData {
   agentId?: string;
 }
 
+interface FileChangedEventData {
+  path?: string;
+  agentId?: string;
+}
+
 export function useDashboardData(options: DashboardDataOptions = {}): DashboardDataState {
   const { subscribe, connectionState } = useGateway();
   const activeAgentId = options.agentId ?? 'main';
@@ -115,8 +120,10 @@ export function useDashboardData(options: DashboardDataOptions = {}): DashboardD
       refreshTokensRef.current?.();
     }
     if (event.event === 'file.changed') {
-      const data = event.data as { path?: string };
-      if (data?.path) {
+      const data = event.data as FileChangedEventData | undefined;
+      const eventAgentId = typeof data?.agentId === 'string' ? data.agentId : undefined;
+
+      if (data?.path && eventAgentId === agentIdRef.current) {
         onFileChangedRef.current?.(data.path);
       }
     }

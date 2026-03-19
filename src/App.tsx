@@ -151,7 +151,7 @@ export default function App({ onLogout }: AppProps) {
   // File browser state
   const {
     openFiles, activeTab, setActiveTab,
-    openFile, closeFile, updateContent, saveFile, reloadFile, initializeFiles,
+    openFile, closeFile, updateContent, saveFile, reloadFile,
     handleFileChanged, remapOpenPaths, closeOpenPathsByPrefix,
   } = useOpenFiles(workspaceAgentId);
 
@@ -305,13 +305,6 @@ export default function App({ onLogout }: AppProps) {
 
   const contextTokens = currentSessionData?.totalTokens ?? 0;
   const contextLimit = currentSessionData?.contextTokens || getContextLimit(model);
-
-  // Restore previously open file tabs
-  useEffect(() => {
-    if (connectionState === 'connected') {
-      initializeFiles();
-    }
-  }, [connectionState, initializeFiles]);
 
   // Boot sequence: fade in panels when connected
   useEffect(() => {

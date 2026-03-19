@@ -249,10 +249,6 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     void restorePersistedFiles(scopedAgentId);
   }, [restorePersistedFiles, scopedAgentId]);
 
-  const initializeFiles = useCallback(async () => {
-    await restorePersistedFiles(scopedAgentId);
-  }, [restorePersistedFiles, scopedAgentId]);
-
   const setActiveTab = useCallback((tab: string) => {
     const requestAgentId = agentIdRef.current;
     setActiveTabState(tab);
@@ -629,7 +625,6 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     updateContent,
     saveFile,
     reloadFile,
-    initializeFiles,
     handleFileChanged,
     remapOpenPaths,
     closeOpenPathsByPrefix,

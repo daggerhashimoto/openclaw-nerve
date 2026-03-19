@@ -413,6 +413,189 @@ describe('useOpenFiles', () => {
     expect(result.current.getDirtyFilePaths()).toEqual(['draft.md']);
   });
 
+  it('saves all dirty files sequentially', async () => {
+    const { mock } = createLocalStorageMock();
+    vi.stubGlobal('localStorage', mock);
+
+    const firstWrite = createDeferred<Response>();
+    const writePaths: string[] = [];
+
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = getRequestUrl(input);
+
+      if (url.pathname === '/api/files/read') {
+        const path = url.searchParams.get('path');
+        if (path === 'first.md') {
+          return createJsonResponse({ ok: true, content: 'first original', mtime: 1 });
+        }
+        if (path === 'second.md') {
+          return createJsonResponse({ ok: true, content: 'second original', mtime: 2 });
+        }
+      }
+
+      if (url.pathname === '/api/files/write') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { path: string };
+        writePaths.push(body.path);
+
+        if (body.path === 'first.md') {
+          return firstWrite.promise;
+        }
+        if (body.path === 'second.md') {
+          return createJsonResponse({ ok: true, mtime: 22 });
+        }
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result } = renderHook(() => useOpenFiles('main'));
+
+    await act(async () => {
+      await result.current.openFile('first.md');
+      await result.current.openFile('second.md');
+    });
+
+    await waitFor(() => {
+      expect(result.current.openFiles.map((file) => file.path)).toEqual(['first.md', 'second.md']);
+    });
+
+    act(() => {
+      result.current.updateContent('first.md', 'first draft');
+      result.current.updateContent('second.md', 'second draft');
+    });
+
+    let saveAllResult!: { ok: boolean; failedPath?: string; conflict?: boolean };
+    act(() => {
+      void result.current.saveAllDirtyFiles().then((value) => {
+        saveAllResult = value;
+      });
+    });
+
+    await waitFor(() => {
+      expect(writePaths).toEqual(['first.md']);
+    });
+
+    await act(async () => {
+      firstWrite.resolve(createJsonResponse({ ok: true, mtime: 11 }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(writePaths).toEqual(['first.md', 'second.md']);
+      expect(saveAllResult).toEqual({ ok: true });
+    });
+  });
+
+  it('stops save-all on the first failure and returns the failed path', async () => {
+    const { mock } = createLocalStorageMock();
+    vi.stubGlobal('localStorage', mock);
+
+    const writePaths: string[] = [];
+
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = getRequestUrl(input);
+
+      if (url.pathname === '/api/files/read') {
+        const path = url.searchParams.get('path');
+        if (path === 'first.md') {
+          return createJsonResponse({ ok: true, content: 'first original', mtime: 1 });
+        }
+        if (path === 'second.md') {
+          return createJsonResponse({ ok: true, content: 'second original', mtime: 2 });
+        }
+      }
+
+      if (url.pathname === '/api/files/write') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { path: string };
+        writePaths.push(body.path);
+
+        if (body.path === 'first.md') {
+          return createJsonResponse({ ok: false, error: 'write failed' }, { ok: false, status: 500 });
+        }
+        if (body.path === 'second.md') {
+          return createJsonResponse({ ok: true, mtime: 22 });
+        }
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result } = renderHook(() => useOpenFiles('main'));
+
+    await act(async () => {
+      await result.current.openFile('first.md');
+      await result.current.openFile('second.md');
+    });
+
+    act(() => {
+      result.current.updateContent('first.md', 'first draft');
+      result.current.updateContent('second.md', 'second draft');
+    });
+
+    let saveAllResult!: { ok: boolean; failedPath?: string; conflict?: boolean };
+    await act(async () => {
+      saveAllResult = await result.current.saveAllDirtyFiles();
+    });
+
+    expect(writePaths).toEqual(['first.md']);
+    expect(saveAllResult).toEqual({ ok: false, failedPath: 'first.md', conflict: undefined });
+  });
+
+  it('returns conflict details from save-all when the first save hits a 409', async () => {
+    const { mock } = createLocalStorageMock();
+    vi.stubGlobal('localStorage', mock);
+
+    const writePaths: string[] = [];
+
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = getRequestUrl(input);
+
+      if (url.pathname === '/api/files/read') {
+        const path = url.searchParams.get('path');
+        if (path === 'first.md') {
+          return createJsonResponse({ ok: true, content: 'first original', mtime: 1 });
+        }
+        if (path === 'second.md') {
+          return createJsonResponse({ ok: true, content: 'second original', mtime: 2 });
+        }
+      }
+
+      if (url.pathname === '/api/files/write') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { path: string };
+        writePaths.push(body.path);
+
+        if (body.path === 'first.md') {
+          return createJsonResponse({ ok: false, error: 'File was modified since you loaded it' }, { ok: false, status: 409 });
+        }
+        if (body.path === 'second.md') {
+          return createJsonResponse({ ok: true, mtime: 22 });
+        }
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result } = renderHook(() => useOpenFiles('main'));
+
+    await act(async () => {
+      await result.current.openFile('first.md');
+      await result.current.openFile('second.md');
+    });
+
+    act(() => {
+      result.current.updateContent('first.md', 'first draft');
+      result.current.updateContent('second.md', 'second draft');
+    });
+
+    let saveAllResult!: { ok: boolean; failedPath?: string; conflict?: boolean };
+    await act(async () => {
+      saveAllResult = await result.current.saveAllDirtyFiles();
+    });
+
+    expect(writePaths).toEqual(['first.md']);
+    expect(saveAllResult).toEqual({ ok: false, failedPath: 'first.md', conflict: true });
+  });
+
   it('clears a saved file from the originating agent after switching away before save resolves', async () => {
     const { mock } = createLocalStorageMock({
       [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['draft.md']),

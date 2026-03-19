@@ -10,6 +10,7 @@ import { Save, X, Loader2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface MemoryEditorProps {
+  agentId: string;
   title: string;
   date?: string; // For daily files
   onSave: () => void;
@@ -17,7 +18,7 @@ interface MemoryEditorProps {
 }
 
 /** Inline editor for modifying a memory entry's content. */
-export function MemoryEditor({ title, date, onSave, onCancel }: MemoryEditorProps) {
+export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryEditorProps) {
   const [content, setContent] = useState('');
   const [originalContent, setOriginalContent] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -31,10 +32,10 @@ export function MemoryEditor({ title, date, onSave, onCancel }: MemoryEditorProp
       setIsLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams({ title });
+        const params = new URLSearchParams({ title, agentId });
         if (date) params.set('date', date);
 
-        const res = await fetch(`/api/memories/section?${params}`);
+        const res = await fetch(`/api/memories/section?${params.toString()}`);
         const data = await res.json();
 
         if (!data.ok) {
@@ -52,7 +53,7 @@ export function MemoryEditor({ title, date, onSave, onCancel }: MemoryEditorProp
     };
 
     fetchContent();
-  }, [title, date]);
+  }, [agentId, title, date]);
 
   // Focus textarea after loading
   useEffect(() => {
@@ -73,7 +74,7 @@ export function MemoryEditor({ title, date, onSave, onCancel }: MemoryEditorProp
       const res = await fetch('/api/memories/section', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content, date }),
+        body: JSON.stringify({ title, content, date, agentId }),
       });
 
       const data = await res.json();

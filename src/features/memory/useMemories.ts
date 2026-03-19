@@ -16,6 +16,11 @@ function generateTempId(): string {
   return `temp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function getMemoriesUrl(agentId: string): string {
+  const params = new URLSearchParams({ agentId });
+  return `/api/memories?${params.toString()}`;
+}
+
 export interface UseMemoriesReturn {
   memories: Memory[];
   isLoading: boolean;
@@ -27,7 +32,7 @@ export interface UseMemoriesReturn {
 }
 
 /** Hook to manage agent memories (CRUD operations via the gateway API). */
-export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
+export function useMemories(initialMemories: Memory[] = [], agentId = 'main'): UseMemoriesReturn {
   const [memories, setMemories] = useState<Memory[]>(initialMemories);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +42,17 @@ export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
   
   // AbortController for in-flight refresh requests
   const refreshAbortRef = useRef<AbortController | null>(null);
+  const timeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+
+  const scheduleTimeout = useCallback((callback: () => void, delayMs: number) => {
+    const timeout = setTimeout(() => {
+      timeoutsRef.current = timeoutsRef.current.filter(activeTimeout => activeTimeout !== timeout);
+      callback();
+    }, delayMs);
+
+    timeoutsRef.current.push(timeout);
+    return timeout;
+  }, []);
   
   // Sync with parent's memories when they change (from SSE updates)
   // but preserve any pending/deleting states.
@@ -62,10 +78,16 @@ export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
     });
   }, [initialMemories]);
 
-  // Abort in-flight refresh on unmount
+  // Abort in-flight refresh and background sync on unmount or agent change
   useEffect(() => {
-    return () => { refreshAbortRef.current?.abort(); };
-  }, []);
+    return () => {
+      refreshAbortRef.current?.abort();
+      for (const timeout of timeoutsRef.current) {
+        clearTimeout(timeout);
+      }
+      timeoutsRef.current = [];
+    };
+  }, [agentId]);
 
   const refresh = useCallback(async () => {
     // Cancel any in-flight refresh to prevent stale data overwriting fresh data
@@ -76,7 +98,7 @@ export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/memories', { signal: controller.signal });
+      const res = await fetch(getMemoriesUrl(agentId), { signal: controller.signal });
       if (!res.ok) {
         throw new Error(`Failed to fetch memories: ${res.status}`);
       }
@@ -107,7 +129,7 @@ export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [agentId]);
 
   const addMemory = useCallback(async (text: string, section?: string, category: MemoryCategory = 'other'): Promise<boolean> => {
     setError(null);
@@ -160,7 +182,7 @@ export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
       const res = await fetch('/api/memories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, section, category }),
+        body: JSON.stringify({ text, section, category, agentId }),
       });
 
       const data: MemoryApiResponse = await res.json();
@@ -170,7 +192,7 @@ export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
         setMemories(prev => prev.map(m => 
           m.tempId === tempId ? { ...m, pending: false, failed: true } : m
         ));
-        setTimeout(() => {
+        scheduleTimeout(() => {
           setMemories(prev => prev.filter(m => m.tempId !== tempId));
         }, 2000);
         setError(data.error || 'Failed to add memory');
@@ -183,14 +205,16 @@ export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
       ));
       
       // SSE will trigger a refresh, but do a background sync just in case
-      setTimeout(() => refresh(), 1000);
+      scheduleTimeout(() => {
+        void refresh();
+      }, 1000);
       return true;
     } catch (err) {
       // Network error: mark as failed, then remove
       setMemories(prev => prev.map(m => 
         m.tempId === tempId ? { ...m, pending: false, failed: true } : m
       ));
-      setTimeout(() => {
+      scheduleTimeout(() => {
         setMemories(prev => prev.filter(m => m.tempId !== tempId));
       }, 2000);
       setError((err as Error).message);
@@ -198,7 +222,7 @@ export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
     } finally {
       pendingOpsRef.current.delete(tempId);
     }
-  }, [refresh]);
+  }, [agentId, refresh, scheduleTimeout]);
 
   const deleteMemory = useCallback(async (query: string, type?: Memory['type'], date?: string): Promise<boolean> => {
     setError(null);
@@ -238,13 +262,13 @@ export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
     const removeDeleting = () => {
       setMemories(prev => prev.filter(m => !m.deleting));
     };
-    const removeTimeout = setTimeout(removeDeleting, 300);
+    const removeTimeout = scheduleTimeout(removeDeleting, 300);
     
     try {
       const res = await fetch('/api/memories', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, type, date }),
+        body: JSON.stringify({ query, type, date, agentId }),
       });
 
       const data: MemoryApiResponse = await res.json();
@@ -252,11 +276,12 @@ export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
       if (!data.ok) {
         // Rollback: remove deleting state
         clearTimeout(removeTimeout);
+        timeoutsRef.current = timeoutsRef.current.filter(activeTimeout => activeTimeout !== removeTimeout);
         setMemories(prev => prev.map(m => 
           m.deleting ? { ...m, deleting: false, failed: true } : m
         ));
         // Clear failed state after brief display
-        setTimeout(() => {
+        scheduleTimeout(() => {
           setMemories(prev => prev.map(m => 
             m.failed ? { ...m, failed: false } : m
           ));
@@ -270,10 +295,11 @@ export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
     } catch (err) {
       // Rollback: remove deleting state
       clearTimeout(removeTimeout);
+      timeoutsRef.current = timeoutsRef.current.filter(activeTimeout => activeTimeout !== removeTimeout);
       setMemories(prev => prev.map(m => 
         m.deleting ? { ...m, deleting: false, failed: true } : m
       ));
-      setTimeout(() => {
+      scheduleTimeout(() => {
         setMemories(prev => prev.map(m => 
           m.failed ? { ...m, failed: false } : m
         ));
@@ -281,7 +307,7 @@ export function useMemories(initialMemories: Memory[] = []): UseMemoriesReturn {
       setError((err as Error).message);
       return false;
     }
-  }, []);
+  }, [agentId, scheduleTimeout]);
 
   const clearError = useCallback(() => {
     setError(null);

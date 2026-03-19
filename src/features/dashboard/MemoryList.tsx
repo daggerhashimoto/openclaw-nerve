@@ -12,6 +12,7 @@ import { MemorySkeletonGroup } from '@/components/skeletons';
 import type { Memory } from '@/types';
 
 interface MemoryListProps {
+  agentId: string;
   memories: Memory[];
   onRefresh: (signal?: AbortSignal) => void | Promise<void>;
   isLoading?: boolean;
@@ -21,9 +22,9 @@ interface MemoryListProps {
 }
 
 /** Searchable, editable list of agent memories with add/delete support. */
-export function MemoryList({ memories: initialMemories, onRefresh, isLoading: initialLoading, hideHeader, compact = false }: MemoryListProps) {
+export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLoading: initialLoading, hideHeader, compact = false }: MemoryListProps) {
   // useMemories provides optimistic state that reflects pending operations
-  const { memories, addMemory, deleteMemory, error, clearError, isLoading } = useMemories(initialMemories);
+  const { memories, addMemory, deleteMemory, error, clearError, isLoading } = useMemories(initialMemories, agentId);
   
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -186,6 +187,7 @@ export function MemoryList({ memories: initialMemories, onRefresh, isLoading: in
   if (editingMemory) {
     return (
       <MemoryEditor
+        agentId={agentId}
         title={editingMemory.title}
         date={editingMemory.date}
         onSave={handleEditorSave}
@@ -309,6 +311,7 @@ export function MemoryList({ memories: initialMemories, onRefresh, isLoading: in
 
       {/* Confirm Delete Dialog */}
       <ConfirmDeleteDialog
+        agentId={agentId}
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
         memoryText={memoryToDelete?.text || ''}

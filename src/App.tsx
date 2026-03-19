@@ -30,6 +30,7 @@ import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { FileTreePanel, TabbedContentArea, useOpenFiles } from '@/features/file-browser';
 import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
+import { getWorkspaceAgentId } from '@/features/workspace/workspaceScope';
 
 // Lazy-loaded features (not needed in initial bundle)
 const SettingsDrawer = lazy(() => import('@/features/settings/SettingsDrawer').then(m => ({ default: m.SettingsDrawer })));
@@ -167,6 +168,8 @@ export default function App({ onLogout }: AppProps) {
     }
   }, [saveFile]);
 
+  const workspaceAgentId = useMemo(() => getWorkspaceAgentId(currentSession), [currentSession]);
+
   // Single file.changed handler — feeds both open files and tree refresh
   const onFileChanged = useCallback((path: string) => {
     handleFileChanged(path);
@@ -174,7 +177,10 @@ export default function App({ onLogout }: AppProps) {
   }, [handleFileChanged]);
 
   // Dashboard data (extracted hook) — single SSE connection handles all events
-  const { memories, memoriesLoading, tokenData, refreshMemories } = useDashboardData({ onFileChanged });
+  const { memories, memoriesLoading, tokenData, refreshMemories } = useDashboardData({
+    agentId: workspaceAgentId,
+    onFileChanged,
+  });
 
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -458,7 +464,14 @@ export default function App({ onLogout }: AppProps) {
         </div>
         <div className="shell-panel flex-1 flex flex-col min-h-0 overflow-hidden rounded-[28px]">
           <PanelErrorBoundary name="Workspace">
-            <WorkspacePanel memories={memories} onRefreshMemories={refreshMemories} memoriesLoading={memoriesLoading} onOpenBoard={() => setViewMode('kanban')} onOpenTask={openTaskInBoard} />
+            <WorkspacePanel
+              workspaceAgentId={workspaceAgentId}
+              memories={memories}
+              onRefreshMemories={refreshMemories}
+              memoriesLoading={memoriesLoading}
+              onOpenBoard={() => setViewMode('kanban')}
+              onOpenTask={openTaskInBoard}
+            />
           </PanelErrorBoundary>
         </div>
       </div>
@@ -491,7 +504,15 @@ export default function App({ onLogout }: AppProps) {
   const compactWorkspacePanel = (
     <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading workspace…</div>}>
       <PanelErrorBoundary name="Workspace">
-        <WorkspacePanel memories={memories} onRefreshMemories={refreshMemories} memoriesLoading={memoriesLoading} compact onOpenBoard={() => setViewMode('kanban')} onOpenTask={openTaskInBoard} />
+        <WorkspacePanel
+          workspaceAgentId={workspaceAgentId}
+          memories={memories}
+          onRefreshMemories={refreshMemories}
+          memoriesLoading={memoriesLoading}
+          compact
+          onOpenBoard={() => setViewMode('kanban')}
+          onOpenTask={openTaskInBoard}
+        />
       </PanelErrorBoundary>
     </Suspense>
   );

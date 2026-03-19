@@ -5,49 +5,87 @@
  * Tab action buttons (add, refresh) render in the tab bar header.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import { WorkspaceTabs, type TabId } from './WorkspaceTabs';
-import { MemoryTab, CronsTab, ConfigTab, SkillsTab } from './tabs';
+import { CronsTab, ConfigTab, SkillsTab } from './tabs';
 import { useCrons } from './hooks/useCrons';
 import { KanbanQuickView } from '@/features/kanban';
+import { getWorkspaceStorageKey } from './workspaceScope';
 import type { Memory } from '@/types';
+
+const MemoryList = lazy(() => import('@/features/dashboard/MemoryList').then(m => ({ default: m.MemoryList })));
 
 const CONFIG_VIEW_KEY = 'nerve-config-view';
 
-/** Combined Config tab with Files/Skills sub-view toggle. */
-function ConfigWithSkills() {
-  const [view, setView] = useState<'files' | 'skills'>(() => {
-    try {
-      const stored = localStorage.getItem(CONFIG_VIEW_KEY);
-      if (stored === 'skills') return 'skills';
-    } catch { /* ignore */ }
-    return 'files';
-  });
+type ConfigView = 'files' | 'skills';
 
-  const switchView = useCallback((v: 'files' | 'skills') => {
-    setView(v);
-    try { localStorage.setItem(CONFIG_VIEW_KEY, v); } catch { /* ignore */ }
-  }, []);
+function getInitialConfigView(agentId: string): ConfigView {
+  try {
+    if (localStorage.getItem(CONFIG_VIEW_KEY) === 'skills') {
+      return 'skills';
+    }
+
+    const stored = localStorage.getItem(getWorkspaceStorageKey('config-view', agentId));
+    if (stored === 'files') {
+      return 'files';
+    }
+  } catch {
+    // ignore storage errors
+  }
+
+  return 'files';
+}
+
+function persistConfigView(view: ConfigView, agentId: string) {
+  try {
+    if (view === 'skills') {
+      localStorage.setItem(CONFIG_VIEW_KEY, 'skills');
+      return;
+    }
+
+    localStorage.removeItem(CONFIG_VIEW_KEY);
+    localStorage.setItem(getWorkspaceStorageKey('config-view', agentId), 'files');
+  } catch {
+    // ignore storage errors
+  }
+}
+
+interface ConfigWithSkillsProps {
+  agentId: string;
+}
+
+/** Combined Config tab with Files/Skills sub-view toggle. */
+function ConfigWithSkills({ agentId }: ConfigWithSkillsProps) {
+  const [view, setView] = useState<ConfigView>(() => getInitialConfigView(agentId));
+
+  useEffect(() => {
+    setView(getInitialConfigView(agentId));
+  }, [agentId]);
+
+  const switchView = useCallback((nextView: ConfigView) => {
+    setView(nextView);
+    persistConfigView(nextView, agentId);
+  }, [agentId]);
 
   return (
     <div className="h-full flex flex-col min-h-0">
       <div className="flex items-center gap-0.5 px-2 py-1 border-b border-border/40">
-        {(['files', 'skills'] as const).map(v => (
+        {(['files', 'skills'] as const).map(nextView => (
           <button
-            key={v}
-            onClick={() => switchView(v)}
+            key={nextView}
+            onClick={() => switchView(nextView)}
             className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm border-0 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 ${
-              view === v
+              view === nextView
                 ? 'bg-purple/15 text-purple font-semibold'
                 : 'bg-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            {v}
+            {nextView}
           </button>
         ))}
       </div>
       <div className="flex-1 min-h-0 overflow-hidden">
-        {view === 'files' ? <ConfigTab /> : <SkillsTab />}
+        {view === 'files' ? <ConfigTab key={agentId} agentId={agentId} /> : <SkillsTab />}
       </div>
     </div>
   );
@@ -66,6 +104,7 @@ function getInitialTab(): TabId {
 }
 
 interface WorkspacePanelProps {
+  workspaceAgentId: string;
   memories: Memory[];
   onRefreshMemories: (signal?: AbortSignal) => void | Promise<void>;
   memoriesLoading?: boolean;
@@ -77,7 +116,15 @@ interface WorkspacePanelProps {
   onOpenTask?: (taskId: string) => void;
 }
 
-export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, compact = false, onOpenBoard, onOpenTask }: WorkspacePanelProps) {
+export function WorkspacePanel({
+  workspaceAgentId,
+  memories,
+  onRefreshMemories,
+  memoriesLoading,
+  compact = false,
+  onOpenBoard,
+  onOpenTask,
+}: WorkspacePanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>(getInitialTab);
   const { activeCount } = useCrons();
 
@@ -107,12 +154,17 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, c
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className={activeTab === 'memory' ? 'h-full' : 'hidden'} hidden={activeTab !== 'memory'} role="tabpanel" id="workspace-tabpanel-memory" aria-labelledby="workspace-tab-memory">
           {visitedTabs.has('memory') && (
-            <MemoryTab
-              memories={memories}
-              onRefresh={onRefreshMemories}
-              isLoading={memoriesLoading}
-              compact={compact}
-            />
+            <Suspense fallback={<div className="flex items-center justify-center text-muted-foreground text-xs p-4">Loading…</div>}>
+              <MemoryList
+                key={workspaceAgentId}
+                agentId={workspaceAgentId}
+                memories={memories}
+                onRefresh={onRefreshMemories}
+                isLoading={memoriesLoading}
+                hideHeader
+                compact={compact}
+              />
+            </Suspense>
           )}
         </div>
         <div className={activeTab === 'crons' ? 'h-full' : 'hidden'} hidden={activeTab !== 'crons'} role="tabpanel" id="workspace-tabpanel-crons" aria-labelledby="workspace-tab-crons">
@@ -121,7 +173,7 @@ export function WorkspacePanel({ memories, onRefreshMemories, memoriesLoading, c
           )}
         </div>
         <div className={activeTab === 'config' ? 'h-full' : 'hidden'} hidden={activeTab !== 'config'} role="tabpanel" id="workspace-tabpanel-config" aria-labelledby="workspace-tab-config">
-          {visitedTabs.has('config') && <ConfigWithSkills />}
+          {visitedTabs.has('config') && <ConfigWithSkills agentId={workspaceAgentId} />}
         </div>
         <div className={activeTab === 'kanban' ? 'h-full' : 'hidden'} hidden={activeTab !== 'kanban'} role="tabpanel" id="workspace-tabpanel-kanban" aria-labelledby="workspace-tab-kanban">
           {visitedTabs.has('kanban') && (

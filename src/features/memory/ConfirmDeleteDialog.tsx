@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 
 interface ConfirmDeleteDialogProps {
+  agentId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   memoryText: string;
@@ -30,6 +31,7 @@ interface ConfirmDeleteDialogProps {
 
 /** Confirmation dialog shown before deleting a memory entry. */
 export function ConfirmDeleteDialog({
+  agentId,
   open,
   onOpenChange,
   memoryText,
@@ -57,12 +59,12 @@ export function ConfirmDeleteDialog({
     const fetchContent = async () => {
       setContentLoading(true);
       try {
-        const params = new URLSearchParams({ title: memoryText });
+        const params = new URLSearchParams({ title: memoryText, agentId });
         if (memoryDate) {
           params.set('date', memoryDate);
         }
         
-        const res = await fetch(`/api/memories/section?${params}`);
+        const res = await fetch(`/api/memories/section?${params.toString()}`);
         const data = await res.json();
         
         if (data.ok && data.content) {
@@ -78,7 +80,7 @@ export function ConfirmDeleteDialog({
     };
 
     fetchContent();
-  }, [open, isSection, isDaily, memoryText, memoryDate]);
+  }, [agentId, open, isSection, isDaily, memoryText, memoryDate]);
 
   const handleConfirm = async () => {
     await onConfirm();

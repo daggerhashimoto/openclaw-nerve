@@ -2,7 +2,7 @@
  * useWorkspaceFile — Read/write a single workspace file by key.
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 interface WorkspaceFileState {
   content: string | null;
@@ -12,7 +12,7 @@ interface WorkspaceFileState {
 }
 
 /** Hook to read and write a single file in the agent workspace via the gateway API. */
-export function useWorkspaceFile() {
+export function useWorkspaceFile(agentId: string) {
   const [state, setState] = useState<WorkspaceFileState>({
     content: null,
     isLoading: false,
@@ -21,14 +21,20 @@ export function useWorkspaceFile() {
   });
   const abortRef = useRef<AbortController>(undefined);
 
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
+
   const load = useCallback(async (key: string) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
+    const params = new URLSearchParams({ agentId });
+
     setState(s => ({ ...s, isLoading: true, error: null }));
     try {
-      const res = await fetch(`/api/workspace/${key}`, { signal: controller.signal });
+      const res = await fetch(`/api/workspace/${key}?${params.toString()}`, { signal: controller.signal });
       if (res.status === 404) {
         setState({ content: null, isLoading: false, error: null, exists: false });
         return;
@@ -40,7 +46,7 @@ export function useWorkspaceFile() {
       if ((err as Error).name === 'AbortError') return;
       setState(s => ({ ...s, isLoading: false, error: (err as Error).message }));
     }
-  }, []);
+  }, [agentId]);
 
   const save = useCallback(async (key: string, content: string): Promise<boolean> => {
     setState(s => ({ ...s, isLoading: true, error: null }));
@@ -48,7 +54,7 @@ export function useWorkspaceFile() {
       const res = await fetch(`/api/workspace/${key}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, agentId }),
       });
       const data = await res.json() as { ok: boolean; error?: string };
       if (!data.ok) throw new Error(data.error || 'Failed to save');
@@ -58,7 +64,7 @@ export function useWorkspaceFile() {
       setState(s => ({ ...s, isLoading: false, error: (err as Error).message }));
       return false;
     }
-  }, []);
+  }, [agentId]);
 
   return { ...state, load, save };
 }

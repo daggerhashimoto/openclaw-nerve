@@ -8,6 +8,7 @@ import { InlineSelect } from '@/components/ui/InlineSelect';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceFile } from '../hooks/useWorkspaceFile';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { getWorkspaceStorageKey } from '../workspaceScope';
 
 const FILE_OPTIONS = [
   { key: 'soul', label: 'SOUL.md' },
@@ -18,10 +19,33 @@ const FILE_OPTIONS = [
   { key: 'heartbeat', label: 'HEARTBEAT.md' },
 ];
 
+const DEFAULT_CONFIG_KEY = 'soul';
+
+function getSelectedConfigStorageKey(agentId: string): string {
+  return getWorkspaceStorageKey('config:selected-file', agentId);
+}
+
+function getInitialSelectedKey(agentId: string): string {
+  try {
+    const stored = localStorage.getItem(getSelectedConfigStorageKey(agentId));
+    if (stored && FILE_OPTIONS.some(file => file.key === stored)) {
+      return stored;
+    }
+  } catch {
+    // ignore storage errors
+  }
+
+  return DEFAULT_CONFIG_KEY;
+}
+
+interface ConfigTabProps {
+  agentId: string;
+}
+
 /** Workspace tab displaying an editable agent config file (YAML/TOML). */
-export function ConfigTab() {
-  const [selectedKey, setSelectedKey] = useState('soul');
-  const { content, isLoading, error, exists, load, save } = useWorkspaceFile();
+export function ConfigTab({ agentId }: ConfigTabProps) {
+  const [selectedKey, setSelectedKey] = useState(() => getInitialSelectedKey(agentId));
+  const { content, isLoading, error, exists, load, save } = useWorkspaceFile(agentId);
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -31,6 +55,14 @@ export function ConfigTab() {
 
   // Clean up feedback timer on unmount
   useEffect(() => () => clearTimeout(feedbackTimer.current), []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(getSelectedConfigStorageKey(agentId), selectedKey);
+    } catch {
+      // ignore storage errors
+    }
+  }, [agentId, selectedKey]);
 
   // Load file when key changes. Reset editing by keying on selectedKey.
   const loadFile = useCallback(() => {
@@ -94,15 +126,15 @@ export function ConfigTab() {
           <InlineSelect
             inline
             value={selectedKey}
-            onChange={(v) => {
+            onChange={(value) => {
               if (editing) {
-                setPendingSwitchKey(v);
+                setPendingSwitchKey(value);
                 return;
               }
-              setSelectedKey(v);
+              setSelectedKey(value);
               setEditing(false);
             }}
-            options={FILE_OPTIONS.map(f => ({ value: f.key, label: f.label }))}
+            options={FILE_OPTIONS.map(file => ({ value: file.key, label: file.label }))}
             ariaLabel="Select config file"
             triggerClassName="min-h-10 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
             menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
@@ -143,7 +175,7 @@ export function ConfigTab() {
               onClick={handleCreate}
               className="mt-2 text-purple hover:underline bg-transparent border-0 cursor-pointer text-[11px] focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
             >
-              Create {FILE_OPTIONS.find(f => f.key === selectedKey)?.label}
+              Create {FILE_OPTIONS.find(file => file.key === selectedKey)?.label}
             </button>
           </div>
         )}

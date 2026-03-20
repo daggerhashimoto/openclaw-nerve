@@ -139,9 +139,30 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     dirtyFilesByAgentRef.current.set(targetAgentId, dirtyFiles);
   }, []);
 
-  const clearDirtyFileSnapshot = useCallback((targetAgentId: string, filePath: string) => {
+  const reconcileDirtyFileSnapshotAfterSave = useCallback((
+    targetAgentId: string,
+    filePath: string,
+    savedContent: string,
+    nextMtime: number,
+  ) => {
     const dirtyFiles = new Map(dirtyFilesByAgentRef.current.get(targetAgentId) ?? []);
-    dirtyFiles.delete(filePath);
+    const snapshot = dirtyFiles.get(filePath);
+
+    if (!snapshot) {
+      dirtyFilesByAgentRef.current.set(targetAgentId, dirtyFiles);
+      return;
+    }
+
+    if (snapshot.content === savedContent) {
+      dirtyFiles.delete(filePath);
+    } else {
+      dirtyFiles.set(filePath, {
+        ...snapshot,
+        savedContent,
+        mtime: nextMtime,
+      });
+    }
+
     dirtyFilesByAgentRef.current.set(targetAgentId, dirtyFiles);
   }, []);
 
@@ -385,20 +406,27 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       const data = await res.json();
 
       if (data.ok) {
+        const savedContent = file.content;
+
         recentSaveMtimes.current.set(scopedPathKey, data.mtime);
         setTimeout(() => recentSaveMtimes.current.delete(scopedPathKey), 2000);
-        clearDirtyFileSnapshot(requestAgentId, filePath);
 
         if (agentIdRef.current === requestAgentId) {
           setOpenFiles((prev) => {
-            const next = prev.map((openFile) => (
-              openFile.path === filePath
-                ? { ...openFile, savedContent: openFile.content, dirty: false, mtime: data.mtime }
-                : openFile
-            ));
+            const next = prev.map((openFile) => {
+              if (openFile.path !== filePath) return openFile;
+              return {
+                ...openFile,
+                savedContent,
+                dirty: openFile.content !== savedContent,
+                mtime: data.mtime,
+              };
+            });
             rememberDirtyFiles(requestAgentId, next);
             return next;
           });
+        } else {
+          reconcileDirtyFileSnapshotAfterSave(requestAgentId, filePath, savedContent, data.mtime);
         }
 
         savingPaths.current.delete(scopedPathKey);
@@ -416,7 +444,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       savingPaths.current.delete(scopedPathKey);
       return { ok: false };
     }
-  }, [clearDirtyFileSnapshot, rememberDirtyFiles]);
+  }, [reconcileDirtyFileSnapshotAfterSave, rememberDirtyFiles]);
 
   const saveFile = useCallback(async (filePath: string): Promise<{ ok: boolean; conflict?: boolean }> => {
     const requestAgentId = agentIdRef.current;

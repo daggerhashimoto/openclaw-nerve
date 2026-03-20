@@ -442,6 +442,8 @@ export default function App({ onLogout }: AppProps) {
     setSttModel(model);
   }, [setSttModel]);
 
+  const visibleSaveToast = saveToast?.agentId === workspaceAgentId ? saveToast : null;
+
   const chatContent = (
     <TabbedContentArea
       activeTab={activeTab}
@@ -451,7 +453,7 @@ export default function App({ onLogout }: AppProps) {
       onCloseTab={closeFile}
       onContentChange={updateContent}
       onSaveFile={handleSaveFile}
-      saveToast={saveToast}
+      saveToast={visibleSaveToast}
       onDismissToast={dismissSaveToast}
       onReloadFile={reloadFile}
       onRetryFile={reloadFile}

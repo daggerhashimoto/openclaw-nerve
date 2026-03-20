@@ -245,6 +245,37 @@ describe('FileTreePanel', () => {
       });
     });
 
+    it('drops an open context menu immediately when the workspace changes', async () => {
+      const { rerender } = render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.contextMenu(screen.getByText('package.json'), new MouseEvent('contextmenu', { bubbles: true }));
+
+      expect(await screen.findByText('Move to Trash')).toBeInTheDocument();
+
+      rerender(
+        <FileTreePanel
+          workspaceAgentId="agent-b"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      expect(screen.queryByText('Move to Trash')).not.toBeInTheDocument();
+      expect(screen.queryByText('Rename')).not.toBeInTheDocument();
+    });
+
     it('does not show confirmation modal for "Move to Trash"', async () => {
       // Mock fetch for trash operation
       global.fetch = vi.fn().mockResolvedValue({
@@ -315,6 +346,46 @@ describe('FileTreePanel', () => {
       await waitFor(() => {
         expect(screen.queryByTestId('confirm-dialog')).not.toBeInTheDocument();
       });
+    });
+
+    it('drops an open delete confirmation immediately when the workspace changes', async () => {
+      mockUseFileTree.mockReturnValue({
+        ...defaultMockHook,
+        workspaceInfo: {
+          isCustomWorkspace: true,
+          rootPath: '/custom/workspace',
+        },
+      });
+
+      const { rerender } = render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.contextMenu(screen.getByText('src'), new MouseEvent('contextmenu', { bubbles: true }));
+      fireEvent.click(await screen.findByText('Permanently Delete'));
+
+      expect(await screen.findByTestId('confirm-dialog')).toBeInTheDocument();
+
+      rerender(
+        <FileTreePanel
+          workspaceAgentId="agent-b"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      expect(screen.queryByTestId('confirm-dialog')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Are you sure you want to permanently delete/)).not.toBeInTheDocument();
     });
 
     it('performs deletion when clicking confirm', async () => {

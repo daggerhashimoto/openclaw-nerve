@@ -83,6 +83,8 @@ type FileTreeToastPayload =
   | { type: 'undo'; message: string; trashPath: string; ttlMs: number };
 
 type FileTreeToast = FileTreeToastPayload & { agentId: string };
+type ScopedContextMenu = { agentId: string; x: number; y: number; entry: TreeEntry };
+type ScopedDeleteConfirmation = { agentId: string; entry: TreeEntry };
 
 export function FileTreePanel({
   workspaceAgentId = 'main',
@@ -124,7 +126,7 @@ export function FileTreePanel({
     setWidth(targetWidth);
   }, [collapsed]);
 
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: TreeEntry } | null>(null);
+  const [contextMenu, setContextMenu] = useState<ScopedContextMenu | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   const [renameTargetPath, setRenameTargetPath] = useState<string | null>(null);
@@ -139,7 +141,7 @@ export function FileTreePanel({
   const workspaceAgentIdRef = useRef(workspaceAgentId);
 
   // Permanent delete confirmation state
-  const [deleteConfirmation, setDeleteConfirmation] = useState<{ entry: TreeEntry } | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<ScopedDeleteConfirmation | null>(null);
 
   const clearToastTimer = useCallback(() => {
     if (toastTimerRef.current !== null) {
@@ -172,18 +174,30 @@ export function FileTreePanel({
     }
   }, [clearToastTimer]);
 
+  const visibleToast = toast?.agentId === workspaceAgentId ? toast : null;
+  const visibleContextMenu = contextMenu?.agentId === workspaceAgentId ? contextMenu : null;
+  const visibleDeleteConfirmation = deleteConfirmation?.agentId === workspaceAgentId
+    ? deleteConfirmation
+    : null;
+
   useEffect(() => {
     workspaceAgentIdRef.current = workspaceAgentId;
     if (toast && toast.agentId !== workspaceAgentId) {
       dismissToast();
     }
-  }, [dismissToast, toast, workspaceAgentId]);
+    if (contextMenu && contextMenu.agentId !== workspaceAgentId) {
+      setContextMenu(null);
+    }
+    if (deleteConfirmation && deleteConfirmation.agentId !== workspaceAgentId) {
+      setDeleteConfirmation(null);
+    }
+  }, [contextMenu, deleteConfirmation, dismissToast, toast, workspaceAgentId]);
 
   useEffect(() => () => clearToastTimer(), [clearToastTimer]);
 
   // Close context menu on outside click / escape
   useEffect(() => {
-    if (!contextMenu) return;
+    if (!visibleContextMenu) return;
 
     const onMouseDown = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -203,11 +217,11 @@ export function FileTreePanel({
       document.removeEventListener('mousedown', onMouseDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [contextMenu]);
+  }, [visibleContextMenu]);
 
   // Clamp context menu within the file explorer bounds after render.
   useEffect(() => {
-    if (!contextMenu || !contextMenuRef.current) return;
+    if (!visibleContextMenu || !contextMenuRef.current) return;
 
     const menuEl = contextMenuRef.current;
     const width = menuEl.offsetWidth;
@@ -223,13 +237,13 @@ export function FileTreePanel({
       ? Math.max(minY, panelRect.bottom - height - MENU_VIEWPORT_PADDING)
       : Math.max(MENU_VIEWPORT_PADDING, window.innerHeight - height - MENU_VIEWPORT_PADDING);
 
-    const nextX = Math.min(Math.max(contextMenu.x, minX), maxX);
-    const nextY = Math.min(Math.max(contextMenu.y, minY), maxY);
+    const nextX = Math.min(Math.max(visibleContextMenu.x, minX), maxX);
+    const nextY = Math.min(Math.max(visibleContextMenu.y, minY), maxY);
 
-    if (nextX !== contextMenu.x || nextY !== contextMenu.y) {
+    if (nextX !== visibleContextMenu.x || nextY !== visibleContextMenu.y) {
       setContextMenu((prev) => (prev ? { ...prev, x: nextX, y: nextY } : prev));
     }
-  }, [contextMenu]);
+  }, [visibleContextMenu]);
 
   const toggleCollapsed = useCallback(() => {
     onCollapseChange(!collapsed);
@@ -371,8 +385,8 @@ export function FileTreePanel({
     const targetRect = event.currentTarget.getBoundingClientRect();
     const nextX = Math.min(event.clientX + MENU_CURSOR_OFFSET, targetRect.right - MENU_VIEWPORT_PADDING);
     const nextY = targetRect.top + MENU_ROW_TOP_OFFSET;
-    setContextMenu({ x: nextX, y: nextY, entry });
-  }, [selectFile]);
+    setContextMenu({ agentId: workspaceAgentId, x: nextX, y: nextY, entry });
+  }, [selectFile, workspaceAgentId]);
 
   const startRename = useCallback((entry: TreeEntry) => {
     if (entry.path === '.trash') {
@@ -428,7 +442,7 @@ export function FileTreePanel({
 
     // Show confirmation for permanent deletion
     if (workspaceInfo?.isCustomWorkspace) {
-      setDeleteConfirmation({ entry });
+      setDeleteConfirmation({ agentId: workspaceAgentId, entry });
       setContextMenu(null);
       return;
     }
@@ -488,11 +502,11 @@ export function FileTreePanel({
   }, [onRemapOpenPaths, postFileOp, refresh, selectFile, showToastForAgent, workspaceAgentId]);
 
   const handleUndoToast = useCallback(async () => {
-    if (!toast || toast.type !== 'undo') return;
-    const { trashPath, agentId: targetAgentId } = toast;
+    if (!visibleToast || visibleToast.type !== 'undo') return;
+    const { trashPath, agentId: targetAgentId } = visibleToast;
     dismissToast();
     await restoreEntry(trashPath, targetAgentId);
-  }, [dismissToast, restoreEntry, toast]);
+  }, [dismissToast, restoreEntry, visibleToast]);
 
   const handleDragStart = useCallback((entry: TreeEntry, event: React.DragEvent) => {
     if (entry.path === '.trash') return;
@@ -560,7 +574,7 @@ export function FileTreePanel({
     return null;
   }
 
-  const menuEntry = contextMenu?.entry;
+  const menuEntry = visibleContextMenu?.entry;
   const menuPath = menuEntry?.path || '';
   const menuInTrash = isTrashItemPath(menuPath);
   const showRestore = menuInTrash;
@@ -669,11 +683,11 @@ export function FileTreePanel({
       </div>
 
       {/* Context menu */}
-      {contextMenu && menuEntry && (
+      {visibleContextMenu && menuEntry && (
         <div
           ref={contextMenuRef}
           className="shell-panel fixed z-50 min-w-[180px] rounded-2xl py-1.5"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          style={{ left: visibleContextMenu.x, top: visibleContextMenu.y }}
         >
           {showRestore && (
             <button
@@ -717,12 +731,12 @@ export function FileTreePanel({
       )}
 
       {/* Toast */}
-      {toast && (
+      {visibleToast && (
         <div className="shell-panel fixed bottom-4 left-2 right-2 z-[70] flex w-auto min-w-0 max-w-[min(92vw,680px)] items-center gap-3 rounded-2xl px-4 py-3 text-xs sm:left-4 sm:right-auto sm:min-w-[320px]">
-          <span className={`flex-1 ${toast.type === 'error' ? 'text-destructive' : 'text-foreground'}`}>
-            {toast.message}
+          <span className={`flex-1 ${visibleToast.type === 'error' ? 'text-destructive' : 'text-foreground'}`}>
+            {visibleToast.message}
           </span>
-          {toast.type === 'undo' && (
+          {visibleToast.type === 'undo' && (
             <button
               className="text-primary hover:underline shrink-0"
               onClick={() => { void handleUndoToast(); }}
@@ -755,15 +769,15 @@ export function FileTreePanel({
       )}
 
       {/* Permanent delete confirmation dialog */}
-      {deleteConfirmation && (
+      {visibleDeleteConfirmation && (
         <ConfirmDialog
           open={true}
           title="Permanently Delete"
-          message={`Are you sure you want to permanently delete "${deleteConfirmation.entry.name}"? This action cannot be undone.`}
+          message={`Are you sure you want to permanently delete "${visibleDeleteConfirmation.entry.name}"? This action cannot be undone.`}
           confirmLabel="Permanently Delete"
           cancelLabel="Cancel"
           variant="danger"
-          onConfirm={() => confirmPermanentDelete(deleteConfirmation.entry)}
+          onConfirm={() => confirmPermanentDelete(visibleDeleteConfirmation.entry)}
           onCancel={() => setDeleteConfirmation(null)}
         />
       )}

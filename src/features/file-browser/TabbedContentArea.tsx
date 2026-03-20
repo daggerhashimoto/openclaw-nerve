@@ -26,6 +26,7 @@ function EditorFallback() {
 }
 
 interface SaveToast {
+  agentId?: string;
   path: string;
   type: 'conflict';
 }
@@ -61,6 +62,9 @@ export function TabbedContentArea({
   chatPanel,
 }: TabbedContentAreaProps) {
   const hasOpenFiles = openFiles.length > 0;
+  const visibleSaveToast = saveToast && (!saveToast.agentId || saveToast.agentId === workspaceAgentId)
+    ? saveToast
+    : null;
 
   return (
     <div className="h-full flex flex-col min-h-0 min-w-0">
@@ -111,14 +115,14 @@ export function TabbedContentArea({
         ))}
 
         {/* Save conflict toast */}
-        {saveToast && (
+        {visibleSaveToast && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-destructive/10 border border-destructive/30 text-sm shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200">
             <AlertTriangle size={14} className="text-destructive shrink-0" />
             <span className="text-foreground">File changed externally.</span>
             {onReloadFile && (
               <button
                 className="text-primary text-xs font-medium hover:underline"
-                onClick={() => { onReloadFile(saveToast.path); onDismissToast?.(); }}
+                onClick={() => { onReloadFile(visibleSaveToast.path); onDismissToast?.(); }}
               >
                 Reload
               </button>

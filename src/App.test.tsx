@@ -15,7 +15,7 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
-const { sessionContext, saveFileByAgent, reloadCalls, useOpenFilesMock } = vi.hoisted(() => {
+const { sessionContext, saveFileByAgent, reloadCalls, tabRenderSnapshots, useOpenFilesMock } = vi.hoisted(() => {
   const sessionContext = {
     sessions: [
       { key: 'agent:alpha:main', label: 'Alpha' },
@@ -42,6 +42,7 @@ const { sessionContext, saveFileByAgent, reloadCalls, useOpenFilesMock } = vi.ho
     bravo: vi.fn<[string], Promise<SaveResult>>(),
   };
   const reloadCalls: Array<{ agentId: string; path: string }> = [];
+  const tabRenderSnapshots: Array<{ workspaceAgentId: string; hasSaveToast: boolean; saveToastPath: string | null }> = [];
 
   const useOpenFilesMock = vi.fn((agentId: string) => ({
     openFiles: [{ path: 'shared.md', name: 'shared.md', content: 'draft', savedContent: 'draft', dirty: false }],
@@ -63,6 +64,7 @@ const { sessionContext, saveFileByAgent, reloadCalls, useOpenFilesMock } = vi.ho
     sessionContext,
     saveFileByAgent,
     reloadCalls,
+    tabRenderSnapshots,
     useOpenFilesMock,
   };
 });
@@ -183,20 +185,28 @@ vi.mock('@/features/file-browser', () => ({
     onSaveFile: (path: string) => void;
     onReloadFile?: (path: string) => void;
     saveToast?: { path: string; type: 'conflict' } | null;
-  }) => (
-    <div>
-      <div data-testid="workspace-agent">{workspaceAgentId}</div>
-      <button type="button" onClick={() => onSaveFile('shared.md')}>Save shared.md</button>
-      {saveToast && (
-        <div>
-          <span>File changed externally.</span>
-          {onReloadFile && (
-            <button type="button" onClick={() => onReloadFile(saveToast.path)}>Reload</button>
-          )}
-        </div>
-      )}
-    </div>
-  ),
+  }) => {
+    tabRenderSnapshots.push({
+      workspaceAgentId,
+      hasSaveToast: Boolean(saveToast),
+      saveToastPath: saveToast?.path ?? null,
+    });
+
+    return (
+      <div>
+        <div data-testid="workspace-agent">{workspaceAgentId}</div>
+        <button type="button" onClick={() => onSaveFile('shared.md')}>Save shared.md</button>
+        {saveToast && (
+          <div>
+            <span>File changed externally.</span>
+            {onReloadFile && (
+              <button type="button" onClick={() => onReloadFile(saveToast.path)}>Reload</button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  },
 }));
 
 vi.mock('@/features/connect/ConnectDialog', () => ({
@@ -263,6 +273,7 @@ describe('App save toast workspace scoping', () => {
     sessionContext.setCurrentSession.mockReset();
     Object.values(saveFileByAgent).forEach((mockFn) => mockFn.mockReset());
     reloadCalls.length = 0;
+    tabRenderSnapshots.length = 0;
 
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -300,6 +311,28 @@ describe('App save toast workspace scoping', () => {
 
     expect(screen.queryByText('File changed externally.')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument();
+  });
+
+  it('never passes a stale save conflict toast into the first render after a workspace switch', async () => {
+    saveFileByAgent.alpha.mockResolvedValue({ ok: false, conflict: true });
+    saveFileByAgent.bravo.mockResolvedValue({ ok: true });
+
+    const { rerender } = render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save shared.md' }));
+
+    expect(await screen.findByText('File changed externally.')).toBeInTheDocument();
+
+    const snapshotsBeforeSwitch = tabRenderSnapshots.length;
+    sessionContext.currentSession = 'agent:bravo:main';
+    rerender(<App />);
+
+    const switchSnapshots = tabRenderSnapshots.slice(snapshotsBeforeSwitch);
+    expect(switchSnapshots[0]).toMatchObject({
+      workspaceAgentId: 'bravo',
+      hasSaveToast: false,
+      saveToastPath: null,
+    });
   });
 
   it('dismisses an active save conflict toast on workspace switch so reload cannot target the wrong workspace', async () => {

@@ -96,6 +96,41 @@ interface SaveFileTarget {
   mtime: number;
 }
 
+function mergeRestoredFiles(restoredFiles: OpenFile[], currentFiles: OpenFile[]): OpenFile[] {
+  const currentFilesByPath = new Map(currentFiles.map((file) => [file.path, file]));
+  const nextFiles = restoredFiles.map((restoredFile) => {
+    const currentFile = currentFilesByPath.get(restoredFile.path);
+    currentFilesByPath.delete(restoredFile.path);
+    return currentFile?.dirty ? currentFile : restoredFile;
+  });
+
+  for (const file of currentFiles) {
+    if (!currentFilesByPath.has(file.path)) continue;
+    nextFiles.push(file);
+  }
+
+  return nextFiles;
+}
+
+function collectDirtyFilePaths(
+  agentId: string,
+  visibleFiles: OpenFile[],
+  dirtyFilesByAgent: Map<string, Map<string, DirtyFileSnapshot>>,
+): string[] {
+  const dirtyPaths = new Set<string>();
+
+  for (const file of visibleFiles) {
+    if (!file.dirty) continue;
+    dirtyPaths.add(file.path);
+  }
+
+  for (const filePath of dirtyFilesByAgent.get(agentId)?.keys() ?? []) {
+    dirtyPaths.add(filePath);
+  }
+
+  return [...dirtyPaths];
+}
+
 export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
   const scopedAgentId = normalizeAgentId(agentId);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
@@ -258,13 +293,21 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       return;
     }
 
-    const nextActiveTab = getRestoredActiveTab(persistedTab, files);
     clearRestore();
-    setOpenFiles(files);
-    setActiveTabState(nextActiveTab);
-    persistFiles(targetAgentId, files);
-    persistTab(targetAgentId, nextActiveTab);
-  }, [scopedAgentId]);
+    setOpenFiles((prev) => {
+      const next = mergeRestoredFiles(files, prev);
+      rememberDirtyFiles(targetAgentId, next);
+      persistFiles(targetAgentId, next);
+      return next;
+    });
+    setActiveTabState((currentTab) => {
+      const nextTab = currentTab !== persistedTab
+        ? currentTab
+        : getRestoredActiveTab(persistedTab, files);
+      persistTab(targetAgentId, nextTab);
+      return nextTab;
+    });
+  }, [rememberDirtyFiles, scopedAgentId]);
 
   useEffect(() => {
     for (const timer of unlockTimers.current.values()) {
@@ -624,8 +667,8 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
   }, [closeDirtyFilesByPrefix, rememberDirtyFiles, scopedAgentId]);
 
   const getDirtyFilePaths = useCallback(() => (
-    openFilesRef.current.filter((file) => file.dirty).map((file) => file.path)
-  ), []);
+    collectDirtyFilePaths(scopedAgentId, openFilesRef.current, dirtyFilesByAgentRef.current)
+  ), [scopedAgentId]);
 
   const discardAllDirtyFiles = useCallback(() => {
     const requestAgentId = agentIdRef.current;
@@ -671,7 +714,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     handleFileChanged,
     remapOpenPaths,
     closeOpenPathsByPrefix,
-    hasDirtyFiles: visibleOpenFiles.some((file) => file.dirty),
+    hasDirtyFiles: getDirtyFilePaths().length > 0,
     getDirtyFilePaths,
     saveAllDirtyFiles,
     discardAllDirtyFiles,

@@ -312,6 +312,179 @@ describe('useOpenFiles', () => {
     expect(currentApi.activeTab).toBe('chat');
   });
 
+  it('keeps a tab opened and edited during restore when the delayed restore commit lands', async () => {
+    const { store, mock } = createLocalStorageMock({
+      [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['restored.md']),
+      [getWorkspaceStorageKey('active-tab', 'main')]: 'restored.md',
+    });
+    vi.stubGlobal('localStorage', mock);
+
+    const restoredRead = createDeferred<Response>();
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = getRequestUrl(input);
+      if (url.pathname !== '/api/files/read') {
+        return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+      }
+
+      const path = url.searchParams.get('path');
+      if (path === 'restored.md') {
+        return restoredRead.promise;
+      }
+
+      if (path === 'manual.md') {
+        return createJsonResponse({ ok: true, content: 'manual original', mtime: 2 });
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result } = renderHook(() => useOpenFiles('main'));
+
+    expect(result.current.openFiles).toEqual([]);
+    expect(result.current.activeTab).toBe('restored.md');
+
+    await act(async () => {
+      await result.current.openFile('manual.md');
+    });
+
+    await waitFor(() => {
+      expect(result.current.openFiles).toHaveLength(1);
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'manual.md',
+        content: 'manual original',
+        savedContent: 'manual original',
+        dirty: false,
+        loading: false,
+      });
+      expect(result.current.activeTab).toBe('manual.md');
+    });
+
+    act(() => {
+      result.current.updateContent('manual.md', 'manual dirty');
+    });
+
+    expect(result.current.hasDirtyFiles).toBe(true);
+    expect(result.current.getDirtyFilePaths()).toEqual(['manual.md']);
+
+    await act(async () => {
+      restoredRead.resolve(createJsonResponse({ ok: true, content: 'restored original', mtime: 1 }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.openFiles.map((file) => file.path)).toEqual(['restored.md', 'manual.md']);
+      expect(result.current.openFiles.find((file) => file.path === 'restored.md')).toMatchObject({
+        content: 'restored original',
+        savedContent: 'restored original',
+        dirty: false,
+      });
+      expect(result.current.openFiles.find((file) => file.path === 'manual.md')).toMatchObject({
+        content: 'manual dirty',
+        savedContent: 'manual original',
+        dirty: true,
+      });
+      expect(result.current.activeTab).toBe('manual.md');
+      expect(result.current.hasDirtyFiles).toBe(true);
+      expect(result.current.getDirtyFilePaths()).toEqual(['manual.md']);
+    });
+
+    expect(store.get(getWorkspaceStorageKey('open-files', 'main'))).toBe(JSON.stringify(['restored.md', 'manual.md']));
+    expect(store.get(getWorkspaceStorageKey('active-tab', 'main'))).toBe('manual.md');
+  });
+
+  it('reports dirty restored files through helper accessors while restore is still loading', async () => {
+    const { mock } = createLocalStorageMock({
+      [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['draft.md']),
+      [getWorkspaceStorageKey('active-tab', 'main')]: 'draft.md',
+      [getWorkspaceStorageKey('open-files', 'research')]: JSON.stringify(['notes.md']),
+      [getWorkspaceStorageKey('active-tab', 'research')]: 'notes.md',
+    });
+    vi.stubGlobal('localStorage', mock);
+
+    const mainRestoreRead = createDeferred<Response>();
+    const readQueues = new Map<string, Array<Response | Promise<Response>>>([
+      ['main', [
+        createJsonResponse({ ok: true, content: 'main original', mtime: 11 }),
+        mainRestoreRead.promise,
+      ]],
+      ['research', [
+        createJsonResponse({ ok: true, content: 'research original', mtime: 22 }),
+      ]],
+    ]);
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = getRequestUrl(input);
+
+      if (url.pathname === '/api/files/read') {
+        const agentId = url.searchParams.get('agentId') || 'main';
+        const nextResponse = readQueues.get(agentId)?.shift();
+        if (nextResponse) {
+          return await nextResponse;
+        }
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result, rerender } = renderHook(
+      ({ agentId }) => useOpenFiles(agentId),
+      { initialProps: { agentId: 'main' } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'draft.md',
+        content: 'main original',
+        savedContent: 'main original',
+        dirty: false,
+      });
+    });
+
+    act(() => {
+      result.current.updateContent('draft.md', 'main unsaved draft');
+    });
+
+    expect(result.current.hasDirtyFiles).toBe(true);
+    expect(result.current.getDirtyFilePaths()).toEqual(['draft.md']);
+
+    rerender({ agentId: 'research' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'notes.md',
+        content: 'research original',
+        dirty: false,
+      });
+    });
+
+    rerender({ agentId: 'main' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles).toEqual([]);
+      expect(result.current.activeTab).toBe('draft.md');
+    });
+
+    expect(result.current.hasDirtyFiles).toBe(true);
+    expect(result.current.getDirtyFilePaths()).toEqual(['draft.md']);
+
+    await act(async () => {
+      mainRestoreRead.resolve(createJsonResponse({ ok: true, content: 'main original', mtime: 11 }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'draft.md',
+        content: 'main unsaved draft',
+        savedContent: 'main original',
+        dirty: true,
+      });
+      expect(result.current.hasDirtyFiles).toBe(true);
+      expect(result.current.getDirtyFilePaths()).toEqual(['draft.md']);
+    });
+  });
+
   it('preserves dirty file state for each agent when switching away and back', async () => {
     const { store, mock } = createLocalStorageMock({
       [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['draft.md']),

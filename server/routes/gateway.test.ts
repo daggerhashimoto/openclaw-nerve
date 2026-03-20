@@ -102,6 +102,33 @@ describe('gateway routes', () => {
       }
     });
 
+    it('uses a long enough timeout for model catalog fetches', async () => {
+      vi.resetModules();
+      vi.doMock('node:child_process', () => ({
+        execFile: (...args: unknown[]) => execFileImpl(...args),
+      }));
+      vi.doMock('../lib/config.js', () => ({
+        config: {
+          auth: false, port: 3000, host: '127.0.0.1', sslPort: 3443,
+          gatewayUrl: 'http://localhost:3100', gatewayToken: 'test-token',
+        },
+        SESSION_COOKIE_NAME: 'nerve_session_3000',
+      }));
+      vi.doMock('../middleware/rate-limit.js', () => ({
+        rateLimitGeneral: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
+        rateLimitRestart: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
+      }));
+      vi.doMock('../lib/openclaw-bin.js', () => ({
+        resolveOpenclawBin: () => '/usr/bin/openclaw',
+      }));
+      vi.doMock('../lib/gateway-client.js', () => ({
+        invokeGatewayTool: vi.fn(async (tool: string, args: Record<string, unknown>) => invokeGatewayImpl(tool, args)),
+      }));
+
+      const mod = await import('./gateway.js');
+      expect(mod.MODEL_LIST_TIMEOUT_MS).toBeGreaterThanOrEqual(15_000);
+    });
+
     it('returns empty array when openclaw binary fails', async () => {
       execFileImpl = (_bin: unknown, _args: unknown, _opts: unknown, cb: unknown) => {
         (cb as (err: Error, stdout: string) => void)(new Error('not found'), '');

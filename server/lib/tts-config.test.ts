@@ -56,6 +56,34 @@ async function loadTtsModule(opts: {
   return mod;
 }
 
+describe('getTTSConfig', () => {
+  it('returns Xiaomi defaults when config file is missing', async () => {
+    const mod = await loadTtsModule({
+      language: 'en',
+      edgeVoiceGender: 'female',
+      storedVoice: 'en-US-JennyNeural',
+    });
+
+    const cfg = mod.getTTSConfig();
+    expect(cfg.xiaomi.model).toBe('mimo-v2-tts');
+    expect(cfg.xiaomi.voice).toBe('mimo_default');
+    expect(cfg.xiaomi.style).toBe('');
+  });
+
+  it('deep-merges Xiaomi patches without dropping defaults', async () => {
+    const mod = await loadTtsModule({
+      language: 'en',
+      edgeVoiceGender: 'female',
+      storedVoice: 'en-US-JennyNeural',
+    });
+
+    const cfg = mod.updateTTSConfig({ xiaomi: { style: 'Happy' } });
+    expect(cfg.xiaomi.style).toBe('Happy');
+    expect(cfg.xiaomi.model).toBe('mimo-v2-tts');
+    expect(cfg.xiaomi.voice).toBe('mimo_default');
+  });
+});
+
 describe('resolveEdgeTTSVoice', () => {
   it('keeps explicit non-default English override', async () => {
     const mod = await loadTtsModule({

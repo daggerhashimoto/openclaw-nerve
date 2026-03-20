@@ -65,6 +65,11 @@ const DEFAULTS: TTSVoiceConfig = {
   edge: {
     voice: 'en-US-AriaNeural',
   },
+  xiaomi: {
+    model: 'mimo-v2-tts',
+    voice: 'mimo_default',
+    style: '',
+  },
 };
 
 let cached: TTSVoiceConfig | null = null;

@@ -51,6 +51,7 @@ export const config = {
 
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   replicateApiToken: process.env.REPLICATE_API_TOKEN || '',
+  mimoApiKey: process.env.MIMO_API_KEY || '',
 
   // Speech-to-text
   sttProvider: (process.env.STT_PROVIDER || 'local') as 'local' | 'openai',

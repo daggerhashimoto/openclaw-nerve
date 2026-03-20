@@ -18,6 +18,7 @@ app.get('/api/keys', rateLimitGeneral, (c) => {
   return c.json({
     openaiKeySet: !!config.openaiApiKey,
     replicateKeySet: !!config.replicateApiToken,
+    xiaomiKeySet: !!config.mimoApiKey,
   });
 });
 
@@ -42,11 +43,19 @@ app.put('/api/keys', rateLimitGeneral, async (c) => {
       results.push(val ? 'REPLICATE_API_TOKEN saved' : 'REPLICATE_API_TOKEN cleared');
     }
 
+    if (body.mimoApiKey !== undefined) {
+      const val = body.mimoApiKey.trim();
+      await writeEnvKey('MIMO_API_KEY', val);
+      (config as Record<string, unknown>).mimoApiKey = val;
+      results.push(val ? 'MIMO_API_KEY saved' : 'MIMO_API_KEY cleared');
+    }
+
     return c.json({
       ok: true,
       message: results.join(', ') || 'No changes',
       openaiKeySet: !!config.openaiApiKey,
       replicateKeySet: !!config.replicateApiToken,
+      xiaomiKeySet: !!config.mimoApiKey,
     });
   } catch {
     return c.text('Invalid request', 400);

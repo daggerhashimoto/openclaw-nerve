@@ -14,15 +14,18 @@ describe('TTS routes', () => {
   function mockDeps(overrides: {
     openaiKey?: string;
     replicateToken?: string;
+    mimoKey?: string;
     edgeResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number; contentType?: string };
     openaiResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number };
     replicateResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number };
+    xiaomiResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number; contentType?: string };
   } = {}) {
     vi.doMock('../lib/config.js', () => ({
       config: {
         auth: false, port: 3000, host: '127.0.0.1', sslPort: 3443,
         openaiApiKey: overrides.openaiKey || '',
         replicateApiToken: overrides.replicateToken || '',
+        mimoApiKey: overrides.mimoKey || '',
       },
       SESSION_COOKIE_NAME: 'nerve_session_3000',
     }));
@@ -49,11 +52,17 @@ describe('TTS routes', () => {
         overrides.replicateResult || { ok: true, buf: Buffer.from('fake-replicate-audio') }
       ),
     }));
+    vi.doMock('../services/xiaomi-tts.js', () => ({
+      synthesizeXiaomi: vi.fn(async () =>
+        overrides.xiaomiResult || { ok: true, buf: Buffer.from('RIFFdemo'), contentType: 'audio/wav' }
+      ),
+    }));
     vi.doMock('../lib/tts-config.js', () => ({
       getTTSConfig: vi.fn(() => ({
-        openai: { voice: 'alloy', model: 'tts-1' },
+        openai: { voice: 'alloy', model: 'tts-1', instructions: '' },
         edge: { voice: 'en-US-JennyNeural' },
         qwen: {},
+        xiaomi: { model: 'mimo-v2-tts', voice: 'mimo_default', style: 'Happy' },
       })),
       updateTTSConfig: vi.fn((patch: unknown) => patch),
     }));
@@ -123,6 +132,41 @@ describe('TTS routes', () => {
       expect(res.status).toBe(200);
     });
 
+    it('uses explicit Xiaomi provider and returns WAV audio', async () => {
+      mockDeps();
+      const app = await buildApp();
+      const res = await app.request('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'Hello', provider: 'xiaomi' }),
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('audio/wav');
+    });
+
+    it('honors explicit Xiaomi provider even when other keys exist', async () => {
+      mockDeps({ openaiKey: 'sk-test', replicateToken: 'r8-test', mimoKey: 'sk-mimo' });
+      const app = await buildApp();
+      const res = await app.request('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'Hello', provider: 'xiaomi' }),
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('audio/wav');
+    });
+
+    it('returns Xiaomi provider errors', async () => {
+      mockDeps({ xiaomiResult: { ok: false, message: 'Xiaomi failed', status: 502 } });
+      const app = await buildApp();
+      const res = await app.request('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'Hello', provider: 'xiaomi' }),
+      });
+      expect(res.status).toBe(502);
+    });
+
     it('returns error from provider failure', async () => {
       mockDeps({ edgeResult: { ok: false, message: 'Edge TTS failed', status: 500 } });
       const app = await buildApp();
@@ -177,6 +221,17 @@ describe('TTS routes', () => {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ edge: { voice: 'en-US-GuyNeural' } }),
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it('accepts valid Xiaomi config patch', async () => {
+      mockDeps();
+      const app = await buildApp();
+      const res = await app.request('/api/tts/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ xiaomi: { model: 'mimo-v2-tts', voice: 'default_en', style: 'Happy' } }),
       });
       expect(res.status).toBe(200);
     });

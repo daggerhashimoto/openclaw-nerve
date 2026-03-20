@@ -2,6 +2,7 @@ import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
+import { FALLBACK_MODELS } from './fallbackModels';
 
 const mockUseSessionContext = vi.fn();
 
@@ -84,6 +85,10 @@ describe('SpawnAgentDialog', () => {
     await waitFor(() => {
       expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ cleanup: 'delete' }));
     });
+  });
+
+  it('includes gpt-5.4 in the fallback model list when the catalog fetch fails', () => {
+    expect(FALLBACK_MODELS.some((option) => option.value === 'openai-codex/gpt-5.4')).toBe(true);
   });
 
   it('keeps the dialog open when spawning is deferred by a guard', async () => {

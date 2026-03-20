@@ -13,6 +13,7 @@ import { InlineSelect } from '@/components/ui/InlineSelect';
 import type { InlineSelectOption } from '@/components/ui/InlineSelect';
 import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
 import { type SubagentCleanupMode } from './buildSpawnSubagentMessage';
+import { FALLBACK_MODELS } from './fallbackModels';
 import { getSessionKey } from '@/types';
 import {
   getRootAgentSessionKey,
@@ -20,11 +21,6 @@ import {
   getTopLevelAgentSessions,
 } from './sessionKeys';
 
-const FALLBACK_MODELS: InlineSelectOption[] = [
-  { value: 'anthropic/claude-haiku-4-5', label: 'claude-haiku-4-5' },
-  { value: 'anthropic/claude-sonnet-4-5', label: 'claude-sonnet-4-5' },
-  { value: 'anthropic/claude-opus-4-6', label: 'claude-opus-4-6' },
-];
 const THINKING_LEVELS: InlineSelectOption[] = [
   { value: 'off', label: 'off' },
   { value: 'low', label: 'low' },

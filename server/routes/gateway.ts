@@ -26,6 +26,7 @@ import { config } from '../lib/config.js';
 const app = new Hono();
 
 const GATEWAY_TIMEOUT_MS = 8_000;
+export const MODEL_LIST_TIMEOUT_MS = 15_000;
 const SESSIONS_ACTIVE_MINUTES = 24 * 60;
 const SESSIONS_LIMIT = 200;
 
@@ -116,7 +117,7 @@ const openclawHome = inferOpenclawHome();
 function runModelsList(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(openclawBin, ['models', 'list', ...args], {
-      timeout: GATEWAY_TIMEOUT_MS,
+      timeout: MODEL_LIST_TIMEOUT_MS,
       maxBuffer: 2 * 1024 * 1024,
       env: { 
         ...process.env, 

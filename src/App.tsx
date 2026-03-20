@@ -17,7 +17,7 @@ import {
 } from 'react';
 import { AlertTriangle, CheckCircle2, RotateCw } from 'lucide-react';
 import { useGateway } from '@/contexts/GatewayContext';
-import { useSessionContext } from '@/contexts/SessionContext';
+import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
 import { useChat } from '@/contexts/ChatContext';
 import { useSettings, type STTInputMode } from '@/contexts/SettingsContext';
 import { getSessionKey } from '@/types';
@@ -28,6 +28,7 @@ import { ConnectDialog } from '@/features/connect/ConnectDialog';
 import { TopBar } from '@/components/TopBar';
 import { StatusBar } from '@/components/StatusBar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { WorkspaceSwitchDialog } from '@/components/WorkspaceSwitchDialog';
 import { ChatPanel, type ChatPanelHandle } from '@/features/chat/ChatPanel';
 import type { TTSProvider } from '@/features/tts/useTTS';
 import type { ViewMode } from '@/features/command-palette/commands';
@@ -38,8 +39,9 @@ import { createCommands } from '@/features/command-palette/commands';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
-import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
-import { getWorkspaceAgentId } from '@/features/workspace/workspaceScope';
+import { buildAgentRootSessionKey, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
+import { shouldGuardWorkspaceSwitch } from '@/features/workspace/workspaceSwitchGuard';
+import { getWorkspaceAgentId, getWorkspaceRootSessionKey } from '@/features/workspace/workspaceScope';
 
 // Lazy-loaded features (not needed in initial bundle)
 const SettingsDrawer = lazy(() => import('@/features/settings/SettingsDrawer').then(m => ({ default: m.SettingsDrawer })));
@@ -54,6 +56,24 @@ const KanbanPanel = lazy(() => import('@/features/kanban/KanbanPanel').then(m =>
 
 interface AppProps {
   onLogout?: () => void;
+}
+
+interface PendingWorkspaceSwitch {
+  targetLabel: string;
+  execute: () => Promise<void>;
+  resolve: (didSwitch: boolean) => void;
+  reject: (error: unknown) => void;
+}
+
+function buildWorkspaceSwitchErrorMessage(result: {
+  failedPath?: string;
+  conflict?: boolean;
+}): string {
+  const fileLabel = result.failedPath || 'a dirty file';
+  if (result.conflict) {
+    return `${fileLabel} changed on disk. Resolve it before switching agents.`;
+  }
+  return `Could not save ${fileLabel}. Resolve it before switching agents.`;
 }
 
 export default function App({ onLogout }: AppProps) {
@@ -163,6 +183,7 @@ export default function App({ onLogout }: AppProps) {
     openFiles, activeTab, setActiveTab,
     openFile, closeFile, updateContent, saveFile, reloadFile,
     handleFileChanged, remapOpenPaths, closeOpenPathsByPrefix,
+    hasDirtyFiles, saveAllDirtyFiles, discardAllDirtyFiles,
   } = useOpenFiles(workspaceAgentId);
 
   // Save with workspace-scoped conflict toast
@@ -175,6 +196,9 @@ export default function App({ onLogout }: AppProps) {
   const [workspaceVersion, bumpWorkspaceVersion] = useReducer((version: number) => version + 1, 0);
   const saveToastTimerRef = useRef<number | null>(null);
   const workspaceAgentIdRef = useRef(workspaceAgentId);
+  const [pendingWorkspaceSwitch, setPendingWorkspaceSwitch] = useState<PendingWorkspaceSwitch | null>(null);
+  const [workspaceSwitchAction, setWorkspaceSwitchAction] = useState<'save' | 'discard' | null>(null);
+  const [workspaceSwitchError, setWorkspaceSwitchError] = useState<string | null>(null);
 
   const clearSaveToastTimer = useCallback(() => {
     if (saveToastTimerRef.current !== null) {
@@ -373,6 +397,116 @@ export default function App({ onLogout }: AppProps) {
   const contextTokens = currentSessionData?.totalTokens ?? 0;
   const contextLimit = currentSessionData?.contextTokens || getContextLimit(model);
 
+  const getWorkspaceSwitchLabel = useCallback((sessionKey: string) => {
+    const targetSession = sessions.find((session) => getSessionKey(session) === sessionKey);
+    if (targetSession) {
+      return getSessionDisplayLabel(targetSession, agentName);
+    }
+
+    const targetAgentId = getWorkspaceAgentId(sessionKey);
+    return targetAgentId === 'main' ? `${agentName} (main)` : `Agent ${targetAgentId}`;
+  }, [agentName, sessions]);
+
+  const requestWorkspaceTransition = useCallback((
+    targetSessionKey: string,
+    targetLabel: string,
+    execute: () => Promise<void>,
+  ) => {
+    if (!shouldGuardWorkspaceSwitch(currentSession, targetSessionKey, hasDirtyFiles)) {
+      return execute().then(() => true);
+    }
+
+    setWorkspaceSwitchAction(null);
+    setWorkspaceSwitchError(null);
+
+    return new Promise<boolean>((resolve, reject) => {
+      setPendingWorkspaceSwitch({
+        targetLabel,
+        execute,
+        resolve,
+        reject,
+      });
+    });
+  }, [currentSession, hasDirtyFiles]);
+
+  const handleCancelWorkspaceSwitch = useCallback(() => {
+    if (workspaceSwitchAction || !pendingWorkspaceSwitch) return;
+
+    pendingWorkspaceSwitch.resolve(false);
+    setPendingWorkspaceSwitch(null);
+    setWorkspaceSwitchAction(null);
+    setWorkspaceSwitchError(null);
+  }, [pendingWorkspaceSwitch, workspaceSwitchAction]);
+
+  const handleSaveAndSwitch = useCallback(async () => {
+    if (!pendingWorkspaceSwitch || workspaceSwitchAction) return;
+
+    const pendingSwitch = pendingWorkspaceSwitch;
+    setWorkspaceSwitchAction('save');
+    setWorkspaceSwitchError(null);
+
+    const result = await saveAllDirtyFiles();
+    if (!result.ok) {
+      setWorkspaceSwitchAction(null);
+      setWorkspaceSwitchError(buildWorkspaceSwitchErrorMessage(result));
+      return;
+    }
+
+    try {
+      await pendingSwitch.execute();
+      pendingSwitch.resolve(true);
+      setPendingWorkspaceSwitch(null);
+      setWorkspaceSwitchError(null);
+    } catch (error) {
+      pendingSwitch.reject(error);
+      setPendingWorkspaceSwitch(null);
+      setWorkspaceSwitchError(null);
+    } finally {
+      setWorkspaceSwitchAction(null);
+    }
+  }, [pendingWorkspaceSwitch, saveAllDirtyFiles, workspaceSwitchAction]);
+
+  const handleDiscardAndSwitch = useCallback(async () => {
+    if (!pendingWorkspaceSwitch || workspaceSwitchAction) return;
+
+    const pendingSwitch = pendingWorkspaceSwitch;
+    setWorkspaceSwitchAction('discard');
+    setWorkspaceSwitchError(null);
+    discardAllDirtyFiles();
+
+    try {
+      await pendingSwitch.execute();
+      pendingSwitch.resolve(true);
+      setPendingWorkspaceSwitch(null);
+      setWorkspaceSwitchError(null);
+    } catch (error) {
+      pendingSwitch.reject(error);
+      setPendingWorkspaceSwitch(null);
+      setWorkspaceSwitchError(null);
+    } finally {
+      setWorkspaceSwitchAction(null);
+    }
+  }, [discardAllDirtyFiles, pendingWorkspaceSwitch, workspaceSwitchAction]);
+
+  const handleSessionChange = useCallback((key: string) => {
+    void requestWorkspaceTransition(key, getWorkspaceSwitchLabel(key), async () => {
+      setCurrentSession(key);
+    });
+  }, [getWorkspaceSwitchLabel, requestWorkspaceTransition, setCurrentSession]);
+
+  const handleSpawnSession = useCallback((opts: SpawnSessionOpts) => {
+    const targetSessionKey = opts.kind === 'root'
+      ? buildAgentRootSessionKey(opts.agentName?.trim() || 'agent', sessions.map(getSessionKey))
+      : opts.parentSessionKey?.trim() || getWorkspaceRootSessionKey(currentSession) || currentSession;
+    const targetLabel = opts.kind === 'root'
+      ? opts.agentName?.trim() || 'New agent'
+      : getWorkspaceSwitchLabel(targetSessionKey);
+
+    return requestWorkspaceTransition(targetSessionKey, targetLabel, async () => {
+      await spawnSession(opts);
+    });
+  }, [currentSession, getWorkspaceSwitchLabel, requestWorkspaceTransition, sessions, spawnSession]);
+
   // Boot sequence: fade in panels when connected
   useEffect(() => {
     if (connectionState === 'connected' && !booted) {
@@ -429,11 +563,6 @@ export default function App({ onLogout }: AppProps) {
     mq.addListener(onChange);
     return () => mq.removeListener(onChange);
   }, [handleCompactLayoutChange]);
-
-  // Handler for session changes
-  const handleSessionChange = useCallback((key: string) => {
-    setCurrentSession(key);
-  }, [setCurrentSession]);
 
   // Handlers for TTS provider/model changes
   const handleTtsProviderChange = useCallback((provider: TTSProvider) => {
@@ -520,7 +649,7 @@ export default function App({ onLogout }: AppProps) {
               onSelect={onSelect}
               onRefresh={refreshSessions}
               onDelete={deleteSession}
-              onSpawn={spawnSession}
+              onSpawn={handleSpawnSession}
               onRename={renameSession}
               onAbort={abortSession}
               isLoading={sessionsLoading}
@@ -556,7 +685,7 @@ export default function App({ onLogout }: AppProps) {
           onSelect={handleSessionChange}
           onRefresh={refreshSessions}
           onDelete={deleteSession}
-          onSpawn={spawnSession}
+          onSpawn={handleSpawnSession}
           onRename={renameSession}
           onAbort={abortSession}
           isLoading={sessionsLoading}
@@ -827,11 +956,21 @@ export default function App({ onLogout }: AppProps) {
         variant="warning"
       />
 
+      <WorkspaceSwitchDialog
+        open={pendingWorkspaceSwitch !== null}
+        targetLabel={pendingWorkspaceSwitch?.targetLabel || 'the other agent'}
+        pendingAction={workspaceSwitchAction}
+        error={workspaceSwitchError}
+        onSaveAndSwitch={handleSaveAndSwitch}
+        onDiscardAndSwitch={handleDiscardAndSwitch}
+        onCancel={handleCancelWorkspaceSwitch}
+      />
+
       {/* Spawn Agent Dialog (from command palette) */}
       <SpawnAgentDialog
         open={spawnDialogOpen}
         onOpenChange={setSpawnDialogOpen}
-        onSpawn={spawnSession}
+        onSpawn={handleSpawnSession}
       />
     </div>
   );

@@ -46,7 +46,7 @@ function deriveAlias(id: string): string {
 interface SpawnAgentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSpawn: (opts: SpawnSessionOpts) => Promise<void>;
+  onSpawn: (opts: SpawnSessionOpts) => Promise<void | boolean>;
 }
 
 /** Two-step session wizard for new top-level agents and subagents. */
@@ -151,27 +151,28 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
     setSpawning(true);
     setSpawnError('');
     try {
-      if (mode === 'root') {
-        await onSpawn({
-          kind: 'root',
-          agentName: agentNameInput.trim(),
-          task: task.trim(),
-          model,
-          thinking,
-        });
-      } else {
-        await onSpawn({
-          kind: 'subagent',
-          parentSessionKey: parentRootKey,
-          task: task.trim(),
-          label: label.trim() || undefined,
-          model,
-          thinking,
-          cleanup,
-        });
+      const spawnResult = mode === 'root'
+        ? await onSpawn({
+            kind: 'root',
+            agentName: agentNameInput.trim(),
+            task: task.trim(),
+            model,
+            thinking,
+          })
+        : await onSpawn({
+            kind: 'subagent',
+            parentSessionKey: parentRootKey,
+            task: task.trim(),
+            label: label.trim() || undefined,
+            model,
+            thinking,
+            cleanup,
+          });
+
+      if (spawnResult !== false) {
+        reset();
+        onOpenChange(false);
       }
-      reset();
-      onOpenChange(false);
     } catch (err) {
       console.error('Failed to create session:', err);
       setSpawnError(err instanceof Error ? err.message : 'Failed to create session');

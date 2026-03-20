@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
 type SaveResult = { ok: boolean; conflict?: boolean };
+type SaveAllResult = { ok: boolean; failedPath?: string; conflict?: boolean };
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
@@ -15,10 +16,20 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
-const { sessionContext, saveFileByAgent, reloadCalls, tabRenderSnapshots, useOpenFilesMock } = vi.hoisted(() => {
+const {
+  sessionContext,
+  saveFileByAgent,
+  saveAllDirtyFilesByAgent,
+  discardAllDirtyFilesByAgent,
+  dirtyStateByAgent,
+  reloadCalls,
+  tabRenderSnapshots,
+  useOpenFilesMock,
+} = vi.hoisted(() => {
   const sessionContext = {
     sessions: [
       { key: 'agent:alpha:main', label: 'Alpha' },
+      { key: 'agent:alpha:subagent:abc', label: 'Alpha helper' },
       { key: 'agent:bravo:main', label: 'Bravo' },
     ],
     sessionsLoading: false,
@@ -41,11 +52,27 @@ const { sessionContext, saveFileByAgent, reloadCalls, tabRenderSnapshots, useOpe
     alpha: vi.fn<[string], Promise<SaveResult>>(),
     bravo: vi.fn<[string], Promise<SaveResult>>(),
   };
+  const saveAllDirtyFilesByAgent = {
+    alpha: vi.fn<[], Promise<SaveAllResult>>(),
+    bravo: vi.fn<[], Promise<SaveAllResult>>(),
+  };
+  const discardAllDirtyFilesByAgent = {
+    alpha: vi.fn<[], void>(),
+    bravo: vi.fn<[], void>(),
+  };
+  const dirtyStateByAgent: Record<string, boolean> = {
+    alpha: false,
+    bravo: false,
+  };
   const reloadCalls: Array<{ agentId: string; path: string }> = [];
-  const tabRenderSnapshots: Array<{ workspaceAgentId: string; hasSaveToast: boolean; saveToastPath: string | null }> = [];
+  const tabRenderSnapshots: Array<{
+    workspaceAgentId: string;
+    hasSaveToast: boolean;
+    saveToastPath: string | null;
+  }> = [];
 
   const useOpenFilesMock = vi.fn((agentId: string) => ({
-    openFiles: [{ path: 'shared.md', name: 'shared.md', content: 'draft', savedContent: 'draft', dirty: false }],
+    openFiles: [{ path: 'shared.md', name: 'shared.md', content: 'draft', savedContent: 'draft', dirty: dirtyStateByAgent[agentId] ?? false }],
     activeTab: 'shared.md',
     setActiveTab: vi.fn(),
     openFile: vi.fn(),
@@ -58,11 +85,18 @@ const { sessionContext, saveFileByAgent, reloadCalls, tabRenderSnapshots, useOpe
     handleFileChanged: vi.fn(),
     remapOpenPaths: vi.fn(),
     closeOpenPathsByPrefix: vi.fn(),
+    hasDirtyFiles: dirtyStateByAgent[agentId] ?? false,
+    getDirtyFilePaths: vi.fn(() => (dirtyStateByAgent[agentId] ? ['shared.md'] : [])),
+    saveAllDirtyFiles: saveAllDirtyFilesByAgent[agentId as keyof typeof saveAllDirtyFilesByAgent] ?? vi.fn().mockResolvedValue({ ok: true }),
+    discardAllDirtyFiles: discardAllDirtyFilesByAgent[agentId as keyof typeof discardAllDirtyFilesByAgent] ?? vi.fn(),
   }));
 
   return {
     sessionContext,
     saveFileByAgent,
+    saveAllDirtyFilesByAgent,
+    discardAllDirtyFilesByAgent,
+    dirtyStateByAgent,
     reloadCalls,
     tabRenderSnapshots,
     useOpenFilesMock,
@@ -255,7 +289,44 @@ vi.mock('@/features/command-palette/CommandPalette', () => ({
 }));
 
 vi.mock('@/features/sessions/SessionList', () => ({
-  SessionList: () => null,
+  SessionList: ({ onSelect, onSpawn }: {
+    onSelect: (key: string) => void;
+    onSpawn?: (opts: { kind: 'root' | 'subagent'; agentName?: string; parentSessionKey?: string; task: string; model: string; thinking: string; cleanup?: string }) => Promise<void>;
+  }) => (
+    <div>
+      <button type="button" onClick={() => onSelect('agent:bravo:main')}>Select Bravo</button>
+      <button type="button" onClick={() => onSelect('agent:alpha:subagent:abc')}>Select Alpha Subagent</button>
+      {onSpawn && (
+        <button
+          type="button"
+          onClick={() => onSpawn({
+            kind: 'root',
+            agentName: 'Charlie',
+            task: 'Investigate workspace guard',
+            model: 'test-model',
+            thinking: 'medium',
+          })}
+        >
+          Spawn Root Charlie
+        </button>
+      )}
+      {onSpawn && (
+        <button
+          type="button"
+          onClick={() => onSpawn({
+            kind: 'subagent',
+            parentSessionKey: 'agent:bravo:main',
+            task: 'Help bravo',
+            model: 'test-model',
+            thinking: 'medium',
+            cleanup: 'keep',
+          })}
+        >
+          Spawn Bravo Subagent
+        </button>
+      )}
+    </div>
+  ),
 }));
 
 vi.mock('@/features/workspace/WorkspacePanel', () => ({
@@ -271,9 +342,15 @@ describe('App save toast workspace scoping', () => {
     localStorage.clear();
     sessionContext.currentSession = 'agent:alpha:main';
     sessionContext.setCurrentSession.mockReset();
+    sessionContext.spawnSession.mockReset();
     Object.values(saveFileByAgent).forEach((mockFn) => mockFn.mockReset());
+    Object.values(saveAllDirtyFilesByAgent).forEach((mockFn) => mockFn.mockReset());
+    Object.values(discardAllDirtyFilesByAgent).forEach((mockFn) => mockFn.mockReset());
+    dirtyStateByAgent.alpha = false;
+    dirtyStateByAgent.bravo = false;
     reloadCalls.length = 0;
     tabRenderSnapshots.length = 0;
+    useOpenFilesMock.mockClear();
 
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -376,5 +453,129 @@ describe('App save toast workspace scoping', () => {
     expect(screen.getByTestId('workspace-agent')).toHaveTextContent('alpha');
     expect(screen.queryByText('File changed externally.')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument();
+  });
+});
+
+describe('App workspace switch guard', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionContext.currentSession = 'agent:alpha:main';
+    sessionContext.setCurrentSession.mockReset();
+    sessionContext.spawnSession.mockReset();
+    Object.values(saveAllDirtyFilesByAgent).forEach((mockFn) => mockFn.mockReset());
+    Object.values(discardAllDirtyFilesByAgent).forEach((mockFn) => mockFn.mockReset());
+    dirtyStateByAgent.alpha = true;
+    dirtyStateByAgent.bravo = false;
+    saveAllDirtyFilesByAgent.alpha.mockResolvedValue({ ok: true });
+    discardAllDirtyFilesByAgent.alpha.mockImplementation(() => {});
+  });
+
+  it('does not guard same-agent subagent navigation', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alpha Subagent' }));
+
+    expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:alpha:subagent:abc');
+    expect(screen.queryByText('Unsaved workspace edits')).not.toBeInTheDocument();
+  });
+
+  it('guards cross-agent session selection until save and switch completes', async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Bravo' }));
+
+    expect(sessionContext.setCurrentSession).not.toHaveBeenCalled();
+    expect(screen.getByText('Unsaved workspace edits')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save and switch' }));
+
+    await waitFor(() => {
+      expect(saveAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
+      expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:bravo:main');
+    });
+  });
+
+  it('lets the user cancel a guarded switch without mutating anything', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Bravo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(saveAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
+    expect(discardAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
+    expect(sessionContext.setCurrentSession).not.toHaveBeenCalled();
+  });
+
+  it('discards dirty files before switching when requested', async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Bravo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and switch' }));
+
+    await waitFor(() => {
+      expect(discardAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
+      expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:bravo:main');
+    });
+  });
+
+  it('stays on the current agent and surfaces an error when save and switch fails', async () => {
+    saveAllDirtyFilesByAgent.alpha.mockResolvedValue({ ok: false, failedPath: 'shared.md', conflict: true });
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Bravo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save and switch' }));
+
+    await waitFor(() => {
+      expect(saveAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
+    });
+
+    expect(sessionContext.setCurrentSession).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent('shared.md');
+  });
+
+  it('guards root-agent creation until the user confirms the switch', async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Spawn Root Charlie' }));
+
+    expect(sessionContext.spawnSession).not.toHaveBeenCalled();
+    expect(screen.getByText('Unsaved workspace edits')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and switch' }));
+
+    await waitFor(() => {
+      expect(discardAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
+      expect(sessionContext.spawnSession).toHaveBeenCalledWith({
+        kind: 'root',
+        agentName: 'Charlie',
+        task: 'Investigate workspace guard',
+        model: 'test-model',
+        thinking: 'medium',
+      });
+    });
+  });
+
+  it('guards cross-agent subagent creation too', async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Spawn Bravo Subagent' }));
+
+    expect(sessionContext.spawnSession).not.toHaveBeenCalled();
+    expect(screen.getByText('Unsaved workspace edits')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save and switch' }));
+
+    await waitFor(() => {
+      expect(saveAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
+      expect(sessionContext.spawnSession).toHaveBeenCalledWith({
+        kind: 'subagent',
+        parentSessionKey: 'agent:bravo:main',
+        task: 'Help bravo',
+        model: 'test-model',
+        thinking: 'medium',
+        cleanup: 'keep',
+      });
+    });
   });
 });

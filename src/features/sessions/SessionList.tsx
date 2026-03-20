@@ -28,7 +28,7 @@ interface SessionListProps {
   onSelect: (key: string) => void;
   onRefresh: () => void;
   onDelete?: (sessionKey: string) => Promise<void>;
-  onSpawn?: (opts: SpawnSessionOpts) => Promise<void>;
+  onSpawn?: (opts: SpawnSessionOpts) => Promise<void | boolean>;
   onRename?: (sessionKey: string, label: string) => Promise<void>;
   onAbort?: (sessionKey: string) => Promise<void>;
   isLoading?: boolean;

@@ -16,7 +16,7 @@ export function ScrollToBottomButton({ onClick, unreadCount }: ScrollToBottomBut
     >
       <span aria-hidden="true">↓</span>
       {unreadCount > 0 && (
-        <span className="absolute -top-1.5 -right-1.5 bg-red text-white text-[9px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1" aria-hidden="true">
+        <span className="absolute -top-1.5 -right-1.5 bg-red text-white text-[0.6rem] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1" aria-hidden="true">
           {unreadCount}
         </span>
       )}

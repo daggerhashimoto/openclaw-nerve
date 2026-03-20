@@ -102,16 +102,16 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           type="button"
           onClick={() => setSysExpanded(!sysExpanded)}
           aria-expanded={sysExpanded}
-          className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-4 py-2 text-[11px] text-muted-foreground transition-colors hover:bg-secondary/50"
+          className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-4 py-2 text-[0.733rem] text-muted-foreground transition-colors hover:bg-secondary/50"
         >
           <span className={`shrink-0 w-3 transition-transform ${sysExpanded ? 'rotate-90' : ''}`}>›</span>
           <span>{statusIcon}</span>
           <span className="truncate font-medium text-info">{msg.systemLabel || 'System notification'}</span>
-          <span className="ml-auto shrink-0 font-mono text-[10px] text-info/40">{timeStr}</span>
+          <span className="ml-auto shrink-0 font-mono text-[0.667rem] text-info/40">{timeStr}</span>
         </button>
         {sysExpanded && (
-          <div className="max-h-[300px] overflow-y-auto border-t border-border/20 bg-secondary/30 px-8 py-3 text-[12px] text-muted-foreground">
-            <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{msg.rawText}</pre>
+          <div className="max-h-[300px] overflow-y-auto border-t border-border/20 bg-secondary/30 px-8 py-3 text-[0.8rem] text-muted-foreground">
+            <pre className="whitespace-pre-wrap font-mono text-[0.667rem] leading-relaxed">{msg.rawText}</pre>
           </div>
         )}
       </div>
@@ -168,25 +168,25 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           onClick={() => onToggleCollapse(index)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleCollapse(index); } }}
         >
-          <span className={`mt-0.5 w-3 shrink-0 text-[10px] text-primary/60 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}>›</span>
-          <span className="mt-0.5 shrink-0 text-[10px] text-primary/60">💭</span>
-          <span className="shrink-0 text-[11px] font-medium text-primary/78">Thinking</span>
+          <span className={`mt-0.5 w-3 shrink-0 text-[0.667rem] text-primary/60 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}>›</span>
+          <span className="mt-0.5 shrink-0 text-[0.667rem] text-primary/60">💭</span>
+          <span className="shrink-0 text-[0.733rem] font-medium text-primary/78">Thinking</span>
           {msg.thinkingDurationMs && (
-            <span className="shrink-0 text-[10px] tabular-nums text-primary/52">
+            <span className="shrink-0 text-[0.667rem] tabular-nums text-primary/52">
               • {msg.thinkingDurationMs >= 1000
                 ? `${(msg.thinkingDurationMs / 1000).toFixed(1)}s`
                 : `${msg.thinkingDurationMs}ms`}
             </span>
           )}
           {isCollapsed && (
-            <span className="min-w-0 flex-1 truncate text-[10px] italic text-primary/44">
+            <span className="min-w-0 flex-1 truncate text-[0.667rem] italic text-primary/44">
               {msg.rawText.slice(0, 100)}{msg.rawText.length > 100 ? '…' : ''}
             </span>
           )}
-          <span className="mt-0.5 shrink-0 font-mono text-[10px] tabular-nums text-primary/36">{timeStr}</span>
+          <span className="mt-0.5 shrink-0 font-mono text-[0.667rem] tabular-nums text-primary/36">{timeStr}</span>
         </div>
         {!isCollapsed && (
-          <div className="ml-3 border-l border-primary/12 px-3 pb-2 pt-1 text-[12px] text-foreground/70 msg-body-intermediate">
+          <div className="ml-3 border-l border-primary/12 px-3 pb-2 pt-1 text-[0.8rem] text-foreground/70 msg-body-intermediate">
             <Suspense fallback={<span className="text-muted-foreground text-xs">…</span>}>
               <MarkdownRenderer content={msg.rawText} searchQuery={searchQuery} />
             </Suspense>
@@ -208,21 +208,21 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           onClick={() => onToggleCollapse(index)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleCollapse(index); } }}
         >
-          <span className={`text-muted-foreground text-[10px] shrink-0 w-3 mt-0.5 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}>›</span>
-          <span className="text-muted-foreground/50 text-[10px] shrink-0 mt-0.5">💬</span>
+          <span className={`text-muted-foreground text-[0.667rem] shrink-0 w-3 mt-0.5 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}>›</span>
+          <span className="text-muted-foreground/50 text-[0.667rem] shrink-0 mt-0.5">💬</span>
           {isCollapsed ? (
-            <span className="text-muted-foreground/70 text-[11px] truncate flex-1 min-w-0 italic">
+            <span className="text-muted-foreground/70 text-[0.733rem] truncate flex-1 min-w-0 italic">
               {msg.rawText.split('\n').find(l => l.trim())?.slice(0, 100) || msg.rawText.slice(0, 100)}
               {msg.rawText.length > 100 ? '…' : ''}
             </span>
           ) : (
-            <div className="text-muted-foreground/70 text-[12px] flex-1 min-w-0 msg-body-intermediate">
+            <div className="text-muted-foreground/70 text-[0.8rem] flex-1 min-w-0 msg-body-intermediate">
               <Suspense fallback={<span className="text-muted-foreground text-xs">…</span>}>
                 <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} />
               </Suspense>
             </div>
           )}
-          <span className="text-muted-foreground/40 text-[10px] shrink-0 tabular-nums mt-0.5">{timeStr}</span>
+          <span className="text-muted-foreground/40 text-[0.667rem] shrink-0 tabular-nums mt-0.5">{timeStr}</span>
         </div>
       </div>
     );
@@ -250,14 +250,14 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
         <span className={`text-muted-foreground text-xs shrink-0 w-3 transition-transform ${!isCollapsed ? 'rotate-90' : ''} ${isUser ? 'rotate-180' : ''} ${!isCollapsed && isUser ? '-rotate-90' : ''}`}>›</span>
         <RoleBadge role={msg.role} agentName={agentName} />
         {isCollapsed && preview && (
-          <span className="text-muted-foreground text-[10px] opacity-60 overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0">
+          <span className="text-muted-foreground text-[0.667rem] opacity-60 overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0">
             {isSystem && msg.rawText && /```/.test(msg.rawText) && (
               <span className="text-orange/70 mr-1" title="Contains code">{'</>'}</span>
             )}
             {preview}
           </span>
         )}
-        <span className={`text-muted-foreground text-[10px] shrink-0 tabular-nums ${isUser ? 'mr-auto' : 'ml-auto'}`}>
+        <span className={`text-muted-foreground text-[0.667rem] shrink-0 tabular-nums ${isUser ? 'mr-auto' : 'ml-auto'}`}>
           {timeStr}
           {missionTime && <span className="ml-1.5 opacity-60">· {missionTime}</span>}
         </span>
@@ -313,7 +313,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
             <div className="absolute top-0 right-3 hidden gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:right-4 sm:flex">
               {/* Copy button */}
               <button
-                className="cockpit-toolbar-button min-h-7 px-2 text-[10px]"
+                className="cockpit-toolbar-button min-h-7 px-2 text-[0.667rem]"
                 aria-label="Copy message to clipboard"
                 onClick={handleCopy}
               >

@@ -62,7 +62,7 @@ function LimitProgressBar({ label, usedPercent, barClass, resetText }: {
 }) {
   return (
     <div className="flex flex-col gap-0.5 mb-1.5">
-      <div className="flex items-baseline justify-between text-[11px]">
+      <div className="flex items-baseline justify-between text-[0.733rem]">
         <span className="text-muted-foreground">{label}</span>
         <span className="text-foreground font-mono font-bold">{usedPercent.toFixed(0)}% used</span>
       </div>
@@ -72,7 +72,7 @@ function LimitProgressBar({ label, usedPercent, barClass, resetText }: {
           style={{ width: `${Math.min(100, Math.max(0, usedPercent))}%` }}
         />
       </div>
-      {resetText && <div className="text-[11px] text-muted-foreground/60">resets {resetText}</div>}
+      {resetText && <div className="text-[0.733rem] text-muted-foreground/60">resets {resetText}</div>}
     </div>
   );
 }
@@ -92,7 +92,7 @@ function LimitsBlockShell({ icon, iconColor, title, lastChecked, loading, unavai
   if (loading) {
     return (
       <div className="pt-1.5 mt-1 border-t border-border/30">
-        <div className="text-[11px] text-muted-foreground/50 flex items-center gap-1.5">
+        <div className="text-[0.733rem] text-muted-foreground/50 flex items-center gap-1.5">
           <span className="animate-pulse">{icon}</span>
           <span className="animate-pulse">Loading {title}…</span>
         </div>
@@ -103,7 +103,7 @@ function LimitsBlockShell({ icon, iconColor, title, lastChecked, loading, unavai
   if (unavailable) {
     return (
       <div className="pt-1.5 mt-1 border-t border-border/30">
-        <div className="text-[11px] text-muted-foreground/40 flex items-center gap-1.5">
+        <div className="text-[0.733rem] text-muted-foreground/40 flex items-center gap-1.5">
           <span>{icon}</span>
           <span>{title} unavailable</span>
         </div>
@@ -113,11 +113,11 @@ function LimitsBlockShell({ icon, iconColor, title, lastChecked, loading, unavai
 
   return (
     <div className="pt-1.5 mt-1 border-t border-border/30">
-      <div className="text-[11px] text-muted-foreground uppercase tracking-[1px] flex items-center gap-1.5 mb-1">
+      <div className="text-[0.733rem] text-muted-foreground uppercase tracking-[1px] flex items-center gap-1.5 mb-1">
         <span className={iconColor}>{icon}</span>
         {title}
         {lastChecked && (
-          <span className="text-[11px] text-muted-foreground/50 ml-auto">{formatTimeAgo(lastChecked)}</span>
+          <span className="text-[0.733rem] text-muted-foreground/50 ml-auto">{formatTimeAgo(lastChecked)}</span>
         )}
       </div>
       {children}
@@ -222,10 +222,10 @@ function ProviderRow({
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
         aria-label={`${entry.source} provider details`}
-        className="flex items-center gap-2 text-[11px] w-full hover:bg-muted/30 rounded px-0.5 py-0.5 transition-colors cursor-pointer group"
+        className="flex items-center gap-2 text-[0.733rem] w-full hover:bg-muted/30 rounded px-0.5 py-0.5 transition-colors cursor-pointer group"
       >
         <span className="w-3.5 text-center shrink-0 text-xs flex items-center justify-center">{icon}</span>
-        <span className="text-foreground text-[11px] font-bold w-16 shrink-0 uppercase tracking-[0.5px]">
+        <span className="text-foreground text-[0.733rem] font-bold w-16 shrink-0 uppercase tracking-[0.5px]">
           {entry.source}
         </span>
         <div className="flex-1 h-2 bg-background border border-border/60 overflow-hidden">
@@ -240,11 +240,11 @@ function ProviderRow({
         <AnimatedNumber
           value={costCents}
           format={(n) => '$' + (n / 100).toFixed(2)}
-          className="text-muted-foreground text-[11px] w-13 text-right shrink-0"
+          className="text-muted-foreground text-[0.733rem] w-13 text-right shrink-0"
           duration={600}
         />
         <span
-          className={`text-[10px] transition-transform duration-150 ${expanded ? 'rotate-180' : ''} text-muted-foreground/50 group-hover:text-muted-foreground`}
+          className={`text-[0.667rem] transition-transform duration-150 ${expanded ? 'rotate-180' : ''} text-muted-foreground/50 group-hover:text-muted-foreground`}
         >
           ▼
         </span>
@@ -253,7 +253,7 @@ function ProviderRow({
       {expanded && (
         <div className="pl-6 pr-1 pb-1.5 pt-0.5 flex flex-col gap-1 border-l-2 border-border/30 ml-[7px]">
           {/* Token breakdown */}
-          <div className="flex gap-3 text-[11px] text-muted-foreground flex-wrap">
+          <div className="flex gap-3 text-[0.733rem] text-muted-foreground flex-wrap">
             <span>
               ↑ <span className="text-foreground">{fmtTokens(entry.inputTokens || 0)}</span> in
             </span>
@@ -268,7 +268,7 @@ function ProviderRow({
           </div>
 
           {/* Message stats */}
-          <div className="flex gap-3 text-[11px] text-muted-foreground flex-wrap">
+          <div className="flex gap-3 text-[0.733rem] text-muted-foreground flex-wrap">
             <span>
               💬 <span className="text-foreground">{(entry.messageCount || 0).toLocaleString()}</span> msgs
             </span>
@@ -319,7 +319,7 @@ export function TokenUsage({ data }: TokenUsageProps) {
             USAGE
           </span>
         </div>
-        <div className="p-3 text-muted-foreground text-[10px]">Loading…</div>
+        <div className="p-3 text-muted-foreground text-[0.667rem]">Loading…</div>
       </div>
     );
   }
@@ -344,7 +344,7 @@ export function TokenUsage({ data }: TokenUsageProps) {
               className="text-xl font-bold text-primary [text-shadow:0_0_8px_rgba(232,168,56,0.3)]"
               duration={800}
             />
-            <span className="text-[11px] text-muted-foreground uppercase tracking-[1px]">all-time</span>
+            <span className="text-[0.733rem] text-muted-foreground uppercase tracking-[1px]">all-time</span>
           </div>
 
           {/* ── Per-provider expandable rows ───────────────────── */}
@@ -361,11 +361,11 @@ export function TokenUsage({ data }: TokenUsageProps) {
               />
             ))
           ) : (
-            <div className="text-[11px] text-muted-foreground/50 italic">No usage data</div>
+            <div className="text-[0.733rem] text-muted-foreground/50 italic">No usage data</div>
           )}
 
           {/* ── Aggregate token stats ──────────────────────────── */}
-          <div className="flex gap-3 pt-1.5 mt-0.5 border-t border-border/40 text-[11px] text-muted-foreground flex-wrap">
+          <div className="flex gap-3 pt-1.5 mt-0.5 border-t border-border/40 text-[0.733rem] text-muted-foreground flex-wrap">
             <span>
               ↑{' '}
               <AnimatedNumber

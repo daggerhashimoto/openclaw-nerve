@@ -146,7 +146,7 @@ export function AddMemoryDialog({ open, onOpenChange, onAdd, sections = [], isLo
                     </button>
                   ))}
                   {section.trim() && !sections.some((s) => s.toLowerCase() === section.trim().toLowerCase()) && (
-                    <div className="mt-1 rounded-xl border border-border/70 bg-background/60 px-3 py-2 text-[11px] text-muted-foreground">
+                    <div className="mt-1 rounded-xl border border-border/70 bg-background/60 px-3 py-2 text-[0.733rem] text-muted-foreground">
                       New section: <span className="font-medium text-primary">{section.trim()}</span>
                     </div>
                   )}

@@ -394,13 +394,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               >
                 <X size={10} />
               </button>
-              <span className="mt-2 block max-w-[64px] truncate text-center text-[10px] text-muted-foreground">{img.name}</span>
+              <span className="mt-2 block max-w-[64px] truncate text-center text-[0.667rem] text-muted-foreground">{img.name}</span>
             </div>
           ))}
         </div>
       )}
       {attachmentError && (
-        <div className="border-t border-border/60 bg-card/72 px-4 py-2 text-[11px] text-destructive">{attachmentError}</div>
+        <div className="border-t border-border/60 bg-card/72 px-4 py-2 text-[0.733rem] text-destructive">{attachmentError}</div>
       )}
       <input
         ref={fileInputRef}
@@ -429,7 +429,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           </span>
         ) : (
           <span
-            className="flex h-10 w-5 shrink-0 select-none items-center justify-center self-center font-mono text-[17px] font-semibold leading-none text-primary/78"
+            className="flex h-10 w-5 shrink-0 select-none items-center justify-center self-center font-mono text-[1.0625rem] font-semibold leading-none text-primary/78"
             aria-hidden="true"
           >
             &gt;
@@ -448,7 +448,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           aria-label="Message input"
           rows={1}
           disabled={!hasActiveSession}
-          className="min-h-[46px] max-h-[160px] flex-1 resize-none border-none bg-transparent px-1 py-2 text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[15px]"
+          className="min-h-[46px] max-h-[160px] flex-1 resize-none border-none bg-transparent px-1 py-2 text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[1rem]"
         />
         <button
           onClick={() => fileInputRef.current?.click()}
@@ -474,7 +474,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           <span className="hidden sm:inline">{isGenerating ? 'Sending' : 'Send'}</span>
         </button>
       </div>
-      <div className="bg-card/92 px-3 pb-2 text-[11px] text-muted-foreground sm:px-4">
+      <div className="bg-card/92 px-3 pb-2 text-[0.733rem] text-muted-foreground sm:px-4">
         {!hasActiveSession
           ? 'Create a top-level agent to start a new branch, or select an existing session to continue.'
           : voiceState === 'recording'
@@ -494,7 +494,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           )}
       </div>
       {voiceError && (
-        <div className="bg-card/92 px-4 pb-3 text-[11px] text-destructive" role="alert">
+        <div className="bg-card/92 px-4 pb-3 text-[0.733rem] text-destructive" role="alert">
           {voiceError}
         </div>
       )}

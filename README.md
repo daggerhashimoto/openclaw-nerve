@@ -72,7 +72,7 @@ Create recurring jobs and one-shot reminders. Every scheduled run shows up as it
 | **Local STT** | On-device Whisper — tiny, base, or small models with multilingual support, explicit language selection, GPU detection, and auto-download. No API key needed |
 | **Code actions** | Copy or save-to-file buttons on every code block |
 | **API key management** | Add provider keys from settings — writes to .env and hot-reloads, no restart needed |
-| **14 themes** | Dark, light, and everything in between. Resizable panels, custom fonts |
+| **14 themes** | Dark, light, and everything in between. Resizable panels, custom fonts, adjustable font size |
 | **Auto-updater** | Built-in updater with automatic rollback. One command to update, verify, and restart |
 
 ## Get Started

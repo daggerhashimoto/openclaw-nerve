@@ -28,7 +28,7 @@ function RunElapsed({ startedAt }: { startedAt: number }) {
     return () => clearInterval(id);
   }, []);
   return (
-    <span className="text-[10px] text-muted-foreground tabular-nums">
+    <span className="text-[0.667rem] text-muted-foreground tabular-nums">
       {formatElapsed(now - startedAt)}
     </span>
   );
@@ -251,10 +251,10 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
           <>
             <div className="panel-header min-h-[56px] justify-between gap-3 px-4">
               <div className="flex items-center gap-2 min-w-0">
-                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold ${getTaskStatusTone(task.status).badgeClass}`}>
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.667rem] font-semibold ${getTaskStatusTone(task.status).badgeClass}`}>
                   {COLUMN_LABELS[task.status as keyof typeof COLUMN_LABELS] ?? 'Task'}
                 </span>
-                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold ${priorityTone?.badgeClass ?? ''}`}>
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.667rem] font-semibold ${priorityTone?.badgeClass ?? ''}`}>
                   {getTaskPriorityLabel(editPriority)}
                 </span>
               </div>
@@ -368,7 +368,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
 
               <div className="cockpit-note space-y-2">
                 <h4 className="cockpit-field-label">Metadata</h4>
-                <div className="space-y-1 text-[11px] text-muted-foreground">
+                <div className="space-y-1 text-[0.733rem] text-muted-foreground">
                   <div className="flex items-center gap-1.5">
                     <Clock size={10} />
                     Created: {new Date(task.createdAt).toLocaleString()}
@@ -387,9 +387,9 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
               {task.run && (
                 <div className="cockpit-note space-y-2">
                   <h4 className="cockpit-field-label">Agent Run</h4>
-                  <div className="space-y-1.5 text-[11px] text-muted-foreground">
+                  <div className="space-y-1.5 text-[0.733rem] text-muted-foreground">
                     <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${getTaskRunTone(task.run.status).badgeClass}`}>
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[0.667rem] font-semibold ${getTaskRunTone(task.run.status).badgeClass}`}>
                         {task.run.status === 'running' && <Loader2 size={9} className="animate-spin" />}
                         {task.run.status.charAt(0).toUpperCase() + task.run.status.slice(1)}
                       </span>
@@ -432,7 +432,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
                   <div className="space-y-2">
                     {task.feedback.map((fb, i) => (
                       <div key={i} className="rounded-2xl border border-border/60 bg-background/45 p-3 text-xs">
-                        <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
+                        <div className="mb-1 flex items-center justify-between text-[0.667rem] text-muted-foreground">
                           <span>{fb.by === 'operator' ? 'Operator' : fb.by}</span>
                           <span>{new Date(fb.at).toLocaleString()}</span>
                         </div>
@@ -497,7 +497,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
 
               {confirmDelete ? (
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="text-[11px] text-destructive font-medium">Delete?</span>
+                  <span className="text-[0.733rem] text-destructive font-medium">Delete?</span>
                   <Button
                     size="xs"
                     variant="destructive"

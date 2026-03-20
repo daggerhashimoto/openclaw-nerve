@@ -200,7 +200,7 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
 
       {/* Feedback toast */}
       {feedback && (
-        <div className={`px-3 py-1.5 text-[10px] flex items-center gap-1.5 border-b ${
+        <div className={`px-3 py-1.5 text-[0.667rem] flex items-center gap-1.5 border-b ${
           feedback.type === 'success'
             ? 'bg-green/10 text-green border-green/20'
             : 'bg-red/10 text-red border-red/20'
@@ -211,16 +211,16 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
       )}
 
       {error && (
-        <div className="px-3 py-2 text-[10px] text-red bg-red/10">{error}</div>
+        <div className="px-3 py-2 text-[0.667rem] text-red bg-red/10">{error}</div>
       )}
 
       <div className="flex-1 overflow-y-auto">
         {!exists && !isLoading && !error && (
-          <div className="text-muted-foreground px-3 py-4 text-[11px] text-center">
+          <div className="text-muted-foreground px-3 py-4 text-[0.733rem] text-center">
             <p>File does not exist yet</p>
             <button
               onClick={handleCreate}
-              className="mt-2 text-purple hover:underline bg-transparent border-0 cursor-pointer text-[11px] focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
+              className="mt-2 text-purple hover:underline bg-transparent border-0 cursor-pointer text-[0.733rem] focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
             >
               Create {FILE_OPTIONS.find(file => file.key === selectedKey)?.label}
             </button>
@@ -239,7 +239,7 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
                 <Pencil size={14} />
               </button>
             </div>
-            <pre className="px-3 py-2 text-[11px] text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono leading-relaxed">
+            <pre className="px-3 py-2 text-[0.733rem] text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono leading-relaxed">
               {content}
             </pre>
           </div>
@@ -251,7 +251,7 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
               ref={textareaRef}
               value={editContent}
               onChange={e => setEditContent(e.target.value)}
-              className="flex-1 w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] px-3 py-2 text-[11px] font-mono bg-background text-foreground border-0 resize-none outline-none focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 focus-visible:ring-inset"
+              className="flex-1 w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] px-3 py-2 text-[0.733rem] font-mono bg-background text-foreground border-0 resize-none outline-none focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 focus-visible:ring-inset"
               spellCheck={false}
               wrap="soft"
             />
@@ -260,7 +260,7 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
                 onClick={handleSave}
                 disabled={isLoading}
                 size="sm"
-                className="text-[11px] uppercase tracking-[0.12em]"
+                className="text-[0.733rem] uppercase tracking-[0.12em]"
               >
                 <Save size={12} /> Save
               </Button>
@@ -268,7 +268,7 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
                 onClick={handleCancel}
                 variant="outline"
                 size="sm"
-                className="text-[11px] uppercase tracking-[0.12em]"
+                className="text-[0.733rem] uppercase tracking-[0.12em]"
               >
                 <X size={12} /> Cancel
               </Button>

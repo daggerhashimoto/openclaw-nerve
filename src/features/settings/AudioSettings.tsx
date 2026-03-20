@@ -303,7 +303,7 @@ function SttModelSelector({ model, onModelChange }: { model: string; onModelChan
         <div className="cockpit-note" data-tone="primary">
           <div className="flex items-center gap-2">
             <Download size={12} className="text-primary animate-pulse" />
-            <span className="font-mono text-[11px] text-primary">
+            <span className="font-mono text-[0.733rem] text-primary">
               Downloading {download.model}... {download.percent}%
             </span>
           </div>
@@ -318,13 +318,13 @@ function SttModelSelector({ model, onModelChange }: { model: string; onModelChan
 
       {download && !download.downloading && download.error && (
         <div className="cockpit-note" data-tone="danger">
-          <span className="font-mono text-[11px] text-destructive">Download failed: {download.error}</span>
+          <span className="font-mono text-[0.733rem] text-destructive">Download failed: {download.error}</span>
         </div>
       )}
 
       {download && !download.downloading && !download.error && (
         <div className="cockpit-note border-green/25 bg-green/8 text-green">
-          <span className="font-mono text-[11px] animate-pulse">✓ Model ready</span>
+          <span className="font-mono text-[0.733rem] animate-pulse">✓ Model ready</span>
         </div>
       )}
 
@@ -333,7 +333,7 @@ function SttModelSelector({ model, onModelChange }: { model: string; onModelChan
         <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-orange/85">
           <div className="flex items-start gap-2">
           <AlertTriangle size={12} className="text-orange shrink-0 mt-0.5" />
-          <span className="text-[11px]">
+          <span className="text-[0.733rem]">
             No GPU detected — {model.includes('small') ? `${model} will be very slow on CPU` : `${model} may be slow on CPU`}. Use tiny for faster multilingual transcription.
           </span>
           </div>
@@ -380,7 +380,7 @@ function ApiKeyInput({
   if (saved) {
     return (
       <div className="cockpit-note border-green/25 bg-green/8 text-green">
-        <span className="font-mono text-[11px]">✓ {keyName} saved</span>
+        <span className="font-mono text-[0.733rem]">✓ {keyName} saved</span>
       </div>
     );
   }
@@ -389,7 +389,7 @@ function ApiKeyInput({
     <div className="rounded-[20px] border border-orange/28 bg-orange/6 px-4 py-4">
       <div className="flex items-center gap-2">
         <KeyRound size={12} className="text-orange shrink-0" />
-        <span className="text-[11px] text-orange">{keyName} required for {provider}</span>
+        <span className="text-[0.733rem] text-orange">{keyName} required for {provider}</span>
       </div>
       <div className="mt-3 flex gap-2">
         <input
@@ -403,7 +403,7 @@ function ApiKeyInput({
         <button
           onClick={handleSave}
           disabled={saving || !value.trim()}
-          className="cockpit-toolbar-button px-4 text-[11px] disabled:cursor-not-allowed disabled:opacity-40"
+          className="cockpit-toolbar-button px-4 text-[0.733rem] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {saving ? 'Saving...' : 'Save'}
         </button>
@@ -632,7 +632,7 @@ export function AudioSettings({
             <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-orange/85">
               <div className="flex items-start gap-2">
               <AlertTriangle size={12} className="text-orange shrink-0 mt-0.5" />
-              <span className="text-[11px]">
+              <span className="text-[0.733rem]">
                 Current model is English-only. Switch to a multilingual model below for {currentLangInfo?.name || langState.language} transcription.
               </span>
               </div>
@@ -644,12 +644,12 @@ export function AudioSettings({
               <div className="flex items-start gap-2">
               <AlertTriangle size={12} className="text-orange shrink-0 mt-0.5" />
               <div className="flex flex-1 items-start justify-between gap-2">
-                <span className="text-[11px]">
+                <span className="text-[0.733rem]">
                   Tiny is fast, but conversational {currentLangInfo?.name || langState.language} can be less accurate. Use base for better results.
                 </span>
                 <button
                   onClick={() => onSttModelChange('base')}
-                  className="cockpit-toolbar-button shrink-0 border-orange/40 px-3 text-[11px] text-orange hover:border-orange/55 hover:bg-orange/10"
+                  className="cockpit-toolbar-button shrink-0 border-orange/40 px-3 text-[0.733rem] text-orange hover:border-orange/55 hover:bg-orange/10"
                 >
                   Use base
                 </button>
@@ -751,7 +751,7 @@ export function AudioSettings({
             <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-orange/85">
               <div className="flex items-start gap-2">
               <AlertTriangle size={12} className="text-orange shrink-0 mt-0.5" />
-              <span className="text-[11px]">
+              <span className="text-[0.733rem]">
                 Qwen3 doesn't support {langState.supported.find((l) => l.code === langState.language)?.name || langState.language}. Voice output will use English.
               </span>
               </div>
@@ -792,7 +792,7 @@ export function AudioSettings({
         <div className="space-y-3">
           {saved && (
             <div className="cockpit-note border-green/25 bg-green/8 text-green">
-              <span className="font-mono text-[11px] animate-pulse">Saved ✓</span>
+              <span className="font-mono text-[0.733rem] animate-pulse">Saved ✓</span>
             </div>
           )}
 

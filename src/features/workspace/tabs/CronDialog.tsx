@@ -92,7 +92,7 @@ function SectionShell({
   return (
     <section className={`cockpit-surface p-3.5 ${className}`}>
       <div className="space-y-0.5">
-        <div className="cockpit-kicker text-[9px]">
+        <div className="cockpit-kicker text-[0.6rem]">
           <span className="text-primary">◆</span>
           {eyebrow}
         </div>
@@ -280,7 +280,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
       onCancel={handleClose}
       onClick={handleDialogClick}
       aria-labelledby="cron-dialog-title"
-      className="fixed inset-0 z-50 m-auto max-h-[calc(100dvh-1rem)] w-[min(1040px,calc(100vw-1rem))] overflow-y-auto rounded-[24px] border border-border/80 bg-card/96 p-0 shadow-[0_36px_90px_rgba(0,0,0,0.38)] backdrop:bg-black/52 backdrop:backdrop-blur-sm sm:max-h-[calc(100dvh-2rem)] sm:rounded-[30px]"
+      className="fixed inset-0 z-50 m-auto max-h-[calc(100dvh-1.067rem)] w-[min(1040px,calc(100vw-1.067rem))] overflow-y-auto rounded-[24px] border border-border/80 bg-card/96 p-0 shadow-[0_36px_90px_rgba(0,0,0,0.38)] backdrop:bg-black/52 backdrop:backdrop-blur-sm sm:max-h-[calc(100dvh-2rem)] sm:rounded-[30px]"
       style={{ overscrollBehavior: 'contain' }}
     >
       <form onSubmit={handleSubmit} onClick={e => e.stopPropagation()} className="flex flex-col">
@@ -492,7 +492,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
                 {deliveryMode === 'announce' && (
                   <div className="space-y-2.5">
                     {availableChannels.length === 0 ? (
-                      <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-[11px] text-orange/85">
+                      <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-[0.733rem] text-orange/85">
                         No messaging channels are configured yet. Set one up in OpenClaw first, or keep the job inside Nerve.
                       </div>
                     ) : (

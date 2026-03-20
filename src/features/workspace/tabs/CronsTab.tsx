@@ -176,7 +176,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
               <div className="min-w-0 flex items-start gap-2">
               <button
                 onClick={() => onToggle(job.id, !job.enabled)}
-                className="shell-chip min-h-8 shrink-0 rounded-lg px-2.5 text-[10px]"
+                className="shell-chip min-h-8 shrink-0 rounded-lg px-2.5 text-[0.667rem]"
                 data-active={job.enabled ? 'true' : 'false'}
                 title={job.enabled ? 'Pause job' : 'Enable job'}
                 aria-label={`${job.enabled ? 'Pause' : 'Enable'} ${name}`}
@@ -254,10 +254,10 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              <span className="cockpit-badge min-h-6 px-2 text-[10px]" data-tone={targetTone}>
+              <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone={targetTone}>
                 {executionLabel}
               </span>
-              <span className="min-w-0 truncate text-right text-[10px] text-muted-foreground">
+              <span className="min-w-0 truncate text-right text-[0.667rem] text-muted-foreground">
                 {job.lastRun ? `Last ${relativeTime(job.lastRun)}` : 'No runs yet'}
               </span>
             </div>
@@ -296,14 +296,14 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
                 return (
                   <div key={i} className="rounded-lg border border-border/60 bg-background/30 px-2.5 py-2">
                     <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-1.5 text-[0.667rem] text-muted-foreground">
                         <span className="tabular-nums">{r.timestamp ? new Date(r.timestamp).toLocaleString() : '—'}</span>
-                        <span className="cockpit-badge min-h-6 px-2 text-[10px]" data-tone={runOk ? 'success' : 'danger'}>
+                        <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone={runOk ? 'success' : 'danger'}>
                           {runOk ? <CheckCircle size={10} /> : <XCircle size={10} />}
                           {r.status}
                         </span>
                         {r.duration !== undefined && (
-                          <span className="cockpit-badge min-h-6 px-2 text-[10px] tabular-nums">{Math.round(r.duration / 1000)}s</span>
+                          <span className="cockpit-badge min-h-6 px-2 text-[0.667rem] tabular-nums">{Math.round(r.duration / 1000)}s</span>
                         )}
                       </div>
                       {r.error && (
@@ -391,7 +391,7 @@ export function CronsTab() {
               {hasToolbarMeta ? (
                 <>
                   {toolbarSummary.failedCount > 0 && (
-                    <span className="cockpit-badge min-h-6 px-2 text-[10px]" data-tone="danger">
+                    <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone="danger">
                       {toolbarSummary.failedCount} failed
                     </span>
                   )}
@@ -401,12 +401,12 @@ export function CronsTab() {
                         <Clock3 size={10} className="text-primary" />
                         Next run
                       </span>
-                      <span className="cockpit-badge min-h-5 shrink-0 px-1.5 text-[9px]" data-tone="primary">
+                      <span className="cockpit-badge min-h-5 shrink-0 px-1.5 text-[0.6rem]" data-tone="primary">
                         {toolbarSummary.nextRelative}
                       </span>
                     </div>
                   ) : toolbarSummary.enabledCount > 0 ? (
-                    <span className="cockpit-badge min-h-6 px-2 text-[10px]" data-tone="success">
+                    <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone="success">
                       {toolbarSummary.enabledCount} live
                     </span>
                   ) : (
@@ -443,7 +443,7 @@ export function CronsTab() {
 
           <div aria-live="polite" aria-atomic="true">
             {error && (
-              <div className="cockpit-note px-3 py-2 text-[11px]" data-tone="danger">{error}</div>
+              <div className="cockpit-note px-3 py-2 text-[0.733rem]" data-tone="danger">{error}</div>
             )}
           </div>
 
@@ -459,7 +459,7 @@ export function CronsTab() {
             <div className="cockpit-surface px-4 py-5 text-center">
               <div className="space-y-1">
                 <div className="text-[12.5px] font-medium text-foreground">No scheduled tasks yet</div>
-                <p className="text-[11px] leading-4.5 text-muted-foreground">
+                <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
                   Create one to schedule a private task or a main-thread reminder.
                 </p>
               </div>

@@ -119,7 +119,7 @@ export function ConfirmDeleteDialog({
 
         <div className="py-4 space-y-3">
           <div className="cockpit-note" data-tone="danger">
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-destructive/80">
+            <p className="mb-1 text-[0.733rem] font-semibold uppercase tracking-[0.16em] text-destructive/80">
               {isSection
                 ? 'Section to delete:'
                 : isDaily
@@ -136,30 +136,30 @@ export function ConfirmDeleteDialog({
           {/* Show markdown content for sections/daily entries */}
           {(isSection || isDaily) && (
             <div className="max-h-60 overflow-y-auto rounded-2xl border border-destructive/20 bg-destructive/6 px-3 py-3">
-              <p className="sticky top-0 mb-2 bg-destructive/6 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-destructive/80">
+              <p className="sticky top-0 mb-2 bg-destructive/6 pb-1 text-[0.667rem] font-semibold uppercase tracking-[0.18em] text-destructive/80">
                 Content to be deleted:
               </p>
               
               {contentLoading ? (
-                <div className="flex items-center gap-2 py-2 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-2 py-2 text-[0.733rem] text-muted-foreground">
                   <Loader2 size={12} className="animate-spin" />
                   Loading content...
                 </div>
               ) : markdownContent ? (
-                <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground">
+                <pre className="whitespace-pre-wrap break-words font-mono text-[0.733rem] text-muted-foreground">
                   {markdownContent}
                 </pre>
               ) : hasItems ? (
                 <ul className="space-y-1">
                   {itemsToDelete.map((item, i) => (
-                    <li key={i} className="flex items-start gap-1.5 font-mono text-[11px] text-muted-foreground">
+                    <li key={i} className="flex items-start gap-1.5 font-mono text-[0.733rem] text-muted-foreground">
                       <span className="shrink-0 text-destructive/60">›</span>
                       <span className="break-words">{item.length > 80 ? item.slice(0, 80) + '...' : item}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-[11px] text-muted-foreground italic">
+                <p className="text-[0.733rem] text-muted-foreground italic">
                   No content found
                 </p>
               )}

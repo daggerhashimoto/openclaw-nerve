@@ -44,7 +44,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/20 bg-background/60">
               <NerveLogo size={30} />
             </div>
-            <div className="mt-6 text-[10px] font-medium uppercase tracking-[0.32em] text-primary/80">
+            <div className="mt-6 text-[0.667rem] font-medium uppercase tracking-[0.32em] text-primary/80">
               Private Cockpit Access
             </div>
             <h1 className="mt-3 max-w-[12ch] text-4xl font-semibold tracking-[-0.05em] text-foreground sm:text-5xl">
@@ -56,22 +56,22 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               <div className="shell-panel rounded-2xl px-4 py-3">
-                <div className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">Sessions</div>
+                <div className="text-[0.667rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">Sessions</div>
                 <div className="mt-2 text-sm font-medium text-foreground">Live agent context</div>
               </div>
               <div className="shell-panel rounded-2xl px-4 py-3">
-                <div className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">Workspace</div>
+                <div className="text-[0.667rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">Workspace</div>
                 <div className="mt-2 text-sm font-medium text-foreground">Files, memory, and skills</div>
               </div>
               <div className="shell-panel rounded-2xl px-4 py-3">
-                <div className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">Telemetry</div>
+                <div className="text-[0.667rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">Telemetry</div>
                 <div className="mt-2 text-sm font-medium text-foreground">Costs, events, and uptime</div>
               </div>
             </div>
           </div>
 
           <div className="px-6 py-8 sm:px-8">
-            <div className="text-[10px] font-medium uppercase tracking-[0.3em] text-primary/80">
+            <div className="text-[0.667rem] font-medium uppercase tracking-[0.3em] text-primary/80">
               Authentication Required
             </div>
             <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-foreground">
@@ -83,7 +83,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
 
             <form onSubmit={handleSubmit} className="mt-8 space-y-4">
               <div>
-                <label htmlFor="nerve-password" className="mb-2 block text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                <label htmlFor="nerve-password" className="mb-2 block text-[0.733rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">
                   Password
                 </label>
                 <Input
@@ -108,7 +108,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
                 type="submit"
                 disabled={submitting || !password.trim()}
                 size="lg"
-                className="w-full text-[11px] uppercase tracking-[0.22em]"
+                className="w-full text-[0.733rem] uppercase tracking-[0.22em]"
               >
                 {submitting ? 'Signing In…' : 'Enter Nerve'}
               </Button>

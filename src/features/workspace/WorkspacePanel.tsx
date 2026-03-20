@@ -70,7 +70,7 @@ function ConfigWithSkills({ agentId }: ConfigWithSkillsProps) {
           <button
             key={nextView}
             onClick={() => switchView(nextView)}
-            className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm border-0 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 ${
+            className={`text-[0.667rem] uppercase tracking-wider px-2 py-0.5 rounded-sm border-0 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 ${
               view === nextView
                 ? 'bg-purple/15 text-purple font-semibold'
                 : 'bg-transparent text-muted-foreground hover:text-foreground'

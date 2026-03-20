@@ -51,8 +51,8 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
           <CollapsibleTrigger className="flex w-full items-center gap-2 px-3.5 py-3 text-left transition-colors cursor-pointer hover:bg-primary/[0.04]">
             <ChevronRight size={14} className={`text-muted-foreground shrink-0 transition-transform duration-200 ${!isCollapsed ? 'rotate-90' : ''}`} />
             <span className="cockpit-badge shrink-0">Tool</span>
-            <span className="flex-1 truncate text-[12px] text-foreground/78">{highlightText(toolPreview, searchQuery)}</span>
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{timeStr}</span>
+            <span className="flex-1 truncate text-[0.8rem] text-foreground/78">{highlightText(toolPreview, searchQuery)}</span>
+            <span className="shrink-0 font-mono text-[0.667rem] text-muted-foreground">{timeStr}</span>
           </CollapsibleTrigger>
           <CollapsibleContent>
             <CardContent className="border-t border-border/40 bg-background/42 px-3 py-3">
@@ -70,7 +70,7 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
                 </div>
               ) : (
                 <div
-                  className="msg-body whitespace-pre-wrap text-[12px] font-mono opacity-85 max-h-[300px] overflow-y-auto"
+                  className="msg-body whitespace-pre-wrap text-[0.8rem] font-mono opacity-85 max-h-[300px] overflow-y-auto"
                   dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
                 />
               )}

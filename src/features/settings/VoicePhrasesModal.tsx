@@ -206,7 +206,7 @@ export function VoicePhrasesModal({
             <Globe size={16} className="text-primary" />
             Voice Phrases — {languageName}
           </DialogTitle>
-          <DialogDescription className="text-[12px] text-muted-foreground">
+          <DialogDescription className="text-[0.8rem] text-muted-foreground">
             Set the phrases you'll say in {languageNativeName} to control voice input.
             {languageCode !== 'en' && ' English phrases always work as fallback for send & cancel.'}
           </DialogDescription>
@@ -277,7 +277,7 @@ export function VoicePhrasesModal({
 
         <DialogFooter className="mt-1 items-center gap-2">
           {saveError && (
-            <span className="text-[11px] text-destructive sm:mr-auto">{saveError}</span>
+            <span className="text-[0.733rem] text-destructive sm:mr-auto">{saveError}</span>
           )}
           <Button
             type="button"

@@ -22,16 +22,16 @@ export function EventLog({ entries }: EventLogProps) {
           <span className="panel-diamond">◆</span>
           EVENTS
         </span>
-        <span className="text-muted-foreground text-[11px]">{entries.length}</span>
+        <span className="text-muted-foreground text-[0.733rem]">{entries.length}</span>
       </div>
-      <div className="flex-1 overflow-y-auto text-[11px]" role="log" aria-label="Event log">
+      <div className="flex-1 overflow-y-auto text-[0.733rem]" role="log" aria-label="Event log">
         {entries.map((e, i) => (
           <div key={`${e.badge}-${+e.ts}-${i}`} className="flex items-center gap-2 px-3 py-1.5 border-b border-border/40">
-            <span className={`inline-block text-[9px] font-bold tracking-[1px] uppercase px-1.5 py-0.5 rounded-sm shrink-0 min-w-12 text-center ${badgeColors[e.badgeCls] || badgeColors['badge-system']}`}>
+            <span className={`inline-block text-[0.6rem] font-bold tracking-[1px] uppercase px-1.5 py-0.5 rounded-sm shrink-0 min-w-12 text-center ${badgeColors[e.badgeCls] || badgeColors['badge-system']}`}>
               {e.badge}
             </span>
             <span className="flex-1 text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap">{e.desc}</span>
-            <span className="text-muted-foreground shrink-0 text-[10px]">{timeAgo(e.ts)}</span>
+            <span className="text-muted-foreground shrink-0 text-[0.667rem]">{timeAgo(e.ts)}</span>
           </div>
         ))}
       </div>

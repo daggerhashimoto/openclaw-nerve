@@ -149,7 +149,7 @@ export default function LightweightChart({ chart }: { chart: ChartData }) {
           {chart.title}
           {values.length > 1 && (
             <span
-              className="ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold"
+              className="ml-2 inline-block rounded px-1.5 py-0.5 text-[0.667rem] font-semibold"
               style={{
                 backgroundColor: isPositive ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
                 color: isPositive ? '#22c55e' : '#ef4444',

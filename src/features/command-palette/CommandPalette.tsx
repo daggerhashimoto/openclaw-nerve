@@ -135,9 +135,9 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
                     setSelectedIndex(0);
                   }}
                   placeholder="Search actions, panels, and settings"
-                  className="h-12 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
+                  className="h-12 flex-1 bg-transparent text-[1rem] text-foreground outline-none placeholder:text-muted-foreground"
                 />
-                <span className="hidden text-[11px] text-muted-foreground sm:inline">Enter to run</span>
+                <span className="hidden text-[0.733rem] text-muted-foreground sm:inline">Enter to run</span>
               </div>
             </div>
 
@@ -172,7 +172,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
                           className="cockpit-command-item"
                         >
                           {cmd.icon || <CommandIcon size={15} className="text-muted-foreground" />}
-                          <span className="flex-1 text-[14px] font-medium text-foreground">{cmd.label}</span>
+                          <span className="flex-1 text-[0.933rem] font-medium text-foreground">{cmd.label}</span>
                           {cmd.shortcut && (
                             <kbd className="cockpit-kbd">
                               {cmd.shortcut}
@@ -187,7 +187,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
             </div>
 
             {/* Footer hint */}
-            <div className="flex items-center gap-4 border-t border-border/60 bg-background/45 px-4 py-3 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-4 border-t border-border/60 bg-background/45 px-4 py-3 text-[0.733rem] text-muted-foreground">
               <span className="flex items-center gap-1">
                 <kbd className="cockpit-kbd">↑↓</kbd> navigate
               </span>

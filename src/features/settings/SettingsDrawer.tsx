@@ -210,7 +210,7 @@ export function SettingsDrawer({
                     disabled={disabled}
                     onClick={() => setActiveCategory(category.key)}
                     data-active={isActive}
-                    className={`shell-chip min-h-11 min-w-[calc(50%-0.25rem)] flex-1 justify-center whitespace-nowrap px-3.5 text-[12px] font-medium sm:min-h-10 sm:min-w-0 sm:flex-none sm:justify-start ${disabled ? 'cursor-not-allowed opacity-45 hover:translate-y-0 hover:border-border/80 hover:text-muted-foreground' : ''}`}
+                    className={`shell-chip min-h-11 min-w-[calc(50%-0.25rem)] flex-1 justify-center whitespace-nowrap px-3.5 text-[0.8rem] font-medium sm:min-h-10 sm:min-w-0 sm:flex-none sm:justify-start ${disabled ? 'cursor-not-allowed opacity-45 hover:translate-y-0 hover:border-border/80 hover:text-muted-foreground' : ''}`}
                   >
                       <Icon size={12} aria-hidden="true" />
                     <span>{category.label}</span>
@@ -273,9 +273,9 @@ export function SettingsDrawer({
               Sign Out
             </button>
           )}
-          <div className="flex items-center justify-between gap-3 px-1 text-[11px] text-muted-foreground/70">
+          <div className="flex items-center justify-between gap-3 px-1 text-[0.733rem] text-muted-foreground/70">
             <span>OpenClaw Nerve</span>
-            <span className="font-mono text-[10px] tracking-[0.08em]">v{__APP_VERSION__}</span>
+            <span className="font-mono text-[0.667rem] tracking-[0.08em]">v{__APP_VERSION__}</span>
           </div>
         </div>
       </div>

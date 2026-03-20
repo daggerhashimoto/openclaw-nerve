@@ -35,7 +35,7 @@ function TaskRow({ task, onClick }: { task: KanbanTask; onClick: () => void }) {
         {task.title}
       </span>
       {task.assignee && (
-        <span className="shrink-0 text-[10px] text-muted-foreground truncate max-w-[60px]">
+        <span className="shrink-0 text-[0.667rem] text-muted-foreground truncate max-w-[60px]">
           {task.assignee.replace(/^agent:/, '')}
         </span>
       )}
@@ -59,16 +59,16 @@ function StatusSection({
   return (
     <div className="mb-2 last:mb-0">
       <div className="mb-1 flex items-center gap-2 px-2">
-        <span className={`text-[10px] font-medium uppercase tracking-[0.16em] ${tone.textClass}`}>
+        <span className={`text-[0.667rem] font-medium uppercase tracking-[0.16em] ${tone.textClass}`}>
           {COLUMN_LABELS[status]}
         </span>
-        <span className="font-mono text-[10px] text-muted-foreground/60">{tasks.length}</span>
+        <span className="font-mono text-[0.667rem] text-muted-foreground/60">{tasks.length}</span>
       </div>
       {visible.map(task => (
         <TaskRow key={task.id} task={task} onClick={() => onOpenTask(task)} />
       ))}
       {overflow > 0 && (
-        <span className="block px-1.5 text-[10px] text-muted-foreground/50">
+        <span className="block px-1.5 text-[0.667rem] text-muted-foreground/50">
           +{overflow} more
         </span>
       )}
@@ -95,7 +95,7 @@ export function KanbanQuickView({ onOpenBoard, onOpenTask }: KanbanQuickViewProp
       <div className="border-b border-border/40 px-3 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="cockpit-kicker text-[9px]">
+            <span className="cockpit-kicker text-[0.6rem]">
               <span className="text-primary">◆</span>
               Kanban
             </span>
@@ -107,7 +107,7 @@ export function KanbanQuickView({ onOpenBoard, onOpenTask }: KanbanQuickViewProp
         </div>
         <button
           onClick={onOpenBoard}
-          className="cockpit-toolbar-button px-3 text-[11px]"
+          className="cockpit-toolbar-button px-3 text-[0.733rem]"
         >
           Open Board
           <ArrowRight size={11} />
@@ -118,15 +118,15 @@ export function KanbanQuickView({ onOpenBoard, onOpenTask }: KanbanQuickViewProp
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto px-2 py-3">
         {error && (
-          <p className="text-[11px] text-destructive px-1.5">{error}</p>
+          <p className="text-[0.733rem] text-destructive px-1.5">{error}</p>
         )}
         {loading && !error && (
-          <p className="px-2 text-[11px] text-muted-foreground/60 animate-pulse">Loading tasks…</p>
+          <p className="px-2 text-[0.733rem] text-muted-foreground/60 animate-pulse">Loading tasks…</p>
         )}
         {!loading && allEmpty && !error && (
           <div className="px-2 py-5 text-center">
             <div className="cockpit-badge mx-auto w-fit">Quiet board</div>
-            <p className="mt-3 text-[11px] text-muted-foreground/70">No active tasks right now.</p>
+            <p className="mt-3 text-[0.733rem] text-muted-foreground/70">No active tasks right now.</p>
           </div>
         )}
         {!loading && !allEmpty && sections.map(({ status, tasks }) =>

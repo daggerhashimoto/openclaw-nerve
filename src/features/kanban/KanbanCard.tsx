@@ -13,26 +13,26 @@ function RunBadge({ status }: { status: string }) {
   switch (safeStatus) {
     case 'running':
       return (
-        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${tone.textClass}`}>
+        <span className={`inline-flex items-center gap-1 text-[0.667rem] font-semibold ${tone.textClass}`}>
           <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
           Live
         </span>
       );
     case 'done':
       return (
-        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${tone.textClass}`}>
+        <span className={`inline-flex items-center gap-1 text-[0.667rem] font-semibold ${tone.textClass}`}>
           <CheckCircle2 size={10} /> Done
         </span>
       );
     case 'error':
       return (
-        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${tone.textClass}`}>
+        <span className={`inline-flex items-center gap-1 text-[0.667rem] font-semibold ${tone.textClass}`}>
           <AlertCircle size={10} /> Error
         </span>
       );
     case 'aborted':
       return (
-        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${tone.textClass}`}>
+        <span className={`inline-flex items-center gap-1 text-[0.667rem] font-semibold ${tone.textClass}`}>
           <XCircle size={10} /> Aborted
         </span>
       );
@@ -117,14 +117,14 @@ function CardContent({
           aria-label={`Priority: ${priorityLabel}`}
           role="img"
         />
-        <span className="text-[13px] font-semibold leading-[18px] text-foreground line-clamp-2 min-w-0">
+        <span className="text-[0.867rem] font-semibold leading-[18px] text-foreground line-clamp-2 min-w-0">
           {task.title}
         </span>
       </div>
 
       {/* Row 2: description preview */}
       {task.description && (
-        <p className="mt-1 ml-4 text-[11px] leading-[15px] text-muted-foreground line-clamp-1">
+        <p className="mt-1 ml-4 text-[0.733rem] leading-[15px] text-muted-foreground line-clamp-1">
           {task.description}
         </p>
       )}
@@ -135,13 +135,13 @@ function CardContent({
           {task.labels.slice(0, 3).map((label, idx) => (
             <span
               key={`${label}-${idx}`}
-              className="rounded-full border border-border/55 bg-background/50 px-2 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+              className="rounded-full border border-border/55 bg-background/50 px-2 py-0.5 text-[0.667rem] font-medium leading-none text-muted-foreground"
             >
               {label}
             </span>
           ))}
           {task.labels.length > 3 && (
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-[0.667rem] text-muted-foreground">
               +{task.labels.length - 3}
             </span>
           )}
@@ -149,7 +149,7 @@ function CardContent({
       )}
 
       {/* Row 3: meta line (assignee, run status, time) */}
-      <div className="flex items-center gap-2 mt-1.5 ml-4 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-2 mt-1.5 ml-4 text-[0.733rem] text-muted-foreground">
         {task.assignee && (
           <span className="truncate max-w-[100px]">
             {task.assignee === 'operator' ? 'Operator' : task.assignee.replace('agent:', '@')}
@@ -159,7 +159,7 @@ function CardContent({
         {task.run && <RunBadge status={task.run.status} />}
 
         {task.run?.status === 'running' && task.run.startedAt && (
-          <span className="inline-flex items-center gap-0.5 text-[10px] text-info/80">
+          <span className="inline-flex items-center gap-0.5 text-[0.667rem] text-info/80">
             <Clock size={9} />
             <ElapsedTime since={task.run.startedAt} />
           </span>

@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Tailscale IP and Tailscale Serve setup flows in the installer, with matching installer-step documentation (PR #116)
 - An **After run** selector for one-shot subagents, with **Keep** and **Delete** cleanup options (PR #120)
+- **Font size setting** in Appearance settings — adjustable from 10px to 24px via dropdown, stored in `localStorage`, applied instantly via CSS custom property. All hardcoded `px` font sizes converted to `rem` units so the entire UI scales proportionally (PR #128)
 
 ### Changed
 - Workspace scope is now derived from the owning top-level agent, including when viewing subagent sessions (PR #123)

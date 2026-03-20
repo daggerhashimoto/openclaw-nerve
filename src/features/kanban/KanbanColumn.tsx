@@ -36,11 +36,11 @@ export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardCl
     >
       <div className="sticky top-0 z-10 flex h-11 items-center justify-between border-b border-border/55 bg-card/78 px-3 backdrop-blur-lg">
         <div className="flex items-center gap-2">
-          <span className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${accent.textClass}`}>
+          <span className={`text-[0.733rem] font-semibold uppercase tracking-[0.18em] ${accent.textClass}`}>
             {COLUMN_LABELS[status]}
           </span>
         </div>
-        <span className={`inline-flex min-w-[28px] items-center justify-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tabular-nums ${accent.badgeClass}`}>
+        <span className={`inline-flex min-w-[28px] items-center justify-center rounded-full border px-2 py-0.5 text-[0.667rem] font-semibold tabular-nums ${accent.badgeClass}`}>
           {tasks.length}
         </span>
       </div>

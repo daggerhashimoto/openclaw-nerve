@@ -63,7 +63,7 @@ All global state flows through four React contexts, nested in dependency order:
 | Context | File | Responsibilities |
 |---------|------|-----------------|
 | **GatewayContext** | `src/contexts/GatewayContext.tsx` | WebSocket connection lifecycle, RPC method calls, event fan-out via pub/sub pattern, model/thinking status polling, activity sparkline |
-| **SettingsContext** | `src/contexts/SettingsContext.tsx` | Sound, TTS provider/model, wake word, panel ratio, theme, font, telemetry/events visibility. Persists to `localStorage` |
+| **SettingsContext** | `src/contexts/SettingsContext.tsx` | Sound, TTS provider/model, wake word, panel ratio, theme, font, font size, telemetry/events visibility. Persists to `localStorage` |
 | **SessionContext** | `src/contexts/SessionContext.tsx` | Session list (via gateway RPC), granular agent status tracking (IDLE/THINKING/STREAMING/DONE/ERROR), busy state derivation, unread session tracking, agent log, event log, session CRUD (delete, spawn, rename, abort) |
 | **ChatContext** | `src/contexts/ChatContext.tsx` | Thin orchestrator composing 4 hooks: `useChatMessages` (CRUD, history, scroll), `useChatStreaming` (deltas, processing stage, activity log), `useChatRecovery` (reconnect, retry, gap detection), `useChatTTS` (playback, voice fallback, sound feedback) |
 
@@ -172,7 +172,7 @@ Settings drawer with tabbed sections.
 | `SettingsDrawer.tsx` | Slide-out drawer container. Includes logout button when auth is enabled |
 | `ConnectionSettings.tsx` | Gateway URL/token, reconnect |
 | `AudioSettings.tsx` | TTS provider, model, voice, wake word |
-| `AppearanceSettings.tsx` | Theme, font selection |
+| `AppearanceSettings.tsx` | Theme, font family, font size selection |
 
 #### `features/tts/`
 Text-to-speech integration.

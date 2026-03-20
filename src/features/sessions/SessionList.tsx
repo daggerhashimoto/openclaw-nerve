@@ -180,7 +180,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
         {isLoading && !sessions.length ? (
           <SessionSkeletonGroup count={4} />
         ) : !sessions.length ? (
-          <div className="text-muted-foreground px-3 py-2 text-[11px]">No active sessions</div>
+          <div className="text-muted-foreground px-3 py-2 text-[0.733rem]">No active sessions</div>
         ) : flatNodes.map((node) => {
           const sessionKey = node.key;
           const sessionType = getSessionType(sessionKey);
@@ -249,9 +249,9 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
           </DialogHeader>
           <div className="py-4">
             <div className="bg-background border border-border/60 px-3 py-2">
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Session:</p>
-              <p className="text-[12px] text-foreground font-mono">{deleteTarget?.label}</p>
-              <p className="text-[10px] text-muted-foreground font-mono mt-1 break-all">{deleteTarget?.key}</p>
+              <p className="text-[0.733rem] text-muted-foreground uppercase tracking-wider mb-1">Session:</p>
+              <p className="text-[0.8rem] text-foreground font-mono">{deleteTarget?.label}</p>
+              <p className="text-[0.667rem] text-muted-foreground font-mono mt-1 break-all">{deleteTarget?.key}</p>
             </div>
           </div>
           <DialogFooter className="gap-2">

@@ -89,7 +89,7 @@ export function FileTreeNode({
   return (
     <div role="treeitem" aria-expanded={isDir ? isExpanded : undefined} aria-selected={isSelected}>
       <div
-        className={`flex items-center gap-1 py-[2px] pr-2 cursor-pointer select-none text-[12px] leading-5 hover:bg-muted/50 ${
+        className={`flex items-center gap-1 py-[2px] pr-2 cursor-pointer select-none text-[0.8rem] leading-5 hover:bg-muted/50 ${
           isSelected ? 'bg-muted/70 text-foreground' : 'text-muted-foreground'
         } ${entry.binary && !canOpen ? 'opacity-50' : ''} ${
           isDropTarget ? 'bg-primary/15 ring-1 ring-primary/40' : ''
@@ -140,7 +140,7 @@ export function FileTreeNode({
             }}
             onBlur={onRenameCommit}
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 min-w-0 bg-background border border-border/60 px-1 py-0 text-[12px] leading-5 text-foreground focus:outline-none focus:border-primary"
+            className="flex-1 min-w-0 bg-background border border-border/60 px-1 py-0 text-[0.8rem] leading-5 text-foreground focus:outline-none focus:border-primary"
           />
         ) : (
           <span className="truncate">{entry.name}</span>

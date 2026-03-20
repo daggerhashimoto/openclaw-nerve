@@ -56,9 +56,9 @@ export function ProcessingIndicator({
     <div className="flex flex-col gap-2 px-4 py-3">
       {/* Row 1: heartbeat + stage label + elapsed + dots */}
       <div className="flex items-center gap-3">
-        <span className="flex items-center gap-2 text-[12px] font-semibold text-foreground">
+        <span className="flex items-center gap-2 text-[0.8rem] font-semibold text-foreground">
           <HeartbeatPulse lastEventTimestamp={lastEventTimestamp} stage={stage} />
-          <span className={`text-[10px] ${stage === 'tool_use' ? 'text-green' : 'text-primary'}`}>◆</span>
+          <span className={`text-[0.667rem] ${stage === 'tool_use' ? 'text-green' : 'text-primary'}`}>◆</span>
           {stage === 'thinking' && (
             <span className="cockpit-badge animate-pulse" data-tone="primary">Thinking</span>
           )}
@@ -77,8 +77,8 @@ export function ProcessingIndicator({
       {/* Row 2: description line (indented to align past diamond) */}
       {descriptionText && (
         <div
-          className="break-all text-[12px] text-muted-foreground"
-          style={{ fontSize: '11px', paddingLeft: '2rem' }}
+          className="break-all text-[0.733rem] text-muted-foreground"
+          style={{ paddingLeft: '2rem' }}
         >
           {descriptionText}
         </div>
@@ -107,9 +107,8 @@ export function ProcessingIndicator({
       {/* Recovery status */}
       {isRecovering && (
         <div
-          className="text-primary"
+          className="text-primary text-[0.733rem]"
           style={{
-            fontSize: '11px',
             paddingLeft: '2rem',
           }}
         >
@@ -120,9 +119,8 @@ export function ProcessingIndicator({
       {/* Stale warning */}
       {isStale && (
         <div
-          className="text-orange"
+          className="text-orange text-[0.733rem]"
           style={{
-            fontSize: '11px',
             paddingLeft: '2rem',
             animation: 'stale-pulse 2s ease-in-out infinite',
           }}

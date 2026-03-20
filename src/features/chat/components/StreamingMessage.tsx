@@ -16,12 +16,12 @@ export function StreamingMessage({ html, elapsedMs, agentName = 'Agent' }: Strea
       <div className="flex items-center gap-2 px-4 py-2">
         <span className="cockpit-badge" data-tone="success">{agentName}</span>
         {elapsedMs > 0 && (
-          <span className="ml-auto font-mono text-[10px] tabular-nums text-muted-foreground">{formatElapsed(elapsedMs)}</span>
+          <span className="ml-auto font-mono text-[0.667rem] tabular-nums text-muted-foreground">{formatElapsed(elapsedMs)}</span>
         )}
       </div>
       <div className="ml-4 border-l-2 border-green/60 px-4 pb-3 pl-6">
         <div
-          className="msg-body whitespace-pre-wrap text-foreground text-[13px]"
+          className="msg-body whitespace-pre-wrap text-foreground text-[0.867rem]"
           dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
         />
       </div>

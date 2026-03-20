@@ -40,12 +40,12 @@ export class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, Panel
           <p className="text-xs text-muted-foreground">
             {this.props.name ? `${this.props.name} crashed` : 'Something went wrong'}
           </p>
-          <pre className="text-[10px] text-destructive max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-2">
+          <pre className="text-[0.667rem] text-destructive max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-2">
             {this.state.error?.message}
           </pre>
           <button
             onClick={this.handleRetry}
-            className="px-3 py-1 text-[10px] font-mono uppercase tracking-wider bg-muted text-muted-foreground hover:bg-muted/80 border border-border"
+            className="px-3 py-1 text-[0.667rem] font-mono uppercase tracking-wider bg-muted text-muted-foreground hover:bg-muted/80 border border-border"
           >
             Retry
           </button>

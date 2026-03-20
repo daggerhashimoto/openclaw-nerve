@@ -51,32 +51,32 @@ type PanelConfig = {
 
 const PANEL_CONFIG: Record<Exclude<PanelId, null> | "default", PanelConfig> = {
   sessions: {
-    boxClass: "w-[440px] max-w-[calc(100vw-1rem)]",
+    boxClass: "w-[440px] max-w-[calc(100vw-1.067rem)]",
     heightClass: "max-h-[70vh] opacity-100",
     contentClass: "max-h-[65vh] overflow-y-auto",
   },
   workspace: {
-    boxClass: "w-[600px] max-w-[calc(100vw-1rem)]",
+    boxClass: "w-[600px] max-w-[calc(100vw-1.067rem)]",
     heightClass: "max-h-[75vh] opacity-100",
     contentClass: "h-[70vh] max-h-[70vh] overflow-hidden",
   },
   "agent-log": {
-    boxClass: "w-[480px] max-w-[calc(100vw-1rem)]",
+    boxClass: "w-[480px] max-w-[calc(100vw-1.067rem)]",
     heightClass: "max-h-[400px] opacity-100",
     contentClass: "max-h-[400px] overflow-y-auto",
   },
   usage: {
-    boxClass: "w-[480px] max-w-[calc(100vw-1rem)]",
+    boxClass: "w-[480px] max-w-[calc(100vw-1.067rem)]",
     heightClass: "max-h-[400px] opacity-100",
     contentClass: "max-h-[400px] overflow-y-auto",
   },
   events: {
-    boxClass: "w-[480px] max-w-[calc(100vw-1rem)]",
+    boxClass: "w-[480px] max-w-[calc(100vw-1.067rem)]",
     heightClass: "max-h-[400px] opacity-100",
     contentClass: "max-h-[400px] overflow-y-auto",
   },
   default: {
-    boxClass: "w-[480px] max-w-[calc(100vw-1rem)]",
+    boxClass: "w-[480px] max-w-[calc(100vw-1.067rem)]",
     heightClass: "max-h-[400px] opacity-100",
     contentClass: "max-h-[400px] overflow-y-auto",
   },
@@ -241,7 +241,7 @@ export function TopBar({
                 Nerve
               </span>
             </div>
-            <div className="hidden xl:block text-[11px] text-muted-foreground/80">
+            <div className="hidden xl:block text-[0.733rem] text-muted-foreground/80">
               OpenClaw Cockpit{" "}
             </div>
           </div>
@@ -255,7 +255,7 @@ export function TopBar({
               aria-label="Switch to chat view"
               aria-pressed={viewMode === "chat"}
               data-active={viewMode === "chat"}
-              className="shell-chip min-h-11 flex-1 justify-center text-[11px] uppercase tracking-[0.14em] max-[371px]:min-h-[38px] max-[371px]:gap-1 max-[371px]:px-2 max-[371px]:text-[10px] max-[371px]:tracking-[0.08em] max-[371px]:[&_svg]:size-3 sm:min-h-10 sm:flex-none"
+              className="shell-chip min-h-11 flex-1 justify-center text-[0.733rem] uppercase tracking-[0.14em] max-[371px]:min-h-[38px] max-[371px]:gap-1 max-[371px]:px-2 max-[371px]:text-[0.667rem] max-[371px]:tracking-[0.08em] max-[371px]:[&_svg]:size-3 sm:min-h-10 sm:flex-none"
             >
               <MessageSquare size={13} aria-hidden="true" />
               <span>Chat</span>
@@ -266,7 +266,7 @@ export function TopBar({
               aria-label="Switch to tasks view"
               aria-pressed={viewMode === "kanban"}
               data-active={viewMode === "kanban"}
-              className="shell-chip min-h-11 flex-1 justify-center text-[11px] uppercase tracking-[0.14em] max-[371px]:min-h-[38px] max-[371px]:gap-1 max-[371px]:px-2 max-[371px]:text-[10px] max-[371px]:tracking-[0.08em] max-[371px]:[&_svg]:size-3 sm:min-h-10 sm:flex-none"
+              className="shell-chip min-h-11 flex-1 justify-center text-[0.733rem] uppercase tracking-[0.14em] max-[371px]:min-h-[38px] max-[371px]:gap-1 max-[371px]:px-2 max-[371px]:text-[0.667rem] max-[371px]:tracking-[0.08em] max-[371px]:[&_svg]:size-3 sm:min-h-10 sm:flex-none"
             >
               <LayoutGrid size={13} aria-hidden="true" />
               <span>Tasks</span>
@@ -326,7 +326,7 @@ export function TopBar({
               />
               <span className="hidden sm:inline">Log</span>
               {agentLogEntries.length > 0 && (
-                <span className="hidden min-w-5 items-center justify-center rounded-full bg-background/80 px-1.5 py-0.5 text-[9px] tabular-nums text-foreground/80 md:inline-flex">
+                <span className="hidden min-w-5 items-center justify-center rounded-full bg-background/80 px-1.5 py-0.5 text-[0.6rem] tabular-nums text-foreground/80 md:inline-flex">
                   {agentLogEntries.length}
                 </span>
               )}
@@ -348,7 +348,7 @@ export function TopBar({
               <Radio size={14} aria-hidden="true" />
               <span className="hidden sm:inline">Events</span>
               {eventEntries.length > 0 && (
-                <span className="hidden min-w-5 items-center justify-center rounded-full bg-background/80 px-1.5 py-0.5 text-[9px] tabular-nums text-foreground/80 md:inline-flex">
+                <span className="hidden min-w-5 items-center justify-center rounded-full bg-background/80 px-1.5 py-0.5 text-[0.6rem] tabular-nums text-foreground/80 md:inline-flex">
                   {eventEntries.length}
                 </span>
               )}
@@ -369,7 +369,7 @@ export function TopBar({
             <BarChart3 size={14} aria-hidden="true" />
             <span className="hidden sm:inline">Usage</span>
             {totalCost && (
-              <span className="hidden rounded-full bg-background/80 px-2 py-0.5 text-[9px] tabular-nums text-foreground/80 lg:inline-flex">
+              <span className="hidden rounded-full bg-background/80 px-2 py-0.5 text-[0.6rem] tabular-nums text-foreground/80 lg:inline-flex">
                 {totalCost}
               </span>
             )}

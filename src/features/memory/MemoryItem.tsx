@@ -105,7 +105,7 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
 
   return (
     <div
-      className={`group relative flex items-center gap-2 px-3 py-1.5 border-b border-border/40 text-[11px] hover:bg-foreground/[0.02] transition-colors ${
+      className={`group relative flex items-center gap-2 px-3 py-1.5 border-b border-border/40 text-[0.733rem] hover:bg-foreground/[0.02] transition-colors ${
         isClickable && !memory.pending && !memory.deleting ? 'cursor-pointer' : ''
       } ${stateClasses}`}
       onClick={handleClick}
@@ -127,14 +127,14 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
             {memory.text}
           </span>
           {!isExpanded && typeof itemCount === 'number' && itemCount > 0 && (
-            <span className="text-[9px] text-muted-foreground/50 shrink-0">
+            <span className="text-[0.6rem] text-muted-foreground/50 shrink-0">
               {itemCount}
             </span>
           )}
         </>
       ) : memory.type === 'daily' ? (
         <>
-          <span className="text-muted-foreground shrink-0 text-[10px] flex items-center">
+          <span className="text-muted-foreground shrink-0 text-[0.667rem] flex items-center">
             <Calendar size={10} />
           </span>
           <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -143,7 +143,7 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
         </>
       ) : (
         <>
-          <span className="text-primary shrink-0 text-[10px]">›</span>
+          <span className="text-primary shrink-0 text-[0.667rem]">›</span>
           <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground">
             {memory.text}
           </span>

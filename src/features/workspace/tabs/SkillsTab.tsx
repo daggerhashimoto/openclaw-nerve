@@ -50,25 +50,25 @@ function SkillRow({ skill }: { skill: Skill }) {
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            {skill.emoji && <span className="text-[11px]">{skill.emoji}</span>}
-            <span className="text-[11px] text-foreground leading-tight truncate font-medium">
+            {skill.emoji && <span className="text-[0.733rem]">{skill.emoji}</span>}
+            <span className="text-[0.733rem] text-foreground leading-tight truncate font-medium">
               {skill.name}
             </span>
             {/* Source badge */}
-            <span className={`text-[9px] px-1 py-px rounded-sm leading-tight ${sourceColor(skill.source)}`}>
+            <span className={`text-[0.6rem] px-1 py-px rounded-sm leading-tight ${sourceColor(skill.source)}`}>
               {skill.source}
             </span>
           </div>
           {skill.description && (
-            <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2 leading-snug">
+            <div className="text-[0.667rem] text-muted-foreground mt-0.5 line-clamp-2 leading-snug">
               {skill.description}
             </div>
           )}
           {skill.disabled && (
-            <div className="text-[10px] text-muted-foreground mt-0.5 italic">Disabled</div>
+            <div className="text-[0.667rem] text-muted-foreground mt-0.5 italic">Disabled</div>
           )}
           {skill.blockedByAllowlist && (
-            <div className="text-[10px] text-muted-foreground mt-0.5 italic">Blocked by allowlist</div>
+            <div className="text-[0.667rem] text-muted-foreground mt-0.5 italic">Blocked by allowlist</div>
           )}
         </div>
 
@@ -101,7 +101,7 @@ function SkillRow({ skill }: { skill: Skill }) {
       {/* Expanded missing requirements */}
       {expanded && hasMissing && (
         <div className="px-3 pb-2 pl-8">
-          <div className="text-[10px] text-muted-foreground">
+          <div className="text-[0.667rem] text-muted-foreground">
             <span className="text-red/70">Missing:</span>{' '}
             {formatMissing(skill.missing!)}
           </div>
@@ -132,7 +132,7 @@ export function SkillsTab({ agentId }: SkillsTabProps) {
         {/* Skills count + Refresh row */}
         {!isLoading && skills.length > 0 && (
           <div className="flex items-center border-b border-border/40">
-            <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] flex-1">
+            <div className="flex items-center gap-2 px-3 py-1.5 text-[0.733rem] flex-1">
               <span className="shrink-0 text-muted-foreground">
                 <Puzzle size={12} />
               </span>
@@ -158,7 +158,7 @@ export function SkillsTab({ agentId }: SkillsTabProps) {
         {/* Error */}
         <div aria-live="polite" aria-atomic="true">
           {error && (
-            <div className="px-3 py-2 text-[10px] text-red bg-red/10">{error}</div>
+            <div className="px-3 py-2 text-[0.667rem] text-red bg-red/10">{error}</div>
           )}
         </div>
 
@@ -175,7 +175,7 @@ export function SkillsTab({ agentId }: SkillsTabProps) {
         {!isLoading && !eligibleSkills.length && !error && (
           <div className="text-muted-foreground px-3 py-8 text-center flex flex-col items-center gap-2">
             <Puzzle size={20} className="text-muted-foreground/50" />
-            <span className="text-[11px]">No skills found</span>
+            <span className="text-[0.733rem]">No skills found</span>
           </div>
         )}
 
@@ -192,7 +192,7 @@ export function SkillsTab({ agentId }: SkillsTabProps) {
               className="w-full flex items-center gap-1.5 px-3 py-2 bg-transparent border-0 cursor-pointer text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
             >
               {showUnavailable ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-              <span className="text-[10px] uppercase tracking-wider">
+              <span className="text-[0.667rem] uppercase tracking-wider">
                 Unavailable ({unavailableSkills.length})
               </span>
             </button>

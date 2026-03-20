@@ -68,12 +68,12 @@ export function SearchBar({
         onKeyDown={handleKeyDown}
         placeholder="Search messages..."
         spellCheck={false}
-        className="flex-1 bg-transparent text-foreground text-[13px] font-mono outline-none placeholder:text-muted-foreground/50"
+        className="flex-1 bg-transparent text-foreground text-[0.867rem] font-mono outline-none placeholder:text-muted-foreground/50"
       />
 
       {/* Results counter */}
       {query.trim() && (
-        <span className={`text-[10px] tabular-nums shrink-0 ${noResults ? 'text-red' : 'text-muted-foreground'}`}>
+        <span className={`text-[0.667rem] tabular-nums shrink-0 ${noResults ? 'text-red' : 'text-muted-foreground'}`}>
           {hasResults ? (
             <>{currentMatchIndex + 1} / {matchCount}</>
           ) : (

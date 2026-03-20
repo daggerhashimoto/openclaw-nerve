@@ -99,12 +99,12 @@ export function ContextMeter({ used, limit }: ContextMeterProps) {
       <AnimatedNumber 
         value={used} 
         format={fmtK}
-        className={`font-mono text-[10px] max-[378px]:text-[9px] ${colors.text}`}
+        className={`font-mono text-[0.667rem] max-[378px]:text-[0.6rem] ${colors.text}`}
         duration={700}
       />
 
       {/* Label - changes based on state */}
-      <span className={`font-mono text-[9px] uppercase tracking-[0.2em] max-[378px]:text-[8px] max-[378px]:tracking-[0.14em] ${colors.text}`}>
+      <span className={`font-mono text-[0.6rem] uppercase tracking-[0.2em] max-[378px]:text-[0.533rem] max-[378px]:tracking-[0.14em] ${colors.text}`}>
         Context
       </span>
     </div>

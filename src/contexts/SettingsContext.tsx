@@ -40,10 +40,18 @@ interface SettingsContextValue {
   setTheme: (theme: ThemeName) => void;
   font: FontName;
   setFont: (font: FontName) => void;
+  fontSize: number;
+  setFontSize: (size: number) => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 const FONT_REFRESH_STORAGE_KEY = 'nerve:font-refresh-20260312';
+
+const ALLOWED_FONT_SIZES = new Set([10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24]);
+
+function normalizeFontSize(size: number): number {
+  return Number.isFinite(size) && ALLOWED_FONT_SIZES.has(size) ? size : 15;
+}
 
 function resolveInitialFont(): FontName {
   const saved = localStorage.getItem('oc-font');
@@ -108,6 +116,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     return saved && themeNames.includes(saved) ? saved : 'ayu-dark';
   });
   const [font, setFontState] = useState<FontName>(resolveInitialFont);
+  const [fontSize, setFontSizeState] = useState<number>(() => {
+    const saved = localStorage.getItem('nerve:font-size');
+    const parsed = saved ? parseInt(saved, 10) : NaN;
+    return normalizeFontSize(parsed);
+  });
   const { speak } = useTTS(soundEnabled, ttsProvider, ttsModel || undefined);
   const wakeWordToggleRef = useRef<(() => void) | null>(null);
 
@@ -120,6 +133,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     applyFont(font);
   }, [font]);
+
+  // Apply font size on mount and when it changes
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-size-base', `${fontSize}px`);
+  }, [fontSize]);
 
   const toggleSound = useCallback(() => {
     setSoundEnabled(prev => {
@@ -263,6 +281,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('oc-font', newFont);
   }, []);
 
+  const setFontSize = useCallback((size: number) => {
+    const normalized = normalizeFontSize(size);
+    setFontSizeState(normalized);
+    localStorage.setItem('nerve:font-size', String(normalized));
+  }, []);
+
   const value = useMemo<SettingsContextValue>(() => ({
     soundEnabled,
     toggleSound,
@@ -296,6 +320,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setTheme,
     font,
     setFont,
+    fontSize,
+    setFontSize,
   }), [
     soundEnabled, toggleSound, ttsProvider, ttsModel, changeTtsProvider, changeTtsModel, toggleTtsProvider,
     sttProvider, changeSttProvider, sttInputMode, changeSttInputMode, sttModel, changeSttModel,
@@ -303,6 +329,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     liveTranscriptionPreview, toggleLiveTranscriptionPreview,
     speak, panelRatio, setPanelRatio, telemetryVisible, toggleTelemetry,
     eventsVisible, toggleEvents, logVisible, toggleLog, theme, setTheme, font, setFont,
+    fontSize, setFontSize,
   ]);
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

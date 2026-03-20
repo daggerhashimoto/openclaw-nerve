@@ -17,11 +17,11 @@ export function MemoriesSection({ memories, isCollapsed, onToggle }: MemoriesSec
           <CollapsibleTrigger className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left transition-colors cursor-pointer hover:bg-primary/[0.04]">
             <ChevronRight size={12} className={`text-muted-foreground shrink-0 transition-transform duration-200 ${!isCollapsed ? 'rotate-90' : ''}`} />
             <Brain size={12} className="shrink-0 text-primary/80" />
-            <span className="flex-1 truncate text-[11px] font-medium text-muted-foreground">Referenced memories</span>
+            <span className="flex-1 truncate text-[0.733rem] font-medium text-muted-foreground">Referenced memories</span>
           </CollapsibleTrigger>
           <CollapsibleContent>
             <CardContent className="border-t border-border/40 bg-background/32 px-3.5 py-3">
-              <div className="max-h-[200px] overflow-y-auto whitespace-pre-wrap text-[12px] leading-6 text-foreground/74">
+              <div className="max-h-[200px] overflow-y-auto whitespace-pre-wrap text-[0.8rem] leading-6 text-foreground/74">
                 {memories}
               </div>
             </CardContent>

@@ -41,7 +41,7 @@ export function EditorTab({
       aria-selected={active}
       aria-controls={`tabpanel-${id}`}
       id={`tab-${id}`}
-      className={`flex items-center gap-1.5 px-3 h-full text-[12px] whitespace-nowrap border-b-2 transition-colors shrink-0 ${
+      className={`flex items-center gap-1.5 px-3 h-full text-[0.8rem] whitespace-nowrap border-b-2 transition-colors shrink-0 ${
         active
           ? 'border-primary text-foreground bg-background'
           : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30'
@@ -56,7 +56,7 @@ export function EditorTab({
 
       {/* Dirty indicator */}
       {dirty && !locked && (
-        <span className="text-primary text-[10px] leading-none">●</span>
+        <span className="text-primary text-[0.667rem] leading-none">●</span>
       )}
 
       {/* Label */}

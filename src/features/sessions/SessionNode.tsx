@@ -252,12 +252,12 @@ export const SessionNode = memo(function SessionNode({
             }}
             onBlur={onRenameCommit}
             onClick={(e) => e.stopPropagation()}
-            className="text-foreground text-[10px] font-bold flex-1 min-w-0 bg-background border border-border/60 px-1 py-0 font-mono focus:outline-none focus:border-primary"
+            className="text-foreground text-[0.667rem] font-bold flex-1 min-w-0 bg-background border border-border/60 px-1 py-0 font-mono focus:outline-none focus:border-primary"
           />
         ) : (
           <SessionInfoPanel session={node.session} running={running}>
             <span className={cn(
-              "text-[10px] font-bold flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap cursor-help",
+              "text-[0.667rem] font-bold flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap cursor-help",
               isCronRun ? "text-muted-foreground font-normal" : "text-foreground"
             )}>
               {isCron && <Timer size={11} className="text-purple mr-1 inline shrink-0" aria-label="Cron job" />}
@@ -283,14 +283,14 @@ export const SessionNode = memo(function SessionNode({
         <AnimatedNumber
           value={displayTokens}
           format={fmtK}
-          className="text-muted-foreground text-[9px] w-14 text-right shrink-0"
+          className="text-muted-foreground text-[0.6rem] w-14 text-right shrink-0"
           duration={700}
         />
 
         {/* Unread indicator + Status badge */}
         {isUnread && <span className="unread-dot" aria-label="Unread" />}
         <span
-          className={`text-[9px] font-bold tracking-[1px] uppercase px-1.5 py-0.5 rounded-sm shrink-0 ${badgeClasses}`}
+          className={`text-[0.6rem] font-bold tracking-[1px] uppercase px-1.5 py-0.5 rounded-sm shrink-0 ${badgeClasses}`}
         >
           {badgeText}
         </span>
@@ -306,7 +306,7 @@ export const SessionNode = memo(function SessionNode({
                     type="button"
                     onClick={handleAbortFromMenu}
                     title="Abort session"
-                    className="bg-card border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
+                    className="bg-card border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
                   >
                     ⏹
                   </button>
@@ -316,7 +316,7 @@ export const SessionNode = memo(function SessionNode({
                     type="button"
                     onClick={handleRenameFromMenu}
                     title="Rename session"
-                    className="bg-card border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
+                    className="bg-card border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
                   >
                     <PenLine size={10} />
                   </button>
@@ -326,7 +326,7 @@ export const SessionNode = memo(function SessionNode({
                     type="button"
                     onClick={handleDeleteFromMenu}
                     title="Delete session"
-                    className="bg-card border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
+                    className="bg-card border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
                   >
                     ✕
                   </button>
@@ -340,7 +340,7 @@ export const SessionNode = memo(function SessionNode({
               title="Session actions"
               aria-label="Session actions"
               aria-expanded={actionsOpen}
-              className="bg-transparent border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[10px] w-6 h-6 flex items-center justify-center"
+              className="bg-transparent border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[0.667rem] w-6 h-6 flex items-center justify-center"
             >
               <EllipsisVertical size={12} />
             </button>
@@ -354,7 +354,7 @@ export const SessionNode = memo(function SessionNode({
               type="button"
               onClick={handleAbortClick}
               title="Abort session"
-              className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
+              className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
             >
               ⏹
             </button>
@@ -366,7 +366,7 @@ export const SessionNode = memo(function SessionNode({
                   type="button"
                   onClick={handleRenameClick}
                   title="Rename session"
-                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
+                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
                 >
                   <PenLine size={10} />
                 </button>
@@ -376,7 +376,7 @@ export const SessionNode = memo(function SessionNode({
                   type="button"
                   onClick={handleDeleteClick}
                   title="Delete session"
-                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[10px] w-5 h-5 flex items-center justify-center"
+                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
                 >
                   ✕
                 </button>

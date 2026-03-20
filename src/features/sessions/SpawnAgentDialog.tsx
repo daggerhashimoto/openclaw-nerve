@@ -201,8 +201,8 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
       <DialogContent
         className={
           mode === null
-            ? 'max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain sm:max-h-[min(100dvh-4rem,54rem)] sm:overflow-visible sm:max-w-4xl lg:max-w-[72rem]'
-            : 'max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain sm:max-h-[min(100dvh-4rem,48rem)] sm:overflow-visible sm:max-w-xl'
+            ? 'max-h-[calc(100dvh-1.067rem)] overflow-y-auto overscroll-contain sm:max-h-[min(100dvh-4rem,54rem)] sm:overflow-visible sm:max-w-4xl lg:max-w-[72rem]'
+            : 'max-h-[calc(100dvh-1.067rem)] overflow-y-auto overscroll-contain sm:max-h-[min(100dvh-4rem,48rem)] sm:overflow-visible sm:max-w-xl'
         }
       >
         {mode === null ? (
@@ -223,14 +223,14 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                     </DialogDescription>
                   </div>
                   <div className="hidden min-w-[170px] rounded-[20px] border border-border/70 bg-background/60 p-3 sm:block">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground/80">2-step flow</div>
+                    <div className="text-[0.667rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground/80">2-step flow</div>
                     <div className="mt-3 space-y-2 text-xs text-muted-foreground">
                       <div className="flex items-center gap-2 text-foreground">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/18 text-[10px] font-semibold text-primary">1</span>
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/18 text-[0.667rem] font-semibold text-primary">1</span>
                         Choose agent type
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted/70 text-[10px] font-semibold text-muted-foreground">2</span>
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted/70 text-[0.667rem] font-semibold text-muted-foreground">2</span>
                         Configure the runtime
                       </div>
                     </div>
@@ -258,7 +258,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                         <div className="text-base font-semibold tracking-[-0.02em] text-foreground">New agent</div>
                       </div>
                     </div>
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground/80">Independent</span>
+                    <span className="text-[0.667rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground/80">Independent</span>
                   </div>
 
                   <div className="space-y-2">
@@ -267,7 +267,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                     </p>
                   </div>
 
-                  <div className="grid gap-2 text-[12px] text-muted-foreground sm:grid-cols-2">
+                  <div className="grid gap-2 text-[0.8rem] text-muted-foreground sm:grid-cols-2">
                     <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
                       Own root conversation
                     </div>
@@ -314,7 +314,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                         <div className="text-base font-semibold tracking-[-0.02em] text-foreground">New subagent</div>
                       </div>
                     </div>
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground/80">Focused</span>
+                    <span className="text-[0.667rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground/80">Focused</span>
                   </div>
 
                   <div className="space-y-2">
@@ -323,7 +323,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                     </p>
                   </div>
 
-                  <div className="grid gap-2 text-[12px] text-muted-foreground">
+                  <div className="grid gap-2 text-[0.8rem] text-muted-foreground">
                     <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
                       Pick which root owns the work
                     </div>
@@ -343,7 +343,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                   </div>
 
                   {!hasRootAgents && (
-                    <div className="rounded-[16px] border border-border/70 bg-background/58 px-3 py-2 text-[12px] leading-5 text-muted-foreground">
+                    <div className="rounded-[16px] border border-border/70 bg-background/58 px-3 py-2 text-[0.8rem] leading-5 text-muted-foreground">
                       Create a top-level agent first, then come back here to launch attached subagents.
                     </div>
                   )}
@@ -352,7 +352,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
             </div>
 
             <DialogFooter className="items-center justify-between gap-3 sm:flex-row">
-              <p className="text-[12px] leading-5 text-muted-foreground">
+              <p className="text-[0.8rem] leading-5 text-muted-foreground">
                 Top-level agents are full sessions. Subagents are short-lived specialists that stay under one of those agents.
               </p>
               <Button type="button" variant="outline" onClick={handleCancel} className="text-xs">

@@ -36,9 +36,9 @@ export function AgentLog({ entries, glow }: AgentLogProps) {
           const ts = new Date(e.ts);
           const timeStr = ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
           return (
-            <div key={`${e.ts}-${i}`} className="flex items-center gap-2 px-3 py-1.5 border-b border-border/40 text-[10px]">
-              <span className="text-muted-foreground shrink-0 text-[9px] w-11 tabular-nums">{timeStr}</span>
-              <span className="shrink-0 text-[11px] flex items-center" aria-hidden="true">{iconMap[e.icon] || e.icon}</span>
+            <div key={`${e.ts}-${i}`} className="flex items-center gap-2 px-3 py-1.5 border-b border-border/40 text-[0.667rem]">
+              <span className="text-muted-foreground shrink-0 text-[0.6rem] w-11 tabular-nums">{timeStr}</span>
+              <span className="shrink-0 text-[0.733rem] flex items-center" aria-hidden="true">{iconMap[e.icon] || e.icon}</span>
               <span className="flex-1 text-foreground overflow-hidden text-ellipsis whitespace-nowrap">{e.text}</span>
             </div>
           );

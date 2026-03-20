@@ -235,7 +235,7 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
       <div aria-live="polite" aria-atomic="true">
         {feedback && (
           <div
-            className={`px-3 py-1.5 text-[10px] flex items-center gap-1.5 border-b ${
+            className={`px-3 py-1.5 text-[0.667rem] flex items-center gap-1.5 border-b ${
               feedback.type === 'success'
                 ? 'bg-green/10 text-green border-green/20'
                 : 'bg-red/10 text-red border-red/20'
@@ -253,7 +253,7 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
 
       {/* Error display */}
       {error && !feedback && (
-        <div className="px-3 py-1.5 text-[10px] flex items-center gap-1.5 bg-red/10 text-red border-b border-red/20">
+        <div className="px-3 py-1.5 text-[0.667rem] flex items-center gap-1.5 bg-red/10 text-red border-b border-red/20">
           <AlertCircle size={10} />
           {error}
           <button
@@ -271,7 +271,7 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
         {initialLoading && !memories.length ? (
           <MemorySkeletonGroup count={6} />
         ) : !memories.length ? (
-          <div className="text-muted-foreground px-3 py-4 text-[11px] text-center">
+          <div className="text-muted-foreground px-3 py-4 text-[0.733rem] text-center">
             <p>No memories yet</p>
             <button
               onClick={() => setAddDialogOpen(true)}
@@ -285,7 +285,7 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
           <div className="flex items-center border-b border-border/40">
             <button
               onClick={openAddDialog}
-              className="group flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-foreground/[0.02] transition-colors cursor-pointer flex-1 bg-transparent border-0 text-left focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+              className="group flex items-center gap-2 px-3 py-1.5 text-[0.733rem] hover:bg-foreground/[0.02] transition-colors cursor-pointer flex-1 bg-transparent border-0 text-left focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
               aria-label="Add new memory"
             >
               <span className="shrink-0 text-muted-foreground group-hover:text-purple transition-colors">

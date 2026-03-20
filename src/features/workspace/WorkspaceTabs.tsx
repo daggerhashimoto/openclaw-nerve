@@ -78,7 +78,7 @@ export function WorkspaceTabs({ activeTab, onTabChange, cronCount, kanbanCount }
             <Icon size={11} />
             <span className="uppercase">{tab.label}</span>
             {badge !== undefined && (
-              <span className="text-[9px] opacity-70">({badge})</span>
+              <span className="text-[0.6rem] opacity-70">({badge})</span>
             )}
           </button>
         );

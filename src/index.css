@@ -8,6 +8,7 @@
 @theme {
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
   --font-sans: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+  --font-size-base: 15px;
 }
 
 @layer base {
@@ -15,6 +16,7 @@
     background: var(--color-background);
     color-scheme: dark light;
     scrollbar-gutter: stable both-edges;
+    font-size: var(--font-size-base);
   }
   * {
     @apply border-border/60 outline-ring/50;
@@ -24,7 +26,9 @@
       color-mix(in srgb, var(--color-secondary) 52%, var(--color-background));
   }
   body {
-    @apply bg-background text-foreground font-sans text-[15px] antialiased;
+    @apply bg-background text-foreground font-sans antialiased;
+
+    font-size: var(--font-size-base);
     line-height: 1.55;
     font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
     background-image:
@@ -196,7 +200,7 @@
   position: absolute;
   right: 12px;
   top: 8px;
-  font-size: 11px;
+  font-size: 0.733rem;
   color: var(--color-red);
 }
 
@@ -388,7 +392,7 @@
   border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
   background: color-mix(in srgb, var(--color-background) 42%, transparent);
   color: var(--color-muted-foreground);
-  font-size: 11px;
+  font-size: 0.733rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   transition:
@@ -432,7 +436,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 10px;
+  font-size: 0.667rem;
   font-weight: 700;
   letter-spacing: 0.22em;
   text-transform: uppercase;
@@ -448,7 +452,7 @@
 }
 
 .cockpit-copy {
-  font-size: 13px;
+  font-size: 0.867rem;
   line-height: 1.55;
   color: color-mix(in srgb, var(--color-foreground) 72%, var(--color-muted-foreground));
 }
@@ -520,7 +524,7 @@
   .cockpit-input,
   .cockpit-select,
   .cockpit-textarea {
-    font-size: 16px;
+    font-size: 1.067rem;
   }
 
   .cockpit-note {
@@ -542,7 +546,7 @@
 }
 
 .cockpit-field-label {
-  font-size: 11px;
+  font-size: 0.733rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -550,7 +554,7 @@
 }
 
 .cockpit-field-hint {
-  font-size: 12px;
+  font-size: 0.8rem;
   line-height: 1.45;
   color: color-mix(in srgb, var(--color-muted-foreground) 88%, transparent);
 }
@@ -577,13 +581,13 @@
 .cockpit-select {
   min-height: 44px;
   padding: 0 14px;
-  font-size: 14px;
+  font-size: 0.933rem;
 }
 
 .cockpit-textarea {
   min-height: 120px;
   padding: 12px 14px;
-  font-size: 14px;
+  font-size: 0.933rem;
   line-height: 1.55;
   resize: vertical;
 }
@@ -606,7 +610,7 @@
 .cockpit-select-mono,
 .cockpit-code {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 0.867rem;
 }
 
 .cockpit-note {
@@ -614,7 +618,7 @@
   border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
   background: color-mix(in srgb, var(--color-background) 48%, transparent);
   padding: 12px 14px;
-  font-size: 12px;
+  font-size: 0.8rem;
   line-height: 1.55;
   color: color-mix(in srgb, var(--color-foreground) 74%, var(--color-muted-foreground));
 }
@@ -639,7 +643,7 @@
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
   background: color-mix(in srgb, var(--color-background) 48%, transparent);
-  font-size: 11px;
+  font-size: 0.733rem;
   font-weight: 600;
   line-height: 1;
   color: var(--color-muted-foreground);
@@ -679,7 +683,7 @@
   border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
   background: color-mix(in srgb, var(--color-background) 70%, transparent);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 0.667rem;
   color: var(--color-muted-foreground);
 }
 
@@ -694,7 +698,7 @@
   border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
   background: color-mix(in srgb, var(--color-background) 42%, transparent);
   color: var(--color-muted-foreground);
-  font-size: 12px;
+  font-size: 0.8rem;
   font-weight: 600;
   transition:
     border-color 0.15s ease,
@@ -754,7 +758,7 @@
 
 .cockpit-command-section {
   padding: 10px 18px 6px;
-  font-size: 10px;
+  font-size: 0.667rem;
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -797,7 +801,7 @@
 }
 .panel-header .panel-label {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 0.667rem;
   font-weight: 700;
   letter-spacing: 0.24em;
   text-transform: uppercase;
@@ -806,17 +810,17 @@
   gap: 6px;
 }
 .panel-header .panel-diamond {
-  font-size: 11px;
+  font-size: 0.733rem;
 }
 
 /* Intermediate assistant messages — reduced visual weight */
-.msg-body-intermediate { font-size: 12px; line-height: 1.4; opacity: 0.7; }
+.msg-body-intermediate { font-size: 0.8rem; line-height: 1.4; opacity: 0.7; }
 .msg-body-intermediate p { margin: 0; }
-.msg-body-intermediate code { font-size: 11px; }
+.msg-body-intermediate code { font-size: 0.733rem; }
 
 /* Markdown rendering */
 .msg-body {
-  font-size: 14px;
+  font-size: 0.933rem;
   line-height: 1.7;
   width: 100%;
   min-width: 0;
@@ -847,7 +851,7 @@
 }
 .msg-body blockquote {
   margin: 0.9em 0;
-  padding: 0.2em 0 0.2em 1rem;
+  padding: 0.2em 0 0.2em 1.067rem;
   border-left: 2px solid color-mix(in srgb, var(--color-primary) 38%, transparent);
   color: color-mix(in srgb, var(--color-foreground) 76%, var(--color-muted-foreground));
   overflow-wrap: anywhere;
@@ -865,7 +869,7 @@
   border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
   padding: 2px 6px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: 0.8rem;
   white-space: break-spaces;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -897,7 +901,7 @@
   position: absolute;
   top: 4px;
   right: 8px;
-  font-size: 11px;
+  font-size: 0.733rem;
   color: var(--color-muted-foreground);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -970,7 +974,7 @@
 }
 .code-diff-view {
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  font-size: 12px;
+  font-size: 0.8rem;
   line-height: 1.5;
   margin: 0;
   padding: 8px 0;
@@ -1008,7 +1012,7 @@
   border: 1px solid var(--color-border);
   border-radius: 4px;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 0.8rem;
 }
 .diff-header {
   display: flex;
@@ -1021,10 +1025,10 @@
 }
 .diff-filepath {
   color: var(--color-primary);
-  font-size: 11px;
+  font-size: 0.733rem;
 }
 .diff-stats {
-  font-size: 11px;
+  font-size: 0.733rem;
   opacity: 0.7;
 }
 .diff-panels {
@@ -1039,7 +1043,7 @@
   border-right: 1px solid var(--color-border);
 }
 .diff-panel-label {
-  font-size: 11px;
+  font-size: 0.733rem;
   font-weight: 700;
   letter-spacing: 1px;
   padding: 3px 10px;
@@ -1057,7 +1061,7 @@
   margin: 0;
   padding: 0;
   background: transparent;
-  font-size: 11px;
+  font-size: 0.733rem;
   line-height: 1.6;
 }
 .diff-line {
@@ -1096,7 +1100,7 @@
   border: 1px solid color-mix(in srgb, var(--color-green) 15%, transparent);
   border-radius: 4px;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 0.8rem;
 }
 .file-content-header {
   display: flex;
@@ -1108,7 +1112,7 @@
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
 }
 .file-content-badge {
-  font-size: 11px;
+  font-size: 0.733rem;
   font-weight: 700;
   letter-spacing: 1px;
   padding: 1px 5px;
@@ -1118,11 +1122,11 @@
 }
 .file-content-filepath {
   color: var(--color-primary);
-  font-size: 11px;
+  font-size: 0.733rem;
   flex: 1;
 }
 .file-content-stats {
-  font-size: 11px;
+  font-size: 0.733rem;
   color: var(--color-green);
   opacity: 0.7;
 }
@@ -1130,7 +1134,7 @@
   margin: 0;
   padding: 0;
   background: transparent;
-  font-size: 11px;
+  font-size: 0.733rem;
   line-height: 1.6;
   max-height: 400px;
   overflow-y: auto;
@@ -1170,7 +1174,7 @@
 .tool-result-details summary {
   cursor: pointer;
   color: var(--color-muted-foreground);
-  font-size: 11px;
+  font-size: 0.733rem;
   font-family: var(--font-mono);
   letter-spacing: 0.3px;
   user-select: none;
@@ -1190,7 +1194,7 @@
   border-bottom: 1px solid var(--color-border);
 }
 .tool-result-body {
-  font-size: 12px;
+  font-size: 0.8rem;
   font-family: var(--font-mono);
   opacity: 0.85;
   padding: 8px 10px;
@@ -1208,7 +1212,7 @@
 
 /* Markdown tables */
 .markdown-content {
-  @apply text-[13px];
+  @apply text-[0.867rem];
   min-width: 0;
   max-width: 100%;
 }
@@ -1221,7 +1225,8 @@
 }
 .markdown-content table.markdown-table {
   @apply w-full border-collapse border-border;
-  font-size: 12px;
+
+  font-size: 0.8rem;
 }
 .markdown-content table.markdown-table th {
   @apply bg-secondary text-left px-3 py-2 font-bold border-border text-primary;
@@ -1340,7 +1345,7 @@
 /* Default theme values (mission-control). Single source of truth for CSS defaults.
    themes.ts applyTheme() overrides these at runtime via element.style.setProperty(). */
 :root {
-  --radius: 1rem;
+  --radius: 1.067rem;
   --background: #0c1016;
   --foreground: #d0c8bc;
   --card: #10151d;

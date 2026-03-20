@@ -48,7 +48,7 @@ export function UpdateBadge() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 text-[9px] text-primary hover:text-primary/80 transition-colors cursor-pointer ml-1.5"
+        className="inline-flex items-center gap-1 text-[0.6rem] text-primary hover:text-primary/80 transition-colors cursor-pointer ml-1.5"
         title={`Update available: v${versionInfo.latest}`}
         aria-label={`Update available: version ${versionInfo.latest}. Click for instructions.`}
       >

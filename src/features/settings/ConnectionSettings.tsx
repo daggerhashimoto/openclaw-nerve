@@ -112,7 +112,7 @@ export function ConnectionSettings({
           <div className="cockpit-divider my-2" />
           <div className="cockpit-row">
             <div className="min-w-0 flex-1">
-              <span className="cockpit-kicker text-[9px]">
+              <span className="cockpit-kicker text-[0.6rem]">
                 <span className="text-primary">◆</span>
                 Gateway Service
               </span>

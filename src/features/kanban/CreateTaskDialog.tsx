@@ -137,7 +137,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDia
             aria-invalid={title.length > 0 && !isValid}
           />
           {title.length > 0 && trimmedTitle.length === 0 && (
-            <p className="text-[10px] text-destructive mt-0.5">Title is required.</p>
+            <p className="text-[0.667rem] text-destructive mt-0.5">Title is required.</p>
           )}
         </div>
 
@@ -204,7 +204,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDia
               placeholder="bug, frontend, urgent"
               className="h-11"
             />
-            <p className="mt-1 text-[11px] text-muted-foreground">Comma-separated</p>
+            <p className="mt-1 text-[0.733rem] text-muted-foreground">Comma-separated</p>
           </div>
 
           {/* Assignee */}

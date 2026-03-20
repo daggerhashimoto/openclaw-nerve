@@ -266,7 +266,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       >
         {/* Infinite scroll sentinel + "load more" indicator */}
         {hasMore && (
-          <div ref={sentinelRef} className="flex items-center justify-center py-2 text-muted-foreground/60 text-[10px] tracking-widest uppercase select-none">
+          <div ref={sentinelRef} className="flex items-center justify-center py-2 text-muted-foreground/60 text-[0.667rem] tracking-widest uppercase select-none">
             ↑ older messages
           </div>
         )}

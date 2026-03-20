@@ -26,8 +26,8 @@ function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
     return (
       <div className="flex items-center gap-2 rounded-xl px-2.5 py-2">
         <span className="w-3" /> {/* spacer matching chevron width */}
-        <span className="text-green text-[10px]">✓</span>
-        <span className="flex-1 truncate text-[12px] text-muted-foreground">
+        <span className="text-green text-[0.667rem]">✓</span>
+        <span className="flex-1 truncate text-[0.8rem] text-muted-foreground">
           {entry.preview}
         </span>
       </div>
@@ -41,8 +41,8 @@ function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
           size={12}
           className={`text-muted-foreground shrink-0 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
         />
-        <span className="text-green text-[10px]">✓</span>
-        <span className="flex-1 truncate text-[12px] text-muted-foreground">
+        <span className="text-green text-[0.667rem]">✓</span>
+        <span className="flex-1 truncate text-[0.8rem] text-muted-foreground">
           {entry.preview}
         </span>
       </CollapsibleTrigger>
@@ -83,10 +83,10 @@ function ToolGroupBlockInner({ msg, index, isCollapsed, onToggleCollapse }: Tool
             />
             <Wrench size={13} className="shrink-0 text-primary/75" />
             <span className="cockpit-badge shrink-0">Tools</span>
-            <span className="flex-1 text-[12px] text-muted-foreground">
+            <span className="flex-1 text-[0.8rem] text-muted-foreground">
               Used {count} tool{count !== 1 ? 's' : ''}
             </span>
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{timeStr}</span>
+            <span className="shrink-0 font-mono text-[0.667rem] text-muted-foreground">{timeStr}</span>
           </CollapsibleTrigger>
           <CollapsibleContent>
             <CardContent className="border-t border-border/40 bg-background/42 px-2 py-2">

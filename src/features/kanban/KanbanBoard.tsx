@@ -127,7 +127,7 @@ export const KanbanBoard = memo(function KanbanBoard({
         <div className="max-w-[420px] text-center">
           <p className="text-sm text-destructive font-semibold mb-2">Couldn't load tasks</p>
           <p className="text-xs text-muted-foreground mb-4">{error}</p>
-          <Button size="sm" onClick={onRetry} className="text-[11px] uppercase tracking-[0.16em]">
+          <Button size="sm" onClick={onRetry} className="text-[0.733rem] uppercase tracking-[0.16em]">
             Retry
           </Button>
         </div>
@@ -152,11 +152,11 @@ export const KanbanBoard = memo(function KanbanBoard({
       <div className="flex-1 flex items-center justify-center">
         <div className="max-w-[420px] text-center select-none">
           <LayoutGrid size={28} className="mx-auto mb-3 text-primary opacity-60" />
-          <h3 className="text-[16px] font-bold text-foreground mb-1.5">No tasks yet</h3>
-          <p className="text-[13px] text-muted-foreground mb-5">
+          <h3 className="text-[1.067rem] font-bold text-foreground mb-1.5">No tasks yet</h3>
+          <p className="text-[0.867rem] text-muted-foreground mb-5">
             Create your first task or ask an agent to propose one.
           </p>
-          <Button size="sm" onClick={onCreateTask} className="min-w-[132px] text-[11px] uppercase tracking-[0.16em]">
+          <Button size="sm" onClick={onCreateTask} className="min-w-[132px] text-[0.733rem] uppercase tracking-[0.16em]">
             Create Task
           </Button>
         </div>

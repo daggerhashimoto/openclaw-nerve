@@ -737,7 +737,7 @@ export default function App({ onLogout }: AppProps) {
        * Kept compact and centered so they read as transient shell notices instead of old alarm strips.
        */}
       {connectionState === 'reconnecting' && !gatewayRestarting && (
-        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-destructive/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-destructive/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
           <span className="inline-flex size-7 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
             <AlertTriangle size={14} aria-hidden="true" />
           </span>
@@ -749,7 +749,7 @@ export default function App({ onLogout }: AppProps) {
       )}
 
       {gatewayRestarting && (
-        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-orange/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-orange/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
           <span className="inline-flex size-7 items-center justify-center rounded-xl bg-orange/10 text-orange">
             <RotateCw size={14} className="animate-spin" aria-hidden="true" />
           </span>
@@ -761,7 +761,7 @@ export default function App({ onLogout }: AppProps) {
         <button
           type="button"
           onClick={dismissNotice}
-          className={`fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 cursor-pointer items-start gap-2 rounded-2xl border px-4 py-2 text-xs font-medium shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-transform hover:-translate-x-1/2 hover:-translate-y-px ${
+          className={`fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 cursor-pointer items-start gap-2 rounded-2xl border px-4 py-2 text-xs font-medium shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-transform hover:-translate-x-1/2 hover:-translate-y-px ${
             gatewayRestartNotice.ok
               ? 'border-green/25 bg-card/94 text-foreground'
               : 'border-destructive/25 bg-card/94 text-foreground'

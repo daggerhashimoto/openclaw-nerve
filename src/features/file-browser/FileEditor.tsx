@@ -192,7 +192,7 @@ export function FileEditor({ file, onContentChange, onSave, onRetry }: FileEdito
             <LockKeyhole size={16} className="text-primary shrink-0" />
             <div className="flex flex-col gap-0.5">
               <span className="text-sm font-medium text-foreground">AI is editing this file</span>
-              <span className="text-[11px] text-muted-foreground">Editor locked until changes complete</span>
+              <span className="text-[0.733rem] text-muted-foreground">Editor locked until changes complete</span>
             </div>
             <span className="text-primary animate-pulse text-lg leading-none ml-1">···</span>
           </div>

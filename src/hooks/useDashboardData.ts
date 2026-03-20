@@ -20,7 +20,7 @@ import type { Memory, TokenData, GatewayEvent } from '@/types';
 const MEMORY_POLL_INTERVAL = 60000; // 60s fallback (was 10s)
 const TOKEN_POLL_INTERVAL = 60000;  // 60s fallback (was 30s)
 
-export type FileChangedHandler = (path: string) => void;
+export type FileChangedHandler = (path: string, agentId: string) => void;
 
 export interface DashboardDataOptions {
   agentId?: string;
@@ -91,13 +91,13 @@ export function useDashboardData(options: DashboardDataOptions = {}): DashboardD
     }
   }, []);
 
-  // Sync refs in effect to avoid render-time mutations
-  useEffect(() => {
-    refreshMemoriesRef.current = refreshMemories;
-    refreshTokensRef.current = refreshTokens;
-    onFileChangedRef.current = options.onFileChanged;
-    agentIdRef.current = activeAgentId;
-  }, [refreshMemories, refreshTokens, options.onFileChanged, activeAgentId]);
+  // These refs back long-lived SSE/WS handlers and must update during render.
+  // Waiting for a passive effect leaves a switch-gap where an old agent event can
+  // be accepted under stale refs after the UI already rerendered.
+  refreshMemoriesRef.current = refreshMemories;
+  refreshTokensRef.current = refreshTokens;
+  onFileChangedRef.current = options.onFileChanged;
+  agentIdRef.current = activeAgentId;
 
   useEffect(() => {
     setMemories([]);
@@ -124,7 +124,7 @@ export function useDashboardData(options: DashboardDataOptions = {}): DashboardD
       const eventAgentId = typeof data?.agentId === 'string' ? data.agentId : undefined;
 
       if (data?.path && eventAgentId === agentIdRef.current) {
-        onFileChangedRef.current?.(data.path);
+        onFileChangedRef.current?.(data.path, eventAgentId);
       }
     }
   }, []);

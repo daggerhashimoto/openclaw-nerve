@@ -220,14 +220,14 @@ export default function App({ onLogout }: AppProps) {
   }, [dismissSaveToast, saveFile, showSaveToastForAgent, workspaceAgentId]);
 
   // Single file.changed handler, feeds both open files and tree refresh.
-  const onFileChanged = useCallback((path: string) => {
-    handleFileChanged(path);
+  const onFileChanged = useCallback((path: string, targetAgentId: string) => {
+    handleFileChanged(path, targetAgentId);
     setLastChangedEvent({
       path,
-      agentId: workspaceAgentId,
+      agentId: targetAgentId,
       sequence: ++fileTreeChangeSequenceRef.current,
     });
-  }, [handleFileChanged, workspaceAgentId]);
+  }, [handleFileChanged]);
 
   // Dashboard data (extracted hook) — single SSE connection handles all events
   const { memories, memoriesLoading, tokenData, refreshMemories } = useDashboardData({

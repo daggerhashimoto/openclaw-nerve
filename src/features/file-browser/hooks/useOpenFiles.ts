@@ -505,11 +505,13 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
    * Handle an external file change event (from SSE `file.changed`).
    *
    * - If this was our own save, ignore it.
-   * - If the file is open, lock it and reload content from disk.
+   * - If the file is open in the targeted workspace, lock it and reload content from disk.
    * - Lock clears automatically after a short delay.
    */
-  const handleFileChanged = useCallback((changedPath: string) => {
-    const requestAgentId = agentIdRef.current;
+  const handleFileChanged = useCallback((changedPath: string, targetAgentId?: string) => {
+    const requestAgentId = normalizeAgentId(targetAgentId ?? agentIdRef.current);
+    if (agentIdRef.current !== requestAgentId) return;
+
     const scopedPathKey = getAgentScopedPathKey(requestAgentId, changedPath);
 
     if (recentSaveMtimes.current.has(scopedPathKey)) return;

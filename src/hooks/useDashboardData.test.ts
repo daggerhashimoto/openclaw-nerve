@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { renderHook, render, waitFor, act } from '@testing-library/react';
+import { createElement } from 'react';
 import { useDashboardData } from './useDashboardData';
 import type { ServerEvent } from '@/hooks/useServerEvents';
 
@@ -43,6 +44,24 @@ vi.mock('@/hooks/useServerEvents', () => ({
     return { connected: true, reconnectAttempts: 0, lastEvent: null };
   },
 }));
+
+function DashboardDataRenderObserver({
+  agentId,
+  onFileChanged,
+  emitDuringRender,
+}: {
+  agentId: string;
+  onFileChanged?: (...args: unknown[]) => void;
+  emitDuringRender?: () => void;
+}) {
+  useDashboardData({
+    agentId,
+    onFileChanged: onFileChanged as unknown as (path: string, targetAgentId: string) => void,
+  });
+
+  emitDuringRender?.();
+  return null;
+}
 
 describe('useDashboardData', () => {
   let originalFetch: typeof globalThis.fetch;
@@ -109,7 +128,54 @@ describe('useDashboardData', () => {
     });
   });
 
-  it('refreshes memories only for matching SSE agent scopes and forwards file.changed only for the active agent', async () => {
+  it('drops old-agent file.changed events that arrive during the workspace switch render gap', async () => {
+    const alphaOnFileChanged = vi.fn();
+    const bravoOnFileChanged = vi.fn();
+    const tokens = deferred<FetchResponse>();
+    const alphaMemories = deferred<FetchResponse>();
+    const bravoMemories = deferred<FetchResponse>();
+
+    globalThis.fetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input);
+      if (url === '/api/tokens') {
+        return tokens.promise;
+      }
+      if (url === '/api/memories?agentId=alpha') {
+        return alphaMemories.promise;
+      }
+      if (url === '/api/memories?agentId=bravo') {
+        return bravoMemories.promise;
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof globalThis.fetch;
+
+    const { rerender } = render(createElement(DashboardDataRenderObserver, {
+      agentId: 'alpha',
+      onFileChanged: alphaOnFileChanged,
+    }));
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith('/api/memories?agentId=alpha', expect.any(Object));
+    });
+
+    alphaOnFileChanged.mockClear();
+    bravoOnFileChanged.mockClear();
+
+    act(() => {
+      rerender(createElement(DashboardDataRenderObserver, {
+        agentId: 'bravo',
+        onFileChanged: bravoOnFileChanged,
+        emitDuringRender: () => {
+          sseHandler?.({ event: 'file.changed', data: { path: 'shared.md', agentId: 'alpha' }, ts: Date.now() });
+        },
+      }));
+    });
+
+    expect(alphaOnFileChanged).not.toHaveBeenCalled();
+    expect(bravoOnFileChanged).not.toHaveBeenCalled();
+  });
+
+  it('refreshes memories only for matching SSE agent scopes and forwards file.changed with its agent id', async () => {
     const onFileChanged = vi.fn();
 
     globalThis.fetch = vi.fn((input: string | URL | Request) => {
@@ -150,6 +216,6 @@ describe('useDashboardData', () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith('/api/memories?agentId=alpha', expect.any(Object));
     });
-    expect(onFileChanged).toHaveBeenCalledWith('memory/2026-03-19.md');
+    expect(onFileChanged).toHaveBeenCalledWith('memory/2026-03-19.md', 'alpha');
   });
 });

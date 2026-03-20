@@ -1467,6 +1467,78 @@ describe('useOpenFiles', () => {
     });
   });
 
+  it('ignores file.changed events explicitly targeted at a different agent after a workspace switch', async () => {
+    const { mock } = createLocalStorageMock({
+      [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['shared.md']),
+      [getWorkspaceStorageKey('active-tab', 'main')]: 'shared.md',
+      [getWorkspaceStorageKey('open-files', 'research')]: JSON.stringify(['shared.md']),
+      [getWorkspaceStorageKey('active-tab', 'research')]: 'shared.md',
+    });
+    vi.stubGlobal('localStorage', mock);
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = getRequestUrl(input);
+
+      if (url.pathname === '/api/files/read') {
+        const agentId = url.searchParams.get('agentId') || 'main';
+        const path = url.searchParams.get('path') || '';
+
+        if (path === 'shared.md' && agentId === 'main') {
+          return createJsonResponse({ ok: true, content: 'main original', mtime: 11 });
+        }
+
+        if (path === 'shared.md' && agentId === 'research') {
+          return createJsonResponse({ ok: true, content: 'research original', mtime: 22 });
+        }
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result, rerender } = renderHook(
+      ({ agentId }) => useOpenFiles(agentId),
+      { initialProps: { agentId: 'main' } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'shared.md',
+        content: 'main original',
+        dirty: false,
+      });
+    });
+
+    rerender({ agentId: 'research' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'shared.md',
+        content: 'research original',
+        dirty: false,
+        locked: false,
+      });
+    });
+
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockClear();
+
+    await act(async () => {
+      (result.current.handleFileChanged as unknown as (path: string, targetAgentId?: string) => void)('shared.md', 'main');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.openFiles[0]).toMatchObject({
+      path: 'shared.md',
+      content: 'research original',
+      savedContent: 'research original',
+      dirty: false,
+      locked: false,
+      mtime: 22,
+    });
+  });
+
   it('keeps in-flight save suppression scoped when two agents save the same relative path', async () => {
     const { mock } = createLocalStorageMock({
       [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['shared.md']),

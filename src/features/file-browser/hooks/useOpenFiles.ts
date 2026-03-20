@@ -103,6 +103,23 @@ interface SaveFileTarget {
   mtime: number;
 }
 
+interface DirtyFileTarget extends SaveFileTarget {
+  path: string;
+}
+
+function createSnapshotBackedOpenFile(filePath: string, snapshot: DirtyFileSnapshot): OpenFile {
+  return {
+    path: filePath,
+    name: basename(filePath),
+    content: snapshot.content,
+    savedContent: snapshot.savedContent,
+    dirty: snapshot.content !== snapshot.savedContent,
+    locked: false,
+    mtime: snapshot.mtime,
+    loading: false,
+  };
+}
+
 function mergeRestoredFiles(restoredFiles: OpenFile[], currentFiles: OpenFile[]): OpenFile[] {
   const currentFilesByPath = new Map(currentFiles.map((file) => [file.path, file]));
   const nextFiles = restoredFiles.map((restoredFile) => {
@@ -128,6 +145,33 @@ function collectDirtyFilePaths(visibleFiles: OpenFile[], storedDirtyPaths: strin
   }
 
   return [...dirtyPaths];
+}
+
+function collectDirtyFileTargets(
+  visibleFiles: OpenFile[],
+  storedDirtyFiles?: Map<string, DirtyFileSnapshot>,
+): DirtyFileTarget[] {
+  const dirtyFiles = new Map<string, SaveFileTarget>();
+
+  for (const [path, snapshot] of storedDirtyFiles ?? []) {
+    dirtyFiles.set(path, {
+      content: snapshot.content,
+      mtime: snapshot.mtime,
+    });
+  }
+
+  for (const file of visibleFiles) {
+    if (!file.dirty || dirtyFiles.has(file.path)) continue;
+    dirtyFiles.set(file.path, {
+      content: file.content,
+      mtime: file.mtime,
+    });
+  }
+
+  return [...dirtyFiles.entries()].map(([path, target]) => ({
+    path,
+    ...target,
+  }));
 }
 
 export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
@@ -272,25 +316,40 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
 
     const files: OpenFile[] = [];
     for (const path of persistedPaths) {
+      const getDirtySnapshot = () => dirtyFilesByAgentRef.current.get(targetAgentId)?.get(path);
+      const restoreDirtySnapshot = () => {
+        const dirtySnapshot = getDirtySnapshot();
+        if (!dirtySnapshot) return;
+        files.push(createSnapshotBackedOpenFile(path, dirtySnapshot));
+      };
+
       try {
         const res = await fetch(buildReadUrl(path, targetAgentId));
-        if (!res.ok) continue;
+        if (!res.ok) {
+          restoreDirtySnapshot();
+          continue;
+        }
         const data = await res.json();
-        if (!data.ok) continue;
+        if (!data.ok) {
+          restoreDirtySnapshot();
+          continue;
+        }
 
-        const dirtySnapshot = dirtyFilesByAgentRef.current.get(targetAgentId)?.get(path);
-        files.push({
-          path,
-          name: basename(path),
-          content: dirtySnapshot?.content ?? data.content,
-          savedContent: dirtySnapshot?.savedContent ?? data.content,
-          dirty: dirtySnapshot ? dirtySnapshot.content !== dirtySnapshot.savedContent : false,
-          locked: false,
-          mtime: dirtySnapshot?.mtime ?? data.mtime,
-          loading: false,
-        });
+        const dirtySnapshot = getDirtySnapshot();
+        files.push(dirtySnapshot
+          ? createSnapshotBackedOpenFile(path, dirtySnapshot)
+          : {
+              path,
+              name: basename(path),
+              content: data.content,
+              savedContent: data.content,
+              dirty: false,
+              locked: false,
+              mtime: data.mtime,
+              loading: false,
+            });
       } catch {
-        // Skip files that can't be loaded
+        restoreDirtySnapshot();
       }
 
       if (restoreRequestRef.current !== requestId || agentIdRef.current !== targetAgentId) {
@@ -473,11 +532,12 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
 
       if (data.ok) {
         const savedContent = file.content;
+        const ownsRequestState = stateOwnerAgentIdRef.current === requestAgentId;
 
         recentSaveMtimes.current.set(scopedPathKey, data.mtime);
         setTimeout(() => recentSaveMtimes.current.delete(scopedPathKey), 2000);
 
-        if (agentIdRef.current === requestAgentId) {
+        if (ownsRequestState) {
           setOpenFiles((prev) => {
             const next = prev.map((openFile) => {
               if (openFile.path !== filePath) return openFile;
@@ -699,26 +759,35 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
 
   const discardAllDirtyFiles = useCallback(() => {
     const requestAgentId = agentIdRef.current;
+    const dirtyPaths = new Set(collectDirtyFilePaths(
+      openFilesRef.current,
+      [...(dirtyFilesByAgentRef.current.get(requestAgentId)?.keys() ?? [])],
+    ));
+
+    if (dirtyPaths.size === 0) return;
+
+    if (stateOwnerAgentIdRef.current !== requestAgentId) {
+      setDirtyFilesForAgent(requestAgentId, new Map());
+      return;
+    }
+
     setOpenFiles((prev) => {
       const next = prev.map((file) => (
-        file.dirty
+        dirtyPaths.has(file.path)
           ? { ...file, content: file.savedContent, dirty: false, error: undefined }
           : file
       ));
       rememberDirtyFiles(requestAgentId, next);
       return next;
     });
-  }, [rememberDirtyFiles]);
+  }, [rememberDirtyFiles, setDirtyFilesForAgent]);
 
   const saveAllDirtyFiles = useCallback(async (): Promise<{ ok: boolean; failedPath?: string; conflict?: boolean }> => {
     const requestAgentId = agentIdRef.current;
-    const dirtyFiles = openFilesRef.current
-      .filter((file) => file.dirty)
-      .map((file) => ({
-        path: file.path,
-        content: file.content,
-        mtime: file.mtime,
-      }));
+    const dirtyFiles = collectDirtyFileTargets(
+      openFilesRef.current,
+      dirtyFilesByAgentRef.current.get(requestAgentId),
+    );
 
     for (const dirtyFile of dirtyFiles) {
       const result = await saveFileForAgent(dirtyFile.path, requestAgentId, dirtyFile);

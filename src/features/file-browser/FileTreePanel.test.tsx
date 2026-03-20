@@ -747,6 +747,100 @@ describe('FileTreePanel', () => {
     });
   });
 
+  describe('workspace-scoped ephemeral state', () => {
+    it('drops an in-progress rename immediately when switching to another workspace with the same path', async () => {
+      mockUseFileTree.mockReturnValue({
+        ...defaultMockHook,
+        entries: [
+          { name: 'README.md', path: 'README.md', type: 'file', children: null },
+          { name: 'src', path: 'src', type: 'directory', children: null },
+        ],
+      });
+
+      const { rerender } = render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.contextMenu(screen.getByText('README.md'), new MouseEvent('contextmenu', { bubbles: true }));
+      fireEvent.click(await screen.findByText('Rename'));
+
+      const renameInput = screen.getByDisplayValue('README.md');
+      fireEvent.change(renameInput, { target: { value: 'workspace-a.md' } });
+      expect(screen.getByDisplayValue('workspace-a.md')).toBeInTheDocument();
+
+      rerender(
+        <FileTreePanel
+          workspaceAgentId="agent-b"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      expect(screen.getByText('README.md')).toBeInTheDocument();
+    });
+
+    it('clears drag source and drop target styling when the workspace changes', () => {
+      mockUseFileTree.mockReturnValue({
+        ...defaultMockHook,
+        entries: [
+          { name: 'src', path: 'src', type: 'directory', children: null },
+          { name: 'README.md', path: 'README.md', type: 'file', children: null },
+        ],
+      });
+
+      const dataTransfer = {
+        effectAllowed: 'all',
+        dropEffect: 'none',
+        setData: vi.fn(),
+      };
+
+      const { rerender } = render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const sourceRow = screen.getByTitle('README.md');
+      const targetRow = screen.getByTitle('src');
+
+      fireEvent.dragStart(sourceRow, { dataTransfer });
+      fireEvent.dragOver(targetRow, { dataTransfer });
+
+      expect(sourceRow.className).toContain('opacity-50');
+      expect(targetRow.className).toContain('bg-primary/15');
+
+      rerender(
+        <FileTreePanel
+          workspaceAgentId="agent-b"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      expect(screen.getByTitle('README.md').className).not.toContain('opacity-50');
+      expect(screen.getByTitle('src').className).not.toContain('bg-primary/15');
+    });
+  });
+
   describe('Mobile collapse behavior', () => {
     const mockOnCollapseChange = vi.fn();
 

@@ -521,7 +521,6 @@ export default function App({ onLogout }: AppProps) {
   useEffect(() => {
     const currentCount = agentLogEntries.length;
     if (currentCount > prevLogCount.current) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transient log glow is intentional UI feedback from external log updates
       setLogGlow(true);
       const timer = setTimeout(() => setLogGlow(false), 500);
       prevLogCount.current = currentCount;

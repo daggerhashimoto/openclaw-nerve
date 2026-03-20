@@ -181,12 +181,17 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
   const [stateOwnerAgentId, setStateOwnerAgentId] = useState(scopedAgentId);
   const [dirtyFilePathsByAgent, setDirtyFilePathsByAgent] = useState<Record<string, string[]>>({});
   const restoreRequestRef = useRef(0);
+  const restorePersistedFilesRef = useRef<(targetAgentId?: string) => Promise<void>>(async () => {});
 
   // Track mtimes from our own saves so we can ignore the SSE bounce-back.
   // Keys are agent-scoped so same relative paths in different workspaces stay isolated.
   const recentSaveMtimes = useRef<Map<string, number>>(new Map());
   /** Paths currently being saved, blocks lock overlay during the save round-trip. */
   const savingPaths = useRef<Set<string>>(new Set());
+  /** Latest async read token per agent/path so older reads cannot patch newer state. */
+  const readRequestTokensRef = useRef<Map<string, number>>(new Map());
+  /** Structural offscreen mutations that must invalidate in-flight restores. */
+  const backgroundMutationVersionsRef = useRef<Map<string, number>>(new Map());
 
   const agentIdRef = useRef(scopedAgentId);
   const stateOwnerAgentIdRef = useRef(scopedAgentId);
@@ -240,6 +245,33 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
 
     setDirtyFilesForAgent(targetAgentId, dirtyFiles);
   }, [setDirtyFilesForAgent]);
+
+  const nextReadRequestToken = useCallback((targetAgentId: string, filePath: string) => {
+    const scopedPathKey = getAgentScopedPathKey(targetAgentId, filePath);
+    const token = (readRequestTokensRef.current.get(scopedPathKey) ?? 0) + 1;
+    readRequestTokensRef.current.set(scopedPathKey, token);
+    return { scopedPathKey, token };
+  }, []);
+
+  const isLatestReadRequest = useCallback((scopedPathKey: string, token: number) => (
+    readRequestTokensRef.current.get(scopedPathKey) === token
+  ), []);
+
+  const getBackgroundMutationVersion = useCallback((targetAgentId: string) => (
+    backgroundMutationVersionsRef.current.get(targetAgentId) ?? 0
+  ), []);
+
+  const bumpBackgroundMutationVersion = useCallback((targetAgentId: string) => {
+    const nextVersion = getBackgroundMutationVersion(targetAgentId) + 1;
+    backgroundMutationVersionsRef.current.set(targetAgentId, nextVersion);
+    return nextVersion;
+  }, [getBackgroundMutationVersion]);
+
+  const claimStateOwnership = useCallback((targetAgentId: string) => {
+    if (stateOwnerAgentIdRef.current === targetAgentId) return;
+    stateOwnerAgentIdRef.current = targetAgentId;
+    setStateOwnerAgentId(targetAgentId);
+  }, []);
 
   const reconcileDirtyFileSnapshotAfterSave = useCallback((
     targetAgentId: string,
@@ -300,10 +332,18 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     const requestId = ++restoreRequestRef.current;
     const persistedPaths = loadPersistedFiles(targetAgentId);
     const persistedTab = loadPersistedTab(targetAgentId);
+    const startBackgroundMutationVersion = getBackgroundMutationVersion(targetAgentId);
     const clearRestore = () => {
       if (restoringAgentIdRef.current === targetAgentId) {
         restoringAgentIdRef.current = null;
       }
+    };
+    const restartRestore = () => {
+      clearRestore();
+      if (restoreRequestRef.current !== requestId || agentIdRef.current !== targetAgentId) {
+        return;
+      }
+      void restorePersistedFilesRef.current(targetAgentId);
     };
 
     restoringAgentIdRef.current = targetAgentId;
@@ -316,6 +356,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
 
     const files: OpenFile[] = [];
     for (const path of persistedPaths) {
+      const { scopedPathKey, token } = nextReadRequestToken(targetAgentId, path);
       const getDirtySnapshot = () => dirtyFilesByAgentRef.current.get(targetAgentId)?.get(path);
       const restoreDirtySnapshot = () => {
         const dirtySnapshot = getDirtySnapshot();
@@ -325,11 +366,20 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
 
       try {
         const res = await fetch(buildReadUrl(path, targetAgentId));
+        if (!isLatestReadRequest(scopedPathKey, token)) {
+          restartRestore();
+          return;
+        }
         if (!res.ok) {
           restoreDirtySnapshot();
           continue;
         }
+
         const data = await res.json();
+        if (!isLatestReadRequest(scopedPathKey, token)) {
+          restartRestore();
+          return;
+        }
         if (!data.ok) {
           restoreDirtySnapshot();
           continue;
@@ -349,6 +399,10 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
               loading: false,
             });
       } catch {
+        if (!isLatestReadRequest(scopedPathKey, token)) {
+          restartRestore();
+          return;
+        }
         restoreDirtySnapshot();
       }
 
@@ -356,10 +410,24 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
         clearRestore();
         return;
       }
+      if (
+        stateOwnerAgentIdRef.current !== targetAgentId
+        && getBackgroundMutationVersion(targetAgentId) !== startBackgroundMutationVersion
+      ) {
+        restartRestore();
+        return;
+      }
     }
 
     if (restoreRequestRef.current !== requestId || agentIdRef.current !== targetAgentId) {
       clearRestore();
+      return;
+    }
+    if (
+      stateOwnerAgentIdRef.current !== targetAgentId
+      && getBackgroundMutationVersion(targetAgentId) !== startBackgroundMutationVersion
+    ) {
+      restartRestore();
       return;
     }
 
@@ -381,7 +449,17 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       persistTab(targetAgentId, nextTab);
       return nextTab;
     });
-  }, [rememberDirtyFiles, scopedAgentId]);
+  }, [
+    getBackgroundMutationVersion,
+    isLatestReadRequest,
+    nextReadRequestToken,
+    rememberDirtyFiles,
+    scopedAgentId,
+  ]);
+
+  useLayoutEffect(() => {
+    restorePersistedFilesRef.current = restorePersistedFiles;
+  }, [restorePersistedFiles]);
 
   useEffect(() => {
     for (const timer of unlockTimers.current.values()) {
@@ -394,9 +472,10 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
 
   const setActiveTab = useCallback((tab: string) => {
     const requestAgentId = agentIdRef.current;
+    claimStateOwnership(requestAgentId);
     setActiveTabState(tab);
     persistTab(requestAgentId, tab);
-  }, []);
+  }, [claimStateOwnership]);
 
   const openFile = useCallback(async (filePath: string) => {
     if (openFilesRef.current.some((file) => file.path === filePath)) {
@@ -405,9 +484,11 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     }
 
     const requestAgentId = agentIdRef.current;
+    const { scopedPathKey, token } = nextReadRequestToken(requestAgentId, filePath);
+    claimStateOwnership(requestAgentId);
 
     setOpenFiles((prev) => {
-      const baseFiles = stateOwnerAgentId === requestAgentId ? prev : [];
+      const baseFiles = stateOwnerAgentIdRef.current === requestAgentId ? prev : [];
       const existing = baseFiles.find((file) => file.path === filePath);
       if (existing) return baseFiles;
 
@@ -445,7 +526,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       const res = await fetch(buildReadUrl(filePath, requestAgentId));
       const data = await res.json();
 
-      if (agentIdRef.current !== requestAgentId) {
+      if (agentIdRef.current !== requestAgentId || !isLatestReadRequest(scopedPathKey, token)) {
         return;
       }
 
@@ -464,7 +545,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
         };
       }));
     } catch {
-      if (agentIdRef.current !== requestAgentId) {
+      if (agentIdRef.current !== requestAgentId || !isLatestReadRequest(scopedPathKey, token)) {
         return;
       }
 
@@ -474,10 +555,11 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
           : file
       )));
     }
-  }, [rememberDirtyFiles, setActiveTab, stateOwnerAgentId]);
+  }, [claimStateOwnership, isLatestReadRequest, nextReadRequestToken, rememberDirtyFiles, setActiveTab]);
 
   const closeFile = useCallback((filePath: string) => {
     const requestAgentId = agentIdRef.current;
+    claimStateOwnership(requestAgentId);
 
     setOpenFiles((prev) => {
       const next = prev.filter((file) => file.path !== filePath);
@@ -491,10 +573,11 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       persistTab(requestAgentId, 'chat');
       return 'chat';
     });
-  }, [rememberDirtyFiles]);
+  }, [claimStateOwnership, rememberDirtyFiles]);
 
   const updateContent = useCallback((filePath: string, content: string) => {
     const requestAgentId = agentIdRef.current;
+    claimStateOwnership(requestAgentId);
     setOpenFiles((prev) => {
       const next = prev.map((file) => {
         if (file.path !== filePath) return file;
@@ -503,7 +586,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       rememberDirtyFiles(requestAgentId, next);
       return next;
     });
-  }, [rememberDirtyFiles]);
+  }, [claimStateOwnership, rememberDirtyFiles]);
 
   const saveFileForAgent = useCallback(async (
     filePath: string,
@@ -579,12 +662,13 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
 
   const reloadFile = useCallback(async (filePath: string) => {
     const requestAgentId = agentIdRef.current;
+    const { scopedPathKey, token } = nextReadRequestToken(requestAgentId, filePath);
 
     try {
       const res = await fetch(buildReadUrl(filePath, requestAgentId));
       const data = await res.json();
 
-      if (agentIdRef.current !== requestAgentId) {
+      if (agentIdRef.current !== requestAgentId || !isLatestReadRequest(scopedPathKey, token)) {
         return;
       }
 
@@ -618,7 +702,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     } catch {
       // ignore reload failures
     }
-  }, [rememberDirtyFiles]);
+  }, [isLatestReadRequest, nextReadRequestToken, rememberDirtyFiles]);
 
   // Clean up pending unlock timers on unmount
   useEffect(() => {
@@ -682,7 +766,8 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     const requestAgentId = normalizeAgentId(targetAgentId);
     remapDirtyFiles(requestAgentId, fromPath, toPath);
 
-    if (agentIdRef.current !== requestAgentId) {
+    if (stateOwnerAgentIdRef.current !== requestAgentId) {
+      bumpBackgroundMutationVersion(requestAgentId);
       const nextPaths = loadPersistedFiles(requestAgentId).map((filePath) => (
         matchesPathPrefix(filePath, fromPath)
           ? remapPathPrefix(filePath, fromPath, toPath)
@@ -718,7 +803,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       persistTab(requestAgentId, nextTab);
       return nextTab;
     });
-  }, [rememberDirtyFiles, remapDirtyFiles, scopedAgentId]);
+  }, [bumpBackgroundMutationVersion, rememberDirtyFiles, remapDirtyFiles, scopedAgentId]);
 
   /** Close any open tabs under a path prefix (file or folder). */
   const closeOpenPathsByPrefix = useCallback((pathPrefix: string, targetAgentId = scopedAgentId) => {
@@ -727,7 +812,8 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     const requestAgentId = normalizeAgentId(targetAgentId);
     closeDirtyFilesByPrefix(requestAgentId, pathPrefix);
 
-    if (agentIdRef.current !== requestAgentId) {
+    if (stateOwnerAgentIdRef.current !== requestAgentId) {
+      bumpBackgroundMutationVersion(requestAgentId);
       const nextPaths = loadPersistedFiles(requestAgentId).filter(
         (filePath) => !matchesPathPrefix(filePath, pathPrefix),
       );
@@ -751,7 +837,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       persistTab(requestAgentId, 'chat');
       return 'chat';
     });
-  }, [closeDirtyFilesByPrefix, rememberDirtyFiles, scopedAgentId]);
+  }, [bumpBackgroundMutationVersion, closeDirtyFilesByPrefix, rememberDirtyFiles, scopedAgentId]);
 
   const getDirtyFilePaths = useCallback(() => (
     collectDirtyFilePaths(visibleOpenFiles, visibleDirtyFilePaths)

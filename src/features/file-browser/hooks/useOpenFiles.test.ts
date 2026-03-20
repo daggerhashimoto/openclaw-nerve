@@ -2279,6 +2279,160 @@ describe('useOpenFiles', () => {
     }
   });
 
+  it('ignores stale reloads when a newer read for the same agent and path already completed', async () => {
+    const { mock } = createLocalStorageMock({
+      [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['draft.md']),
+      [getWorkspaceStorageKey('active-tab', 'main')]: 'draft.md',
+    });
+    vi.stubGlobal('localStorage', mock);
+
+    const olderReload = createDeferred<Response>();
+    const readQueue: Array<Response | Promise<Response>> = [
+      createJsonResponse({ ok: true, content: 'initial', mtime: 1 }),
+      olderReload.promise,
+      createJsonResponse({ ok: true, content: 'fresh', mtime: 3 }),
+    ];
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = getRequestUrl(input);
+      if (url.pathname === '/api/files/read' && url.searchParams.get('path') === 'draft.md') {
+        const next = readQueue.shift();
+        if (next) return await next;
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result } = renderHook(() => useOpenFiles('main'));
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'draft.md',
+        content: 'initial',
+        savedContent: 'initial',
+        dirty: false,
+        mtime: 1,
+      });
+    });
+
+    act(() => {
+      void result.current.reloadFile('draft.md');
+      void result.current.reloadFile('draft.md');
+    });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'draft.md',
+        content: 'fresh',
+        savedContent: 'fresh',
+        dirty: false,
+        mtime: 3,
+      });
+    });
+
+    await act(async () => {
+      olderReload.resolve(createJsonResponse({ ok: true, content: 'stale', mtime: 2 }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'draft.md',
+        content: 'fresh',
+        savedContent: 'fresh',
+        dirty: false,
+        mtime: 3,
+      });
+    });
+  });
+
+  it('applies close-path updates to the state owner while a switch-back restore is still loading', async () => {
+    const { store, mock } = createLocalStorageMock({
+      [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['docs/main.md']),
+      [getWorkspaceStorageKey('active-tab', 'main')]: 'docs/main.md',
+      [getWorkspaceStorageKey('open-files', 'research')]: JSON.stringify(['notes.md']),
+      [getWorkspaceStorageKey('active-tab', 'research')]: 'notes.md',
+    });
+    vi.stubGlobal('localStorage', mock);
+
+    const mainSwitchBackRestore = createDeferred<Response>();
+    const readQueues = new Map<string, Array<Response | Promise<Response>>>([
+      ['main', [
+        createJsonResponse({ ok: true, content: 'main original', mtime: 11 }),
+        mainSwitchBackRestore.promise,
+      ]],
+      ['research', [
+        createJsonResponse({ ok: true, content: 'research original', mtime: 22 }),
+      ]],
+    ]);
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = getRequestUrl(input);
+      if (url.pathname === '/api/files/read') {
+        const agentId = url.searchParams.get('agentId') || 'main';
+        const next = readQueues.get(agentId)?.shift();
+        if (next) {
+          return await next;
+        }
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result, rerender } = renderHook(
+      ({ agentId }) => useOpenFiles(agentId),
+      { initialProps: { agentId: 'main' } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'docs/main.md',
+        content: 'main original',
+        savedContent: 'main original',
+        dirty: false,
+      });
+      expect(result.current.activeTab).toBe('docs/main.md');
+    });
+
+    rerender({ agentId: 'research' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({
+        path: 'notes.md',
+        content: 'research original',
+        savedContent: 'research original',
+        dirty: false,
+      });
+      expect(result.current.activeTab).toBe('notes.md');
+    });
+
+    rerender({ agentId: 'main' });
+
+    await waitFor(() => {
+      expect(result.current.openFiles).toEqual([]);
+      expect(result.current.activeTab).toBe('docs/main.md');
+    });
+
+    act(() => {
+      result.current.closeOpenPathsByPrefix('docs', 'main');
+    });
+
+    await act(async () => {
+      mainSwitchBackRestore.resolve(createJsonResponse({ ok: true, content: 'main original', mtime: 11 }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.openFiles).toEqual([]);
+      expect(result.current.activeTab).toBe('chat');
+      expect(result.current.hasDirtyFiles).toBe(false);
+      expect(result.current.getDirtyFilePaths()).toEqual([]);
+    });
+
+    expect(store.get(getWorkspaceStorageKey('open-files', 'main'))).toBe(JSON.stringify([]));
+    expect(store.get(getWorkspaceStorageKey('active-tab', 'main'))).toBe('chat');
+  });
+
   it('discards dirty files back to their saved content', async () => {
     const { mock } = createLocalStorageMock();
     vi.stubGlobal('localStorage', mock);

@@ -366,6 +366,7 @@ export async function moveEntry(params: {
 
     const sourceStat = await statOrThrow(params.sourceAbs);
     const targetDirAbs = params.targetDirAbs || workspaceRoot;
+    // Validation-only: this throws if the caller tries to move outside the workspace.
     toWorkspaceRelative(targetDirAbs, workspaceRoot);
 
     const targetDirStat = await statOrThrow(targetDirAbs);

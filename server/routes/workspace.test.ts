@@ -97,4 +97,14 @@ describe('workspace routes', () => {
     expect(json.files.find((file) => file.key === 'tools')?.exists).toBe(true);
     expect(json.files.find((file) => file.key === 'user')?.exists).toBe(false);
   });
+
+    it('rejects invalid agent ids', async () => {
+      const app = await buildApp();
+      const res = await app.request('/api/workspace?agentId=../bad');
+
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as { ok: boolean; error: string };
+      expect(json.ok).toBe(false);
+      expect(json.error).toContain('Invalid agent id');
+    });
 });

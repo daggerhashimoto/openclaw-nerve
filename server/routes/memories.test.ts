@@ -437,5 +437,61 @@ describe('memories routes', () => {
 
       stopFileWatcher();
     });
+
+    it('includes scoped agentId when a non-main MEMORY.md changes on disk', async () => {
+      const researchMemoryPath = path.join(researchWorkspace, 'MEMORY.md');
+      await fs.writeFile(researchMemoryPath, '# MEMORY.md\n');
+      const { startFileWatcher, stopFileWatcher } = await loadFileWatcher();
+
+      startFileWatcher();
+      await fs.writeFile(researchMemoryPath, '# MEMORY.md\n\n## Facts\n- Research update\n');
+
+      await waitForBroadcast(([event, payload]) => (
+        event === 'memory.changed'
+        && payload !== null
+        && typeof payload === 'object'
+        && (payload as { file?: string; agentId?: string }).file === 'MEMORY.md'
+        && (payload as { file?: string; agentId?: string }).agentId === 'research'
+      ));
+
+      await waitForBroadcast(([event, payload]) => (
+        event === 'file.changed'
+        && payload !== null
+        && typeof payload === 'object'
+        && (payload as { path?: string; agentId?: string }).path === 'MEMORY.md'
+        && (payload as { path?: string; agentId?: string }).agentId === 'research'
+      ));
+
+      stopFileWatcher();
+    });
+
+    it('includes scoped agentId when a non-main daily memory file changes on disk', async () => {
+      const researchMemoryDir = path.join(researchWorkspace, 'memory');
+      const researchDailyPath = path.join(researchMemoryDir, '2026-02-26.md');
+      await fs.mkdir(researchMemoryDir, { recursive: true });
+      await fs.writeFile(researchDailyPath, '## Morning\n- First\n');
+      const { startFileWatcher, stopFileWatcher } = await loadFileWatcher();
+
+      startFileWatcher();
+      await fs.writeFile(researchDailyPath, '## Morning\n- Updated\n');
+
+      await waitForBroadcast(([event, payload]) => (
+        event === 'memory.changed'
+        && payload !== null
+        && typeof payload === 'object'
+        && (payload as { file?: string; agentId?: string }).file === '2026-02-26.md'
+        && (payload as { file?: string; agentId?: string }).agentId === 'research'
+      ));
+
+      await waitForBroadcast(([event, payload]) => (
+        event === 'file.changed'
+        && payload !== null
+        && typeof payload === 'object'
+        && (payload as { path?: string; agentId?: string }).path === 'memory/2026-02-26.md'
+        && (payload as { path?: string; agentId?: string }).agentId === 'research'
+      ));
+
+      stopFileWatcher();
+    });
   });
 });

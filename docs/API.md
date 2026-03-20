@@ -246,8 +246,8 @@ data: {"event":"memory.changed","data":{"source":"api","action":"create","sectio
 |-------|---------|-------------|
 | `connected` | On initial connection | `{ ts }` |
 | `ping` | Every 30 seconds (keep-alive) | `{ ts }` |
-| `memory.changed` | Memory file modified via API | `{ source, action, section?, file? }` |
-| `file.changed` | Workspace file modified (by agent or externally) | `{ path, mtime }` |
+| `memory.changed` | Memory file modified via API or file watcher | `{ source, action?, section?, file?, agentId? }` |
+| `file.changed` | Workspace file modified by the file watcher | `{ path, agentId }` |
 | `tokens.updated` | Token usage changed | varies |
 | `status.changed` | Gateway status changed | varies |
 
@@ -641,11 +641,19 @@ Session data is cached for 60 seconds to avoid repeated filesystem scans.
 
 ## Memories
 
+All memory routes accept an optional `agentId` scope. If omitted, Nerve uses `main`. The UI normally derives this from the owning top-level agent when you switch sessions.
+
 ### `GET /api/memories`
 
-Returns parsed memory data from `MEMORY.md` (sections + bullet items) and the 7 most recent daily files (section headers only).
+Returns parsed memory data from `MEMORY.md` (sections + bullet items) and the 7 most recent daily files (section headers only) for the selected workspace agent.
 
 **Rate Limit:** General (60/min)
+
+**Query Parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
 
 **Response:**
 
@@ -667,6 +675,7 @@ Returns the raw markdown content of a specific section.
 |-------|------|----------|-------------|
 | `title` | `string` | Yes | Section title (exact match) |
 | `date` | `string` | No | `YYYY-MM-DD` for daily files; omit for MEMORY.md |
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
 
 **Response:**
 
@@ -702,6 +711,7 @@ Creates a new memory entry. Writes a bullet point to `MEMORY.md` under the speci
 | `section` | `string` | No | Section heading (default: "General", max 200 chars) |
 | `category` | `"preference" \| "fact" \| "decision" \| "entity" \| "other"` | No | Category for vector store |
 | `importance` | `number` | No | 0–1 importance score (default: 0.7) |
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
 
 **Response:**
 
@@ -709,7 +719,7 @@ Creates a new memory entry. Writes a bullet point to `MEMORY.md` under the speci
 { "ok": true, "result": { "written": true, "section": "Preferences" } }
 ```
 
-Broadcasts `memory.changed` SSE event on success.
+Broadcasts `memory.changed` SSE event on success, tagged with the affected `agentId`.
 
 ### `PUT /api/memories/section`
 
@@ -730,6 +740,7 @@ Replaces the content of an existing section.
 | `title` | `string` | Yes | Section title (1–200 chars) |
 | `content` | `string` | Yes | New markdown content (max 50000 chars) |
 | `date` | `string` | No | `YYYY-MM-DD` for daily files; omit for MEMORY.md |
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
 
 ### `DELETE /api/memories`
 
@@ -749,6 +760,7 @@ Deletes a memory entry from the file.
 |-------|------|----------|-------------|
 | `query` | `string` | Yes | Text to find (exact match for items, section title for sections) |
 | `type` | `"section" \| "item" \| "daily"` | No | What to delete. `section`/`daily` removes header + all content. Default: item |
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
 | `date` | `string` | No | `YYYY-MM-DD` — required when `type` is `"daily"` |
 
 **Response:**
@@ -798,7 +810,7 @@ All fields are optional. A `ts` (epoch ms) is automatically set on write. The lo
 
 ### `GET /api/gateway/models`
 
-Returns available AI models from the OpenClaw gateway. Models are fetched via `openclaw models list` CLI and cached for 5 minutes.
+Returns available AI models from the OpenClaw gateway. Models are fetched via `openclaw models list`, cached for 5 minutes, and the CLI call allows a longer timeout so cold starts have more time to surface configured models in the spawn dialog.
 
 **Rate Limit:** General (60/min)
 
@@ -814,8 +826,10 @@ Returns available AI models from the OpenClaw gateway. Models are fetched via `o
 ```
 
 **Selection logic:**
-1. Configured/allowlisted models (from `agents.defaults.models` in OpenClaw config) — all included regardless of `available` flag
-2. If ≤0 results: falls back to all available models from the gateway
+1. Configured / allowlisted models (from `agents.defaults.models` in OpenClaw config) are fetched first and included regardless of `available` flag
+2. If that returns 0 models, Nerve falls back to `openclaw models list --all --json` and keeps only available entries
+
+The CLI timeout for model discovery is **15 seconds**, which helps cold or recently started OpenClaw installs surface configured models more reliably.
 
 ### `GET /api/gateway/session-info`
 
@@ -914,9 +928,17 @@ Unregisters a session's working directory.
 
 ## Workspace Files
 
+Workspace file routes accept an optional `agentId` scope. If omitted, Nerve uses the `main` workspace.
+
 ### `GET /api/workspace`
 
-Lists available workspace file keys and their existence status.
+Lists available workspace file keys and their existence status for the selected workspace agent.
+
+**Query Parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
 
 **Response:**
 
@@ -940,6 +962,12 @@ Reads a workspace file by key.
 
 **Valid keys:** `soul`, `tools`, `identity`, `user`, `agents`, `heartbeat`
 
+**Query Parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
+
 **Response:**
 
 ```json
@@ -955,8 +983,13 @@ Writes content to a workspace file.
 **Request Body:**
 
 ```json
-{ "content": "# Updated content\n\nNew text here." }
+{ "content": "# Updated content\n\nNew text here.", "agentId": "research" }
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `content` | `string` | Yes | New file contents |
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
 
 Content must be a string, max 100 KB.
 
@@ -1028,9 +1061,17 @@ Returns the last 10 run history entries for a cron job.
 
 ### `GET /api/skills`
 
-Lists all OpenClaw skills via `openclaw skills list --json`.
+Lists all OpenClaw skills via `openclaw skills list --json` for the selected workspace agent.
+
+Nerve scopes this by creating a temporary OpenClaw config whose `agents.defaults.workspace` points at the selected agent workspace, then runs the CLI against that workspace.
 
 **Rate Limit:** General (60/min)
+
+**Query Parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
 
 **Response:**
 
@@ -1057,43 +1098,65 @@ Lists all OpenClaw skills via `openclaw skills list --json`.
 
 ## File Browser
 
-Browse, read, and edit workspace files. All paths are restricted to the workspace directory with traversal protection.
+Browse, read, and edit workspace files. All paths are restricted to the selected workspace directory with traversal protection.
+
+All file-browser routes accept an optional `agentId` scope. If omitted, Nerve uses `main`. If `FILE_BROWSER_ROOT` is set, file-browser agent scoping is bypassed and all sessions browse the same custom root.
 
 ### `GET /api/files/tree`
 
 Returns the workspace directory tree. Excludes `node_modules`, `.git`, `dist`, `server-dist`, and other build artifacts.
 
-**Response:**
-```json
-[
-  {
-    "name": "MEMORY.md",
-    "path": "MEMORY.md",
-    "type": "file"
-  },
-  {
-    "name": "memory",
-    "path": "memory",
-    "type": "directory",
-    "children": [...]
-  }
-]
-```
-
-### `GET /api/files/read`
-
-Read a file's contents with its modification time (for conflict detection on save).
-
 **Query Parameters:**
 
-| Param | Description |
-|-------|-------------|
-| `path` | Relative path within the workspace |
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | `string` | No | Relative directory path to expand. Defaults to root |
+| `depth` | `number` | No | Expansion depth, clamped to 1–5 |
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
 
 **Response:**
 ```json
 {
+  "ok": true,
+  "root": ".",
+  "entries": [
+    {
+      "name": "MEMORY.md",
+      "path": "MEMORY.md",
+      "type": "file",
+      "mtime": 1771355007542
+    },
+    {
+      "name": "memory",
+      "path": "memory",
+      "type": "directory",
+      "children": null
+    }
+  ],
+  "workspaceInfo": {
+    "isCustomWorkspace": false,
+    "rootPath": "/home/user/.openclaw/workspace"
+  }
+}
+```
+
+### `GET /api/files/read`
+
+Read a text file's contents with its modification time (for conflict detection on save).
+
+**Query Parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | `string` | Yes | Relative path within the selected workspace |
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
+
+**Response:**
+```json
+{
+  "ok": true,
   "content": "# MEMORY.md\n...",
+  "size": 128,
   "mtime": 1771355007542
 }
 ```
@@ -1102,21 +1165,32 @@ Read a file's contents with its modification time (for conflict detection on sav
 
 | Status | Condition |
 |--------|-----------|
-| 400 | Missing `path`, path traversal detected, or binary file |
+| 400 | Missing `path`, not a file, or other invalid request |
+| 403 | Path traversal or excluded path |
 | 404 | File not found |
+| 413 | File too large |
+| 415 | Binary file |
 
-### `POST /api/files/write`
+### `PUT /api/files/write`
 
-Write file contents with optimistic concurrency via mtime comparison. If the file was modified since it was last read, returns 409 Conflict.
+Write text file contents with optimistic concurrency via mtime comparison. If the file was modified since it was last read, returns 409 Conflict.
 
 **Request Body:**
 ```json
 {
   "path": "MEMORY.md",
   "content": "# Updated content\n...",
-  "mtime": 1771355007542
+  "expectedMtime": 1771355007542,
+  "agentId": "research"
 }
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | `string` | Yes | Relative file path within the selected workspace |
+| `content` | `string` | Yes | UTF-8 file contents |
+| `expectedMtime` | `number` | No | Expected current mtime for optimistic concurrency |
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
 
 **Response (success):**
 ```json
@@ -1130,8 +1204,60 @@ Write file contents with optimistic concurrency via mtime comparison. If the fil
 
 | Status | Condition |
 |--------|-----------|
-| 400 | Missing fields or path traversal |
-| 409 | File modified since last read (mtime mismatch) |
+| 400 | Missing fields or invalid request |
+| 403 | Path traversal or excluded path |
+| 409 | File modified since last read (`currentMtime` returned) |
+| 413 | Content too large |
+| 415 | Binary file write attempted |
+
+### `POST /api/files/rename`
+
+Rename a file or directory within the selected workspace.
+
+**Request Body:**
+```json
+{ "path": "notes/today.md", "newName": "tomorrow.md", "agentId": "research" }
+```
+
+### `POST /api/files/move`
+
+Move a file or directory into another directory within the selected workspace.
+
+**Request Body:**
+```json
+{ "sourcePath": "notes/today.md", "targetDirPath": "archive", "agentId": "research" }
+```
+
+### `POST /api/files/trash`
+
+Move a file or directory into `.trash` when using the default workspace root. If `FILE_BROWSER_ROOT` is set, deletion is permanent instead.
+
+**Request Body:**
+```json
+{ "path": "notes/today.md", "agentId": "research" }
+```
+
+### `POST /api/files/restore`
+
+Restore an item from `.trash` back to its original location.
+
+**Request Body:**
+```json
+{ "path": ".trash/2026-03-20-notes-today.md", "agentId": "research" }
+```
+
+### `GET /api/files/raw`
+
+Serves supported image files from the selected workspace for previews.
+
+**Query Parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | `string` | Yes | Relative image path |
+| `agentId` | `string` | No | Workspace agent id. Defaults to `main` |
+
+Supported image types: `png`, `jpg`, `jpeg`, `gif`, `webp`, `avif`, `svg`, `ico`.
 
 ---
 

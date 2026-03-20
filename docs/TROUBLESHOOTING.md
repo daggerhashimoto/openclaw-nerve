@@ -446,13 +446,14 @@ MEMORY_PATH=/path/to/.openclaw/workspace/MEMORY.md
 
 **Symptom:** Model selector is empty or shows only the current model.
 
-**Cause:** Models are fetched via `GET /api/gateway/models`, which runs `openclaw models list --json`.
+**Cause:** Models are fetched via `GET /api/gateway/models`. Nerve first runs `openclaw models list --json` for configured / allowlisted models, waits up to 15 seconds for cold starts, and falls back to `openclaw models list --all --json` if needed. If those CLI calls fail or return nothing, the dropdown can stay sparse.
 
 **Fix:**
+- Wait a moment after a cold start, then reopen the spawn dialog or refresh the page
 - Ensure the `openclaw` binary is in PATH (the server searches multiple locations — see `lib/openclaw-bin.ts`)
 - Set `OPENCLAW_BIN` env var to the explicit path
-- Check server logs for model list errors
-- An allowlist can restrict visible models (configured server-side)
+- Check server logs for model list errors or timeouts
+- If you use an allowlist, verify the expected Codex or other models are configured there
 
 ### Model change doesn't take effect
 

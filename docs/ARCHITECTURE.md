@@ -114,7 +114,7 @@ Session management sidebar.
 | `SessionList.tsx` | Hierarchical session tree with parent-child relationships |
 | `SessionNode.tsx` | Individual session row with status indicator, context menu |
 | `SessionInfoPanel.tsx` | Session detail panel (model, tokens, thinking level) |
-| `SpawnAgentDialog.tsx` | Dialog for spawning sub-agents with task/model/thinking config |
+| `SpawnAgentDialog.tsx` | Dialog for spawning top-level agents and subagents with task, model, thinking, and subagent **After run** cleanup config |
 | `sessionTree.ts` | Builds tree structure from flat session list using `parentId` |
 | `statusUtils.ts` | Maps agent status to icons and labels |
 
@@ -139,18 +139,30 @@ Full workspace file browser with tabbed CodeMirror editor.
 #### `features/workspace/`
 Workspace file editor and management tabs.
 
+The workspace scope is derived from the **owning top-level agent**. Memory, Config, Skills, file-browser state, and persisted drafts follow that top-level agent. Crons and Kanban stay global.
+
 | File | Purpose |
 |------|---------|
-| `WorkspacePanel.tsx` | Container for workspace tabs |
+| `WorkspacePanel.tsx` | Container for workspace tabs, scoped by the current top-level workspace agent |
 | `WorkspaceTabs.tsx` | Tab switcher (Memory, Config, Crons, Skills) |
-| `tabs/MemoryTab.tsx` | View/edit MEMORY.md and daily files |
-| `tabs/ConfigTab.tsx` | Edit workspace files (SOUL.md, TOOLS.md, USER.md, etc.) |
-| `tabs/CronsTab.tsx` | Cron job management (list, create, toggle, run) |
+| `tabs/MemoryTab.tsx` | View/edit the selected top-level agent's `MEMORY.md` and daily files |
+| `tabs/ConfigTab.tsx` | Edit scoped workspace files (`SOUL.md`, `TOOLS.md`, `USER.md`, etc.) for the selected top-level agent |
+| `tabs/CronsTab.tsx` | Cron job management (list, create, toggle, run). Remains global |
 | `tabs/CronDialog.tsx` | Cron creation/edit dialog |
-| `tabs/SkillsTab.tsx` | View installed skills with eligibility status |
-| `hooks/useWorkspaceFile.ts` | Fetch/save workspace files via REST API |
+| `tabs/SkillsTab.tsx` | View installed skills for the selected top-level agent workspace |
+| `hooks/useWorkspaceFile.ts` | Fetch/save scoped workspace files via REST API + `agentId` |
 | `hooks/useCrons.ts` | Cron CRUD operations via REST API |
-| `hooks/useSkills.ts` | Fetch skills list |
+| `hooks/useSkills.ts` | Fetch scoped skills list via `agentId` |
+| `workspaceScope.ts` | Derives workspace scope and localStorage keys from the owning top-level agent |
+| `workspaceSwitchGuard.ts` | Pure guard logic for dirty-file prompts when switching between top-level agents |
+
+### Workspace scope rules
+
+- Root sessions use their own top-level agent as workspace scope
+- Subagent and cron-run views inherit the owning top-level agent workspace
+- The child session itself does **not** create a separate workspace scope
+- Cross-agent dirty file prompts only fire when the owning top-level agent changes
+- Crons and Kanban stay global even while Memory, Config, Skills, and file-browser state switch per agent
 
 #### `features/settings/`
 Settings drawer with tabbed sections.
@@ -332,24 +344,30 @@ Applied in order in `app.ts`:
 | `/api/voice-phrases/:lang` | `routes/voice-phrases.ts` | GET, PUT | Read/save language-specific stop/cancel/wake phrase overrides |
 | `/api/agentlog` | `routes/agent-log.ts` | GET, POST | Agent activity log persistence. Zod-validated entries. Mutex-protected file I/O |
 | `/api/tokens` | `routes/tokens.ts` | GET | Token usage statistics — scans session transcripts, persists high water mark |
-| `/api/memories` | `routes/memories.ts` | GET, POST, DELETE | Memory management — reads MEMORY.md + daily files, stores/deletes via gateway tool invocation |
-| `/api/memories/section` | `routes/memories.ts` | GET, PUT | Read/replace a specific memory section by title |
-| `/api/gateway/models` | `routes/gateway.ts` | GET | Available models via `openclaw models list`. Allowlist support |
+| `/api/memories` | `routes/memories.ts` | GET, POST, DELETE | Agent-scoped memory management — reads `MEMORY.md` + daily files, stores/deletes via gateway tool invocation |
+| `/api/memories/section` | `routes/memories.ts` | GET, PUT | Read/replace a specific memory section by title, scoped via `agentId` |
+| `/api/gateway/models` | `routes/gateway.ts` | GET | Available models via `openclaw models list`, with longer cold-start timeout, allowlist support, and `--all` fallback |
 | `/api/gateway/session-info` | `routes/gateway.ts` | GET | Current session model/thinking level |
 | `/api/gateway/session-patch` | `routes/gateway.ts` | POST | Change model/effort for a session |
 | `/api/server-info` | `routes/server-info.ts` | GET | Server time, gateway uptime, agent name |
 | `/api/version` | `routes/version.ts` | GET | Package version from `package.json` |
 | `/api/git-info` | `routes/git-info.ts` | GET, POST, DELETE | Git branch/status. Session workdir registration |
-| `/api/workspace/:key` | `routes/workspace.ts` | GET, PUT | Read/write workspace files (strict key→file allowlist: soul, tools, identity, user, agents, heartbeat) |
+| `/api/workspace` | `routes/workspace.ts` | GET | List allowlisted workspace files for the selected agent workspace |
+| `/api/workspace/:key` | `routes/workspace.ts` | GET, PUT | Read/write allowlisted workspace files (`soul`, `tools`, `identity`, `user`, `agents`, `heartbeat`) via `agentId` |
 | `/api/crons` | `routes/crons.ts` | GET, POST, PATCH, DELETE | Cron job CRUD via gateway tool invocation |
 | `/api/crons/:id/toggle` | `routes/crons.ts` | POST | Toggle cron enabled/disabled |
 | `/api/crons/:id/run` | `routes/crons.ts` | POST | Run cron job immediately |
 | `/api/crons/:id/runs` | `routes/crons.ts` | GET | Cron run history |
-| `/api/skills` | `routes/skills.ts` | GET | List skills via `openclaw skills list --json` |
+| `/api/skills` | `routes/skills.ts` | GET | List skills for the selected agent workspace via a scoped OpenClaw config |
 | `/api/files` | `routes/files.ts` | GET | Serve local image files (MIME-type restricted, directory traversal blocked) |
-| `/api/files/tree` | `routes/file-browser.ts` | GET | Workspace directory tree (excludes node_modules, .git, etc.) |
-| `/api/files/read` | `routes/file-browser.ts` | GET | Read file contents with mtime for conflict detection |
-| `/api/files/write` | `routes/file-browser.ts` | POST | Write file with mtime-based optimistic concurrency (409 on conflict) |
+| `/api/files/tree` | `routes/file-browser.ts` | GET | Agent-scoped workspace directory tree (excludes node_modules, .git, etc.) |
+| `/api/files/read` | `routes/file-browser.ts` | GET | Read scoped file contents with mtime for conflict detection |
+| `/api/files/write` | `routes/file-browser.ts` | PUT | Write scoped file contents with optimistic concurrency (409 on conflict) |
+| `/api/files/rename` | `routes/file-browser.ts` | POST | Rename a file or directory within the selected workspace |
+| `/api/files/move` | `routes/file-browser.ts` | POST | Move a file or directory within the selected workspace |
+| `/api/files/trash` | `routes/file-browser.ts` | POST | Trash a file or directory, or permanently delete when using `FILE_BROWSER_ROOT` |
+| `/api/files/restore` | `routes/file-browser.ts` | POST | Restore a trashed file or directory |
+| `/api/files/raw` | `routes/file-browser.ts` | GET | Serve scoped image previews from the selected workspace |
 | `/api/claude-code-limits` | `routes/claude-code-limits.ts` | GET | Claude Code rate limits via PTY + CLI parsing |
 | `/api/codex-limits` | `routes/codex-limits.ts` | GET | Codex rate limits via OpenAI API with local file fallback |
 | `/api/kanban/tasks` | `routes/kanban.ts` | GET, POST | Task CRUD -- list (with filters/pagination) and create |
@@ -374,7 +392,7 @@ Applied in order in `app.ts`:
 | `lib/ws-proxy.ts` | WebSocket proxy — client→gateway with session cookie auth on upgrade and Ed25519 device identity injection |
 | `lib/device-identity.ts` | Ed25519 keypair generation/persistence (`~/.nerve/device-identity.json`). Builds signed connect blocks for gateway auth |
 | `lib/gateway-client.ts` | HTTP client for gateway tool invocation API (`/tools/invoke`) |
-| `lib/file-watcher.ts` | Watches MEMORY.md, `memory/`, and workspace directory (recursive). Broadcasts `file.changed` SSE events for real-time sync |
+| `lib/file-watcher.ts` | Discovers agent workspaces, watches each `MEMORY.md` and `memory/` directory, and optionally watches full workspaces recursively. Broadcasts agent-tagged `memory.changed` / `file.changed` SSE events |
 | `lib/file-utils.ts` | File browser utilities — path validation, directory exclusions, binary file detection |
 | `lib/files.ts` | Async file helpers (`readJSON`, `writeJSON`, `readText`) |
 | `lib/mutex.ts` | Async mutex for serializing file read-modify-write. Includes keyed mutex variant |
@@ -444,7 +462,8 @@ Browser → GET /api/events → SSE stream (text/event-stream)
 ```
 
 Events pushed by the server:
-- `memory.changed` — File watcher detects MEMORY.md or daily file changes
+- `memory.changed` — File watcher or memory API detects `MEMORY.md` / daily file changes, tagged with `agentId`
+- `file.changed` — File watcher detects a workspace file change, tagged with `agentId`
 - `tokens.updated` — Token usage data changed
 - `status.changed` — Gateway status changed
 - `ping` — Keep-alive every 30 seconds

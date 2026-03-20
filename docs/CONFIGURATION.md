@@ -256,13 +256,13 @@ REPLICATE_BASE_URL=https://api.replicate.com/v1
 
 | Variable | Default | Description |
 |---------|---------|-------------|
-| `FILE_BROWSER_ROOT` | `""` (disabled) | If set, overrides OpenClaw workspace as the root directory for the workspace directory tree. In this mode, default exclusion rules are disabled and delete operations are permanent (no `.trash` recovery). |
-| `MEMORY_PATH` | `~/.openclaw/workspace/MEMORY.md` | Path to the agent's long-term memory file |
-| `MEMORY_DIR` | `~/.openclaw/workspace/memory/` | Directory for daily memory files (`YYYY-MM-DD.md`) |
+| `FILE_BROWSER_ROOT` | `""` (disabled) | If set, overrides the file browser root directory for all sessions. In this mode, file-browser `agentId` scoping is bypassed, default exclusion rules are disabled, and delete operations are permanent (no `.trash` recovery). |
+| `MEMORY_PATH` | `~/.openclaw/workspace/MEMORY.md` | Path to the main agent's long-term memory file |
+| `MEMORY_DIR` | `~/.openclaw/workspace/memory/` | Directory for the main agent's daily memory files (`YYYY-MM-DD.md`) |
 | `SESSIONS_DIR` | `~/.openclaw/agents/main/sessions/` | Session transcript directory (scanned for token usage) |
 | `USAGE_FILE` | `~/.openclaw/token-usage.json` | Persistent cumulative token usage data |
 | `NERVE_VOICE_PHRASES_PATH` | `~/.nerve/voice-phrases.json` | Override location for per-language voice phrase overrides |
-| `NERVE_WATCH_WORKSPACE_RECURSIVE` | `false` | Enables recursive `fs.watch` for the entire workspace (legacy behavior). Disabled by default to prevent Linux inotify `ENOSPC` watcher exhaustion. |
+| `NERVE_WATCH_WORKSPACE_RECURSIVE` | `false` | Re-enables recursive `fs.watch` for full workspace `file.changed` SSE events outside `MEMORY.md` and `memory/`. Disabled by default to prevent Linux inotify `ENOSPC` watcher exhaustion. Memory watchers stay enabled for discovered agent workspaces even when this is `false`. |
 | `WORKSPACE_ROOT` | *(auto-detected)* | Allowed base directory for git workdir registration. Auto-derived from `git worktree list` or parent of `process.cwd()` |
 
 ```bash

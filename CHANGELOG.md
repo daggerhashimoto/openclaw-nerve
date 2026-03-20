@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Highlights
+
+**Workspace context now follows the owning top-level agent**. File browser state, Memory, Config, and Skills now switch with the selected top-level agent instead of leaking across agents, and dirty editor tabs now block cross-agent switches with an explicit save / discard / cancel choice (PR #123).
+
+**Agent runtime flows got tighter**. Subagents can now choose whether they stay visible after one-shot runs, subagent deletion is more reliable, and the model catalog waits longer on cold starts so configured Codex and other models are more likely to appear in the spawn dialog (PR #119, PR #120, PR #124).
+
+**Installer and mobile edge cases got another hardening pass**. Tailscale setup now supports distinct IP and Serve flows, wake word is disabled on mobile web, and the right sidebar can collapse narrower on smaller screens (PR #116, PR #118, PR #122).
+
+### Added
+- Tailscale IP and Tailscale Serve setup flows in the installer, with matching installer-step documentation (PR #116)
+- An **After run** selector for one-shot subagents, with **Keep** and **Delete** cleanup options (PR #120)
+
+### Changed
+- Workspace scope is now derived from the owning top-level agent, including when viewing subagent sessions (PR #123)
+- File browser tabs, selection state, drafts, Memory, Config, and Skills now persist per top-level agent instead of globally (PR #123)
+- Cross-agent workspace switches now show **Save and switch**, **Discard and switch**, or **Cancel** when dirty editor tabs exist (PR #123)
+- Model catalog fetches now allow a longer cold-start timeout before giving up, so configured Codex and other models appear more reliably in the spawn dialog (PR #124)
+- Mobile web now disables wake word and points users to manual mic activation instead (PR #118)
+- Right sidebar resizing now allows a narrower minimum width (PR #122)
+
+### Fixed
+- Subagent session deletion no longer fails on the Nerve side when the gateway closes a proxied WebSocket normally during delete flows (PR #119)
+- Agent-scoped workspace switching no longer leaks same-path editor state, save toasts, watcher refreshes, or async file reads across top-level agents (PR #123)
+- Tailscale origin handling is more robust during setup and follow-up gateway patching (PR #116)
+
 ---
 
 ## [1.4.9] — 2026-03-18

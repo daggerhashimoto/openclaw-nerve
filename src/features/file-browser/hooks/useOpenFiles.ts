@@ -1,4 +1,11 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+} from 'react';
 import { getWorkspaceStorageKey } from '@/features/workspace/workspaceScope';
 import { isImageFile } from '../utils/fileTypes';
 import type { OpenFile } from '../types';
@@ -112,20 +119,12 @@ function mergeRestoredFiles(restoredFiles: OpenFile[], currentFiles: OpenFile[])
   return nextFiles;
 }
 
-function collectDirtyFilePaths(
-  agentId: string,
-  visibleFiles: OpenFile[],
-  dirtyFilesByAgent: Map<string, Map<string, DirtyFileSnapshot>>,
-): string[] {
-  const dirtyPaths = new Set<string>();
+function collectDirtyFilePaths(visibleFiles: OpenFile[], storedDirtyPaths: string[]): string[] {
+  const dirtyPaths = new Set(storedDirtyPaths);
 
   for (const file of visibleFiles) {
     if (!file.dirty) continue;
     dirtyPaths.add(file.path);
-  }
-
-  for (const filePath of dirtyFilesByAgent.get(agentId)?.keys() ?? []) {
-    dirtyPaths.add(filePath);
   }
 
   return [...dirtyPaths];
@@ -135,6 +134,8 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
   const scopedAgentId = normalizeAgentId(agentId);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
   const [activeTab, setActiveTabState] = useState<string>(() => loadPersistedTab(scopedAgentId));
+  const [stateOwnerAgentId, setStateOwnerAgentId] = useState(scopedAgentId);
+  const [dirtyFilePathsByAgent, setDirtyFilePathsByAgent] = useState<Record<string, string[]>>({});
   const restoreRequestRef = useRef(0);
 
   // Track mtimes from our own saves so we can ignore the SSE bounce-back.
@@ -144,20 +145,42 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
   const savingPaths = useRef<Set<string>>(new Set());
 
   const agentIdRef = useRef(scopedAgentId);
-  const stateOwnerAgentRef = useRef(scopedAgentId);
+  const stateOwnerAgentIdRef = useRef(scopedAgentId);
   const restoringAgentIdRef = useRef<string | null>(null);
   const dirtyFilesByAgentRef = useRef<Map<string, Map<string, DirtyFileSnapshot>>>(new Map());
-  agentIdRef.current = scopedAgentId;
 
-  const ownsVisibleState = stateOwnerAgentRef.current === scopedAgentId;
-  const visibleOpenFiles = ownsVisibleState ? openFiles : [];
+  const ownsVisibleState = stateOwnerAgentId === scopedAgentId;
+  const visibleOpenFiles = useMemo(() => (
+    ownsVisibleState ? openFiles : []
+  ), [openFiles, ownsVisibleState]);
   const visibleActiveTab = ownsVisibleState ? activeTab : loadPersistedTab(scopedAgentId);
+  const visibleDirtyFilePaths = useMemo(() => (
+    dirtyFilePathsByAgent[scopedAgentId] ?? []
+  ), [dirtyFilePathsByAgent, scopedAgentId]);
 
   const openFilesRef = useRef<OpenFile[]>(visibleOpenFiles);
-  // eslint-disable-next-line react-hooks/immutability
-  openFilesRef.current = visibleOpenFiles;
+
+  useLayoutEffect(() => {
+    agentIdRef.current = scopedAgentId;
+    stateOwnerAgentIdRef.current = stateOwnerAgentId;
+    openFilesRef.current = visibleOpenFiles;
+  }, [scopedAgentId, stateOwnerAgentId, visibleOpenFiles]);
 
   const unlockTimers = useRef<Map<string, number>>(new Map());
+
+  const setDirtyFilesForAgent = useCallback((targetAgentId: string, dirtyFiles: Map<string, DirtyFileSnapshot>) => {
+    dirtyFilesByAgentRef.current.set(targetAgentId, dirtyFiles);
+
+    const nextPaths = [...dirtyFiles.keys()];
+    setDirtyFilePathsByAgent((prev) => {
+      const currentPaths = prev[targetAgentId] ?? [];
+      const pathsUnchanged = currentPaths.length === nextPaths.length
+        && currentPaths.every((path, index) => path === nextPaths[index]);
+
+      if (pathsUnchanged) return prev;
+      return { ...prev, [targetAgentId]: nextPaths };
+    });
+  }, []);
 
   const rememberDirtyFiles = useCallback((targetAgentId: string, files: OpenFile[]) => {
     const dirtyFiles = new Map<string, DirtyFileSnapshot>();
@@ -171,8 +194,8 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       });
     }
 
-    dirtyFilesByAgentRef.current.set(targetAgentId, dirtyFiles);
-  }, []);
+    setDirtyFilesForAgent(targetAgentId, dirtyFiles);
+  }, [setDirtyFilesForAgent]);
 
   const reconcileDirtyFileSnapshotAfterSave = useCallback((
     targetAgentId: string,
@@ -184,7 +207,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     const snapshot = dirtyFiles.get(filePath);
 
     if (!snapshot) {
-      dirtyFilesByAgentRef.current.set(targetAgentId, dirtyFiles);
+      setDirtyFilesForAgent(targetAgentId, dirtyFiles);
       return;
     }
 
@@ -198,8 +221,8 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       });
     }
 
-    dirtyFilesByAgentRef.current.set(targetAgentId, dirtyFiles);
-  }, []);
+    setDirtyFilesForAgent(targetAgentId, dirtyFiles);
+  }, [setDirtyFilesForAgent]);
 
   const remapDirtyFiles = useCallback((targetAgentId: string, fromPath: string, toPath: string) => {
     const dirtyFiles = dirtyFilesByAgentRef.current.get(targetAgentId);
@@ -213,8 +236,8 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       nextDirtyFiles.set(nextPath, snapshot);
     }
 
-    dirtyFilesByAgentRef.current.set(targetAgentId, nextDirtyFiles);
-  }, []);
+    setDirtyFilesForAgent(targetAgentId, nextDirtyFiles);
+  }, [setDirtyFilesForAgent]);
 
   const closeDirtyFilesByPrefix = useCallback((targetAgentId: string, pathPrefix: string) => {
     const dirtyFiles = dirtyFilesByAgentRef.current.get(targetAgentId);
@@ -226,14 +249,8 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       nextDirtyFiles.set(path, snapshot);
     }
 
-    dirtyFilesByAgentRef.current.set(targetAgentId, nextDirtyFiles);
-  }, []);
-
-  useEffect(() => {
-    if (stateOwnerAgentRef.current !== scopedAgentId) return;
-    if (restoringAgentIdRef.current === scopedAgentId) return;
-    rememberDirtyFiles(scopedAgentId, openFiles);
-  }, [openFiles, rememberDirtyFiles, scopedAgentId]);
+    setDirtyFilesForAgent(targetAgentId, nextDirtyFiles);
+  }, [setDirtyFilesForAgent]);
 
   const restorePersistedFiles = useCallback(async (targetAgentId = scopedAgentId) => {
     const requestId = ++restoreRequestRef.current;
@@ -245,17 +262,11 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       }
     };
 
-    stateOwnerAgentRef.current = targetAgentId;
     restoringAgentIdRef.current = targetAgentId;
-    setOpenFiles([]);
-    setActiveTabState(persistedTab);
+    await Promise.resolve();
 
-    if (persistedPaths.length === 0) {
-      dirtyFilesByAgentRef.current.set(targetAgentId, new Map());
+    if (restoreRequestRef.current !== requestId || agentIdRef.current !== targetAgentId) {
       clearRestore();
-      persistFiles(targetAgentId, []);
-      persistTab(targetAgentId, 'chat');
-      setActiveTabState('chat');
       return;
     }
 
@@ -294,14 +305,18 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     }
 
     clearRestore();
+    const ownsTargetState = stateOwnerAgentIdRef.current === targetAgentId;
+    stateOwnerAgentIdRef.current = targetAgentId;
+    setStateOwnerAgentId(targetAgentId);
     setOpenFiles((prev) => {
-      const next = mergeRestoredFiles(files, prev);
+      const baseFiles = ownsTargetState ? prev : [];
+      const next = mergeRestoredFiles(files, baseFiles);
       rememberDirtyFiles(targetAgentId, next);
       persistFiles(targetAgentId, next);
       return next;
     });
     setActiveTabState((currentTab) => {
-      const nextTab = currentTab !== persistedTab
+      const nextTab = ownsTargetState && currentTab !== persistedTab
         ? currentTab
         : getRestoredActiveTab(persistedTab, files);
       persistTab(targetAgentId, nextTab);
@@ -314,6 +329,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       clearTimeout(timer);
     }
     unlockTimers.current.clear();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- restore orchestration intentionally rehydrates agent-scoped editor state from persisted storage
     void restorePersistedFiles(scopedAgentId);
   }, [restorePersistedFiles, scopedAgentId]);
 
@@ -332,13 +348,14 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     const requestAgentId = agentIdRef.current;
 
     setOpenFiles((prev) => {
-      const existing = prev.find((file) => file.path === filePath);
-      if (existing) return prev;
+      const baseFiles = stateOwnerAgentId === requestAgentId ? prev : [];
+      const existing = baseFiles.find((file) => file.path === filePath);
+      if (existing) return baseFiles;
 
-      let base = prev;
-      if (base.length >= MAX_OPEN_TABS) {
-        const oldest = base.find((file) => !file.dirty);
-        base = oldest ? base.filter((file) => file.path !== oldest.path) : base.slice(1);
+      let nextBase = baseFiles;
+      if (nextBase.length >= MAX_OPEN_TABS) {
+        const oldest = nextBase.find((file) => !file.dirty);
+        nextBase = oldest ? nextBase.filter((file) => file.path !== oldest.path) : nextBase.slice(1);
       }
 
       const newFile: OpenFile = {
@@ -351,11 +368,11 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
         mtime: 0,
         loading: true,
       };
-      const next = [...base, newFile];
+      const next = [...nextBase, newFile];
+      rememberDirtyFiles(requestAgentId, next);
       persistFiles(requestAgentId, next);
       return next;
     });
-
     setActiveTab(filePath);
 
     if (isImageFile(basename(filePath))) {
@@ -398,13 +415,14 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
           : file
       )));
     }
-  }, [setActiveTab]);
+  }, [rememberDirtyFiles, setActiveTab, stateOwnerAgentId]);
 
   const closeFile = useCallback((filePath: string) => {
     const requestAgentId = agentIdRef.current;
 
     setOpenFiles((prev) => {
       const next = prev.filter((file) => file.path !== filePath);
+      rememberDirtyFiles(requestAgentId, next);
       persistFiles(requestAgentId, next);
       return next;
     });
@@ -414,14 +432,19 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       persistTab(requestAgentId, 'chat');
       return 'chat';
     });
-  }, []);
+  }, [rememberDirtyFiles]);
 
   const updateContent = useCallback((filePath: string, content: string) => {
-    setOpenFiles((prev) => prev.map((file) => {
-      if (file.path !== filePath) return file;
-      return { ...file, content, dirty: content !== file.savedContent };
-    }));
-  }, []);
+    const requestAgentId = agentIdRef.current;
+    setOpenFiles((prev) => {
+      const next = prev.map((file) => {
+        if (file.path !== filePath) return file;
+        return { ...file, content, dirty: content !== file.savedContent };
+      });
+      rememberDirtyFiles(requestAgentId, next);
+      return next;
+    });
+  }, [rememberDirtyFiles]);
 
   const saveFileForAgent = useCallback(async (
     filePath: string,
@@ -516,22 +539,26 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
         return;
       }
 
-      setOpenFiles((prev) => prev.map((file) => (
-        file.path === filePath
-          ? {
-              ...file,
-              content: data.content,
-              savedContent: data.content,
-              dirty: false,
-              mtime: data.mtime,
-              error: undefined,
-            }
-          : file
-      )));
+      setOpenFiles((prev) => {
+        const next = prev.map((file) => (
+          file.path === filePath
+            ? {
+                ...file,
+                content: data.content,
+                savedContent: data.content,
+                dirty: false,
+                mtime: data.mtime,
+                error: undefined,
+              }
+            : file
+        ));
+        rememberDirtyFiles(requestAgentId, next);
+        return next;
+      });
     } catch {
       // ignore reload failures
     }
-  }, []);
+  }, [rememberDirtyFiles]);
 
   // Clean up pending unlock timers on unmount
   useEffect(() => {
@@ -667,8 +694,8 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
   }, [closeDirtyFilesByPrefix, rememberDirtyFiles, scopedAgentId]);
 
   const getDirtyFilePaths = useCallback(() => (
-    collectDirtyFilePaths(scopedAgentId, openFilesRef.current, dirtyFilesByAgentRef.current)
-  ), [scopedAgentId]);
+    collectDirtyFilePaths(visibleOpenFiles, visibleDirtyFilePaths)
+  ), [visibleDirtyFilePaths, visibleOpenFiles]);
 
   const discardAllDirtyFiles = useCallback(() => {
     const requestAgentId = agentIdRef.current;
@@ -714,7 +741,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     handleFileChanged,
     remapOpenPaths,
     closeOpenPathsByPrefix,
-    hasDirtyFiles: getDirtyFilePaths().length > 0,
+    hasDirtyFiles: visibleOpenFiles.some((file) => file.dirty) || visibleDirtyFilePaths.length > 0,
     getDirtyFilePaths,
     saveAllDirtyFiles,
     discardAllDirtyFiles,

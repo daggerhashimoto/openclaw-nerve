@@ -354,4 +354,27 @@ describe('App save toast workspace scoping', () => {
     expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument();
     expect(reloadCalls).toEqual([]);
   });
+
+  it('does not resurface a stale save conflict toast after switching away and back', async () => {
+    saveFileByAgent.alpha.mockResolvedValue({ ok: false, conflict: true });
+    saveFileByAgent.bravo.mockResolvedValue({ ok: true });
+
+    const { rerender } = render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save shared.md' }));
+
+    expect(await screen.findByText('File changed externally.')).toBeInTheDocument();
+
+    sessionContext.currentSession = 'agent:bravo:main';
+    rerender(<App />);
+
+    expect(screen.queryByText('File changed externally.')).not.toBeInTheDocument();
+
+    sessionContext.currentSession = 'agent:alpha:main';
+    rerender(<App />);
+
+    expect(screen.getByTestId('workspace-agent')).toHaveTextContent('alpha');
+    expect(screen.queryByText('File changed externally.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument();
+  });
 });

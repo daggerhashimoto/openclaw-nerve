@@ -5,7 +5,16 @@
  * Connection management is handled by useConnectionManager.
  * Dashboard data fetching is handled by useDashboardData.
  */
-import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  useReducer,
+  lazy,
+  Suspense,
+} from 'react';
 import { AlertTriangle, CheckCircle2, RotateCw } from 'lucide-react';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext } from '@/contexts/SessionContext';
@@ -161,7 +170,9 @@ export default function App({ onLogout }: AppProps) {
     agentId: string;
     path: string;
     type: 'conflict';
+    workspaceVersion: number;
   } | null>(null);
+  const [workspaceVersion, bumpWorkspaceVersion] = useReducer((version: number) => version + 1, 0);
   const saveToastTimerRef = useRef<number | null>(null);
   const workspaceAgentIdRef = useRef(workspaceAgentId);
 
@@ -184,20 +195,23 @@ export default function App({ onLogout }: AppProps) {
     if (workspaceAgentIdRef.current !== targetAgentId) return;
 
     clearSaveToastTimer();
-    const toastForAgent = { ...nextToast, agentId: targetAgentId };
+    const toastForAgent = {
+      ...nextToast,
+      agentId: targetAgentId,
+      workspaceVersion,
+    };
     setSaveToast(toastForAgent);
     saveToastTimerRef.current = window.setTimeout(() => {
       setSaveToast((currentToast) => (currentToast === toastForAgent ? null : currentToast));
       saveToastTimerRef.current = null;
     }, 5000);
-  }, [clearSaveToastTimer]);
+  }, [clearSaveToastTimer, workspaceVersion]);
 
   useEffect(() => {
     workspaceAgentIdRef.current = workspaceAgentId;
-    if (saveToast && saveToast.agentId !== workspaceAgentId) {
-      dismissSaveToast();
-    }
-  }, [dismissSaveToast, saveToast, workspaceAgentId]);
+    bumpWorkspaceVersion();
+    clearSaveToastTimer();
+  }, [clearSaveToastTimer, workspaceAgentId]);
 
   useEffect(() => () => clearSaveToastTimer(), [clearSaveToastTimer]);
 
@@ -373,7 +387,7 @@ export default function App({ onLogout }: AppProps) {
   useEffect(() => {
     const currentCount = agentLogEntries.length;
     if (currentCount > prevLogCount.current) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: transient UI glow follows external log updates
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- transient log glow is intentional UI feedback from external log updates
       setLogGlow(true);
       const timer = setTimeout(() => setLogGlow(false), 500);
       prevLogCount.current = currentCount;
@@ -442,7 +456,10 @@ export default function App({ onLogout }: AppProps) {
     setSttModel(model);
   }, [setSttModel]);
 
-  const visibleSaveToast = saveToast?.agentId === workspaceAgentId ? saveToast : null;
+  const visibleSaveToast = saveToast?.agentId === workspaceAgentId
+    && saveToast.workspaceVersion === workspaceVersion
+    ? saveToast
+    : null;
 
   const chatContent = (
     <TabbedContentArea

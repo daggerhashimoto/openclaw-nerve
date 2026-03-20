@@ -217,7 +217,6 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID) {
     setLoading(false);
   }, [fetchChildren, scopedAgentId]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch and agent-scope resets belong in this effect
   useEffect(() => {
     void loadRoot();
   }, [loadRoot]);

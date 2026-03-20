@@ -14,7 +14,7 @@ export const nerveTheme = EditorView.theme(
     '&': {
       backgroundColor: 'transparent',
       color: 'var(--foreground)',
-      fontSize: '13px',
+      fontSize: 'var(--editor-font-size, 13px)',
       fontFamily: 'var(--font-mono)',
       height: '100%',
     },
@@ -62,7 +62,7 @@ export const nerveTheme = EditorView.theme(
       gap: '4px',
     },
     '.cm-panel.cm-search input': {
-      fontSize: '12px',
+      fontSize: 'var(--editor-font-size, 13px)',
       padding: '2px 6px',
       borderRadius: '4px',
       border: '1px solid var(--border)',
@@ -70,7 +70,7 @@ export const nerveTheme = EditorView.theme(
       color: 'var(--foreground)',
     },
     '.cm-panel.cm-search button': {
-      fontSize: '12px',
+      fontSize: 'var(--editor-font-size, 13px)',
       padding: '2px 8px',
       borderRadius: '4px',
       cursor: 'pointer',
@@ -82,12 +82,12 @@ export const nerveTheme = EditorView.theme(
       backgroundColor: 'var(--muted)',
     },
     '.cm-panel.cm-search button[name="close"]': {
-      fontSize: '14px',
+      fontSize: 'var(--editor-font-size, 13px)',
       padding: '2px 8px',
       fontWeight: 'bold',
     },
     '.cm-panel.cm-search label': {
-      fontSize: '12px',
+      fontSize: 'var(--editor-font-size, 13px)',
       color: 'var(--muted-foreground)',
     },
     '.cm-tooltip': {

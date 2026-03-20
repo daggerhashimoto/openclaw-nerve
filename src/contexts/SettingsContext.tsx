@@ -42,15 +42,22 @@ interface SettingsContextValue {
   setFont: (font: FontName) => void;
   fontSize: number;
   setFontSize: (size: number) => void;
+  editorFontSize: number;
+  setEditorFontSize: (size: number) => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 const FONT_REFRESH_STORAGE_KEY = 'nerve:font-refresh-20260312';
 
 const ALLOWED_FONT_SIZES = new Set([10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24]);
+const ALLOWED_EDITOR_FONT_SIZES = new Set([10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24]);
 
 function normalizeFontSize(size: number): number {
   return Number.isFinite(size) && ALLOWED_FONT_SIZES.has(size) ? size : 15;
+}
+
+function normalizeEditorFontSize(size: number): number {
+  return Number.isFinite(size) && ALLOWED_EDITOR_FONT_SIZES.has(size) ? size : 13;
 }
 
 function resolveInitialFont(): FontName {
@@ -121,6 +128,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const parsed = saved ? parseInt(saved, 10) : NaN;
     return normalizeFontSize(parsed);
   });
+  const [editorFontSize, setEditorFontSizeState] = useState<number>(() => {
+    const saved = localStorage.getItem('nerve:editor-font-size');
+    const parsed = saved ? parseInt(saved, 10) : NaN;
+    return normalizeEditorFontSize(parsed);
+  });
   const { speak } = useTTS(soundEnabled, ttsProvider, ttsModel || undefined);
   const wakeWordToggleRef = useRef<(() => void) | null>(null);
 
@@ -138,6 +150,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.style.setProperty('--font-size-base', `${fontSize}px`);
   }, [fontSize]);
+
+  // Apply editor font size on mount and when it changes
+  useEffect(() => {
+    document.documentElement.style.setProperty('--editor-font-size', `${editorFontSize}px`);
+  }, [editorFontSize]);
 
   const toggleSound = useCallback(() => {
     setSoundEnabled(prev => {
@@ -287,6 +304,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('nerve:font-size', String(normalized));
   }, []);
 
+  const setEditorFontSize = useCallback((size: number) => {
+    const normalized = normalizeEditorFontSize(size);
+    setEditorFontSizeState(normalized);
+    localStorage.setItem('nerve:editor-font-size', String(normalized));
+  }, []);
+
   const value = useMemo<SettingsContextValue>(() => ({
     soundEnabled,
     toggleSound,
@@ -322,6 +345,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setFont,
     fontSize,
     setFontSize,
+    editorFontSize,
+    setEditorFontSize,
   }), [
     soundEnabled, toggleSound, ttsProvider, ttsModel, changeTtsProvider, changeTtsModel, toggleTtsProvider,
     sttProvider, changeSttProvider, sttInputMode, changeSttInputMode, sttModel, changeSttModel,
@@ -329,7 +354,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     liveTranscriptionPreview, toggleLiveTranscriptionPreview,
     speak, panelRatio, setPanelRatio, telemetryVisible, toggleTelemetry,
     eventsVisible, toggleEvents, logVisible, toggleLog, theme, setTheme, font, setFont,
-    fontSize, setFontSize,
+    fontSize, setFontSize, editorFontSize, setEditorFontSize,
   ]);
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

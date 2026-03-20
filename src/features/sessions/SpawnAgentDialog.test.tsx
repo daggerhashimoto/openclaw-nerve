@@ -1,7 +1,8 @@
 import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { FALLBACK_MODELS, SpawnAgentDialog } from './SpawnAgentDialog';
+import { SpawnAgentDialog } from './SpawnAgentDialog';
+import { FALLBACK_MODELS } from './fallbackModels';
 
 const mockUseSessionContext = vi.fn();
 

@@ -138,13 +138,24 @@ export function resolveRecognitionLang(language: string): string {
   return LANG_TO_BCP47.en;
 }
 
+export interface VoiceInputOptions {
+  /** Draft text to preserve when starting recording. Restored on discard. */
+  draftText?: string;
+  /** How to handle the final transcript: 'replace' draft, 'append' to draft, or 'prepend'. Default: 'replace'. */
+  insertMode?: 'replace' | 'append' | 'prepend';
+  /** Called when draft text should be restored (e.g., on discard). */
+  onDraftRestore?: (draft: string) => void;
+}
+
 export function useVoiceInput(
   onTranscription: (text: string) => void,
   agentName: string = 'Agent',
   language: string = 'en',
   phrasesVersion: number = 0,
   sttInputMode: STTInputMode = 'hybrid',
+  options: VoiceInputOptions = {},
 ) {
+  const { draftText = '', insertMode = 'replace', onDraftRestore } = options;
   const [state, setState] = useState<VoiceState>('idle');
   const stateRef = useRef<VoiceState>('idle');
   const [interimTranscript, setInterimTranscript] = useState('');
@@ -158,6 +169,11 @@ export function useVoiceInput(
   onTranscriptionRef.current = onTranscription;
   const sttInputModeRef = useRef(sttInputMode);
   sttInputModeRef.current = sttInputMode;
+
+  // Draft preservation: saved when recording starts, restored on discard
+  const savedDraftRef = useRef('');
+  const insertModeRef = useRef(insertMode);
+  insertModeRef.current = insertMode;
 
   // Single persistent recognition instance
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -380,6 +396,9 @@ export function useVoiceInput(
     recognitionRef.current = null;
 
     try {
+      // Save draft text before starting recording
+      savedDraftRef.current = draftText || '';
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       chunksRef.current = [];
@@ -404,7 +423,7 @@ export function useVoiceInput(
         ensureRecognitionRef.current('wake');
       }
     }
-  }, [resetBrowserTranscript, setVoiceState]);
+  }, [resetBrowserTranscript, setVoiceState, draftText]);
 
   const doDiscard = useCallback(() => {
     setInterimTranscript('');
@@ -419,13 +438,20 @@ export function useVoiceInput(
       mediaRecorderRef.current.stop();
     }
     stopStream();
+
+    // Restore saved draft on discard
+    if (savedDraftRef.current && onDraftRestore) {
+      onDraftRestore(savedDraftRef.current);
+    }
+    savedDraftRef.current = '';
+
     if (wakeWordEnabledRef.current) {
       setVoiceState('listening');
       ensureRecognitionRef.current('wake');
     } else {
       setVoiceState('idle');
     }
-  }, [resetBrowserTranscript, stopStream, setVoiceState]);
+  }, [resetBrowserTranscript, stopStream, setVoiceState, onDraftRestore]);
 
   const transcribeWithBackend = useCallback(async (blob: Blob) => {
     const fd = new FormData();
@@ -484,8 +510,28 @@ export function useVoiceInput(
           }
         }
 
-        if (cleaned) onTranscriptionRef.current(cleaned);
+        if (cleaned) {
+          // Apply insert mode: replace (default), append, or prepend
+          const savedDraft = savedDraftRef.current;
+          let finalText = cleaned;
+
+          if (savedDraft) {
+            const mode = insertModeRef.current;
+            if (mode === 'append') {
+              // Append transcript after draft with space separator if needed
+              finalText = savedDraft + (savedDraft.endsWith(' ') ? '' : ' ') + cleaned;
+            } else if (mode === 'prepend') {
+              // Prepend transcript before draft with space separator if needed
+              finalText = cleaned + (savedDraft.startsWith(' ') ? '' : ' ') + savedDraft;
+            }
+            // 'replace' mode uses cleaned transcript as-is (default)
+          }
+
+          onTranscriptionRef.current(finalText);
+        }
         setError(null);
+        // Clear saved draft after successful transcription
+        savedDraftRef.current = '';
       } catch (err) {
         console.error('Transcription failed:', err);
         setError(`Transcription failed: ${err instanceof Error ? err.message : String(err)}`);

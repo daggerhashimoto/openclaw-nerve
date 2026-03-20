@@ -106,16 +106,48 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   const effectiveSttInputMode = sttProvider === 'openai' ? 'local' : sttInputMode;
 
-  const { voiceState, interimTranscript, wakeWordEnabled, toggleWakeWord, error: voiceError, clearError: clearVoiceError } = useVoiceInput((text) => {
+  // Track current input value for draft preservation during voice recording
+  const [currentInputValue, setCurrentInputValue] = useState('');
+
+  const handleDraftRestore = useCallback((draft: string) => {
     const input = inputRef.current;
     if (input) {
-      input.value = '';
-      input.style.height = 'auto';
+      input.value = draft;
       input.style.fontStyle = '';
       input.style.opacity = '';
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+      setCurrentInputValue(draft);
+      // Focus back on input after restore
+      input.focus();
     }
-    onSend('[voice] ' + text);
-  }, agentName, voiceLang, voicePhrasesVersion, effectiveSttInputMode);
+  }, []);
+
+  const { voiceState, interimTranscript, wakeWordEnabled, toggleWakeWord, error: voiceError, clearError: clearVoiceError } = useVoiceInput(
+    (text) => {
+      const input = inputRef.current;
+      if (input) {
+        input.value = '';
+        input.style.height = 'auto';
+        input.style.fontStyle = '';
+        input.style.opacity = '';
+      }
+      setCurrentInputValue('');
+      onSend('[voice] ' + text);
+    },
+    agentName,
+    voiceLang,
+    voicePhrasesVersion,
+    effectiveSttInputMode,
+    {
+      // Preserve current input as draft when recording starts
+      draftText: currentInputValue,
+      // Restore draft on discard
+      onDraftRestore: handleDraftRestore,
+      // Default to replace mode (voice transcript replaces draft)
+      insertMode: 'replace',
+    }
+  );
 
   // Live transcription preview: write interim transcript to textarea during recording
   useEffect(() => {
@@ -260,16 +292,18 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
     // Add to persistent command history (deduplication handled by hook)
     if (text) inputHistory.addToHistory(text);
-    
+
     // Trigger pulse animation on successful send
     setSendPulse(true);
     setTimeout(() => setSendPulse(false), 400);
-    
+
     const input = inputRef.current;
     if (input) {
       input.value = '';
       input.style.height = 'auto';
     }
+    // Clear tracked input value
+    setCurrentInputValue('');
     onSend(text || '', pendingImages.length > 0 ? [...pendingImages] : undefined);
     setPendingImages([]);
     setAttachmentError(null);
@@ -330,6 +364,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           input.style.height = 'auto';
           input.style.height = Math.min(input.scrollHeight, 160) + 'px';
           input.setSelectionRange(input.value.length, input.value.length);
+          // Track the history entry value
+          setCurrentInputValue(entry);
         }
       }
       return;
@@ -351,6 +387,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         input.style.height = 'auto';
         input.style.height = Math.min(input.scrollHeight, 160) + 'px';
         input.setSelectionRange(input.value.length, input.value.length);
+        // Track the navigated value
+        setCurrentInputValue(input.value);
       }
     }
   };
@@ -359,6 +397,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     if (!inputRef.current) return;
     resetTabCompletion();
     clearVoiceError();
+    // Track current value for draft preservation during voice recording
+    setCurrentInputValue(inputRef.current.value);
     inputRef.current.style.height = 'auto';
     inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + 'px';
   };

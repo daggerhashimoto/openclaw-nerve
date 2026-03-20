@@ -770,3 +770,342 @@ describe('matchesPhrase (internal)', () => {
     });
   });
 });
+
+describe('Draft Preservation (Issue #76)', () => {
+  let originalFetch: typeof fetch;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    (window as unknown as { SpeechRecognition: typeof MockSpeechRecognition }).SpeechRecognition = MockSpeechRecognition;
+    (window as unknown as { MediaRecorder: typeof MockMediaRecorder }).MediaRecorder = MockMediaRecorder;
+    (navigator as unknown as { mediaDevices: { getUserMedia: Mock } }).mediaDevices = {
+      getUserMedia: vi.fn().mockResolvedValue(new MockMediaStream()),
+    };
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn((input: string | URL) => {
+      const url = String(input);
+      if (url.startsWith('/api/voice-phrases')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ stopPhrases: ['boom', 'done'], cancelPhrases: ['cancel'] }),
+        });
+      }
+      if (url === '/api/transcribe') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ text: 'voice transcript' }) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    }) as typeof fetch;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    globalThis.fetch = originalFetch;
+  });
+
+  describe('Draft Saving', () => {
+    it('should save draft text when recording starts', async () => {
+      const onTranscription = vi.fn();
+      const draftText = 'pre-typed draft message';
+
+      const { result } = renderHook(() =>
+        useVoiceInput(onTranscription, 'Agent', 'en', 0, 'hybrid', { draftText })
+      );
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      expect(result.current.voiceState).toBe('recording');
+    });
+
+    it('should restore draft on discard with onDraftRestore callback', async () => {
+      const onTranscription = vi.fn();
+      const onDraftRestore = vi.fn();
+      const draftText = 'important draft that should be restored';
+
+      const { result } = renderHook(() =>
+        useVoiceInput(onTranscription, 'Agent', 'en', 0, 'hybrid', { draftText, onDraftRestore })
+      );
+
+      // Start recording
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      expect(result.current.voiceState).toBe('recording');
+
+      // Discard recording
+      act(() => {
+        result.current.discardRecording();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // Draft should be restored via callback
+      expect(onDraftRestore).toHaveBeenCalledWith(draftText);
+    });
+  });
+
+  describe('Insert Modes', () => {
+    it('should replace draft with transcript in replace mode (default)', async () => {
+      const onTranscription = vi.fn();
+      const draftText = 'old draft';
+
+      const { result } = renderHook(() =>
+        useVoiceInput(onTranscription, 'Agent', 'en', 0, 'hybrid', { draftText, insertMode: 'replace' })
+      );
+
+      // Start recording
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      // Stop and transcribe
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // Should receive only the transcript (draft replaced)
+      expect(onTranscription).toHaveBeenCalledWith('voice transcript');
+    });
+
+    it('should append transcript to draft in append mode', async () => {
+      const onTranscription = vi.fn();
+      const draftText = 'pre typed text';
+
+      const { result } = renderHook(() =>
+        useVoiceInput(onTranscription, 'Agent', 'en', 0, 'hybrid', { draftText, insertMode: 'append' })
+      );
+
+      // Start recording
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      // Stop and transcribe
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // Should receive draft + transcript
+      expect(onTranscription).toHaveBeenCalledWith('pre typed text voice transcript');
+    });
+
+    it('should prepend transcript to draft in prepend mode', async () => {
+      const onTranscription = vi.fn();
+      const draftText = 'existing draft';
+
+      const { result } = renderHook(() =>
+        useVoiceInput(onTranscription, 'Agent', 'en', 0, 'hybrid', { draftText, insertMode: 'prepend' })
+      );
+
+      // Start recording
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      // Stop and transcribe
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // Should receive transcript + draft
+      expect(onTranscription).toHaveBeenCalledWith('voice transcript existing draft');
+    });
+
+    it('should handle append without extra space when draft ends with space', async () => {
+      const onTranscription = vi.fn();
+      const draftText = 'draft with trailing space ';
+
+      globalThis.fetch = vi.fn((input: string | URL) => {
+        const url = String(input);
+        if (url.startsWith('/api/voice-phrases')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ stopPhrases: ['done'], cancelPhrases: ['cancel'] }),
+          });
+        }
+        if (url === '/api/transcribe') {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ text: 'transcript' }) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      }) as typeof fetch;
+
+      const { result } = renderHook(() =>
+        useVoiceInput(onTranscription, 'Agent', 'en', 0, 'hybrid', { draftText, insertMode: 'append' })
+      );
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // No double space between draft and transcript
+      expect(onTranscription).toHaveBeenCalledWith('draft with trailing space transcript');
+    });
+
+    it('should handle prepend without extra space when draft starts with space', async () => {
+      const onTranscription = vi.fn();
+      const draftText = ' draft with leading space';
+
+      globalThis.fetch = vi.fn((input: string | URL) => {
+        const url = String(input);
+        if (url.startsWith('/api/voice-phrases')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ stopPhrases: ['done'], cancelPhrases: ['cancel'] }),
+          });
+        }
+        if (url === '/api/transcribe') {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ text: 'transcript' }) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      }) as typeof fetch;
+
+      const { result } = renderHook(() =>
+        useVoiceInput(onTranscription, 'Agent', 'en', 0, 'hybrid', { draftText, insertMode: 'prepend' })
+      );
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // No double space between transcript and draft
+      expect(onTranscription).toHaveBeenCalledWith('transcript draft with leading space');
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should handle empty draft text', async () => {
+      const onTranscription = vi.fn();
+
+      const { result } = renderHook(() =>
+        useVoiceInput(onTranscription, 'Agent', 'en', 0, 'hybrid', { draftText: '', insertMode: 'append' })
+      );
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // Should just receive transcript without any draft-related issues
+      expect(onTranscription).toHaveBeenCalledWith('voice transcript');
+    });
+
+    it('should clear saved draft after successful transcription', async () => {
+      const onTranscription = vi.fn();
+      const onDraftRestore = vi.fn();
+      const draftText = 'saved draft';
+
+      const { result } = renderHook(() =>
+        useVoiceInput(onTranscription, 'Agent', 'en', 0, 'hybrid', { draftText, onDraftRestore })
+      );
+
+      // Start recording and save the draft
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      // Complete transcription successfully
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // Draft was transcribed and sent
+      expect(onTranscription).toHaveBeenCalled();
+
+      // Now start a new recording with empty draft text (simulating cleared input)
+      // and verify the new empty draft is saved
+      const { result: result2 } = renderHook(() =>
+        useVoiceInput(vi.fn(), 'Agent', 'en', 0, 'hybrid', { draftText: '', onDraftRestore: vi.fn() })
+      );
+
+      await act(async () => {
+        result2.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      // Discard with empty draft
+      act(() => {
+        result2.current.discardRecording();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // Should not throw and should handle empty draft gracefully
+      expect(result2.current.voiceState).toBe('idle');
+    });
+
+    it('should not call onDraftRestore if callback not provided', async () => {
+      const onTranscription = vi.fn();
+      const draftText = 'draft';
+
+      const { result } = renderHook(() =>
+        useVoiceInput(onTranscription, 'Agent', 'en', 0, 'hybrid', { draftText })
+      );
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      // Should not throw when discarding without callback
+      expect(() => {
+        act(() => {
+          result.current.discardRecording();
+        });
+      }).not.toThrow();
+    });
+  });
+});

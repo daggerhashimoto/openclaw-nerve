@@ -352,7 +352,7 @@ function ApiKeyInput({
 }: {
   keyName: string;
   provider: string;
-  fieldName: 'openaiKey' | 'replicateToken';
+  fieldName: 'openaiKey' | 'replicateToken' | 'mimoApiKey';
   onSaved: () => void;
 }) {
   const [value, setValue] = useState('');

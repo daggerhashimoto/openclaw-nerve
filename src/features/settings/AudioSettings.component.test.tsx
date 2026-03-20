@@ -28,10 +28,18 @@ vi.mock('./VoicePhrasesModal', () => ({
   VoicePhrasesModal: () => null,
 }));
 
+type InlineSelectOption = { value: string; label: string };
+type InlineSelectMockProps = {
+  ariaLabel: string;
+  options: InlineSelectOption[];
+  value: string;
+  onChange: (value: string) => void;
+};
+
 vi.mock('@/components/ui/InlineSelect', () => ({
-  InlineSelect: ({ ariaLabel, options, value, onChange }: any) => (
+  InlineSelect: ({ ariaLabel, options, value, onChange }: InlineSelectMockProps) => (
     <select aria-label={ariaLabel} value={value} onChange={(e) => onChange(e.target.value)}>
-      {options.map((opt: any) => (
+      {options.map((opt) => (
         <option key={opt.value} value={opt.value}>{opt.label}</option>
       ))}
     </select>

@@ -16,6 +16,11 @@ export interface TTSVoiceConfig {
   edge: {
     voice: string;
   };
+  xiaomi: {
+    model: string;
+    voice: string;
+    style: string;
+  };
 }
 
 interface UseTTSConfigReturn {

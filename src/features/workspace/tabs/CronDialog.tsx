@@ -97,7 +97,7 @@ function SectionShell({
           {eyebrow}
         </div>
         <div className="text-base font-semibold tracking-[-0.03em] text-foreground">{title}</div>
-        <p className="text-[12.5px] leading-5 text-muted-foreground">{description}</p>
+        <p className="text-[0.833rem] leading-5 text-muted-foreground">{description}</p>
       </div>
       <div className="mt-3 space-y-2.5">{children}</div>
     </section>

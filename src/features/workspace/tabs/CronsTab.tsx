@@ -189,8 +189,8 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
                 <span>{job.enabled ? 'Live' : 'Off'}</span>
               </button>
                 <div className="min-w-0 space-y-0.5">
-                  <div className="text-[12.5px] font-semibold leading-tight text-foreground break-words">{name}</div>
-                  <div className="text-[10.5px] leading-4.5 text-muted-foreground">{humanSchedule(job)}</div>
+                  <div className="text-[0.833rem] font-semibold leading-tight text-foreground break-words">{name}</div>
+                  <div className="text-[0.7rem] leading-4.5 text-muted-foreground">{humanSchedule(job)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-1 self-start">
@@ -229,7 +229,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
                           setActionsOpen(false);
                           onEdit(job);
                         }}
-                        className="flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[10.5px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+                        className="flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[0.7rem] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
                         aria-label={`Edit ${name}`}
                       >
                         <Pencil size={12} />
@@ -237,7 +237,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
                       </button>
                       <button
                         onClick={handleDeleteClick}
-                        className={`flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[10.5px] font-medium transition-colors ${
+                        className={`flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[0.7rem] font-medium transition-colors ${
                           confirmingDelete
                             ? 'text-red hover:bg-red/10 hover:text-red'
                             : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-red'
@@ -264,18 +264,18 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
 
             <div aria-live="polite" aria-atomic="true" className="space-y-1">
               {running && (
-                <div className="text-[10.5px] text-primary flex items-center gap-1.5">
+                <div className="text-[0.7rem] text-primary flex items-center gap-1.5">
                   <Loader2 size={10} className="animate-spin" />
                   <span>Running now.</span>
                 </div>
               )}
               {job.lastError && !taskSucceeded && !running && (
-                <div className="text-[10.5px] text-red/80 truncate" title={job.lastError}>
+                <div className="text-[0.7rem] text-red/80 truncate" title={job.lastError}>
                   {job.lastError}
                 </div>
               )}
               {isDeliveryFailure && !running && (
-                <div className="text-[10.5px] text-orange/80 truncate" title={job.lastError}>
+                <div className="text-[0.7rem] text-orange/80 truncate" title={job.lastError}>
                   Delivery failed. Check cron settings.
                 </div>
               )}
@@ -287,7 +287,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
             <div className="cockpit-divider" />
             <div className="space-y-1.5">
               {!runs.length && (
-                <div className="text-[10.5px] text-muted-foreground">
+                <div className="text-[0.7rem] text-muted-foreground">
                   No run history yet.
                 </div>
               )}
@@ -307,10 +307,10 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
                         )}
                       </div>
                       {r.error && (
-                        <div className="text-[10.5px] text-red/80 break-words" title={r.error}>{r.error}</div>
+                        <div className="text-[0.7rem] text-red/80 break-words" title={r.error}>{r.error}</div>
                       )}
                       {r.summary && (
-                        <div className="text-[10.5px] leading-4.5 text-foreground/70 line-clamp-2">{r.summary.slice(0, 150)}{r.summary.length > 150 ? '…' : ''}</div>
+                        <div className="text-[0.7rem] leading-4.5 text-foreground/70 line-clamp-2">{r.summary.slice(0, 150)}{r.summary.length > 150 ? '…' : ''}</div>
                       )}
                     </div>
                   </div>
@@ -397,7 +397,7 @@ export function CronsTab() {
                   )}
                   {toolbarSummary.nextRelative ? (
                     <div className="shell-panel flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1">
-                      <span className="cockpit-kicker shrink-0 text-[7.5px] tracking-[0.16em]">
+                      <span className="cockpit-kicker shrink-0 text-[0.5rem] tracking-[0.16em]">
                         <Clock3 size={10} className="text-primary" />
                         Next run
                       </span>
@@ -410,7 +410,7 @@ export function CronsTab() {
                       {toolbarSummary.enabledCount} live
                     </span>
                   ) : (
-                    <span className="text-[10.5px] text-muted-foreground">
+                    <span className="text-[0.7rem] text-muted-foreground">
                       No live crons
                     </span>
                   )}
@@ -423,7 +423,7 @@ export function CronsTab() {
                 onClick={handleAdd}
                 aria-label="Add cron job"
                 title="Add cron job"
-                className="shell-chip min-h-8 rounded-lg px-2.5 text-[10.5px] font-medium"
+                className="shell-chip min-h-8 rounded-lg px-2.5 text-[0.7rem] font-medium"
               >
                 <Plus size={13} />
                 <span>New cron</span>
@@ -458,7 +458,7 @@ export function CronsTab() {
           {!isLoading && !jobs.length && !error && (
             <div className="cockpit-surface px-4 py-5 text-center">
               <div className="space-y-1">
-                <div className="text-[12.5px] font-medium text-foreground">No scheduled tasks yet</div>
+                <div className="text-[0.833rem] font-medium text-foreground">No scheduled tasks yet</div>
                 <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
                   Create one to schedule a private task or a main-thread reminder.
                 </p>

@@ -524,7 +524,7 @@
   .cockpit-input,
   .cockpit-select,
   .cockpit-textarea {
-    font-size: 1.067rem;
+    font-size: 16px;
   }
 
   .cockpit-note {

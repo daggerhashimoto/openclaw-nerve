@@ -422,6 +422,9 @@ const PROVIDER_MODELS: Record<TTSProvider, { value: string; label: string }[]> =
   replicate: [
     { value: '', label: 'qwen-tts (default)' },
   ],
+  xiaomi: [
+    { value: 'mimo-v2-tts', label: 'mimo-v2-tts' },
+  ],
   edge: [],
 };
 
@@ -462,14 +465,15 @@ export function AudioSettings({
   const { state: langState, support, isMultilingual, setLanguage } = useLanguage();
 
   // Fetch API key status once on mount
-  const [apiKeys, setApiKeys] = useState<{ openai: boolean; replicate: boolean }>({ openai: true, replicate: true });
+  const [apiKeys, setApiKeys] = useState<{ openai: boolean; replicate: boolean; xiaomi: boolean }>({ openai: true, replicate: true, xiaomi: true });
   useEffect(() => {
-    fetch('/api/transcribe/config')
+    fetch('/api/keys')
       .then((r) => r.json())
       .then((data) => {
         setApiKeys({
           openai: !!data.openaiKeySet,
           replicate: !!data.replicateKeySet,
+          xiaomi: !!data.xiaomiKeySet,
         });
       })
       .catch(() => {});
@@ -744,6 +748,14 @@ export function AudioSettings({
             >
               Edge (Free)
             </button>
+            <button
+              type="button"
+              onClick={() => onTtsProviderChange('xiaomi')}
+              data-active={ttsProvider === 'xiaomi'}
+              className="shell-chip min-h-11 flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
+            >
+              Xiaomi Mimo
+            </button>
           </div>
           <p className="cockpit-field-hint px-1">Choose the voice engine first, then tune the model and speaking style below.</p>
 
@@ -768,6 +780,9 @@ export function AudioSettings({
       {showOutput && ttsProvider === 'replicate' && !apiKeys.replicate && (
         <ApiKeyInput keyName="REPLICATE_API_TOKEN" provider="Replicate TTS" fieldName="replicateToken" onSaved={() => setApiKeys(k => ({ ...k, replicate: true }))} />
       )}
+      {showOutput && ttsProvider === 'xiaomi' && !apiKeys.xiaomi && (
+        <ApiKeyInput keyName="MIMO_API_KEY" provider="Xiaomi Mimo" fieldName="mimoApiKey" onSaved={() => setApiKeys(k => ({ ...k, xiaomi: true }))} />
+      )}
 
       {/* TTS Model (shown when provider has multiple models) */}
       {showOutput && models.length > 0 && (
@@ -777,8 +792,11 @@ export function AudioSettings({
             <p className="mt-1 text-xs text-muted-foreground">Select the synthesis model exposed by the active provider.</p>
           </div>
           <InlineSelect
-            value={ttsModel}
-            onChange={onTtsModelChange}
+            value={ttsProvider === 'xiaomi' ? (ttsModel || config?.xiaomi.model || '') : ttsModel}
+            onChange={(value) => {
+              onTtsModelChange(value);
+              if (ttsProvider === 'xiaomi') updateField('xiaomi', 'model', value);
+            }}
             options={models}
             ariaLabel="TTS Model"
             triggerClassName={`${INLINE_SELECT_TRIGGER_CLASS} min-w-[188px]`}
@@ -851,6 +869,35 @@ export function AudioSettings({
                 value={config.qwen.styleInstruction}
                 onChange={(v) => updateField('qwen', 'styleInstruction', v)}
                 placeholder="Emotion and style guidance..."
+              />
+            </>
+          )}
+
+          {ttsProvider === 'xiaomi' && (
+            <>
+              <div className="cockpit-row items-start justify-between">
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-medium text-foreground">Voice</span>
+                  <p className="mt-1 text-xs text-muted-foreground">Choose one of Xiaomi's built-in MiMo voices.</p>
+                </div>
+                <InlineSelect
+                  value={config.xiaomi.voice}
+                  onChange={(v) => updateField('xiaomi', 'voice', v)}
+                  options={[
+                    { value: 'mimo_default', label: 'mimo_default' },
+                    { value: 'default_zh', label: 'default_zh' },
+                    { value: 'default_en', label: 'default_en' },
+                  ]}
+                  ariaLabel="Xiaomi Voice"
+                  triggerClassName={`${INLINE_SELECT_TRIGGER_CLASS} min-w-[188px]`}
+                  menuClassName={`${INLINE_SELECT_MENU_CLASS} min-w-[188px]`}
+                />
+              </div>
+              <ExpandableInput
+                label="Style"
+                value={config.xiaomi.style}
+                onChange={(v) => updateField('xiaomi', 'style', v)}
+                placeholder="Happy, whisper, calm, dramatic..."
               />
             </>
           )}

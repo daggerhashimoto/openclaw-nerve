@@ -102,5 +102,3 @@ export function useTTSConfig(): UseTTSConfigReturn {
 
   return { config, loading, error, saved, updateField };
 }
-rn { config, loading, error, saved, updateField };
-}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi, Mock } from 'vitest';
 import { AudioSettings } from './AudioSettings';
 import * as wakeWordSupport from '@/features/voice/wakeWordSupport';
@@ -9,15 +9,18 @@ vi.mock('@/features/voice/wakeWordSupport', () => ({
   isWakeWordSupportedEnvironment: vi.fn(() => true),
 }));
 
+const updateField = vi.fn();
+
 vi.mock('@/features/tts/useTTSConfig', () => ({
   useTTSConfig: () => ({
     config: {
       edge: { voice: 'en-US-AriaNeural' },
-      openai: { voice: 'alloy' },
-      qwen3: { voice: 'Chelsie' },
+      openai: { model: 'tts-1', voice: 'alloy', instructions: '' },
+      qwen: { mode: 'voice_design', language: 'English', speaker: 'Serena', voiceDescription: '', styleInstruction: '' },
+      xiaomi: { model: 'mimo-v2-tts', voice: 'mimo_default', style: '' },
     },
     saved: true,
-    updateField: vi.fn(),
+    updateField,
   }),
 }));
 
@@ -26,7 +29,13 @@ vi.mock('./VoicePhrasesModal', () => ({
 }));
 
 vi.mock('@/components/ui/InlineSelect', () => ({
-  InlineSelect: () => <div data-testid="inline-select" />,
+  InlineSelect: ({ ariaLabel, options, value, onChange }: any) => (
+    <select aria-label={ariaLabel} value={value} onChange={(e) => onChange(e.target.value)}>
+      {options.map((opt: any) => (
+        <option key={opt.value} value={opt.value}>{opt.label}</option>
+      ))}
+    </select>
+  ),
 }));
 
 const baseProps = {
@@ -55,18 +64,39 @@ function mockWakeWordSupport(result: { supported: boolean; reason: 'mobile-web' 
   (wakeWordSupport.isWakeWordSupportedEnvironment as Mock).mockReturnValue(result.supported);
 }
 
-describe('AudioSettings mobile wake-word gating', () => {
+type ApiKeyState = { openaiKeySet: boolean; replicateKeySet: boolean; xiaomiKeySet: boolean; hasGpu: boolean };
+let apiKeyState: ApiKeyState = {
+  openaiKeySet: true,
+  replicateKeySet: true,
+  xiaomiKeySet: false,
+  hasGpu: false,
+};
+
+describe('AudioSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockWakeWordSupport({ supported: true, reason: null });
+    apiKeyState = {
+      openaiKeySet: true,
+      replicateKeySet: true,
+      xiaomiKeySet: false,
+      hasGpu: false,
+    };
 
     globalThis.fetch = vi.fn((input: string | URL) => {
       const url = String(input);
 
+      if (url === '/api/keys') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(apiKeyState),
+        } as Response);
+      }
+
       if (url === '/api/transcribe/config') {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ openaiKeySet: true, replicateKeySet: true, hasGpu: false }),
+          json: () => Promise.resolve({ hasGpu: apiKeyState.hasGpu }),
         } as Response);
       }
 
@@ -84,7 +114,7 @@ describe('AudioSettings mobile wake-word gating', () => {
       if (url === '/api/language/support') {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve([]),
+          json: () => Promise.resolve({ languages: [], isMultilingual: false }),
         } as Response);
       }
 
@@ -102,26 +132,76 @@ describe('AudioSettings mobile wake-word gating', () => {
         } as Response);
       }
 
+      if (url === '/api/tts/config') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({}),
+        } as Response);
+      }
+
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
     }) as typeof fetch;
   });
 
-  it('renders the wake word toggle as disabled and visually off on mobile web', async () => {
-    mockWakeWordSupport({ supported: false, reason: 'mobile-web' });
+  describe('mobile wake-word gating', () => {
+    it('renders the wake word toggle as disabled and visually off on mobile web', async () => {
+      mockWakeWordSupport({ supported: false, reason: 'mobile-web' });
 
-    render(<AudioSettings {...baseProps} wakeWordEnabled={true} />);
+      render(<AudioSettings {...baseProps} wakeWordEnabled={true} />);
 
-    const toggle = await screen.findByRole('switch', { name: /toggle wake word detection/i });
-    expect(toggle).toBeDisabled();
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
+      const toggle = await screen.findByRole('switch', { name: /toggle wake word detection/i });
+      expect(toggle).toBeDisabled();
+      expect(toggle).toHaveAttribute('aria-checked', 'false');
+    });
+
+    it('shows helper copy pointing users to the manual mic trigger', async () => {
+      mockWakeWordSupport({ supported: false, reason: 'mobile-web' });
+
+      render(<AudioSettings {...baseProps} wakeWordEnabled={false} />);
+
+      expect(await screen.findByText(/wake word isn't supported on mobile web/i)).toBeInTheDocument();
+      expect(screen.getByText(/use the manual mic trigger instead/i)).toBeInTheDocument();
+    });
   });
 
-  it('shows helper copy pointing users to the manual mic trigger', async () => {
-    mockWakeWordSupport({ supported: false, reason: 'mobile-web' });
+  describe('Xiaomi Mimo output settings', () => {
+    it('renders a Xiaomi Mimo provider button', async () => {
+      render(<AudioSettings {...baseProps} section="output" ttsProvider="xiaomi" ttsModel="" />);
+      expect(await screen.findByRole('button', { name: 'Xiaomi Mimo' })).toBeInTheDocument();
+    });
 
-    render(<AudioSettings {...baseProps} wakeWordEnabled={false} />);
+    it('shows the Xiaomi API key prompt when Xiaomi is selected and the key is missing', async () => {
+      apiKeyState.xiaomiKeySet = false;
+      render(<AudioSettings {...baseProps} section="output" ttsProvider="xiaomi" ttsModel="" />);
 
-    expect(await screen.findByText(/wake word isn't supported on mobile web/i)).toBeInTheDocument();
-    expect(screen.getByText(/use the manual mic trigger instead/i)).toBeInTheDocument();
+      expect(await screen.findByText(/MIMO_API_KEY required for Xiaomi Mimo/i)).toBeInTheDocument();
+    });
+
+    it('renders Xiaomi model and voice selectors', async () => {
+      render(<AudioSettings {...baseProps} section="output" ttsProvider="xiaomi" ttsModel="mimo-v2-tts" />);
+
+      expect(await screen.findByLabelText('TTS Model')).toHaveValue('mimo-v2-tts');
+      expect(screen.getByLabelText('Xiaomi Voice')).toHaveValue('mimo_default');
+      expect(screen.getByRole('option', { name: 'mimo-v2-tts' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'mimo_default' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'default_zh' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'default_en' })).toBeInTheDocument();
+    });
+
+    it('updates Xiaomi voice when the voice selector changes', async () => {
+      render(<AudioSettings {...baseProps} section="output" ttsProvider="xiaomi" ttsModel="mimo-v2-tts" />);
+
+      fireEvent.change(await screen.findByLabelText('Xiaomi Voice'), { target: { value: 'default_en' } });
+      expect(updateField).toHaveBeenCalledWith('xiaomi', 'voice', 'default_en');
+    });
+
+    it('updates Xiaomi style when the Style field changes', async () => {
+      render(<AudioSettings {...baseProps} section="output" ttsProvider="xiaomi" ttsModel="mimo-v2-tts" />);
+
+      fireEvent.click(await screen.findByText('Happy, whisper, calm, dramatic...'));
+      fireEvent.change(screen.getByPlaceholderText('Happy, whisper, calm, dramatic...'), { target: { value: 'Happy' } });
+
+      expect(updateField).toHaveBeenCalledWith('xiaomi', 'style', 'Happy');
+    });
   });
 });

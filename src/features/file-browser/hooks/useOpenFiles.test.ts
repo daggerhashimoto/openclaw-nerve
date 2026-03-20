@@ -1,4 +1,5 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
+import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useOpenFiles } from './useOpenFiles';
 import { getWorkspaceStorageKey } from '@/features/workspace/workspaceScope';
@@ -47,6 +48,35 @@ function getRequestUrl(input: RequestInfo | URL): URL {
   if (typeof input === 'string') return new URL(input, 'http://localhost');
   if (input instanceof URL) return new URL(input.toString(), 'http://localhost');
   return new URL(input.url, 'http://localhost');
+}
+
+interface OpenFilesRenderSnapshot {
+  agentId: string;
+  openFilePaths: string[];
+  activeTab: string;
+  loadingFilePaths: string[];
+}
+
+function OpenFilesRenderObserver({
+  agentId,
+  onRender,
+}: {
+  agentId: string;
+  onRender: (
+    snapshot: OpenFilesRenderSnapshot,
+    api: ReturnType<typeof useOpenFiles>,
+  ) => void;
+}) {
+  const api = useOpenFiles(agentId);
+
+  onRender({
+    agentId,
+    openFilePaths: api.openFiles.map((file) => file.path),
+    activeTab: api.activeTab,
+    loadingFilePaths: api.openFiles.filter((file) => file.loading).map((file) => file.path),
+  }, api);
+
+  return null;
 }
 
 describe('useOpenFiles', () => {
@@ -138,6 +168,148 @@ describe('useOpenFiles', () => {
     expect(result.current.openFiles.some((file) => file.path === 'main.md')).toBe(false);
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('agentId=main'));
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('agentId=research'));
+  });
+
+  it('hides the previous agent tabs on the first render after switching workspaces', async () => {
+    const { mock } = createLocalStorageMock({
+      [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['main.md']),
+      [getWorkspaceStorageKey('active-tab', 'main')]: 'main.md',
+      [getWorkspaceStorageKey('open-files', 'research')]: JSON.stringify(['notes.md']),
+      [getWorkspaceStorageKey('active-tab', 'research')]: 'notes.md',
+    });
+    vi.stubGlobal('localStorage', mock);
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = getRequestUrl(input);
+      if (url.pathname !== '/api/files/read') {
+        return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+      }
+
+      const path = url.searchParams.get('path');
+      const requestAgentId = url.searchParams.get('agentId') || 'main';
+
+      if (path === 'main.md' && requestAgentId === 'main') {
+        return createJsonResponse({ ok: true, content: '# main', mtime: 11 });
+      }
+
+      if (path === 'notes.md' && requestAgentId === 'research') {
+        return createJsonResponse({ ok: true, content: '# research', mtime: 22 });
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const researchSnapshots: OpenFilesRenderSnapshot[] = [];
+    let currentApi!: ReturnType<typeof useOpenFiles>;
+
+    const { rerender } = render(createElement(OpenFilesRenderObserver, {
+      agentId: 'main',
+      onRender: (_, api) => {
+        currentApi = api;
+      },
+    }));
+
+    await waitFor(() => {
+      expect(currentApi.openFiles.map((file) => file.path)).toEqual(['main.md']);
+      expect(currentApi.activeTab).toBe('main.md');
+    });
+
+    rerender(createElement(OpenFilesRenderObserver, {
+      agentId: 'research',
+      onRender: (snapshot) => {
+        researchSnapshots.push(snapshot);
+      },
+    }));
+
+    expect(researchSnapshots[0]).toMatchObject({
+      agentId: 'research',
+      openFilePaths: [],
+      activeTab: 'notes.md',
+      loadingFilePaths: [],
+    });
+
+    await waitFor(() => {
+      expect(researchSnapshots.at(-1)).toMatchObject({
+        agentId: 'research',
+        openFilePaths: ['notes.md'],
+        activeTab: 'notes.md',
+      });
+    });
+  });
+
+  it('drops late file reads that resolve during the pre-effect switch window', async () => {
+    const { mock } = createLocalStorageMock();
+    vi.stubGlobal('localStorage', mock);
+
+    const lateRead = createDeferred<Response>();
+    const researchSnapshots: OpenFilesRenderSnapshot[] = [];
+    let currentApi!: ReturnType<typeof useOpenFiles>;
+    let resolveLateReadOnResearchRender = false;
+    let resolvedLateRead = false;
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = getRequestUrl(input);
+      if (
+        url.pathname === '/api/files/read'
+        && url.searchParams.get('path') === 'late.md'
+        && (url.searchParams.get('agentId') || 'main') === 'main'
+      ) {
+        return lateRead.promise;
+      }
+
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { rerender } = render(createElement(OpenFilesRenderObserver, {
+      agentId: 'main',
+      onRender: (snapshot, api) => {
+        currentApi = api;
+        if (snapshot.agentId === 'research') {
+          researchSnapshots.push(snapshot);
+          if (resolveLateReadOnResearchRender && !resolvedLateRead) {
+            resolvedLateRead = true;
+            lateRead.resolve(createJsonResponse({ ok: true, content: 'late main', mtime: 7 }));
+          }
+        }
+      },
+    }));
+
+    act(() => {
+      void currentApi.openFile('late.md');
+    });
+
+    await waitFor(() => {
+      expect(currentApi.openFiles.map((file) => file.path)).toEqual(['late.md']);
+      expect(currentApi.openFiles[0]?.loading).toBe(true);
+    });
+
+    resolveLateReadOnResearchRender = true;
+
+    await act(async () => {
+      rerender(createElement(OpenFilesRenderObserver, {
+        agentId: 'research',
+        onRender: (snapshot, api) => {
+          currentApi = api;
+          researchSnapshots.push(snapshot);
+          if (resolveLateReadOnResearchRender && !resolvedLateRead) {
+            resolvedLateRead = true;
+            lateRead.resolve(createJsonResponse({ ok: true, content: 'late main', mtime: 7 }));
+          }
+        },
+      }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(researchSnapshots[0]).toMatchObject({
+      agentId: 'research',
+      openFilePaths: [],
+      activeTab: 'chat',
+      loadingFilePaths: [],
+    });
+    expect(researchSnapshots.some((snapshot) => snapshot.openFilePaths.includes('late.md'))).toBe(false);
+    expect(currentApi.openFiles).toEqual([]);
+    expect(currentApi.activeTab).toBe('chat');
   });
 
   it('preserves dirty file state for each agent when switching away and back', async () => {

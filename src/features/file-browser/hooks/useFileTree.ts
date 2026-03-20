@@ -107,6 +107,15 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID) {
   const agentIdRef = useRef(scopedAgentId);
   const stateOwnerAgentRef = useRef(scopedAgentId);
   const requestVersionRef = useRef(0);
+  agentIdRef.current = scopedAgentId;
+
+  const ownsVisibleState = stateOwnerAgentRef.current === scopedAgentId;
+  const visibleEntries = ownsVisibleState ? entries : [];
+  const visibleExpandedPaths = ownsVisibleState ? expandedPaths : loadExpandedPaths(scopedAgentId);
+  const visibleSelectedPath = ownsVisibleState ? selectedPath : loadSelectedPath(scopedAgentId);
+  const visibleLoadingPaths = ownsVisibleState ? loadingPaths : new Set<string>();
+  const visibleWorkspaceInfo = ownsVisibleState ? workspaceInfo : null;
+  const visibleLoading = ownsVisibleState ? loading : true;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -114,10 +123,6 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID) {
       mountedRef.current = false;
     };
   }, []);
-
-  useEffect(() => {
-    agentIdRef.current = scopedAgentId;
-  }, [scopedAgentId]);
 
   // Persist expanded paths
   useEffect(() => {
@@ -311,13 +316,13 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID) {
   }, [expandedPaths, refreshDirectory]);
 
   return {
-    entries,
-    loading,
+    entries: visibleEntries,
+    loading: visibleLoading,
     error,
-    expandedPaths,
-    selectedPath,
-    loadingPaths,
-    workspaceInfo,
+    expandedPaths: visibleExpandedPaths,
+    selectedPath: visibleSelectedPath,
+    loadingPaths: visibleLoadingPaths,
+    workspaceInfo: visibleWorkspaceInfo,
     toggleDirectory,
     selectFile,
     refresh,

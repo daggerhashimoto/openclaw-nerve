@@ -182,15 +182,15 @@ vi.mock('@/features/file-browser', () => ({
     workspaceAgentId: string;
     onSaveFile: (path: string) => void;
     onReloadFile?: (path: string) => void;
-    saveToast?: { path: string; type: 'conflict' | 'error' } | null;
+    saveToast?: { path: string; type: 'conflict' } | null;
   }) => (
     <div>
       <div data-testid="workspace-agent">{workspaceAgentId}</div>
       <button type="button" onClick={() => onSaveFile('shared.md')}>Save shared.md</button>
       {saveToast && (
         <div>
-          <span>{saveToast.type === 'conflict' ? 'File changed externally.' : 'Failed to save.'}</span>
-          {saveToast.type === 'conflict' && onReloadFile && (
+          <span>File changed externally.</span>
+          {onReloadFile && (
             <button type="button" onClick={() => onReloadFile(saveToast.path)}>Reload</button>
           )}
         </div>

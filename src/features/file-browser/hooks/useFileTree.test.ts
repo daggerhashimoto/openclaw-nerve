@@ -1,6 +1,7 @@
 /** Tests for useFileTree hook - workspace info handling and tree operations. */
+import { createElement } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
 import { useFileTree } from './useFileTree';
 import type { TreeEntry } from '../types';
 import { getWorkspaceStorageKey } from '@/features/workspace/workspaceScope';
@@ -28,10 +29,57 @@ function createLocalStorageMock(initial: Record<string, string> = {}) {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error?: unknown) => void;
+
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+}
+
 function getRequestUrl(input: RequestInfo | URL): URL {
   if (typeof input === 'string') return new URL(input, 'http://localhost');
   if (input instanceof URL) return new URL(input.toString(), 'http://localhost');
   return new URL(input.url, 'http://localhost');
+}
+
+interface FileTreeRenderSnapshot {
+  agentId: string;
+  entryPaths: string[];
+  expandedPaths: string[];
+  selectedPath: string | null;
+  loading: boolean;
+  loadingPaths: string[];
+  workspaceRoot: string | null;
+}
+
+function FileTreeRenderObserver({
+  agentId,
+  onRender,
+}: {
+  agentId: string;
+  onRender: (
+    snapshot: FileTreeRenderSnapshot,
+    api: ReturnType<typeof useFileTree>,
+  ) => void;
+}) {
+  const api = useFileTree(agentId);
+
+  onRender({
+    agentId,
+    entryPaths: api.entries.map((entry) => entry.path),
+    expandedPaths: [...api.expandedPaths].sort(),
+    selectedPath: api.selectedPath,
+    loading: api.loading,
+    loadingPaths: [...api.loadingPaths].sort(),
+    workspaceRoot: api.workspaceInfo?.rootPath ?? null,
+  }, api);
+
+  return null;
 }
 
 describe('useFileTree', () => {
@@ -846,6 +894,219 @@ describe('useFileTree', () => {
 
       expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('agentId=main'));
       expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('agentId=research'));
+    });
+
+    it('hides the previous agent tree on the first render after switching workspaces', async () => {
+      const { mock } = createLocalStorageMock({
+        [getWorkspaceStorageKey('file-tree-expanded', 'main')]: JSON.stringify(['src']),
+        [getWorkspaceStorageKey('file-tree-selected', 'main')]: 'src/index.ts',
+        [getWorkspaceStorageKey('file-tree-expanded', 'research')]: JSON.stringify(['notes']),
+        [getWorkspaceStorageKey('file-tree-selected', 'research')]: 'notes/todo.md',
+      });
+      vi.stubGlobal('localStorage', mock);
+
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockImplementation(async (input) => {
+        const url = getRequestUrl(input);
+        const agentId = url.searchParams.get('agentId') || 'main';
+        const path = url.searchParams.get('path');
+
+        if (!path && agentId === 'main') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'src', path: 'src', type: 'directory' as const, children: null },
+              ],
+              workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace-main' },
+            }),
+          } as Response;
+        }
+
+        if (path === 'src' && agentId === 'main') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'index.ts', path: 'src/index.ts', type: 'file' as const, children: null },
+              ],
+            }),
+          } as Response;
+        }
+
+        if (!path && agentId === 'research') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'notes', path: 'notes', type: 'directory' as const, children: null },
+              ],
+              workspaceInfo: { isCustomWorkspace: true, rootPath: '/workspace-research' },
+            }),
+          } as Response;
+        }
+
+        if (path === 'notes' && agentId === 'research') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'todo.md', path: 'notes/todo.md', type: 'file' as const, children: null },
+              ],
+            }),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({ ok: false, error: 'Not found' }),
+        } as Response;
+      });
+
+      const researchSnapshots: FileTreeRenderSnapshot[] = [];
+      let currentApi!: ReturnType<typeof useFileTree>;
+
+      const { rerender } = render(createElement(FileTreeRenderObserver, {
+        agentId: 'main',
+        onRender: (_, api) => {
+          currentApi = api;
+        },
+      }));
+
+      await waitFor(() => {
+        expect(currentApi.loading).toBe(false);
+        expect(currentApi.entries.map((entry) => entry.path)).toEqual(['src']);
+        expect(currentApi.expandedPaths.has('src')).toBe(true);
+        expect(currentApi.selectedPath).toBe('src/index.ts');
+      });
+
+      rerender(createElement(FileTreeRenderObserver, {
+        agentId: 'research',
+        onRender: (snapshot) => {
+          researchSnapshots.push(snapshot);
+        },
+      }));
+
+      expect(researchSnapshots[0]).toMatchObject({
+        agentId: 'research',
+        entryPaths: [],
+        expandedPaths: ['notes'],
+        selectedPath: 'notes/todo.md',
+        loading: true,
+        loadingPaths: [],
+        workspaceRoot: null,
+      });
+
+      await waitFor(() => {
+        expect(researchSnapshots.at(-1)).toMatchObject({
+          agentId: 'research',
+          entryPaths: ['notes'],
+          expandedPaths: ['notes'],
+          selectedPath: 'notes/todo.md',
+          loading: false,
+          workspaceRoot: '/workspace-research',
+        });
+      });
+    });
+
+    it('drops late root loads that resolve during the pre-effect switch window', async () => {
+      const { mock } = createLocalStorageMock();
+      vi.stubGlobal('localStorage', mock);
+
+      const mainRootLoad = createDeferred<Response>();
+      const researchSnapshots: FileTreeRenderSnapshot[] = [];
+      let currentApi!: ReturnType<typeof useFileTree>;
+      let resolveMainRootOnResearchRender = false;
+      let resolvedMainRoot = false;
+
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockImplementation(async (input) => {
+        const url = getRequestUrl(input);
+        const agentId = url.searchParams.get('agentId') || 'main';
+        const path = url.searchParams.get('path');
+
+        if (!path && agentId === 'main') {
+          return mainRootLoad.promise;
+        }
+
+        if (!path && agentId === 'research') {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: [
+                { name: 'notes', path: 'notes', type: 'directory' as const, children: null },
+              ],
+              workspaceInfo: { isCustomWorkspace: true, rootPath: '/workspace-research' },
+            }),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({ ok: false, error: 'Not found' }),
+        } as Response;
+      });
+
+      const { rerender } = render(createElement(FileTreeRenderObserver, {
+        agentId: 'main',
+        onRender: (_, api) => {
+          currentApi = api;
+        },
+      }));
+
+      await waitFor(() => {
+        expect(currentApi.loading).toBe(true);
+      });
+
+      await act(async () => {
+        resolveMainRootOnResearchRender = true;
+
+        rerender(createElement(FileTreeRenderObserver, {
+          agentId: 'research',
+          onRender: (snapshot, api) => {
+            currentApi = api;
+            researchSnapshots.push(snapshot);
+            if (resolveMainRootOnResearchRender && !resolvedMainRoot) {
+              resolvedMainRoot = true;
+              mainRootLoad.resolve({
+                ok: true,
+                json: async () => ({
+                  ok: true,
+                  entries: [
+                    { name: 'src', path: 'src', type: 'directory' as const, children: null },
+                  ],
+                  workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace-main' },
+                }),
+              } as Response);
+            }
+          },
+        }));
+
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(researchSnapshots[0]).toMatchObject({
+        agentId: 'research',
+        entryPaths: [],
+      });
+      expect(researchSnapshots.some((snapshot) => snapshot.entryPaths.includes('src'))).toBe(false);
+
+      await waitFor(() => {
+        expect(currentApi.loading).toBe(false);
+        expect(currentApi.entries.map((entry) => entry.path)).toEqual(['notes']);
+        expect(currentApi.workspaceInfo).toEqual({
+          isCustomWorkspace: true,
+          rootPath: '/workspace-research',
+        });
+      });
     });
 
     it('restores the destination agent tree state without overwriting its persisted storage on switch', async () => {

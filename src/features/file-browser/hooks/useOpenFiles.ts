@@ -108,17 +108,19 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
   /** Paths currently being saved, blocks lock overlay during the save round-trip. */
   const savingPaths = useRef<Set<string>>(new Set());
 
-  const openFilesRef = useRef<OpenFile[]>([]);
-  // eslint-disable-next-line react-hooks/immutability
-  openFilesRef.current = openFiles;
-
   const agentIdRef = useRef(scopedAgentId);
   const stateOwnerAgentRef = useRef(scopedAgentId);
   const restoringAgentIdRef = useRef<string | null>(null);
   const dirtyFilesByAgentRef = useRef<Map<string, Map<string, DirtyFileSnapshot>>>(new Map());
-  useEffect(() => {
-    agentIdRef.current = scopedAgentId;
-  }, [scopedAgentId]);
+  agentIdRef.current = scopedAgentId;
+
+  const ownsVisibleState = stateOwnerAgentRef.current === scopedAgentId;
+  const visibleOpenFiles = ownsVisibleState ? openFiles : [];
+  const visibleActiveTab = ownsVisibleState ? activeTab : loadPersistedTab(scopedAgentId);
+
+  const openFilesRef = useRef<OpenFile[]>(visibleOpenFiles);
+  // eslint-disable-next-line react-hooks/immutability
+  openFilesRef.current = visibleOpenFiles;
 
   const unlockTimers = useRef<Map<string, number>>(new Map());
 
@@ -628,8 +630,8 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
   }, [saveFileForAgent]);
 
   return {
-    openFiles,
-    activeTab,
+    openFiles: visibleOpenFiles,
+    activeTab: visibleActiveTab,
     setActiveTab,
     openFile,
     closeFile,
@@ -639,7 +641,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     handleFileChanged,
     remapOpenPaths,
     closeOpenPathsByPrefix,
-    hasDirtyFiles: openFiles.some((file) => file.dirty),
+    hasDirtyFiles: visibleOpenFiles.some((file) => file.dirty),
     getDirtyFilePaths,
     saveAllDirtyFiles,
     discardAllDirtyFiles,

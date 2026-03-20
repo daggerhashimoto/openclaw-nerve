@@ -160,7 +160,7 @@ export default function App({ onLogout }: AppProps) {
   const [saveToast, setSaveToast] = useState<{
     agentId: string;
     path: string;
-    type: 'conflict' | 'error';
+    type: 'conflict';
   } | null>(null);
   const saveToastTimerRef = useRef<number | null>(null);
   const workspaceAgentIdRef = useRef(workspaceAgentId);
@@ -179,7 +179,7 @@ export default function App({ onLogout }: AppProps) {
 
   const showSaveToastForAgent = useCallback((
     targetAgentId: string,
-    nextToast: { path: string; type: 'conflict' | 'error' },
+    nextToast: { path: string; type: 'conflict' },
   ) => {
     if (workspaceAgentIdRef.current !== targetAgentId) return;
 

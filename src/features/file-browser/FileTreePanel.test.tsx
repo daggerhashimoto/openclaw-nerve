@@ -841,6 +841,225 @@ describe('FileTreePanel', () => {
     });
   });
 
+  describe('workspace-scoped async completions', () => {
+    it('keeps a newer workspace rename session active when an older rename resolves', async () => {
+      mockUseFileTree.mockReturnValue({
+        ...defaultMockHook,
+        entries: [
+          { name: 'README.md', path: 'README.md', type: 'file', children: null },
+          { name: 'src', path: 'src', type: 'directory', children: null },
+        ],
+      });
+
+      const renameRequestA = createDeferred<Response>();
+      const renameRequestB = createDeferred<Response>();
+      const mockFetch = vi.mocked(global.fetch);
+      mockFetch.mockImplementation(async (input, init) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url === '/api/files/rename') {
+          const body = JSON.parse(String(init?.body ?? '{}')) as { agentId?: string };
+          return body.agentId === 'agent-a' ? renameRequestA.promise : renameRequestB.promise;
+        }
+
+        return {
+          ok: true,
+          json: async () => ({ ok: true }),
+        } as Response;
+      });
+
+      const { rerender } = render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.contextMenu(screen.getByText('README.md'), new MouseEvent('contextmenu', { bubbles: true }));
+      fireEvent.click(await screen.findByText('Rename'));
+
+      const renameInputA = screen.getByDisplayValue('README.md');
+      fireEvent.change(renameInputA, { target: { value: 'workspace-a.md' } });
+      fireEvent.keyDown(renameInputA, { key: 'Enter' });
+
+      await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+      expect(JSON.parse(String((mockFetch.mock.calls[0]?.[1] as RequestInit)?.body ?? '{}'))).toMatchObject({
+        agentId: 'agent-a',
+        path: 'README.md',
+        newName: 'workspace-a.md',
+      });
+
+      rerender(
+        <FileTreePanel
+          workspaceAgentId="agent-b"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.contextMenu(screen.getByText('README.md'), new MouseEvent('contextmenu', { bubbles: true }));
+      fireEvent.click(await screen.findByText('Rename'));
+
+      const renameInputB = screen.getByDisplayValue('README.md');
+      fireEvent.change(renameInputB, { target: { value: 'workspace-b.md' } });
+      fireEvent.keyDown(renameInputB, { key: 'Enter' });
+
+      await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+      expect(JSON.parse(String((mockFetch.mock.calls[1]?.[1] as RequestInit)?.body ?? '{}'))).toMatchObject({
+        agentId: 'agent-b',
+        path: 'README.md',
+        newName: 'workspace-b.md',
+      });
+
+      await act(async () => {
+        renameRequestA.resolve({
+          ok: true,
+          json: async () => ({ ok: true, from: 'README.md', to: 'workspace-a.md' }),
+        } as Response);
+        await Promise.resolve();
+      });
+
+      expect(screen.getByDisplayValue('workspace-b.md')).toBeInTheDocument();
+    });
+
+    it('keeps a newer workspace context menu open when an older trash request resolves', async () => {
+      const trashRequestA = createDeferred<Response>();
+      const mockFetch = vi.mocked(global.fetch);
+      mockFetch.mockImplementation(async (input, init) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url === '/api/files/trash') {
+          const body = JSON.parse(String(init?.body ?? '{}')) as { agentId?: string };
+          if (body.agentId === 'agent-a') {
+            return trashRequestA.promise;
+          }
+        }
+
+        return {
+          ok: true,
+          json: async () => ({ ok: true }),
+        } as Response;
+      });
+
+      const { rerender } = render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.contextMenu(screen.getByText('package.json'), new MouseEvent('contextmenu', { bubbles: true }));
+      fireEvent.click(await screen.findByText('Move to Trash'));
+
+      await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+
+      rerender(
+        <FileTreePanel
+          workspaceAgentId="agent-b"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.contextMenu(screen.getByText('src'), new MouseEvent('contextmenu', { bubbles: true }));
+      expect(await screen.findByText('Rename')).toBeInTheDocument();
+
+      await act(async () => {
+        trashRequestA.resolve({
+          ok: true,
+          json: async () => ({ ok: true, from: 'package.json', to: '.trash/package.json', undoTtlMs: 10000 }),
+        } as Response);
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText('Rename')).toBeInTheDocument();
+      expect(screen.getByText('Move to Trash')).toBeInTheDocument();
+    });
+
+    it('keeps a newer workspace delete confirmation open when an older delete resolves', async () => {
+      mockUseFileTree.mockReturnValue({
+        ...defaultMockHook,
+        workspaceInfo: {
+          isCustomWorkspace: true,
+          rootPath: '/custom/workspace',
+        },
+      });
+
+      const deleteRequestA = createDeferred<Response>();
+      const mockFetch = vi.mocked(global.fetch);
+      mockFetch.mockImplementation(async (input, init) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url === '/api/files/trash') {
+          const body = JSON.parse(String(init?.body ?? '{}')) as { agentId?: string };
+          if (body.agentId === 'agent-a') {
+            return deleteRequestA.promise;
+          }
+        }
+
+        return {
+          ok: true,
+          json: async () => ({ ok: true }),
+        } as Response;
+      });
+
+      const { rerender } = render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.contextMenu(screen.getByText('package.json'), new MouseEvent('contextmenu', { bubbles: true }));
+      fireEvent.click(await screen.findByText('Permanently Delete'));
+      fireEvent.click(await screen.findByTestId('confirm-button'));
+
+      await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+
+      rerender(
+        <FileTreePanel
+          workspaceAgentId="agent-b"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.contextMenu(screen.getByText('src'), new MouseEvent('contextmenu', { bubbles: true }));
+      fireEvent.click(await screen.findByText('Permanently Delete'));
+
+      expect(await screen.findByText(/permanently delete "src"/i)).toBeInTheDocument();
+
+      await act(async () => {
+        deleteRequestA.resolve({
+          ok: true,
+          json: async () => ({ ok: true, from: 'package.json', to: '' }),
+        } as Response);
+        await Promise.resolve();
+      });
+
+      expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
+      expect(screen.getByText(/permanently delete "src"/i)).toBeInTheDocument();
+    });
+  });
+
   describe('Mobile collapse behavior', () => {
     const mockOnCollapseChange = vi.fn();
 

@@ -83,11 +83,16 @@ type FileTreeToastPayload =
   | { type: 'undo'; message: string; trashPath: string; ttlMs: number };
 
 type FileTreeToast = FileTreeToastPayload & { agentId: string };
-type ScopedContextMenu = { agentId: string; x: number; y: number; entry: TreeEntry };
-type ScopedDeleteConfirmation = { agentId: string; entry: TreeEntry };
-type ScopedRenameState = { agentId: string; path: string; value: string };
+type ScopedSessionState = { agentId: string; sessionId: number };
+type ScopedContextMenu = ScopedSessionState & { x: number; y: number; entry: TreeEntry };
+type ScopedDeleteConfirmation = ScopedSessionState & { entry: TreeEntry };
+type ScopedRenameState = ScopedSessionState & { path: string; value: string };
 type ScopedDragSource = { agentId: string; entry: TreeEntry };
 type ScopedPathState = { agentId: string; path: string };
+
+function isSameScopedSession<T extends ScopedSessionState>(current: T | null, target: T | null): boolean {
+  return Boolean(current && target && current.agentId === target.agentId && current.sessionId === target.sessionId);
+}
 
 export function FileTreePanel({
   workspaceAgentId = 'main',
@@ -131,9 +136,11 @@ export function FileTreePanel({
 
   const [contextMenu, setContextMenu] = useState<ScopedContextMenu | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const contextMenuSessionIdRef = useRef(0);
 
   const [renameState, setRenameState] = useState<ScopedRenameState | null>(null);
-  const renameInFlightRef = useRef(false);
+  const renameSessionIdRef = useRef(0);
+  const renameInFlightRef = useRef<Set<string>>(new Set());
 
   const [dragSource, setDragSource] = useState<ScopedDragSource | null>(null);
   const [dropTargetPath, setDropTargetPath] = useState<ScopedPathState | null>(null);
@@ -144,6 +151,7 @@ export function FileTreePanel({
 
   // Permanent delete confirmation state
   const [deleteConfirmation, setDeleteConfirmation] = useState<ScopedDeleteConfirmation | null>(null);
+  const deleteConfirmationSessionIdRef = useRef(0);
 
   const clearToastTimer = useCallback(() => {
     if (toastTimerRef.current !== null) {
@@ -156,6 +164,26 @@ export function FileTreePanel({
     clearToastTimer();
     setToast(null);
   }, [clearToastTimer]);
+
+  const clearContextMenuIfCurrent = useCallback((targetContextMenu: ScopedContextMenu | null) => {
+    setContextMenu((currentContextMenu) => (
+      isSameScopedSession(currentContextMenu, targetContextMenu) ? null : currentContextMenu
+    ));
+  }, []);
+
+  const clearRenameIfCurrent = useCallback((targetRenameState: ScopedRenameState | null) => {
+    setRenameState((currentRenameState) => (
+      isSameScopedSession(currentRenameState, targetRenameState) ? null : currentRenameState
+    ));
+  }, []);
+
+  const clearDeleteConfirmationIfCurrent = useCallback((targetDeleteConfirmation: ScopedDeleteConfirmation | null) => {
+    setDeleteConfirmation((currentDeleteConfirmation) => (
+      isSameScopedSession(currentDeleteConfirmation, targetDeleteConfirmation)
+        ? null
+        : currentDeleteConfirmation
+    ));
+  }, []);
 
   const showToastForAgent = useCallback((
     targetAgentId: string,
@@ -399,7 +427,14 @@ export function FileTreePanel({
     const targetRect = event.currentTarget.getBoundingClientRect();
     const nextX = Math.min(event.clientX + MENU_CURSOR_OFFSET, targetRect.right - MENU_VIEWPORT_PADDING);
     const nextY = targetRect.top + MENU_ROW_TOP_OFFSET;
-    setContextMenu({ agentId: workspaceAgentId, x: nextX, y: nextY, entry });
+    contextMenuSessionIdRef.current += 1;
+    setContextMenu({
+      agentId: workspaceAgentId,
+      sessionId: contextMenuSessionIdRef.current,
+      x: nextX,
+      y: nextY,
+      entry,
+    });
   }, [selectFile, workspaceAgentId]);
 
   const startRename = useCallback((entry: TreeEntry) => {
@@ -407,7 +442,13 @@ export function FileTreePanel({
       showToastForAgent(workspaceAgentId, { type: 'error', message: 'Cannot rename .trash root' }, 3500);
       return;
     }
-    setRenameState({ agentId: workspaceAgentId, path: entry.path, value: entry.name });
+    renameSessionIdRef.current += 1;
+    setRenameState({
+      agentId: workspaceAgentId,
+      sessionId: renameSessionIdRef.current,
+      path: entry.path,
+      value: entry.name,
+    });
     setContextMenu(null);
   }, [showToastForAgent, workspaceAgentId]);
 
@@ -423,23 +464,27 @@ export function FileTreePanel({
   }, []);
 
   const commitRename = useCallback(async () => {
-    if (!renameState || renameInFlightRef.current) return;
+    if (!renameState) return;
 
-    const targetAgentId = renameState.agentId;
-    const nextName = renameState.value.trim();
+    const renameSession = renameState;
+    const renameSessionKey = `${renameSession.agentId}:${renameSession.sessionId}`;
+    if (renameInFlightRef.current.has(renameSessionKey)) return;
+
+    const targetAgentId = renameSession.agentId;
+    const nextName = renameSession.value.trim();
     if (!nextName) {
       showToastForAgent(targetAgentId, { type: 'error', message: 'Name cannot be empty' }, 3000);
-      cancelRename();
+      clearRenameIfCurrent(renameSession);
       return;
     }
 
-    renameInFlightRef.current = true;
+    renameInFlightRef.current.add(renameSessionKey);
     try {
       const result = await postFileOp<FileOpResult>('/api/files/rename', {
-        path: renameState.path,
+        path: renameSession.path,
         newName: nextName,
       }, targetAgentId);
-      cancelRename();
+      clearRenameIfCurrent(renameSession);
       refresh(targetAgentId);
       onRemapOpenPaths?.(result.from, result.to, targetAgentId);
       selectFile(result.to, targetAgentId);
@@ -447,34 +492,44 @@ export function FileTreePanel({
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Rename failed';
       showToastForAgent(targetAgentId, { type: 'error', message }, 4500);
-      cancelRename();
+      clearRenameIfCurrent(renameSession);
     } finally {
-      renameInFlightRef.current = false;
+      renameInFlightRef.current.delete(renameSessionKey);
     }
-  }, [cancelRename, onRemapOpenPaths, postFileOp, refresh, renameState, selectFile, showToastForAgent]);
+  }, [clearRenameIfCurrent, onRemapOpenPaths, postFileOp, refresh, renameState, selectFile, showToastForAgent]);
 
   const moveToTrash = useCallback(async (entry: TreeEntry) => {
+    const targetAgentId = workspaceAgentId;
+    const originatingContextMenu = visibleContextMenu?.entry.path === entry.path
+      ? visibleContextMenu
+      : null;
+
     if (entry.path === '.trash' || entry.path.startsWith('.trash/')) {
-      showToastForAgent(workspaceAgentId, { type: 'error', message: 'Item is already in Trash' }, 3000);
+      showToastForAgent(targetAgentId, { type: 'error', message: 'Item is already in Trash' }, 3000);
       setContextMenu(null);
       return;
     }
 
     // Show confirmation for permanent deletion
     if (workspaceInfo?.isCustomWorkspace) {
-      setDeleteConfirmation({ agentId: workspaceAgentId, entry });
+      deleteConfirmationSessionIdRef.current += 1;
+      setDeleteConfirmation({
+        agentId: targetAgentId,
+        sessionId: deleteConfirmationSessionIdRef.current,
+        entry,
+      });
       setContextMenu(null);
       return;
     }
 
     // Normal trash behavior (no confirmation)
     try {
-      const result = await postFileOp<FileOpResult>('/api/files/trash', { path: entry.path });
-      onCloseOpenPaths?.(result.from, workspaceAgentId);
-      refresh(workspaceAgentId);
-      setContextMenu(null);
+      const result = await postFileOp<FileOpResult>('/api/files/trash', { path: entry.path }, targetAgentId);
+      onCloseOpenPaths?.(result.from, targetAgentId);
+      refresh(targetAgentId);
+      clearContextMenuIfCurrent(originatingContextMenu);
       showToastForAgent(
-        workspaceAgentId,
+        targetAgentId,
         {
           type: 'undo',
           message: `Moved ${basename(result.from)} to Trash`,
@@ -485,28 +540,29 @@ export function FileTreePanel({
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Move to Trash failed';
-      showToastForAgent(workspaceAgentId, { type: 'error', message }, 4500);
-      setContextMenu(null);
+      showToastForAgent(targetAgentId, { type: 'error', message }, 4500);
+      clearContextMenuIfCurrent(originatingContextMenu);
     }
-  }, [onCloseOpenPaths, postFileOp, refresh, showToastForAgent, workspaceAgentId, workspaceInfo]);
+  }, [clearContextMenuIfCurrent, onCloseOpenPaths, postFileOp, refresh, showToastForAgent, visibleContextMenu, workspaceAgentId, workspaceInfo]);
 
-  const confirmPermanentDelete = useCallback(async (entry: TreeEntry) => {
+  const confirmPermanentDelete = useCallback(async (confirmation: ScopedDeleteConfirmation) => {
+    const targetAgentId = confirmation.agentId;
     try {
-      const result = await postFileOp<FileOpResult>('/api/files/trash', { path: entry.path });
-      onCloseOpenPaths?.(result.from, workspaceAgentId);
-      refresh(workspaceAgentId);
+      const result = await postFileOp<FileOpResult>('/api/files/trash', { path: confirmation.entry.path }, targetAgentId);
+      onCloseOpenPaths?.(result.from, targetAgentId);
+      refresh(targetAgentId);
       showToastForAgent(
-        workspaceAgentId,
+        targetAgentId,
         { type: 'success', message: `Permanently deleted ${basename(result.from)}` },
         3000,
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Permanent deletion failed';
-      showToastForAgent(workspaceAgentId, { type: 'error', message }, 4500);
+      showToastForAgent(targetAgentId, { type: 'error', message }, 4500);
     } finally {
-      setDeleteConfirmation(null);
+      clearDeleteConfirmationIfCurrent(confirmation);
     }
-  }, [onCloseOpenPaths, postFileOp, refresh, showToastForAgent, workspaceAgentId]);
+  }, [clearDeleteConfirmationIfCurrent, onCloseOpenPaths, postFileOp, refresh, showToastForAgent]);
 
   const restoreEntry = useCallback(async (entryPath: string, targetAgentId = workspaceAgentId) => {
     try {
@@ -797,7 +853,7 @@ export function FileTreePanel({
           confirmLabel="Permanently Delete"
           cancelLabel="Cancel"
           variant="danger"
-          onConfirm={() => confirmPermanentDelete(visibleDeleteConfirmation.entry)}
+          onConfirm={() => { void confirmPermanentDelete(visibleDeleteConfirmation); }}
           onCancel={() => setDeleteConfirmation(null)}
         />
       )}

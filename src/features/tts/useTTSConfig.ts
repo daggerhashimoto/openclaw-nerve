@@ -79,7 +79,7 @@ export function useTTSConfig(): UseTTSConfigReturn {
 
       const patch = { [provider]: { [field]: value } };
       const key = `${provider}.${field}`;
-      const isTextField = field === 'instructions' || field === 'voiceDescription' || field === 'styleInstruction';
+      const isTextField = field === 'instructions' || field === 'voiceDescription' || field === 'styleInstruction' || field === 'style';
 
       if (isTextField) {
         clearTimeout(debounceTimers.current[key]);
@@ -101,4 +101,6 @@ export function useTTSConfig(): UseTTSConfigReturn {
   }, []);
 
   return { config, loading, error, saved, updateField };
+}
+rn { config, loading, error, saved, updateField };
 }

@@ -176,6 +176,13 @@ export function createCommands(actions: CommandActions): Command[] {
       keywords: ['tts', 'voice', 'speech', 'edge', 'free'],
     },
     {
+      id: 'tts-xiaomi',
+      label: 'TTS: Switch to Xiaomi Mimo',
+      action: () => actions.onTtsProviderChange('xiaomi' as TTSProvider),
+      category: 'voice',
+      keywords: ['tts', 'voice', 'speech', 'xiaomi', 'mimo'],
+    },
+    {
       id: 'toggle-wake-word',
       label: 'Toggle Wake Word',
       action: actions.onToggleWakeWord,

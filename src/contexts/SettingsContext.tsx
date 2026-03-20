@@ -208,7 +208,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const toggleTtsProvider = useCallback(() => {
     setTtsProvider(prev => {
-      const order: TTSProvider[] = ['openai', 'replicate', 'edge'];
+      const order: TTSProvider[] = ['openai', 'replicate', 'xiaomi', 'edge'];
       const next = order[(order.indexOf(prev) + 1) % order.length]!;
       localStorage.setItem('oc-tts-provider', next);
       return next;

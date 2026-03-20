@@ -22,7 +22,7 @@ export type LegacyTTSProvider = 'qwen';
 /** Migrate legacy provider names to current ones. */
 export function migrateTTSProvider(provider: string): TTSProvider {
   if (provider === 'qwen') return 'replicate';
-  if (provider === 'openai' || provider === 'replicate' || provider === 'edge') return provider;
+  if (provider === 'openai' || provider === 'replicate' || provider === 'edge' || provider === 'xiaomi') return provider;
   return 'openai';
 }
 

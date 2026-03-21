@@ -109,6 +109,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   // Track current input value for draft preservation during voice recording
   const [currentInputValue, setCurrentInputValue] = useState('');
 
+  // Voice insert mode: how transcript merges with draft
+  const [voiceInsertMode, setVoiceInsertMode] = useState<'replace' | 'append' | 'prepend'>('replace');
+
+  // Track whether draft is preserved during recording
+  const [savedDraft, setSavedDraft] = useState<string | null>(null);
+
   const handleDraftRestore = useCallback((draft: string) => {
     const input = inputRef.current;
     if (input) {
@@ -118,6 +124,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       input.style.height = 'auto';
       input.style.height = Math.min(input.scrollHeight, 160) + 'px';
       setCurrentInputValue(draft);
+      setSavedDraft(null);
       // Focus back on input after restore
       input.focus();
     }
@@ -133,6 +140,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         input.style.opacity = '';
       }
       setCurrentInputValue('');
+      setSavedDraft(null);
       onSend('[voice] ' + text);
     },
     agentName,
@@ -141,15 +149,29 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     effectiveSttInputMode,
     {
       // Preserve current input as draft when recording starts
-      draftText: currentInputValue,
+      draftText: savedDraft ?? currentInputValue,
       // Restore draft on discard
       onDraftRestore: handleDraftRestore,
-      // Default to replace mode (voice transcript replaces draft)
-      insertMode: 'replace',
+      // Use selected insert mode
+      insertMode: voiceInsertMode,
     }
   );
 
-  // Live transcription preview: write interim transcript to textarea during recording
+  // Sync savedDraft indicator with voice state changes
+  useEffect(() => {
+    if (voiceState === 'recording') {
+      // Capture draft when recording starts for UI indicator
+      const draft = inputRef.current?.value || '';
+      if (draft) setSavedDraft(draft);
+    } else if (voiceState === 'idle' || voiceState === 'listening') {
+      // Clear saved draft indicator when not recording
+      setSavedDraft(null);
+    }
+  }, [voiceState]);
+
+  // Live transcription preview: show interim transcript but allow mixed typing
+  const userTypedDuringRecordingRef = useRef(false);
+
   useEffect(() => {
     if (!inputRef.current) return;
 
@@ -161,15 +183,18 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     }
 
     if (voiceState === 'recording') {
-      if (interimTranscript) {
-        inputRef.current.value = interimTranscript;
-        inputRef.current.style.fontStyle = 'italic';
-        inputRef.current.style.opacity = '0.5';
-        inputRef.current.style.height = 'auto';
-        inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + 'px';
-      } else {
-        inputRef.current.value = '';
-        inputRef.current.style.height = 'auto';
+      // Only update preview if user hasn't typed during this recording
+      if (!userTypedDuringRecordingRef.current) {
+        if (interimTranscript) {
+          inputRef.current.value = interimTranscript;
+          inputRef.current.style.fontStyle = 'italic';
+          inputRef.current.style.opacity = '0.5';
+          inputRef.current.style.height = 'auto';
+          inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + 'px';
+        } else {
+          inputRef.current.value = '';
+          inputRef.current.style.height = 'auto';
+        }
       }
     } else {
       // Clear provisional styling when not recording
@@ -181,6 +206,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         inputRef.current.value = '';
         inputRef.current.style.height = 'auto';
       }
+      // Reset user typing tracking when recording ends
+      userTypedDuringRecordingRef.current = false;
     }
   }, [interimTranscript, liveTranscriptionPreview, voiceState]);
 
@@ -399,6 +426,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     clearVoiceError();
     // Track current value for draft preservation during voice recording
     setCurrentInputValue(inputRef.current.value);
+    // If user types while recording, mark that they've taken over
+    if (voiceState === 'recording') {
+      userTypedDuringRecordingRef.current = true;
+      // Clear the preview styling so user knows they're now in control
+      inputRef.current.style.fontStyle = '';
+      inputRef.current.style.opacity = '';
+    }
     inputRef.current.style.height = 'auto';
     inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + 'px';
   };
@@ -492,12 +526,34 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           {isGenerating ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ArrowUp size={16} aria-hidden="true" />}
         </button>
       </div>
-      <div className="text-[10px] text-muted-foreground px-4 pb-1.5 pl-10 bg-card">
-        {voiceState === 'recording'
-          ? 'Recording… Left Shift to send · Double Left Shift to discard'
-          : voiceState === 'transcribing'
-          ? 'Transcribing…'
-          : 'Enter or ⌘Enter to send · Shift+Enter for newline · Double Left Shift for voice · Ctrl+F search'}
+      <div className="text-[10px] text-muted-foreground px-4 pb-1.5 pl-10 bg-card flex items-center justify-between">
+        <span>
+          {voiceState === 'recording'
+            ? 'Recording… Left Shift to send · Double Left Shift to discard'
+            : voiceState === 'transcribing'
+            ? 'Transcribing…'
+            : 'Enter or ⌘Enter to send · Shift+Enter for newline · Double Left Shift for voice · Ctrl+F search'}
+        </span>
+        {voiceState === 'recording' && (
+          <span className="flex items-center gap-2">
+            {savedDraft && (
+              <span className="text-amber-500 flex items-center gap-1" title="Your pre-typed text will be restored if you cancel">
+                <span className="w-1 h-1 rounded-full bg-amber-500" />
+                Draft saved
+              </span>
+            )}
+            <select
+              value={voiceInsertMode}
+              onChange={(e) => setVoiceInsertMode(e.target.value as 'replace' | 'append' | 'prepend')}
+              className="bg-transparent border border-border rounded text-[10px] px-1 py-0.5 cursor-pointer hover:border-primary focus:border-primary focus:outline-none"
+              title="How voice transcript merges with saved draft"
+            >
+              <option value="replace">Replace</option>
+              <option value="append">Append</option>
+              <option value="prepend">Prepend</option>
+            </select>
+          </span>
+        )}
       </div>
       {voiceError && (
         <div className="text-[10px] text-destructive px-4 pb-1.5 pl-10 bg-card" role="alert">

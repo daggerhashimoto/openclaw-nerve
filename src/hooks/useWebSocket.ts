@@ -194,7 +194,8 @@ export function useWebSocket(): UseWebSocketReturn {
               const errMsg = 'Auth failed: ' + (response.error?.message || 'unknown');
               setConnectError(errMsg);
               setConnectionState('disconnected');
-              intentionalDisconnectRef.current = true; // prevent reconnect on auth failure
+              // Treat auth failures during reconnect like transient failures so the
+              // socket keeps retrying instead of getting stuck until a manual reload.
               ws.close();
               connectRejectRef.current?.(new Error(errMsg));
             }

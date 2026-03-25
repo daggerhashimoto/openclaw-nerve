@@ -123,7 +123,10 @@ function formatExecError(err: ExecFileException, stderr: string, commandLabel: s
   return `${commandLabel} failed: ${err.message}`;
 }
 
-function execOpenclawCommand(args: string[], opts: { env?: NodeJS.ProcessEnv; cwd?: string } = {}): Promise<string> {
+function execOpenclawCommand(
+  args: string[],
+  opts: { env?: NodeJS.ProcessEnv; cwd?: string } = {},
+): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const openclawBin = resolveOpenclawBin();
     execFile(openclawBin, args, {
@@ -136,7 +139,7 @@ function execOpenclawCommand(args: string[], opts: { env?: NodeJS.ProcessEnv; cw
         const label = `openclaw ${args.join(' ')}`;
         return reject(new SkillsRouteError(formatExecError(err, stderr, label)));
       }
-      return resolve(stdout);
+      return resolve({ stdout, stderr });
     });
   });
 }
@@ -203,11 +206,12 @@ async function execOpenclawSkills(agentId?: string): Promise<RawSkill[]> {
   const scoped = await createScopedOpenclawEnv(workspace.workspaceRoot);
 
   try {
-    const stdout = await execOpenclawCommand(['skills', 'list', '--json'], {
+    const { stdout, stderr } = await execOpenclawCommand(['skills', 'list', '--json'], {
       env: scoped.env,
       cwd: await resolveWorkspaceCwd(workspace.workspaceRoot),
     });
-    return parseSkillsOutput(stdout);
+    const payload = stdout.trim() ? stdout : stderr;
+    return parseSkillsOutput(payload);
   } finally {
     await scoped.cleanup();
   }

@@ -161,6 +161,19 @@ describe('GET /api/skills', () => {
     expect(skillsCall?.opts).toEqual(expect.objectContaining({ cwd: mainWorkspace }));
   });
 
+  it('falls back to stderr when skills JSON is emitted there on success', async () => {
+    setupExec('', GOOD_SKILLS_JSON);
+
+    const app = await buildApp();
+    const res = await app.request('/api/skills');
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ok: boolean; skills: Array<{ name: string }> };
+    expect(json.ok).toBe(true);
+    expect(json.skills).toHaveLength(2);
+    expect(json.skills[0].name).toBe('weather');
+  });
+
   it('parses skills when warnings are printed before JSON', async () => {
     setupExec(`Config warnings: duplicate plugin id\n${GOOD_SKILLS_JSON}`);
 

@@ -94,7 +94,7 @@ https://nerve.example.com
 ```json
 "gateway": {
   "tools": {
-    "allow": ["cron", "gateway"]
+    "allow": ["cron", "gateway", "sessions_spawn"]
   }
 }
 ```

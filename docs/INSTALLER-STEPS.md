@@ -276,7 +276,7 @@ After `.env` is written, the setup wizard detects and applies pending OpenClaw g
 #### Possible changes detected:
 1. **Device scopes** — bootstraps `~/.openclaw/devices/paired.json` with full operator scopes if missing or incomplete
 2. **Pre-pair Nerve device** — registers Nerve's Ed25519 identity in `paired.json` so it can connect without manual `openclaw devices approve`
-3. **Tools allow** — adds `"cron"` and `"gateway"` to `gateway.tools.allow` in `~/.openclaw/openclaw.json` (required for OpenClaw ≥2026.2.23 which denies these tools on `/tools/invoke` by default)
+3. **Tools allow** — adds `"cron"`, `"gateway"`, and `"sessions_spawn"` to `gateway.tools.allow` in `~/.openclaw/openclaw.json` (required for OpenClaw ≥2026.2.23, which denies these tools on `/tools/invoke` by default; `sessions_spawn` is required for Kanban task execution)
 4. **Allowed origins** — adds all required Nerve browser origins to `gateway.controlUi.allowedOrigins`
    - LAN or tailnet-IP mode: `http://<ip>:<port>`
    - Tailscale Serve mode: `https://<node>.tail<id>.ts.net`

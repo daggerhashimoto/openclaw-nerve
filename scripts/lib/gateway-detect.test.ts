@@ -143,6 +143,28 @@ describe('gateway detection and repair', () => {
     expect(updated.gateway.controlUi.allowedOrigins).not.toContain(`  http://${EXAMPLE_TS_IPV4}:3080  `);
   });
 
+  it('detects missing sessions_spawn in gateway.tools.allow and patches it for kanban execution', async () => {
+    const { mod } = await importGatewayDetect();
+
+    const changes = mod.detectNeededConfigChanges({
+      gatewayToken: 'test-token',
+    });
+    const toolsAllowChange = changes.find((change) => change.id === 'tools-allow');
+
+    expect(toolsAllowChange).toBeDefined();
+    expect(toolsAllowChange?.description).toContain('sessions_spawn');
+
+    const result = toolsAllowChange!.apply();
+    expect(result.ok).toBe(true);
+
+    const updated = JSON.parse(readFileSync(path.join(tempHome, '.openclaw', 'openclaw.json'), 'utf8'));
+    expect(updated.gateway.tools.allow).toEqual(expect.arrayContaining([
+      'cron',
+      'gateway',
+      'sessions_spawn',
+    ]));
+  });
+
   it('prefers a detected config token over a stale shell env token during setup', async () => {
     process.env.OPENCLAW_GATEWAY_TOKEN = 'stale-shell-token';
 

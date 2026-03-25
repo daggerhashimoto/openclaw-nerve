@@ -172,7 +172,7 @@ export function patchGatewayAllowedOrigins(origin: string): GatewayPatchResult {
   }
 }
 
-const REQUIRED_HTTP_TOOLS = ['cron', 'gateway'] as const;
+const REQUIRED_HTTP_TOOLS = ['cron', 'gateway', 'sessions_spawn'] as const;
 
 // Must match the connect metadata sent by Nerve's browser WS client
 // (src/hooks/useWebSocket.ts) to avoid OpenClaw 2026.2.26+ metadata-repair prompts.
@@ -914,7 +914,7 @@ export function detectNeededConfigChanges(opts: {
   if (needsToolsAllow()) {
     changes.push({
       id: 'tools-allow',
-      description: 'Allow cron + gateway tools on /tools/invoke (needed for cron and gateway management)',
+      description: 'Allow cron + gateway + sessions_spawn tools on /tools/invoke (needed for cron, gateway management, and kanban task execution)',
       apply: () => {
         const r = patchGatewayToolsAllow();
         return { ok: r.ok, message: r.message, needsRestart: r.ok };

@@ -767,7 +767,7 @@ async function collectInteractive(
         } else if (change.id === 'pre-pair') {
           dim('  • Pre-pair: run `openclaw devices approve` after starting Nerve');
         } else if (change.id === 'tools-allow') {
-          dim('  • HTTP tools: add "cron" and "gateway" to gateway.tools.allow in ~/.openclaw/openclaw.json');
+          dim('  • HTTP tools: add "cron", "gateway", and "sessions_spawn" to gateway.tools.allow in ~/.openclaw/openclaw.json');
         } else if (change.id.startsWith('allowed-origins')) {
           dim('  • Origins: add the required origin(s) to gateway.controlUi.allowedOrigins in ~/.openclaw/openclaw.json');
         }

@@ -229,7 +229,13 @@ function pollSessionCompletion(
 
 // ── Zod schemas ──────────────────────────────────────────────────────
 
-const taskStatusSchema = z.enum(['backlog', 'todo', 'in-progress', 'review', 'done', 'cancelled']);
+/** Built-in statuses kept for backwards compat; custom slugs are also accepted. */
+const BUILT_IN_STATUS_VALUES = ['backlog', 'todo', 'in-progress', 'review', 'done', 'cancelled'] as const;
+const taskStatusSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Status key must be lowercase-kebab-case (e.g. "in-progress", "blocked")');
 const taskPrioritySchema = z.enum(['critical', 'high', 'normal', 'low']);
 const taskActorSchema = z.union([
   z.literal('operator'),

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { KanbanTask, TaskStatus, TaskPriority } from '../types';
+import { COLUMNS } from '../types';
 
 /* ── API response shape ── */
 interface TasksResponse {
@@ -56,6 +57,23 @@ function buildQuery(filters: KanbanFilters): string {
   return p.toString();
 }
 
+/* ── Board config ── */
+export interface BoardColumnConfig {
+  key: string;
+  title: string;
+  wipLimit?: number;
+  visible: boolean;
+}
+
+export interface BoardConfig {
+  columns: BoardColumnConfig[];
+  defaults: { status: string; priority: string };
+  reviewRequired: boolean;
+  allowDoneDragBypass: boolean;
+  quickViewLimit: number;
+  proposalPolicy: 'confirm' | 'auto';
+}
+
 /* ── Hook ── */
 export function useKanban() {
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
@@ -63,7 +81,22 @@ export function useKanban() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<KanbanFilters>(EMPTY_FILTERS);
+  const [boardConfig, setBoardConfig] = useState<BoardConfig | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  /* ── Fetch board config (columns are user-configurable) ── */
+  useEffect(() => {
+    fetch('/api/kanban/config')
+      .then(r => r.ok ? r.json() : null)
+      .then((cfg: BoardConfig | null) => { if (cfg) setBoardConfig(cfg); })
+      .catch(() => {/* fallback to COLUMNS default */});
+  }, []);
+
+  /** Visible columns in display order, derived from board config when available. */
+  const boardColumns = useMemo((): TaskStatus[] => {
+    if (!boardConfig) return COLUMNS;
+    return boardConfig.columns.filter(c => c.visible).map(c => c.key);
+  }, [boardConfig]);
 
   /* ── Fetch ── */
 
@@ -265,9 +298,7 @@ export function useKanban() {
   }, [tasksByStatusMap]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<TaskStatus, number> = {
-      backlog: 0, todo: 0, 'in-progress': 0, review: 0, done: 0, cancelled: 0,
-    };
+    const counts: Record<string, number> = {};
     for (const t of tasks) counts[t.status] = (counts[t.status] || 0) + 1;
     return counts;
   }, [tasks]);
@@ -288,6 +319,8 @@ export function useKanban() {
     setTasksOptimistic,
     tasksByStatus,
     statusCounts,
+    boardColumns,
+    boardConfig,
     executeTask,
     approveTask,
     rejectTask,

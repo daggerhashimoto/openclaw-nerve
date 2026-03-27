@@ -11,10 +11,18 @@ interface KanbanColumnProps {
   status: TaskStatus;
   tasks: KanbanTask[];
   onCardClick: (task: KanbanTask) => void;
+  /** Display label for the column. Falls back to COLUMN_LABELS or a title-cased version of the key. */
+  label?: string;
 }
 
-export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardClick }: KanbanColumnProps) {
-  const accent = TASK_STATUS_TONE[status];
+/** Derive a human-readable label from a status key as last resort (e.g. "in-progress" → "In Progress"). */
+function labelFromKey(key: string): string {
+  return key.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardClick, label }: KanbanColumnProps) {
+  const accent = TASK_STATUS_TONE[status] ?? TASK_STATUS_TONE['todo'];
+  const displayLabel = label ?? COLUMN_LABELS[status] ?? labelFromKey(status);
 
   // Make the column itself a drop target (for dropping into empty columns)
   const { setNodeRef, isOver: isDirectlyOver } = useDroppable({ id: status });
@@ -37,7 +45,7 @@ export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardCl
       <div className="sticky top-0 z-10 flex h-11 items-center justify-between border-b border-border/55 bg-card/78 px-3 backdrop-blur-lg">
         <div className="flex items-center gap-2">
           <span className={`text-[0.733rem] font-semibold uppercase tracking-[0.18em] ${accent.textClass}`}>
-            {COLUMN_LABELS[status]}
+          {displayLabel}
           </span>
         </div>
         <span className={`inline-flex min-w-[28px] items-center justify-center rounded-full border px-2 py-0.5 text-[0.667rem] font-semibold tabular-nums ${accent.badgeClass}`}>

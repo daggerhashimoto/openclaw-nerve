@@ -1,14 +1,26 @@
 // Kanban type contracts — Frozen v1
 // Change policy: coordinator approval + issue-file sync required.
 
-export type TaskStatus = 'backlog' | 'todo' | 'in-progress' | 'review' | 'done' | 'cancelled';
+/** Built-in status keys shipped with the default board config. */
+export const BUILT_IN_STATUSES = ['backlog', 'todo', 'in-progress', 'review', 'done', 'cancelled'] as const;
+export type BuiltInStatus = typeof BUILT_IN_STATUSES[number];
+
+/**
+ * TaskStatus is a plain string so custom column keys are supported.
+ * The board config (from /api/kanban/config) is the canonical source of truth
+ * for which statuses are valid and how columns are ordered.
+ */
+export type TaskStatus = string;
 export type TaskPriority = 'critical' | 'high' | 'normal' | 'low';
 
-/** Canonical column display order. Single source of truth for board + header. */
+/**
+ * Default column display order used as a fallback before the board config loads.
+ * Consumers should prefer `config.columns` from useKanban() over this constant.
+ */
 export const COLUMNS: TaskStatus[] = ['backlog', 'todo', 'in-progress', 'review', 'done'];
 
-/** Human-readable column labels. */
-export const COLUMN_LABELS: Record<TaskStatus, string> = {
+/** Human-readable labels for built-in columns. Custom columns use their `title` from config. */
+export const COLUMN_LABELS: Record<string, string> = {
   backlog: 'Backlog',
   todo: 'To Do',
   'in-progress': 'In Progress',

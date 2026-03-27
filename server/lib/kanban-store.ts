@@ -58,7 +58,15 @@ function matchesRunIdentifier(run: TaskRunLink, value: string): boolean {
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export type TaskStatus = 'backlog' | 'todo' | 'in-progress' | 'review' | 'done' | 'cancelled';
+/** Built-in status keys that ship with the default board config. */
+export const BUILT_IN_STATUSES = ['backlog', 'todo', 'in-progress', 'review', 'done', 'cancelled'] as const;
+export type BuiltInStatus = typeof BUILT_IN_STATUSES[number];
+
+/**
+ * TaskStatus is a string so users can define custom column keys.
+ * Built-in values are still the recommended defaults.
+ */
+export type TaskStatus = string;
 export type TaskPriority = 'critical' | 'high' | 'normal' | 'low';
 export type TaskActor = 'operator' | `agent:${string}`;
 
@@ -106,7 +114,7 @@ export interface KanbanTask {
 
 export interface KanbanBoardConfig {
   columns: Array<{
-    key: TaskStatus;
+    key: string;
     title: string;
     wipLimit?: number;
     visible: boolean;
@@ -227,7 +235,7 @@ const CURRENT_SCHEMA_VERSION = 1;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
-const STATUS_ORDER: Record<TaskStatus, number> = {
+const STATUS_ORDER: Record<string, number> = {
   backlog: 0,
   todo: 1,
   'in-progress': 2,
@@ -236,13 +244,15 @@ const STATUS_ORDER: Record<TaskStatus, number> = {
   cancelled: 5,
 };
 
-const VALID_TASK_STATUSES = new Set<TaskStatus>(['backlog', 'todo', 'in-progress', 'review', 'done', 'cancelled']);
+const VALID_TASK_STATUSES = new Set<string>(BUILT_IN_STATUSES);
 const VALID_TASK_PRIORITIES = new Set<TaskPriority>(['critical', 'high', 'normal', 'low']);
 
-function normalizeTaskStatus(value: unknown): TaskStatus {
-  return typeof value === 'string' && VALID_TASK_STATUSES.has(value as TaskStatus)
-    ? (value as TaskStatus)
-    : DEFAULT_CONFIG.defaults.status;
+function normalizeTaskStatus(value: unknown, configColumns?: TaskStatus[]): TaskStatus {
+  if (typeof value !== 'string') return DEFAULT_CONFIG.defaults.status;
+  // Accept built-in statuses or any key defined in the current board config
+  if (VALID_TASK_STATUSES.has(value)) return value;
+  if (configColumns && configColumns.includes(value)) return value;
+  return DEFAULT_CONFIG.defaults.status;
 }
 
 function normalizeTaskPriority(value: unknown): TaskPriority {
@@ -382,7 +392,7 @@ export class KanbanStore {
       const childSessionKey = task.run?.childSessionKey ?? task.run?.sessionId;
       return {
         ...task,
-        status: normalizeTaskStatus(task.status),
+        status: normalizeTaskStatus(task.status, data.config.columns.map(c => c.key)),
         priority: normalizeTaskPriority(task.priority),
         run: task.run
           ? {
@@ -512,7 +522,7 @@ export class KanbanStore {
 
       // Sort: status order → columnOrder → updatedAt desc
       tasks.sort((a, b) => {
-        const statusDiff = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+        const statusDiff = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
         if (statusDiff !== 0) return statusDiff;
         const orderDiff = a.columnOrder - b.columnOrder;
         if (orderDiff !== 0) return orderDiff;

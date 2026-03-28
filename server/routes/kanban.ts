@@ -19,6 +19,7 @@ import {
   getKanbanStore,
   VersionConflictError,
   TaskNotFoundError,
+  InvalidTaskStatusError,
   InvalidTransitionError,
   ProposalNotFoundError,
   ProposalAlreadyResolvedError,
@@ -230,7 +231,13 @@ function pollSessionCompletion(
 
 // ── Zod schemas ──────────────────────────────────────────────────────
 
-const taskStatusSchema = z.enum(['backlog', 'todo', 'in-progress', 'review', 'done', 'cancelled']);
+/** Built-in statuses kept for backwards compat; custom slugs are also accepted. */
+const BUILT_IN_STATUS_VALUES = ['backlog', 'todo', 'in-progress', 'review', 'done', 'cancelled'] as const;
+const taskStatusSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Status key must be lowercase-kebab-case (e.g. "in-progress", "blocked")');
 const taskPrioritySchema = z.enum(['critical', 'high', 'normal', 'low']);
 const taskActorSchema = z.union([
   z.literal('operator'),
@@ -445,8 +452,14 @@ app.post('/api/kanban/tasks', rateLimitGeneral, async (c) => {
     }, 400);
   }
 
-  const task = await store.createTask(parsed.data);
-  return c.json(task, 201);
+  try {
+    const task = await store.createTask(parsed.data);
+    return c.json(task, 201);
+  } catch (err) {
+    const invalidStatusResponse = handleInvalidTaskStatusError(c, err);
+    if (invalidStatusResponse) return invalidStatusResponse;
+    throw err;
+  }
 });
 
 // PATCH /api/kanban/tasks/:id
@@ -482,6 +495,8 @@ app.patch('/api/kanban/tasks/:id', rateLimitGeneral, async (c) => {
     const updated = await store.updateTask(id, version, cleanPatch);
     return c.json(updated);
   } catch (err) {
+    const invalidStatusResponse = handleInvalidTaskStatusError(c, err);
+    if (invalidStatusResponse) return invalidStatusResponse;
     if (err instanceof VersionConflictError) {
       return c.json({
         error: 'version_conflict',
@@ -542,6 +557,8 @@ app.post('/api/kanban/tasks/:id/reorder', rateLimitGeneral, async (c) => {
     );
     return c.json(task);
   } catch (err) {
+    const invalidStatusResponse = handleInvalidTaskStatusError(c, err);
+    if (invalidStatusResponse) return invalidStatusResponse;
     if (err instanceof VersionConflictError) {
       return c.json({
         error: 'version_conflict',
@@ -582,8 +599,14 @@ app.put('/api/kanban/config', rateLimitGeneral, async (c) => {
     }, 400);
   }
 
-  const config = await store.updateConfig(parsed.data);
-  return c.json(config);
+  try {
+    const config = await store.updateConfig(parsed.data);
+    return c.json(config);
+  } catch (err) {
+    const invalidStatusResponse = handleInvalidTaskStatusError(c, err);
+    if (invalidStatusResponse) return invalidStatusResponse;
+    throw err;
+  }
 });
 
 // ── Proposal routes ──────────────────────────────────────────────────
@@ -662,6 +685,8 @@ app.post('/api/kanban/proposals', rateLimitGeneral, async (c) => {
     const proposal = await store.createProposal({ type, payload: safePayload, sourceSessionKey, proposedBy });
     return c.json(proposal, 201);
   } catch (err) {
+    const invalidStatusResponse = handleInvalidTaskStatusError(c, err);
+    if (invalidStatusResponse) return invalidStatusResponse;
     if (err instanceof TaskNotFoundError) {
       return c.json({ error: 'not_found', details: err.message }, 404);
     }
@@ -678,6 +703,8 @@ app.post('/api/kanban/proposals/:id/approve', rateLimitGeneral, async (c) => {
     const { proposal, task } = await store.approveProposal(id);
     return c.json({ proposal, task });
   } catch (err) {
+    const invalidStatusResponse = handleInvalidTaskStatusError(c, err);
+    if (invalidStatusResponse) return invalidStatusResponse;
     if (err instanceof ProposalNotFoundError) {
       return c.json({ error: 'not_found', details: err.message }, 404);
     }
@@ -728,7 +755,20 @@ app.post('/api/kanban/proposals/:id/reject', rateLimitGeneral, async (c) => {
 
 // ── Workflow helpers ──────────────────────────────────────────────────
 
+function handleInvalidTaskStatusError(c: Context, err: unknown) {
+  if (err instanceof InvalidTaskStatusError) {
+    return c.json({
+      error: 'validation_error',
+      details: `status: Unknown status "${err.status}"`,
+      allowed: err.allowed,
+    }, 400);
+  }
+  return null;
+}
+
 function handleWorkflowError(c: Context, err: unknown) {
+  const invalidStatusResponse = handleInvalidTaskStatusError(c, err);
+  if (invalidStatusResponse) return invalidStatusResponse;
   if (err instanceof InvalidTransitionError) {
     return c.json({
       error: 'invalid_transition',

@@ -58,7 +58,15 @@ function matchesRunIdentifier(run: TaskRunLink, value: string): boolean {
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export type TaskStatus = 'backlog' | 'todo' | 'in-progress' | 'review' | 'done' | 'cancelled';
+/** Built-in status keys that ship with the default board config. */
+export const BUILT_IN_STATUSES = ['backlog', 'todo', 'in-progress', 'review', 'done', 'cancelled'] as const;
+export type BuiltInStatus = typeof BUILT_IN_STATUSES[number];
+
+/**
+ * TaskStatus is a string so users can define custom column keys.
+ * Built-in values are still the recommended defaults.
+ */
+export type TaskStatus = string;
 export type TaskPriority = 'critical' | 'high' | 'normal' | 'low';
 export type TaskActor = 'operator' | `agent:${string}`;
 
@@ -106,7 +114,7 @@ export interface KanbanTask {
 
 export interface KanbanBoardConfig {
   columns: Array<{
-    key: TaskStatus;
+    key: string;
     title: string;
     wipLimit?: number;
     visible: boolean;
@@ -210,6 +218,18 @@ export class TaskNotFoundError extends Error {
   }
 }
 
+export class InvalidTaskStatusError extends Error {
+  status: string;
+  allowed: string[];
+  constructor(status: string, allowed: Iterable<string>) {
+    const allowedList = [...allowed];
+    super(`Invalid task status: ${status}`);
+    this.name = 'InvalidTaskStatusError';
+    this.status = status;
+    this.allowed = allowedList;
+  }
+}
+
 export class InvalidTransitionError extends Error {
   from: TaskStatus;
   to: TaskStatus;
@@ -227,7 +247,7 @@ const CURRENT_SCHEMA_VERSION = 1;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
-const STATUS_ORDER: Record<TaskStatus, number> = {
+const STATUS_ORDER: Record<string, number> = {
   backlog: 0,
   todo: 1,
   'in-progress': 2,
@@ -236,13 +256,23 @@ const STATUS_ORDER: Record<TaskStatus, number> = {
   cancelled: 5,
 };
 
-const VALID_TASK_STATUSES = new Set<TaskStatus>(['backlog', 'todo', 'in-progress', 'review', 'done', 'cancelled']);
+const VALID_TASK_STATUSES = new Set<string>(BUILT_IN_STATUSES);
 const VALID_TASK_PRIORITIES = new Set<TaskPriority>(['critical', 'high', 'normal', 'low']);
 
-function normalizeTaskStatus(value: unknown): TaskStatus {
-  return typeof value === 'string' && VALID_TASK_STATUSES.has(value as TaskStatus)
-    ? (value as TaskStatus)
-    : DEFAULT_CONFIG.defaults.status;
+function getAllowedTaskStatuses(config: KanbanBoardConfig): Set<string> {
+  return new Set([...BUILT_IN_STATUSES, ...config.columns.map((column) => column.key)]);
+}
+
+function isAllowedTaskStatus(value: string, config: KanbanBoardConfig): boolean {
+  return getAllowedTaskStatuses(config).has(value);
+}
+
+function normalizeTaskStatus(value: unknown, configColumns?: TaskStatus[]): TaskStatus {
+  if (typeof value !== 'string') return DEFAULT_CONFIG.defaults.status;
+  // Accept built-in statuses or any key defined in the current board config
+  if (VALID_TASK_STATUSES.has(value)) return value;
+  if (configColumns && configColumns.includes(value)) return value;
+  return DEFAULT_CONFIG.defaults.status;
 }
 
 function normalizeTaskPriority(value: unknown): TaskPriority {
@@ -382,7 +412,7 @@ export class KanbanStore {
       const childSessionKey = task.run?.childSessionKey ?? task.run?.sessionId;
       return {
         ...task,
-        status: normalizeTaskStatus(task.status),
+        status: normalizeTaskStatus(task.status, data.config.columns.map(c => c.key)),
         priority: normalizeTaskPriority(task.priority),
         run: task.run
           ? {
@@ -512,7 +542,7 @@ export class KanbanStore {
 
       // Sort: status order → columnOrder → updatedAt desc
       tasks.sort((a, b) => {
-        const statusDiff = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+        const statusDiff = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
         if (statusDiff !== 0) return statusDiff;
         const orderDiff = a.columnOrder - b.columnOrder;
         if (orderDiff !== 0) return orderDiff;
@@ -557,6 +587,10 @@ export class KanbanStore {
   }): Promise<KanbanTask> {
     return this.withStore(async () => {
       const data = await this.readRaw();
+
+      if (input.status && !isAllowedTaskStatus(input.status, data.config)) {
+        throw new InvalidTaskStatusError(input.status, getAllowedTaskStatuses(data.config));
+      }
 
       // Compute columnOrder — append to end of target column
       const targetStatus = input.status ?? data.config.defaults.status;
@@ -631,6 +665,10 @@ export class KanbanStore {
         throw new VersionConflictError(task.version, task);
       }
 
+      if (patch.status && !isAllowedTaskStatus(patch.status, data.config)) {
+        throw new InvalidTaskStatusError(patch.status, getAllowedTaskStatuses(data.config));
+      }
+
       // Apply patch
       const now = Date.now();
       const updated: KanbanTask = { ...task, ...patch, updatedAt: now, version: task.version + 1 };
@@ -689,6 +727,10 @@ export class KanbanStore {
         throw new VersionConflictError(task.version, task);
       }
 
+      if (!isAllowedTaskStatus(targetStatus, data.config)) {
+        throw new InvalidTaskStatusError(targetStatus, getAllowedTaskStatuses(data.config));
+      }
+
       const now = Date.now();
 
       // Get all tasks in target column (excluding the task being moved)
@@ -739,9 +781,18 @@ export class KanbanStore {
   async updateConfig(patch: Partial<KanbanBoardConfig>): Promise<KanbanBoardConfig> {
     return this.withStore(async () => {
       const data = await this.readRaw();
-      data.config = { ...data.config, ...patch };
-      if (patch.columns) data.config.columns = patch.columns;
-      if (patch.defaults) data.config.defaults = { ...data.config.defaults, ...patch.defaults };
+      const nextConfig: KanbanBoardConfig = {
+        ...data.config,
+        ...patch,
+        columns: patch.columns ?? data.config.columns,
+        defaults: { ...data.config.defaults, ...patch.defaults },
+      };
+
+      if (!isAllowedTaskStatus(nextConfig.defaults.status, nextConfig)) {
+        throw new InvalidTaskStatusError(nextConfig.defaults.status, getAllowedTaskStatuses(nextConfig));
+      }
+
+      data.config = nextConfig;
       await this.writeRaw(data);
       await this.audit({ ts: Date.now(), action: 'config_update' });
       return data.config;
@@ -1124,6 +1175,10 @@ export class KanbanStore {
       const data = await this.readRaw();
       const now = Date.now();
 
+      if ('status' in input.payload && typeof input.payload.status === 'string' && !isAllowedTaskStatus(input.payload.status, data.config)) {
+        throw new InvalidTaskStatusError(input.payload.status, getAllowedTaskStatuses(data.config));
+      }
+
       const proposal: KanbanProposal = {
         id: crypto.randomUUID(),
         type: input.type,
@@ -1235,6 +1290,9 @@ export class KanbanStore {
     proposedBy: TaskActor,
   ): Promise<KanbanTask> {
     const targetStatus = (payload.status as TaskStatus) ?? data.config.defaults.status;
+    if (!isAllowedTaskStatus(targetStatus, data.config)) {
+      throw new InvalidTaskStatusError(targetStatus, getAllowedTaskStatuses(data.config));
+    }
     const maxOrder = data.tasks
       .filter((t) => t.status === targetStatus)
       .reduce((max, t) => Math.max(max, t.columnOrder), -1);
@@ -1290,6 +1348,9 @@ export class KanbanStore {
 
     // If status changed, re-compute columnOrder
     if (patch.status && patch.status !== task.status) {
+      if (typeof patch.status !== 'string' || !isAllowedTaskStatus(patch.status, data.config)) {
+        throw new InvalidTaskStatusError(String(patch.status), getAllowedTaskStatuses(data.config));
+      }
       const maxOrder = data.tasks
         .filter((t) => t.status === (patch.status as TaskStatus) && t.id !== taskId)
         .reduce((max, t) => Math.max(max, t.columnOrder), -1);

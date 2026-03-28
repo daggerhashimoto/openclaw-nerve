@@ -17,6 +17,8 @@ interface KanbanBoardProps {
   hasAnyTasks: boolean;
   onCreateTask: () => void;
   reorderTask: (id: string, version: number, targetStatus: TaskStatus, targetIndex: number) => Promise<KanbanTask>;
+  /** Visible columns in display order — derived from board config. Falls back to COLUMNS. */
+  boardColumns?: TaskStatus[];
 }
 
 /* ── Loading skeleton ── */
@@ -48,15 +50,18 @@ export const KanbanBoard = memo(function KanbanBoard({
   hasAnyTasks,
   onCreateTask,
   reorderTask,
+  boardColumns: boardColumnsProp,
 }: KanbanBoardProps) {
+  const activeColumns = boardColumnsProp ?? COLUMNS;
+
   /* ── Build flat task list from the tasksByStatus prop ── */
   const propTasks = useMemo(() => {
     const all: KanbanTask[] = [];
-    for (const col of COLUMNS) {
+    for (const col of activeColumns) {
       all.push(...tasksByStatus(col));
     }
     return all;
-  }, [tasksByStatus]);
+  }, [tasksByStatus, activeColumns]);
 
   /* ── Drag override: non-null only during an active drag ── */
   const [dragOverride, setDragOverride] = useState<KanbanTask[] | null>(null);
@@ -78,6 +83,7 @@ export const KanbanBoard = memo(function KanbanBoard({
     tasks: localTasks,
     setTasksOptimistic: setTasksWithDragTracking,
     reorderTask,
+    activeColumns,
     onError: (msg) => {
       // Clear override to fall back to prop data
       setDragOverride(null);
@@ -140,7 +146,7 @@ export const KanbanBoard = memo(function KanbanBoard({
     return (
       <div className="h-full overflow-x-auto">
         <div className="flex gap-3 p-0 min-w-min h-full">
-          {COLUMNS.map(s => <SkeletonColumn key={s} />)}
+          {activeColumns.map(s => <SkeletonColumn key={s} />)}
         </div>
       </div>
     );
@@ -176,7 +182,7 @@ export const KanbanBoard = memo(function KanbanBoard({
     >
       <div className="h-full overflow-x-auto">
         <div className="flex gap-3 p-0 min-w-min h-full">
-          {COLUMNS.map(status => (
+          {activeColumns.map(status => (
             <KanbanColumn
               key={status}
               status={status}

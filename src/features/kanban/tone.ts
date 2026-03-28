@@ -5,7 +5,7 @@ const FALLBACK_PRIORITY: TaskPriority = 'normal';
 const FALLBACK_RUN_STATUS: TaskRunLink['status'] = 'error';
 
 export const TASK_STATUS_TONE: Record<
-  TaskStatus,
+  string,
   { textClass: string; badgeClass: string; statClass: string }
 > = {
   backlog: {

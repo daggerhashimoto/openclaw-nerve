@@ -32,6 +32,7 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
     reorderTask,
     tasksByStatus,
     statusCounts,
+    boardColumns,
     executeTask,
     approveTask,
     rejectTask,
@@ -118,6 +119,7 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
           hasAnyTasks={tasks.length > 0}
           onCreateTask={openCreateDialog}
           reorderTask={reorderTask}
+          boardColumns={boardColumns}
         />
       </div>
 

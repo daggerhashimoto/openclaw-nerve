@@ -230,6 +230,18 @@ export class InvalidTaskStatusError extends Error {
   }
 }
 
+export class InvalidBoardConfigError extends Error {
+  details: string;
+  statuses: string[];
+  constructor(details: string, statuses: Iterable<string> = []) {
+    const statusList = [...statuses];
+    super(details);
+    this.name = 'InvalidBoardConfigError';
+    this.details = details;
+    this.statuses = statusList;
+  }
+}
+
 export class InvalidTransitionError extends Error {
   from: TaskStatus;
   to: TaskStatus;
@@ -256,11 +268,20 @@ const STATUS_ORDER: Record<string, number> = {
   cancelled: 5,
 };
 
+const REQUIRED_BOARD_COLUMNS: TaskStatus[] = ['backlog', 'todo', 'in-progress', 'review', 'done'];
 const VALID_TASK_STATUSES = new Set<string>(BUILT_IN_STATUSES);
 const VALID_TASK_PRIORITIES = new Set<TaskPriority>(['critical', 'high', 'normal', 'low']);
 
+function getConfiguredStatuses(config: KanbanBoardConfig): TaskStatus[] {
+  return config.columns.map((column) => column.key);
+}
+
+function getStatusOrderMap(config: KanbanBoardConfig): Map<string, number> {
+  return new Map(config.columns.map((column, index) => [column.key, index] as const));
+}
+
 function getAllowedTaskStatuses(config: KanbanBoardConfig): Set<string> {
-  return new Set([...BUILT_IN_STATUSES, ...config.columns.map((column) => column.key)]);
+  return new Set([...BUILT_IN_STATUSES, ...getConfiguredStatuses(config)]);
 }
 
 function isAllowedTaskStatus(value: string, config: KanbanBoardConfig): boolean {
@@ -394,7 +415,8 @@ export class KanbanStore {
     if (!data.config.defaults || !data.config.defaults.status) {
       data.config.defaults = structuredClone(DEFAULT_CONFIG.defaults);
     }
-    data.config.defaults.status = normalizeTaskStatus(data.config.defaults.status);
+    const configuredStatuses = getConfiguredStatuses(data.config);
+    data.config.defaults.status = normalizeTaskStatus(data.config.defaults.status, configuredStatuses);
     data.config.defaults.priority = normalizeTaskPriority(data.config.defaults.priority);
     if (!data.config.proposalPolicy) {
       data.config.proposalPolicy = 'confirm';
@@ -412,7 +434,7 @@ export class KanbanStore {
       const childSessionKey = task.run?.childSessionKey ?? task.run?.sessionId;
       return {
         ...task,
-        status: normalizeTaskStatus(task.status, data.config.columns.map(c => c.key)),
+        status: normalizeTaskStatus(task.status, configuredStatuses),
         priority: normalizeTaskPriority(task.priority),
         run: task.run
           ? {
@@ -540,9 +562,12 @@ export class KanbanStore {
         );
       }
 
+      const statusOrder = getStatusOrderMap(data.config);
+
       // Sort: status order → columnOrder → updatedAt desc
       tasks.sort((a, b) => {
-        const statusDiff = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
+        const statusDiff = (statusOrder.get(a.status) ?? STATUS_ORDER[a.status] ?? Number.MAX_SAFE_INTEGER)
+          - (statusOrder.get(b.status) ?? STATUS_ORDER[b.status] ?? Number.MAX_SAFE_INTEGER);
         if (statusDiff !== 0) return statusDiff;
         const orderDiff = a.columnOrder - b.columnOrder;
         if (orderDiff !== 0) return orderDiff;
@@ -788,8 +813,31 @@ export class KanbanStore {
         defaults: { ...data.config.defaults, ...patch.defaults },
       };
 
+      const configuredStatuses = new Set(getConfiguredStatuses(nextConfig));
+      const missingBuiltIns = REQUIRED_BOARD_COLUMNS.filter((status) => !configuredStatuses.has(status));
+      if (missingBuiltIns.length > 0) {
+        throw new InvalidBoardConfigError(
+          `Missing required board columns: ${missingBuiltIns.join(', ')}`,
+          missingBuiltIns,
+        );
+      }
+
       if (!isAllowedTaskStatus(nextConfig.defaults.status, nextConfig)) {
         throw new InvalidTaskStatusError(nextConfig.defaults.status, getAllowedTaskStatuses(nextConfig));
+      }
+
+      const referencedStatuses = new Set<string>([
+        ...data.tasks.map((task) => task.status),
+        ...data.proposals.flatMap((proposal) => (
+          typeof proposal.payload?.status === 'string' ? [proposal.payload.status] : []
+        )),
+      ]);
+      const removedReferencedStatuses = [...referencedStatuses].filter((status) => !configuredStatuses.has(status));
+      if (removedReferencedStatuses.length > 0) {
+        throw new InvalidBoardConfigError(
+          `Cannot remove columns still in use: ${removedReferencedStatuses.join(', ')}`,
+          removedReferencedStatuses,
+        );
       }
 
       data.config = nextConfig;

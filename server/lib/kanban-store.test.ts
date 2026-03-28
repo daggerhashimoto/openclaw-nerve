@@ -10,6 +10,7 @@ import {
   InvalidTransitionError,
   ProposalNotFoundError,
   ProposalAlreadyResolvedError,
+  InvalidBoardConfigError,
 } from './kanban-store.js';
 import type { KanbanTask } from './kanban-store.js';
 
@@ -252,6 +253,26 @@ describe('listTasks', () => {
     const result = await store.listTasks();
     expect(result.items.map((t) => t.title)).toEqual(['Backlog', 'Todo 1', 'Todo 2', 'Done']);
   });
+
+  it('sorts by configured board column order for custom statuses', async () => {
+    await store.updateConfig({
+      columns: [
+        { key: 'backlog', title: 'Backlog', visible: true },
+        { key: 'blocked', title: 'Blocked', visible: true },
+        { key: 'todo', title: 'To Do', visible: true },
+        { key: 'in-progress', title: 'In Progress', visible: true },
+        { key: 'review', title: 'Review', visible: true },
+        { key: 'done', title: 'Done', visible: true },
+        { key: 'cancelled', title: 'Cancelled', visible: false },
+      ],
+    });
+
+    await createSampleTask({ title: 'Todo task', status: 'todo' });
+    await createSampleTask({ title: 'Blocked task', status: 'blocked' });
+
+    const result = await store.listTasks();
+    expect(result.items.map((t) => t.title)).toEqual(['Blocked task', 'Todo task']);
+  });
 });
 
 // ── Get ──────────────────────────────────────────────────────────────
@@ -445,6 +466,65 @@ describe('config', () => {
     await store.updateConfig({ quickViewLimit: 20 });
     const cfg = await store.getConfig();
     expect(cfg.quickViewLimit).toBe(20);
+  });
+
+  it('preserves custom default status across reads', async () => {
+    await store.updateConfig({
+      columns: [
+        { key: 'backlog', title: 'Backlog', visible: true },
+        { key: 'todo', title: 'To Do', visible: true },
+        { key: 'in-progress', title: 'In Progress', visible: true },
+        { key: 'review', title: 'Review', visible: true },
+        { key: 'blocked', title: 'Blocked', visible: true },
+        { key: 'done', title: 'Done', visible: true },
+        { key: 'cancelled', title: 'Cancelled', visible: false },
+      ],
+      defaults: { status: 'blocked', priority: 'normal' },
+    });
+
+    const cfg = await store.getConfig();
+    expect(cfg.defaults.status).toBe('blocked');
+
+    const task = await createSampleTask({ title: 'Uses custom default' });
+    expect(task.status).toBe('blocked');
+  });
+
+  it('rejects config updates that remove a status used by existing tasks', async () => {
+    await store.updateConfig({
+      columns: [
+        { key: 'backlog', title: 'Backlog', visible: true },
+        { key: 'todo', title: 'To Do', visible: true },
+        { key: 'in-progress', title: 'In Progress', visible: true },
+        { key: 'review', title: 'Review', visible: true },
+        { key: 'blocked', title: 'Blocked', visible: true },
+        { key: 'done', title: 'Done', visible: true },
+        { key: 'cancelled', title: 'Cancelled', visible: false },
+      ],
+    });
+    await createSampleTask({ title: 'Blocked task', status: 'blocked' });
+
+    await expect(store.updateConfig({
+      columns: [
+        { key: 'backlog', title: 'Backlog', visible: true },
+        { key: 'todo', title: 'To Do', visible: true },
+        { key: 'in-progress', title: 'In Progress', visible: true },
+        { key: 'review', title: 'Review', visible: true },
+        { key: 'done', title: 'Done', visible: true },
+        { key: 'cancelled', title: 'Cancelled', visible: false },
+      ],
+    })).rejects.toBeInstanceOf(InvalidBoardConfigError);
+  });
+
+  it('rejects config updates that remove required built-in columns', async () => {
+    await expect(store.updateConfig({
+      columns: [
+        { key: 'backlog', title: 'Backlog', visible: true },
+        { key: 'todo', title: 'To Do', visible: true },
+        { key: 'in-progress', title: 'In Progress', visible: true },
+        { key: 'review', title: 'Review', visible: true },
+        { key: 'cancelled', title: 'Cancelled', visible: false },
+      ],
+    })).rejects.toBeInstanceOf(InvalidBoardConfigError);
   });
 });
 

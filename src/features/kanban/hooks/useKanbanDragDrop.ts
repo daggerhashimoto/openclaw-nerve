@@ -57,7 +57,7 @@ export function useKanbanDragDrop({
       const task = tasks.find((t) => t.id === id);
       return task?.status ?? null;
     },
-    [tasks],
+    [tasks, activeColumns],
   );
 
   /* ── Drag Start ── */
@@ -134,7 +134,7 @@ export function useKanbanDragDrop({
         });
       });
     },
-    [findColumnForId, setTasksOptimistic],
+    [findColumnForId, setTasksOptimistic, activeColumns],
   );
 
   /* ── Drag End (commit to API) ── */
@@ -252,7 +252,7 @@ export function useKanbanDragDrop({
         snapshotRef.current = null;
       }
     },
-    [tasks, findColumnForId, setTasksOptimistic, reorderTask, onError],
+    [tasks, findColumnForId, setTasksOptimistic, reorderTask, onError, activeColumns],
   );
 
   const onDragCancel = useCallback(() => {

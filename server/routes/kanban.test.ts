@@ -619,6 +619,35 @@ describe('PUT /api/kanban/config', () => {
     const cfg = await res.json() as Record<string, unknown>;
     expect(cfg.reviewRequired).toBe(false);
   });
+
+  it('returns 400 when config removes a status used by existing tasks', async () => {
+    const app = await buildApp();
+    const cfgRes = await app.request('/api/kanban/config', jsonPut({
+      columns: [
+        { key: 'backlog', title: 'Backlog', visible: true },
+        { key: 'todo', title: 'To Do', visible: true },
+        { key: 'in-progress', title: 'In Progress', visible: true },
+        { key: 'review', title: 'Review', visible: true },
+        { key: 'blocked', title: 'Blocked', visible: true },
+        { key: 'done', title: 'Done', visible: true },
+        { key: 'cancelled', title: 'Cancelled', visible: false },
+      ],
+    }));
+    expect(cfgRes.status).toBe(200);
+    await createTask(app, { status: 'blocked' });
+
+    const res = await app.request('/api/kanban/config', jsonPut({
+      columns: [
+        { key: 'backlog', title: 'Backlog', visible: true },
+        { key: 'todo', title: 'To Do', visible: true },
+        { key: 'in-progress', title: 'In Progress', visible: true },
+        { key: 'review', title: 'Review', visible: true },
+        { key: 'done', title: 'Done', visible: true },
+        { key: 'cancelled', title: 'Cancelled', visible: false },
+      ],
+    }));
+    expect(res.status).toBe(400);
+  });
 });
 
 // ── POST /api/kanban/tasks/:id/execute ───────────────────────────────

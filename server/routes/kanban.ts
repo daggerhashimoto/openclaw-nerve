@@ -20,6 +20,7 @@ import {
   VersionConflictError,
   TaskNotFoundError,
   InvalidTaskStatusError,
+  InvalidBoardConfigError,
   InvalidTransitionError,
   ProposalNotFoundError,
   ProposalAlreadyResolvedError,
@@ -231,8 +232,6 @@ function pollSessionCompletion(
 
 // ── Zod schemas ──────────────────────────────────────────────────────
 
-/** Built-in statuses kept for backwards compat; custom slugs are also accepted. */
-const BUILT_IN_STATUS_VALUES = ['backlog', 'todo', 'in-progress', 'review', 'done', 'cancelled'] as const;
 const taskStatusSchema = z
   .string()
   .min(1)
@@ -761,6 +760,13 @@ function handleInvalidTaskStatusError(c: Context, err: unknown) {
       error: 'validation_error',
       details: `status: Unknown status "${err.status}"`,
       allowed: err.allowed,
+    }, 400);
+  }
+  if (err instanceof InvalidBoardConfigError) {
+    return c.json({
+      error: 'validation_error',
+      details: err.details,
+      statuses: err.statuses,
     }, 400);
   }
   return null;

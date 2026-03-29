@@ -22,8 +22,8 @@ describe('workspaceScope', () => {
   });
 
   it('uses the owning agent for channel sessions', () => {
-    expect(getWorkspaceAgentId('agent:varys:telegram:direct:8411420710')).toBe('varys');
-    expect(getWorkspaceRootSessionKey('agent:varys:telegram:direct:8411420710')).toBe('agent:varys:main');
+    expect(getWorkspaceAgentId('agent:test:telegram:direct:123')).toBe('test');
+    expect(getWorkspaceRootSessionKey('agent:test:telegram:direct:123')).toBe('agent:test:main');
   });
 
   it('falls back to main for unknown session keys', () => {

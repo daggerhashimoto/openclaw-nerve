@@ -33,13 +33,15 @@ describe('sessionKeys', () => {
   });
 
   it('resolves root agent id and parent for channel sessions', () => {
-    expect(getRootAgentId('agent:varys:telegram:direct:8411420710')).toBe('varys');
-    expect(getRootAgentSessionKey('agent:varys:telegram:direct:8411420710')).toBe('agent:varys:main');
-    expect(inferParentSessionKey('agent:varys:telegram:direct:8411420710')).toBe('agent:varys:main');
+    expect(getRootAgentId('agent:reviewer:telegram:direct:123')).toBe('reviewer');
+    expect(getRootAgentSessionKey('agent:reviewer:telegram:direct:123')).toBe('agent:reviewer:main');
+    expect(inferParentSessionKey('agent:reviewer:telegram:direct:123')).toBe('agent:reviewer:main');
 
-    expect(getRootAgentId('agent:codex:acp:58836f65')).toBe('codex');
+    expect(getRootAgentId('agent:main:discord:guild:456')).toBe('main');
+    expect(inferParentSessionKey('agent:main:discord:guild:456')).toBe('agent:main:main');
+
     expect(inferParentSessionKey('agent:main:main')).toBeNull();
-    expect(inferParentSessionKey('agent:varys:main')).toBeNull();
+    expect(inferParentSessionKey('agent:reviewer:main')).toBeNull();
   });
 
   it('detects root-child relationships', () => {

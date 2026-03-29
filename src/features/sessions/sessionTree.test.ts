@@ -220,18 +220,18 @@ describe('buildAgentSidebarTree', () => {
 
   it('nests channel sessions under their agent root', () => {
     const sessions = [
-      session('agent:varys:main', { label: 'Varys' }),
-      session('agent:varys:telegram:direct:8411420710', { displayName: 'iPhone' }),
-      session('agent:varys:subagent:abc123', { label: 'Worker' }),
+      session('agent:reviewer:main', { label: 'Reviewer' }),
+      session('agent:reviewer:telegram:direct:123', { displayName: 'Telegram DM' }),
+      session('agent:reviewer:subagent:abc123', { label: 'Worker' }),
     ];
 
     const tree = buildAgentSidebarTree(sessions);
     expect(tree).toHaveLength(1);
-    expect(tree[0].key).toBe('agent:varys:main');
+    expect(tree[0].key).toBe('agent:reviewer:main');
 
     const childKeys = tree[0].children.map((c) => c.key);
-    expect(childKeys).toContain('agent:varys:subagent:abc123');
-    expect(childKeys).toContain('agent:varys:telegram:direct:8411420710');
+    expect(childKeys).toContain('agent:reviewer:subagent:abc123');
+    expect(childKeys).toContain('agent:reviewer:telegram:direct:123');
   });
 
   it('preserves multiple valid top-level agent roots', () => {

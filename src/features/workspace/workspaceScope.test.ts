@@ -21,6 +21,11 @@ describe('workspaceScope', () => {
     expect(getWorkspaceRootSessionKey('agent:test:cron:daily:run:xyz')).toBe('agent:test:main');
   });
 
+  it('uses the owning agent for channel sessions', () => {
+    expect(getWorkspaceAgentId('agent:varys:telegram:direct:8411420710')).toBe('varys');
+    expect(getWorkspaceRootSessionKey('agent:varys:telegram:direct:8411420710')).toBe('agent:varys:main');
+  });
+
   it('falls back to main for unknown session keys', () => {
     expect(getWorkspaceAgentId('weird-session-key')).toBe('main');
     expect(getWorkspaceRootSessionKey('weird-session-key')).toBe('agent:main:main');

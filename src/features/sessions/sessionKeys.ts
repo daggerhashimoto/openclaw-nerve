@@ -41,19 +41,8 @@ export function isCronRunSessionKey(sessionKey: string): boolean {
 }
 
 export function getRootAgentId(sessionKey: string): string | null {
-  const rootMatch = sessionKey.match(ROOT_AGENT_RE);
-  if (rootMatch) return rootMatch[1];
-
-  const subagentMatch = sessionKey.match(SUBAGENT_RE);
-  if (subagentMatch) return subagentMatch[1].split(':')[1] ?? null;
-
-  const cronMatch = sessionKey.match(CRON_RE);
-  if (cronMatch) return cronMatch[1].split(':')[1] ?? null;
-
-  const cronRunMatch = sessionKey.match(/^((?:agent:[^:]+)):cron:[^:]+:run:.+$/);
-  if (cronRunMatch) return cronRunMatch[1].split(':')[1] ?? null;
-
-  return null;
+  const m = sessionKey.match(/^agent:([^:]+)/);
+  return m?.[1] ?? null;
 }
 
 export function getRootAgentSessionKey(sessionKey: string): string | null {
@@ -71,7 +60,9 @@ export function inferParentSessionKey(sessionKey: string): string | null {
   const cronMatch = sessionKey.match(CRON_RE);
   if (cronMatch) return `${cronMatch[1]}:main`;
 
-  return null;
+  // Any other agent:X:... key (channel sessions like telegram, discord, etc.)
+  const rootKey = getRootAgentSessionKey(sessionKey);
+  return rootKey !== sessionKey ? rootKey : null;
 }
 
 export function resolveParentSessionKey(session: Session, knownKeys?: Set<string>): string | null {

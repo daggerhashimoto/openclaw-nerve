@@ -3,9 +3,11 @@ import type { Session } from '@/types';
 import { getSessionKey } from '@/types';
 import {
   buildAgentRootSessionKey,
+  getRootAgentId,
   getRootAgentSessionKey,
   getSessionDisplayLabel,
   getTopLevelAgentSessions,
+  inferParentSessionKey,
   isRootChildSession,
   isTopLevelAgentSessionKey,
   pickDefaultSessionKey,
@@ -28,6 +30,16 @@ describe('sessionKeys', () => {
     expect(getRootAgentSessionKey('agent:reviewer:subagent:abc')).toBe('agent:reviewer:main');
     expect(getRootAgentSessionKey('agent:reviewer:cron:daily')).toBe('agent:reviewer:main');
     expect(getRootAgentSessionKey('agent:reviewer:cron:daily:run:xyz')).toBe('agent:reviewer:main');
+  });
+
+  it('resolves root agent id and parent for channel sessions', () => {
+    expect(getRootAgentId('agent:varys:telegram:direct:8411420710')).toBe('varys');
+    expect(getRootAgentSessionKey('agent:varys:telegram:direct:8411420710')).toBe('agent:varys:main');
+    expect(inferParentSessionKey('agent:varys:telegram:direct:8411420710')).toBe('agent:varys:main');
+
+    expect(getRootAgentId('agent:codex:acp:58836f65')).toBe('codex');
+    expect(inferParentSessionKey('agent:main:main')).toBeNull();
+    expect(inferParentSessionKey('agent:varys:main')).toBeNull();
   });
 
   it('detects root-child relationships', () => {

@@ -218,7 +218,7 @@ describe('buildAgentSidebarTree', () => {
     ]);
   });
 
-  it('nests channel sessions under their agent root', () => {
+  it('nests direct message sessions under their agent root', () => {
     const sessions = [
       session('agent:reviewer:main', { label: 'Reviewer' }),
       session('agent:reviewer:telegram:direct:123', { displayName: 'Telegram DM' }),

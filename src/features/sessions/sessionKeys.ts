@@ -5,7 +5,7 @@ const ROOT_AGENT_RE = /^agent:([^:]+):main$/;
 const SUBAGENT_RE = /^((?:agent:[^:]+)):subagent:.+$/;
 const CRON_RE = /^((?:agent:[^:]+)):cron:[^:]+$/;
 const CRON_RUN_RE = /^(.+:cron:[^:]+):run:.+$/;
-const CHANNEL_RE = /^((?:agent:[^:]+)):(?!main$|subagent:|cron:)[^:]+:.+$/;
+const DIRECT_RE = /^((?:agent:[^:]+))(?::[^:]+)*:direct:.+$/;
 
 export type SessionType = 'main' | 'subagent' | 'cron' | 'cron-run';
 
@@ -54,8 +54,8 @@ export function getRootAgentId(sessionKey: string): string | null {
   const cronRunMatch = sessionKey.match(/^((?:agent:[^:]+)):cron:[^:]+:run:.+$/);
   if (cronRunMatch) return cronRunMatch[1].split(':')[1] ?? null;
 
-  const channelMatch = sessionKey.match(CHANNEL_RE);
-  if (channelMatch) return channelMatch[1].split(':')[1] ?? null;
+  const directMatch = sessionKey.match(DIRECT_RE);
+  if (directMatch) return directMatch[1].split(':')[1] ?? null;
 
   return null;
 }
@@ -75,8 +75,8 @@ export function inferParentSessionKey(sessionKey: string): string | null {
   const cronMatch = sessionKey.match(CRON_RE);
   if (cronMatch) return `${cronMatch[1]}:main`;
 
-  const channelMatch = sessionKey.match(CHANNEL_RE);
-  if (channelMatch) return `${channelMatch[1]}:main`;
+  const directMatch = sessionKey.match(DIRECT_RE);
+  if (directMatch) return `${directMatch[1]}:main`;
 
   return null;
 }

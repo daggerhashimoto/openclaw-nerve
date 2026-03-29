@@ -15,6 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { canonicalizeKanbanAssignee } from './kanban-assignee.js';
 import { createMutex } from './mutex.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -54,6 +55,16 @@ function matchesRunIdentifier(run: TaskRunLink, value: string): boolean {
     || value === run.childSessionKey
     || value === run.sessionId
     || value === run.runId;
+}
+
+function canonicalizeProposalPayloadAssignee(payload: Record<string, unknown>): Record<string, unknown> {
+  if (!Object.prototype.hasOwnProperty.call(payload, 'assignee')) return payload;
+  return {
+    ...payload,
+    assignee: payload.assignee == null
+      ? undefined
+      : canonicalizeKanbanAssignee(String(payload.assignee)),
+  };
 }
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -625,6 +636,9 @@ export class KanbanStore {
 
       const now = Date.now();
       const existingIds = new Set(data.tasks.map((t) => t.id));
+      const assignee = input.assignee == null
+        ? undefined
+        : canonicalizeKanbanAssignee(input.assignee);
       const task: KanbanTask = {
         id: uniqueSlugId(input.title, existingIds),
         title: input.title,
@@ -636,7 +650,7 @@ export class KanbanStore {
         updatedAt: now,
         version: 1,
         sourceSessionKey: input.sourceSessionKey,
-        assignee: input.assignee,
+        assignee,
         labels: input.labels ?? [],
         columnOrder: maxOrder + 1,
         model: input.model,
@@ -695,13 +709,25 @@ export class KanbanStore {
       }
 
       // Apply patch
+      const normalizedPatch = { ...patch };
+      if (Object.prototype.hasOwnProperty.call(patch, 'assignee')) {
+        normalizedPatch.assignee = patch.assignee == null
+          ? undefined
+          : canonicalizeKanbanAssignee(patch.assignee);
+      }
+
       const now = Date.now();
-      const updated: KanbanTask = { ...task, ...patch, updatedAt: now, version: task.version + 1 };
+      const updated: KanbanTask = {
+        ...task,
+        ...normalizedPatch,
+        updatedAt: now,
+        version: task.version + 1,
+      };
 
       // If status changed, re-compute columnOrder (append to end of new column)
-      if (patch.status && patch.status !== task.status) {
+      if (normalizedPatch.status && normalizedPatch.status !== task.status) {
         const maxOrder = data.tasks
-          .filter((t) => t.status === patch.status && t.id !== id)
+          .filter((t) => t.status === normalizedPatch.status && t.id !== id)
           .reduce((max, t) => Math.max(max, t.columnOrder), -1);
         updated.columnOrder = maxOrder + 1;
       }
@@ -713,7 +739,7 @@ export class KanbanStore {
         action: 'update',
         taskId: id,
         actor,
-        detail: Object.keys(patch).join(','),
+        detail: Object.keys(normalizedPatch).join(','),
       });
       return updated;
     });
@@ -851,7 +877,7 @@ export class KanbanStore {
 
   async executeTask(
     id: string,
-    options?: { model?: string; thinking?: 'off' | 'low' | 'medium' | 'high' },
+    options?: { model?: string; thinking?: 'off' | 'low' | 'medium' | 'high'; sessionKey?: string },
     actor?: string,
   ): Promise<KanbanTask> {
     return this.withStore(async () => {
@@ -876,7 +902,7 @@ export class KanbanStore {
       }
 
       const now = Date.now();
-      const sessionKey = uniqueRunSessionKey(id, now);
+      const sessionKey = options?.sessionKey ?? uniqueRunSessionKey(id, now);
 
       task.status = 'in-progress';
       task.run = {
@@ -1223,14 +1249,16 @@ export class KanbanStore {
       const data = await this.readRaw();
       const now = Date.now();
 
-      if ('status' in input.payload && typeof input.payload.status === 'string' && !isAllowedTaskStatus(input.payload.status, data.config)) {
-        throw new InvalidTaskStatusError(input.payload.status, getAllowedTaskStatuses(data.config));
+      const payload = canonicalizeProposalPayloadAssignee(input.payload);
+
+      if ('status' in payload && typeof payload.status === 'string' && !isAllowedTaskStatus(payload.status, data.config)) {
+        throw new InvalidTaskStatusError(payload.status, getAllowedTaskStatuses(data.config));
       }
 
       const proposal: KanbanProposal = {
         id: crypto.randomUUID(),
         type: input.type,
-        payload: input.payload,
+        payload,
         sourceSessionKey: input.sourceSessionKey,
         proposedBy: input.proposedBy,
         proposedAt: now,
@@ -1241,17 +1269,17 @@ export class KanbanStore {
       // In auto mode, immediately execute the proposal
       if (data.config.proposalPolicy === 'auto') {
         if (input.type === 'create') {
-          const task = await this._createTaskUnlocked(data, input.payload, input.proposedBy);
+          const task = await this._createTaskUnlocked(data, payload, input.proposedBy);
           proposal.status = 'approved';
           proposal.resolvedAt = now;
           proposal.resolvedBy = input.proposedBy;
           proposal.resultTaskId = task.id;
         } else {
-          await this._applyUpdateUnlocked(data, input.payload);
+          await this._applyUpdateUnlocked(data, payload);
           proposal.status = 'approved';
           proposal.resolvedAt = now;
           proposal.resolvedBy = input.proposedBy;
-          proposal.resultTaskId = input.payload.id as string;
+          proposal.resultTaskId = payload.id as string;
         }
       }
 
@@ -1348,6 +1376,9 @@ export class KanbanStore {
     const now = Date.now();
     const existingIds = new Set(data.tasks.map((t) => t.id));
     const title = typeof payload.title === 'string' && payload.title ? payload.title : 'untitled';
+    const assignee = payload.assignee == null
+      ? undefined
+      : canonicalizeKanbanAssignee(String(payload.assignee));
     const task: KanbanTask = {
       id: uniqueSlugId(title, existingIds),
       title,
@@ -1359,7 +1390,7 @@ export class KanbanStore {
       updatedAt: now,
       version: 1,
       sourceSessionKey: payload.sourceSessionKey as string | undefined,
-      assignee: payload.assignee as TaskActor | undefined,
+      assignee,
       labels: (payload.labels as string[]) ?? [],
       columnOrder: maxOrder + 1,
       model: payload.model as string | undefined,
@@ -1392,6 +1423,11 @@ export class KanbanStore {
     const patch: Record<string, unknown> = {};
     for (const key of ALLOWED_UPDATE_FIELDS) {
       if (key in payload) patch[key] = payload[key];
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'assignee')) {
+      patch.assignee = patch.assignee == null
+        ? undefined
+        : canonicalizeKanbanAssignee(String(patch.assignee));
     }
 
     // If status changed, re-compute columnOrder

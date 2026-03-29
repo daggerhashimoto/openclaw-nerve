@@ -564,21 +564,40 @@ This prevents stale overwrites from concurrent editors (drag-and-drop, API clien
 
 ```
 1. POST /api/kanban/tasks/:id/execute
-   +-- store.executeTask()    -> status = in-progress, run.status = running
-   +-- invokeGatewayTool('sessions_spawn', { label: 'kanban-<id>', ... })
-       +-- fire-and-forget
+   +-- withMutex(`kanban-execute:${id}`) prevents double-launch races
+   +-- store.executeTask(..., { sessionKey }) -> status = in-progress, run.status = running
+   +-- Primary path (Linux / existing master behavior):
+   |    +-- invokeGatewayTool('sessions_spawn', { task, mode:'run', label: runSessionKey, model?, thinking? })
+   |    +-- attach childSessionKey / runId when available
+   |    +-- start pollSessionCompletion(taskId, { correlationKey: runSessionKey, childSessionKey?, runId? })
+   |
+   +-- macOS fallback path (intentional platform compromise):
+   |    +-- resolve assignee root -> agent:<assignee>:main
+   |    +-- gatewayRpcCall('sessions.list', ...) to confirm the parent root exists
+   |    +-- launchKanbanFallbackSubagentViaRpc({ label, task, parentSessionKey, model?, thinking? })
+   |         +-- gatewayRpcCall('chat.send', { sessionKey: parentSessionKey, message:'[spawn-subagent]...', idempotencyKey })
+   |         +-- attach returned runId when available
+   |         +-- start pollFallbackSessionCompletion(taskId, { correlationKey, parentSessionKey, expectedChildLabel, knownSessionKeysBefore, runId? })
+   |
+   +-- on launch failure: store.completeRun(taskId, sessionKey, undefined, 'Spawn failed: ...')
 
-2. pollSessionCompletion()    -> polls gateway subagents every 5s (max 360 attempts / 30 min)
-   +-- invokeGatewayTool('subagents', { action: 'list' })
-   +-- match by label
-   +-- if status=done:
+2. pollSessionCompletion() / pollFallbackSessionCompletion()
+   +-- primary path polls gateway subagents for the run correlation key / runId
+   +-- macOS fallback polls direct gateway RPC sessions.list every 5s (max 720 attempts / 60 min)
+   +-- macOS fallback matches the spawned child beneath the assignee root and attaches childSessionKey
+   +-- both paths complete the task when the child reports terminal success/failure
+   +-- if session not found yet:
+       +-- schedule next poll
+   +-- if session is idle and not busy/processing:
        |   fetch session history (last 3 messages)
        |   parseKanbanMarkers(resultText) -> create proposals
        |   stripKanbanMarkers(resultText) -> clean result
-       +-- store.completeRun(taskId, cleanResult)
+       +-- store.completeRun(taskId, sessionKey, cleanResult)
    +-- if status=error/failed:
-       +-- store.completeRun(taskId, undefined, errorMsg)
-   +-- if status=running:
+       +-- store.completeRun(taskId, sessionKey, undefined, errorMsg)
+   +-- if task/run no longer matches the active session key:
+       +-- stop polling as stale
+   +-- otherwise:
        +-- schedule next poll
 
 3. store.completeRun()
@@ -586,7 +605,7 @@ This prevents stale overwrites from concurrent editors (drag-and-drop, API clien
    +-- error   -> run.status = error, task.status = todo
 ```
 
-The model cascade is: task's `model` -> board config `defaultModel` -> `anthropic/claude-sonnet-4-5`.
+The model cascade is: task `model` -> execute request `model` -> board config `defaultModel` -> OpenClaw's configured default model. Thinking follows the same cascade with `defaultThinking`.
 
 ### Marker Parsing
 

@@ -434,6 +434,18 @@ MEMORY_PATH=/path/to/.openclaw/workspace/MEMORY.md
 - Check that the selected root session isn't busy with another task
 - Check gateway logs for spawn errors
 
+### Kanban task execution cannot attach to a spawned worker
+
+**Symptom:** A Kanban task enters `in-progress`, but the worker session never links up cleanly, or completion only works by label fallback.
+
+**Cause:** Kanban execution intentionally avoids HTTP `/tools/invoke -> sessions_spawn` and instead uses the gateway's session-native path: `chat.send` with `[spawn-subagent]`, followed by `sessions.list` discovery. That means Kanban execution depends on a usable top-level root session and on the gateway being able to surface the new child session.
+
+**Fix:**
+- Make sure a top-level root session such as `agent:main:main` exists and is healthy
+- Check gateway RPC/session logs, not just HTTP tool logs
+- If child discovery is delayed, Kanban falls back to the human-readable run label for completion tracking
+- If the worker never appears in the session list, inspect gateway connectivity and recent session events first
+
 ### Session status stuck on "THINKING"
 
 **Symptom:** Session shows thinking/spinning indefinitely.

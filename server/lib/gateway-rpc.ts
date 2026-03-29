@@ -63,6 +63,7 @@ const pending = new Map<string, PendingCall>();
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let connectPromise: Promise<void> | null = null;
 let connectResolve: (() => void) | null = null;
+let connectReject: ((err: Error) => void) | null = null;
 
 function buildConnectParams(nonce: string) {
   const clientId = 'openclaw-control-ui';
@@ -113,14 +114,25 @@ function rejectAllPending(reason: string): void {
   }
 }
 
+/** Reject and clear the in-flight connect promise. */
+function rejectConnect(reason: string): void {
+  if (connectReject) {
+    connectReject(new Error(reason));
+  }
+  connectPromise = null;
+  connectResolve = null;
+  connectReject = null;
+}
+
 /** Establish the persistent gateway connection. */
 function ensureConnection(): void {
   if (ws || connecting) return;
   if (!config.gatewayToken) return; // No token = can't connect
 
   connecting = true;
-  connectPromise = new Promise<void>((resolve) => {
+  connectPromise = new Promise<void>((resolve, reject) => {
     connectResolve = resolve;
+    connectReject = reject;
   });
   const wsUrl = getGatewayWsUrl();
 
@@ -155,11 +167,14 @@ function ensureConnection(): void {
           connected = true;
           if (connectResolve) {
             connectResolve();
-            connectResolve = null;
           }
+          connectResolve = null;
+          connectReject = null;
           console.log('[gateway-rpc] Connected to gateway (persistent)');
         } else {
-          console.error('[gateway-rpc] Gateway connect rejected:', msg.error?.message);
+          const reason = msg.error?.message || 'Gateway connect rejected';
+          console.error('[gateway-rpc] Gateway connect rejected:', reason);
+          rejectConnect(reason);
           socket.close();
         }
         return;
@@ -190,11 +205,19 @@ function ensureConnection(): void {
 
   socket.on('close', () => {
     const wasConnected = connected;
+    const wasConnecting = connecting;
     ws = null;
     connected = false;
     connecting = false;
-    connectPromise = null;
-    connectResolve = null;
+
+    if (!wasConnected && wasConnecting) {
+      rejectConnect('Gateway connection closed before connect completed');
+    } else {
+      connectPromise = null;
+      connectResolve = null;
+      connectReject = null;
+    }
+
     rejectAllPending('Gateway connection closed');
 
     // Auto-reconnect after a delay (only if we had a working connection)

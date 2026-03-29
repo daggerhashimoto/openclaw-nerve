@@ -36,12 +36,20 @@ import {
   gatewayFilesSet,
 } from './gateway-rpc.js';
 
-describe('gateway-rpc (persistent WebSocket)', () => {
-  let wss: WebSocketServer;
+let wss: WebSocketServer;
 
+async function importFreshGatewayRpc() {
+  for (const client of wss.clients) client.close();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  vi.resetModules();
+  return await import('./gateway-rpc.js');
+}
+
+describe('gateway-rpc (persistent WebSocket)', () => {
   /** Handler for incoming RPC method calls (after connect handshake) */
   let rpcHandler: (method: string, params: unknown) => unknown;
   let lastConnectParams: unknown = null;
+  let connectMode: 'accept' | 'reject' | 'close' = 'accept';
 
   beforeAll(async () => {
     rpcHandler = () => ({});
@@ -62,6 +70,14 @@ describe('gateway-rpc (persistent WebSocket)', () => {
 
         if (msg.method === 'connect') {
           lastConnectParams = msg.params;
+          if (connectMode === 'reject') {
+            ws.send(JSON.stringify({ type: 'res', id: msg.id, ok: false, error: { message: 'connect rejected by test server' } }));
+            return;
+          }
+          if (connectMode === 'close') {
+            ws.close();
+            return;
+          }
           ws.send(JSON.stringify({ type: 'res', id: msg.id, ok: true, payload: {} }));
           return;
         }
@@ -87,6 +103,7 @@ describe('gateway-rpc (persistent WebSocket)', () => {
   beforeEach(() => {
     rpcHandler = () => ({});
     lastConnectParams = null;
+    connectMode = 'accept';
   });
 
   afterEach(() => {
@@ -164,6 +181,18 @@ describe('gateway-rpc (persistent WebSocket)', () => {
       expect(r1).toEqual({ echo: 'a' });
       expect(r2).toEqual({ echo: 'b' });
       expect(r3).toEqual({ echo: 'c' });
+    });
+
+    it('rejects when the gateway rejects the initial connect handshake', async () => {
+      connectMode = 'reject';
+      const { gatewayRpcCall } = await importFreshGatewayRpc();
+      await expect(gatewayRpcCall('test.method', {})).rejects.toThrow('connect rejected by test server');
+    });
+
+    it('rejects when the socket closes before connect completes', async () => {
+      connectMode = 'close';
+      const { gatewayRpcCall } = await importFreshGatewayRpc();
+      await expect(gatewayRpcCall('test.method', {})).rejects.toThrow(/closed before connect completed/i);
     });
   });
 

@@ -25,9 +25,17 @@ import {
   ProposalNotFoundError,
   ProposalAlreadyResolvedError,
 } from '../lib/kanban-store.js';
+import { InvalidKanbanAssigneeError, resolveKanbanAssigneeRootSessionKey } from '../lib/kanban-assignee.js';
 import { invokeGatewayTool } from '../lib/gateway-client.js';
+import { gatewayRpcCall } from '../lib/gateway-rpc.js';
+import { withMutex } from '../lib/mutex.js';
 import { parseKanbanMarkers, stripKanbanMarkers } from '../lib/parseMarkers.js';
+import {
+  buildKanbanFallbackRunKey,
+  launchKanbanFallbackSubagentViaRpc,
+} from '../lib/kanban-subagent-fallback.js';
 import type {
+  KanbanTask,
   TaskStatus,
   TaskPriority,
   TaskActor,
@@ -35,6 +43,11 @@ import type {
 } from '../lib/kanban-store.js';
 
 const app = new Hono();
+
+const POLL_SESSIONS_ACTIVE_MINUTES = 24 * 60;
+const PARENT_ROOT_LOOKUP_ACTIVE_MINUTES = 7 * 24 * 60;
+const PARENT_ROOT_LOOKUP_SESSIONS_LIMIT = 1000;
+const POLL_SESSIONS_LIMIT = 200;
 
 // ── Session completion poller ────────────────────────────────────────
 
@@ -57,6 +70,7 @@ function parseGatewayResponse(result: unknown): Record<string, unknown> {
 // ── Active poll timer tracking (for graceful shutdown) ───────────────
 
 const activePollTimers = new Set<ReturnType<typeof setTimeout>>();
+const activeBackgroundTasks = new Set<Promise<unknown>>();
 
 function trackTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
   const id = setTimeout(() => {
@@ -67,16 +81,93 @@ function trackTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout>
   return id;
 }
 
-/** Cancel all active poll timers (call on shutdown). */
-export function cleanupKanbanPollers(): void {
+function trackBackgroundTask<T>(task: Promise<T>): Promise<T> {
+  const tracked = task.finally(() => {
+    activeBackgroundTasks.delete(tracked);
+  });
+  activeBackgroundTasks.add(tracked);
+  return tracked as Promise<T>;
+}
+
+/** Cancel all active poll timers and await pending async launch bookkeeping (call on shutdown). */
+export async function cleanupKanbanPollers(): Promise<void> {
+  const pendingBackgroundTasks = Array.from(activeBackgroundTasks);
+  if (pendingBackgroundTasks.length > 0) {
+    await Promise.allSettled(pendingBackgroundTasks);
+  }
+
   for (const t of activePollTimers) clearTimeout(t);
   activePollTimers.clear();
+}
+
+interface GatewaySessionSummary {
+  key?: string;
+  sessionKey?: string;
+  label?: string;
+  status?: string;
+  error?: string;
+  agentState?: string;
+  busy?: boolean;
+  processing?: boolean;
 }
 
 interface KanbanRunIdentity {
   correlationKey: string;
   childSessionKey?: string;
   runId?: string;
+}
+
+interface KanbanFallbackRunIdentity {
+  correlationKey: string;
+  parentSessionKey: string;
+  expectedChildLabel: string;
+  knownSessionKeysBefore: string[];
+  runId?: string;
+}
+
+interface PendingPrimarySpawn {
+  runSessionKey: string;
+  prompt: string;
+  model?: string;
+  thinking?: string;
+}
+
+interface PendingFallbackLaunch {
+  sessionKey: string;
+  parentSessionKey: string;
+  label: string;
+  prompt: string;
+  model?: string;
+  thinking?: string;
+}
+
+type ExecuteTaskAttempt =
+  | { duplicate: true }
+  | {
+    duplicate: false;
+    task: KanbanTask;
+    primarySpawn?: PendingPrimarySpawn;
+    fallbackLaunch?: PendingFallbackLaunch;
+  };
+
+class KanbanExecutionPreflightError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'KanbanExecutionPreflightError';
+  }
+}
+
+/**
+ * Intentional platform compromise:
+ * - Linux keeps the original master/session-spawn path as primary because it already works there.
+ * - macOS defaults to the assignee-root fallback path because the primary subagent spawn flow is known to fail there.
+ * Tests can override this with NERVE_KANBAN_EXECUTION_MODE.
+ */
+function shouldUseKanbanFallback(): boolean {
+  const mode = process.env.NERVE_KANBAN_EXECUTION_MODE;
+  if (mode === 'primary') return false;
+  if (mode === 'fallback') return true;
+  return process.platform === 'darwin';
 }
 
 function findGatewayRunMatch(
@@ -98,6 +189,37 @@ function findGatewayRunMatch(
   return sessions.find((session) => String(session.label ?? '') === identity.correlationKey);
 }
 
+function getSessionKey(session: GatewaySessionSummary): string | null {
+  if (typeof session.sessionKey === 'string' && session.sessionKey.trim()) return session.sessionKey;
+  if (typeof session.key === 'string' && session.key.trim()) return session.key;
+  return null;
+}
+
+function isFallbackChildSession(sessionKey: string, parentSessionKey: string): boolean {
+  const parentMatch = parentSessionKey.match(/^agent:([^:]+):main$/);
+  if (!parentMatch) return false;
+  return sessionKey.startsWith(`agent:${parentMatch[1]}:subagent:`);
+}
+
+function pickSpawnedChildSession(
+  sessions: GatewaySessionSummary[],
+  identity: KanbanFallbackRunIdentity,
+): GatewaySessionSummary | null {
+  const unseenChildren = sessions.filter((session) => {
+    const sessionKey = getSessionKey(session);
+    if (!sessionKey) return false;
+    if (!isFallbackChildSession(sessionKey, identity.parentSessionKey)) return false;
+    return !identity.knownSessionKeysBefore.includes(sessionKey);
+  });
+
+  if (unseenChildren.length === 0) return null;
+
+  const exactLabelMatch = unseenChildren.find((session) => session.label === identity.expectedChildLabel);
+  if (exactLabelMatch) return exactLabelMatch;
+
+  return unseenChildren.length === 1 ? unseenChildren[0] : null;
+}
+
 /** Poll gateway subagents for a kanban run until it finishes, then complete the run. */
 function pollSessionCompletion(
   store: ReturnType<typeof getKanbanStore>,
@@ -117,7 +239,6 @@ function pollSessionCompletion(
     }
 
     try {
-      // Stop stale pollers once the task leaves this active run.
       const task = await store.getTask(taskId).catch(() => null);
       if (
         !task
@@ -125,21 +246,17 @@ function pollSessionCompletion(
         || task.run?.status !== 'running'
         || task.run?.sessionKey !== identity.correlationKey
       ) {
-        return; // task was moved, aborted, or rerun under a newer session key
+        return;
       }
 
       const raw = await invokeGatewayTool('subagents', { action: 'list', recentMinutes: 120 });
       const parsed = parseGatewayResponse(raw);
-
-      // subagents list returns { active: [...], recent: [...] }
       const active = (parsed.active ?? []) as Array<Record<string, unknown>>;
       const recent = (parsed.recent ?? []) as Array<Record<string, unknown>>;
       const all = [...active, ...recent];
 
       const match = findGatewayRunMatch(all, identity);
-
       if (!match) {
-        // Not found yet -- may not have registered, keep trying
         trackTimeout(poll, intervalMs);
         return;
       }
@@ -154,7 +271,6 @@ function pollSessionCompletion(
             : identity.childSessionKey;
 
       if (status === 'done') {
-        // Fetch session history to get the result text
         let resultText = 'Completed (no result text)';
         if (!childSessionKey) {
           console.warn(`[kanban] Run ${identity.correlationKey} completed without a child session key`);
@@ -213,20 +329,147 @@ function pollSessionCompletion(
         return;
       }
 
-      if (status === 'running') {
+      trackTimeout(poll, intervalMs);
+    } catch (err) {
+      console.error(`[kanban] Poll error for task ${taskId}:`, err);
+      trackTimeout(poll, intervalMs);
+    }
+  };
+
+  trackTimeout(poll, 3_000);
+}
+
+/** Poll spawned macOS fallback child session until the task finishes. */
+function pollFallbackSessionCompletion(
+  store: ReturnType<typeof getKanbanStore>,
+  taskId: string,
+  identity: KanbanFallbackRunIdentity,
+  intervalMs = 5_000,
+  maxAttempts = 720,
+): void {
+  let attempts = 0;
+
+  const poll = async () => {
+    attempts++;
+    if (attempts > maxAttempts) {
+      console.warn(`[kanban] Polling timed out for task ${taskId} (runKey: ${identity.correlationKey})`);
+      await store.completeRun(taskId, identity.correlationKey, undefined, 'Run timed out (polling limit reached)').catch(() => {});
+      return;
+    }
+
+    try {
+      const task = await store.getTask(taskId).catch(() => null);
+      if (
+        !task
+        || task.status !== 'in-progress'
+        || task.run?.status !== 'running'
+        || task.run?.sessionKey !== identity.correlationKey
+      ) {
+        return;
+      }
+
+      const sessionsResponse = await gatewayRpcCall('sessions.list', {
+        activeMinutes: POLL_SESSIONS_ACTIVE_MINUTES,
+        limit: POLL_SESSIONS_LIMIT,
+      }) as { sessions?: GatewaySessionSummary[] };
+      const sessions = Array.isArray(sessionsResponse.sessions) ? sessionsResponse.sessions : [];
+
+      let activeSessionKey = task.run?.childSessionKey ?? task.run?.sessionId;
+      if (!activeSessionKey) {
+        const spawned = pickSpawnedChildSession(sessions, identity);
+        const spawnedSessionKey = spawned ? getSessionKey(spawned) : null;
+        if (spawnedSessionKey) {
+          activeSessionKey = spawnedSessionKey;
+          try {
+            await store.attachRunIdentifiers(taskId, identity.correlationKey, {
+              childSessionKey: spawnedSessionKey,
+              runId: identity.runId,
+            });
+          } catch (err) {
+            console.warn(`[kanban] Failed to attach spawned child session for task ${taskId}:`, err);
+          }
+        }
+      }
+
+      if (!activeSessionKey) {
         trackTimeout(poll, intervalMs);
         return;
       }
 
-      // Unknown status -- keep polling
+      const session = sessions.find((candidate) => getSessionKey(candidate) === activeSessionKey);
+      if (!session) {
+        trackTimeout(poll, intervalMs);
+        return;
+      }
+
+      const status = session.status;
+      if (status === 'error' || status === 'failed') {
+        const errorMsg = session.error || 'Session failed';
+        await store.completeRun(taskId, identity.correlationKey, undefined, errorMsg).catch(() => {});
+        return;
+      }
+
+      const agentState = session.agentState;
+      const busy = session.busy;
+      const processing = session.processing;
+      const isDone = status === 'done' || (agentState === 'idle' && !busy && !processing);
+
+      if (isDone) {
+        let resultText = 'Completed (no result text)';
+        try {
+          const histResponse = await gatewayRpcCall('sessions.get', {
+            key: activeSessionKey,
+            limit: 3,
+            includeTools: true,
+          }) as { messages?: Array<Record<string, unknown>> };
+          const messages = Array.isArray(histResponse.messages) ? histResponse.messages : [];
+          const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+          if (lastAssistant) {
+            const content = lastAssistant.content;
+            if (typeof content === 'string') {
+              resultText = content;
+            } else if (Array.isArray(content)) {
+              const textPart = (content as Array<Record<string, unknown>>).find((p) => p.type === 'text');
+              if (textPart && typeof textPart.text === 'string') resultText = textPart.text;
+            }
+          }
+        } catch (err) {
+          console.warn(`[kanban] Could not fetch history for ${activeSessionKey}:`, err);
+        }
+
+        const markers = parseKanbanMarkers(resultText);
+        const cleanResult = markers.length > 0 ? stripKanbanMarkers(resultText) : resultText;
+
+        const completedTask = await store.completeRun(taskId, identity.correlationKey, cleanResult).catch((err) => {
+          console.error(`[kanban] Failed to complete run for task ${taskId}:`, err);
+          return null;
+        });
+        if (!completedTask) return;
+
+        console.log(`[kanban] Run completed for task ${taskId} (runKey: ${identity.correlationKey}, child: ${activeSessionKey})`);
+
+        for (const marker of markers) {
+          try {
+            await store.createProposal({
+              type: marker.type,
+              payload: marker.payload,
+              sourceSessionKey: activeSessionKey,
+              proposedBy: task.assignee ?? 'operator',
+            });
+          } catch (err) {
+            console.warn(`[kanban] Failed to create proposal from marker:`, err);
+          }
+        }
+        return;
+      }
+
       trackTimeout(poll, intervalMs);
     } catch (err) {
       console.error(`[kanban] Poll error for task ${taskId}:`, err);
-      trackTimeout(poll, intervalMs); // retry on transient errors
+      trackTimeout(poll, intervalMs);
     }
   };
 
-  // Start after a brief delay to let the session register
   trackTimeout(poll, 3_000);
 }
 
@@ -762,6 +1005,12 @@ function handleInvalidTaskStatusError(c: Context, err: unknown) {
       allowed: err.allowed,
     }, 400);
   }
+  if (err instanceof InvalidKanbanAssigneeError) {
+    return c.json({
+      error: 'validation_error',
+      details: err.message,
+    }, 400);
+  }
   if (err instanceof InvalidBoardConfigError) {
     return c.json({
       error: 'validation_error',
@@ -811,70 +1060,214 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
   }
 
   try {
-    // Guard: reject if task is already in-progress (double-click race)
-    const existing = await store.getTask(id);
-    if (existing.status === 'in-progress') {
+    const useFallback = shouldUseKanbanFallback();
+
+    const execution = await withMutex<ExecuteTaskAttempt>(`kanban-execute:${id}`, async () => {
+      const existing = await store.getTask(id);
+      if (existing.status === 'in-progress') {
+        return { duplicate: true } as const;
+      }
+
+      const assignedParentSessionKey = resolveKanbanAssigneeRootSessionKey(existing.assignee);
+      if (assignedParentSessionKey) {
+        const sessionsResponse = await gatewayRpcCall('sessions.list', {
+          activeMinutes: PARENT_ROOT_LOOKUP_ACTIVE_MINUTES,
+          limit: PARENT_ROOT_LOOKUP_SESSIONS_LIMIT,
+        }) as { sessions?: GatewaySessionSummary[] };
+        const sessions = Array.isArray(sessionsResponse.sessions) ? sessionsResponse.sessions : [];
+        if (!sessions.some((session) => getSessionKey(session) === assignedParentSessionKey)) {
+          throw new KanbanExecutionPreflightError(`Parent agent session not found: ${assignedParentSessionKey}`);
+        }
+
+        const config = await store.getConfig();
+        const model = parsed.data.model || existing.model || config.defaultModel;
+        const thinking = parsed.data.thinking || existing.thinking || config.defaultThinking;
+        const persistedModel = parsed.data.model || existing.model;
+        const persistedThinking = parsed.data.thinking || existing.thinking;
+        const titleSlug = existing.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'task';
+        const label = `kb-${titleSlug}-${existing.id}-v${existing.version + 1}-${Date.now()}`;
+        const sessionKey = buildKanbanFallbackRunKey(label);
+        const taskDescription = existing.description || existing.title;
+        const prompt = `You are working on a Kanban task.
+
+Title: ${existing.title}
+
+Description: ${taskDescription}
+
+Deliver your result as a clear summary of what was done.`;
+
+        const task = await store.executeTask(
+          id,
+          {
+            sessionKey,
+            model: persistedModel,
+            thinking: persistedThinking,
+          },
+          'operator',
+        );
+
+        return {
+          duplicate: false,
+          task,
+          fallbackLaunch: {
+            sessionKey,
+            parentSessionKey: assignedParentSessionKey,
+            label,
+            prompt,
+            model,
+            thinking,
+          },
+        } as const;
+      }
+
+      if (useFallback) {
+        throw new KanbanExecutionPreflightError('Kanban automation on macOS requires assigning the task to a live worker agent root (not @main).');
+      }
+
+      const task = await store.executeTask(id, parsed.data, 'operator');
+      const taskDescription = task.description || task.title;
+      const runSessionKey = task.run?.sessionKey;
+      if (!runSessionKey) {
+        throw new Error(`executeTask did not produce a run session key for task ${id}`);
+      }
+
+      const config = await store.getConfig();
+      const model = task.model || config.defaultModel;
+      const thinking = task.thinking || config.defaultThinking;
+
+      return {
+        duplicate: false,
+        task,
+        primarySpawn: {
+          runSessionKey,
+          prompt: `You are working on a Kanban task.
+
+Title: ${task.title}
+
+Description: ${taskDescription}
+
+Deliver your result as a clear summary of what was done.`,
+          model,
+          thinking,
+        },
+      } as const;
+    });
+
+    if (execution.duplicate) {
       return c.json({ error: 'duplicate_execution', details: 'Task is already being executed' }, 409);
     }
 
-    const task = await store.executeTask(id, parsed.data, 'operator');
+    if (execution.primarySpawn) {
+      const { runSessionKey, prompt, model, thinking } = execution.primarySpawn;
+      const spawnArgs: Record<string, unknown> = {
+        task: prompt,
+        mode: 'run',
+        label: runSessionKey,
+      };
+      if (model) spawnArgs.model = model;
+      if (thinking) spawnArgs.thinking = thinking;
 
-    // Spawn agent session via gateway (fire-and-forget)
-    const taskDescription = task.description || task.title;
-    const runSessionKey = task.run?.sessionKey;
-    if (!runSessionKey) {
-      throw new Error(`executeTask did not produce a run session key for task ${id}`);
+      void trackBackgroundTask(
+        invokeGatewayTool('sessions_spawn', spawnArgs)
+          .then(async (spawnRaw) => {
+            const spawn = parseGatewayResponse(spawnRaw);
+            const childSessionKey = typeof spawn.childSessionKey === 'string'
+              ? spawn.childSessionKey
+              : typeof spawn.sessionKey === 'string'
+                ? spawn.sessionKey
+                : typeof spawn.sessionId === 'string'
+                  ? spawn.sessionId
+                  : undefined;
+            const runId = typeof spawn.runId === 'string' ? spawn.runId : undefined;
+
+            const linkedTask = await store.attachRunIdentifiers(id, runSessionKey, {
+              childSessionKey,
+              runId,
+            });
+            if (!linkedTask) {
+              console.warn(`[kanban] Spawned run metadata arrived after task ${id} moved on from run ${runSessionKey}`);
+              return;
+            }
+
+            pollSessionCompletion(store, id, {
+              correlationKey: runSessionKey,
+              childSessionKey: linkedTask.run?.childSessionKey ?? childSessionKey,
+              runId: linkedTask.run?.runId ?? runId,
+            });
+          })
+          .catch((err) => {
+            console.error(`[kanban] Failed to spawn session for task ${id}:`, err);
+            store.completeRun(id, runSessionKey, undefined, `Spawn failed: ${err.message}`).catch(() => {});
+          }),
+      );
+
+      return c.json(execution.task);
     }
 
-    const spawnArgs: Record<string, unknown> = {
-      task: `You are working on a Kanban task.\n\nTitle: ${task.title}\n\nDescription: ${taskDescription}\n\nDeliver your result as a clear summary of what was done.`,
-      mode: 'run',
-      label: runSessionKey,
-    };
-    // Use task's model, or board default. If neither is set, omit — OpenClaw
-    // will use whatever default model the operator configured in openclaw.json.
-    const config = await store.getConfig();
-    const model = task.model || config.defaultModel;
-    if (model) spawnArgs.model = model;
-    const thinking = task.thinking || config.defaultThinking;
-    if (thinking) spawnArgs.thinking = thinking;
+    const { fallbackLaunch } = execution;
+    if (!fallbackLaunch) {
+      throw new Error(`No kanban launch strategy was selected for task ${id}`);
+    }
 
-    invokeGatewayTool('sessions_spawn', spawnArgs)
-      .then(async (spawnRaw) => {
-        const spawn = parseGatewayResponse(spawnRaw);
-        const childSessionKey = typeof spawn.childSessionKey === 'string'
-          ? spawn.childSessionKey
-          : typeof spawn.sessionKey === 'string'
-            ? spawn.sessionKey
-            : typeof spawn.sessionId === 'string'
-              ? spawn.sessionId
-              : undefined;
-        const runId = typeof spawn.runId === 'string' ? spawn.runId : undefined;
-
-        const linkedTask = await store.attachRunIdentifiers(id, runSessionKey, {
-          childSessionKey,
-          runId,
+    void trackBackgroundTask((async () => {
+      let launchResult: {
+        sessionKey: string;
+        parentSessionKey: string;
+        knownSessionKeysBefore: string[];
+        runId?: string;
+      };
+      try {
+        launchResult = await launchKanbanFallbackSubagentViaRpc({
+          label: fallbackLaunch.label,
+          task: fallbackLaunch.prompt,
+          parentSessionKey: fallbackLaunch.parentSessionKey,
+          model: fallbackLaunch.model,
+          thinking: fallbackLaunch.thinking,
         });
-        if (!linkedTask) {
-          console.warn(`[kanban] Spawned run metadata arrived after task ${id} moved on from run ${runSessionKey}`);
-          return;
+
+        if (launchResult.sessionKey !== fallbackLaunch.sessionKey) {
+          throw new Error(
+            `Run correlation key mismatch, expected ${fallbackLaunch.sessionKey}, got ${launchResult.sessionKey}`,
+          );
         }
-
-        // Poll for session completion in the background, preferring the stable
-        // spawned identifiers before falling back to the human-readable label.
-        pollSessionCompletion(store, id, {
-          correlationKey: runSessionKey,
-          childSessionKey: linkedTask.run?.childSessionKey ?? childSessionKey,
-          runId: linkedTask.run?.runId ?? runId,
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.error(`[kanban] Failed to launch assignee subagent for task ${id}:`, err);
+        await store.completeRun(
+          id,
+          fallbackLaunch.sessionKey,
+          undefined,
+          `Spawn failed: ${errorMessage}`,
+        ).catch((completeErr) => {
+          console.warn(`[kanban] Failed to mark spawn failure for task ${id}:`, completeErr);
         });
-      })
-      .catch((err) => {
-        console.error(`[kanban] Failed to spawn session for task ${id}:`, err);
-        store.completeRun(id, runSessionKey, undefined, `Spawn failed: ${err.message}`).catch(() => {});
-      });
+        return;
+      }
 
-    return c.json(task);
+      try {
+        if (launchResult.runId) {
+          await store.attachRunIdentifiers(id, fallbackLaunch.sessionKey, {
+            runId: launchResult.runId,
+          });
+        }
+      } catch (err) {
+        console.error(`[kanban] Failed to attach run metadata for task ${id}:`, err);
+      }
+
+      pollFallbackSessionCompletion(store, id, {
+        correlationKey: fallbackLaunch.sessionKey,
+        parentSessionKey: fallbackLaunch.parentSessionKey,
+        expectedChildLabel: fallbackLaunch.label,
+        knownSessionKeysBefore: launchResult.knownSessionKeysBefore,
+        runId: launchResult.runId,
+      });
+    })());
+
+    return c.json(execution.task);
   } catch (err) {
+    if (err instanceof KanbanExecutionPreflightError) {
+      return c.json({ error: 'invalid_execution_target', details: err.message }, 409);
+    }
     return handleWorkflowError(c, err);
   }
 });

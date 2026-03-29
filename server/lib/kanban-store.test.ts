@@ -13,6 +13,7 @@ import {
   InvalidBoardConfigError,
 } from './kanban-store.js';
 import type { KanbanTask } from './kanban-store.js';
+import { InvalidKanbanAssigneeError } from './kanban-assignee.js';
 
 let store: KanbanStore;
 let tmpDir: string;
@@ -129,6 +130,18 @@ describe('createTask', () => {
     expect(task.dueAt).toBe(9999999);
     expect(task.estimateMin).toBe(30);
     expect(task.sourceSessionKey).toBe('sess-123');
+  });
+
+  it('canonicalizes assignee on create', async () => {
+    const task = await createSampleTask({ assignee: 'agent:reviewer:main' });
+    expect(task.assignee).toBe('agent:reviewer');
+
+    const persisted = await store.getTask(task.id);
+    expect(persisted.assignee).toBe('agent:reviewer');
+  });
+
+  it('rejects invalid root assignee on create', async () => {
+    await expect(createSampleTask({ assignee: 'agent:main' })).rejects.toThrow(InvalidKanbanAssigneeError);
   });
 
   it('persists to disk', async () => {
@@ -346,6 +359,34 @@ describe('updateTask', () => {
     const found = await store.getTask(task.id);
     expect(found.title).toBe('Persisted update');
     expect(found.version).toBe(2);
+  });
+
+  it('canonicalizes assignee on update when present in patch', async () => {
+    const task = await createSampleTask({ assignee: 'agent:codex' });
+
+    const updated = await store.updateTask(task.id, task.version, {
+      assignee: 'agent:reviewer:subagent:child',
+    });
+
+    expect(updated.assignee).toBe('agent:reviewer');
+
+    const persisted = await store.getTask(task.id);
+    expect(persisted.assignee).toBe('agent:reviewer');
+  });
+
+  it('does not rewrite a legacy assignee during unrelated updates', async () => {
+    const task = await createSampleTask({ assignee: 'agent:codex' });
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    raw.tasks[0].assignee = 'agent:reviewer:main';
+    fs.writeFileSync(filePath, JSON.stringify(raw, null, 2));
+
+    const updated = await store.updateTask(task.id, task.version, { title: 'Retitled' });
+
+    expect(updated.assignee).toBe('agent:reviewer:main');
+
+    const persisted = await store.getTask(task.id);
+    expect(persisted.assignee).toBe('agent:reviewer:main');
+    expect(persisted.title).toBe('Retitled');
   });
 });
 
@@ -656,6 +697,58 @@ describe('executeTask', () => {
     const task = await createSampleTask({ status: 'todo' });
     const executed = await store.executeTask(task.id);
     expect(executed.columnOrder).toBe(1); // after existing
+  });
+});
+
+describe('canonical run session key', () => {
+  it('accepts a precomputed run correlation key in executeTask', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    const rootSessionKey = 'kanban-root:test-task';
+    
+    const executed = await store.executeTask(task.id, { sessionKey: rootSessionKey });
+
+    expect(executed.status).toBe('in-progress');
+    expect(executed.run).toBeDefined();
+    expect(executed.run!.status).toBe('running');
+    expect(executed.run!.sessionKey).toBe(rootSessionKey);
+    expect(executed.version).toBe(task.version + 1);
+  });
+
+  it('preserves stale-run protection: old run cannot rewrite active canonical session key', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    const rootSessionKey1 = 'kanban-root:run-1';
+    const rootSessionKey2 = 'kanban-root:run-2';
+
+    // First run
+    const run1 = await store.executeTask(task.id, { sessionKey: rootSessionKey1 });
+    expect(run1.run!.sessionKey).toBe(rootSessionKey1);
+
+    // Abort and re-execute with new root session key
+    const aborted = await store.abortTask(run1.id);
+    expect(aborted.run!.status).toBe('aborted');
+
+    const run2 = await store.executeTask(aborted.id, { sessionKey: rootSessionKey2 });
+    expect(run2.run!.sessionKey).toBe(rootSessionKey2);
+    expect(run2.run!.status).toBe('running');
+
+    // Stale run completion with old session key should fail
+    await expect(
+      store.completeRun(run2.id, rootSessionKey1, 'stale result')
+    ).rejects.toThrow(InvalidTransitionError);
+
+    // Verify active run is still intact
+    const current = await store.getTask(task.id);
+    expect(current.run?.status).toBe('running');
+    expect(current.run?.sessionKey).toBe(rootSessionKey2);
+    expect(current.result).toBeUndefined();
+  });
+
+  it('still generates auto keys when no custom session key is provided', async () => {
+    const task = await createSampleTask({ status: 'todo' });
+    
+    const executed = await store.executeTask(task.id);
+
+    expect(executed.run!.sessionKey).toMatch(new RegExp(`^kb-${task.id}-\\d+`));
   });
 });
 
@@ -1076,6 +1169,16 @@ describe('createProposal', () => {
     expect(proposal.proposedAt).toBeGreaterThan(0);
   });
 
+  it('canonicalizes assignee in create proposal payload', async () => {
+    const proposal = await store.createProposal({
+      type: 'create',
+      payload: { title: 'New feature', assignee: 'agent:reviewer:main' },
+      proposedBy: 'agent:codex',
+    });
+
+    expect(proposal.payload.assignee).toBe('agent:reviewer');
+  });
+
   it('creates a pending update proposal', async () => {
     const task = await createSampleTask();
     const proposal = await store.createProposal({
@@ -1086,6 +1189,17 @@ describe('createProposal', () => {
     expect(proposal.type).toBe('update');
     expect(proposal.status).toBe('pending');
     expect(proposal.payload.id).toBe(task.id);
+  });
+
+  it('canonicalizes assignee in update proposal payload', async () => {
+    const task = await createSampleTask();
+    const proposal = await store.createProposal({
+      type: 'update',
+      payload: { id: task.id, assignee: 'agent:reviewer:subagent:child' },
+      proposedBy: 'agent:codex',
+    });
+
+    expect(proposal.payload.assignee).toBe('agent:reviewer');
   });
 
   it('stores sourceSessionKey', async () => {
@@ -1161,6 +1275,51 @@ describe('approveProposal', () => {
       proposedBy: 'agent:codex',
     });
     await expect(store.approveProposal(proposal.id)).rejects.toThrow(TaskNotFoundError);
+  });
+
+  it('canonicalizes assignee when approving a legacy create proposal payload', async () => {
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    raw.proposals.push({
+      id: 'legacy-create-proposal',
+      type: 'create',
+      payload: { title: 'Legacy create', assignee: 'agent:reviewer:main' },
+      proposedBy: 'agent:codex',
+      proposedAt: Date.now(),
+      status: 'pending',
+      version: 1,
+    });
+    fs.writeFileSync(filePath, JSON.stringify(raw, null, 2));
+
+    const { proposal, task } = await store.approveProposal('legacy-create-proposal');
+
+    expect(proposal.status).toBe('approved');
+    expect(task.assignee).toBe('agent:reviewer');
+
+    const persisted = await store.getTask(task.id);
+    expect(persisted.assignee).toBe('agent:reviewer');
+  });
+
+  it('canonicalizes assignee when approving a legacy update proposal payload', async () => {
+    const task = await createSampleTask({ assignee: 'agent:codex' });
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    raw.proposals.push({
+      id: 'legacy-update-proposal',
+      type: 'update',
+      payload: { id: task.id, assignee: 'agent:reviewer:subagent:child' },
+      proposedBy: 'agent:codex',
+      proposedAt: Date.now(),
+      status: 'pending',
+      version: 1,
+    });
+    fs.writeFileSync(filePath, JSON.stringify(raw, null, 2));
+
+    const { proposal, task: updated } = await store.approveProposal('legacy-update-proposal');
+
+    expect(proposal.status).toBe('approved');
+    expect(updated.assignee).toBe('agent:reviewer');
+
+    const persisted = await store.getTask(task.id);
+    expect(persisted.assignee).toBe('agent:reviewer');
   });
 });
 

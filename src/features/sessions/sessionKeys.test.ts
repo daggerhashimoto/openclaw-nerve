@@ -37,8 +37,8 @@ describe('sessionKeys', () => {
     expect(getRootAgentSessionKey('agent:reviewer:telegram:direct:123')).toBe('agent:reviewer:main');
     expect(inferParentSessionKey('agent:reviewer:telegram:direct:123')).toBe('agent:reviewer:main');
 
-    expect(getRootAgentId('agent:main:discord:guild:456')).toBe('main');
-    expect(inferParentSessionKey('agent:main:discord:guild:456')).toBe('agent:main:main');
+    expect(getRootAgentId('agent:main:discord:group:456')).toBe('main');
+    expect(inferParentSessionKey('agent:main:discord:group:456')).toBe('agent:main:main');
 
     expect(inferParentSessionKey('agent:main:main')).toBeNull();
     expect(inferParentSessionKey('agent:reviewer:main')).toBeNull();

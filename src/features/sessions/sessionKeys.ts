@@ -5,7 +5,7 @@ const ROOT_AGENT_RE = /^agent:([^:]+):main$/;
 const SUBAGENT_RE = /^((?:agent:[^:]+)):subagent:.+$/;
 const CRON_RE = /^((?:agent:[^:]+)):cron:[^:]+$/;
 const CRON_RUN_RE = /^(.+:cron:[^:]+):run:.+$/;
-const CHANNEL_RE = /^((?:agent:[^:]+)):[^:]+:.+$/;
+const CHANNEL_RE = /^((?:agent:[^:]+)):(?!main$|subagent:|cron:)[^:]+:.+$/;
 
 export type SessionType = 'main' | 'subagent' | 'cron' | 'cron-run';
 

@@ -59,8 +59,6 @@ function InfoRow({
 
 /* ─── Main component ─────────────────────────────────────────────── */
 
-const HOVER_OPEN_DELAY_MS = 300;
-
 /** Detail panel showing metadata for the selected session. */
 export const SessionInfoPanel = memo(function SessionInfoPanel({
   session,
@@ -69,14 +67,16 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
 }: SessionInfoPanelProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const openTimer = useRef<ReturnType<typeof setTimeout>>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
   const handleEnter = useCallback(() => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
-    setOpen(true);
+    openTimer.current = setTimeout(() => setOpen(true), 500);
   }, []);
 
   const handleLeave = useCallback(() => {
+    if (openTimer.current) { clearTimeout(openTimer.current); openTimer.current = null; }
     closeTimer.current = setTimeout(() => setOpen(false), 150);
   }, []);
 
@@ -123,9 +123,10 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
     return () => { cancelled = true; };
   }, [open, sessionKey, sessionType]);
 
-  /* Cleanup close timer on unmount */
+  /* Cleanup timers on unmount */
   useEffect(() => {
     return () => {
+      if (openTimer.current) clearTimeout(openTimer.current);
       if (closeTimer.current) clearTimeout(closeTimer.current);
     };
   }, []);
@@ -147,10 +148,9 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
 
   return (
     <div
-      className="group relative flex-1 min-w-0"
+      className="relative flex-1 min-w-0"
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
-      style={{ ['--session-info-open-delay' as string]: `${HOVER_OPEN_DELAY_MS}ms` }}
     >
       {/* Trigger */}
       <div className="cursor-default min-w-0 overflow-hidden">
@@ -158,71 +158,73 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
       </div>
 
       {/* Panel */}
-      <div
-        ref={panelRef}
-        className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-56 rounded border border-border bg-card shadow-lg shadow-black/30 opacity-0 transition-[opacity,visibility] duration-150 [transition-delay:var(--session-info-open-delay)] group-hover:visible group-hover:opacity-100"
-      >
-        <div className="px-3 py-2.5 space-y-0.5">
-          {/* Model */}
-          <InfoRow label="Model" value={model} />
+      {open && (
+        <div
+          ref={panelRef}
+          className="absolute left-0 top-full z-50 mt-1 w-56 rounded border border-border bg-card shadow-lg shadow-black/30"
+        >
+          <div className="px-3 py-2.5 space-y-0.5">
+            {/* Model */}
+            <InfoRow label="Model" value={model} />
 
-          {/* Thinking */}
-          {thinking && <InfoRow label="Thinking" value={thinking} />}
+            {/* Thinking */}
+            {thinking && <InfoRow label="Thinking" value={thinking} />}
 
-          {/* Tokens with mini progress bar */}
-          <div className="py-[2px]">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-muted-foreground text-[0.667rem] shrink-0">
-                Tokens
-              </span>
-              <span className="text-foreground text-[0.667rem] font-medium text-right">
-                {totalTok != null ? fmtK(totalTok) : '—'} /{' '}
-                {fmtK(ctxTok)} ({pct}%)
-              </span>
+            {/* Tokens with mini progress bar */}
+            <div className="py-[2px]">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground text-[0.667rem] shrink-0">
+                  Tokens
+                </span>
+                <span className="text-foreground text-[0.667rem] font-medium text-right">
+                  {totalTok != null ? fmtK(totalTok) : '—'} /{' '}
+                  {fmtK(ctxTok)} ({pct}%)
+                </span>
+              </div>
+              {/* Mini progress bar */}
+              <div className="mt-1 w-full h-1 bg-background border border-border/60 overflow-hidden rounded-sm">
+                <div
+                  className={`h-full ${barCls}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
             </div>
-            {/* Mini progress bar */}
-            <div className="mt-1 w-full h-1 bg-background border border-border/60 overflow-hidden rounded-sm">
-              <div
-                className={`h-full ${barCls}`}
-                style={{ width: `${pct}%` }}
+
+            {/* Input / Output breakdown */}
+            {(session.inputTokens != null ||
+              session.outputTokens != null) && (
+              <InfoRow
+                label="In / Out"
+                value={`${session.inputTokens != null ? fmtK(session.inputTokens) : '—'} / ${session.outputTokens != null ? fmtK(session.outputTokens) : '—'}`}
               />
+            )}
+
+            {/* Last Active */}
+            <InfoRow label="Last Active" value={relativeTime(lastActive)} />
+
+            {/* Channel */}
+            {session.channel && (
+              <InfoRow label="Channel" value={session.channel} />
+            )}
+
+            {/* Status */}
+            <div className="flex items-center justify-between gap-3 py-[2px]">
+              <span className="text-muted-foreground text-[0.667rem] shrink-0">
+                Status
+              </span>
+              <span
+                className={`text-[0.6rem] font-bold tracking-[1px] uppercase px-1.5 py-0.5 rounded-sm ${
+                  running
+                    ? 'bg-green/20 text-green'
+                    : 'bg-muted-foreground/20 text-muted-foreground'
+                }`}
+              >
+                {status}
+              </span>
             </div>
-          </div>
-
-          {/* Input / Output breakdown */}
-          {(session.inputTokens != null ||
-            session.outputTokens != null) && (
-            <InfoRow
-              label="In / Out"
-              value={`${session.inputTokens != null ? fmtK(session.inputTokens) : '—'} / ${session.outputTokens != null ? fmtK(session.outputTokens) : '—'}`}
-            />
-          )}
-
-          {/* Last Active */}
-          <InfoRow label="Last Active" value={relativeTime(lastActive)} />
-
-          {/* Channel */}
-          {session.channel && (
-            <InfoRow label="Channel" value={session.channel} />
-          )}
-
-          {/* Status */}
-          <div className="flex items-center justify-between gap-3 py-[2px]">
-            <span className="text-muted-foreground text-[0.667rem] shrink-0">
-              Status
-            </span>
-            <span
-              className={`text-[0.6rem] font-bold tracking-[1px] uppercase px-1.5 py-0.5 rounded-sm ${
-                running
-                  ? 'bg-green/20 text-green'
-                  : 'bg-muted-foreground/20 text-muted-foreground'
-              }`}
-            >
-              {status}
-            </span>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 });

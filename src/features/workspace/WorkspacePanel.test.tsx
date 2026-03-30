@@ -74,13 +74,13 @@ describe('WorkspacePanel', () => {
     localStorage.setItem('nerve-workspace-tab', 'config');
     mockUseCrons.mockReturnValue({
       activeCount: 0,
-      cronWarning: 'Cron management is unavailable on this gateway. Add cron, gateway, and sessions_spawn to gateway.tools.allow, then restart the gateway.',
+      cronWarning: 'This gateway does not expose cron management, so Nerve can’t load or edit crons right now.',
     });
 
     render(
       <WorkspacePanel workspaceAgentId="alpha" memories={[]} onRefreshMemories={vi.fn()} />,
     );
 
-    expect(await screen.findByTestId('config-tab')).toHaveTextContent('gateway.tools.allow');
+    expect(await screen.findByTestId('config-tab')).toHaveTextContent('Nerve can’t load or edit crons right now');
   });
 });

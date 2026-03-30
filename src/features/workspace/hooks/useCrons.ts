@@ -47,9 +47,12 @@ export interface CronRun {
 
 const CRON_TOOL_UNAVAILABLE_RE = /tool not available:\s*cron/i;
 
+export const CRON_GATEWAY_TOOL_ALLOWLIST = ['cron', 'gateway', 'sessions_spawn'] as const;
+export const CRON_WARNING_SUMMARY = 'This gateway does not expose cron management, so Nerve can’t load or edit crons right now.';
+
 export function getCronWarning(error: string | null | undefined): string | null {
   if (!error || !CRON_TOOL_UNAVAILABLE_RE.test(error)) return null;
-  return 'Cron management is unavailable on this gateway. Add cron, gateway, and sessions_spawn to gateway.tools.allow, then restart the gateway. If this is a local install, rerunning npm run setup can patch it too.';
+  return CRON_WARNING_SUMMARY;
 }
 
 export function normalizeCronJob(j: Record<string, unknown>): CronJob {

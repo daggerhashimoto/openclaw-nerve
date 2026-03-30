@@ -44,10 +44,10 @@ describe('normalizeCronJob', () => {
 });
 
 describe('getCronWarning', () => {
-  it('returns a setup warning for the known cron tool unavailable error', () => {
+  it('returns a short remediation summary for the known cron tool unavailable error', () => {
     expect(
       getCronWarning('Gateway tool invoke failed: 404 {"ok":false,"error":{"type":"not_found","message":"Tool not available: cron"}}'),
-    ).toContain('gateway.tools.allow');
+    ).toBe('This gateway does not expose cron management, so Nerve can’t load or edit crons right now.');
   });
 
   it('ignores unrelated cron errors', () => {

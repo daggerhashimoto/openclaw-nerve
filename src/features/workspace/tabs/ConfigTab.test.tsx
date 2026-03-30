@@ -85,11 +85,11 @@ describe('ConfigTab', () => {
     render(
       <ConfigTab
         agentId="alpha"
-        cronWarning="Cron management is unavailable on this gateway. Add cron, gateway, and sessions_spawn to gateway.tools.allow, then restart the gateway."
+        cronWarning="This gateway does not expose cron management, so Nerve can’t load or edit crons right now."
       />,
     );
 
-    expect(await screen.findByText(/cron management is unavailable on this gateway/i)).toBeInTheDocument();
-    expect(screen.getByText(/gateway\.tools\.allow/i)).toBeInTheDocument();
+    expect(await screen.findByText(/this gateway does not expose cron management/i)).toBeInTheDocument();
+    expect(screen.getByText(/nerve can’t load or edit crons right now/i)).toBeInTheDocument();
   });
 });

@@ -72,4 +72,24 @@ describe('ConfigTab', () => {
       expect(screen.getByRole('textbox')).toHaveValue('alpha soul draft');
     });
   });
+
+  it('shows a cron capability warning when the gateway is missing cron access', async () => {
+    globalThis.fetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input);
+      if (url === '/api/workspace/soul?agentId=alpha') {
+        return Promise.resolve(jsonResponse({ ok: true, content: 'alpha soul' }));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof globalThis.fetch;
+
+    render(
+      <ConfigTab
+        agentId="alpha"
+        cronWarning="Cron management is unavailable on this gateway. Add cron, gateway, and sessions_spawn to gateway.tools.allow, then restart the gateway."
+      />,
+    );
+
+    expect(await screen.findByText(/cron management is unavailable on this gateway/i)).toBeInTheDocument();
+    expect(screen.getByText(/gateway\.tools\.allow/i)).toBeInTheDocument();
+  });
 });

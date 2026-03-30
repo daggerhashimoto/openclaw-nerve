@@ -238,6 +238,19 @@ openclaw devices approve <requestId>
 
 After approval, reconnect from the browser (refresh the page or click reconnect).
 
+### Cron tab says "Tool not available: cron"
+
+**Symptom:** Settings → Cron fails with `Tool not available: cron` or shows a cron access warning.
+
+**Cause:** Fresh setup patches this, but older installs, upgrade paths that never re-ran setup, or remote gateway setups can still be missing the required HTTP tool allowlist.
+
+**Fix:** Add these tools to `gateway.tools.allow` on the gateway, then restart it:
+```json
+["cron", "gateway", "sessions_spawn"]
+```
+
+If Nerve and the gateway are on the same machine, re-running `npm run setup` can patch it for you.
+
 ### Messages buffered indefinitely
 
 **Symptom:** Messages sent immediately after connecting are lost.

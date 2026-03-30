@@ -326,7 +326,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
 
 /** Workspace tab listing cron jobs with create/edit/delete/toggle controls. */
 export function CronsTab() {
-  const { jobs, isLoading, error, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
+  const { jobs, isLoading, error, cronWarning, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
   const { refreshSessions } = useSessionContext();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
@@ -442,12 +442,26 @@ export function CronsTab() {
           </div>
 
           <div aria-live="polite" aria-atomic="true">
-            {error && (
+            {error && !cronWarning && (
               <div className="cockpit-note px-3 py-2 text-[0.733rem]" data-tone="danger">{error}</div>
             )}
           </div>
 
-          {isLoading && !jobs.length && !error && (
+          {cronWarning && (
+            <div className="cockpit-surface px-4 py-5 text-center">
+              <div className="space-y-2">
+                <div className="text-[0.833rem] font-medium text-foreground">Cron access isn&apos;t enabled on this gateway</div>
+                <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
+                  {cronWarning}
+                </p>
+                <p className="text-[0.7rem] leading-4.5 text-muted-foreground">
+                  Manual fix: add <code>cron</code>, <code>gateway</code>, and <code>sessions_spawn</code> to <code>gateway.tools.allow</code> on the gateway, then restart it.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {isLoading && !jobs.length && !error && !cronWarning && (
             <div className="space-y-2">
               <div className="cockpit-surface h-20 animate-pulse" />
               <div className="cockpit-surface h-20 animate-pulse" />
@@ -455,7 +469,7 @@ export function CronsTab() {
             </div>
           )}
 
-          {!isLoading && !jobs.length && !error && (
+          {!isLoading && !jobs.length && !error && !cronWarning && (
             <div className="cockpit-surface px-4 py-5 text-center">
               <div className="space-y-1">
                 <div className="text-[0.833rem] font-medium text-foreground">No scheduled tasks yet</div>

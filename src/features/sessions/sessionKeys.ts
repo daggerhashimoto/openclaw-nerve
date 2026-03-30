@@ -185,3 +185,15 @@ export function buildAgentRootSessionKey(
 
   return candidate;
 }
+
+export function getAgentRegistrationName(name: string, sessionKey: string): string {
+  const agentId = getRootAgentId(sessionKey);
+  const baseId = slugifyPart(name);
+
+  if (!agentId || agentId === baseId) return name;
+
+  const suffix = agentId.startsWith(`${baseId}-`) ? agentId.slice(baseId.length + 1) : '';
+  if (/^\d+$/.test(suffix)) return `${name} ${suffix}`;
+
+  return agentId;
+}

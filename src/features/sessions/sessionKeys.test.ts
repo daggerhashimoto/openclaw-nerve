@@ -3,6 +3,7 @@ import type { Session } from '@/types';
 import { getSessionKey } from '@/types';
 import {
   buildAgentRootSessionKey,
+  getAgentRegistrationName,
   getRootAgentId,
   getRootAgentSessionKey,
   getSessionDisplayLabel,
@@ -59,6 +60,11 @@ describe('sessionKeys', () => {
   it('builds unique root session keys', () => {
     const existing = new Set(['agent:reviewer:main', 'agent:reviewer-2:main']);
     expect(buildAgentRootSessionKey('Reviewer', existing)).toBe('agent:reviewer-3:main');
+  });
+
+  it('builds a unique agent registration name for duplicate roots', () => {
+    expect(getAgentRegistrationName('Reviewer', 'agent:reviewer:main')).toBe('Reviewer');
+    expect(getAgentRegistrationName('Reviewer', 'agent:reviewer-2:main')).toBe('Reviewer 2');
   });
 
   it('picks top-level agent roots and prefers main', () => {

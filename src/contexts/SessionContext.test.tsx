@@ -73,6 +73,57 @@ describe('SessionContext', () => {
     }) as typeof fetch;
   });
 
+  it('calls agents.create when spawning a root agent', async () => {
+    function Spawn() {
+      const { spawnSession } = useSessionContext();
+      return <button data-testid="spawn" onClick={() => spawnSession({
+        kind: 'root', agentName: 'Test', task: 'hi', model: 'anthropic/claude-sonnet-4-5',
+      })} />;
+    }
+
+    render(<SessionProvider><Spawn /></SessionProvider>);
+    await waitFor(() => expect(rpcMock).toHaveBeenCalled());
+    screen.getByTestId('spawn').click();
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith('agents.create', expect.objectContaining({ name: 'Test' }));
+    });
+  });
+
+  it('uses a unique config name when spawning a duplicate root agent', async () => {
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            { sessionKey: 'agent:main:main', label: 'Main' },
+            { sessionKey: 'agent:test:main', label: 'Test' },
+          ],
+        };
+      }
+      return {};
+    });
+
+    function Spawn() {
+      const { spawnSession } = useSessionContext();
+      return <button data-testid="spawn-duplicate" onClick={() => spawnSession({
+        kind: 'root', agentName: 'Test', task: 'hi', model: 'anthropic/claude-sonnet-4-5',
+      })} />;
+    }
+
+    render(<SessionProvider><Spawn /></SessionProvider>);
+    await waitFor(() => expect(rpcMock).toHaveBeenCalledWith('sessions.list', { limit: 1000 }));
+    screen.getByTestId('spawn-duplicate').click();
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith('agents.create', expect.objectContaining({
+        name: 'Test 2',
+        workspace: '~/.openclaw/workspace-test-2',
+      }));
+      expect(rpcMock).toHaveBeenCalledWith('sessions.patch', expect.objectContaining({
+        key: 'agent:test-2:main',
+        label: 'Test',
+      }));
+    });
+  });
+
   it('uses the full gateway session list for sidebar refreshes so older agent chats stay visible', async () => {
     render(
       <SessionProvider>

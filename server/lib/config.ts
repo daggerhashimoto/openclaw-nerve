@@ -86,6 +86,22 @@ export const config = {
   usageFile: process.env.USAGE_FILE || path.join(HOME, '.openclaw', 'token-usage.json'),
   workspaceWatchRecursive: process.env.NERVE_WATCH_WORKSPACE_RECURSIVE !== 'false',
   workspaceRemote: process.env.NERVE_WORKSPACE_REMOTE === 'true',
+
+  // Agent workspace path overrides (format: agentId:/path/to/workspace)
+  // Allows mapping specific agents to custom workspace locations
+  agentWorkspaces: (() => {
+    const env = process.env.NERVE_AGENT_WORKSPACES || '';
+    if (!env) return {} as Record<string, string>;
+    const pairs = env.split(',').map(s => s.trim()).filter(Boolean);
+    const result: Record<string, string> = {};
+    for (const pair of pairs) {
+      const [agentId, workspacePath] = pair.split(':');
+      if (agentId && workspacePath) {
+        result[agentId.trim()] = workspacePath.trim();
+      }
+    }
+    return result;
+  })(),
   certPath: path.join(PROJECT_ROOT, 'certs', 'cert.pem'),
   keyPath: path.join(PROJECT_ROOT, 'certs', 'key.pem'),
   bunPath: path.join(HOME, '.bun', 'bin', 'bunx'),

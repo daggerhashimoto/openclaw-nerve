@@ -73,6 +73,22 @@ describe('SessionContext', () => {
     }) as typeof fetch;
   });
 
+  it('calls agents.create when spawning a root agent', async () => {
+    function Spawn() {
+      const { spawnSession } = useSessionContext();
+      return <button data-testid="spawn" onClick={() => spawnSession({
+        kind: 'root', agentName: 'Test', task: 'hi', model: 'anthropic/claude-sonnet-4-5',
+      })} />;
+    }
+
+    render(<SessionProvider><Spawn /></SessionProvider>);
+    await waitFor(() => expect(rpcMock).toHaveBeenCalled());
+    screen.getByTestId('spawn').click();
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith('agents.create', expect.objectContaining({ name: 'Test' }));
+    });
+  });
+
   it('uses the full gateway session list for sidebar refreshes so older agent chats stay visible', async () => {
     render(
       <SessionProvider>

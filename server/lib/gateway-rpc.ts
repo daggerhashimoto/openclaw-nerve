@@ -65,6 +65,42 @@ let connectPromise: Promise<void> | null = null;
 let connectResolve: (() => void) | null = null;
 let connectReject: ((err: Error) => void) | null = null;
 
+function normalizeOrigin(value: string | undefined | null): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+function getGatewayRequestOrigin(): string {
+  const configuredPublicOrigin = normalizeOrigin(config.publicOrigin);
+  if (configuredPublicOrigin) return configuredPublicOrigin;
+
+  const configuredAllowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((value) => normalizeOrigin(value.trim()))
+    .filter((value): value is string => Boolean(value));
+
+  const firstNonLoopbackOrigin = configuredAllowedOrigins.find((origin) => !isLoopbackOrigin(origin));
+  if (firstNonLoopbackOrigin) return firstNonLoopbackOrigin;
+
+  const firstAllowedOrigin = configuredAllowedOrigins[0];
+  if (firstAllowedOrigin) return firstAllowedOrigin;
+
+  return `http://127.0.0.1:${config.port}`;
+}
+
 function buildConnectParams(nonce: string) {
   const clientId = 'openclaw-control-ui';
   const clientMode = 'webchat';
@@ -137,7 +173,7 @@ function ensureConnection(): void {
   const wsUrl = getGatewayWsUrl();
 
   const socket = new WebSocket(wsUrl, {
-    headers: { Origin: `http://127.0.0.1:${config.port}` },
+    headers: { Origin: getGatewayRequestOrigin() },
   });
 
   socket.on('open', () => {

@@ -10,6 +10,7 @@ vi.mock('./config.js', () => ({
       gatewayUrl: `http://127.0.0.1:${testPort}`,
       gatewayToken: 'test-token',
       port: 3080,
+      publicOrigin: process.env.NERVE_PUBLIC_ORIGIN || '',
     };
   },
 }));
@@ -49,6 +50,7 @@ describe('gateway-rpc (persistent WebSocket)', () => {
   /** Handler for incoming RPC method calls (after connect handshake) */
   let rpcHandler: (method: string, params: unknown) => unknown;
   let lastConnectParams: unknown = null;
+  let lastRequestOrigin: string | undefined;
   let connectMode: 'accept' | 'reject' | 'close' = 'accept';
 
   beforeAll(async () => {
@@ -57,7 +59,9 @@ describe('gateway-rpc (persistent WebSocket)', () => {
     wss = new WebSocketServer({ port: 0 });
     testPort = (wss.address() as { port: number }).port;
 
-    wss.on('connection', (ws) => {
+    wss.on('connection', (ws, req) => {
+      lastRequestOrigin = req.headers.origin;
+
       // Send challenge immediately
       ws.send(JSON.stringify({
         type: 'event',
@@ -103,7 +107,10 @@ describe('gateway-rpc (persistent WebSocket)', () => {
   beforeEach(() => {
     rpcHandler = () => ({});
     lastConnectParams = null;
+    lastRequestOrigin = undefined;
     connectMode = 'accept';
+    delete process.env.NERVE_PUBLIC_ORIGIN;
+    delete process.env.ALLOWED_ORIGINS;
   });
 
   afterEach(() => {
@@ -137,6 +144,35 @@ describe('gateway-rpc (persistent WebSocket)', () => {
           nonce: 'test-nonce',
         },
       });
+    });
+
+    it('uses the configured public origin for the gateway websocket handshake', async () => {
+      process.env.NERVE_PUBLIC_ORIGIN = 'https://192.168.192.252:3443';
+      rpcHandler = () => ({ ok: true });
+
+      const { gatewayRpcCall } = await importFreshGatewayRpc();
+      await gatewayRpcCall('test.method', { foo: 'bar' });
+
+      expect(lastRequestOrigin).toBe('https://192.168.192.252:3443');
+    });
+
+    it('falls back to the first non-loopback allowed origin when no public origin is configured', async () => {
+      process.env.ALLOWED_ORIGINS = 'http://127.0.0.1:3080, https://192.168.192.252:3443';
+      rpcHandler = () => ({ ok: true });
+
+      const { gatewayRpcCall } = await importFreshGatewayRpc();
+      await gatewayRpcCall('test.method', { foo: 'bar' });
+
+      expect(lastRequestOrigin).toBe('https://192.168.192.252:3443');
+    });
+
+    it('falls back to localhost when no public or allowed origin is configured', async () => {
+      rpcHandler = () => ({ ok: true });
+
+      const { gatewayRpcCall } = await importFreshGatewayRpc();
+      await gatewayRpcCall('test.method', { foo: 'bar' });
+
+      expect(lastRequestOrigin).toBe('http://127.0.0.1:3080');
     });
 
     it('sends RPC request and returns payload', async () => {

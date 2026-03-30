@@ -2,6 +2,20 @@
 
 Nerve ships a built-in updater that pulls the latest published release from GitHub, rebuilds, restarts the service, and verifies health — all in one command.
 
+## Prerequisites
+
+Before using the updater, make sure this checkout has an HTTPS GitHub `origin`, for example:
+
+```bash
+git remote -v
+```
+
+`origin` should point to `https://github.com/<owner>/<repo>.git`. If it does not, fix it first:
+
+```bash
+git remote set-url origin https://github.com/<owner>/<repo>.git
+```
+
 ## Quick start
 
 ```bash
@@ -9,7 +23,7 @@ npm run update -- --yes
 ```
 
 This will:
-1. Check prerequisites (git, Node.js, npm)
+1. Check prerequisites (git, Node.js, npm, and an HTTPS GitHub `origin` remote)
 2. Resolve the latest published GitHub release (fallback: latest semver tag)
 3. Snapshot the current state for rollback
 4. `git fetch --tags && git checkout <tag>`
@@ -143,8 +157,9 @@ The updater resolves versions from GitHub Releases first. If release lookup fail
 
 **Fix:** Verify remote/release access and tags:
 ```bash
-git remote -v                               # Verify origin points to the right repo
-git fetch --tags origin                     # Pull any missing tags
+git remote -v
+git remote set-url origin https://github.com/<owner>/<repo>.git
+git fetch --tags origin
 curl -sSf https://api.github.com/repos/<owner>/<repo>/releases/latest | jq .tag_name
 ```
 

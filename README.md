@@ -136,9 +136,11 @@ Fetches the latest release, rebuilds, restarts, verifies health, and rolls back 
 <details><summary><strong>Development</strong></summary>
 
 ```bash
-npm run dev # frontend — Vite HMR on :3080
-npm run dev:server # backend — watch mode on :3081
+npm run dev # frontend — Vite on :3080 by default
+PORT=3081 npm run dev:server # backend — explicit split-port dev setup
 ```
+
+`npm run dev:server` uses the normal server `PORT` setting. If you do not override it, the backend also defaults to `:3080` and will collide with Vite.
 
 **Requires:** Node.js 22+ and an OpenClaw gateway.
 </details>

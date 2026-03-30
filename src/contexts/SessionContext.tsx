@@ -6,12 +6,14 @@ import { describeToolUse } from '@/utils/helpers';
 import { buildSessionTree } from '@/features/sessions/sessionTree';
 import {
   buildAgentRootSessionKey,
+  getAgentRegistrationName,
   getRootAgentSessionKey,
   getSessionDisplayLabel,
   getTopLevelAgentSessions,
   isSubagentSessionKey,
   isTopLevelAgentSessionKey,
   pickDefaultSessionKey,
+  getRootAgentId,
   isRootChildSession,
 } from '@/features/sessions/sessionKeys';
 import { buildSpawnSubagentMessage, type SubagentCleanupMode } from '@/features/sessions/buildSpawnSubagentMessage';
@@ -702,6 +704,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         rootName,
         authoritativeSessions.map(getSessionKey),
       );
+      // Register agent in config (ignore if already registered)
+      const agentId = getRootAgentId(sessionKey);
+      const registrationName = getAgentRegistrationName(rootName, sessionKey);
+      try {
+        await rpc('agents.create', { name: registrationName, workspace: `~/.openclaw/workspace-${agentId}` });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes('already exists')) throw err;
+      }
       const thinkingLevel = opts.thinking && opts.thinking !== 'off' ? opts.thinking : null;
 
       await rpc('sessions.patch', {

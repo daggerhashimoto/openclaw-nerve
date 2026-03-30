@@ -52,10 +52,11 @@ function persistConfigView(view: ConfigView, agentId: string) {
 
 interface ConfigWithSkillsProps {
   agentId: string;
+  cronWarning?: string | null;
 }
 
 /** Combined Config tab with Files/Skills sub-view toggle. */
-function ConfigWithSkills({ agentId }: ConfigWithSkillsProps) {
+function ConfigWithSkills({ agentId, cronWarning = null }: ConfigWithSkillsProps) {
   const [view, setView] = useState<ConfigView>(() => getInitialConfigView(agentId));
 
   const switchView = useCallback((nextView: ConfigView) => {
@@ -81,7 +82,7 @@ function ConfigWithSkills({ agentId }: ConfigWithSkillsProps) {
         ))}
       </div>
       <div className="flex-1 min-h-0 overflow-hidden">
-        {view === 'files' ? <ConfigTab key={agentId} agentId={agentId} /> : <SkillsTab key={agentId} agentId={agentId} />}
+        {view === 'files' ? <ConfigTab key={agentId} agentId={agentId} cronWarning={cronWarning} /> : <SkillsTab key={agentId} agentId={agentId} />}
       </div>
     </div>
   );
@@ -125,7 +126,7 @@ export function WorkspacePanel({
   onOpenTask,
 }: WorkspacePanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>(getInitialTab);
-  const { activeCount } = useCrons();
+  const { activeCount, cronWarning } = useCrons();
 
   const [visitedTabs, setVisitedTabs] = useState<Set<TabId>>(() => new Set([activeTab]));
 
@@ -173,7 +174,7 @@ export function WorkspacePanel({
           )}
         </div>
         <div className={activeTab === 'config' ? 'h-full' : 'hidden'} hidden={activeTab !== 'config'} role="tabpanel" id="workspace-tabpanel-config" aria-labelledby="workspace-tab-config">
-          {visitedTabs.has('config') && <ConfigWithSkills key={workspaceAgentId} agentId={workspaceAgentId} />}
+          {visitedTabs.has('config') && <ConfigWithSkills key={workspaceAgentId} agentId={workspaceAgentId} cronWarning={cronWarning} />}
         </div>
         <div className={activeTab === 'kanban' ? 'h-full' : 'hidden'} hidden={activeTab !== 'kanban'} role="tabpanel" id="workspace-tabpanel-kanban" aria-labelledby="workspace-tab-kanban">
           {visitedTabs.has('kanban') && (

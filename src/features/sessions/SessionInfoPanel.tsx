@@ -67,14 +67,16 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
 }: SessionInfoPanelProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const openTimer = useRef<ReturnType<typeof setTimeout>>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
   const handleEnter = useCallback(() => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
-    setOpen(true);
+    openTimer.current = setTimeout(() => setOpen(true), 500);
   }, []);
 
   const handleLeave = useCallback(() => {
+    if (openTimer.current) { clearTimeout(openTimer.current); openTimer.current = null; }
     closeTimer.current = setTimeout(() => setOpen(false), 150);
   }, []);
 
@@ -121,9 +123,10 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
     return () => { cancelled = true; };
   }, [open, sessionKey, sessionType]);
 
-  /* Cleanup close timer on unmount */
+  /* Cleanup timers on unmount */
   useEffect(() => {
     return () => {
+      if (openTimer.current) clearTimeout(openTimer.current);
       if (closeTimer.current) clearTimeout(closeTimer.current);
     };
   }, []);

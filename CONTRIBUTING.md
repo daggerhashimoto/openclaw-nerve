@@ -45,61 +45,78 @@ Thanks for wanting to help! This guide covers everything you need to start contr
    # Terminal 1 — Vite frontend with HMR
    npm run dev
 
-   # Terminal 2 — Backend with file watching
-   npm run dev:server
+   # Terminal 2 — Backend with file watching on a separate port
+   PORT=3081 npm run dev:server
    ```
 
-5. Open **http://localhost:3080**. The frontend proxies API requests to the backend on `:3081`.
+5. Open **http://localhost:3080**. In this split setup, Vite proxies API and WebSocket traffic to the backend on `:3081`.
+
+   `npm run dev:server` does not default to `:3081` on its own. Without `PORT=3081`, the backend uses its normal default of `:3080`.
 
 ## Project Structure
 
 ```
-nerve/
+openclaw-nerve/
 ├── src/                        # Frontend (React + TypeScript)
-│   ├── features/               # Feature modules (co-located)
-│   │   ├── auth/               # Login page, auth gate, session hook
-│   │   ├── chat/               # Chat panel, messages, input, search
-│   │   ├── voice/              # Push-to-talk, wake word, audio feedback
-│   │   ├── tts/                # Text-to-speech playback
-│   │   ├── sessions/           # Session list, tree, spawn dialog
-│   │   ├── workspace/          # Tabbed panel: memory, crons, skills, config
-│   │   ├── file-browser/       # Workspace file browser with tabbed editor
-│   │   ├── settings/           # Settings drawer (appearance, audio, connection)
+│   ├── features/               # Product surfaces and feature-local helpers
+│   │   ├── activity/           # Agent log and event log panels
+│   │   ├── auth/               # Login gate and auth flows
+│   │   ├── charts/             # Inline chart extraction and renderers
+│   │   ├── chat/               # Chat UI, message loading, streaming operations
 │   │   ├── command-palette/    # ⌘K command palette
-│   │   ├── markdown/           # Markdown renderer, code block actions
-│   │   ├── charts/             # Inline chart extraction and rendering
-│   │   ├── memory/             # Memory editor, add/delete dialogs
-│   │   ├── activity/           # Agent log, event log
-│   │   ├── dashboard/          # Token usage, memory list, limits
-│   │   └── connect/            # Connect dialog (gateway setup)
-│   ├── components/             # Shared UI components
-│   │   ├── ui/                 # Primitives (button, input, dialog, etc.)
-│   │   └── skeletons/          # Loading skeletons
-│   ├── contexts/               # React contexts (Chat, Session, Gateway, Settings)
-│   ├── hooks/                  # Shared hooks (WebSocket, SSE, keyboard, etc.)
-│   ├── lib/                    # Utilities (formatting, themes, sanitize, etc.)
-│   ├── types.ts                # Shared type definitions
-│   └── test/                   # Test setup
+│   │   ├── connect/            # Gateway connect dialog
+│   │   ├── dashboard/          # Token usage and memory list views
+│   │   ├── file-browser/       # Workspace tree, tabs, editors
+│   │   ├── kanban/             # Task board, proposals, execution views
+│   │   ├── markdown/           # Markdown and tool output rendering
+│   │   ├── memory/             # Memory editing dialogs and hooks
+│   │   ├── sessions/           # Session list, tree helpers, spawn flows
+│   │   ├── settings/           # Settings drawer and audio controls
+│   │   ├── tts/                # Text-to-speech playback/config
+│   │   ├── voice/              # Push-to-talk, wake word, audio feedback
+│   │   └── workspace/          # Workspace-scoped panels and state
+│   ├── components/             # Shared UI building blocks
+│   ├── contexts/               # Gateway, session, chat, and settings contexts
+│   ├── hooks/                  # Cross-cutting hooks used across features
+│   ├── lib/                    # Shared frontend utilities
+│   ├── App.tsx                 # Main layout and panel composition
+│   └── main.tsx                # Frontend entry point
 ├── server/                     # Backend (Hono + TypeScript)
-│   ├── routes/                 # API route handlers
-│   ├── services/               # TTS engines, Whisper, usage tracking
-│   ├── lib/                    # Utilities (config, WS proxy, file watcher, etc.)
-│   ├── middleware/             # Auth, rate limiting, security headers, caching
-│   └── app.ts                  # Hono app assembly
-├── config/                     # TypeScript configs for server build
+│   ├── routes/                 # API routes, mounted from server/app.ts
+│   │   ├── auth.ts
+│   │   ├── gateway.ts
+│   │   ├── sessions.ts
+│   │   ├── workspace.ts
+│   │   ├── files.ts
+│   │   ├── file-browser.ts
+│   │   ├── kanban.ts
+│   │   ├── crons.ts
+│   │   ├── memories.ts
+│   │   ├── tts.ts
+│   │   ├── transcribe.ts
+│   │   └── ...plus route tests beside many handlers
+│   ├── services/               # Whisper, TTS, and related backend services
+│   ├── lib/                    # Config, gateway helpers, cache, file watchers, mutexes
+│   ├── middleware/             # Auth, security headers, cache, limits
+│   ├── app.ts                  # Hono app assembly
+│   └── index.ts                # HTTP/HTTPS server startup
+├── bin/                        # CLI/update entrypoints
+├── config/                     # TypeScript build configs
+├── docs/                       # User and operator docs
+├── public/                     # Static assets
 ├── scripts/                    # Setup wizard and utilities
-├── docs/                       # Documentation
-├── vitest.config.ts            # Test configuration
-├── eslint.config.js            # Lint configuration
-└── vite.config.ts              # Vite build configuration
+├── vite.config.ts              # Vite config
+├── vitest.config.ts            # Vitest config
+└── eslint.config.js            # ESLint flat config
 ```
 
 ### Key conventions
 
-- **Feature modules** live in `src/features/<name>/`. Each feature owns its components, hooks, types, and tests.
-- **`@/` import alias** maps to `src/` — use it for cross-feature imports.
-- **Tests are co-located** with source files: `foo.ts` → `foo.test.ts`.
-- **Server routes** are thin handlers that delegate to `services/` and `lib/`.
+- **Feature modules** usually live in `src/features/<name>/`. Keep new UI work inside the closest existing feature instead of inventing a parallel structure.
+- **`@/` import alias** maps to `src/`.
+- **Tests are usually nearby** the code they cover, especially for hooks, routes, and utilities.
+- **Cross-feature imports exist**, but keep them narrow and intentional. Reuse small helpers, avoid circular dependencies, and do not spread one-off shortcuts across the app.
+- **Server routes** live in `server/routes/` and are mounted in `server/app.ts`. Shared logic belongs in `server/lib/`, `server/services/`, or `server/middleware/`.
 
 ## Adding a Feature
 

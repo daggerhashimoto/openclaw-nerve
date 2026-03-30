@@ -21,6 +21,11 @@ describe('workspaceScope', () => {
     expect(getWorkspaceRootSessionKey('agent:test:cron:daily:run:xyz')).toBe('agent:test:main');
   });
 
+  it('uses the owning agent for direct message sessions', () => {
+    expect(getWorkspaceAgentId('agent:test:telegram:direct:123')).toBe('test');
+    expect(getWorkspaceRootSessionKey('agent:test:telegram:direct:123')).toBe('agent:test:main');
+  });
+
   it('falls back to main for unknown session keys', () => {
     expect(getWorkspaceAgentId('weird-session-key')).toBe('main');
     expect(getWorkspaceRootSessionKey('weird-session-key')).toBe('agent:main:main');

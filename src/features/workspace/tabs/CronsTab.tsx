@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { RefreshCw, Play, Plus, Trash2, Pencil, ChevronDown, ChevronRight, CheckCircle, XCircle, Circle, Loader2, Settings2, Clock3 } from 'lucide-react';
-import { useCrons, type CronJob, type CronRun } from '../hooks/useCrons';
+import { useCrons, type CronJob, type CronRun, CRON_GATEWAY_TOOL_ALLOWLIST } from '../hooks/useCrons';
 import { CronDialog } from './CronDialog';
 import { useSessionContext } from '@/contexts/SessionContext';
 
@@ -326,7 +326,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
 
 /** Workspace tab listing cron jobs with create/edit/delete/toggle controls. */
 export function CronsTab() {
-  const { jobs, isLoading, error, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
+  const { jobs, isLoading, error, cronWarning, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
   const { refreshSessions } = useSessionContext();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
@@ -442,12 +442,58 @@ export function CronsTab() {
           </div>
 
           <div aria-live="polite" aria-atomic="true">
-            {error && (
+            {error && !cronWarning && (
               <div className="cockpit-note px-3 py-2 text-[0.733rem]" data-tone="danger">{error}</div>
             )}
           </div>
 
-          {isLoading && !jobs.length && !error && (
+          {cronWarning && (
+            <div className="cockpit-surface px-4 py-5 text-left">
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <div className="text-[0.833rem] font-medium text-foreground">Cron unavailable</div>
+                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
+                    {cronWarning}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-foreground/80">Recommended fix</div>
+                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
+                    Ask your agent to update your OpenClaw config (<code>openclaw.json</code>) so <code>gateway.tools.allow</code> includes:
+                  </p>
+                  <ul className="ml-5 list-disc space-y-1 text-[0.733rem] leading-4.5 text-muted-foreground">
+                    {CRON_GATEWAY_TOOL_ALLOWLIST.map((tool) => (
+                      <li key={`recommended-${tool}`}><code>{tool}</code></li>
+                    ))}
+                  </ul>
+                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">Then restart the gateway.</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-foreground/80">Manual fix</div>
+                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
+                    Edit <code>openclaw.json</code> and add these entries to <code>gateway.tools.allow</code>:
+                  </p>
+                  <ul className="ml-5 list-disc space-y-1 text-[0.733rem] leading-4.5 text-muted-foreground">
+                    {CRON_GATEWAY_TOOL_ALLOWLIST.map((tool) => (
+                      <li key={`manual-${tool}`}><code>{tool}</code></li>
+                    ))}
+                  </ul>
+                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">Then restart the gateway.</p>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-foreground/80">Local install shortcut</div>
+                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
+                    If this is a local install, rerun <code>npm run setup</code> to restore the missing entries.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isLoading && !jobs.length && !error && !cronWarning && (
             <div className="space-y-2">
               <div className="cockpit-surface h-20 animate-pulse" />
               <div className="cockpit-surface h-20 animate-pulse" />
@@ -455,7 +501,7 @@ export function CronsTab() {
             </div>
           )}
 
-          {!isLoading && !jobs.length && !error && (
+          {!isLoading && !jobs.length && !error && !cronWarning && (
             <div className="cockpit-surface px-4 py-5 text-center">
               <div className="space-y-1">
                 <div className="text-[0.833rem] font-medium text-foreground">No scheduled tasks yet</div>

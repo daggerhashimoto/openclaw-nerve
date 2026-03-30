@@ -68,7 +68,7 @@ On the cloud host config:
 ```json
 "gateway": {
   "tools": {
-    "allow": ["cron", "gateway"]
+    "allow": ["cron", "gateway", "sessions_spawn"]
   }
 }
 ```

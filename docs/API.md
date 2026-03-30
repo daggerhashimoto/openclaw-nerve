@@ -21,7 +21,7 @@ Nerve exposes a REST + SSE API served by [Hono](https://hono.dev/) on the config
 - [Memories](#memories)
 - [Agent Log](#agent-log)
 - [Gateway](#gateway)
-- [Git Info](#git-info)
+- [Sessions](#sessions)
 - [Workspace Files](#workspace-files)
 - [Cron Jobs](#cron-jobs)
 - [Skills](#skills)
@@ -427,8 +427,8 @@ Transcribes audio using the configured STT provider.
 
 | Model | Size | Speed | Quality |
 |-------|------|-------|---------|
-| `tiny` (default) | 75 MB | Fastest | Good baseline, multilingual |
-| `base` | 142 MB | Fast | Better conversational accuracy, multilingual |
+| `tiny` | 75 MB | Fastest | Good baseline, multilingual |
+| `base` (default) | 142 MB | Fast | Better conversational accuracy, multilingual |
 | `small` | 466 MB | Moderate | Best accuracy (CPU-intensive), multilingual |
 | `tiny.en` | 75 MB | Fastest | English-only variant |
 | `base.en` | 142 MB | Fast | English-only variant |
@@ -471,7 +471,7 @@ Returns current STT runtime config + local model readiness/download state.
 ```json
 {
   "provider": "local",
-  "model": "tiny",
+  "model": "base",
   "language": "en",
   "modelReady": true,
   "openaiKeySet": false,
@@ -479,7 +479,7 @@ Returns current STT runtime config + local model readiness/download state.
   "hasGpu": false,
   "availableModels": {
     "tiny": { "size": "75MB", "ready": true, "multilingual": true },
-    "base": { "size": "142MB", "ready": false, "multilingual": true },
+    "base": { "size": "142MB", "ready": true, "multilingual": true },
     "tiny.en": { "size": "75MB", "ready": true, "multilingual": false }
   },
   "download": null
@@ -580,7 +580,7 @@ Returns full provider × language support matrix and current local model state.
       "tts": { "edge": true, "qwen3": true, "openai": true }
     }
   ],
-  "currentModel": "tiny",
+  "currentModel": "base",
   "isMultilingual": true
 }
 ```
@@ -867,7 +867,7 @@ All fields are optional. A `ts` (epoch ms) is automatically set on write. The lo
 
 ### `GET /api/gateway/models`
 
-Returns available AI models from the OpenClaw gateway. Models are fetched via `openclaw models list`, cached for 5 minutes, and the CLI call allows a longer timeout so cold starts have more time to surface configured models in the spawn dialog.
+Returns the models defined in the active OpenClaw config. This endpoint is config-backed now, not CLI-discovered or cache-backed.
 
 **Rate Limit:** General (60/min)
 
@@ -876,17 +876,26 @@ Returns available AI models from the OpenClaw gateway. Models are fetched via `o
 ```json
 {
   "models": [
-    { "id": "anthropic/claude-sonnet-4-20250514", "label": "claude-sonnet-4-20250514", "provider": "anthropic" },
-    { "id": "openai/gpt-4o", "label": "gpt-4o", "provider": "openai" }
-  ]
+    {
+      "id": "anthropic/claude-sonnet-4-20250514",
+      "label": "claude-sonnet-4-20250514",
+      "provider": "anthropic",
+      "configured": true,
+      "role": "primary"
+    }
+  ],
+  "error": null,
+  "source": "config"
 }
 ```
 
-**Selection logic:**
-1. Configured / allowlisted models (from `agents.defaults.models` in OpenClaw config) are fetched first and included regardless of `available` flag
-2. If that returns 0 models, Nerve falls back to `openclaw models list --all --json` and keeps only available entries
+| Field | Type | Description |
+|-------|------|-------------|
+| `models` | `array` | Configured models from `agents.defaults.model` and `agents.defaults.models` in the active OpenClaw config |
+| `error` | `string \| null` | Read error or configuration problem, for example config unreadable or no configured models |
+| `source` | `"config"` | Identifies the backing source |
 
-The CLI timeout for model discovery is **15 seconds**, which helps cold or recently started OpenClaw installs surface configured models more reliably.
+Model roles are `primary`, `fallback`, or `allowed`. If the config cannot be read, or no models are configured, the endpoint returns an empty `models` array with an explanatory `error` string.
 
 ### `GET /api/gateway/session-info`
 
@@ -911,7 +920,7 @@ Resolution order: per-session data from `sessions_list` → global `gateway_stat
 
 ### `POST /api/gateway/session-patch`
 
-Changes the model and/or thinking level for a session. HTTP fallback when WebSocket RPC fails.
+HTTP fallback for **model changes** when the frontend cannot apply `sessions.patch` over WebSocket. Thinking-only changes are not supported here.
 
 **Rate Limit:** General (60/min)
 
@@ -925,61 +934,111 @@ Changes the model and/or thinking level for a session. HTTP fallback when WebSoc
 }
 ```
 
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `sessionKey` | `string` | No | Target session. If omitted, Nerve tries to pick a preferred active root session |
+| `model` | `string` | No | Model to apply via the gateway's `session_status` tool |
+| `thinkingLevel` | `string \| null` | No | Accepted by the schema, but not applied by this HTTP fallback |
+
 **Response:**
 
 ```json
-{ "ok": true, "model": "anthropic/claude-sonnet-4-20250514", "thinking": "high" }
+{ "ok": true, "model": "anthropic/claude-sonnet-4-20250514" }
 ```
 
-**Errors:** 400 (invalid JSON), 502 (gateway tool invocation failed)
+**Behavior notes:**
+- Thinking changes belong on WebSocket RPC `sessions.patch`, alongside other session metadata/settings updates.
+- A request that only changes `thinkingLevel` returns **501**.
+- If no active root session can be found and `sessionKey` is omitted, the endpoint returns **409**.
+- If both `model` and `thinkingLevel` are sent, the model change is applied and the thinking change is ignored.
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | Invalid JSON or validation error |
+| 409 | No active root session available |
+| 501 | Thinking-only changes are not supported over HTTP |
+| 502 | Model change failed |
+
+### `POST /api/gateway/restart`
+
+Restarts the OpenClaw gateway service, then waits for the service to report healthy status and for the gateway port to become reachable.
+
+**Rate Limit:** Restart (3/min)
+
+**Response:**
+
+```json
+{ "ok": true, "output": "Gateway restarted successfully" }
+```
+
+**Errors:** 500 if restart or post-restart verification fails.
 
 ---
 
-## Git Info
+## Sessions
 
-### `GET /api/git-info`
+### `GET /api/sessions/hidden`
 
-Returns the current git branch and dirty status.
+Returns hidden cron-like sessions from `sessions.json`, sorted by recent activity. Used to surface session metadata that is not part of the normal active session tree.
 
 **Rate Limit:** General (60/min)
 
 **Query Parameters:**
 
-| Param | Description |
-|-------|-------------|
-| `sessionKey` | Use a registered session-specific working directory |
+| Param | Default | Description |
+|-------|---------|-------------|
+| `activeMinutes` | `1440` | Include sessions updated within the last N minutes |
+| `limit` | `200` | Maximum results. Clamped to `2000` |
 
 **Response:**
 
 ```json
-{ "branch": "main", "dirty": true }
+{
+  "ok": true,
+  "sessions": [
+    {
+      "key": "agent:main:cron:daily:run:abc",
+      "sessionKey": "agent:main:cron:daily:run:abc",
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "label": "daily summary",
+      "displayName": "daily summary",
+      "updatedAt": 1708100000000,
+      "model": "openai/gpt-5",
+      "thinking": "medium",
+      "thinkingLevel": "medium",
+      "totalTokens": 1234,
+      "contextTokens": 456,
+      "parentId": "agent:main:cron:daily"
+    }
+  ]
+}
 ```
 
-Returns `{ "branch": null, "dirty": false }` if not in a git repo.
+If the backing `sessions.json` file is unavailable, the endpoint returns `{ "ok": true, "sessions": [] }`. In remote-workspace cases it may also include `remoteWorkspace: true`.
 
-### `POST /api/git-info/workdir`
+### `GET /api/sessions/:id/model`
 
-Registers a working directory for a session, so `GET /api/git-info?sessionKey=...` resolves to the correct repo.
+Reads the actual model used by a session from its transcript. This is mainly for cron-run sessions where gateway session listings may only expose the parent agent's default model.
 
-**Request Body:**
+**Rate Limit:** General (60/min)
+
+**Path Parameters:**
+
+| Param | Description |
+|-------|-------------|
+| `id` | Session UUID |
+
+**Response:**
 
 ```json
-{ "sessionKey": "agent:main:subagent:abc123", "workdir": "/home/user/project" }
+{ "ok": true, "model": "openai/gpt-5", "missing": false }
 ```
 
-The workdir must be within the allowed base directory (derived from `WORKSPACE_ROOT` env var, git worktree list, or the parent of `process.cwd()`). Returns 403 if the path is outside the allowed base.
+If the transcript cannot be found, the endpoint returns `{ "ok": true, "model": null, "missing": true }`.
 
-Session workdir entries expire after 1 hour. Max 100 entries.
-
-### `DELETE /api/git-info/workdir`
-
-Unregisters a session's working directory.
-
-**Request Body:**
-
-```json
-{ "sessionKey": "agent:main:subagent:abc123" }
-```
+**Errors:** 400 if `id` is not a valid UUID.
 
 ---
 
@@ -1657,7 +1716,7 @@ Move a task to a different position within its column or to another column. CAS-
 
 ### `POST /api/kanban/tasks/:id/execute`
 
-Execute a task by spawning an agent session. The task must be in `todo` or `backlog` status. Moves the task to `in-progress` and starts polling the agent session for completion.
+Execute a task and move it to `in-progress`. The launch path depends on the task's assignee and platform. The task must be in `todo` or `backlog` status. Moves the task to `in-progress` and starts polling the agent session for completion.
 
 **Rate Limit:** General (60/min)
 
@@ -1672,22 +1731,29 @@ Execute a task by spawning an agent session. The task must be in `todo` or `back
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `model` | `string` | No | Model override (max 200 chars). Falls back to task's model → board `defaultModel` → `anthropic/claude-sonnet-4-5` |
-| `thinking` | `string` | No | Thinking level: `off`, `low`, `medium`, `high` |
+| `model` | `string` | No | Execution model override (max 200 chars). Cascade: execute request → task `model` → board `defaultModel` → OpenClaw configured default |
+| `thinking` | `string` | No | Thinking override: `off`, `low`, `medium`, `high` |
 
 **Response:** The updated `KanbanTask` object with `status: "in-progress"` and a `run` object.
+
+**Execution paths:**
+- **Assigned tasks** run through the assignee's live root session. Nerve verifies that parent root exists, then asks it to spawn a child worker.
+- **Unassigned or `operator` tasks** use the normal `sessions_spawn` path.
+- **macOS fallback rule:** unassigned or `operator` tasks are rejected. Assign the task to a live worker root first.
 
 **Errors:**
 
 | Status | Body | Condition |
 |--------|------|-----------|
 | 404 | `{ "error": "not_found" }` | Task not found |
+| 409 | `{ "error": "duplicate_execution" }` | Task is already running |
+| 409 | `{ "error": "invalid_execution_target" }` | Required parent root is missing, or macOS requires an assigned live worker root |
 | 409 | `{ "error": "invalid_transition", "from": "done", "to": "in-progress" }` | Task not in `todo` or `backlog` status |
 
 **Notes:**
-- If the task is already `in-progress` with an active run, returns the task as-is (idempotent).
-- The spawned agent receives the task title and description as its prompt.
-- The backend polls the gateway every 5 seconds for up to 30 minutes. On completion, the task moves to `review`. On error, it moves back to `todo`.
+- The spawned worker receives the task title and description as its prompt.
+- Backend pollers run every 5 seconds for up to **720 attempts / 60 minutes**.
+- On success the task moves to `review`. On error it moves back to `todo`.
 
 ### `POST /api/kanban/tasks/:id/complete`
 
@@ -1695,10 +1761,11 @@ Complete a running task. Called by the backend poller automatically, but can als
 
 **Rate Limit:** General (60/min)
 
-**Request Body (optional):**
+**Request Body:**
 
 ```json
 {
+  "sessionKey": "kb-auth-refactor-123-v4-1708100000000",
   "result": "Refactored auth module. Extracted SessionService class...",
   "error": "Agent session timed out"
 }
@@ -1706,6 +1773,7 @@ Complete a running task. Called by the backend poller automatically, but can als
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `sessionKey` | `string` | Yes | Active run session key used to match the task run |
 | `result` | `string` | No | Agent output text (max 50000 chars). Kanban markers are parsed and stripped automatically |
 | `error` | `string` | No | Error message (max 5000 chars). If set, task moves to `todo` instead of `review` |
 
@@ -1715,8 +1783,9 @@ Complete a running task. Called by the backend poller automatically, but can als
 
 | Status | Condition |
 |--------|-----------|
+| 400 | Invalid body or missing `sessionKey` |
 | 404 | Task not found |
-| 409 | No active run to complete |
+| 409 | No active matching run to complete |
 
 ### `POST /api/kanban/tasks/:id/approve`
 
@@ -2008,7 +2077,8 @@ All `/api/*` routes have rate limiting applied. Limits are per-client-IP per-pat
 |--------|--------|-------|
 | **TTS** | `POST /api/tts` | 10 requests / 60 seconds |
 | **Transcribe** | `POST /api/transcribe` | 30 requests / 60 seconds |
-| **General** | All other `/api/*` routes | 60 requests / 60 seconds |
+| **General** | Most `/api/*` routes | 60 requests / 60 seconds |
+| **Restart** | `POST /api/gateway/restart` | 3 requests / 60 seconds |
 
 **Rate limit headers** are included on every response:
 

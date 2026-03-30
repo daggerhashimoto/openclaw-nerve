@@ -131,9 +131,9 @@ The marker must contain valid JSON inside `[chart:{...}]`. The parser uses brack
 
 ### How Agents Learn About Charts
 
-Unlike TTS markers (which use runtime prompt injection), chart markers are taught to agents via the **`TOOLS.md` workspace file**. Nerve's installer can inject chart documentation into `TOOLS.md` automatically (see PR #218).
+Unlike TTS markers, chart markers are **not** injected by Nerve at runtime.
 
-Agents that have the chart syntax in their `TOOLS.md` will naturally include `[chart:{...}]` markers when data visualization is appropriate.
+Agents only use `[chart:{...}]` markers when that syntax is already present in their own instructions or workspace context, for example in `TOOLS.md`, `AGENTS.md`, or another prompt source you manage.
 
 ### Implementation
 

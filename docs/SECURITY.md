@@ -227,7 +227,6 @@ All POST/PUT endpoints validate request bodies with [Zod](https://zod.dev/) sche
 | `PUT /api/memories/section` | `title` (1–200), `content` (≤50000), `date` (YYYY-MM-DD regex) |
 | `DELETE /api/memories` | `query` (1–1000), `type` (enum), `date` (YYYY-MM-DD regex) |
 | `PUT /api/workspace/:key` | `content` (string, ≤100 KB), `key` checked against strict allowlist |
-| `POST /api/git-info/workdir` | `sessionKey` (non-empty), `workdir` (non-empty, validated against allowed base) |
 
 Validation errors return **HTTP 400** with the first Zod issue message as plain text or JSON.
 
@@ -295,7 +294,7 @@ This prevents the proxy from being used to connect to arbitrary external hosts.
 
 ### Token Injection
 
-Nerve performs **server-side token injection** to provide a zero-config connection experience for local and authenticated users without exposing the `GATEWAY_TOKEN` to the browser storage.
+Nerve performs **server-side token injection** to provide a zero-config connection experience for local and authenticated users without exposing the `GATEWAY_TOKEN` to the browser storage. Trusted-proxy configuration only affects how Nerve interprets forwarded client IPs, for example for loopback detection and rate limiting. It does not grant authentication by itself.
 
 **Injection Logic:**
 1. `GET /api/connect-defaults` returns the official gateway WebSocket URL, `token: null`, and a `serverSideAuth` flag.
@@ -314,14 +313,15 @@ OpenClaw 2026.2.19+ requires a signed device identity (Ed25519 keypair) for WebS
 
 Nerve generates a persistent device identity on first start (stored at `~/.nerve/device-identity.json`) and injects it into the connect handshake. The gateway always stays on loopback (`127.0.0.1`) — Nerve proxies all external connections through its WS proxy.
 
-**First-time pairing (required once):**
+**Normal setup path:** the setup wizard now pre-pairs Nerve's device identity while it is configuring the gateway, so a fresh install usually does **not** require a manual `openclaw devices approve` step.
+
+**Manual approval is fallback / recovery guidance:**
 
 1. Start Nerve and open the UI in a browser
-2. The first connection creates a pending pairing request on the gateway
-3. Approve it: `openclaw devices list` → `openclaw devices approve <requestId>`
-4. All subsequent connections are automatically authenticated
+2. If the device is still pending, list requests: `openclaw devices list`
+3. Approve the Nerve device: `openclaw devices approve <requestId>`
 
-If the device is rejected (e.g. after a gateway reset), the proxy falls back to token-only auth. The connection succeeds but with reduced scopes — chat and tool calls may fail with "missing scope" errors. Re-approve the device to restore full functionality.
+If the device is rejected (for example after a gateway reset), the proxy falls back to token-only auth. The connection succeeds but with reduced scopes, and chat or tool calls may fail with "missing scope" errors until the device is approved again.
 
 **Architecture:** `Browser (remote) → Nerve (0.0.0.0:3080) → WS proxy → Gateway (127.0.0.1:18789)`. The gateway never needs to bind to LAN or be directly network-accessible.
 
@@ -353,7 +353,6 @@ Multiple layers prevent directory traversal attacks:
 | `/api/files` | `path.resolve()` + prefix allowlist + symlink resolution + re-check |
 | `/api/memories` (date params) | Regex validation: `/^\d{4}-\d{2}-\d{2}$/` — prevents injection in file paths |
 | `/api/workspace/:key` | Strict key→filename allowlist (`soul`→`SOUL.md`, etc.) — no user-controlled paths |
-| `/api/git-info/workdir` | Resolved path checked against allowed base directory (derived from git worktrees or `WORKSPACE_ROOT`). Exact match or child-path check with separator guard |
 
 ---
 
@@ -403,7 +402,7 @@ The setup wizard:
 1. Writes `.env` atomically (via temp file + rename)
 2. Applies `chmod 600` to `.env` and backup files
 3. Cleans up `.env.tmp` on interruption (Ctrl+C handler)
-4. Backs up existing `.env` before overwriting (timestamped `.env.bak.*`)
+4. Backs up existing `.env` before overwriting (`.env.backup` or `.env.backup.YYYY-MM-DD`)
 
 ---
 

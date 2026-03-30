@@ -346,12 +346,16 @@ Applied in order in `app.ts`:
 | `/api/tokens` | `routes/tokens.ts` | GET | Token usage statistics — scans session transcripts, persists high water mark |
 | `/api/memories` | `routes/memories.ts` | GET, POST, DELETE | Agent-scoped memory management — reads `MEMORY.md` + daily files, stores/deletes via gateway tool invocation |
 | `/api/memories/section` | `routes/memories.ts` | GET, PUT | Read/replace a specific memory section by title, scoped via `agentId` |
-| `/api/gateway/models` | `routes/gateway.ts` | GET | Available models via `openclaw models list`, with longer cold-start timeout, allowlist support, and `--all` fallback |
+| `/api/gateway/models` | `routes/gateway.ts` | GET | Config-backed model catalog from the active OpenClaw config. Returns `{ models, error, source: "config" }` |
 | `/api/gateway/session-info` | `routes/gateway.ts` | GET | Current session model/thinking level |
-| `/api/gateway/session-patch` | `routes/gateway.ts` | POST | Change model/effort for a session |
+| `/api/gateway/session-patch` | `routes/gateway.ts` | POST | HTTP fallback for model changes. Thinking changes belong on WS `sessions.patch` |
 | `/api/server-info` | `routes/server-info.ts` | GET | Server time, gateway uptime, agent name |
 | `/api/version` | `routes/version.ts` | GET | Package version from `package.json` |
-| `/api/git-info` | `routes/git-info.ts` | GET, POST, DELETE | Git branch/status. Session workdir registration |
+| `/api/version/check` | `routes/version-check.ts` | GET | Check whether a newer published version is available |
+| `/api/channels` | `routes/channels.ts` | GET | List configured messaging channels from OpenClaw config |
+| `/api/gateway/restart` | `routes/gateway.ts` | POST | Restart the OpenClaw gateway service and verify readiness |
+| `/api/sessions/hidden` | `routes/sessions.ts` | GET | List hidden cron-like sessions from stored session metadata |
+| `/api/sessions/:id/model` | `routes/sessions.ts` | GET | Read the actual model used by a session from its transcript |
 | `/api/workspace` | `routes/workspace.ts` | GET | List allowlisted workspace files for the selected agent workspace |
 | `/api/workspace/:key` | `routes/workspace.ts` | GET, PUT | Read/write allowlisted workspace files (`soul`, `tools`, `identity`, `user`, `agents`, `heartbeat`) via `agentId` |
 | `/api/crons` | `routes/crons.ts` | GET, POST, PATCH, DELETE | Cron job CRUD via gateway tool invocation |
@@ -359,6 +363,7 @@ Applied in order in `app.ts`:
 | `/api/crons/:id/run` | `routes/crons.ts` | POST | Run cron job immediately |
 | `/api/crons/:id/runs` | `routes/crons.ts` | GET | Cron run history |
 | `/api/skills` | `routes/skills.ts` | GET | List skills for the selected agent workspace via a scoped OpenClaw config |
+| `/api/keys` | `routes/api-keys.ts` | GET, PUT | Read API-key presence and persist updated key values to `.env` |
 | `/api/files` | `routes/files.ts` | GET | Serve local image files (MIME-type restricted, directory traversal blocked) |
 | `/api/files/tree` | `routes/file-browser.ts` | GET | Agent-scoped workspace directory tree (excludes node_modules, .git, etc.) |
 | `/api/files/read` | `routes/file-browser.ts` | GET | Read scoped file contents with mtime for conflict detection |
@@ -486,7 +491,7 @@ The frontend calls gateway methods via `GatewayContext.rpc()`:
 | `sessions.list` | List active sessions |
 | `sessions.delete` | Delete a session |
 | `sessions.reset` | Clear session context |
-| `sessions.patch` | Rename a session |
+| `sessions.patch` | Patch session metadata and settings, including rename/model/thinking flows the gateway supports |
 | `chat.send` | Send a message (with idempotency key) |
 | `chat.history` | Load message history |
 | `chat.abort` | Abort current generation |
@@ -565,26 +570,29 @@ This prevents stale overwrites from concurrent editors (drag-and-drop, API clien
 ```
 1. POST /api/kanban/tasks/:id/execute
    +-- withMutex(`kanban-execute:${id}`) prevents double-launch races
-   +-- store.executeTask(..., { sessionKey }) -> status = in-progress, run.status = running
-   +-- Primary path (Linux / existing master behavior):
-   |    +-- invokeGatewayTool('sessions_spawn', { task, mode:'run', label: runSessionKey, model?, thinking? })
-   |    +-- attach childSessionKey / runId when available
-   |    +-- start pollSessionCompletion(taskId, { correlationKey: runSessionKey, childSessionKey?, runId? })
-   |
-   +-- macOS fallback path (intentional platform compromise):
+   +-- if task already in-progress: return 409 duplicate_execution
+   +-- if task has an assignee root:
    |    +-- resolve assignee root -> agent:<assignee>:main
-   |    +-- gatewayRpcCall('sessions.list', ...) to confirm the parent root exists
+   |    +-- gatewayRpcCall('sessions.list', ...) confirms the parent root exists
+   |    +-- store.executeTask(..., { sessionKey }) -> status = in-progress, run.status = running
    |    +-- launchKanbanFallbackSubagentViaRpc({ label, task, parentSessionKey, model?, thinking? })
    |         +-- gatewayRpcCall('chat.send', { sessionKey: parentSessionKey, message:'[spawn-subagent]...', idempotencyKey })
    |         +-- attach returned runId when available
    |         +-- start pollFallbackSessionCompletion(taskId, { correlationKey, parentSessionKey, expectedChildLabel, knownSessionKeysBefore, runId? })
    |
+   +-- else if task is unassigned / operator:
+   |    +-- on macOS: return 409 invalid_execution_target
+   |    +-- otherwise use invokeGatewayTool('sessions_spawn', { task, mode:'run', label: runSessionKey, model?, thinking? })
+   |    +-- attach childSessionKey / runId when available
+   |    +-- start pollSessionCompletion(taskId, { correlationKey: runSessionKey, childSessionKey?, runId? })
+   |
+   +-- if an assigned parent root is missing: return 409 invalid_execution_target
    +-- on launch failure: store.completeRun(taskId, sessionKey, undefined, 'Spawn failed: ...')
 
 2. pollSessionCompletion() / pollFallbackSessionCompletion()
-   +-- primary path polls gateway subagents for the run correlation key / runId
-   +-- macOS fallback polls direct gateway RPC sessions.list every 5s (max 720 attempts / 60 min)
-   +-- macOS fallback matches the spawned child beneath the assignee root and attaches childSessionKey
+   +-- sessions_spawn path polls gateway subagents by correlation key / childSessionKey / runId
+   +-- assignee-root path polls gateway RPC sessions.list every 5s (max 720 attempts / 60 min)
+   +-- assignee-root path matches the spawned child beneath the parent root and attaches childSessionKey
    +-- both paths complete the task when the child reports terminal success/failure
    +-- if session not found yet:
        +-- schedule next poll
@@ -605,7 +613,7 @@ This prevents stale overwrites from concurrent editors (drag-and-drop, API clien
    +-- error   -> run.status = error, task.status = todo
 ```
 
-The model cascade is: task `model` -> execute request `model` -> board config `defaultModel` -> OpenClaw's configured default model. Thinking follows the same cascade with `defaultThinking`.
+The model cascade is: execute request `model` -> task `model` -> board config `defaultModel` -> OpenClaw's configured default model. Thinking follows the same pattern with `defaultThinking`.
 
 ### Marker Parsing
 
@@ -639,7 +647,7 @@ The `proposalPolicy` config controls behavior:
 | Proposals | Frontend | 5s | Show new proposals in inbox |
 | Gateway subagents | Backend | 5s | Detect when agent runs complete |
 
-Backend polling for each running task is independent -- each `executeTask` call starts its own poll loop (capped at 360 attempts = 30 minutes). Stale runs are reconciled by `reconcileStaleRuns()`.
+Backend polling for each running task is independent -- each `executeTask` call starts its own poll loop (capped at 720 attempts = 60 minutes). Stale runs are reconciled by `reconcileStaleRuns()`.
 
 ---
 

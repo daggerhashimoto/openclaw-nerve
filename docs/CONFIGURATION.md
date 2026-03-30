@@ -26,10 +26,10 @@ Connects Nerve to your OpenClaw gateway. The wizard auto-detects the gateway tok
 2. Environment variable `OPENCLAW_GATEWAY_TOKEN`
 3. `~/.openclaw/openclaw.json` (auto-detected)
 
-Tests the connection before proceeding. If the gateway is unreachable, you can continue anyway. On OpenClaw 2026.2.19+, the wizard also:
+Tests the connection before proceeding. If the gateway is unreachable, setup stops so you can fix the gateway or token first. On current OpenClaw builds, the wizard also:
 - Reads the real gateway token from the systemd service file (works around a known bug where `openclaw onboard` writes different tokens to systemd and `openclaw.json`)
 - Bootstraps `paired.json` and `device-auth.json` with full operator scopes if they don't exist yet
-- Pre-registers Nerve's device identity so it can connect without manual `openclaw devices approve`
+- Pre-pairs Nerve's device identity in the normal setup path so it can connect without manual approval (`openclaw devices approve`)
 - Restarts the gateway to apply changes
 
 #### 2. Agent Identity
@@ -48,7 +48,7 @@ Determines how you'll access Nerve. The wizard auto-configures `HOST`, `ALLOWED_
 | **Network (LAN)** | `0.0.0.0` | Accessible from your local network. Prompts for your LAN IP. Sets CORS + CSP for that IP. |
 | **Custom** | Manual | Full manual control: custom port, bind address, HTTPS certificate generation, CORS. |
 
-**HTTPS (Custom mode only):** The wizard can generate self-signed certificates via `openssl` and configure `SSL_PORT`.
+**HTTPS (Network and Custom modes):** The wizard can offer self-signed certificate generation via `openssl` and configure `SSL_PORT` for non-localhost access.
 
 #### 4. Authentication
 
@@ -80,7 +80,7 @@ Custom file paths for `MEMORY_PATH`, `MEMORY_DIR`, `SESSIONS_DIR`. Most users sk
 | `--defaults --access-mode tailscale-ip` | Non-interactive setup for direct tailnet IP access. |
 | `--defaults --access-mode tailscale-serve` | Non-interactive setup for loopback + Tailscale Serve HTTPS access. |
 
-The wizard backs up existing `.env` files (e.g. `.env.bak.1708100000000`) before overwriting and applies `chmod 600` to both `.env` and backup files.
+The wizard backs up existing `.env` files as `.env.backup` or `.env.backup.YYYY-MM-DD` before overwriting and applies `chmod 600` to both `.env` and backup files.
 
 ---
 
@@ -126,7 +126,7 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
 Nerve performs **server-side token injection**. When a connection is established through the WebSocket proxy, Nerve automatically injects the configured `GATEWAY_TOKEN` into the connection request if the client is considered **trusted**.
 
 **Trust is granted if:**
-1. The connection is from a **local loopback address** (`127.0.0.1` or `::1`), accounting for `X-Forwarded-For` and `X-Real-IP` when behind a trusted proxy (see `TRUSTED_PROXIES`).
+1. The connection is from a **local loopback address** (`127.0.0.1` or `::1`). When Nerve is behind a trusted reverse proxy, proxy-aware client IP handling can preserve that loopback detection (see `TRUSTED_PROXIES`).
 2. OR, the connection has a valid **authenticated session** (`NERVE_AUTH=true`).
 
 This allows the browser UI to connect without having to manually enter or store the gateway token in the browser's persistent storage. If a connection is not trusted (e.g., remote access without authentication), the token field in the UI must be filled manually.
@@ -171,7 +171,7 @@ Xiaomi MiMo is available as an explicit provider option when `MIMO_API_KEY` is s
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `STT_PROVIDER` | `local` | STT provider: `local` (whisper.cpp, no API key needed) or `openai` (requires `OPENAI_API_KEY`) |
-| `WHISPER_MODEL` | `tiny` | Local whisper model: `tiny` (75 MB), `base` (142 MB), or `small` (466 MB) — multilingual variants. English-only variants (`tiny.en`, `base.en`, `small.en`) are also available. |
+| `WHISPER_MODEL` | `base` | Local whisper model: `tiny` (75 MB), `base` (142 MB), or `small` (466 MB) — multilingual variants. English-only variants (`tiny.en`, `base.en`, `small.en`) are also available. |
 | `WHISPER_MODEL_DIR` | `~/.nerve/models` | Directory for downloaded whisper model files |
 | `NERVE_LANGUAGE` | `en` | Preferred voice language (ISO 639-1). Legacy `LANGUAGE` is still accepted but deprecated |
 | `EDGE_VOICE_GENDER` | `female` | Edge TTS voice gender: `female` or `male` |
@@ -179,7 +179,7 @@ Xiaomi MiMo is available as an explicit provider option when `MIMO_API_KEY` is s
 ```bash
 # Use local speech-to-text (no API key needed)
 STT_PROVIDER=local
-WHISPER_MODEL=tiny
+WHISPER_MODEL=base
 NERVE_LANGUAGE=en
 ```
 
@@ -285,7 +285,6 @@ REPLICATE_BASE_URL=https://api.replicate.com/v1
 | `USAGE_FILE` | `~/.openclaw/token-usage.json` | Persistent cumulative token usage data |
 | `NERVE_VOICE_PHRASES_PATH` | `~/.nerve/voice-phrases.json` | Override location for per-language voice phrase overrides |
 | `NERVE_WATCH_WORKSPACE_RECURSIVE` | `false` | Re-enables recursive `fs.watch` for full workspace `file.changed` SSE events outside `MEMORY.md` and `memory/`. Disabled by default to prevent Linux inotify `ENOSPC` watcher exhaustion. Memory watchers stay enabled for discovered agent workspaces even when this is `false`. |
-| `WORKSPACE_ROOT` | *(auto-detected)* | Allowed base directory for git workdir registration. Auto-derived from `git worktree list` or parent of `process.cwd()` |
 
 ```bash
 FILE_BROWSER_ROOT=/home/user
@@ -352,7 +351,7 @@ curl -X PUT http://localhost:3080/api/kanban/config \
 | `allowDoneDragBypass` | `boolean` | `false` | Allow dragging tasks directly to done (skipping review) |
 | `quickViewLimit` | `number` | `5` | Max tasks shown in workspace quick view (1--50) |
 | `proposalPolicy` | `string` | `"confirm"` | How agent proposals are handled: `"confirm"` (manual review) or `"auto"` (apply immediately) |
-| `defaultModel` | `string` | *(none)* | Default model for agent execution (max 100 chars). Falls back to `anthropic/claude-sonnet-4-5` |
+| `defaultModel` | `string` | *(none)* | Default model for agent execution (max 100 chars). If unset, execution falls back to OpenClaw's configured default model |
 
 ### Column Schema
 
@@ -438,7 +437,7 @@ MIMO_API_KEY=sk-mimo-...
 
 # Speech / Language
 STT_PROVIDER=local
-WHISPER_MODEL=tiny
+WHISPER_MODEL=base
 NERVE_LANGUAGE=en
 EDGE_VOICE_GENDER=female
 

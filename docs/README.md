@@ -1,34 +1,30 @@
-# Nerve Documentation
+# Nerve Docs
 
-Use this folder as the docs hub for Nerve.
+Start here when you need setup, operations, or contributor guidance.
 
-## Core Docs
+## Top-level entry points
 
-- [Architecture](./ARCHITECTURE.md)
-- [Configuration](./CONFIGURATION.md), setup wizard, auth, access modes, TTS providers, and appearance settings
-- [API](./API.md)
-- [Security](./SECURITY.md)
-- [Troubleshooting](./TROUBLESHOOTING.md)
-- [Updating](./UPDATING.md)
-- [Installer Steps](./INSTALLER-STEPS.md)
-- [Agent Markers](./AGENT-MARKERS.md)
-- [Code Review](./CODE_REVIEW.md)
+- [Project README](../README.md), product overview and quick start
+- [Contributing](../CONTRIBUTING.md), local development, tests, and PR expectations
+- [Changelog](../CHANGELOG.md), release notes
 
-## Agent-Driven Setup
+## Core docs
+
+- [Architecture](./ARCHITECTURE.md), codebase structure and system design
+- [Configuration](./CONFIGURATION.md), `.env`, auth, access modes, TTS providers, and UI settings
+- [API](./API.md), backend endpoints and behavior
+- [Security](./SECURITY.md), threat model and hardening notes
+- [Troubleshooting](./TROUBLESHOOTING.md), common failures and fixes
+- [Updating](./UPDATING.md), built-in updater flow and rollback
+- [Installer Steps](./INSTALLER-STEPS.md), what the installer does
+- [Agent Markers](./AGENT-MARKERS.md), TTS, charts, and kanban markers
+- [Code Review](./CODE_REVIEW.md), review guidance for the current codebase
+
+## Setup and deployment
 
 - [AI Agent Setup](./AI_SETUP.md)
 - [Nerve Agent Install Contract](./INSTALL.md)
-
-## Deployment Guides
-
 - [Run everything on one machine](./DEPLOYMENT-A.md)
 - [Use a cloud Gateway with Nerve on your laptop](./DEPLOYMENT-B.md)
 - [Run both Nerve and Gateway in the cloud](./DEPLOYMENT-C.md)
-
-## How-to Guides
-
 - [Add Tailscale to an existing Nerve install](./TAILSCALE.md)
-
-## Release Notes
-
-- [Changelog](../CHANGELOG.md)

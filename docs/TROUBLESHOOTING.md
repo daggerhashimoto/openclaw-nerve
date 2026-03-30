@@ -129,7 +129,7 @@ The server detects `EADDRINUSE` and exits with a clear error (see `server/index.
 
 **Symptom:** Red reconnecting banner appears periodically.
 
-**Cause:** WebSocket connection to gateway dropped. Nerve auto-reconnects with exponential backoff (1s base, 30s max, up to 50 attempts).
+**Cause:** WebSocket connection to gateway dropped. Nerve auto-reconnects with exponential backoff (1s base, 30s max).
 
 **Diagnosis:**
 ```bash
@@ -321,7 +321,7 @@ After approval, reconnect from the browser (refresh the page or click reconnect)
 **Fix (local STT):**
 - Models auto-download on first use. Check server logs for download progress or errors
 - Ensure `ffmpeg` is installed (the installer handles this): `ffmpeg -version`
-- Check model file exists: `ls ~/.nerve/models/ggml-tiny.bin`
+- Check model file exists: `ls ~/.nerve/models/ggml-base.bin`
 
 **Fix (OpenAI STT):**
 - Set `STT_PROVIDER=openai` and `OPENAI_API_KEY` in `.env`
@@ -336,7 +336,7 @@ After approval, reconnect from the browser (refresh the page or click reconnect)
 
 **Causes:**
 - Language is set incorrectly
-- Local model is `tiny` (fast, but less accurate for conversational non-English)
+- Local model is set to a smaller low-accuracy model
 - English-only model (`*.en`) selected for non-English speech
 
 **Fix:**
@@ -427,7 +427,7 @@ MEMORY_PATH=/path/to/.openclaw/workspace/MEMORY.md
 
 **Symptom:** "Timed out waiting for subagent to spawn" error.
 
-**Cause:** Spawning uses a polling approach — sends a `[spawn-subagent]` chat message to the selected root session, then polls `sessions.list` every 2s for up to 30s waiting for a new subagent session to appear.
+**Cause:** Spawning uses a polling approach, sends a `[spawn-subagent]` chat message to the selected root session, then polls `sessions.list` every 1s for up to 60s waiting for a new subagent session to appear.
 
 **Fix:**
 - The selected root agent must be running and able to process the spawn request
@@ -438,12 +438,17 @@ MEMORY_PATH=/path/to/.openclaw/workspace/MEMORY.md
 
 **Symptom:** A Kanban task enters `in-progress`, but the worker session never links up cleanly, or completion only works by label fallback.
 
-**Cause:** Kanban execution intentionally avoids HTTP `/tools/invoke -> sessions_spawn` and instead uses the gateway's session-native path: `chat.send` with `[spawn-subagent]`, followed by `sessions.list` discovery. That means Kanban execution depends on a usable top-level root session and on the gateway being able to surface the new child session.
+**Cause:** Kanban has two execution paths now:
+- **Assigned tasks** run beneath the assignee's live root session via RPC `[spawn-subagent]`.
+- **Unassigned or `operator` tasks** use the normal `sessions_spawn` path.
+
+That means failures can come from either a missing assignee root, a delayed child discovery step, or the normal subagent spawn path. On macOS, unassigned or `operator` tasks are rejected outright and must be assigned to a live worker root first.
 
 **Fix:**
-- Make sure a top-level root session such as `agent:main:main` exists and is healthy
-- Check gateway RPC/session logs, not just HTTP tool logs
-- If child discovery is delayed, Kanban falls back to the human-readable run label for completion tracking
+- If the task is assigned, make sure that assignee's root session exists and is healthy
+- If the task is unassigned, verify the normal `sessions_spawn` path is working
+- On macOS, assign the task to a live worker root before executing it
+- Check gateway RPC/session logs for the assignee-root path, and HTTP tool logs for the normal spawn path
 - If the worker never appears in the session list, inspect gateway connectivity and recent session events first
 
 ### Session status stuck on "THINKING"
@@ -465,24 +470,28 @@ MEMORY_PATH=/path/to/.openclaw/workspace/MEMORY.md
 
 **Symptom:** Model selector is empty or shows only the current model.
 
-**Cause:** Models are fetched via `GET /api/gateway/models`. Nerve first runs `openclaw models list --json` for configured / allowlisted models, waits up to 15 seconds for cold starts, and falls back to `openclaw models list --all --json` if needed. If those CLI calls fail or return nothing, the dropdown can stay sparse.
+**Cause:** Models are fetched via `GET /api/gateway/models`, which reads the active OpenClaw config. If that config is unreadable, or it has no configured models, the dropdown can stay empty or sparse.
 
 **Fix:**
-- Wait a moment after a cold start, then reopen the spawn dialog or refresh the page
-- Ensure the `openclaw` binary is in PATH (the server searches multiple locations — see `lib/openclaw-bin.ts`)
-- Set `OPENCLAW_BIN` env var to the explicit path
-- Check server logs for model list errors or timeouts
-- If you use an allowlist, verify the expected Codex or other models are configured there
+- Verify the expected models are configured in OpenClaw (`agents.defaults.model` / `agents.defaults.models`)
+- Check that Nerve can read the active OpenClaw config file
+- Check server logs for `gateway/models` read errors
+- After fixing config, reopen the spawn dialog or refresh the page
 
 ### Model change doesn't take effect
 
 **Symptom:** Switched model in UI but responses still come from the old model.
 
-**Cause:** Model/thinking changes go through `POST /api/gateway/session-patch`, which invokes the gateway's session patch API.
+**Cause:** There are two different paths now:
+- **Model changes** can fall back to `POST /api/gateway/session-patch`
+- **Thinking changes** must go through WebSocket RPC `sessions.patch`
+
+If you call the HTTP fallback with only `thinkingLevel`, it returns **501**. If Nerve cannot find an active root session and you omitted `sessionKey`, it can return **409**.
 
 **Fix:**
-- The change applies per-session — switching sessions will show that session's model
-- Verify the patch succeeded: check for `{ ok: true }` response
+- For model changes, verify the HTTP fallback returned `{ ok: true }`
+- For thinking changes, retry after the WebSocket reconnects and use the normal `sessions.patch` flow
+- If you see a 409 from the HTTP fallback, pass `sessionKey` explicitly or make sure an active root session exists
 - Some models may not be available for the current session type
 
 ---

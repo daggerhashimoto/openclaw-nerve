@@ -43,7 +43,7 @@ export function FileEditor({ file, onContentChange, onSave, onRetry }: FileEdito
     let destroyed = false;
 
     const setup = async () => {
-      const langExt = await getLanguageExtension(file.name);
+      const langExt = await getLanguageExtension(file.name, file.content);
       if (destroyed) return;
 
       const extensions: Extension[] = [

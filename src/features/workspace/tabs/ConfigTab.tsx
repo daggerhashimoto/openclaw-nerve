@@ -45,10 +45,11 @@ function getConfigDraftKind(fileKey: string): string {
 
 interface ConfigTabProps {
   agentId: string;
+  cronWarning?: string | null;
 }
 
 /** Workspace tab displaying an editable agent config file (YAML/TOML). */
-export function ConfigTab({ agentId }: ConfigTabProps) {
+export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
   const [selectedKey, setSelectedKey] = useState(() => getInitialSelectedKey(agentId));
   const { content, isLoading, error, exists, load, save } = useWorkspaceFile(agentId);
   const initialDraft = readPersistedDraft<string>(getConfigDraftKind(getInitialSelectedKey(agentId)), agentId);
@@ -207,6 +208,12 @@ export function ConfigTab({ agentId }: ConfigTabProps) {
         }`}>
           {feedback.type === 'success' ? <CheckCircle size={10} /> : <AlertCircle size={10} />}
           {feedback.message}
+        </div>
+      )}
+
+      {cronWarning && (
+        <div className="px-3 py-2 text-[0.667rem] border-b border-orange/20 bg-orange/10 text-orange">
+          {cronWarning}
         </div>
       )}
 

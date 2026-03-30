@@ -45,6 +45,16 @@ export interface CronRun {
   summary?: string;
 }
 
+const CRON_TOOL_UNAVAILABLE_RE = /tool not available:\s*cron/i;
+
+export const CRON_GATEWAY_TOOL_ALLOWLIST = ['cron', 'gateway', 'sessions_spawn'] as const;
+export const CRON_WARNING_SUMMARY = 'This gateway does not expose cron management, so Nerve can’t load or edit crons right now.';
+
+export function getCronWarning(error: string | null | undefined): string | null {
+  if (!error || !CRON_TOOL_UNAVAILABLE_RE.test(error)) return null;
+  return CRON_WARNING_SUMMARY;
+}
+
 export function normalizeCronJob(j: Record<string, unknown>): CronJob {
   const sched = (j.schedule || {}) as Record<string, unknown>;
   const payload = (j.payload || {}) as Record<string, unknown>;
@@ -96,11 +106,19 @@ export function useCrons() {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cronWarning, setCronWarning] = useState<string | null>(null);
   const fetchedRef = useRef(false);
+
+  const setErrorState = useCallback((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    setError(message);
+    setCronWarning(getCronWarning(message));
+  }, []);
 
   const fetchJobs = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setCronWarning(null);
     try {
       const res = await fetch('/api/crons');
       const data = await res.json() as { ok: boolean; result?: { jobs?: unknown[]; details?: { jobs?: unknown[] } }; error?: string };
@@ -108,11 +126,11 @@ export function useCrons() {
       const rawJobs = data.result?.jobs || data.result?.details?.jobs || (Array.isArray(data.result) ? data.result : []);
       setJobs((rawJobs as Record<string, unknown>[]).map(normalizeCronJob));
     } catch (err) {
-      setError((err as Error).message);
+      setErrorState(err);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [setErrorState]);
 
   // Auto-fetch on first mount so activeCount is available immediately (e.g. for tab badge)
   useEffect(() => {
@@ -134,10 +152,10 @@ export function useCrons() {
       setJobs(prev => prev.map(j => j.id === id ? { ...j, enabled } : j));
       return true;
     } catch (err) {
-      setError((err as Error).message);
+      setErrorState(err);
       return false;
     }
-  }, []);
+  }, [setErrorState]);
 
   const runJob = useCallback(async (id: string) => {
     try {
@@ -152,10 +170,10 @@ export function useCrons() {
       )));
       return true;
     } catch (err) {
-      setError((err as Error).message);
+      setErrorState(err);
       return false;
     }
-  }, []);
+  }, [setErrorState]);
 
   const fetchRuns = useCallback(async (id: string): Promise<CronRun[]> => {
     try {
@@ -191,10 +209,10 @@ export function useCrons() {
       await fetchJobs();
       return true;
     } catch (err) {
-      setError((err as Error).message);
+      setErrorState(err);
       return false;
     }
-  }, [fetchJobs]);
+  }, [fetchJobs, setErrorState]);
 
   const updateJob = useCallback(async (id: string, patch: Record<string, unknown>) => {
     try {
@@ -208,10 +226,10 @@ export function useCrons() {
       await fetchJobs();
       return true;
     } catch (err) {
-      setError((err as Error).message);
+      setErrorState(err);
       return false;
     }
-  }, [fetchJobs]);
+  }, [fetchJobs, setErrorState]);
 
   const deleteJob = useCallback(async (id: string) => {
     try {
@@ -221,12 +239,12 @@ export function useCrons() {
       setJobs(prev => prev.filter(j => j.id !== id));
       return true;
     } catch (err) {
-      setError((err as Error).message);
+      setErrorState(err);
       return false;
     }
-  }, []);
+  }, [setErrorState]);
 
   const activeCount = jobs.filter(j => j.enabled).length;
 
-  return { jobs, isLoading, error, activeCount, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob };
+  return { jobs, isLoading, error, cronWarning, activeCount, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob };
 }

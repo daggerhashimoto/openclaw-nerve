@@ -30,6 +30,7 @@ Tests the connection before proceeding. If the gateway is unreachable, setup sto
 - Reads the real gateway token from the systemd service file (works around a known bug where `openclaw onboard` writes different tokens to systemd and `openclaw.json`)
 - Bootstraps `paired.json` and `device-auth.json` with full operator scopes if they don't exist yet
 - Pre-pairs Nerve's device identity in the normal setup path so it can connect without manual approval (`openclaw devices approve`)
+- Adds `cron`, `gateway`, and `sessions_spawn` to `gateway.tools.allow` when they are missing
 - Restarts the gateway to apply changes
 
 #### 2. Agent Identity

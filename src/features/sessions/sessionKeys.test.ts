@@ -88,6 +88,11 @@ describe('sessionKeys', () => {
     expect(getSessionDisplayLabel(session('agent:main:main'), 'Nerve')).toBe('Nerve (main)');
   });
 
+  it('keeps the main root label canonical even if gateway metadata says heartbeat', () => {
+    expect(getSessionDisplayLabel(session('agent:main:main', { label: 'heartbeat' }), 'Nerve')).toBe('Nerve (main)');
+    expect(getSessionDisplayLabel(session('agent:main:main', { displayName: 'heartbeat' }), 'Nerve')).toBe('Nerve (main)');
+  });
+
   it('falls back to inferred parent when explicit parentId is outside the current window', () => {
     const knownKeys = new Set(['agent:reviewer:main', 'agent:reviewer:subagent:child']);
     const child = session('agent:reviewer:subagent:child', { parentId: 'agent:missing:main' });

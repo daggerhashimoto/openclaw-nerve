@@ -13,6 +13,7 @@
  */
 
 import { Hono } from 'hono';
+import JSON5 from 'json5';
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { Socket } from 'node:net';
@@ -159,7 +160,7 @@ async function getModelCatalog(): Promise<{ models: GatewayModelInfo[]; error: s
 
   try {
     const raw = await readFile(configPath, 'utf8');
-    const configData = JSON.parse(raw) as OpenClawConfig;
+    const configData = JSON5.parse(raw) as OpenClawConfig;
     const models = readConfiguredModels(configData);
 
     if (models.length === 0) {

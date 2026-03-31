@@ -9,11 +9,14 @@
 
 export const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 export const REPLICATE_BASE_URL = process.env.REPLICATE_BASE_URL || 'https://api.replicate.com/v1';
+export const OPENAI_API_VERSION = process.env.OPENAI_API_VERSION || '';
 
 // ─── API endpoints (derived from base URLs) ──────────────────────────────────
 
 export const OPENAI_TTS_URL = `${OPENAI_BASE_URL}/audio/speech`;
-export const OPENAI_WHISPER_URL = `${OPENAI_BASE_URL}/audio/transcriptions`;
+export const OPENAI_WHISPER_URL = OPENAI_API_VERSION
+  ? `${OPENAI_BASE_URL}/audio/transcriptions?api-version=${OPENAI_API_VERSION}`
+  : `${OPENAI_BASE_URL}/audio/transcriptions`;
 export const REPLICATE_QWEN_TTS_URL = `${REPLICATE_BASE_URL}/models/qwen/qwen3-tts/predictions`;
 
 // ─── Default connection ──────────────────────────────────────────────────────

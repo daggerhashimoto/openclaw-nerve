@@ -40,7 +40,8 @@ describe('openai-whisper transcribe URL building', () => {
     }));
 
     vi.doMock('../lib/constants.js', () => ({
-      OPENAI_WHISPER_URL: 'https://example.cognitiveservices.azure.com/openai/deployments/whisper/audio/transcriptions',
+      OPENAI_WHISPER_URL:
+        'https://example.cognitiveservices.azure.com/openai/deployments/whisper/audio/transcriptions',
     }));
 
     vi.mocked(fetch).mockResolvedValue(
@@ -77,6 +78,29 @@ describe('openai-whisper transcribe URL building', () => {
     expect(result).toEqual({ ok: true, text: 'ok' });
     expect(fetch).toHaveBeenCalledWith(
       'https://example.cognitiveservices.azure.com/openai/deployments/whisper/audio/transcriptions?api-version=2025-01-01',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('uses base whisper URL when API version is whitespace-only', async () => {
+    vi.doMock('../lib/config.js', () => ({
+      config: { openaiApiKey: 'sk-test', openaiApiVersion: '   ', language: 'en' },
+    }));
+
+    vi.doMock('../lib/constants.js', () => ({
+      OPENAI_WHISPER_URL: 'https://api.openai.com/v1/audio/transcriptions',
+    }));
+
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ text: 'ok' }), { status: 200 }),
+    );
+
+    const { transcribe } = await import('./openai-whisper.js');
+    const result = await transcribe(Buffer.from('abc'), 'sample.webm');
+
+    expect(result).toEqual({ ok: true, text: 'ok' });
+    expect(fetch).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/audio/transcriptions',
       expect.objectContaining({ method: 'POST' }),
     );
   });

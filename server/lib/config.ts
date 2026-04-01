@@ -50,6 +50,7 @@ export const config = {
   host: process.env.HOST || DEFAULT_HOST,
 
   openaiApiKey: process.env.OPENAI_API_KEY || '',
+  openaiApiVersion: process.env.OPENAI_API_VERSION || process.env.AZURE_OPENAI_API_VERSION || '',
   replicateApiToken: process.env.REPLICATE_API_TOKEN || '',
   mimoApiKey: process.env.MIMO_API_KEY || '',
 

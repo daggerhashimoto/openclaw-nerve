@@ -9,6 +9,18 @@
 import { config } from '../lib/config.js';
 import { OPENAI_WHISPER_URL } from '../lib/constants.js';
 
+function getWhisperUrl(): string {
+  const apiVersion = config.openaiApiVersion?.trim();
+  if (!apiVersion) return OPENAI_WHISPER_URL;
+
+  const url = new URL(OPENAI_WHISPER_URL);
+  if (!url.searchParams.has('api-version')) {
+    url.searchParams.set('api-version', apiVersion);
+  }
+
+  return url.toString();
+}
+
 export interface WhisperResult {
   ok: true;
   text: string;
@@ -55,7 +67,7 @@ export async function transcribe(
   footer += `--${boundary}--\r\n`;
   const payload = Buffer.concat([header, fileData, Buffer.from(footer)]);
 
-  const resp = await fetch(OPENAI_WHISPER_URL, {
+  const resp = await fetch(getWhisperUrl(), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${config.openaiApiKey}`,

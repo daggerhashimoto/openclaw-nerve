@@ -257,7 +257,7 @@ export const SessionNode = memo(function SessionNode({
         ) : (
           <SessionInfoPanel session={node.session} running={running}>
             <span className={cn(
-              "text-[0.667rem] font-bold flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap cursor-help",
+              "text-[0.667rem] font-bold flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer",
               isCronRun ? "text-muted-foreground font-normal" : "text-foreground"
             )}>
               {isCron && <Timer size={11} className="text-purple mr-1 inline shrink-0" aria-label="Cron job" />}

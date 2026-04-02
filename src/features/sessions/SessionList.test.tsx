@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { Session } from '@/types';
 import { SessionList } from './SessionList';
 
@@ -43,5 +43,50 @@ describe('SessionList empty state', () => {
 
     expect(screen.getByTestId('session-skeleton-group')).toBeInTheDocument();
     expect(screen.queryByText('No active sessions')).not.toBeInTheDocument();
+  });
+});
+
+describe('SessionList actions', () => {
+  it('allows renaming and deleting direct child sessions', () => {
+    const sessions: Session[] = [
+      { sessionKey: 'agent:reviewer:main', label: 'Reviewer' },
+      { sessionKey: 'agent:reviewer:telegram:direct:123', displayName: 'Telegram DM' },
+    ];
+
+    renderSessionList({ sessions, compact: true, onRename: vi.fn(), onDelete: vi.fn() });
+
+    fireEvent.click(screen.getAllByLabelText('Session actions')[1]!);
+
+    expect(screen.getByTitle('Rename session')).toBeInTheDocument();
+    expect(screen.getByTitle('Delete session')).toBeInTheDocument();
+  });
+
+  it('allows renaming and deleting ACP child sessions', () => {
+    const sessions: Session[] = [
+      { sessionKey: 'agent:codex:main', label: 'Codex' },
+      { sessionKey: 'agent:codex:acp:123', displayName: 'ACP Session', parentId: 'agent:codex:main' },
+    ];
+
+    renderSessionList({ sessions, compact: true, onRename: vi.fn(), onDelete: vi.fn() });
+
+    fireEvent.click(screen.getAllByLabelText('Session actions')[1]!);
+
+    expect(screen.getByTitle('Rename session')).toBeInTheDocument();
+    expect(screen.getByTitle('Delete session')).toBeInTheDocument();
+  });
+
+  it('shows an informational dialog when deleting a main agent session', () => {
+    const sessions: Session[] = [
+      { sessionKey: 'agent:reviewer:main', label: 'Reviewer' },
+    ];
+
+    renderSessionList({ sessions, compact: true, onRename: vi.fn(), onDelete: vi.fn() });
+
+    fireEvent.click(screen.getByLabelText('Session actions'));
+    fireEvent.click(screen.getByTitle('Delete session'));
+
+    expect(screen.getByText('Cannot Delete Main Agent Session')).toBeInTheDocument();
+    expect(screen.getByText(/Main agent sessions are not deletable/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'docs.openclaw.ai/cli/agents' })).toHaveAttribute('href', 'https://docs.openclaw.ai/cli/agents');
   });
 });

@@ -789,6 +789,82 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!parentSessionKey) {
       throw new Error('Create a top-level agent before launching a subagent');
     }
+    const discoverChildSession = async (expectedKey?: string): Promise<string | null> => {
+      const deadline = Date.now() + SUBAGENT_DISCOVERY_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        try {
+          const res = await rpc('sessions.list', {
+            activeMinutes: SESSIONS_ACTIVE_MINUTES,
+            limit: SESSIONS_LIMIT,
+          }) as SessionsListResponse;
+          const fresh = res?.sessions ?? [];
+          const newSession = fresh.find((session) => {
+            const sessionKey = getSessionKey(session);
+            if (!sessionKey) return false;
+            if (expectedKey) return sessionKey === expectedKey;
+            return isSubagentSessionKey(sessionKey) && isRootChildSession(sessionKey, parentSessionKey) && !before.has(sessionKey);
+          });
+          if (newSession) return getSessionKey(newSession);
+        } catch {
+          // keep polling
+        }
+        await new Promise(r => setTimeout(r, SUBAGENT_DISCOVERY_POLL_MS));
+      }
+      return null;
+    };
+
+    // Prefer direct session RPC spawn for determinism. Some gateways ignore
+    // marker-message spawning, which can cause false timeout errors.
+    const rootAgentId = getRootAgentId(parentSessionKey);
+    const childSessionKey = rootAgentId
+      ? `agent:${rootAgentId}:subagent:${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`
+      : '';
+    const thinking = opts.thinking && opts.thinking !== 'off' ? opts.thinking : undefined;
+    const idempotencyKey = `spawn-subagent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    if (childSessionKey) {
+      try {
+        await rpc('sessions.create', {
+          key: childSessionKey,
+          parentSessionKey,
+          ...(opts.label ? { label: opts.label } : {}),
+          ...(opts.model ? { model: opts.model } : {}),
+        });
+
+        try {
+          await rpc('sessions.send', {
+            key: childSessionKey,
+            message: opts.task,
+            ...(thinking ? { thinking } : {}),
+            idempotencyKey,
+          });
+        } catch (sendErr) {
+          try {
+            await rpc('sessions.delete', { key: childSessionKey, deleteTranscript: true });
+          } catch {
+            // Best-effort cleanup only; preserve original send failure.
+          }
+          throw sendErr;
+        }
+
+        const discoveredKey = await discoverChildSession(childSessionKey);
+        if (discoveredKey) {
+          await refreshSessions();
+          setCurrentSession(discoveredKey);
+          return;
+        }
+        throw new Error('Timed out waiting for the new subagent session to appear');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const unsupportedDirectSpawn = /unknown method:\s*sessions\.(create|send)|invalid_request|not available/i.test(msg);
+        if (!unsupportedDirectSpawn) {
+          await refreshSessions();
+          throw err;
+        }
+        // Fall through to marker-message compatibility mode.
+      }
+    }
+
     const message = buildSpawnSubagentMessage({
       task: opts.task,
       label: opts.label,
@@ -796,27 +872,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       thinking: opts.thinking,
       cleanup: opts.cleanup,
     });
-    const idempotencyKey = `spawn-subagent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     await rpc('chat.send', { sessionKey: parentSessionKey, message, idempotencyKey });
 
-    // A spawned child can take a while to appear in sessions.list for non-main
-    // roots, even after the parent agent accepts the request.
-    const deadline = Date.now() + SUBAGENT_DISCOVERY_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      try {
-        const res = await rpc('sessions.list', { activeMinutes: SESSIONS_ACTIVE_MINUTES, limit: SESSIONS_LIMIT }) as SessionsListResponse;
-        const fresh = res?.sessions ?? [];
-        const newSession = fresh.find((session) => {
-          const sessionKey = getSessionKey(session);
-          return isSubagentSessionKey(sessionKey) && isRootChildSession(sessionKey, parentSessionKey) && !before.has(sessionKey);
-        });
-        if (newSession) {
-          await refreshSessions();
-          setCurrentSession(getSessionKey(newSession));
-          return;
-        }
-      } catch { /* keep polling */ }
-      await new Promise(r => setTimeout(r, SUBAGENT_DISCOVERY_POLL_MS));
+    const discoveredKey = await discoverChildSession();
+    if (discoveredKey) {
+      await refreshSessions();
+      setCurrentSession(discoveredKey);
+      return;
     }
     await refreshSessions();
     throw new Error('Timed out waiting for the new subagent session to appear');

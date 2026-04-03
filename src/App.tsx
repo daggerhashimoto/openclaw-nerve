@@ -54,6 +54,8 @@ const WorkspacePanel = lazy(() => import('@/features/workspace/WorkspacePanel').
 
 // Lazy-loaded view modes
 const KanbanPanel = lazy(() => import('@/features/kanban/KanbanPanel').then(m => ({ default: m.KanbanPanel })));
+const BackupsPanel = lazy(() => import('@/features/backups/BackupsPanel').then(m => ({ default: m.BackupsPanel })));
+const OrgChart = lazy(() => import('@/features/org/OrgChart').then(m => ({ default: m.OrgChart })));
 
 interface AppProps {
   onLogout?: () => void;
@@ -305,11 +307,11 @@ export default function App({ onLogout }: AppProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
 
-  // View mode state (chat | kanban), persisted to localStorage
+  // View mode state (chat | kanban | backups | org), persisted to localStorage
   const [viewMode, setViewModeRaw] = useState<ViewMode>(() => {
     try {
       const saved = localStorage.getItem('nerve:viewMode');
-      if (saved === 'kanban') return 'kanban';
+      if (saved === 'kanban' || saved === 'backups' || saved === 'org') return saved;
     } catch { /* ignore */ }
     return 'chat';
   });
@@ -921,12 +923,26 @@ export default function App({ onLogout }: AppProps) {
             </Suspense>
           </div>
         )}
+        {viewMode === 'backups' && (
+          <div className="shell-panel boot-panel flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden rounded-[28px]">
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
+              <BackupsPanel />
+            </Suspense>
+          </div>
+        )}
+        {viewMode === 'org' && (
+          <div className="w-full h-full overflow-hidden">
+            <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground text-xs">Loading…</div>}>
+              <OrgChart />
+            </Suspense>
+          </div>
+        )}
         {isCompactLayout ? (
-          <div className={`shell-panel flex-1 min-w-0 min-h-0 overflow-hidden rounded-[28px] boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
+          <div className={`shell-panel flex-1 min-w-0 min-h-0 overflow-hidden rounded-[28px] boot-panel${viewMode === 'kanban' || viewMode === 'backups' || viewMode === 'org' ? ' hidden' : ''}`}>
             {chatContent}
           </div>
         ) : (
-          <div style={{ display: viewMode === 'kanban' ? 'none' : 'contents' }}>
+          <div style={{ display: viewMode === 'kanban' || viewMode === 'backups' || viewMode === 'org' ? 'none' : 'contents' }}>
             <ResizablePanels
               leftPercent={panelRatio}
               onResize={setPanelRatio}

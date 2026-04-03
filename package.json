@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-nerve",
+  "name": "ceraimic-nerve-center",
   "version": "1.5.2",
   "description": "Web interface for OpenClaw — chat, voice input, TTS, and agent monitoring in the browser",
   "license": "MIT",
@@ -8,9 +8,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/daggerhashimoto/openclaw-nerve.git"
+    "url": "https://github.com/daggerhashimoto/CerAImic-Nerve-Center.git"
   },
-  "homepage": "https://github.com/daggerhashimoto/openclaw-nerve",
+  "homepage": "https://github.com/daggerhashimoto/CerAImic-Nerve-Center",
   "keywords": [
     "openclaw",
     "nerve",

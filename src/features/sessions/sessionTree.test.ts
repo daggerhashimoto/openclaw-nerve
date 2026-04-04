@@ -218,10 +218,11 @@ describe('buildAgentSidebarTree', () => {
     ]);
   });
 
-  it('nests direct message sessions under their agent root', () => {
+  it('nests direct and channel delivery sessions under their agent root', () => {
     const sessions = [
       session('agent:reviewer:main', { label: 'Reviewer' }),
       session('agent:reviewer:telegram:direct:123', { displayName: 'Telegram DM' }),
+      session('agent:reviewer:discord:channel:456', { displayName: 'Discord #general' }),
       session('agent:reviewer:subagent:abc123', { label: 'Worker' }),
     ];
 
@@ -232,6 +233,7 @@ describe('buildAgentSidebarTree', () => {
     const childKeys = tree[0].children.map((c) => c.key);
     expect(childKeys).toContain('agent:reviewer:subagent:abc123');
     expect(childKeys).toContain('agent:reviewer:telegram:direct:123');
+    expect(childKeys).toContain('agent:reviewer:discord:channel:456');
   });
 
   it('preserves multiple valid top-level agent roots', () => {

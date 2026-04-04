@@ -33,7 +33,7 @@ describe('sessionKeys', () => {
     expect(getRootAgentSessionKey('agent:reviewer:cron:daily:run:xyz')).toBe('agent:reviewer:main');
   });
 
-  it('resolves root agent id and parent for direct message sessions', () => {
+  it('resolves root agent id and parent for direct and channel delivery sessions', () => {
     // per-channel-peer: agent:X:<channel>:direct:<peerId>
     expect(getRootAgentId('agent:reviewer:telegram:direct:123')).toBe('reviewer');
     expect(getRootAgentSessionKey('agent:reviewer:telegram:direct:123')).toBe('agent:reviewer:main');
@@ -46,6 +46,11 @@ describe('sessionKeys', () => {
     // per-peer: agent:X:direct:<peerId>
     expect(getRootAgentId('agent:main:direct:456')).toBe('main');
     expect(inferParentSessionKey('agent:main:direct:456')).toBe('agent:main:main');
+
+    // channel sessions should also resolve back to their root agent
+    expect(getRootAgentId('agent:varys:discord:channel:1488657713385701408')).toBe('varys');
+    expect(getRootAgentSessionKey('agent:varys:discord:channel:1488657713385701408')).toBe('agent:varys:main');
+    expect(inferParentSessionKey('agent:varys:discord:channel:1488657713385701408')).toBe('agent:varys:main');
 
     // root sessions still return null parent
     expect(inferParentSessionKey('agent:main:main')).toBeNull();

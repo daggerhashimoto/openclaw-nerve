@@ -1,0 +1,13 @@
+# Nerve Manifest
+# OpenClaw Web UI / Cockpit Interface
+
+project: nerve
+type: openclaw-ui
+description: OpenClaw web interface - the cockpit UI
+status: external
+created: 2026-03-26
+owner: OpenClaw Community
+repository: https://github.com/daggerhashimoto/openclaw-nerve
+
+# This is the OpenClaw UI itself, not an Otto-managed project
+# Excluded from standard Otto project workflows

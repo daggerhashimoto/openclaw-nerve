@@ -1,4 +1,4 @@
-/** Tests for the sessions API route (GET /api/sessions/:id/model). */
+/** Tests for the sessions API routes. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import fs from 'node:fs/promises';
@@ -7,10 +7,12 @@ import os from 'node:os';
 
 describe('sessions routes', () => {
   let tmpDir: string;
+  let spawnSubagentMock: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.resetModules();
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-test-'));
+    spawnSubagentMock = vi.fn();
   });
 
   afterEach(async () => {
@@ -32,6 +34,9 @@ describe('sessions routes', () => {
     }));
     vi.doMock('../middleware/rate-limit.js', () => ({
       rateLimitGeneral: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
+    }));
+    vi.doMock('../lib/subagent-spawn.js', () => ({
+      spawnSubagent: spawnSubagentMock,
     }));
 
     const mod = await import('./sessions.js');
@@ -152,5 +157,154 @@ describe('sessions routes', () => {
     expect(res.status).toBe(404);
     const json = (await res.json()) as Record<string, unknown>;
     expect(json.ok).toBe(false);
+  });
+
+  // ── POST /api/sessions/spawn-subagent ────────────────────────────
+
+  it('rejects missing body with 400', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/sessions/spawn-subagent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not json',
+    });
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.ok).toBe(false);
+    expect(typeof json.error).toBe('string');
+  });
+
+  it('rejects body with missing required fields', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/sessions/spawn-subagent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: 'do something' }), // missing parentSessionKey
+    });
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.ok).toBe(false);
+    expect(String(json.error)).toContain('parentSessionKey');
+  });
+
+  it('rejects parentSessionKey that is not a top-level root key', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/sessions/spawn-subagent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parentSessionKey: 'agent:reviewer:subagent:child',
+        task: 'do something',
+      }),
+    });
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.ok).toBe(false);
+    expect(String(json.error)).toContain('parentSessionKey');
+  });
+
+  it('rejects empty task string', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/sessions/spawn-subagent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parentSessionKey: 'agent:reviewer:main',
+        task: '',
+      }),
+    });
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.ok).toBe(false);
+  });
+
+  it('returns direct success payload when helper succeeds with direct mode', async () => {
+    spawnSubagentMock.mockResolvedValueOnce({
+      sessionKey: 'agent:reviewer:subagent:abc-123',
+      runId: 'run-xyz',
+      mode: 'direct',
+    });
+
+    const app = await buildApp();
+    const res = await app.request('/api/sessions/spawn-subagent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parentSessionKey: 'agent:reviewer:main',
+        task: 'Reply with exactly: OK',
+        label: 'audit-auth-flow',
+        model: 'claude-sonnet-4-6',
+        thinking: 'medium',
+        cleanup: 'keep',
+      }),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.ok).toBe(true);
+    expect(json.sessionKey).toBe('agent:reviewer:subagent:abc-123');
+    expect(json.runId).toBe('run-xyz');
+    expect(json.mode).toBe('direct');
+  });
+
+  it('returns marker success payload when helper falls back to marker mode', async () => {
+    spawnSubagentMock.mockResolvedValueOnce({
+      sessionKey: 'agent:reviewer:subagent:from-marker',
+      mode: 'marker',
+    });
+
+    const app = await buildApp();
+    const res = await app.request('/api/sessions/spawn-subagent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parentSessionKey: 'agent:reviewer:main',
+        task: 'do something',
+      }),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.ok).toBe(true);
+    expect(json.sessionKey).toBe('agent:reviewer:subagent:from-marker');
+    expect(json.mode).toBe('marker');
+    expect(json.runId).toBeUndefined();
+  });
+
+  it('returns 500 with error message when helper throws', async () => {
+    spawnSubagentMock.mockRejectedValueOnce(new Error('Gateway connection failed'));
+
+    const app = await buildApp();
+    const res = await app.request('/api/sessions/spawn-subagent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parentSessionKey: 'agent:reviewer:main',
+        task: 'do something',
+      }),
+    });
+    expect(res.status).toBe(500);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.ok).toBe(false);
+    expect(String(json.error)).toContain('Gateway connection failed');
+  });
+
+  it('defaults cleanup to keep when not specified', async () => {
+    spawnSubagentMock.mockResolvedValueOnce({
+      sessionKey: 'agent:reviewer:subagent:test',
+      mode: 'direct',
+    });
+
+    const app = await buildApp();
+    await app.request('/api/sessions/spawn-subagent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parentSessionKey: 'agent:reviewer:main',
+        task: 'do something',
+      }),
+    });
+
+    expect(spawnSubagentMock).toHaveBeenCalledWith(expect.objectContaining({
+      cleanup: 'keep',
+    }));
   });
 });

@@ -11,6 +11,7 @@ export default defineConfig({
     exclude: [
       'node_modules/**',
       'server-dist/**',  // Exclude compiled server output (contains duplicate .test.js files)
+      '.worktrees/**',
     ],
     coverage: {
       provider: 'v8',
@@ -18,6 +19,7 @@ export default defineConfig({
       exclude: [
         'node_modules/',
         'server-dist/',
+        '.worktrees/',
         'src/test/',
         '**/*.d.ts',
         '**/*.config.*',

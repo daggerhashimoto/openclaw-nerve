@@ -11,8 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import type { InlineSelectOption } from '@/components/ui/InlineSelect';
-import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
-import { type SubagentCleanupMode } from './buildSpawnSubagentMessage';
+import { useSessionContext, type SpawnSessionOpts, type SubagentCleanupMode } from '@/contexts/SessionContext';
 import { getSessionKey } from '@/types';
 import {
   getRootAgentSessionKey,

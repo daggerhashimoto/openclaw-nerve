@@ -229,7 +229,7 @@ export async function startFileWatcher(): Promise<void> {
   startRootWorkspaceWatcher();
 
   if (!config.workspaceWatchRecursive) {
-    console.log('[file-watcher] Workspace recursive watch disabled (default). Set NERVE_WATCH_WORKSPACE_RECURSIVE=true to re-enable SSE file.changed events outside memory/.');
+    console.log('[file-watcher] Workspace recursive watch disabled via NERVE_WATCH_WORKSPACE_RECURSIVE=false. SSE file.changed events outside memory/ are off.');
   }
 }
 

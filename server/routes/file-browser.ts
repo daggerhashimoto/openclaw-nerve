@@ -173,6 +173,19 @@ function gatewayFilesToTree(files: Awaited<ReturnType<typeof gatewayFilesList>>)
     }));
 }
 
+function normalizeWorkspaceLookupPath(input: string): string {
+  const trimmed = input.trim();
+  if (trimmed === '/workspace' || trimmed === '/workspace/') {
+    return '.';
+  }
+
+  if (trimmed.startsWith('/workspace/')) {
+    return trimmed.slice('/workspace/'.length);
+  }
+
+  return trimmed;
+}
+
 // ── GET /api/files/tree ──────────────────────────────────────────────
 
 app.get('/api/files/tree', async (c) => {
@@ -273,6 +286,7 @@ app.get('/api/files/tree', async (c) => {
 
 app.get('/api/files/resolve', async (c) => {
   const targetPath = c.req.query('path');
+  const relativeTo = c.req.query('relativeTo');
   if (!targetPath) {
     return c.json({ ok: false, error: 'Missing path parameter' }, 400);
   }
@@ -288,9 +302,22 @@ app.get('/api/files/resolve', async (c) => {
     return c.json({ ok: false, error: 'Not supported for remote workspaces', code: 'REMOTE_WORKSPACE' }, 501);
   }
 
+  const rawTargetPath = targetPath.trim().replace(/\\/g, '/');
+  const normalizedTargetPath = normalizeWorkspaceLookupPath(rawTargetPath);
+  const workspaceRelativePath = (() => {
+    if (!relativeTo) return normalizedTargetPath;
+    if (rawTargetPath === '/workspace' || rawTargetPath === '/workspace/') return '.';
+    if (rawTargetPath.startsWith('/workspace/')) return rawTargetPath.slice('/workspace/'.length);
+    if (rawTargetPath.startsWith('/')) return rawTargetPath.replace(/^\/+/, '');
+
+    const normalizedRelativeTo = normalizeWorkspaceLookupPath(relativeTo.replace(/\\/g, '/')).replace(/^\/+/, '');
+    const relativeDir = path.posix.dirname(normalizedRelativeTo);
+    return path.posix.normalize(path.posix.join(relativeDir === '.' ? '' : relativeDir, normalizedTargetPath));
+  })();
+
   const resolved = await resolveWorkspacePathForRoot(
     workspace.workspaceRoot,
-    targetPath,
+    workspaceRelativePath,
     { allowNonExistent: true },
   );
   if (!resolved) {

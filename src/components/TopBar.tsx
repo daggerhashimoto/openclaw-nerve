@@ -108,6 +108,8 @@ interface TopBarProps {
   viewMode?: ViewMode;
   /** Callback to change the view mode. */
   onViewModeChange?: (mode: ViewMode) => void;
+  /** Whether the Tasks/Kanban view toggle should be shown. */
+  showKanbanView?: boolean;
 }
 
 /**
@@ -130,6 +132,7 @@ export function TopBar({
   workspacePanel,
   viewMode = "chat",
   onViewModeChange,
+  showKanbanView = true,
 }: TopBarProps) {
   const [activePanel, setActivePanel] = useState<PanelId>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -260,17 +263,19 @@ export function TopBar({
               <MessageSquare size={13} aria-hidden="true" />
               <span>Chat</span>
             </button>
-            <button
-              onClick={() => onViewModeChange("kanban")}
-              title="Tasks View"
-              aria-label="Switch to tasks view"
-              aria-pressed={viewMode === "kanban"}
-              data-active={viewMode === "kanban"}
-              className="shell-chip min-h-11 flex-1 justify-center text-[0.733rem] uppercase tracking-[0.14em] max-[371px]:min-h-[38px] max-[371px]:gap-1 max-[371px]:px-2 max-[371px]:text-[0.667rem] max-[371px]:tracking-[0.08em] max-[371px]:[&_svg]:size-3 sm:min-h-10 sm:flex-none"
-            >
-              <LayoutGrid size={13} aria-hidden="true" />
-              <span>Tasks</span>
-            </button>
+            {showKanbanView && (
+              <button
+                onClick={() => onViewModeChange("kanban")}
+                title="Tasks View"
+                aria-label="Switch to tasks view"
+                aria-pressed={viewMode === "kanban"}
+                data-active={viewMode === "kanban"}
+                className="shell-chip min-h-11 flex-1 justify-center text-[0.733rem] uppercase tracking-[0.14em] max-[371px]:min-h-[38px] max-[371px]:gap-1 max-[371px]:px-2 max-[371px]:text-[0.667rem] max-[371px]:tracking-[0.08em] max-[371px]:[&_svg]:size-3 sm:min-h-10 sm:flex-none"
+              >
+                <LayoutGrid size={13} aria-hidden="true" />
+                <span>Tasks</span>
+              </button>
+            )}
           </div>
         )}
         <div ref={buttonsRef} className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-1.5 overflow-x-auto pb-1 max-[371px]:gap-0.5 sm:max-w-none sm:gap-2 sm:overflow-visible sm:pb-0">

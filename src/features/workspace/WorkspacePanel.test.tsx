@@ -1,10 +1,16 @@
+import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspacePanel } from './WorkspacePanel';
 
 const configTabRenderLog: Array<{ agentId: string; cronWarning?: string | null }> = [];
 const skillsTabRenderLog: string[] = [];
-const mockUseCrons = vi.fn(() => ({ activeCount: 0, cronWarning: null }));
+const mockUseCrons = vi.fn<() => { activeCount: number; cronWarning: string | null }>(() => ({
+  activeCount: 0,
+  cronWarning: null,
+}));
+let kanbanVisible = true;
+const mockUseSettings = vi.fn(() => ({ kanbanVisible }));
 
 vi.mock('./WorkspaceTabs', () => ({
   WorkspaceTabs: ({ activeTab, onTabChange }: { activeTab: string; onTabChange: (tab: 'config') => void }) => (
@@ -31,6 +37,10 @@ vi.mock('./hooks/useCrons', () => ({
   useCrons: () => mockUseCrons(),
 }));
 
+vi.mock('@/contexts/SettingsContext', () => ({
+  useSettings: () => mockUseSettings(),
+}));
+
 vi.mock('@/features/kanban', () => ({
   KanbanQuickView: () => <div data-testid="kanban-tab" />,
 }));
@@ -42,6 +52,8 @@ describe('WorkspacePanel', () => {
     skillsTabRenderLog.length = 0;
     mockUseCrons.mockReset();
     mockUseCrons.mockReturnValue({ activeCount: 0, cronWarning: null });
+    kanbanVisible = true;
+    mockUseSettings.mockClear();
   });
 
   it('recomputes the config subview from storage on agent switch before mounting the child tab', async () => {
@@ -82,5 +94,27 @@ describe('WorkspacePanel', () => {
     );
 
     expect(await screen.findByTestId('config-tab')).toHaveTextContent('Nerve can’t load or edit crons right now');
+  });
+
+  it('falls back to memory when kanban is hidden but persisted as active', () => {
+    localStorage.setItem('nerve-workspace-tab', 'kanban');
+    kanbanVisible = false;
+
+    render(
+      <WorkspacePanel workspaceAgentId="alpha" memories={[]} onRefreshMemories={vi.fn()} />,
+    );
+
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('memory');
+    expect(localStorage.getItem('nerve-workspace-tab')).toBe('memory');
+  });
+
+  it('keeps kanban active when visibility is enabled', () => {
+    localStorage.setItem('nerve-workspace-tab', 'kanban');
+
+    render(
+      <WorkspacePanel workspaceAgentId="alpha" memories={[]} onRefreshMemories={vi.fn()} />,
+    );
+
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('kanban');
   });
 });

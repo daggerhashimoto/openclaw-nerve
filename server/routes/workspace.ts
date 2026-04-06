@@ -30,6 +30,7 @@ const FILE_MAP: Record<string, string> = {
   user: 'USER.md',
   agents: 'AGENTS.md',
   heartbeat: 'HEARTBEAT.md',
+  chatPathLinks: 'CHAT_PATH_LINKS.json',
 };
 
 function getWorkspaceRoot(agentId?: string): { agentId: string; workspaceRoot: string } {

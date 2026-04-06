@@ -1284,6 +1284,35 @@
 .markdown-content h2 { @apply text-base; }
 .markdown-content h3 { @apply text-sm; }
 
+.markdown-document {
+  backdrop-filter: blur(14px);
+}
+
+.markdown-document-content {
+  @apply text-[0.95rem] leading-7 text-foreground;
+}
+
+.markdown-document-content h1,
+.markdown-document-content h2,
+.markdown-document-content h3,
+.markdown-document-content h4,
+.markdown-document-content h5,
+.markdown-document-content h6 {
+  scroll-margin-top: 1rem;
+}
+
+.markdown-document-content blockquote {
+  @apply my-4 border-l-2 border-primary/45 pl-4 text-muted-foreground;
+}
+
+.markdown-document-content hr {
+  @apply my-5 border-border;
+}
+
+.markdown-document-content pre {
+  @apply my-4;
+}
+
 /*
  * All color tokens are defined here via @theme inline, referencing :root vars.
  * This is the SINGLE source of token registration for Tailwind.

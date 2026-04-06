@@ -10,7 +10,8 @@ import { type ReactNode, lazy, Suspense } from 'react';
 import { Loader2, AlertTriangle, X } from 'lucide-react';
 import { EditorTabBar } from './EditorTabBar';
 import { ImageViewer } from './ImageViewer';
-import { isImageFile } from './utils/fileTypes';
+import { MarkdownDocumentView } from './MarkdownDocumentView';
+import { isImageFile, isMarkdownFile } from './utils/fileTypes';
 import type { OpenFile } from './types';
 
 // Lazy-load CodeMirror editor — keeps it out of the initial bundle
@@ -41,6 +42,7 @@ interface TabbedContentAreaProps {
   onSaveFile: (path: string) => void;
   onRetryFile: (path: string) => void;
   onReloadFile?: (path: string) => void;
+  onOpenWorkspacePath?: (path: string, basePath?: string) => void | Promise<void>;
   saveToast?: SaveToast | null;
   onDismissToast?: () => void;
   /** The chat panel rendered as-is (never unmounted). */
@@ -57,6 +59,7 @@ export function TabbedContentArea({
   onSaveFile,
   onRetryFile,
   onReloadFile,
+  onOpenWorkspacePath,
   saveToast,
   onDismissToast,
   chatPanel,
@@ -101,6 +104,14 @@ export function TabbedContentArea({
           >
             {isImageFile(file.name) ? (
               <ImageViewer file={file} agentId={workspaceAgentId} />
+            ) : isMarkdownFile(file.name) ? (
+              <MarkdownDocumentView
+                file={file}
+                onContentChange={onContentChange}
+                onSave={onSaveFile}
+                onRetry={onRetryFile}
+                onOpenWorkspacePath={onOpenWorkspacePath}
+              />
             ) : (
               <Suspense fallback={<EditorFallback />}>
                 <FileEditor

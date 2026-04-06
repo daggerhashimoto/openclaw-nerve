@@ -112,15 +112,77 @@ describe('file-browser routes', () => {
       expect(json).toEqual({ ok: true, path: 'docs', type: 'directory', binary: false });
     });
 
+    it('resolves current-document-relative file links safely within the workspace', async () => {
+      await fs.mkdir(path.join(tmpDir, 'docs', 'guide'), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, 'docs', 'guide', 'advanced.md'), '# Advanced');
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/resolve?path=advanced.md&relativeTo=docs/guide/index.md');
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
+      expect(json).toEqual({ ok: true, path: 'docs/guide/advanced.md', type: 'file', binary: false });
+    });
+
+    it('supports workspace-root links from markdown docs via a leading slash', async () => {
+      await fs.mkdir(path.join(tmpDir, 'docs'), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, 'docs', 'todo.md'), '# Todo');
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/resolve?path=/docs/todo.md&relativeTo=notes/index.md');
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
+      expect(json).toEqual({ ok: true, path: 'docs/todo.md', type: 'file', binary: false });
+    });
+
+    it('resolves workspace-root-document relative links even when relativeTo is slash-prefixed', async () => {
+      await fs.mkdir(path.join(tmpDir, 'projects', 'demo'), { recursive: true });
+      await fs.writeFile(path.join(tmpDir, 'projects', 'demo', 'notes.md'), '# Notes');
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/resolve?path=./projects/demo/notes.md&relativeTo=/README.md');
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
+      expect(json).toEqual({ ok: true, path: 'projects/demo/notes.md', type: 'file', binary: false });
+    });
+
     it('returns 404 for safe missing targets inside the workspace root', async () => {
       const app = await buildApp();
       const res = await app.request('/api/files/resolve?path=missing-note.md');
       expect(res.status).toBe(404);
     });
 
+    it('accepts /workspace-prefixed paths by normalizing to workspace-relative', async () => {
+      await fs.mkdir(path.join(tmpDir, 'src'));
+      await fs.writeFile(path.join(tmpDir, 'src', 'main.ts'), 'export {};');
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/resolve?path=%2Fworkspace%2Fsrc%2Fmain.ts');
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
+      expect(json).toEqual({ ok: true, path: 'src/main.ts', type: 'file', binary: false });
+    });
+
+    it('keeps /workspace-prefixed links rooted even when relativeTo is provided', async () => {
+      await fs.mkdir(path.join(tmpDir, 'src'));
+      await fs.mkdir(path.join(tmpDir, 'notes'));
+      await fs.writeFile(path.join(tmpDir, 'src', 'main.ts'), 'export {};');
+      const app = await buildApp();
+
+      const res = await app.request('/api/files/resolve?path=%2Fworkspace%2Fsrc%2Fmain.ts&relativeTo=notes/index.md');
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
+      expect(json).toEqual({ ok: true, path: 'src/main.ts', type: 'file', binary: false });
+    });
+
     it('returns 403 for invalid or excluded targets', async () => {
       const app = await buildApp();
       const res = await app.request('/api/files/resolve?path=../../etc');
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 403 when a current-document-relative link escapes the workspace', async () => {
+      const app = await buildApp();
+      const res = await app.request('/api/files/resolve?path=../../../etc/passwd&relativeTo=docs/guide/index.md');
       expect(res.status).toBe(403);
     });
   });

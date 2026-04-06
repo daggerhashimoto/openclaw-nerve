@@ -43,6 +43,8 @@ interface ChatPanelProps {
   isMobileTopBarHidden?: boolean;
   /** Open or reveal a safe workspace path in the file explorer/editor. */
   onOpenWorkspacePath?: (path: string) => void | Promise<void>;
+  /** Configured path prefixes that should render as clickable inline path links. */
+  pathLinkPrefixes?: string[];
 }
 
 export interface ChatPanelHandle {
@@ -59,6 +61,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   loadMore, hasMore = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
   onToggleMobileTopBar, isMobileTopBarHidden = false,
   onOpenWorkspacePath,
+  pathLinkPrefixes,
 }, ref) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -333,6 +336,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
                 isCurrentMatch={isCurrentMatch}
                 agentName={agentName}
                 onOpenWorkspacePath={onOpenWorkspacePath}
+                pathLinkPrefixes={pathLinkPrefixes}
               />
             </div>
           );

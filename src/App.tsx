@@ -38,6 +38,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { createCommands } from '@/features/command-palette/commands';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
+import { DEFAULT_CHAT_PATH_LINKS_CONFIG, parseChatPathLinksConfig } from '@/features/chat/chatPathLinks';
 import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
 import { isImageFile } from '@/features/file-browser/utils/fileTypes';
 import { buildAgentRootSessionKey, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
@@ -77,6 +78,17 @@ function buildWorkspaceSwitchErrorMessage(result: {
   return `Could not save ${fileLabel}. Resolve it before switching agents.`;
 }
 
+function getInitialViewMode(canShowKanban: boolean): ViewMode {
+  try {
+    const saved = localStorage.getItem('nerve:viewMode');
+    if (saved === 'kanban' && canShowKanban) return 'kanban';
+  } catch {
+    // ignore storage errors
+  }
+
+  return 'chat';
+}
+
 export default function App({ onLogout }: AppProps) {
   // Gateway state
   const {
@@ -111,6 +123,7 @@ export default function App({ onLogout }: AppProps) {
     eventsVisible, logVisible,
     toggleEvents, toggleLog, toggleTelemetry,
     setTheme, setFont,
+    kanbanVisible,
   } = useSettings();
 
   // Connection management (extracted hook)
@@ -306,30 +319,63 @@ export default function App({ onLogout }: AppProps) {
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
 
   // View mode state (chat | kanban), persisted to localStorage
-  const [viewMode, setViewModeRaw] = useState<ViewMode>(() => {
-    try {
-      const saved = localStorage.getItem('nerve:viewMode');
-      if (saved === 'kanban') return 'kanban';
-    } catch { /* ignore */ }
-    return 'chat';
-  });
+  const [viewMode, setViewModeRaw] = useState<ViewMode>(() => getInitialViewMode(kanbanVisible));
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const setViewMode = useCallback((mode: ViewMode) => {
-    setViewModeRaw(mode);
+    const nextMode = mode === 'kanban' && !kanbanVisible ? 'chat' : mode;
+    setViewModeRaw(nextMode);
 
-    if (mode === 'kanban' && isCompactLayout) {
+    if (nextMode === 'kanban' && isCompactLayout) {
       setFileBrowserCollapsed(true);
     }
 
-    try { localStorage.setItem('nerve:viewMode', mode); } catch { /* ignore */ }
-  }, [isCompactLayout, setFileBrowserCollapsed]);
+    try { localStorage.setItem('nerve:viewMode', nextMode); } catch { /* ignore */ }
+  }, [isCompactLayout, kanbanVisible, setFileBrowserCollapsed]);
   const openTaskInBoard = useCallback((taskId: string) => {
     setPendingTaskId(taskId);
     setViewMode('kanban');
   }, [setViewMode]);
+  const [chatPathLinkPrefixes, setChatPathLinkPrefixes] = useState<string[]>(
+    DEFAULT_CHAT_PATH_LINKS_CONFIG.prefixes,
+  );
 
-  const openWorkspacePath = useCallback(async (targetPath: string) => {
+  useEffect(() => {
+    const params = new URLSearchParams({ agentId: workspaceAgentId });
+    const controller = new AbortController();
+
+    void fetch(`/api/workspace/chatPathLinks?${params.toString()}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (res.status === 404) {
+          setChatPathLinkPrefixes(DEFAULT_CHAT_PATH_LINKS_CONFIG.prefixes);
+          return;
+        }
+        const data = await res.json() as { ok: boolean; content?: string };
+        if (!data.ok || !data.content) {
+          setChatPathLinkPrefixes(DEFAULT_CHAT_PATH_LINKS_CONFIG.prefixes);
+          return;
+        }
+        const parsed = parseChatPathLinksConfig(data.content);
+        setChatPathLinkPrefixes(parsed.prefixes);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setChatPathLinkPrefixes(DEFAULT_CHAT_PATH_LINKS_CONFIG.prefixes);
+        }
+      });
+
+    return () => controller.abort();
+  }, [workspaceAgentId]);
+
+  useEffect(() => {
+    if (kanbanVisible || viewMode !== 'kanban') return;
+    setViewMode('chat');
+  }, [kanbanVisible, setViewMode, viewMode]);
+
+  const openWorkspacePath = useCallback(async (targetPath: string, basePath?: string) => {
     const params = new URLSearchParams({ path: targetPath, agentId: workspaceAgentId });
+    if (basePath) {
+      params.set('relativeTo', basePath);
+    }
     const res = await fetch(`/api/files/resolve?${params.toString()}`);
     const data = await res.json().catch(() => null) as {
       ok?: boolean;
@@ -340,14 +386,12 @@ export default function App({ onLogout }: AppProps) {
 
     if (!res.ok || !data?.ok || !data.path || !data.type) return;
 
-    if (data.type === 'file' && (!data.binary || isImageFile(data.path))) {
-      setRevealRequest(null);
-      await openFile(data.path);
-      return;
-    }
-
     setFileBrowserCollapsed(false);
     setRevealRequest({ id: Date.now(), path: data.path, kind: data.type, agentId: workspaceAgentId });
+
+    if (data.type === 'file' && (!data.binary || isImageFile(data.path))) {
+      await openFile(data.path);
+    }
   }, [openFile, setFileBrowserCollapsed, workspaceAgentId]);
 
   const toggleMobileTopBar = useCallback(() => {
@@ -381,9 +425,10 @@ export default function App({ onLogout }: AppProps) {
     onRefreshSessions: refreshSessions,
     onRefreshMemory: refreshMemories,
     onSetViewMode: setViewMode,
+    canShowKanban: kanbanVisible,
   }), [openSpawnDialog, handleReset, toggleSound, handleAbort, openSettings, openSearch,
     setTheme, setFont, setTtsProvider, handleToggleWakeWord, toggleEvents, toggleLog, toggleTelemetry,
-    refreshSessions, refreshMemories, setViewMode]);
+    refreshSessions, refreshMemories, setViewMode, kanbanVisible]);
 
   // Keyboard shortcut handlers with useCallback
   const handleOpenPalette = useCallback(() => setPaletteOpen(true), []);
@@ -631,6 +676,7 @@ export default function App({ onLogout }: AppProps) {
       onDismissToast={dismissSaveToast}
       onReloadFile={reloadFile}
       onRetryFile={reloadFile}
+      onOpenWorkspacePath={openWorkspacePath}
       chatPanel={
         <PanelErrorBoundary name="Chat">
           <ChatPanel
@@ -657,6 +703,7 @@ export default function App({ onLogout }: AppProps) {
             onToggleMobileTopBar={isCompactLayout ? toggleMobileTopBar : undefined}
             isMobileTopBarHidden={isMobileTopBarHidden}
             onOpenWorkspacePath={openWorkspacePath}
+            pathLinkPrefixes={chatPathLinkPrefixes}
           />
         </PanelErrorBoundary>
       }
@@ -822,6 +869,7 @@ export default function App({ onLogout }: AppProps) {
           workspacePanel={compactWorkspacePanel}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          showKanbanView={kanbanVisible}
         />
       )}
       

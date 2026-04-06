@@ -23,6 +23,7 @@ export interface CommandActions {
   onRefreshSessions: () => void;
   onRefreshMemory: () => void;
   onSetViewMode?: (mode: ViewMode) => void;
+  canShowKanban?: boolean;
 }
 
 const THEME_LABELS: Record<ThemeName, string> = {
@@ -190,7 +191,7 @@ export function createCommands(actions: CommandActions): Command[] {
       keywords: ['wake', 'voice', 'microphone', 'hey'],
     },
     // Kanban commands
-    ...(actions.onSetViewMode ? [
+    ...(actions.onSetViewMode && actions.canShowKanban !== false ? [
       {
         id: 'open-kanban',
         label: 'Open Tasks View',

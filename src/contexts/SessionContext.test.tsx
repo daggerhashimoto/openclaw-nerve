@@ -138,6 +138,212 @@ describe('SessionContext', () => {
     });
   });
 
+  it('subagent spawn calls /api/sessions/spawn-subagent, refreshes sessions, and switches to the returned child', async () => {
+    let sessionsListCalls = 0;
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        sessionsListCalls += 1;
+        return sessionsListCalls >= 2
+          ? {
+              sessions: [
+                { sessionKey: 'agent:reviewer:main', label: 'Reviewer' },
+                { sessionKey: 'agent:reviewer:subagent:new-child-uuid', label: 'Reviewer child' },
+              ],
+            }
+          : {
+              sessions: [
+                { sessionKey: 'agent:reviewer:main', label: 'Reviewer' },
+              ],
+            };
+      }
+      return {};
+    });
+
+    const spawnedChildKey = 'agent:reviewer:subagent:new-child-uuid';
+    const fetchSpy = vi.fn((input: string | URL | Request) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+
+      if (url.includes('/api/sessions/spawn-subagent')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ok: true, sessionKey: spawnedChildKey, mode: 'direct' }),
+        } as Response);
+      }
+      if (url.includes('/api/server-info')) return Promise.resolve(jsonResponse({ agentName: 'Jen' }));
+      if (url.includes('/api/agentlog')) return Promise.resolve(jsonResponse([]));
+      if (url.includes('/api/sessions/hidden')) return Promise.resolve(jsonResponse({ ok: true, sessions: [] }));
+      return Promise.resolve(jsonResponse({}));
+    }) as typeof fetch;
+    globalThis.fetch = fetchSpy;
+
+    function SpawnSubagent() {
+      const { spawnSession, currentSession } = useSessionContext();
+      return (
+        <div>
+          <div data-testid="current-session">{currentSession}</div>
+          <button
+            data-testid="spawn-subagent"
+            onClick={() => spawnSession({
+              kind: 'subagent',
+              task: 'do something',
+              label: 'my-task',
+              cleanup: 'keep',
+              parentSessionKey: 'agent:reviewer:main',
+            })}
+          />
+        </div>
+      );
+    }
+
+    render(<SessionProvider><SpawnSubagent /></SessionProvider>);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:reviewer:main');
+    });
+
+    await act(async () => {
+      screen.getByTestId('spawn-subagent').click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe(spawnedChildKey);
+    });
+
+    const spawnCall = fetchSpy.mock.calls.find(([input]) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      return url.includes('/api/sessions/spawn-subagent');
+    });
+    expect(spawnCall).toBeDefined();
+    expect(spawnCall?.[1]).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(JSON.parse(String((spawnCall?.[1] as RequestInit).body))).toEqual({
+      parentSessionKey: 'agent:reviewer:main',
+      task: 'do something',
+      label: 'my-task',
+      cleanup: 'keep',
+    });
+    expect(sessionsListCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  it('surfaces route error when subagent spawn fails', async () => {
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return { sessions: [{ sessionKey: 'agent:reviewer:main', label: 'Reviewer' }] };
+      }
+      return {};
+    });
+
+    globalThis.fetch = vi.fn((input: string | URL | Request) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+
+      if (url.includes('/api/sessions/spawn-subagent')) {
+        return Promise.resolve({
+          ok: false,
+          json: async () => ({ ok: false, error: 'Gateway connection failed' }),
+        } as Response);
+      }
+      if (url.includes('/api/server-info')) return Promise.resolve(jsonResponse({ agentName: 'Jen' }));
+      if (url.includes('/api/agentlog')) return Promise.resolve(jsonResponse([]));
+      if (url.includes('/api/sessions/hidden')) return Promise.resolve(jsonResponse({ ok: true, sessions: [] }));
+      return Promise.resolve(jsonResponse({}));
+    }) as typeof fetch;
+
+    let caughtError: Error | null = null;
+
+    function SpawnSubagentError() {
+      const { spawnSession } = useSessionContext();
+      return (
+        <button
+          data-testid="spawn-error"
+          onClick={async () => {
+            try {
+              await spawnSession({
+                kind: 'subagent',
+                task: 'do something',
+                parentSessionKey: 'agent:reviewer:main',
+              });
+            } catch (err) {
+              caughtError = err as Error;
+            }
+          }}
+        />
+      );
+    }
+
+    render(<SessionProvider><SpawnSubagentError /></SessionProvider>);
+    await waitFor(() => expect(rpcMock).toHaveBeenCalled());
+
+    await act(async () => {
+      screen.getByTestId('spawn-error').click();
+    });
+
+    await waitFor(() => {
+      expect(caughtError).not.toBeNull();
+    });
+
+    expect(caughtError!.message).toContain('Gateway connection failed');
+  });
+
+  it('root spawn still uses agents.create + chat.send and does not call spawn-subagent route', async () => {
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return { sessions: [{ sessionKey: 'agent:main:main', label: 'Main' }] };
+      }
+      return {};
+    });
+
+    const fetchSpy = vi.fn((input: string | URL | Request) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+      if (url.includes('/api/server-info')) return Promise.resolve(jsonResponse({ agentName: 'Jen' }));
+      if (url.includes('/api/agentlog')) return Promise.resolve(jsonResponse([]));
+      if (url.includes('/api/sessions/hidden')) return Promise.resolve(jsonResponse({ ok: true, sessions: [] }));
+      return Promise.resolve(jsonResponse({}));
+    }) as typeof fetch;
+    globalThis.fetch = fetchSpy;
+
+    function SpawnRoot() {
+      const { spawnSession } = useSessionContext();
+      return (
+        <button
+          data-testid="spawn-root"
+          onClick={() => spawnSession({ kind: 'root', agentName: 'NewAgent', task: 'hi' })}
+        />
+      );
+    }
+
+    render(<SessionProvider><SpawnRoot /></SessionProvider>);
+    await waitFor(() => expect(rpcMock).toHaveBeenCalled());
+
+    await act(async () => {
+      screen.getByTestId('spawn-root').click();
+    });
+
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith('agents.create', expect.objectContaining({ name: 'NewAgent' }));
+      expect(rpcMock).toHaveBeenCalledWith('chat.send', expect.objectContaining({ message: 'hi' }));
+    });
+
+    const spawnRouteCalled = fetchSpy.mock.calls.some(([input]) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      return url.includes('/api/sessions/spawn-subagent');
+    });
+    expect(spawnRouteCalled).toBe(false);
+  });
+
   it('uses a unique config name when spawning a duplicate root agent', async () => {
     rpcMock.mockImplementation(async (method: string) => {
       if (method === 'sessions.list') {

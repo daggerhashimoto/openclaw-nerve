@@ -1,7 +1,8 @@
 /**
  * Sessions API Routes
  *
- * GET /api/sessions/:id/model — Read the actual model used in a session from its transcript.
+ * GET  /api/sessions/:id/model        — Read the actual model used in a session from its transcript.
+ * POST /api/sessions/spawn-subagent   — Server-side subagent spawn with lifecycle ownership.
  *
  * The gateway's sessions.list returns the agent default model, not the model
  * actually used in a cron-run session (where payload.model overrides it).
@@ -9,12 +10,14 @@
  */
 
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { access, readdir, readFile } from 'node:fs/promises';
 import { config } from '../lib/config.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
+import { spawnSubagent } from '../lib/subagent-spawn.js';
 
 const app = new Hono();
 const CRON_SESSION_RE = /^agent:[^:]+:cron:[^:]+(?::run:.+)?$/;
@@ -275,6 +278,60 @@ app.get('/api/sessions/:id/model', rateLimitGeneral, async (c) => {
 
   const modelId = await readModelFromTranscript(transcriptPath);
   return c.json({ ok: true, model: modelId, missing: false });
+});
+
+// ── POST /api/sessions/spawn-subagent ────────────────────────────────
+
+const spawnSubagentSchema = z.object({
+  parentSessionKey: z
+    .string()
+    .min(1)
+    .max(500)
+    .regex(/^agent:[^:]+:main$/, 'parentSessionKey must be a top-level root session key (agent:<id>:main)'),
+  task: z.string().min(1).max(50_000),
+  label: z.string().max(500).optional(),
+  model: z.string().max(200).optional(),
+  thinking: z.string().max(20).optional(),
+  cleanup: z.enum(['keep', 'delete']).default('keep'),
+});
+
+app.post('/api/sessions/spawn-subagent', rateLimitGeneral, async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'Invalid JSON body' }, 400);
+  }
+
+  const parsed = spawnSubagentSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({
+      ok: false,
+      error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    }, 400);
+  }
+
+  try {
+    const result = await spawnSubagent({
+      parentSessionKey: parsed.data.parentSessionKey,
+      task: parsed.data.task,
+      label: parsed.data.label,
+      model: parsed.data.model,
+      thinking: parsed.data.thinking,
+      cleanup: parsed.data.cleanup,
+    });
+
+    return c.json({
+      ok: true,
+      sessionKey: result.sessionKey,
+      ...(result.runId ? { runId: result.runId } : {}),
+      mode: result.mode,
+    }, 200);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[sessions] spawn-subagent failed:', message);
+    return c.json({ ok: false, error: message }, 500);
+  }
 });
 
 export default app;

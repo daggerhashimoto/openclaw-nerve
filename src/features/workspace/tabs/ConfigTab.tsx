@@ -18,6 +18,7 @@ const FILE_OPTIONS = [
   { key: 'user', label: 'USER.md' },
   { key: 'agents', label: 'AGENTS.md' },
   { key: 'heartbeat', label: 'HEARTBEAT.md' },
+  { key: 'chatPathLinks', label: 'CHAT_PATH_LINKS.json' },
 ];
 
 const DEFAULT_CONFIG_KEY = 'soul';
@@ -150,7 +151,9 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
 
   const handleCreate = useCallback(async () => {
     const label = FILE_OPTIONS.find(f => f.key === selectedKey)?.label || selectedKey;
-    const template = `# ${label}\n\n`;
+    const template = selectedKey === 'chatPathLinks'
+      ? '{\n  "prefixes": [\n    "/workspace/"\n  ]\n}\n'
+      : `# ${label}\n\n`;
     const result = await save(selectedKey, template);
     if (result === 'saved') {
       showFeedback('success', 'File created');

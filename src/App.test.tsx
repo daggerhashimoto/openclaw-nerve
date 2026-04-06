@@ -17,15 +17,21 @@ function createDeferred<T>() {
 }
 
 const {
+  settingsContext,
   sessionContext,
   saveFileByAgent,
   saveAllDirtyFilesByAgent,
   discardAllDirtyFilesByAgent,
   dirtyStateByAgent,
   reloadCalls,
+  topBarRenderSnapshots,
   tabRenderSnapshots,
   useOpenFilesMock,
 } = vi.hoisted(() => {
+  const settingsContext = {
+    kanbanVisible: true,
+  };
+
   const sessionContext = {
     sessions: [
       { key: 'agent:alpha:main', label: 'Alpha' },
@@ -65,6 +71,7 @@ const {
     bravo: false,
   };
   const reloadCalls: Array<{ agentId: string; path: string }> = [];
+  const topBarRenderSnapshots: Array<{ showKanbanView?: boolean; viewMode?: string }> = [];
   const tabRenderSnapshots: Array<{
     workspaceAgentId: string;
     hasSaveToast: boolean;
@@ -92,12 +99,14 @@ const {
   }));
 
   return {
+    settingsContext,
     sessionContext,
     saveFileByAgent,
     saveAllDirtyFilesByAgent,
     discardAllDirtyFilesByAgent,
     dirtyStateByAgent,
     reloadCalls,
+    topBarRenderSnapshots,
     tabRenderSnapshots,
     useOpenFilesMock,
   };
@@ -165,6 +174,7 @@ vi.mock('@/contexts/SettingsContext', () => ({
     toggleTelemetry: vi.fn(),
     setTheme: vi.fn(),
     setFont: vi.fn(),
+    kanbanVisible: settingsContext.kanbanVisible,
   }),
 }));
 
@@ -248,7 +258,15 @@ vi.mock('@/features/connect/ConnectDialog', () => ({
 }));
 
 vi.mock('@/components/TopBar', () => ({
-  TopBar: () => null,
+  TopBar: ({ showKanbanView, viewMode }: { showKanbanView?: boolean; viewMode?: string }) => {
+    topBarRenderSnapshots.push({ showKanbanView, viewMode });
+    return (
+      <div>
+        <div data-testid="topbar-show-kanban">{String(showKanbanView ?? true)}</div>
+        <div data-testid="topbar-view-mode">{viewMode ?? 'chat'}</div>
+      </div>
+    );
+  },
 }));
 
 vi.mock('@/components/StatusBar', () => ({
@@ -348,7 +366,9 @@ describe('App save toast workspace scoping', () => {
     Object.values(discardAllDirtyFilesByAgent).forEach((mockFn) => mockFn.mockReset());
     dirtyStateByAgent.alpha = false;
     dirtyStateByAgent.bravo = false;
+    settingsContext.kanbanVisible = true;
     reloadCalls.length = 0;
+    topBarRenderSnapshots.length = 0;
     tabRenderSnapshots.length = 0;
     useOpenFilesMock.mockClear();
 
@@ -577,5 +597,31 @@ describe('App workspace switch guard', () => {
         cleanup: 'keep',
       });
     });
+  });
+});
+
+describe('App kanban visibility gating', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    settingsContext.kanbanVisible = true;
+    topBarRenderSnapshots.length = 0;
+  });
+
+  it('passes the kanban visibility flag through to the top bar', () => {
+    settingsContext.kanbanVisible = false;
+
+    render(<App />);
+
+    expect(screen.getByTestId('topbar-show-kanban')).toHaveTextContent('false');
+    expect(topBarRenderSnapshots.at(-1)).toMatchObject({ showKanbanView: false });
+  });
+
+  it('falls back to chat when kanban is persisted but hidden', () => {
+    localStorage.setItem('nerve:viewMode', 'kanban');
+    settingsContext.kanbanVisible = false;
+
+    render(<App />);
+
+    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('chat');
   });
 });

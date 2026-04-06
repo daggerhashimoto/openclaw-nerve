@@ -151,7 +151,7 @@ Returns server time, gateway process uptime, timezone, and agent name.
 | Field | Type | Description |
 |-------|------|-------------|
 | `serverTime` | `number` | Current epoch milliseconds |
-| `gatewayStartedAt` | `number \| null` | Gateway process start time (epoch ms). Linux only; `null` elsewhere |
+| `gatewayStartedAt` | `number \| null` | Gateway process start time (epoch ms), when the host OS can resolve it (Linux via `/proc`, macOS via `ps`) |
 | `timezone` | `string` | IANA timezone of the server |
 | `agentName` | `string` | Configured agent display name |
 

@@ -171,6 +171,23 @@ function shouldUseKanbanFallback(): boolean {
   return process.platform === 'darwin';
 }
 
+function resolveKanbanLaunchOptions(options: {
+  requestedModel?: string;
+  taskModel?: string;
+  defaultModel?: string;
+  requestedThinking?: string;
+  taskThinking?: string;
+  defaultThinking?: string;
+}): { model?: string; thinking: string } {
+  const model = options.requestedModel ?? options.taskModel ?? options.defaultModel;
+  const rawThinking = options.requestedThinking ?? options.taskThinking ?? options.defaultThinking;
+  const thinking = typeof rawThinking === 'string' && rawThinking.trim() !== '' && rawThinking.toLowerCase() !== 'off'
+    ? rawThinking
+    : 'low';
+
+  return { model, thinking };
+}
+
 function findGatewayRunMatch(
   sessions: Array<Record<string, unknown>>,
   identity: KanbanRunIdentity,
@@ -1158,10 +1175,16 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
         }
 
         const config = await store.getConfig();
-        const model = parsed.data.model || existing.model || config.defaultModel;
-        const thinking = parsed.data.thinking || existing.thinking || config.defaultThinking;
-        const persistedModel = parsed.data.model || existing.model;
-        const persistedThinking = parsed.data.thinking || existing.thinking;
+        const { model, thinking } = resolveKanbanLaunchOptions({
+          requestedModel: parsed.data.model,
+          taskModel: existing.model,
+          defaultModel: config.defaultModel,
+          requestedThinking: parsed.data.thinking,
+          taskThinking: existing.thinking,
+          defaultThinking: config.defaultThinking,
+        });
+        const persistedModel = parsed.data.model ?? existing.model;
+        const persistedThinking = parsed.data.thinking ?? existing.thinking;
         const titleSlug = existing.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'task';
         const label = `kb-${titleSlug}-${existing.id}-v${existing.version + 1}-${Date.now()}`;
         const sessionKey = buildKanbanFallbackRunKey(label);
@@ -1210,8 +1233,12 @@ Deliver your result as a clear summary of what was done.`;
       }
 
       const config = await store.getConfig();
-      const model = task.model || config.defaultModel;
-      const thinking = task.thinking || config.defaultThinking;
+      const { model, thinking } = resolveKanbanLaunchOptions({
+        taskModel: task.model,
+        defaultModel: config.defaultModel,
+        taskThinking: task.thinking,
+        defaultThinking: config.defaultThinking,
+      });
 
       return {
         duplicate: false,

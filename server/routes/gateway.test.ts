@@ -360,6 +360,55 @@ describe('gateway routes', () => {
       });
     });
 
+    it('returns configured models when the OpenClaw config uses JSON5 syntax', async () => {
+      setDefaults();
+      readFileImpl = async () => `
+        {
+          // OpenClaw config often includes comments and trailing commas
+          agents: {
+            defaults: {
+              model: {
+                primary: 'zai/glm-4.7',
+                fallbacks: [
+                  'openrouter/xiaomi/mimo-v2-pro',
+                ],
+              },
+              models: {
+                'zai/glm-4.7': { alias: 'glm-4.7' },
+                'openrouter/xiaomi/mimo-v2-pro': { alias: 'mimo-v2-pro' },
+              },
+            },
+          },
+        }
+      `;
+
+      const app = buildApp();
+      const res = await app.request('/api/gateway/models');
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        models: [
+          {
+            id: 'zai/glm-4.7',
+            label: 'glm-4.7',
+            provider: 'zai',
+            alias: 'glm-4.7',
+            configured: true,
+            role: 'primary',
+          },
+          {
+            id: 'openrouter/xiaomi/mimo-v2-pro',
+            label: 'mimo-v2-pro',
+            provider: 'openrouter',
+            alias: 'mimo-v2-pro',
+            configured: true,
+            role: 'fallback',
+          },
+        ],
+        error: null,
+        source: 'config',
+      });
+    });
+
     it('returns an explicit error when the config is unreadable', async () => {
       setDefaults();
       readFileImpl = async () => {

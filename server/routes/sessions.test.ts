@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 
-describe('GET /api/sessions/:id/model', () => {
+describe('sessions routes', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
@@ -107,5 +107,50 @@ describe('GET /api/sessions/:id/model', () => {
     expect(json.ok).toBe(true);
     expect(json.model).toBe('openai/gpt-4o');
     expect(json.missing).toBe(false);
+  });
+
+  it('serves omitted image bytes from a session transcript', async () => {
+    const app = await buildApp();
+    const sessionKey = 'agent:main:main';
+    const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const timestamp = 1775131617235;
+    const base64 = Buffer.from('hello-image').toString('base64');
+
+    await fs.writeFile(path.join(tmpDir, 'sessions.json'), JSON.stringify({
+      [sessionKey]: { sessionId },
+    }));
+    await fs.writeFile(path.join(tmpDir, `${sessionId}.jsonl`), [
+      JSON.stringify({ type: 'session_start', ts: Date.now() }),
+      JSON.stringify({
+        type: 'message',
+        message: {
+          timestamp,
+          content: [
+            { type: 'text', text: 'testing' },
+            { type: 'image', mimeType: 'image/png', data: base64 },
+          ],
+        },
+      }),
+    ].join('\n'));
+
+    const res = await app.request(`/api/sessions/media?sessionKey=${encodeURIComponent(sessionKey)}&timestamp=${timestamp}&imageIndex=0`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+    expect(res.headers.get('content-disposition')).toContain(`message-${timestamp}-image-0.png`);
+    const body = Buffer.from(await res.arrayBuffer()).toString('utf-8');
+    expect(body).toBe('hello-image');
+  });
+
+  it('returns 404 when session transcript media cannot be resolved', async () => {
+    const app = await buildApp();
+    const sessionKey = 'agent:main:main';
+    await fs.writeFile(path.join(tmpDir, 'sessions.json'), JSON.stringify({
+      [sessionKey]: { sessionId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' },
+    }));
+
+    const res = await app.request(`/api/sessions/media?sessionKey=${encodeURIComponent(sessionKey)}&timestamp=1775131617235&imageIndex=0`);
+    expect(res.status).toBe(404);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.ok).toBe(false);
   });
 });

@@ -1017,6 +1017,98 @@ describe('POST /api/kanban/tasks/:id/execute', () => {
     expect(body.thinking).toBe('high');
   });
 
+  it('launches unassigned tasks with low thinking when nothing usable is configured', async () => {
+    const invokeGatewayToolMock = vi.fn(async () => ({ sessionKey: 'agent:main:subagent:spawned-child' }));
+    const app = await buildApp({ executionMode: 'primary', invokeGatewayToolMock });
+    const task = await createTask(app, { status: 'todo' });
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    expect(res.status).toBe(200);
+    const body = await res.json() as KanbanTask;
+
+    expect(body.thinking).toBeUndefined();
+    expect(invokeGatewayToolMock).toHaveBeenCalledWith('sessions_spawn', expect.objectContaining({
+      thinking: 'low',
+    }));
+  });
+
+  it('launches assigned tasks with low thinking when nothing usable is configured', async () => {
+    let launchArgs: { model?: string; thinking?: string } | undefined;
+
+    vi.doMock('../lib/kanban-subagent-fallback.js', () => ({
+      buildKanbanFallbackRunKey: buildMockRootSessionKey,
+      resolveKanbanFallbackParentSessionKey: vi.fn(() => 'agent:reviewer:main'),
+      launchKanbanFallbackSubagentViaRpc: vi.fn(async ({ label, parentSessionKey, model, thinking }: {
+        label: string;
+        parentSessionKey: string;
+        model?: string;
+        thinking?: string;
+      }) => {
+        launchArgs = { model, thinking };
+        return {
+          sessionKey: buildMockRootSessionKey(label),
+          parentSessionKey,
+          knownSessionKeysBefore: [parentSessionKey],
+          runId: 'run-123',
+        };
+      }),
+    }));
+
+    const app = await buildApp({ executionMode: 'fallback' });
+    const task = await createTask(app, { status: 'todo', assignee: 'agent:reviewer' });
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    expect(res.status).toBe(200);
+    const body = await res.json() as KanbanTask;
+
+    expect(body.thinking).toBeUndefined();
+    expect(launchArgs?.thinking).toBe('low');
+  });
+
+  it('preserves configured board thinking for unassigned launches', async () => {
+    const invokeGatewayToolMock = vi.fn(async () => ({ sessionKey: 'agent:main:subagent:spawned-child' }));
+    const app = await buildApp({ executionMode: 'primary', invokeGatewayToolMock });
+    await app.request('/api/kanban/config', jsonPut({ defaultThinking: 'high' }));
+    const task = await createTask(app, { status: 'todo' });
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    expect(res.status).toBe(200);
+    expect(invokeGatewayToolMock).toHaveBeenCalledWith('sessions_spawn', expect.objectContaining({
+      thinking: 'high',
+    }));
+  });
+
+  it('preserves configured board thinking for assigned launches', async () => {
+    let launchArgs: { model?: string; thinking?: string } | undefined;
+
+    vi.doMock('../lib/kanban-subagent-fallback.js', () => ({
+      buildKanbanFallbackRunKey: buildMockRootSessionKey,
+      resolveKanbanFallbackParentSessionKey: vi.fn(() => 'agent:reviewer:main'),
+      launchKanbanFallbackSubagentViaRpc: vi.fn(async ({ label, parentSessionKey, model, thinking }: {
+        label: string;
+        parentSessionKey: string;
+        model?: string;
+        thinking?: string;
+      }) => {
+        launchArgs = { model, thinking };
+        return {
+          sessionKey: buildMockRootSessionKey(label),
+          parentSessionKey,
+          knownSessionKeysBefore: [parentSessionKey],
+          runId: 'run-123',
+        };
+      }),
+    }));
+
+    const app = await buildApp({ executionMode: 'fallback' });
+    await app.request('/api/kanban/config', jsonPut({ defaultThinking: 'high' }));
+    const task = await createTask(app, { status: 'todo', assignee: 'agent:reviewer' });
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    expect(res.status).toBe(200);
+    expect(launchArgs?.thinking).toBe('high');
+  });
+
   it('rejects duplicate execution of already-running task', async () => {
     const app = await buildApp();
     const task = await createTask(app, { status: 'todo' });

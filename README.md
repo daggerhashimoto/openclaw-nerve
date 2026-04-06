@@ -104,7 +104,7 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
 
 ### Pick your setup
 
-- **[Local](docs/DEPLOYMENT-A.md)** — Run Nerve and Gateway on one machine
+- **[Local](docs/DEPLOYMENT-A.md)** — Run Nerve and Gateway on one machine. *Recommended default setup for reliability and simplicity.*
 - **[Hybrid](docs/DEPLOYMENT-B.md)** — Keep Nerve local, run Gateway in the cloud
 - **[Cloud](docs/DEPLOYMENT-C.md)** — Run Nerve and Gateway in the cloud
 

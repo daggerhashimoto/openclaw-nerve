@@ -114,6 +114,103 @@ describe('splitToolCallMessage', () => {
     expect(result).toHaveLength(0);
   });
 
+  it('keeps image-only user messages', () => {
+    const msg: ChatMessage = {
+      role: 'user',
+      content: [
+        { type: 'image', mimeType: 'image/png', data: 'abc123' },
+      ],
+    };
+    const result = splitToolCallMessage(msg);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe('user');
+    expect(result[0].images).toHaveLength(1);
+    expect(result[0].images?.[0].mimeType).toBe('image/png');
+  });
+
+  it('keeps image-only transcript messages backed by MediaPath', () => {
+    const msg: ChatMessage = {
+      role: 'user',
+      content: '',
+      MediaPath: '/Users/cd0x23/.openclaw/media/inbound/test.png',
+      MediaType: 'image/png',
+    };
+    const result = splitToolCallMessage(msg);
+    expect(result).toHaveLength(1);
+    expect(result[0].images).toHaveLength(1);
+    expect(result[0].images?.[0]).toMatchObject({
+      mimeType: 'image/png',
+      preview: '/api/files?path=%2FUsers%2Fcd0x23%2F.openclaw%2Fmedia%2Finbound%2Ftest.png',
+      name: 'test.png',
+    });
+  });
+
+  it('keeps text-plus-image transcript messages backed by MediaPath', () => {
+    const msg: ChatMessage = {
+      role: 'user',
+      content: 'testing image upload to see if it get surpressed',
+      MediaPath: '/Users/cd0x23/.openclaw/media/inbound/test.png',
+      MediaType: 'image/png',
+    };
+    const result = splitToolCallMessage(msg);
+    expect(result).toHaveLength(1);
+    expect(result[0].rawText).toContain('testing image upload');
+    expect(result[0].images).toHaveLength(1);
+    expect(result[0].images?.[0].preview).toBe('/api/files?path=%2FUsers%2Fcd0x23%2F.openclaw%2Fmedia%2Finbound%2Ftest.png');
+  });
+
+  it('renders omitted chat.history image blocks via transcript media route', () => {
+    const msg: ChatMessage = {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'testing' },
+        { type: 'image', mimeType: 'image/jpeg', omitted: true, bytes: 12345 },
+      ],
+      timestamp: 1775130149867,
+    };
+    const result = splitToolCallMessage(msg, 'agent:main:main');
+    expect(result).toHaveLength(1);
+    expect(result[0].images).toHaveLength(1);
+    expect(result[0].images?.[0]).toMatchObject({
+      mimeType: 'image/jpeg',
+      preview: '/api/sessions/media?sessionKey=agent%3Amain%3Amain&timestamp=1775130149867&imageIndex=0',
+      name: 'image-1',
+    });
+  });
+
+  it('keeps images when user messages are split into system-event + user segments', () => {
+    const msg: ChatMessage = {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'System: [2026-04-02 15:03:56 GMT+3] Exec completed (fast-fal, code 0) :: tests passed\nhello' },
+        { type: 'image', mimeType: 'image/jpeg', omitted: true, bytes: 12345 },
+      ],
+      timestamp: 1775131617235,
+    };
+    const result = splitToolCallMessage(msg, 'agent:main:main');
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ role: 'event' });
+    expect(result[1]).toMatchObject({ role: 'user', rawText: 'hello' });
+    expect(result[1].images).toHaveLength(1);
+    expect(result[1].images?.[0].preview).toBe('/api/sessions/media?sessionKey=agent%3Amain%3Amain&timestamp=1775131617235&imageIndex=0');
+  });
+
+  it('creates an image-only user bubble after system-event splitting when no user text remains', () => {
+    const msg: ChatMessage = {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'System: [2026-04-02 15:03:56 GMT+3] Exec completed (fast-fal, code 0) :: tests passed' },
+        { type: 'image', mimeType: 'image/jpeg', omitted: true, bytes: 12345 },
+      ],
+      timestamp: 1775131617235,
+    };
+    const result = splitToolCallMessage(msg, 'agent:main:main');
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ role: 'event' });
+    expect(result[1]).toMatchObject({ role: 'user', rawText: '' });
+    expect(result[1].images).toHaveLength(1);
+  });
+
   it('handles thinking blocks', () => {
     const msg: ChatMessage = {
       role: 'assistant',

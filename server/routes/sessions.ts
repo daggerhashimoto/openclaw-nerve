@@ -31,6 +31,16 @@ interface StoredSessionSummary {
   contextTokens?: number;
 }
 
+interface TranscriptImageContentBlock {
+  type?: string;
+  data?: string;
+  mimeType?: string;
+  source?: {
+    data?: string;
+    media_type?: string;
+  };
+}
+
 function isCronLikeSessionKey(sessionKey: string): boolean {
   return CRON_SESSION_RE.test(sessionKey);
 }
@@ -43,6 +53,12 @@ function inferParentSessionKey(sessionKey: string): string | null {
   if (cronMatch) return `${cronMatch[1]}:main`;
 
   return null;
+}
+
+async function loadSessionStore(): Promise<Record<string, StoredSessionSummary | undefined>> {
+  const sessionsFile = join(config.sessionsDir, 'sessions.json');
+  const raw = await readFile(sessionsFile, 'utf-8');
+  return JSON.parse(raw) as Record<string, StoredSessionSummary | undefined>;
 }
 
 /** Resolve the transcript path for a session ID, checking both active and deleted files. */
@@ -102,6 +118,94 @@ async function readModelFromTranscript(filePath: string): Promise<string | null>
   });
 }
 
+async function readImageBlockFromTranscript(
+  filePath: string,
+  messageTimestamp: number,
+  imageIndex: number,
+): Promise<{ buffer: Buffer; mimeType: string; filename: string } | null> {
+  return new Promise((resolve) => {
+    const stream = createReadStream(filePath, { encoding: 'utf-8' });
+    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    let resolved = false;
+
+    const done = (result: { buffer: Buffer; mimeType: string; filename: string } | null) => {
+      if (resolved) return;
+      resolved = true;
+      rl.close();
+      stream.destroy();
+      resolve(result);
+    };
+
+    rl.on('line', (line) => {
+      if (resolved) return;
+      try {
+        const entry = JSON.parse(line) as {
+          type?: string;
+          message?: { timestamp?: number; content?: TranscriptImageContentBlock[] | unknown };
+        };
+        if (entry.type !== 'message') return;
+        if ((entry.message?.timestamp ?? null) !== messageTimestamp) return;
+        const content = Array.isArray(entry.message?.content)
+          ? entry.message.content as TranscriptImageContentBlock[]
+          : [];
+        const imageBlocks = content.filter((block) => block?.type === 'image');
+        const target = imageBlocks[imageIndex];
+        if (!target) return done(null);
+        const base64 = target.data || target.source?.data;
+        const mimeType = target.mimeType || target.source?.media_type || 'application/octet-stream';
+        if (!base64) return done(null);
+        const ext = mimeType === 'image/jpeg' ? '.jpg'
+          : mimeType === 'image/png' ? '.png'
+          : mimeType === 'image/gif' ? '.gif'
+          : mimeType === 'image/webp' ? '.webp'
+          : '';
+        return done({
+          buffer: Buffer.from(base64, 'base64'),
+          mimeType,
+          filename: `message-${messageTimestamp}-image-${imageIndex}${ext}`,
+        });
+      } catch {
+        // skip malformed lines
+      }
+    });
+
+    rl.on('close', () => done(null));
+    rl.on('error', () => done(null));
+  });
+}
+
+app.get('/api/sessions/media', rateLimitGeneral, async (c) => {
+  const sessionKey = c.req.query('sessionKey') || '';
+  const timestampRaw = c.req.query('timestamp') || '';
+  const imageIndexRaw = c.req.query('imageIndex') || '0';
+  const messageTimestamp = Number(timestampRaw);
+  const imageIndex = Number(imageIndexRaw);
+
+  if (!sessionKey || !Number.isFinite(messageTimestamp) || !Number.isInteger(imageIndex) || imageIndex < 0) {
+    return c.json({ ok: false, error: 'Invalid media lookup params' }, 400);
+  }
+
+  try {
+    const store = await loadSessionStore();
+    const sessionId = store[sessionKey]?.sessionId;
+    if (!sessionId) return c.json({ ok: false, error: 'Unknown session key' }, 404);
+    const transcriptPath = await findTranscript(sessionId);
+    if (!transcriptPath) return c.json({ ok: false, error: 'Transcript not found' }, 404);
+    const media = await readImageBlockFromTranscript(transcriptPath, messageTimestamp, imageIndex);
+    if (!media) return c.json({ ok: false, error: 'Image not found' }, 404);
+    return new Response(media.buffer, {
+      headers: {
+        'Content-Type': media.mimeType,
+        'Content-Disposition': `inline; filename="${media.filename}"`,
+        'Cache-Control': 'private, max-age=3600',
+      },
+    });
+  } catch (err) {
+    console.warn('[sessions] media lookup failed:', (err as Error).message);
+    return c.json({ ok: false, error: 'Failed to load media' }, 500);
+  }
+});
+
 app.get('/api/sessions/hidden', rateLimitGeneral, async (c) => {
   const activeMinutesRaw = c.req.query('activeMinutes');
   const limitRaw = c.req.query('limit');
@@ -113,12 +217,10 @@ app.get('/api/sessions/hidden', rateLimitGeneral, async (c) => {
     ? Math.min(Number(limitRaw), 2000)
     : 200;
 
-  const sessionsFile = join(config.sessionsDir, 'sessions.json');
   const cutoffMs = Date.now() - activeMinutes * 60_000;
 
   try {
-    const raw = await readFile(sessionsFile, 'utf-8');
-    const store = JSON.parse(raw) as Record<string, StoredSessionSummary | undefined>;
+    const store = await loadSessionStore();
 
     const sessions = Object.entries(store)
       .filter(([sessionKey, session]) => {

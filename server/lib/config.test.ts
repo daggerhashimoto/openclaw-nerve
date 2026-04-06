@@ -58,6 +58,32 @@ describe('config module', () => {
     });
   });
 
+  describe('workspaceWatchRecursive', () => {
+    it('defaults to true when env var is unset', async () => {
+      vi.resetModules();
+      delete process.env.NERVE_WATCH_WORKSPACE_RECURSIVE;
+
+      const { config } = await import('./config.js');
+      expect(config.workspaceWatchRecursive).toBe(true);
+    });
+
+    it('can be disabled explicitly with false', async () => {
+      vi.resetModules();
+      process.env.NERVE_WATCH_WORKSPACE_RECURSIVE = 'false';
+
+      const { config } = await import('./config.js');
+      expect(config.workspaceWatchRecursive).toBe(false);
+    });
+
+    it('stays enabled when set to true', async () => {
+      vi.resetModules();
+      process.env.NERVE_WATCH_WORKSPACE_RECURSIVE = 'true';
+
+      const { config } = await import('./config.js');
+      expect(config.workspaceWatchRecursive).toBe(true);
+    });
+  });
+
   describe('SESSION_COOKIE_NAME', () => {
     it('includes the port number', async () => {
       const { SESSION_COOKIE_NAME, config } = await import('./config.js');

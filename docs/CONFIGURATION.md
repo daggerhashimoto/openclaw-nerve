@@ -291,7 +291,7 @@ REPLICATE_BASE_URL=https://api.replicate.com/v1
 | `SESSIONS_DIR` | `~/.openclaw/agents/main/sessions/` | Session transcript directory (scanned for token usage) |
 | `USAGE_FILE` | `~/.openclaw/token-usage.json` | Persistent cumulative token usage data |
 | `NERVE_VOICE_PHRASES_PATH` | `~/.nerve/voice-phrases.json` | Override location for per-language voice phrase overrides |
-| `NERVE_WATCH_WORKSPACE_RECURSIVE` | `false` | Re-enables recursive `fs.watch` for full workspace `file.changed` SSE events outside `MEMORY.md` and `memory/`. Disabled by default to prevent Linux inotify `ENOSPC` watcher exhaustion. Memory watchers stay enabled for discovered agent workspaces even when this is `false`. |
+| `NERVE_WATCH_WORKSPACE_RECURSIVE` | `true` | Enables recursive `fs.watch` for full workspace `file.changed` SSE events outside `MEMORY.md` and `memory/`. Set this to `false` to disable full-workspace watching if you hit Linux inotify `ENOSPC` watcher exhaustion. Memory watchers stay enabled for discovered agent workspaces even when this is `false`. |
 
 ```bash
 FILE_BROWSER_ROOT=/home/user

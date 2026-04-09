@@ -8,25 +8,31 @@ interface UseBeadDetailState {
   error: string | null;
 }
 
+interface UseBeadDetailFetchState {
+  bead: BeadDetail | null;
+  error: string | null;
+  requestKey: string | null;
+}
+
 export function useBeadDetail(target: BeadLinkTarget): UseBeadDetailState {
-  const [state, setState] = useState<UseBeadDetailState>({ bead: null, loading: true, error: null });
+  const [state, setState] = useState<UseBeadDetailFetchState>({ bead: null, error: null, requestKey: null });
+
+  const params = new URLSearchParams();
+  if (target.explicitTargetPath) {
+    params.set('targetPath', target.explicitTargetPath);
+  }
+  if (target.currentDocumentPath) {
+    params.set('currentDocumentPath', target.currentDocumentPath);
+  }
+  if (target.workspaceAgentId) {
+    params.set('workspaceAgentId', target.workspaceAgentId);
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const requestKey = `${target.beadId}${suffix}`;
 
   useEffect(() => {
     let cancelled = false;
-    setState({ bead: null, loading: true, error: null });
-
-    const params = new URLSearchParams();
-    if (target.explicitTargetPath) {
-      params.set('targetPath', target.explicitTargetPath);
-    }
-    if (target.currentDocumentPath) {
-      params.set('currentDocumentPath', target.currentDocumentPath);
-    }
-    if (target.workspaceAgentId) {
-      params.set('workspaceAgentId', target.workspaceAgentId);
-    }
-
-    const suffix = params.toString() ? `?${params.toString()}` : '';
 
     void fetch(`/api/beads/${encodeURIComponent(target.beadId)}${suffix}`)
       .then(async (res) => {
@@ -42,23 +48,29 @@ export function useBeadDetail(target: BeadLinkTarget): UseBeadDetailState {
         if (!res.ok || !data?.ok || !data.bead) {
           setState({
             bead: null,
-            loading: false,
             error: data?.details || data?.error || 'Failed to load bead',
+            requestKey,
           });
           return;
         }
 
-        setState({ bead: data.bead, loading: false, error: null });
+        setState({ bead: data.bead, error: null, requestKey });
       })
       .catch(() => {
         if (cancelled) return;
-        setState({ bead: null, loading: false, error: 'Network error' });
+        setState({ bead: null, error: 'Network error', requestKey });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [target.beadId, target.currentDocumentPath, target.explicitTargetPath, target.workspaceAgentId]);
+  }, [requestKey, suffix, target.beadId]);
 
-  return state;
+  const loading = state.requestKey !== requestKey;
+
+  return {
+    bead: loading ? null : state.bead,
+    loading,
+    error: loading ? null : state.error,
+  };
 }

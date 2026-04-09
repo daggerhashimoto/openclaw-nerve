@@ -5,6 +5,7 @@ import { isMessageCollapsible } from './types';
 import { decodeHtmlEntities } from '@/lib/formatting';
 import { isStructuredMarkdown } from '@/lib/text/isStructuredMarkdown';
 import type { ChatMsg } from './types';
+import type { BeadLinkTarget } from '@/features/beads';
 
 // Lazy-load markdown renderer (includes highlight.js)
 const MarkdownRenderer = lazy(() => import('@/features/markdown/MarkdownRenderer').then(m => ({ default: m.MarkdownRenderer })));
@@ -45,6 +46,7 @@ interface MessageBubbleProps {
   agentName?: string;
   onOpenWorkspacePath?: (path: string) => void | Promise<void>;
   pathLinkPrefixes?: string[];
+  onOpenBeadId?: (target: BeadLinkTarget) => void | Promise<void>;
 }
 
 const borderClass = (role: string) => {
@@ -73,7 +75,7 @@ function RoleBadge({ role, agentName = 'Agent' }: { role: string; agentName?: st
   return <span className="cockpit-badge">System</span>;
 }
 
-function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, firstMessageTime, searchQuery, isCurrentMatch, agentName, onOpenWorkspacePath, pathLinkPrefixes }: MessageBubbleProps) {
+function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, firstMessageTime, searchQuery, isCurrentMatch, agentName, onOpenWorkspacePath, pathLinkPrefixes, onOpenBeadId }: MessageBubbleProps) {
   const isUser = msg.role === 'user';
   const isAssistant = msg.role === 'assistant';
   const isSystem = msg.role === 'system' || msg.role === 'event';
@@ -190,7 +192,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
         {!isCollapsed && (
           <div className="ml-3 border-l border-primary/12 px-3 pb-2 pt-1 text-[0.8rem] text-foreground/70 msg-body-intermediate">
             <Suspense fallback={<span className="text-muted-foreground text-xs">…</span>}>
-              <MarkdownRenderer content={msg.rawText} searchQuery={searchQuery} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} />
+              <MarkdownRenderer content={msg.rawText} searchQuery={searchQuery} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} onOpenBeadId={onOpenBeadId} />
             </Suspense>
           </div>
         )}
@@ -220,7 +222,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           ) : (
             <div className="text-muted-foreground/70 text-[0.8rem] flex-1 min-w-0 msg-body-intermediate">
               <Suspense fallback={<span className="text-muted-foreground text-xs">…</span>}>
-                <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} />
+                <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} onOpenBeadId={onOpenBeadId} />
               </Suspense>
             </div>
           )}
@@ -286,7 +288,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
             )}
             {displayContent && (
               <Suspense fallback={<div className="text-muted-foreground text-xs">Loading…</div>}>
-                <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} />
+                <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} onOpenBeadId={onOpenBeadId} />
               </Suspense>
             )}
           </div>
@@ -381,6 +383,7 @@ export const MessageBubble = memo(MessageBubbleInner, (prev, next) => {
   if (prev.agentName !== next.agentName) return false;
   if (prev.onOpenWorkspacePath !== next.onOpenWorkspacePath) return false;
   if (prev.pathLinkPrefixes !== next.pathLinkPrefixes) return false;
+  if (prev.onOpenBeadId !== next.onOpenBeadId) return false;
   
   // All relevant props are equal, skip re-render
   return true;

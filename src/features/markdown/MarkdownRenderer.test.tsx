@@ -309,6 +309,118 @@ describe('MarkdownRenderer', () => {
     consoleError.mockRestore();
   });
 
+  it('opens explicit bead-scheme links in-app when a bead handler is provided', () => {
+    const onOpenBeadId = vi.fn();
+    render(<MarkdownRenderer content="[viewer](bead:nerve-fms2)" onOpenBeadId={onOpenBeadId} />);
+
+    fireEvent.click(screen.getByRole('link', { name: 'viewer' }));
+
+    expect(onOpenBeadId).toHaveBeenCalledWith({ beadId: 'nerve-fms2' });
+  });
+
+  it('routes explicit bead-scheme links to bead tabs before workspace resolution or browser fallback', () => {
+    const onOpenBeadId = vi.fn();
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="[viewer](bead:nerve-fms2)"
+        onOpenBeadId={onOpenBeadId}
+        onOpenWorkspacePath={onOpenWorkspacePath}
+      />,
+    );
+
+    const link = screen.getByRole('link', { name: 'viewer' });
+    expect(link).toHaveAttribute('href', 'bead:nerve-fms2');
+    expect(link).not.toHaveAttribute('target', '_blank');
+
+    fireEvent.click(link);
+
+    expect(onOpenBeadId).toHaveBeenCalledWith({ beadId: 'nerve-fms2' });
+    expect(onOpenWorkspacePath).not.toHaveBeenCalled();
+  });
+
+  it('does not treat bare bead ids as bead links when a workspace handler is also present', async () => {
+    const onOpenBeadId = vi.fn();
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="[viewer](nerve-fms2)"
+        onOpenBeadId={onOpenBeadId}
+        onOpenWorkspacePath={onOpenWorkspacePath}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'viewer' }));
+
+    expect(onOpenBeadId).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(onOpenWorkspacePath).toHaveBeenCalledWith('nerve-fms2', undefined);
+    });
+  });
+
+  it('passes explicit bead lookup context through for cross-context links', () => {
+    const onOpenBeadId = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="[viewer](bead:///home/derrick/.openclaw/workspace/projects/virtra-apex-docs/.beads#virtra-apex-docs-id2)"
+        currentDocumentPath="bead-link-dogfood.md"
+        workspaceAgentId="main"
+        onOpenBeadId={onOpenBeadId}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'viewer' }));
+
+    expect(onOpenBeadId).toHaveBeenCalledWith({
+      beadId: 'virtra-apex-docs-id2',
+      explicitTargetPath: '/home/derrick/.openclaw/workspace/projects/virtra-apex-docs/.beads',
+      currentDocumentPath: 'bead-link-dogfood.md',
+      workspaceAgentId: 'main',
+    });
+  });
+
+  it('preserves relative explicit bead links as anchors even before context-aware parsing is available', () => {
+    const onOpenBeadId = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="[viewer](bead://../projects/virtra-apex-docs/.beads#virtra-apex-docs-id2)"
+        onOpenBeadId={onOpenBeadId}
+      />,
+    );
+
+    const link = screen.getByRole('link', { name: 'viewer' });
+    expect(link).toHaveAttribute('href', 'bead://../projects/virtra-apex-docs/.beads#virtra-apex-docs-id2');
+    expect(link).toHaveAttribute('target', '_blank');
+
+    fireEvent.click(link);
+    expect(onOpenBeadId).not.toHaveBeenCalled();
+  });
+
+  it('routes relative explicit bead links in-app once current document context is available', () => {
+    const onOpenBeadId = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="[viewer](bead://../projects/virtra-apex-docs/.beads#virtra-apex-docs-id2)"
+        currentDocumentPath="notes/bead-link-dogfood.md"
+        workspaceAgentId="main"
+        onOpenBeadId={onOpenBeadId}
+      />,
+    );
+
+    const link = screen.getByRole('link', { name: 'viewer' });
+    expect(link).toHaveAttribute('href', 'bead://../projects/virtra-apex-docs/.beads#virtra-apex-docs-id2');
+    expect(link).not.toHaveAttribute('target', '_blank');
+
+    fireEvent.click(link);
+
+    expect(onOpenBeadId).toHaveBeenCalledWith({
+      beadId: 'virtra-apex-docs-id2',
+      explicitTargetPath: '../projects/virtra-apex-docs/.beads',
+      currentDocumentPath: 'notes/bead-link-dogfood.md',
+      workspaceAgentId: 'main',
+    });
+  });
+
   it('keeps external links as normal browser links when a handler is provided', () => {
     const onOpenWorkspacePath = vi.fn();
     render(<MarkdownRenderer content="[example](https://example.com)" onOpenWorkspacePath={onOpenWorkspacePath} />);

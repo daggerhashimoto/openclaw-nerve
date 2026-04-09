@@ -3,10 +3,27 @@ import { describe, expect, it, vi } from 'vitest';
 import { MarkdownDocumentView } from './MarkdownDocumentView';
 import type { OpenFile } from './types';
 
+const markdownRendererSpy = vi.fn();
+
 vi.mock('@/features/markdown/MarkdownRenderer', () => ({
-  MarkdownRenderer: ({ content, className }: { content: string; className?: string }) => (
-    <div data-testid="markdown-renderer" className={className}>{content}</div>
-  ),
+  MarkdownRenderer: ({
+    content,
+    className,
+    currentDocumentPath,
+    onOpenBeadId,
+    onOpenWorkspacePath,
+    workspaceAgentId,
+  }: {
+    content: string;
+    className?: string;
+    currentDocumentPath?: string;
+    onOpenBeadId?: (target: { beadId: string }) => void;
+    onOpenWorkspacePath?: (path: string, basePath?: string) => void;
+    workspaceAgentId?: string;
+  }) => {
+    markdownRendererSpy({ content, className, currentDocumentPath, onOpenBeadId, onOpenWorkspacePath, workspaceAgentId });
+    return <div data-testid="markdown-renderer" className={className}>{content}</div>;
+  },
 }));
 
 vi.mock('./FileEditor', () => ({
@@ -65,6 +82,35 @@ describe('MarkdownDocumentView', () => {
     expect(editButton).toHaveAttribute('aria-pressed', 'true');
     expect(previewButton).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByTestId('file-editor')).toBeInTheDocument();
+  });
+
+  it('passes bead and workspace handlers through to the markdown renderer while preserving document path fallback', () => {
+    const onOpenBeadId = vi.fn();
+    const onOpenWorkspacePath = vi.fn();
+
+    render(
+      <MarkdownDocumentView
+        file={file}
+        onContentChange={vi.fn()}
+        onSave={vi.fn()}
+        onRetry={vi.fn()}
+        onOpenBeadId={onOpenBeadId}
+        onOpenWorkspacePath={onOpenWorkspacePath}
+        workspaceAgentId="research"
+      />,
+    );
+
+    expect(markdownRendererSpy).toHaveBeenCalled();
+    const props = markdownRendererSpy.mock.calls.at(-1)?.[0];
+    expect(props.currentDocumentPath).toBe('docs/guide.md');
+    expect(props.onOpenBeadId).toBe(onOpenBeadId);
+    expect(props.workspaceAgentId).toBe('research');
+
+    props.onOpenWorkspacePath?.('docs/todo.md');
+    expect(onOpenWorkspacePath).toHaveBeenCalledWith('docs/todo.md', 'docs/guide.md');
+
+    props.onOpenWorkspacePath?.('docs/child.md', 'docs');
+    expect(onOpenWorkspacePath).toHaveBeenCalledWith('docs/child.md', 'docs');
   });
 
   it('shows the loading state in preview mode instead of a blank markdown pane', () => {

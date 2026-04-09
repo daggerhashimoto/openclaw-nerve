@@ -8,6 +8,7 @@ import { useMessageSearch } from './useMessageSearch';
 import { ActivityLog, ChatHeader, ProcessingIndicator, ScrollToBottomButton, StreamingMessage, ToolGroupBlock } from './components';
 import { isMessageCollapsible } from './types';
 import type { ChatMsg, ImageAttachment, OutgoingUploadPayload } from './types';
+import type { BeadLinkTarget } from '@/features/beads';
 
 interface ChatPanelProps {
   messages: ChatMsg[];
@@ -45,6 +46,8 @@ interface ChatPanelProps {
   onOpenWorkspacePath?: (path: string) => void | Promise<void>;
   /** Configured path prefixes that should render as clickable inline path links. */
   pathLinkPrefixes?: string[];
+  /** Open a dedicated bead viewer tab. */
+  onOpenBeadId?: (target: BeadLinkTarget) => void | Promise<void>;
 }
 
 export interface ChatPanelHandle {
@@ -62,6 +65,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   onToggleMobileTopBar, isMobileTopBarHidden = false,
   onOpenWorkspacePath,
   pathLinkPrefixes,
+  onOpenBeadId,
 }, ref) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -337,6 +341,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
                 agentName={agentName}
                 onOpenWorkspacePath={onOpenWorkspacePath}
                 pathLinkPrefixes={pathLinkPrefixes}
+                onOpenBeadId={onOpenBeadId}
               />
             </div>
           );

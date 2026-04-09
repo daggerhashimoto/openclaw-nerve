@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 
 vi.mock('@/features/markdown/MarkdownRenderer', () => ({
-  MarkdownRenderer: ({ content, onOpenWorkspacePath }: { content: string; onOpenWorkspacePath?: ((path: string) => void) & { handlerId?: string } }) => (
+  MarkdownRenderer: ({ content, onOpenWorkspacePath }: { content: string; onOpenWorkspacePath?: ((path: string) => void) & { handlerId?: string }; onOpenBeadId?: ((beadId: string) => void) }) => (
     <div data-handler-id={onOpenWorkspacePath?.handlerId ?? ''}>{content}</div>
   ),
 }));

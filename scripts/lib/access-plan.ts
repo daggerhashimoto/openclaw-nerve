@@ -122,7 +122,7 @@ export function buildAccessPlan(input: BuildAccessPlanInput): AccessPlan {
       const origin = tailscale?.serveOrigins?.[0] || null;
       if (!origin) {
         plan.followUpSteps = dedupe([
-          `Run: tailscale serve --bg 443 http://127.0.0.1:${port}`,
+          `Run: tailscale serve --bg http://127.0.0.1:${port}`,
           'Confirm Tailscale Serve exposes a usable https://<node>.tail<id>.ts.net origin, then re-run setup.',
         ]);
         return plan;

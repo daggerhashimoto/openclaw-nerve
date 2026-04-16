@@ -610,13 +610,13 @@ async function collectInteractive(
     console.log('');
     const configureServe = await confirm({
       theme: promptTheme,
-      message: `Configure Tailscale Serve now? (tailscale serve --bg 443 http://127.0.0.1:${port})`,
+      message: `Configure Tailscale Serve now? (tailscale serve --bg http://127.0.0.1:${port})`,
       default: true,
     });
 
     if (configureServe) {
       try {
-        execSync(`tailscale serve --bg 443 http://127.0.0.1:${port}`, { stdio: 'pipe', timeout: 15000, encoding: 'utf8' });
+        execSync(`tailscale serve --bg http://127.0.0.1:${port}`, { stdio: 'pipe', timeout: 15000, encoding: 'utf8' });
         success(`Tailscale Serve configured for http://127.0.0.1:${port}`);
       } catch (err) {
         const execErr = err as {
@@ -640,7 +640,7 @@ async function collectInteractive(
         warn(`Failed to configure Tailscale Serve automatically: ${detailWithStatus}`);
       }
     } else {
-      dim(`Run later: tailscale serve --bg 443 http://127.0.0.1:${port}`);
+      dim(`Run later: tailscale serve --bg http://127.0.0.1:${port}`);
     }
 
     tailscaleState = getTailscaleState();

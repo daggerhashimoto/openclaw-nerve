@@ -40,7 +40,7 @@ describe('buildAccessPlan', () => {
   });
 
   it('adds follow-up steps when tailscale-serve is selected without a confirmed ts.net origin', () => {
-    expect(buildAccessPlan({
+    const plan = buildAccessPlan({
       profile: 'tailscale-serve',
       port: '3080',
       tailscale: {
@@ -50,7 +50,10 @@ describe('buildAccessPlan', () => {
         dnsName: null,
         serveOrigins: [],
       },
-    }).followUpSteps.length).toBeGreaterThan(0);
+    });
+    expect(plan.followUpSteps.length).toBeGreaterThan(0);
+    expect(plan.followUpSteps[0]).toContain('tailscale serve --bg http://127.0.0.1:3080');
+    expect(plan.followUpSteps[0]).not.toContain('--bg 443');
   });
 });
 

@@ -44,6 +44,7 @@ import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { DEFAULT_CHAT_PATH_LINKS_CONFIG, parseChatPathLinksConfig } from '@/features/chat/chatPathLinks';
 import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
+import { useEdgeSwipeToOpen } from '@/features/file-browser/hooks/useEdgeSwipeToOpen';
 import { type BeadLinkTarget, type OpenBeadTab, buildBeadTabId } from '@/features/beads';
 import { isImageFile } from '@/features/file-browser/utils/fileTypes';
 import { buildAgentRootSessionKey, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
@@ -959,6 +960,14 @@ export default function App({ onLogout }: AppProps) {
   );
 
   const showCompactFileBrowser = isCompactLayout && viewMode !== 'kanban' && !fileBrowserCollapsed;
+  const compactFileBrowserSwipeEnabled =
+    isCompactLayout &&
+    viewMode !== 'kanban' &&
+    fileBrowserCollapsed;
+  const compactFileBrowserSwipe = useEdgeSwipeToOpen({
+    enabled: compactFileBrowserSwipeEnabled,
+    onOpen: () => setFileBrowserCollapsed(false),
+  });
 
   return (
     <div className="nerve-shell relative h-screen flex flex-col overflow-hidden bg-background" data-booted={booted}>
@@ -1087,6 +1096,19 @@ export default function App({ onLogout }: AppProps) {
               />
             </PanelErrorBoundary>
           </div>
+        )}
+
+        {compactFileBrowserSwipeEnabled && (
+          <div
+            data-testid="file-browser-swipe-zone"
+            aria-hidden="true"
+            className="fixed inset-y-0 left-0 z-20 hidden w-6 max-[900px]:block"
+            style={{ touchAction: 'pan-y' }}
+            onPointerDown={compactFileBrowserSwipe.bind.onPointerDown}
+            onPointerMove={compactFileBrowserSwipe.bind.onPointerMove}
+            onPointerUp={compactFileBrowserSwipe.bind.onPointerUp}
+            onPointerCancel={compactFileBrowserSwipe.bind.onPointerCancel}
+          />
         )}
 
         {showCompactFileBrowser && (

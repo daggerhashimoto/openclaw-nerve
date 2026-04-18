@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 const EDGE_SWIPE_ZONE_PX = 24;
 const OPEN_THRESHOLD_PX = 72;
@@ -27,11 +27,28 @@ export function useEdgeSwipeToOpen({
 }: UseEdgeSwipeToOpenOptions): UseEdgeSwipeToOpenResult {
   const pointerIdRef = useRef<number | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
+  const capturedTargetRef = useRef<HTMLDivElement | null>(null);
 
   const reset = useCallback(() => {
+    if (pointerIdRef.current !== null && capturedTargetRef.current) {
+      try {
+        capturedTargetRef.current.releasePointerCapture(pointerIdRef.current);
+      } catch {
+        // Pointer capture may already be released or unavailable.
+      }
+    }
     pointerIdRef.current = null;
     startRef.current = null;
+    capturedTargetRef.current = null;
   }, []);
+
+  useEffect(() => {
+    if (!enabled) {
+      reset();
+    }
+  }, [enabled, reset]);
+
+  useEffect(() => reset, [reset]);
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!enabled || event.pointerType !== 'touch' || event.clientX > EDGE_SWIPE_ZONE_PX) return;
@@ -44,6 +61,7 @@ export function useEdgeSwipeToOpen({
 
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
+      capturedTargetRef.current = event.currentTarget;
     } catch {
       // Pointer capture is unavailable in some test environments.
     }

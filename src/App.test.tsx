@@ -921,7 +921,7 @@ describe('App kanban visibility gating', () => {
 
     expect(screen.queryByTestId('file-tree-panel')).not.toBeInTheDocument();
 
-    const swipeZone = screen.getByTestId('file-browser-swipe-zone');
+    const swipeZone = screen.getByTestId('app-shell');
     await act(async () => {
       fireEvent.pointerDown(swipeZone, {
         pointerType: 'touch',
@@ -958,7 +958,7 @@ describe('App kanban visibility gating', () => {
     render(<App />);
     await act(async () => {});
 
-    const swipeZone = screen.getByTestId('file-browser-swipe-zone');
+    const swipeZone = screen.getByTestId('app-shell');
     await act(async () => {
       fireEvent.pointerDown(swipeZone, {
         pointerType: 'touch',

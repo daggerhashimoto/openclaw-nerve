@@ -141,4 +141,40 @@ describe('useEdgeSwipeToOpen', () => {
 
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
+
+  it('releases pointer capture and clears gesture state when disabled mid-swipe', () => {
+    const onOpen = vi.fn();
+    const releasePointerCapture = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useEdgeSwipeToOpen({ enabled, onOpen }),
+      { initialProps: { enabled: true } },
+    );
+
+    act(() => {
+      result.current.bind.onPointerDown(createPointerEvent({
+        pointerId: 7,
+        clientX: 10,
+        clientY: 20,
+        currentTarget: {
+          setPointerCapture: vi.fn(),
+          releasePointerCapture,
+        },
+      }));
+    });
+
+    act(() => {
+      rerender({ enabled: false });
+    });
+
+    act(() => {
+      result.current.bind.onPointerMove(createPointerEvent({
+        pointerId: 7,
+        clientX: 100,
+        clientY: 24,
+      }));
+    });
+
+    expect(releasePointerCapture).toHaveBeenCalledWith(7);
+    expect(onOpen).not.toHaveBeenCalled();
+  });
 });

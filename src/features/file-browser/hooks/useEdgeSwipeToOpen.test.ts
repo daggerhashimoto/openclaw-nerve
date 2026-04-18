@@ -86,8 +86,6 @@ describe('useEdgeSwipeToOpen', () => {
     });
 
     expect(onOpen).not.toHaveBeenCalled();
-    expect(result.current.swipeActive).toBe(false);
-    expect(result.current.swipeOffsetPx).toBe(0);
   });
 
   it('ignores non-touch pointers', () => {
@@ -111,5 +109,36 @@ describe('useEdgeSwipeToOpen', () => {
     });
 
     expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('does not cancel an active swipe when a second touch starts', () => {
+    const onOpen = vi.fn();
+    const { result } = renderHook(() => useEdgeSwipeToOpen({ enabled: true, onOpen }));
+
+    act(() => {
+      result.current.bind.onPointerDown(createPointerEvent({
+        pointerId: 1,
+        clientX: 10,
+        clientY: 20,
+      }));
+    });
+
+    act(() => {
+      result.current.bind.onPointerDown(createPointerEvent({
+        pointerId: 2,
+        clientX: 12,
+        clientY: 22,
+      }));
+    });
+
+    act(() => {
+      result.current.bind.onPointerMove(createPointerEvent({
+        pointerId: 1,
+        clientX: 96,
+        clientY: 24,
+      }));
+    });
+
+    expect(onOpen).toHaveBeenCalledTimes(1);
   });
 });

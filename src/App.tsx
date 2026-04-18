@@ -960,13 +960,16 @@ export default function App({ onLogout }: AppProps) {
   );
 
   const showCompactFileBrowser = isCompactLayout && viewMode !== 'kanban' && !fileBrowserCollapsed;
+  const handleOpenCompactFileBrowserFromSwipe = useCallback(() => {
+    setFileBrowserCollapsed(false);
+  }, [setFileBrowserCollapsed]);
   const compactFileBrowserSwipeEnabled =
     isCompactLayout &&
     viewMode !== 'kanban' &&
     fileBrowserCollapsed;
   const compactFileBrowserSwipe = useEdgeSwipeToOpen({
     enabled: compactFileBrowserSwipeEnabled,
-    onOpen: () => setFileBrowserCollapsed(false),
+    onOpen: handleOpenCompactFileBrowserFromSwipe,
   });
 
   return (

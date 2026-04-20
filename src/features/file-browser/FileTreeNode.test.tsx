@@ -160,6 +160,22 @@ describe('FileTreeNode', () => {
     expect(onContextMenu).not.toHaveBeenCalled();
   });
 
+  it('does not let Enter on the compact actions button trigger the row key handler', () => {
+    const onToggleDir = vi.fn();
+    renderNode({
+      entry: directoryEntry,
+      compact: true,
+      onOpenActions: vi.fn(),
+      onToggleDir,
+    });
+
+    const button = screen.getByRole('button', { name: `Open actions for ${directoryEntry.name}` });
+
+    fireEvent.keyDown(button, { key: 'Enter' });
+
+    expect(onToggleDir).not.toHaveBeenCalled();
+  });
+
   it('uses a shrinkable filename region so compact actions remain accessible on narrow rows', () => {
     renderNode({
       compact: true,

@@ -1,4 +1,3 @@
-import type React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { FileTreeNode } from './FileTreeNode';
@@ -27,7 +26,15 @@ const directoryEntry: TreeEntry = {
   children: [],
 };
 
-function renderNode(overrides: Partial<React.ComponentProps<typeof FileTreeNode>> = {}) {
+type RenderNodeOverrides = Partial<{
+  entry: TreeEntry;
+  compact: boolean;
+  onOpenActions: (entry: TreeEntry, anchorRect: DOMRect) => void;
+  onSelect: (path: string) => void;
+  onToggleDir: (path: string) => void;
+}>;
+
+function renderNode(overrides: RenderNodeOverrides = {}) {
   return render(
     <FileTreeNode
       entry={entry}

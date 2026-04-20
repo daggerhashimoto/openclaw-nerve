@@ -246,7 +246,7 @@ export function FileTreeNode({
             className="flex-1 min-w-0 bg-background border border-border/60 px-1 py-0 text-[0.8rem] leading-5 text-foreground focus:outline-none focus:border-primary"
           />
         ) : (
-          <span className="truncate">{entry.name}</span>
+          <span className="flex-1 min-w-0 truncate">{entry.name}</span>
         )}
         {showCompactActions && (
           <button

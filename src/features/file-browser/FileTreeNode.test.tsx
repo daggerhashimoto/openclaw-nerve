@@ -144,4 +144,13 @@ describe('FileTreeNode', () => {
     const label = `Open actions for ${entry.name}`;
     expect(screen.queryByRole('button', { name: label })).toBeNull();
   });
+
+  it('uses a shrinkable filename region so compact actions remain accessible on narrow rows', () => {
+    renderNode({
+      compact: true,
+      onOpenActions: vi.fn(),
+    });
+
+    expect(screen.getByText(entry.name)).toHaveClass('flex-1', 'min-w-0', 'truncate');
+  });
 });

@@ -210,6 +210,76 @@ describe('FileTreePanel', () => {
   });
 
   describe('context menu add to chat', () => {
+    it('opens the shared row menu from a compact actions button without selecting the row', async () => {
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          isCompactLayout={true}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open actions for package.json' }));
+
+      expect(await screen.findByText('Rename')).toBeInTheDocument();
+      expect(defaultMockHook.selectFile).not.toHaveBeenCalled();
+    });
+
+    it('does not toggle a directory when its compact actions button is clicked', async () => {
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          isCompactLayout={true}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open actions for src' }));
+
+      expect(await screen.findByText('Rename')).toBeInTheDocument();
+      expect(defaultMockHook.toggleDirectory).not.toHaveBeenCalled();
+    });
+
+    it('does not open the shared row menu from touch long press in compact layout', async () => {
+      vi.useFakeTimers();
+
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          isCompactLayout={true}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const row = screen.getByTitle('package.json');
+      fireEvent.pointerDown(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 11 });
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+      fireEvent.pointerUp(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 11 });
+
+      expect(screen.queryByText('Add to chat')).not.toBeInTheDocument();
+      expect(screen.queryByText('Rename')).not.toBeInTheDocument();
+    });
+
     it('opens the shared row menu on touch release after a long press without triggering file open', async () => {
       vi.useFakeTimers();
 

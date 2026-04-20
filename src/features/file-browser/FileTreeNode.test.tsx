@@ -30,6 +30,7 @@ type RenderNodeOverrides = Partial<{
   entry: TreeEntry;
   compact: boolean;
   onOpenActions: (entry: TreeEntry, anchorRect: DOMRect) => void;
+  onContextMenu: (entry: TreeEntry, event: React.MouseEvent) => void;
   onSelect: (path: string) => void;
   onToggleDir: (path: string) => void;
 }>;
@@ -143,6 +144,20 @@ describe('FileTreeNode', () => {
 
     const label = `Open actions for ${entry.name}`;
     expect(screen.queryByRole('button', { name: label })).toBeNull();
+  });
+
+  it('suppresses the browser context menu on the compact actions button', () => {
+    const onContextMenu = vi.fn();
+    renderNode({
+      compact: true,
+      onOpenActions: vi.fn(),
+      onContextMenu,
+    });
+
+    const button = screen.getByRole('button', { name: `Open actions for ${entry.name}` });
+
+    expect(fireEvent.contextMenu(button)).toBe(false);
+    expect(onContextMenu).not.toHaveBeenCalled();
   });
 
   it('uses a shrinkable filename region so compact actions remain accessible on narrow rows', () => {

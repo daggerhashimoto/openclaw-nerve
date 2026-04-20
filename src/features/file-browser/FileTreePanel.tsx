@@ -506,7 +506,7 @@ export function FileTreePanel({
       agentId: workspaceAgentId,
       sessionId: contextMenuSessionIdRef.current,
       x: anchorRect.right - MENU_CURSOR_OFFSET,
-      y: anchorRect.top + MENU_ROW_TOP_OFFSET,
+      y: anchorRect.bottom + MENU_VIEWPORT_PADDING,
       entry,
       source: 'mouse',
     });

@@ -169,6 +169,7 @@ export function FileTreeNode({
   };
 
   const handleActionsContextMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
     event.stopPropagation();
   };
 

@@ -168,6 +168,10 @@ export function FileTreeNode({
     event.stopPropagation();
   };
 
+  const handleActionsMouseDown = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+  };
+
   const handleActionsContextMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -258,6 +262,7 @@ export function FileTreeNode({
             draggable={false}
             onClick={handleActionsClick}
             onPointerDown={handleActionsPointerDown}
+            onMouseDown={handleActionsMouseDown}
             onContextMenu={handleActionsContextMenu}
           >
             <EllipsisVertical size={16} />

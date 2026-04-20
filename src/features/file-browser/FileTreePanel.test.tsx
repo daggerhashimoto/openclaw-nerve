@@ -280,6 +280,34 @@ describe('FileTreePanel', () => {
       expect(screen.queryByText('Rename')).not.toBeInTheDocument();
     });
 
+    it('closes the shared row menu when the same compact actions button is clicked again', async () => {
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          isCompactLayout={true}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const button = screen.getByRole('button', { name: 'Open actions for package.json' });
+
+      fireEvent.click(button);
+      expect(await screen.findByText('Rename')).toBeInTheDocument();
+
+      fireEvent.mouseDown(button);
+      fireEvent.click(button);
+
+      await waitFor(() => {
+        expect(screen.queryByText('Rename')).not.toBeInTheDocument();
+      });
+    });
+
     it('opens the shared row menu on touch release after a long press without triggering file open', async () => {
       vi.useFakeTimers();
 

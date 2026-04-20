@@ -501,14 +501,25 @@ export function FileTreePanel({
   }, [selectFile, workspaceAgentId]);
 
   const openCompactActionsMenu = useCallback((entry: TreeEntry, anchorRect: DOMRect) => {
-    contextMenuSessionIdRef.current += 1;
-    setContextMenu({
-      agentId: workspaceAgentId,
-      sessionId: contextMenuSessionIdRef.current,
-      x: anchorRect.right - MENU_CURSOR_OFFSET,
-      y: anchorRect.bottom + MENU_VIEWPORT_PADDING,
-      entry,
-      source: 'mouse',
+    setContextMenu((currentContextMenu) => {
+      if (
+        currentContextMenu
+        && currentContextMenu.agentId === workspaceAgentId
+        && currentContextMenu.source === 'mouse'
+        && currentContextMenu.entry.path === entry.path
+      ) {
+        return null;
+      }
+
+      contextMenuSessionIdRef.current += 1;
+      return {
+        agentId: workspaceAgentId,
+        sessionId: contextMenuSessionIdRef.current,
+        x: anchorRect.right - MENU_CURSOR_OFFSET,
+        y: anchorRect.bottom + MENU_VIEWPORT_PADDING,
+        entry,
+        source: 'mouse',
+      };
     });
   }, [workspaceAgentId]);
 

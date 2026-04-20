@@ -30,6 +30,23 @@ describe('extractEditBlocks', () => {
     expect(extractEditBlocks(text2)[0].oldText).toBe('a');
   });
 
+  it('extracts nested edits arrays from real edit tool payloads', () => {
+    const text = '**tool:** `edit`\n```json\n{"path":"2026-04-20.md","edits":[{"oldText":"foo","newText":"bar"},{"oldText":"baz","newText":"qux"}]}\n```';
+
+    const blocks = extractEditBlocks(text);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toEqual({ filePath: '2026-04-20.md', oldText: 'foo', newText: 'bar' });
+    expect(blocks[1]).toEqual({ filePath: '2026-04-20.md', oldText: 'baz', newText: 'qux' });
+  });
+
+  it('uses per-edit path when present inside nested edits', () => {
+    const text = '**tool:** `edit`\n```json\n{"path":"fallback.md","edits":[{"path":"nested.md","oldText":"a","newText":"b"}]}\n```';
+
+    const blocks = extractEditBlocks(text);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toEqual({ filePath: 'nested.md', oldText: 'a', newText: 'b' });
+  });
+
   it('skips malformed JSON', () => {
     const text = '**tool:** `Edit`\n```json\n{not valid json}\n```';
     expect(extractEditBlocks(text)).toHaveLength(0);

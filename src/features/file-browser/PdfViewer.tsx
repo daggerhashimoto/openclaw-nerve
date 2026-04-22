@@ -1,8 +1,11 @@
 /**
  * PdfViewer — Renders PDF files using the browser's built-in PDF viewer via iframe.
+ * Falls back to opening the raw file directly on mobile web, where inline PDF embeds
+ * are unreliable in Chrome-based browsers.
  */
 
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle, ExternalLink } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { OpenFile } from './types';
 
 interface PdfViewerProps {
@@ -31,6 +34,30 @@ export function PdfViewer({ file, agentId }: PdfViewerProps) {
   }
 
   const src = `/api/files/raw?path=${encodeURIComponent(file.path)}&agentId=${encodeURIComponent(agentId)}`;
+  const userAgent = typeof navigator === 'undefined' ? '' : (navigator.userAgent || '').toLowerCase();
+  const platform = typeof navigator === 'undefined' ? '' : (navigator.platform || '').toLowerCase();
+  const maxTouchPoints = typeof navigator === 'undefined' ? 0 : navigator.maxTouchPoints || 0;
+  const isMobileWeb = /android|iphone|ipod/.test(userAgent)
+    || /ipad|mobile|tablet/.test(userAgent)
+    || (platform === 'macintel' && maxTouchPoints > 1);
+
+  if (isMobileWeb) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-[#0a0a0a] px-6 text-center text-muted-foreground">
+        <AlertTriangle size={24} className="text-amber-400" />
+        <div className="text-sm text-foreground">PDF preview isn't supported on mobile web.</div>
+        <div className="max-w-sm text-xs">
+          Open the file directly for your browser's native PDF handling.
+        </div>
+        <Button asChild size="sm">
+          <a href={src} target="_blank" rel="noreferrer">
+            <ExternalLink size={14} />
+            Open PDF
+          </a>
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full w-full bg-[#0a0a0a]">

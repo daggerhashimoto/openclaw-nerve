@@ -34,11 +34,13 @@ export function PdfViewer({ file, agentId }: PdfViewerProps) {
   }
 
   const src = `/api/files/raw?path=${encodeURIComponent(file.path)}&agentId=${encodeURIComponent(agentId)}`;
-  const userAgent = typeof navigator === 'undefined' ? '' : (navigator.userAgent || '').toLowerCase();
-  const platform = typeof navigator === 'undefined' ? '' : (navigator.platform || '').toLowerCase();
-  const maxTouchPoints = typeof navigator === 'undefined' ? 0 : navigator.maxTouchPoints || 0;
-  const isMobileWeb = /android|iphone|ipod/.test(userAgent)
-    || /ipad|mobile|tablet/.test(userAgent)
+  const nav = typeof navigator === 'undefined' ? undefined : navigator;
+  const userAgent = (nav?.userAgent || '').toLowerCase();
+  // navigator.platform is deprecated, but the MacIntel + touchpoints check is still
+  // the most reliable way to catch iPadOS Safari reporting a desktop-like UA.
+  const platform = (nav?.platform || '').toLowerCase();
+  const maxTouchPoints = nav?.maxTouchPoints ?? 0;
+  const isMobileWeb = /android|iphone|ipad|mobile|tablet/.test(userAgent)
     || (platform === 'macintel' && maxTouchPoints > 1);
 
   if (isMobileWeb) {
@@ -50,7 +52,7 @@ export function PdfViewer({ file, agentId }: PdfViewerProps) {
           Open the file directly for your browser's native PDF handling.
         </div>
         <Button asChild size="sm">
-          <a href={src} target="_blank" rel="noreferrer">
+          <a href={src} target="_blank" rel="noopener noreferrer">
             <ExternalLink size={14} />
             Open PDF
           </a>

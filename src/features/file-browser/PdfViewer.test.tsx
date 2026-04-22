@@ -74,5 +74,27 @@ describe('PdfViewer', () => {
       '/api/files/raw?path=docs%2Fspec.pdf&agentId=agent-1',
     );
     expect(openLink).toHaveAttribute('target', '_blank');
+    expect(openLink).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('shows the mobile fallback for iPadOS Safari reporting a desktop-like UA', () => {
+    setNavigatorEnv({
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Version/17.3 Safari/605.1.15',
+      platform: 'MacIntel',
+      maxTouchPoints: 5,
+    });
+
+    render(<PdfViewer file={baseFile} agentId="agent-1" />);
+
+    expect(screen.getByText(/pdf preview isn't supported on mobile web/i)).toBeInTheDocument();
+    expect(screen.queryByTitle('spec.pdf')).not.toBeInTheDocument();
+
+    const openLink = screen.getByRole('link', { name: /open pdf/i });
+    expect(openLink).toHaveAttribute(
+      'href',
+      '/api/files/raw?path=docs%2Fspec.pdf&agentId=agent-1',
+    );
+    expect(openLink).toHaveAttribute('target', '_blank');
+    expect(openLink).toHaveAttribute('rel', 'noopener noreferrer');
   });
 });

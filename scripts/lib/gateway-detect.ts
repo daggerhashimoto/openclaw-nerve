@@ -13,7 +13,11 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 
 const HOME = process.env.HOME || os.homedir();
-const OPENCLAW_CONFIG = join(HOME, '.openclaw', 'openclaw.json');
+const DEFAULT_OPENCLAW_CONFIG = join(HOME, '.openclaw', 'openclaw.json');
+
+function resolveOpenClawConfigPath(): string {
+  return process.env.OPENCLAW_CONFIG_PATH?.trim() || DEFAULT_OPENCLAW_CONFIG;
+}
 
 interface OpenClawConfig {
   gateway?: {
@@ -51,6 +55,7 @@ export interface GatewayTokenChoice {
  */
 export function detectGatewayConfig(): DetectedGateway {
   const result: DetectedGateway = { token: null, url: null };
+  const openclawConfigPath = resolveOpenClawConfigPath();
 
   // The gateway process prefers the systemd env var over the config file token,
   // so detect it first even when openclaw.json is absent or broken.
@@ -59,12 +64,12 @@ export function detectGatewayConfig(): DetectedGateway {
     result.token = systemdToken;
   }
 
-  if (!existsSync(OPENCLAW_CONFIG)) {
+  if (!existsSync(openclawConfigPath)) {
     return result;
   }
 
   try {
-    const raw = readFileSync(OPENCLAW_CONFIG, 'utf-8');
+    const raw = readFileSync(openclawConfigPath, 'utf-8');
     const config = JSON.parse(raw) as OpenClawConfig;
 
     if (!result.token && config.gateway?.auth?.token) {
@@ -138,15 +143,16 @@ export interface GatewayPatchResult {
  * Returns a result indicating success/failure.
  */
 export function patchGatewayAllowedOrigins(origin: string): GatewayPatchResult {
-  const result: GatewayPatchResult = { ok: false, message: '', configPath: OPENCLAW_CONFIG };
+  const openclawConfigPath = resolveOpenClawConfigPath();
+  const result: GatewayPatchResult = { ok: false, message: '', configPath: openclawConfigPath };
 
-  if (!existsSync(OPENCLAW_CONFIG)) {
-    result.message = `Config not found: ${OPENCLAW_CONFIG}`;
+  if (!existsSync(openclawConfigPath)) {
+    result.message = `Config not found: ${openclawConfigPath}`;
     return result;
   }
 
   try {
-    const raw = readFileSync(OPENCLAW_CONFIG, 'utf-8');
+    const raw = readFileSync(openclawConfigPath, 'utf-8');
     const config = JSON.parse(raw) as OpenClawConfig;
 
     config.gateway = config.gateway || {};
@@ -162,7 +168,7 @@ export function patchGatewayAllowedOrigins(origin: string): GatewayPatchResult {
     origins.push(origin);
     config.gateway.controlUi.allowedOrigins = origins;
 
-    writeFileSync(OPENCLAW_CONFIG, JSON.stringify(config, null, 2) + '\n');
+    writeFileSync(openclawConfigPath, JSON.stringify(config, null, 2) + '\n');
     result.ok = true;
     result.message = `Added ${origin} to gateway.controlUi.allowedOrigins`;
     return result;
@@ -187,15 +193,16 @@ const NERVE_PAIRED_DISPLAY_NAME = 'Nerve UI';
  * Returns a result indicating success/failure.
  */
 export function patchGatewayToolsAllow(): GatewayPatchResult {
-  const result: GatewayPatchResult = { ok: false, message: '', configPath: OPENCLAW_CONFIG };
+  const openclawConfigPath = resolveOpenClawConfigPath();
+  const result: GatewayPatchResult = { ok: false, message: '', configPath: openclawConfigPath };
 
-  if (!existsSync(OPENCLAW_CONFIG)) {
-    result.message = `Config not found: ${OPENCLAW_CONFIG}`;
+  if (!existsSync(openclawConfigPath)) {
+    result.message = `Config not found: ${openclawConfigPath}`;
     return result;
   }
 
   try {
-    const raw = readFileSync(OPENCLAW_CONFIG, 'utf-8');
+    const raw = readFileSync(openclawConfigPath, 'utf-8');
     const config = JSON.parse(raw) as OpenClawConfig;
 
     config.gateway = config.gateway || {};
@@ -211,7 +218,7 @@ export function patchGatewayToolsAllow(): GatewayPatchResult {
 
     config.gateway.tools.allow = [...allow, ...missing];
 
-    writeFileSync(OPENCLAW_CONFIG, JSON.stringify(config, null, 2) + '\n');
+    writeFileSync(openclawConfigPath, JSON.stringify(config, null, 2) + '\n');
     result.ok = true;
     result.message = `Added ${missing.join(', ')} to gateway.tools.allow`;
     return result;
@@ -850,10 +857,11 @@ function needsPrePair(gatewayToken?: string): boolean {
  * Detect whether gateway.tools.allow is missing required HTTP tools.
  */
 function needsToolsAllow(): boolean {
-  if (!existsSync(OPENCLAW_CONFIG)) return false;
+  const openclawConfigPath = resolveOpenClawConfigPath();
+  if (!existsSync(openclawConfigPath)) return false;
 
   try {
-    const raw = readFileSync(OPENCLAW_CONFIG, 'utf-8');
+    const raw = readFileSync(openclawConfigPath, 'utf-8');
     const config = JSON.parse(raw) as OpenClawConfig;
     const allow = Array.isArray(config.gateway?.tools?.allow) ? config.gateway.tools.allow : [];
     return REQUIRED_HTTP_TOOLS.some(tool => !allow.includes(tool));
@@ -866,10 +874,11 @@ function needsToolsAllow(): boolean {
  * Detect whether a specific origin is missing from gateway.controlUi.allowedOrigins.
  */
 function needsOriginPatch(origin: string): boolean {
-  if (!existsSync(OPENCLAW_CONFIG)) return false;
+  const openclawConfigPath = resolveOpenClawConfigPath();
+  if (!existsSync(openclawConfigPath)) return false;
 
   try {
-    const raw = readFileSync(OPENCLAW_CONFIG, 'utf-8');
+    const raw = readFileSync(openclawConfigPath, 'utf-8');
     const config = JSON.parse(raw) as OpenClawConfig;
     const origins = config.gateway?.controlUi?.allowedOrigins || [];
     return !origins.includes(origin);

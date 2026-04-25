@@ -70,10 +70,13 @@ async function getContext(): Promise<WhisperContext> {
   // Prevent concurrent initialization (multiple requests hitting at same time)
   if (contextInitializing) return contextInitializing;
 
+  // Pick the GPU backend: Vulkan on Linux (AMD/Intel/NVIDIA), default (Metal) on macOS.
+  const backend = process.platform === 'linux' ? 'vulkan' : undefined;
+
   contextInitializing = initWhisper({
     filePath: modelPath(),
-    useGpu: true, // auto-detects Metal on macOS; CPU fallback elsewhere
-  }).then((ctx) => {
+    useGpu: true, // auto-detects Metal on macOS; Vulkan on Linux; CPU fallback elsewhere
+  }, backend).then((ctx) => {
     whisperContext = ctx;
     contextInitializing = null;
     console.log(`[whisper-local] Model loaded: ${activeModel}`);
@@ -393,6 +396,7 @@ export async function transcribeLocal(
     const transcribeOpts: TranscribeOptions = {
       temperature: 0.0,
       language: whisperLang,
+      maxThreads: cpus().length,
     };
     const { promise } = ctx.transcribeFile(wavTmp, transcribeOpts);
 

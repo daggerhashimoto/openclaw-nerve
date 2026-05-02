@@ -1,5 +1,7 @@
 // Theme definitions for Nerve UI
 
+import type { NerveTheme } from './theme-schema';
+
 export type ThemeName =
   | 'midnight'
   | 'light'
@@ -15,6 +17,9 @@ export type ThemeName =
   | 'ayu-dark'
   | 'rose-pine'
   | 'monochrome';
+
+/** Extended theme name: built-in or 'imported' for a custom theme. */
+export type ExtendedThemeName = ThemeName | 'imported';
 
 export interface Theme {
   name: ThemeName;
@@ -746,8 +751,8 @@ const hljsThemes: Record<ThemeName, string> = {
   'monochrome': 'github-dark-dimmed',
 };
 
-/** Apply a theme by setting CSS custom properties on the document root and loading the matching highlight.js stylesheet. */
-export function applyTheme(themeName: ThemeName): void {
+/** Apply a built-in theme by setting CSS custom properties on the document root and loading the matching highlight.js stylesheet. */
+export function applyTheme(themeName: ThemeName, layoutOverrides?: Record<string, string>): void {
   const theme = themes[themeName];
   if (!theme) return;
   
@@ -764,6 +769,13 @@ export function applyTheme(themeName: ThemeName): void {
     }
   });
 
+  // Apply layout overrides after colors (they can override spacing/sizing vars)
+  if (layoutOverrides) {
+    Object.entries(layoutOverrides).forEach(([property, value]) => {
+      root.style.setProperty(property, value);
+    });
+  }
+
   // Apply highlight.js theme (vendored locally to avoid CDN dependency)
   const hljsTheme = hljsThemes[themeName];
   const existingLink = document.getElementById('hljs-theme') as HTMLLinkElement | null;
@@ -779,5 +791,50 @@ export function applyTheme(themeName: ThemeName): void {
     link.rel = 'stylesheet';
     link.href = hljsHref;
     document.head.appendChild(link);
+  }
+}
+
+/** Apply an imported/custom theme by setting its CSS custom properties on the document root. */
+export function applyImportedTheme(colors: Record<string, string>): void {
+  const root = document.documentElement;
+  Object.entries(colors).forEach(([property, value]) => {
+    root.style.setProperty(property, value);
+    
+    // Dual-namespace: also set the base property if --color-* form
+    if (property.startsWith('--color-')) {
+      const baseProperty = '--' + property.slice(8);
+      root.style.setProperty(baseProperty, value);
+    }
+  });
+
+  // Imported themes use github-dark-dimmed highlight.js by default
+  const existingLink = document.getElementById('hljs-theme') as HTMLLinkElement | null;
+  const hljsHref = `/hljs/github-dark-dimmed.min.css`;
+  if (existingLink) {
+    if (existingLink.getAttribute('href') !== hljsHref) {
+      existingLink.href = hljsHref;
+    }
+  } else {
+    const link = document.createElement('link');
+    link.id = 'hljs-theme';
+    link.rel = 'stylesheet';
+    link.href = hljsHref;
+    document.head.appendChild(link);
+  }
+}
+
+/** Apply layout-related CSS custom properties from a layout template. */
+export function applyLayoutVariables(overrides: Record<string, string>): void {
+  const root = document.documentElement;
+  Object.entries(overrides).forEach(([property, value]) => {
+    root.style.setProperty(property, value);
+  });
+}
+
+/** Remove layout-related CSS custom properties that were previously applied. */
+export function clearLayoutVariables(allLayoutKeys: string[]): void {
+  const root = document.documentElement;
+  for (const property of allLayoutKeys) {
+    root.style.removeProperty(property);
   }
 }

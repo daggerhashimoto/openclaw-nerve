@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./styles/foundation.css";
 /* Note: highlight.js theme is applied dynamically via ThemeContext */
 
 @custom-variant dark (&:is(.dark *));

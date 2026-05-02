@@ -1,8 +1,12 @@
 /* eslint-disable react-refresh/only-export-components -- hook intentionally co-located with provider */
 import { createContext, useContext, useCallback, useRef, useState, useEffect, useMemo, type ReactNode } from 'react';
 import { useTTS, migrateTTSProvider, type TTSProvider } from '@/features/tts/useTTS';
-import { type ThemeName, applyTheme, themeNames } from '@/lib/themes';
+import { type ThemeName, type ExtendedThemeName, applyTheme, applyImportedTheme, applyLayoutVariables, clearLayoutVariables, themeNames } from '@/lib/themes';
 import { type FontName, applyFont, fontNames } from '@/lib/fonts';
+import { type NerveTheme } from '@/lib/theme-schema';
+import { type LayoutTemplate, builtInLayoutTemplates } from '@/lib/layout-templates';
+import { saveImportedTheme, loadImportedTheme, clearImportedTheme as removeImportedTheme, saveLayoutTemplate, loadLayoutTemplate } from '@/lib/theme-io';
+import { applyGatewayThemeOverrides, fetchGatewayThemeConfig } from '@/lib/gateway-theme';
 
 export type STTProvider = 'local' | 'openai';
 export type STTInputMode = 'browser' | 'local' | 'hybrid';
@@ -50,6 +54,12 @@ interface SettingsContextValue {
   setEditorFontSize: (size: number) => void;
   kanbanVisible: boolean;
   toggleKanbanVisible: () => void;
+  layoutTemplate: string;
+  setLayoutTemplate: (name: string) => void;
+  importedTheme: NerveTheme | null;
+  setImportedTheme: (theme: NerveTheme | null) => void;
+  highContrast: boolean;
+  setHighContrast: (enabled: boolean) => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -164,13 +174,63 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const saved = localStorage.getItem(KANBAN_VISIBILITY_STORAGE_KEY);
     return saved !== 'false';
   });
+
+  // --- Phase 2: Layout template, imported theme, high contrast ---
+  const [layoutTemplate, setLayoutTemplateState] = useState<string>(() => {
+    return loadLayoutTemplate() || 'default';
+  });
+  const [importedTheme, setImportedThemeState] = useState<NerveTheme | null>(() => {
+    return loadImportedTheme();
+  });
+  const [highContrast, setHighContrastState] = useState<boolean>(() => {
+    return localStorage.getItem('nerve:high-contrast') === 'true';
+  });
   const { speak } = useTTS(soundEnabled, ttsProvider, ttsModel || undefined);
   const wakeWordToggleRef = useRef<(() => void) | null>(null);
 
   // Apply theme on mount and when it changes
   useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
+    // If an imported theme is active, it overrides the built-in theme for colors
+    if (importedTheme) {
+      applyImportedTheme(importedTheme.colors);
+    } else {
+      applyTheme(theme);
+    }
+
+    // Apply layout template variables on top
+    const template = builtInLayoutTemplates[layoutTemplate];
+    if (template && layoutTemplate !== 'default') {
+      applyLayoutVariables(template.overrides);
+    } else if (layoutTemplate === 'default') {
+      // Clear any previously applied layout variables
+      const allLayoutKeys = Object.values(builtInLayoutTemplates)
+        .flatMap(t => Object.keys(t.overrides));
+      clearLayoutVariables(allLayoutKeys);
+    }
+
+    // Set/unset high-contrast attribute
+    if (highContrast) {
+      document.documentElement.setAttribute('data-high-contrast', 'true');
+    } else {
+      document.documentElement.removeAttribute('data-high-contrast');
+    }
+
+    // Apply gateway theme overrides only when no imported theme is active
+    // (imported themes take priority over gateway)
+    if (!importedTheme) {
+      fetchGatewayThemeConfig().then(config => {
+        if (config) applyGatewayThemeOverrides(config);
+      });
+    }
+  }, [theme, importedTheme, layoutTemplate, highContrast]);
+
+  // Gateway theme bridge: fetch once on mount and apply if no imported theme
+  useEffect(() => {
+    if (importedTheme) return; // imported theme takes priority
+    fetchGatewayThemeConfig().then(config => {
+      if (config) applyGatewayThemeOverrides(config);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Apply font on mount and when it changes
   useEffect(() => {
@@ -357,6 +417,30 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('nerve:editor-font-size', String(normalized));
   }, []);
 
+  const setLayoutTemplate = useCallback((name: string) => {
+    setLayoutTemplateState(name);
+    saveLayoutTemplate(name);
+  }, []);
+
+  const setImportedTheme = useCallback((themeValue: NerveTheme | null) => {
+    setImportedThemeState(themeValue);
+    if (themeValue) {
+      saveImportedTheme(themeValue);
+    } else {
+      removeImportedTheme();
+    }
+  }, []);
+
+  const setHighContrast = useCallback((enabled: boolean) => {
+    setHighContrastState(enabled);
+    localStorage.setItem('nerve:high-contrast', String(enabled));
+    if (enabled) {
+      document.documentElement.setAttribute('data-high-contrast', 'true');
+    } else {
+      document.documentElement.removeAttribute('data-high-contrast');
+    }
+  }, []);
+
   const toggleKanbanVisible = useCallback(() => {
     setKanbanVisible(prev => {
       const next = !prev;
@@ -408,6 +492,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setEditorFontSize,
     kanbanVisible,
     toggleKanbanVisible,
+    layoutTemplate,
+    setLayoutTemplate,
+    importedTheme,
+    setImportedTheme,
+    highContrast,
+    setHighContrast,
   }), [
     soundEnabled, toggleSound, ttsProvider, ttsModel, changeTtsProvider, changeTtsModel, toggleTtsProvider,
     sttProvider, changeSttProvider, sttInputMode, changeSttInputMode, sttModel, changeSttModel,
@@ -418,6 +508,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     commandPaletteButtonVisible, toggleCommandPaletteButtonVisible,
     theme, setTheme, font, setFont,
     fontSize, setFontSize, editorFontSize, setEditorFontSize, kanbanVisible, toggleKanbanVisible,
+    layoutTemplate, setLayoutTemplate, importedTheme, setImportedTheme, highContrast, setHighContrast,
   ]);
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

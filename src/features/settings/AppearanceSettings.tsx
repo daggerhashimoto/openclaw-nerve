@@ -1,9 +1,14 @@
-import { Monitor, Eye, Type, Activity, ALargeSmall, Code2, Columns3, Command } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Monitor, Eye, Type, Activity, ALargeSmall, Code2, Columns3, Command, LayoutGrid, Contrast, Download, Upload } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useSettings } from '@/contexts/SettingsContext';
 import { themes, themeNames, type ThemeName } from '@/lib/themes';
 import { fonts, fontNames, type FontName } from '@/lib/fonts';
+import { builtInLayoutTemplates } from '@/lib/layout-templates';
+import { fetchTweakcnTheme } from '@/lib/theme-io';
+import { exportAsCSS, exportAsJSON } from '@/lib/theme-io';
+import { validateTheme } from '@/lib/theme-schema';
 
 const INLINE_SELECT_TRIGGER_CLASS =
   'min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-left text-sm font-sans text-foreground sm:min-w-[148px]';
@@ -40,6 +45,11 @@ const FONT_SIZE_OPTIONS = [
   { value: '24', label: '24px' },
 ];
 
+const LAYOUT_TEMPLATE_OPTIONS = Object.values(builtInLayoutTemplates).map(t => ({
+  value: t.name,
+  label: t.label,
+}));
+
 /** Settings section for theme, font, font size, and panel visibility. */
 export function AppearanceSettings() {
   const {
@@ -61,7 +71,18 @@ export function AppearanceSettings() {
     setFontSize,
     editorFontSize,
     setEditorFontSize,
+    layoutTemplate,
+    setLayoutTemplate,
+    importedTheme,
+    setImportedTheme,
+    highContrast,
+    setHighContrast,
   } = useSettings();
+
+  const [importInput, setImportInput] = useState('');
+  const [importStatus, setImportStatus] = useState<'idle' | 'loading' | 'error' | 'success'>('idle');
+  const [importError, setImportError] = useState('');
+  const [copiedFormat, setCopiedFormat] = useState<string | null>(null);
 
   const handleThemeChange = (next: string) => {
     setTheme(next as ThemeName);
@@ -70,6 +91,49 @@ export function AppearanceSettings() {
   const handleFontChange = (next: string) => {
     setFont(next as FontName);
   };
+
+  const handleImportTheme = useCallback(async () => {
+    if (!importInput.trim()) return;
+    setImportStatus('loading');
+    setImportError('');
+    try {
+      const nerveTheme = await fetchTweakcnTheme(importInput.trim());
+      const missing = validateTheme(nerveTheme.colors);
+      if (missing.length > 0) {
+        console.warn(`Imported theme missing variables: ${missing.join(', ')}. They will fall back to defaults.`);
+      }
+      setImportedTheme(nerveTheme);
+      setImportStatus('success');
+      setImportInput('');
+    } catch (e) {
+      setImportStatus('error');
+      setImportError(e instanceof Error ? e.message : 'Failed to import theme');
+    }
+  }, [importInput, setImportedTheme]);
+
+  const handleClearImported = useCallback(() => {
+    setImportedTheme(null);
+    setImportStatus('idle');
+    setImportError('');
+  }, [setImportedTheme]);
+
+  const handleExportCSS = useCallback(() => {
+    if (!importedTheme) return;
+    const css = exportAsCSS(importedTheme);
+    navigator.clipboard.writeText(css).then(() => {
+      setCopiedFormat('CSS');
+      setTimeout(() => setCopiedFormat(null), 2000);
+    });
+  }, [importedTheme]);
+
+  const handleExportJSON = useCallback(() => {
+    if (!importedTheme) return;
+    const json = exportAsJSON(importedTheme);
+    navigator.clipboard.writeText(json).then(() => {
+      setCopiedFormat('JSON');
+      setTimeout(() => setCopiedFormat(null), 2000);
+    });
+  }, [importedTheme]);
 
   return (
     <div className="space-y-4">
@@ -99,6 +163,43 @@ export function AppearanceSettings() {
             menuClassName={INLINE_SELECT_MENU_CLASS}
           />
         </div>
+      </div>
+
+      {/* Layout template selector */}
+      <div className="cockpit-row items-start justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <LayoutGrid size={14} className="text-primary" />
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground">Layout</span>
+            <span className="text-xs text-muted-foreground">Tune spacing and density across the cockpit.</span>
+          </div>
+        </div>
+        <div className="relative w-full sm:w-auto">
+          <InlineSelect
+            value={layoutTemplate}
+            onChange={setLayoutTemplate}
+            options={LAYOUT_TEMPLATE_OPTIONS}
+            ariaLabel="Select layout template"
+            triggerClassName={INLINE_SELECT_TRIGGER_CLASS}
+            menuClassName={INLINE_SELECT_MENU_CLASS}
+          />
+        </div>
+      </div>
+
+      {/* High Contrast toggle */}
+      <div className="cockpit-row items-start justify-between">
+        <div className="flex items-center gap-3">
+          <Contrast size={14} className={highContrast ? 'text-primary' : 'text-muted-foreground'} aria-hidden="true" />
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground" id="high-contrast-label">High contrast</span>
+            <span className="text-xs text-muted-foreground">Boost borders, focus rings, and text contrast.</span>
+          </div>
+        </div>
+        <Switch
+          checked={highContrast}
+          onCheckedChange={setHighContrast}
+          aria-labelledby="high-contrast-label"
+        />
       </div>
 
       {/* Font selector */}
@@ -161,6 +262,83 @@ export function AppearanceSettings() {
             triggerClassName={INLINE_SELECT_TRIGGER_CLASS}
             menuClassName={INLINE_SELECT_MENU_CLASS}
           />
+        </div>
+      </div>
+
+      {/* Theme Import section */}
+      <div className="cockpit-row items-start justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <Download size={14} className="text-primary" />
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground">Import theme</span>
+            <span className="text-xs text-muted-foreground">Paste a tweakcn URL or JSON to import a custom palette.</span>
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[200px]">
+          {importedTheme && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
+              <span className="inline-block w-2 h-2 rounded-full bg-primary" />
+              Custom theme active
+            </span>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={importInput}
+              onChange={(e) => { setImportInput(e.target.value); setImportStatus('idle'); setImportError(''); }}
+              placeholder="tweakcn.com/..."
+              className="flex-1 min-h-11 rounded-2xl border border-border/80 bg-background/65 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+              onKeyDown={(e) => { if (e.key === 'Enter') handleImportTheme(); }}
+            />
+            <button
+              onClick={handleImportTheme}
+              disabled={importStatus === 'loading' || !importInput.trim()}
+              className="min-h-11 px-4 rounded-2xl border border-border/80 bg-background/65 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {importStatus === 'loading' ? '…' : 'Import'}
+            </button>
+          </div>
+          {importedTheme && (
+            <button
+              onClick={handleClearImported}
+              className="text-xs text-muted-foreground hover:text-destructive transition-colors self-end"
+            >
+              Clear imported theme
+            </button>
+          )}
+          {importStatus === 'error' && importError && (
+            <span className="text-xs text-destructive">{importError}</span>
+          )}
+          {importStatus === 'success' && (
+            <span className="text-xs text-green">Theme imported successfully</span>
+          )}
+        </div>
+      </div>
+
+      {/* Theme Export section */}
+      <div className="cockpit-row items-start justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <Upload size={14} className={importedTheme ? 'text-primary' : 'text-muted-foreground'} />
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground">Export theme</span>
+            <span className="text-xs text-muted-foreground">Copy the current palette as CSS or JSON.</span>
+          </div>
+        </div>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button
+            onClick={handleExportCSS}
+            disabled={!importedTheme}
+            className="min-h-11 px-4 rounded-2xl border border-border/80 bg-background/65 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {copiedFormat === 'CSS' ? 'Copied!' : 'Copy CSS'}
+          </button>
+          <button
+            onClick={handleExportJSON}
+            disabled={!importedTheme}
+            className="min-h-11 px-4 rounded-2xl border border-border/80 bg-background/65 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {copiedFormat === 'JSON' ? 'Copied!' : 'Copy JSON'}
+          </button>
         </div>
       </div>
 

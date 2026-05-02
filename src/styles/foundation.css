@@ -1,0 +1,348 @@
+/**
+ * Nerve Theme Foundation
+ * 
+ * Extends the existing Nerve CSS custom properties with additional
+ * variables needed for Control UI parity, template gallery support,
+ * and the Deck (multi-column) layout.
+ * 
+ * All variables are CSS custom properties set on :root.
+ * Runtime theme switching works by overriding these via
+ * document.documentElement.style.setProperty().
+ * 
+ * Variable naming convention:
+ *   --nerve-*        = Nerve-specific variables (not in Control UI)
+ *   --*              = Shared with OpenClaw Control UI (same name)
+ *   --color-*        = shadcn/ui color token namespace (existing)
+ *   --cm-*           = CodeMirror editor variables
+ *   --shell-*        = Shell/panel layout variables
+ *   --deck-*         = Deck (multi-column) layout variables
+ */
+
+/* ============================================================
+   LAYOUT & SPACING
+   ============================================================ */
+:root {
+  /* Shell structure */
+  --shell-gap: 14px;
+  --shell-pad: 14px;
+  --shell-nav-width: 260px;
+  --shell-nav-rail-width: 52px;
+  --shell-topbar-height: 48px;
+  --shell-focus-duration: 0.15s;
+  --shell-focus-ease: ease;
+
+  /* Panel chrome */
+  --panel-pad: 14px;
+  --panel-gap: 8px;
+  --panel-header-height: 48px;
+
+  /* Content density — overridable by layout templates */
+  --nerve-content-gap: 0.8em;      /* paragraph spacing in messages */
+  --nerve-row-gap: 14px;           /* cockpit-row internal gap */
+  --nerve-row-pad: 14px 16px;      /* cockpit-row padding */
+  --nerve-field-gap: 8px;          /* cockpit-field internal gap */
+
+  /* Bar widths */
+  --bar-max-width: none;
+  --nerve-chat-max-width: none;     /* matches gateway.controlUi.chatMessageMaxWidth */
+
+  /* Deck (multi-column chat) layout */
+  --deck-gap: 2px;
+  --deck-column-min-width: 320px;
+  --deck-column-max-width: 1fr;
+  --deck-header-height: 36px;
+  --deck-gutter-width: 6px;
+  --deck-accent-width: 3px;        /* left accent stripe per column */
+}
+
+/* ============================================================
+   TYPOGRAPHY (extended)
+   ============================================================ */
+:root {
+  /* These are already set in index.css @theme, but we add Nerve-specific extensions */
+  --font-display: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+  
+  /* Heading weight (used by markdown renderer) */
+  --nerve-heading-weight: 600;
+  --nerve-heading-spacing: -0.02em;
+  
+  /* Content font sizes (relative to --font-size-base) */
+  --nerve-font-xs: 0.667rem;      /* kickers, badges, kbd */
+  --nerve-font-sm: 0.733rem;      /* labels, mono labels */
+  --nerve-font-md: 0.8rem;        /* small body, hints */
+  --nerve-font-base: 0.933rem;    /* main body text */
+  --nerve-font-lg: 1.05rem;       /* cockpit titles */
+  
+  /* Line heights */
+  --nerve-lh-tight: 1.2;
+  --nerve-lh-normal: 1.55;
+  --nerve-lh-relaxed: 1.7;
+}
+
+/* ============================================================
+   ANIMATION & TRANSITION
+   ============================================================ */
+:root {
+  --duration-fast: 0.1s;
+  --duration-normal: 0.15s;
+  --duration-slow: 0.25s;
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ============================================================
+   SHADOWS (overridable per theme/template)
+   ============================================================ */
+:root {
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.2);
+  --shadow-xl: 0 34px 90px rgba(0, 0, 0, 0.42);
+  --shadow-card: 0 18px 40px rgba(0, 0, 0, 0.18);
+  --shadow-glow: 0 0 18px rgba(0, 0, 0, 0.12);
+}
+
+/* ============================================================
+   FOCUS & INTERACTION
+   ============================================================ */
+:root {
+  --focus-ring: 3px;
+  --focus-spread: 4px;
+  --focus-color: color-mix(in srgb, var(--primary) 16%, transparent);
+  --focus-glow: 0 0 0 var(--focus-ring) var(--focus-color);
+}
+
+/* ============================================================
+   STATUS & STATE COLORS (Control UI parity)
+   These supplement the existing --color-* tokens with explicit
+   status/state colors used by the Control UI.
+   ============================================================ */
+:root {
+  /* Active/idle/busy (session indicators) */
+  --nerve-active: var(--primary);
+  --nerve-idle: var(--muted-foreground);
+  --nerve-busy: var(--orange);
+  --nerve-complete: var(--green);
+  --nerve-error: var(--destructive);
+  --nerve-pending: var(--muted-foreground);
+  --nerve-loading: var(--primary);
+  
+  /* Online/offline */
+  --nerve-online: var(--green);
+  --nerve-offline: var(--muted-foreground);
+  
+  /* On/off toggles */
+  --nerve-on: var(--green);
+  --nerve-off: var(--muted-foreground);
+}
+
+/* ============================================================
+   COMPONENT-SPECIFIC (Control UI parity)
+   ============================================================ */
+:root {
+  /* Chrome (top bar, navigation chrome) */
+  --nerve-chrome: var(--secondary);
+  --nerve-chrome-strong: var(--border);
+  
+  /* Panel backgrounds */
+  --nerve-panel: var(--card);
+  --nerve-panel-hover: color-mix(in srgb, var(--primary) 5%, var(--card));
+  --nerve-panel-strong: var(--secondary);
+  
+  /* Context indicator */
+  --nerve-ctx-bg: color-mix(in srgb, var(--primary) 6%, transparent);
+  --nerve-ctx-color: var(--primary);
+  
+  /* Surface (general elevated surface) */
+  --nerve-surface: var(--card);
+  
+  /* Links */
+  --nerve-link: var(--primary);
+  
+  /* Assistant identity */
+  --nerve-assistant: var(--primary);
+  
+  /* Audio/Talk */
+  --nerve-audio: var(--green);
+  
+  /* Automations (cron) */
+  --nerve-automations: var(--purple);
+  
+  /* Channels */
+  --nerve-channels: var(--info);
+  
+  /* Security */
+  --nerve-security: var(--destructive);
+  
+  /* Model indicator */
+  --nerve-model: var(--info);
+  
+  /* File browser */
+  --nerve-file: var(--info);
+}
+
+/* ============================================================
+   CODEMIRROR EDITOR (Control UI parity)
+   ============================================================ */
+:root {
+  --cm-bg: var(--background);
+  --cm-border: var(--border);
+  --cm-callout-bg: color-mix(in srgb, var(--primary) 5%, var(--card));
+  --cm-code-bg: color-mix(in srgb, var(--background) 70%, transparent);
+  --cm-danger: var(--destructive);
+  --cm-font: var(--font-mono);
+  --cm-font-size: 0.867rem;
+  --cm-heading-weight: 600;
+  --cm-highlight: color-mix(in srgb, var(--primary) 10%, transparent);
+  --cm-info: var(--info);
+  --cm-inline-code-bg: color-mix(in srgb, var(--background) 70%, transparent);
+  --cm-line-height: 1.55;
+  --cm-link: var(--primary);
+  --cm-mono: var(--font-mono);
+  --cm-muted: var(--muted-foreground);
+  --cm-radius: var(--radius);
+  --cm-success: var(--green);
+  --cm-table-header-bg: var(--secondary);
+  --cm-table-stripe-bg: color-mix(in srgb, var(--secondary) 50%, transparent);
+  --cm-text: var(--foreground);
+  --cm-warning: var(--orange);
+}
+
+/* ============================================================
+   DECK (Multi-Column Chat) LAYOUT
+   ============================================================ */
+
+/* Deck column accent colors — 7 slots matching Deck's AGENT_ACCENTS */
+:root {
+  --deck-accent-1: #39BAE6;  /* blue */
+  --deck-accent-2: #7FD962;  /* green */
+  --deck-accent-3: #D2A6FF;  /* purple */
+  --deck-accent-4: #FF8F40;  /* orange */
+  --deck-accent-5: #FF6E6E;  /* red/pink */
+  --deck-accent-6: #6DD6D6;  /* teal */
+  --deck-accent-7: #E8C45A;  /* yellow */
+}
+
+/* Deck column chrome */
+.deck-column {
+  display: flex;
+  flex-direction: column;
+  min-width: var(--deck-column-min-width);
+  max-width: var(--deck-column-max-width);
+  border-left: var(--deck-accent-width) solid var(--deck-accent-color, var(--primary));
+  background: var(--color-card);
+  transition: border-color var(--duration-normal) var(--ease-out);
+}
+
+.deck-column:first-child {
+  border-left: none;
+}
+
+.deck-column-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--deck-header-height);
+  padding: 0 var(--panel-pad);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-secondary) 92%, transparent),
+    color-mix(in srgb, var(--color-card) 90%, transparent)
+  );
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 85%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--nerve-font-xs);
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--deck-accent-color, var(--primary)) 82%, var(--color-foreground));
+  flex-shrink: 0;
+}
+
+.deck-column-header .deck-column-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--deck-accent-color, var(--primary));
+  flex-shrink: 0;
+}
+
+.deck-column-header .deck-column-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.deck-column:hover .deck-column-header .deck-column-actions {
+  opacity: 1;
+}
+
+.deck-column-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Deck resize gutter */
+.deck-gutter {
+  width: var(--deck-gutter-width);
+  cursor: col-resize;
+  background: color-mix(in srgb, var(--color-border) 60%, transparent);
+  transition: background var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.deck-gutter:hover,
+.deck-gutter[data-resizing="true"] {
+  background: color-mix(in srgb, var(--primary) 40%, var(--color-border));
+}
+
+/* Add column button */
+.deck-add-column {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  border: 1px dashed color-mix(in srgb, var(--color-border) 80%, transparent);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.deck-add-column:hover {
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--color-border));
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  color: var(--color-foreground);
+}
+
+/* ============================================================
+   HIGH CONTRAST MODE
+   Applied when data-high-contrast="true" on <html>
+   ============================================================ */
+[data-high-contrast="true"] {
+  --nerve-chrome: var(--foreground);
+  --nerve-panel: var(--background);
+  --shadow-card: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+}
+
+/* ============================================================
+   REDUCED MOTION
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0.001s;
+    --duration-normal: 0.001s;
+    --duration-slow: 0.001s;
+    --shell-focus-duration: 0.001s;
+  }
+}

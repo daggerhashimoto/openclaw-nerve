@@ -82,6 +82,8 @@ interface DeckContextValue {
   reorderColumns: (fromIdx: number, toIdx: number) => void;
   /** Resize by adjusting flex proportions of two adjacent columns */
   resizeColumn: (leftId: string, rightId: string, deltaRatio: number) => void;
+  /** Toggle a column: add if absent, remove if present. Returns 'added' or 'removed'. */
+  toggleColumn: (sessionKey: string, agentId?: string) => 'added' | 'removed';
   /** Auto-add a column if transitioning to deck with none */
   ensureColumn: (sessionKey: string, agentId?: string) => void;
   /** Equalize all columns to equal width */
@@ -162,6 +164,24 @@ export function DeckProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const toggleColumn = useCallback((sessionKey: string, agentId?: string): 'added' | 'removed' => {
+    let result: 'added' | 'removed' = 'added';
+    setColumns(prev => {
+      const existing = prev.find(c => c.sessionKey === sessionKey);
+      if (existing) {
+        result = 'removed';
+        const next = prev.filter(c => c.sessionKey !== sessionKey);
+        setActiveColumnId(active => active === existing.id ? (next[0]?.id ?? null) : active);
+        return equalizeFlex(next);
+      }
+      const id = generateColumnId();
+      const newCol: DeckColumn = { id, sessionKey, agentId, flex: 1 };
+      setActiveColumnId(id);
+      return equalizeFlex([...prev, newCol]);
+    });
+    return result;
+  }, []);
+
   const ensureColumn = useCallback((sessionKey: string, agentId?: string) => {
     setColumns(prev => {
       if (prev.length > 0) return prev;
@@ -201,7 +221,7 @@ export function DeckProvider({ children }: { children: ReactNode }) {
     equalizeColumns,
   }), [
     layoutMode, setLayoutMode, columns, activeColumnId, setActiveColumn,
-    addColumn, removeColumn, reorderColumns, resizeColumn, ensureColumn, equalizeColumns,
+    addColumn, removeColumn, toggleColumn, reorderColumns, resizeColumn, ensureColumn, equalizeColumns,
   ]);
 
   return <DeckContext.Provider value={value}>{children}</DeckContext.Provider>;

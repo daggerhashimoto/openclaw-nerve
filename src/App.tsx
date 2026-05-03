@@ -672,19 +672,19 @@ export default function App({ onLogout }: AppProps) {
     }
   }, [discardAllDirtyFiles, pendingWorkspaceSwitch, workspaceSwitchAction]);
 
-  // Deck context — when in deck mode, clicking an agent adds a column
-  const { layoutMode, addColumn } = useDeck();
+  // Deck context — when in deck mode, clicking an agent toggles its column
+  const { layoutMode, toggleColumn } = useDeck();
 
   const handleSessionChange = useCallback((key: string) => {
     if (layoutMode === 'deck') {
-      // In deck mode, add agent as a new column instead of switching session
-      addColumn(key, getWorkspaceAgentId(key));
+      // In deck mode, toggle agent column — click to open, click again to close
+      toggleColumn(key, getWorkspaceAgentId(key));
       return;
     }
     void requestWorkspaceTransition(key, getWorkspaceSwitchLabel(key), async () => {
       setCurrentSession(key);
     });
-  }, [addColumn, getWorkspaceSwitchLabel, layoutMode, requestWorkspaceTransition, setCurrentSession]);
+  }, [toggleColumn, getWorkspaceAgentId, getWorkspaceSwitchLabel, layoutMode, requestWorkspaceTransition, setCurrentSession]);
 
   const handleSpawnSession = useCallback((opts: SpawnSessionOpts) => {
     const targetSessionKey = opts.kind === 'root'

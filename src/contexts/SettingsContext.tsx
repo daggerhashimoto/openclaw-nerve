@@ -235,6 +235,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   // Apply theme overrides on top of everything else
   useEffect(() => {
     const root = document.documentElement;
+    if (!themeOverrides || typeof themeOverrides !== 'object') return;
     for (const [prop, val] of Object.entries(themeOverrides)) {
       root.style.setProperty(prop, val);
     }

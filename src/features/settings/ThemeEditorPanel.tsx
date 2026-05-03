@@ -47,7 +47,10 @@ const STORAGE_KEY_EXPANDED = 'nerve:theme:editor-expanded-groups';
 export function loadThemeOverrides(): ThemeOverrides {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_OVERRIDES);
-    return raw ? JSON.parse(raw) : {};
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    return {};
   } catch {
     return {};
   }
@@ -204,7 +207,8 @@ function GroupSection({ group, specs, overrides, onSet, onReset, isExpanded, onT
   onToggle: () => void;
 }) {
   const meta = GROUP_META[group];
-  const overriddenCount = specs.filter(s => s.property in overrides).length;
+  const safeOverrides = overrides ?? {};
+  const overriddenCount = specs.filter(s => s.property in safeOverrides).length;
 
   return (
     <div className="border border-border/40 rounded-xl overflow-hidden">
@@ -230,8 +234,8 @@ function GroupSection({ group, specs, overrides, onSet, onReset, isExpanded, onT
             <VariableRow
               key={spec.property}
               spec={spec}
-              value={overrides[spec.property] ?? (getComputedValue(spec.property) || spec.default)}
-              isOverridden={spec.property in overrides}
+              value={safeOverrides[spec.property] ?? (getComputedValue(spec.property) || spec.default)}
+              isOverridden={spec.property in safeOverrides}
               onSet={(v) => onSet(spec.property, v)}
               onReset={() => onReset(spec.property)}
             />
@@ -378,7 +382,7 @@ export function ThemeEditorPanel({ overrides, setOverride, resetAll, resetOne }:
             key={group}
             group={group as VariableGroup}
             specs={specs}
-            overrides={overrides}
+            overrides={overrides ?? {}}
             onSet={handleSet}
             onReset={handleReset}
             isExpanded={expandedGroups.has(group)}

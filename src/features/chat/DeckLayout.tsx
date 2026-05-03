@@ -30,22 +30,26 @@ export function DeckLayout({
   const containerRef = useRef<HTMLDivElement>(null);
   const [resizing, setResizing] = useState<{ leftId: string; rightId: string } | null>(null);
 
-  // ── Resize logic with dampening ───────────────────────────────────────
+  // ── Resize logic ──────────────────────────────────────────────────────
+  // Uses incremental delta tracking: each mousemove computes the delta
+  // from the LAST position (not from drag start), so the ratio change is
+  // proportional and feels natural regardless of how far you drag.
+  // The SENSITIVITY multiplier controls how fast columns resize.
+
+  const SENSITIVITY = 0.003; // ~0.3% flex change per pixel of mouse movement
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent, leftId: string, rightId: string) => {
       e.preventDefault();
       setResizing({ leftId, rightId });
 
-      const startX = e.clientX;
-      const containerWidth = containerRef.current?.offsetWidth ?? 1;
-      // Dampening factor: 0.4 makes the resize feel smooth and controlled
-      // rather than 1:1 with pixel movement (which felt jumpy)
-      const DAMPING = 0.4;
+      let lastX = e.clientX;
 
       const onMouseMove = (ev: MouseEvent) => {
-        const deltaX = ev.clientX - startX;
-        const deltaRatio = (deltaX / containerWidth) * DAMPING;
+        const deltaX = ev.clientX - lastX;
+        lastX = ev.clientX;
+        // Small pixel delta → small ratio delta, so it feels smooth
+        const deltaRatio = deltaX * SENSITIVITY;
         resizeColumn(leftId, rightId, deltaRatio);
       };
 
@@ -77,13 +81,12 @@ export function DeckLayout({
     );
   }
 
-  // Calculate total flex for percentage widths
   const totalFlex = columns.reduce((sum, c) => sum + c.flex, 0);
 
   return (
     <div
       ref={containerRef}
-      className={cn('h-full flex min-h-0 overflow-hidden', className)}
+      className={cn('h-full flex min-h-0', className)}
     >
       {columns.map((col, idx) => {
         const isActive = col.id === activeColumnId;
@@ -96,9 +99,10 @@ export function DeckLayout({
           <div
             key={col.id}
             className={cn(
-              'flex min-h-0 h-full',
-              // Lock right edge of last column flush to container right
-              isLast && 'flex-1',
+              // min-w-0 + overflow-hidden prevents ChatPanel's intrinsic
+              // min-width from pushing columns beyond their allocated space
+              'min-w-0 overflow-hidden flex flex-col h-full',
+              isLast ? 'flex-1' : '',
             )}
             style={!isLast ? { width: `${widthPercent}%`, flexShrink: 0 } : undefined}
           >
@@ -118,7 +122,7 @@ export function DeckLayout({
             {idx < columns.length - 1 && (
               <div
                 className={cn(
-                  'w-1.5 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors flex-shrink-0',
+                  'w-1.5 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors shrink-0',
                   resizing?.leftId === col.id && 'bg-primary/40',
                 )}
                 onMouseDown={(e) => handleResizeStart(e, col.id, columns[idx + 1].id)}
@@ -131,7 +135,7 @@ export function DeckLayout({
         );
       })}
 
-      {/* Add column button (narrow strip on far right, doesn't eat into chat space) */}
+      {/* Add column button */}
       {columns.length < 6 && (
         <div
           className="flex flex-col items-center justify-center w-6 shrink-0 border-l border-border/50 hover:bg-accent/30 transition-colors cursor-pointer"

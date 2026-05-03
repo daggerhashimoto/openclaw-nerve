@@ -66,6 +66,8 @@ All global state flows through four React contexts, nested in dependency order:
 | **SettingsContext** | `src/contexts/SettingsContext.tsx` | Sound, TTS provider/model, wake word, panel ratio, theme, font, font size, telemetry/events visibility. Persists to `localStorage` |
 | **SessionContext** | `src/contexts/SessionContext.tsx` | Session list (via gateway RPC), granular agent status tracking (IDLE/THINKING/STREAMING/DONE/ERROR), busy state derivation, unread session tracking, agent log, event log, session CRUD (delete, spawn, rename, abort) |
 | **ChatContext** | `src/contexts/ChatContext.tsx` | Thin orchestrator composing 4 hooks: `useChatMessages` (CRUD, history, scroll), `useChatStreaming` (deltas, processing stage, activity log), `useChatRecovery` (reconnect, retry, gap detection), `useChatTTS` (playback, voice fallback, sound feedback) |
+| **DeckContext** | `src/contexts/DeckContext.tsx` | Layout mode (single vs deck), column configs, add/remove/reorder/resize, active column tracking, localStorage persistence |
+| **SessionScope** | `src/contexts/SessionScope.tsx` | Scope component that re-provides SessionContext with a fixed `currentSession` — used by deck columns to isolate session state without duplicating the global session list or gateway connection |
 
 **Data flow pattern:** Contexts subscribe to gateway events via `GatewayContext.subscribe()`. The `SessionContext` listens for `agent` and `chat` events to update granular status. The `ChatContext` listens for streaming deltas and lifecycle events to render real-time responses.
 
@@ -102,6 +104,11 @@ The main chat interface.
 | `image-compress.ts` | Client-side image compression before upload |
 | `types.ts` | Chat-specific types (`ChatMsg`, `ImageAttachment`) |
 | `utils.ts` | Chat utility functions |
+| `DeckAwareChatWrapper.tsx` | Layout-mode switcher — renders single ChatPanel in single mode, or DeckLayout with per-column SessionScope + ChatProvider in deck mode |
+| `DeckLayout.tsx` | Multi-column flex layout with resize handles between columns, add-column button, and active-column highlighting |
+| `ChatColumn.tsx` | Column wrapper with header (label, agent name, close button) and scrollable body; inactive columns show preview and click-to-activate |
+| `AddColumnDialog.tsx` | Modal for selecting a session to add as a new deck column, with search/filter and deduplication against existing columns |
+| `EmptyChatState.tsx` | Quick-action cards for empty chats — command palette, new session, refresh, settings shortcuts with keyboard support |
 | `useMessageSearch.ts` | Hook for message search filtering |
 | `operations/` | Pure business logic (no React): `loadHistory.ts`, `sendMessage.ts`, `streamEventHandler.ts` |
 | `components/` | Sub-components: `ActivityLog`, `ChatHeader`, `HeartbeatPulse`, `ProcessingIndicator`, `ScrollToBottomButton`, `StreamingMessage`, `ThinkingDots`, `ToolGroupBlock`, `useModelEffort` |
@@ -173,6 +180,7 @@ Settings drawer with tabbed sections.
 | `ConnectionSettings.tsx` | Gateway URL/token, reconnect |
 | `AudioSettings.tsx` | TTS provider, model, voice, wake word |
 | `AppearanceSettings.tsx` | Theme, font family, font size selection |
+| `ThemeEditorPanel.tsx` | Live CSS variable editor — grouped collapsible sections, color picker for color variables, text input for other types, per-variable and global reset, export as CSS/JSON, search, override count badge, localStorage persistence |
 
 #### `features/tts/`
 Text-to-speech integration.
@@ -286,6 +294,11 @@ Cmd+K command palette.
 |------|---------|
 | `lib/constants.ts` | App constants: context window limits (with dynamic `getContextLimit()` fallback), wake/stop/cancel phrase builders, attachment limits |
 | `lib/themes.ts` | Theme definitions and CSS variable application |
+| `lib/theme-schema.ts` | TypeScript types for themes (`NerveTheme`, `LayoutTemplate`, `VariableSpec`, `ThemeComposition`), validation, `normalizeThemeColors()` for `--color-*`/`--*` dual-property bridging, tweakcn color mapping |
+| `lib/variable-specs.ts` | Registry of all editable CSS custom properties (`VARIABLE_SPECS`, `GROUP_META`) with metadata (label, group, type, default, description, derived flag) driving the visual theme editor UI |
+| `lib/layout-templates.ts` | Preset layout configurations (default, compact, comfortable, monospace, editor, high-contrast, glassmorphism) that override spacing/sizing/radii independent of color themes; `composeWithLayout()` merges layout overrides onto a color theme |
+| `lib/theme-io.ts` | Import/export themes from CSS snippets, JSON, or tweakcn registry; localStorage persistence for imported themes and layout selection; `parseCSSSnippet()`, `fetchTweakcnTheme()`, `exportAsCSS()`/`exportAsJSON()`/`exportAsTweakcn()` |
+| `lib/gateway-theme.ts` | Bridge to sync theme preferences with OpenClaw gateway config — reads `ui.seamColor` from `/api/config/public` and applies as CSS variable overrides; local Nerve theme always takes priority |
 | `lib/fonts.ts` | Font configuration |
 | `lib/formatting.ts` | Message formatting utilities |
 | `lib/sanitize.ts` | HTML sanitization via DOMPurify |
@@ -508,6 +521,108 @@ The frontend calls gateway methods via `GatewayContext.rpc()`:
 | `exec.approval.request` | — | Exec approval requested |
 | `exec.approval.resolved` | — | Exec approval granted |
 | `presence` | — | Presence updates |
+
+---
+
+## Theme System
+
+Nerve's theme system follows a layered architecture where each layer overrides the one below:
+
+```
+:root defaults (foundation.css / index.css)
+  ↓ overridden by
+Built-in theme (lib/themes.ts → style.setProperty on :root)
+  ↓ overridden by
+Layout template (lib/layout-templates.ts → style.setProperty on :root)
+  ↓ overridden by
+Imported theme (lib/theme-io.ts → localStorage → style.setProperty on :root)
+  ↓ overridden by
+User overrides (ThemeEditorPanel → localStorage → style.setProperty on :root)
+  ↓ overridden by
+Gateway theme (lib/gateway-theme.ts → style.setProperty on :root, lowest priority)
+```
+
+### Layer Details
+
+1. **CSS Variables (foundation.css):** All themeable properties are CSS custom properties on `:root` — colors, spacing, radii, shadows, animation timing, layout dimensions. This is the canonical default layer.
+
+2. **Theme Schema (theme-schema.ts):** Defines the TypeScript type system:
+   - `NerveTheme` — a named color palette (CSS variable map) with optional highlight.js theme
+   - `LayoutTemplate` — spacing/sizing overrides independent of color
+   - `ThemeComposition` — a color theme name + optional layout template
+   - `VariableSpec` / `VariableGroup` — metadata for the visual editor
+   - `normalizeThemeColors()` — bridges the dual `--color-*`/`--*` naming convention so themes only need one form
+   - `validateTheme()` — checks for required color variables
+
+3. **Built-in Themes (lib/themes.ts):** Predefined color palettes (e.g., Midnight, Dracula) applied by calling `style.setProperty()` on `document.documentElement` for each CSS variable in the theme.
+
+4. **Layout Templates (layout-templates.ts):** Preset spacing/density configurations (default, compact, comfortable, monospace, editor, high-contrast, glassmorphism) that override layout variables without touching colors. Applied via `applyLayoutTemplate()` which tracks applied variables in `dataset.appliedLayoutVars` so they can be cleanly removed on template switch. `composeWithLayout()` merges a layout's overrides onto a color theme's variables for combined application.
+
+5. **Variable Specs (variable-specs.ts):** The `VARIABLE_SPECS` array and `GROUP_META` map define every editable CSS property — its label, group, type (color/length/font/duration/easing/shadow/ratio), default value, description, and whether it's derived. This drives the visual editor UI: color variables get a native color picker, others get text inputs.
+
+6. **Visual Editor (ThemeEditorPanel):** Live CSS variable editor with grouped collapsible sections, per-variable reset, global reset, search, override count badge, and export to CSS or JSON. Overrides are persisted to `localStorage` under `nerve:theme:overrides` and `nerve:theme:editor-expanded-groups`.
+
+7. **Theme I/O (theme-io.ts):** Handles import from tweakcn URLs/IDs, raw JSON, and CSS snippets. Export as CSS, JSON, or tweakcn-compatible format. Imported themes stored in `localStorage` under `nerve:theme:imported`. Layout template selection stored under `nerve:theme:layout`.
+
+8. **Gateway Theme Bridge (gateway-theme.ts):** Reads `ui.seamColor` from `/api/config/public` and applies it as `--color-ring`/`--ring`. Local Nerve theme settings always take priority — the gateway accent is only applied when no imported theme is active.
+
+### Application Flow
+
+When the app loads or theme changes:
+1. Built-in theme colors are applied to `:root` via `style.setProperty()`
+2. If a layout template is selected, its overrides are applied on top
+3. If an imported theme exists in localStorage, its normalized colors override built-in values
+4. User overrides from the visual editor are applied last (before gateway)
+5. Gateway theme overrides are applied, but only for properties not already overridden by local settings
+
+---
+
+## Deck Mode
+
+Deck mode provides a multi-column chat layout where each column is an independent session with its own ChatProvider, isolated via `SessionScope`.
+
+### Layout Modes
+
+- **Single** — traditional single-panel chat view (default)
+- **Deck** — side-by-side columns, each showing a different session
+
+The layout mode is stored in `DeckContext` and persisted to `localStorage` under `nerve:layout-mode`. Switching modes is handled by `DeckAwareChatWrapper`, which renders the existing `ChatPanel` in single mode or `DeckLayout` in deck mode.
+
+### Session Isolation via SessionScope
+
+`SessionScope` is **not** a standalone context provider — it's a scope component that reads the global `SessionContext` and re-provides it with a fixed `currentSession` for its subtree. This means:
+
+- Each deck column gets its own `currentSession` and `setCurrentSession` (no-op, since columns don't change sessions)
+- The global session list, gateway connection, and session CRUD are shared across all columns
+- All downstream consumers (`ChatContext`, `ChatPanel`, etc.) work without modification
+
+### Column Lifecycle
+
+Columns are managed by `DeckContext`:
+
+- **Add:** `addColumn(sessionKey, agentId?)` creates a new `DeckColumn` with a unique ID and equalizes flex proportions
+- **Remove:** `removeColumn(id)` removes a column and equalizes remaining columns
+- **Reorder:** `reorderColumns(fromIdx, toIdx)` moves a column position
+- **Toggle:** `toggleColumn(sessionKey)` adds a column if absent, removes if present — used by the sidebar for quick toggle
+- **Ensure:** `ensureColumn(sessionKey)` auto-adds a column when switching to deck mode with no existing columns
+
+Column configs (id, sessionKey, agentId, flex) are persisted to `localStorage` under `nerve:deck-columns`.
+
+### Resize Behavior
+
+Columns use CSS flexbox with per-column `flex` proportions. `DeckLayout` renders resize handles between adjacent columns. On drag:
+
+1. `mousedown` on the resize gutter starts tracking
+2. Each `mousemove` computes a delta from the last position, multiplied by a sensitivity factor (0.002 flex-ratio per pixel)
+3. `resizeColumn(leftId, rightId, deltaRatio)` adjusts flex proportions, enforcing a minimum flex of 0.3 (~30% of average) to prevent columns from collapsing to zero
+4. On `mouseup`, tracking ends — the custom proportions persist until `equalizeColumns()` is called
+
+### Sidebar Toggle Wiring
+
+The session sidebar can toggle columns into/out of the deck:
+- `toggleColumn(sessionKey)` in `DeckContext` — adds if absent, removes if present
+- This is wired through the sidebar's context menu or the `AddColumnDialog` for manual selection
+- Active column selection is tracked in `activeColumnId`, auto-defaulting to the first column
 
 ---
 

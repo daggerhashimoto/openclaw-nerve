@@ -40,7 +40,7 @@ export interface SpawnSessionOpts {
   parentSessionKey?: string;
 }
 
-interface SessionContextValue {
+export interface SessionContextValue {
   sessions: Session[];
   sessionsLoading: boolean;
   currentSession: string;
@@ -60,7 +60,7 @@ interface SessionContextValue {
   agentName: string;
 }
 
-const SessionContext = createContext<SessionContextValue | null>(null);
+export const SessionContext = createContext<SessionContextValue | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const { connectionState, rpc, subscribe } = useGateway();

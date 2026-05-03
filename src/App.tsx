@@ -826,7 +826,6 @@ export default function App({ onLogout }: AppProps) {
               />
             }
             currentSessionKey={currentSession}
-            currentSessionDisplayName={currentSessionDisplayName}
           />
         </PanelErrorBoundary>
       }

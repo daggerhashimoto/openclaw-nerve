@@ -1,45 +1,40 @@
 import { useState, useCallback, useMemo, type ReactNode } from 'react';
 import { useDeck } from '@/contexts/DeckContext';
 import { useSessionContext } from '@/contexts/SessionContext';
+import { SessionScope } from '@/contexts/SessionScope';
+import { ChatProvider, useChat } from '@/contexts/ChatContext';
+import { ChatPanel } from '@/features/chat/ChatPanel';
 import { DeckLayout } from './DeckLayout';
 import { AddColumnDialog } from './AddColumnDialog';
 import { getSessionKey } from '@/types';
 import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
-
-interface DeckAwareChatWrapperProps {
-  /** The normal single-chat ChatPanel */
-  singleChat: ReactNode;
-  /** Current session key for auto-adding first column */
-  currentSessionKey: string;
-  /** Current session display name */
-  currentSessionDisplayName: string;
-}
+import type { DeckColumn } from '@/contexts/DeckContext';
 
 /**
- * Switches between single ChatPanel and DeckLayout (multi-column)
- * based on the DeckContext layoutMode setting.
+ * DeckAwareChatWrapper — Switches between single ChatPanel and
+ * multi-column DeckLayout based on DeckContext layoutMode.
+ *
+ * In single mode, renders the provided singleChat node (the existing ChatPanel).
+ * In deck mode, renders a DeckLayout where each column gets its own
+ * SessionScope + ChatProvider, so all columns are fully independent chat sessions.
  */
 export function DeckAwareChatWrapper({
   singleChat,
   currentSessionKey,
-  currentSessionDisplayName,
-}: DeckAwareChatWrapperProps) {
-  const { layoutMode, addColumn, ensureColumn, columns } = useDeck();
-  const { sessions, setCurrentSession } = useSessionContext();
+}: {
+  singleChat: ReactNode;
+  currentSessionKey: string;
+}) {
+  const { layoutMode, columns, ensureColumn } = useDeck();
+  const { sessions } = useSessionContext();
   const [addColumnOpen, setAddColumnOpen] = useState(false);
 
   // When switching to deck mode, ensure at least one column exists
-  const handleActivateDeck = useCallback(() => {
-    if (columns.length === 0) {
+  useMemo(() => {
+    if (layoutMode === 'deck' && columns.length === 0) {
       ensureColumn(currentSessionKey);
     }
-  }, [columns.length, currentSessionKey, ensureColumn]);
-
-  // If deck mode just activated, trigger column setup
-  // (runs on next render after layoutMode change)
-  if (layoutMode === 'deck' && columns.length === 0) {
-    // Will be handled by the ensureColumn call from DeckLayout empty state
-  }
+  }, [layoutMode, columns.length, currentSessionKey, ensureColumn]);
 
   const getSessionLabel = useCallback(
     (key: string) => {
@@ -57,20 +52,18 @@ export function DeckAwareChatWrapper({
     [sessions],
   );
 
-  const renderActiveChat = useCallback(() => {
-    return singleChat;
-  }, [singleChat]);
-
-  const renderInactivePreview = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    (_column: { id: string; sessionKey: string; agentId?: string; width: number }) => {
+  // Every column (active and inactive) gets a full ChatPanel
+  const renderColumn = useCallback(
+    (column: DeckColumn) => {
       return (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 p-4 text-muted-foreground">
-          <span className="text-xs">Click to switch to this session</span>
-        </div>
+        <SessionScope sessionKey={column.sessionKey}>
+          <ChatProvider>
+            <ScopedChatPanel agentName={getAgentName(column.sessionKey)} />
+          </ChatProvider>
+        </SessionScope>
       );
     },
-    [],
+    [getAgentName],
   );
 
   if (layoutMode === 'single') {
@@ -81,8 +74,8 @@ export function DeckAwareChatWrapper({
   return (
     <>
       <DeckLayout
-        renderActiveChat={renderActiveChat}
-        renderInactivePreview={renderInactivePreview}
+        renderActiveChat={renderColumn}
+        renderInactivePreview={renderColumn}
         getSessionLabel={getSessionLabel}
         getAgentName={getAgentName}
         onAddColumn={() => setAddColumnOpen(true)}
@@ -92,5 +85,47 @@ export function DeckAwareChatWrapper({
         onClose={() => setAddColumnOpen(false)}
       />
     </>
+  );
+}
+
+/**
+ * ScopedChatPanel — A ChatPanel that reads its chat state from
+ * the scoped ChatProvider (via SessionScope).
+ */
+function ScopedChatPanel({ agentName }: { agentName?: string }) {
+  const {
+    messages,
+    handleSend,
+    handleAbort,
+    isGenerating,
+    stream,
+    processingStage,
+    lastEventTimestamp,
+    currentToolDescription,
+    activityLog,
+    handleReset,
+    loadMore,
+    hasMore,
+  } = useChat();
+
+  return (
+    <ChatPanel
+      id="deck-chat"
+      messages={messages}
+      onSend={handleSend}
+      onAbort={handleAbort}
+      isGenerating={isGenerating}
+      stream={stream}
+      processingStage={processingStage}
+      lastEventTimestamp={lastEventTimestamp}
+      currentToolDescription={currentToolDescription}
+      activityLog={activityLog}
+      onReset={handleReset}
+      searchOpen={false}
+      onSearchClose={() => {}}
+      agentName={agentName ?? 'Agent'}
+      loadMore={loadMore}
+      hasMore={hasMore}
+    />
   );
 }

@@ -38,7 +38,7 @@ export function ChatColumn({
   return (
     <div
       className={cn(
-        'flex flex-col min-h-0 border-r border-border last:border-r-0 transition-colors',
+        'flex flex-col h-full min-h-0 border-r border-border last:border-r-0 transition-colors',
         isActive ? 'bg-background' : 'bg-muted/30 hover:bg-muted/50 cursor-pointer',
         className,
       )}
@@ -49,7 +49,7 @@ export function ChatColumn({
       aria-selected={isActive}
       aria-label={`Chat column: ${label}`}
     >
-      {/* Column header */}
+      {/* Column header — fixed height, never scrolls */}
       <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border bg-card/50 shrink-0 select-none">
         {onDragStart && (
           <button
@@ -76,8 +76,8 @@ export function ChatColumn({
         </button>
       </div>
 
-      {/* Column body — either the full ChatPanel (active) or a compact preview */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      {/* Column body — fills remaining height, scrolls internally */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {children}
       </div>
     </div>

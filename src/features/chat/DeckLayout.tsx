@@ -26,11 +26,11 @@ export function DeckLayout({
   onAddColumn,
   className,
 }: DeckLayoutProps) {
-  const { columns, activeColumnId, setActiveColumn, removeColumn, resizeColumn, addColumn } = useDeck();
+  const { columns, activeColumnId, setActiveColumn, removeColumn, resizeColumn } = useDeck();
   const containerRef = useRef<HTMLDivElement>(null);
   const [resizing, setResizing] = useState<{ leftId: string; rightId: string } | null>(null);
 
-  // ── Resize logic ──────────────────────────────────────────────────────
+  // ── Resize logic with dampening ───────────────────────────────────────
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent, leftId: string, rightId: string) => {
@@ -39,14 +39,14 @@ export function DeckLayout({
 
       const startX = e.clientX;
       const containerWidth = containerRef.current?.offsetWidth ?? 1;
+      // Dampening factor: 0.4 makes the resize feel smooth and controlled
+      // rather than 1:1 with pixel movement (which felt jumpy)
+      const DAMPING = 0.4;
 
       const onMouseMove = (ev: MouseEvent) => {
         const deltaX = ev.clientX - startX;
-        // Convert pixel delta to flex ratio delta
-        const deltaRatio = deltaX / containerWidth;
+        const deltaRatio = (deltaX / containerWidth) * DAMPING;
         resizeColumn(leftId, rightId, deltaRatio);
-        // Reset startX so we're always computing from the current state
-        // (this avoids drift from accumulated rounding)
       };
 
       const onMouseUp = () => {
@@ -65,7 +65,7 @@ export function DeckLayout({
 
   if (columns.length === 0) {
     return (
-      <div className={cn('flex-1 flex items-center justify-center bg-background', className)}>
+      <div className={cn('h-full flex items-center justify-center bg-background', className)}>
         <button
           className="flex flex-col items-center gap-2 px-6 py-4 rounded-lg border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
           onClick={onAddColumn ?? (() => { /* noop */ })}
@@ -83,19 +83,24 @@ export function DeckLayout({
   return (
     <div
       ref={containerRef}
-      className={cn('flex-1 flex min-h-0 overflow-hidden', className)}
+      className={cn('h-full flex min-h-0 overflow-hidden', className)}
     >
       {columns.map((col, idx) => {
         const isActive = col.id === activeColumnId;
         const label = getSessionLabel(col.sessionKey);
         const agentName = getAgentName?.(col.sessionKey);
         const widthPercent = (col.flex / totalFlex) * 100;
+        const isLast = idx === columns.length - 1;
 
         return (
           <div
             key={col.id}
-            className="flex min-h-0"
-            style={{ width: `${widthPercent}%`, flexShrink: 0 }}
+            className={cn(
+              'flex min-h-0 h-full',
+              // Lock right edge of last column flush to container right
+              isLast && 'flex-1',
+            )}
+            style={!isLast ? { width: `${widthPercent}%`, flexShrink: 0 } : undefined}
           >
             <ChatColumn
               columnId={col.id}
@@ -113,7 +118,7 @@ export function DeckLayout({
             {idx < columns.length - 1 && (
               <div
                 className={cn(
-                  'w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors flex-shrink-0',
+                  'w-1.5 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors flex-shrink-0',
                   resizing?.leftId === col.id && 'bg-primary/40',
                 )}
                 onMouseDown={(e) => handleResizeStart(e, col.id, columns[idx + 1].id)}
@@ -126,16 +131,17 @@ export function DeckLayout({
         );
       })}
 
-      {/* Add column button (right edge) */}
+      {/* Add column button (narrow strip on far right, doesn't eat into chat space) */}
       {columns.length < 6 && (
-        <div className="flex flex-col items-center justify-center w-10 shrink-0 border-l border-border hover:bg-accent/30 transition-colors cursor-pointer"
+        <div
+          className="flex flex-col items-center justify-center w-6 shrink-0 border-l border-border/50 hover:bg-accent/30 transition-colors cursor-pointer"
           onClick={onAddColumn}
           role="button"
           tabIndex={0}
           aria-label="Add column"
           onKeyDown={(e) => { if (e.key === 'Enter') onAddColumn?.(); }}
         >
-          <Plus className="w-4 h-4 text-muted-foreground" />
+          <Plus className="w-3 h-3 text-muted-foreground" />
         </div>
       )}
     </div>

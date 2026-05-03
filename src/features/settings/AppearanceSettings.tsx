@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Monitor, Eye, Type, Activity, ALargeSmall, Code2, Columns3, Command, LayoutGrid, Contrast, Download, Upload } from 'lucide-react';
+import { Monitor, Eye, Type, Activity, ALargeSmall, Code2, Columns3, Command, LayoutGrid, Contrast, Download, Upload, PanelLeft } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -9,6 +9,7 @@ import { layoutTemplates } from '@/lib/layout-templates';
 import { fetchTweakcnTheme } from '@/lib/theme-io';
 import { exportAsCSS, exportAsJSON } from '@/lib/theme-io';
 import { validateTheme } from '@/lib/theme-schema';
+import { useDeck, type LayoutMode } from '@/contexts/DeckContext';
 
 const INLINE_SELECT_TRIGGER_CLASS =
   'min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-left text-sm font-sans text-foreground sm:min-w-[148px]';
@@ -83,6 +84,8 @@ export function AppearanceSettings() {
   const [importStatus, setImportStatus] = useState<'idle' | 'loading' | 'error' | 'success'>('idle');
   const [importError, setImportError] = useState('');
   const [copiedFormat, setCopiedFormat] = useState<string | null>(null);
+
+  const { layoutMode, setLayoutMode } = useDeck();
 
   const handleThemeChange = (next: string) => {
     setTheme(next as ThemeName);
@@ -200,6 +203,30 @@ export function AppearanceSettings() {
           onCheckedChange={setHighContrast}
           aria-labelledby="high-contrast-label"
         />
+      </div>
+
+      {/* Layout mode toggle */}
+      <div className="cockpit-row items-start justify-between">
+        <div className="flex items-center gap-3">
+          <PanelLeft size={14} className={layoutMode === 'deck' ? 'text-primary' : 'text-muted-foreground'} aria-hidden="true" />
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground" id="layout-mode-label">Chat layout</span>
+            <span className="text-xs text-muted-foreground">Single chat or multi-column deck view.</span>
+          </div>
+        </div>
+        <div className="relative w-full sm:w-auto">
+          <InlineSelect
+            value={layoutMode}
+            onChange={(v) => setLayoutMode(v as LayoutMode)}
+            options={[
+              { value: 'single', label: 'Single chat' },
+              { value: 'deck', label: 'Deck mode' },
+            ]}
+            ariaLabel="Select chat layout mode"
+            triggerClassName={INLINE_SELECT_TRIGGER_CLASS}
+            menuClassName={INLINE_SELECT_MENU_CLASS}
+          />
+        </div>
       </div>
 
       {/* Font selector */}

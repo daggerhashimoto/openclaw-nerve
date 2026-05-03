@@ -9,6 +9,7 @@ import { GatewayProvider } from '@/contexts/GatewayContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
 import { SessionProvider } from '@/contexts/SessionContext';
 import { ChatProvider } from '@/contexts/ChatContext';
+import { DeckProvider } from '@/contexts/DeckContext';
 import { LoginPage } from './LoginPage';
 import { useAuth } from './useAuth';
 
@@ -32,7 +33,9 @@ export function AuthGate() {
       <SettingsProvider>
         <SessionProvider>
           <ChatProvider>
-            <App onLogout={logout} />
+            <DeckProvider>
+              <App onLogout={logout} />
+            </DeckProvider>
           </ChatProvider>
         </SessionProvider>
       </SettingsProvider>

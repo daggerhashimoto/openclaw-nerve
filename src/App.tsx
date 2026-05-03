@@ -30,6 +30,7 @@ import { StatusBar } from '@/components/StatusBar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { WorkspaceSwitchDialog } from '@/components/WorkspaceSwitchDialog';
 import { ChatPanel, type ChatPanelHandle } from '@/features/chat/ChatPanel';
+import { DeckAwareChatWrapper } from '@/features/chat/DeckAwareChatWrapper';
 import type { TTSProvider } from '@/features/tts/useTTS';
 import type { ViewMode } from '@/features/command-palette/commands';
 import { ResizablePanels } from '@/components/ResizablePanels';
@@ -791,35 +792,41 @@ export default function App({ onLogout }: AppProps) {
       pathLinkAliases={chatPathLinkAliases}
       chatPanel={
         <PanelErrorBoundary name="Chat">
-          <ChatPanel
-            ref={chatPanelRef}
-            id="main-chat"
-            messages={messages}
-            onSend={handleSend}
-            onAbort={handleAbort}
-            isGenerating={isGenerating}
-            stream={stream}
-            processingStage={processingStage}
-            lastEventTimestamp={lastEventTimestamp}
-            currentToolDescription={currentToolDescription}
-            activityLog={activityLog}
-            onWakeWordState={handleWakeWordState}
-            onReset={handleReset}
-            searchOpen={searchOpen}
-            onSearchClose={closeSearch}
-            agentName={currentSessionDisplayName}
-            loadMore={loadMore}
-            hasMore={hasMore}
-            onToggleFileBrowser={isCompactLayout ? handleToggleFileBrowser : fileBrowserCollapsed ? handleToggleFileBrowser : undefined}
-            isFileBrowserCollapsed={fileBrowserCollapsed}
-            onToggleMobileTopBar={isCompactLayout ? toggleMobileTopBar : undefined}
-            isMobileTopBarHidden={isMobileTopBarHidden}
-            onOpenWorkspacePath={openWorkspacePath}
-            pathLinkPrefixes={chatPathLinkPrefixes}
-            pathLinkAliases={chatPathLinkAliases}
-            onOpenBeadId={openBeadId}
-            showCommandPaletteButton={commandPaletteButtonVisible && !paletteOpen && !settingsOpen && viewMode === 'chat'}
-            onOpenCommandPalette={handleOpenPalette}
+          <DeckAwareChatWrapper
+            singleChat={
+              <ChatPanel
+                ref={chatPanelRef}
+                id="main-chat"
+                messages={messages}
+                onSend={handleSend}
+                onAbort={handleAbort}
+                isGenerating={isGenerating}
+                stream={stream}
+                processingStage={processingStage}
+                lastEventTimestamp={lastEventTimestamp}
+                currentToolDescription={currentToolDescription}
+                activityLog={activityLog}
+                onWakeWordState={handleWakeWordState}
+                onReset={handleReset}
+                searchOpen={searchOpen}
+                onSearchClose={closeSearch}
+                agentName={currentSessionDisplayName}
+                loadMore={loadMore}
+                hasMore={hasMore}
+                onToggleFileBrowser={isCompactLayout ? handleToggleFileBrowser : fileBrowserCollapsed ? handleToggleFileBrowser : undefined}
+                isFileBrowserCollapsed={fileBrowserCollapsed}
+                onToggleMobileTopBar={isCompactLayout ? toggleMobileTopBar : undefined}
+                isMobileTopBarHidden={isMobileTopBarHidden}
+                onOpenWorkspacePath={openWorkspacePath}
+                pathLinkPrefixes={chatPathLinkPrefixes}
+                pathLinkAliases={chatPathLinkAliases}
+                onOpenBeadId={openBeadId}
+                showCommandPaletteButton={commandPaletteButtonVisible && !paletteOpen && !settingsOpen && viewMode === 'chat'}
+                onOpenCommandPalette={handleOpenPalette}
+              />
+            }
+            currentSessionKey={currentSession}
+            currentSessionDisplayName={currentSessionDisplayName}
           />
         </PanelErrorBoundary>
       }

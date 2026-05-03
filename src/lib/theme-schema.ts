@@ -39,6 +39,8 @@ export interface LayoutTemplate {
   name: string;
   /** Human-readable label. */
   label: string;
+  /** Short description of the template's vibe/purpose. */
+  description?: string;
   /** CSS custom property overrides for layout/spacing/sizing. */
   overrides: Record<string, string>;
 }

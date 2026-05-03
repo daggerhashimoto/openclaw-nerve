@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- hook intentionally co-located with provider */
-import { createContext, useContext, useCallback, useState, useEffect, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useCallback, useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -9,7 +9,8 @@ export interface DeckColumn {
   id: string;
   sessionKey: string;
   agentId?: string;
-  width: number; // px
+  /** Flex proportion (default 1 = equal share). Manual resize sets custom proportions. */
+  flex: number;
 }
 
 // ── Persistence ──────────────────────────────────────────────────────────
@@ -17,7 +18,7 @@ export interface DeckColumn {
 const LAYOUT_MODE_KEY = 'nerve:layout-mode';
 const DECK_COLUMNS_KEY = 'nerve:deck-columns';
 
-const MIN_COLUMN_WIDTH = 280;
+const MIN_COLUMN_FLEX = 0.3; // minimum flex proportion (~30% of average)
 
 function loadLayoutMode(): LayoutMode {
   const saved = localStorage.getItem(LAYOUT_MODE_KEY);
@@ -39,9 +40,13 @@ function loadColumns(): DeckColumn[] {
       (c: unknown) =>
         typeof c === 'object' && c !== null &&
         typeof (c as DeckColumn).id === 'string' &&
-        typeof (c as DeckColumn).sessionKey === 'string' &&
-        typeof (c as DeckColumn).width === 'number'
-    );
+        typeof (c as DeckColumn).sessionKey === 'string'
+    ).map((c: Record<string, unknown>) => ({
+      id: c.id as string,
+      sessionKey: c.sessionKey as string,
+      agentId: c.agentId as string | undefined,
+      flex: typeof c.flex === 'number' ? c.flex : 1,
+    }));
   } catch {
     return [];
   }
@@ -58,10 +63,10 @@ function generateColumnId(): string {
   return `col-${Date.now()}-${++_idCounter}`;
 }
 
-function redistributeWidth(columns: DeckColumn[], totalWidth: number): DeckColumn[] {
+/** Reset all columns to equal flex proportions */
+function equalizeFlex(columns: DeckColumn[]): DeckColumn[] {
   if (columns.length === 0) return columns;
-  const equalWidth = Math.max(MIN_COLUMN_WIDTH, totalWidth / columns.length);
-  return columns.map(c => ({ ...c, width: equalWidth }));
+  return columns.map(c => ({ ...c, flex: 1 }));
 }
 
 // ── Context ──────────────────────────────────────────────────────────────
@@ -75,10 +80,12 @@ interface DeckContextValue {
   addColumn: (sessionKey: string, agentId?: string) => void;
   removeColumn: (id: string) => void;
   reorderColumns: (fromIdx: number, toIdx: number) => void;
-  resizeColumn: (id: string, newWidth: number) => void;
+  /** Resize by adjusting flex proportions of two adjacent columns */
+  resizeColumn: (leftId: string, rightId: string, deltaRatio: number) => void;
   /** Auto-add a column if transitioning to deck with none */
   ensureColumn: (sessionKey: string, agentId?: string) => void;
-  minColumnWidth: number;
+  /** Equalize all columns to equal width */
+  equalizeColumns: () => void;
 }
 
 const DeckContext = createContext<DeckContextValue | null>(null);
@@ -100,9 +107,8 @@ export function DeckProvider({ children }: { children: ReactNode }) {
     const id = generateColumnId();
     setColumns(prev => {
       if (prev.some(c => c.sessionKey === sessionKey)) return prev;
-      const newCol: DeckColumn = { id, sessionKey, agentId, width: 0 };
-      const next = [...prev, newCol];
-      return redistributeWidth(next, 1200);
+      const newCol: DeckColumn = { id, sessionKey, agentId, flex: 1 };
+      return equalizeFlex([...prev, newCol]);
     });
     setActiveColumnId(id);
   }, []);
@@ -110,7 +116,7 @@ export function DeckProvider({ children }: { children: ReactNode }) {
   const removeColumn = useCallback((id: string) => {
     setColumns(prev => {
       const next = prev.filter(c => c.id !== id);
-      return redistributeWidth(next, 1200);
+      return equalizeFlex(next);
     });
     setActiveColumnId(prev => prev === id ? null : prev);
   }, []);
@@ -125,20 +131,49 @@ export function DeckProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const resizeColumn = useCallback((id: string, newWidth: number) => {
-    setColumns(prev =>
-      prev.map(c => c.id === id ? { ...c, width: Math.max(MIN_COLUMN_WIDTH, newWidth) } : c)
-    );
+  /** Resize by transferring flex proportion between two adjacent columns.
+   *  deltaRatio > 0 means left column grows, right shrinks. */
+  const resizeColumn = useCallback((leftId: string, rightId: string, deltaRatio: number) => {
+    setColumns(prev => {
+      const left = prev.find(c => c.id === leftId);
+      const right = prev.find(c => c.id === rightId);
+      if (!left || !right) return prev;
+
+      const totalFlex = left.flex + right.flex;
+      let newLeftFlex = left.flex + deltaRatio;
+      let newRightFlex = right.flex - deltaRatio;
+
+      // Enforce minimum flex on both sides
+      const minFlex = MIN_COLUMN_FLEX;
+      if (newLeftFlex < minFlex) {
+        newLeftFlex = minFlex;
+        newRightFlex = totalFlex - minFlex;
+      }
+      if (newRightFlex < minFlex) {
+        newRightFlex = minFlex;
+        newLeftFlex = totalFlex - minFlex;
+      }
+
+      return prev.map(c => {
+        if (c.id === leftId) return { ...c, flex: newLeftFlex };
+        if (c.id === rightId) return { ...c, flex: newRightFlex };
+        return c;
+      });
+    });
   }, []);
 
   const ensureColumn = useCallback((sessionKey: string, agentId?: string) => {
     setColumns(prev => {
       if (prev.length > 0) return prev;
       const id = generateColumnId();
-      const newCol: DeckColumn = { id, sessionKey, agentId, width: 1200 };
+      const newCol: DeckColumn = { id, sessionKey, agentId, flex: 1 };
       setActiveColumnId(id);
       return [newCol];
     });
+  }, []);
+
+  const equalizeColumns = useCallback(() => {
+    setColumns(prev => equalizeFlex(prev));
   }, []);
 
   // Auto-set active to first column if none selected
@@ -163,10 +198,10 @@ export function DeckProvider({ children }: { children: ReactNode }) {
     reorderColumns,
     resizeColumn,
     ensureColumn,
-    minColumnWidth: MIN_COLUMN_WIDTH,
+    equalizeColumns,
   }), [
     layoutMode, setLayoutMode, columns, activeColumnId, setActiveColumn,
-    addColumn, removeColumn, reorderColumns, resizeColumn, ensureColumn,
+    addColumn, removeColumn, reorderColumns, resizeColumn, ensureColumn, equalizeColumns,
   ]);
 
   return <DeckContext.Provider value={value}>{children}</DeckContext.Provider>;

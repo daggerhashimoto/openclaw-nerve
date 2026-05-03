@@ -26,20 +26,27 @@ export function DeckLayout({
   onAddColumn,
   className,
 }: DeckLayoutProps) {
-  const { columns, activeColumnId, setActiveColumn, removeColumn, resizeColumn, minColumnWidth, addColumn } = useDeck();
+  const { columns, activeColumnId, setActiveColumn, removeColumn, resizeColumn, addColumn } = useDeck();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [resizing, setResizing] = useState<{ colId: string; startX: number; startWidth: number } | null>(null);
+  const [resizing, setResizing] = useState<{ leftId: string; rightId: string } | null>(null);
 
   // ── Resize logic ──────────────────────────────────────────────────────
 
   const handleResizeStart = useCallback(
-    (e: React.MouseEvent, colId: string, currentWidth: number) => {
+    (e: React.MouseEvent, leftId: string, rightId: string) => {
       e.preventDefault();
-      setResizing({ colId, startX: e.clientX, startWidth: currentWidth });
+      setResizing({ leftId, rightId });
+
+      const startX = e.clientX;
+      const containerWidth = containerRef.current?.offsetWidth ?? 1;
 
       const onMouseMove = (ev: MouseEvent) => {
-        const delta = ev.clientX - e.clientX;
-        resizeColumn(colId, currentWidth + delta);
+        const deltaX = ev.clientX - startX;
+        // Convert pixel delta to flex ratio delta
+        const deltaRatio = deltaX / containerWidth;
+        resizeColumn(leftId, rightId, deltaRatio);
+        // Reset startX so we're always computing from the current state
+        // (this avoids drift from accumulated rounding)
       };
 
       const onMouseUp = () => {
@@ -70,22 +77,25 @@ export function DeckLayout({
     );
   }
 
+  // Calculate total flex for percentage widths
+  const totalFlex = columns.reduce((sum, c) => sum + c.flex, 0);
+
   return (
     <div
       ref={containerRef}
       className={cn('flex-1 flex min-h-0 overflow-hidden', className)}
-      style={{ '--deck-gap': '2px' } as React.CSSProperties}
     >
       {columns.map((col, idx) => {
         const isActive = col.id === activeColumnId;
         const label = getSessionLabel(col.sessionKey);
         const agentName = getAgentName?.(col.sessionKey);
+        const widthPercent = (col.flex / totalFlex) * 100;
 
         return (
           <div
             key={col.id}
             className="flex min-h-0"
-            style={{ width: `${col.width}px`, flexShrink: 0 }}
+            style={{ width: `${widthPercent}%`, flexShrink: 0 }}
           >
             <ChatColumn
               columnId={col.id}
@@ -104,9 +114,9 @@ export function DeckLayout({
               <div
                 className={cn(
                   'w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors flex-shrink-0',
-                  resizing?.colId === col.id && 'bg-primary/40',
+                  resizing?.leftId === col.id && 'bg-primary/40',
                 )}
-                onMouseDown={(e) => handleResizeStart(e, col.id, col.width)}
+                onMouseDown={(e) => handleResizeStart(e, col.id, columns[idx + 1].id)}
                 role="separator"
                 aria-orientation="vertical"
                 aria-label="Resize column"

@@ -1,5 +1,5 @@
 import { useCallback, type ReactNode } from 'react';
-import { MessageSquare, Search, RefreshCw, Settings, Plus, Command } from 'lucide-react';
+import { MessageSquare, RefreshCw, Settings, Plus, Command } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface QuickAction {
@@ -16,7 +16,7 @@ interface EmptyChatStateProps {
   actions?: QuickAction[];
   onOpenCommandPalette?: () => void;
   onNewSession?: () => void;
-  onSearch?: () => void;
+  onSearch?: () => void; // unused — in-chat search is meaningless with 0 messages
   onRefresh?: () => void;
   onSettings?: () => void;
   className?: string;
@@ -52,14 +52,7 @@ export function EmptyChatState({
       icon: <Plus size={16} />,
       action: onNewSession,
     }] : []),
-    ...(onSearch ? [{
-      id: 'search',
-      label: 'Search History',
-      description: 'Search across all sessions',
-      icon: <Search size={16} />,
-      shortcut: '⌘F',
-      action: onSearch,
-    }] : []),
+
     ...(onRefresh ? [{
       id: 'refresh',
       label: 'Refresh Sessions',

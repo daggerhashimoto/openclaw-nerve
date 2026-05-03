@@ -5,7 +5,7 @@ import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useSettings } from '@/contexts/SettingsContext';
 import { themes, themeNames, type ThemeName } from '@/lib/themes';
 import { fonts, fontNames, type FontName } from '@/lib/fonts';
-import { builtInLayoutTemplates } from '@/lib/layout-templates';
+import { layoutTemplates } from '@/lib/layout-templates';
 import { fetchTweakcnTheme } from '@/lib/theme-io';
 import { exportAsCSS, exportAsJSON } from '@/lib/theme-io';
 import { validateTheme } from '@/lib/theme-schema';
@@ -45,7 +45,7 @@ const FONT_SIZE_OPTIONS = [
   { value: '24', label: '24px' },
 ];
 
-const LAYOUT_TEMPLATE_OPTIONS = Object.values(builtInLayoutTemplates).map(t => ({
+const LAYOUT_TEMPLATE_OPTIONS = Object.values(layoutTemplates).map(t => ({
   value: t.name,
   label: t.label,
 }));

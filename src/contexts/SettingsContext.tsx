@@ -4,7 +4,7 @@ import { useTTS, migrateTTSProvider, type TTSProvider } from '@/features/tts/use
 import { type ThemeName, type ExtendedThemeName, applyTheme, applyImportedTheme, applyLayoutVariables, clearLayoutVariables, themeNames } from '@/lib/themes';
 import { type FontName, applyFont, fontNames } from '@/lib/fonts';
 import { type NerveTheme } from '@/lib/theme-schema';
-import { type LayoutTemplate, builtInLayoutTemplates } from '@/lib/layout-templates';
+import { type LayoutTemplate, layoutTemplates } from '@/lib/layout-templates';
 import { saveImportedTheme, loadImportedTheme, clearImportedTheme as removeImportedTheme, saveLayoutTemplate, loadLayoutTemplate } from '@/lib/theme-io';
 import { applyGatewayThemeOverrides, fetchGatewayThemeConfig } from '@/lib/gateway-theme';
 
@@ -198,12 +198,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
 
     // Apply layout template variables on top
-    const template = builtInLayoutTemplates[layoutTemplate];
+    const template = layoutTemplates[layoutTemplate];
     if (template && layoutTemplate !== 'default') {
       applyLayoutVariables(template.overrides);
     } else if (layoutTemplate === 'default') {
       // Clear any previously applied layout variables
-      const allLayoutKeys = Object.values(builtInLayoutTemplates)
+      const allLayoutKeys = Object.values(layoutTemplates)
         .flatMap(t => Object.keys(t.overrides));
       clearLayoutVariables(allLayoutKeys);
     }

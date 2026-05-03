@@ -7,6 +7,7 @@ import { type NerveTheme } from '@/lib/theme-schema';
 import { type LayoutTemplate, layoutTemplates } from '@/lib/layout-templates';
 import { saveImportedTheme, loadImportedTheme, clearImportedTheme as removeImportedTheme, saveLayoutTemplate, loadLayoutTemplate } from '@/lib/theme-io';
 import { applyGatewayThemeOverrides, fetchGatewayThemeConfig } from '@/lib/gateway-theme';
+import { loadThemeOverrides, saveThemeOverrides, type ThemeOverrides } from '@/features/settings/ThemeEditorPanel';
 
 export type STTProvider = 'local' | 'openai';
 export type STTInputMode = 'browser' | 'local' | 'hybrid';
@@ -60,6 +61,10 @@ interface SettingsContextValue {
   setImportedTheme: (theme: NerveTheme | null) => void;
   highContrast: boolean;
   setHighContrast: (enabled: boolean) => void;
+  themeOverrides: Record<string, string>;
+  setThemeOverride: (property: string, value: string | null) => void;
+  resetThemeOverride: (property: string) => void;
+  resetAllThemeOverrides: () => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -185,6 +190,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [highContrast, setHighContrastState] = useState<boolean>(() => {
     return localStorage.getItem('nerve:high-contrast') === 'true';
   });
+  const [themeOverrides, setThemeOverrides] = useState<ThemeOverrides>(() => {
+    return loadThemeOverrides();
+  });
   const { speak } = useTTS(soundEnabled, ttsProvider, ttsModel || undefined);
   const wakeWordToggleRef = useRef<(() => void) | null>(null);
 
@@ -223,6 +231,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       });
     }
   }, [theme, importedTheme, layoutTemplate, highContrast]);
+
+  // Apply theme overrides on top of everything else
+  useEffect(() => {
+    const root = document.documentElement;
+    for (const [prop, val] of Object.entries(themeOverrides)) {
+      root.style.setProperty(prop, val);
+    }
+  }, [themeOverrides]);
 
   // Gateway theme bridge: fetch once on mount and apply if no imported theme
   useEffect(() => {
@@ -441,6 +457,40 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const setThemeOverride = useCallback((property: string, value: string | null) => {
+    setThemeOverrides(prev => {
+      const next = { ...prev };
+      if (value === null || value === '') {
+        delete next[property];
+        document.documentElement.style.removeProperty(property);
+      } else {
+        next[property] = value;
+        document.documentElement.style.setProperty(property, value);
+      }
+      saveThemeOverrides(next);
+      return next;
+    });
+  }, []);
+
+  const resetThemeOverride = useCallback((property: string) => {
+    setThemeOverrides(prev => {
+      const next = { ...prev };
+      delete next[property];
+      document.documentElement.style.removeProperty(property);
+      saveThemeOverrides(next);
+      return next;
+    });
+  }, []);
+
+  const resetAllThemeOverrides = useCallback(() => {
+    const root = document.documentElement;
+    for (const prop of Object.keys(themeOverrides)) {
+      root.style.removeProperty(prop);
+    }
+    setThemeOverrides({});
+    saveThemeOverrides({});
+  }, [themeOverrides]);
+
   const toggleKanbanVisible = useCallback(() => {
     setKanbanVisible(prev => {
       const next = !prev;
@@ -509,6 +559,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     theme, setTheme, font, setFont,
     fontSize, setFontSize, editorFontSize, setEditorFontSize, kanbanVisible, toggleKanbanVisible,
     layoutTemplate, setLayoutTemplate, importedTheme, setImportedTheme, highContrast, setHighContrast,
+    themeOverrides, setThemeOverride, resetThemeOverride, resetAllThemeOverrides,
   ]);
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

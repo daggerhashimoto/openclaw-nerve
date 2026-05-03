@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Monitor, Eye, Type, Activity, ALargeSmall, Code2, Columns3, Command, LayoutGrid, Contrast, Download, Upload, PanelLeft } from 'lucide-react';
+import { Monitor, Eye, Type, Activity, ALargeSmall, Code2, Columns3, Command, LayoutGrid, Contrast, Download, Upload, PanelLeft, ChevronDown, ChevronRight } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -10,6 +10,7 @@ import { fetchTweakcnTheme } from '@/lib/theme-io';
 import { exportAsCSS, exportAsJSON } from '@/lib/theme-io';
 import { validateTheme } from '@/lib/theme-schema';
 import { useDeck, type LayoutMode } from '@/contexts/DeckContext';
+import { ThemeEditorPanel } from './ThemeEditorPanel';
 
 const INLINE_SELECT_TRIGGER_CLASS =
   'min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-left text-sm font-sans text-foreground sm:min-w-[148px]';
@@ -78,7 +79,13 @@ export function AppearanceSettings() {
     setImportedTheme,
     highContrast,
     setHighContrast,
+    themeOverrides,
+    setThemeOverride,
+    resetThemeOverride,
+    resetAllThemeOverrides,
   } = useSettings();
+
+  const [showThemeEditor, setShowThemeEditor] = useState(false);
 
   const [importInput, setImportInput] = useState('');
   const [importStatus, setImportStatus] = useState<'idle' | 'loading' | 'error' | 'success'>('idle');
@@ -367,6 +374,41 @@ export function AppearanceSettings() {
             {copiedFormat === 'JSON' ? 'Copied!' : 'Copy JSON'}
           </button>
         </div>
+      </div>
+
+      {/* Theme Editor (collapsible) */}
+      <div className="border border-border/50 rounded-2xl overflow-hidden">
+        <button
+          onClick={() => setShowThemeEditor(v => !v)}
+          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/30 transition-colors"
+        >
+          <Monitor size={14} className="text-primary" />
+          <span className="text-sm font-medium text-foreground flex-1 text-left">
+            Theme Editor
+            {Object.keys(themeOverrides).length > 0 && (
+              <span className="ml-2 text-[0.6rem] font-bold bg-primary/15 text-primary px-1.5 py-0.5 rounded-full">
+                {Object.keys(themeOverrides).length}
+              </span>
+            )}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            Live-edit every color, font, and spacing variable
+          </span>
+          {showThemeEditor
+            ? <ChevronDown size={14} className="text-muted-foreground" />
+            : <ChevronRight size={14} className="text-muted-foreground" />
+          }
+        </button>
+        {showThemeEditor && (
+          <div className="px-4 pb-4 border-t border-border/30">
+            <ThemeEditorPanel
+              overrides={themeOverrides}
+              setOverride={(prop, val) => setThemeOverride(prop, val)}
+              resetAll={resetAllThemeOverrides}
+              resetOne={resetThemeOverride}
+            />
+          </div>
+        )}
       </div>
 
       {/* Events Panel Visibility */}

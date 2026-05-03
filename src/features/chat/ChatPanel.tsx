@@ -6,6 +6,7 @@ import { InputBar, type InputBarHandle } from './InputBar';
 import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './useMessageSearch';
 import { ActivityLog, ChatHeader, ProcessingIndicator, ScrollToBottomButton, StreamingMessage, ToolGroupBlock } from './components';
+import { EmptyChatState, type QuickAction } from './EmptyChatState';
 import { isMessageCollapsible } from './types';
 import type { ChatMsg, ImageAttachment, OutgoingUploadPayload } from './types';
 import type { BeadLinkTarget } from '@/features/beads';
@@ -54,6 +55,16 @@ interface ChatPanelProps {
   showCommandPaletteButton?: boolean;
   /** Open the command palette from the compact composer launcher. */
   onOpenCommandPalette?: () => void;
+  /** Quick actions shown in the empty chat state. If omitted, defaults are built from other handlers. */
+  emptyStateActions?: QuickAction[];
+  /** Open search (for empty state quick action). */
+  onOpenSearch?: () => void;
+  /** Refresh sessions (for empty state quick action). */
+  onRefreshSessions?: () => void;
+  /** Open settings (for empty state quick action). */
+  onOpenSettings?: () => void;
+  /** Start a new session (for empty state quick action). */
+  onNewSession?: () => void;
 }
 
 export interface ChatPanelHandle {
@@ -76,6 +87,11 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   onOpenBeadId,
   showCommandPaletteButton = false,
   onOpenCommandPalette,
+  emptyStateActions,
+  onOpenSearch,
+  onRefreshSessions,
+  onOpenSettings,
+  onNewSession,
 }, ref) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -287,6 +303,19 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         aria-label="Chat messages"
         className="flex-1 overflow-y-auto overflow-x-hidden py-3 flex flex-col gap-1"
       >
+        {/* Empty chat state — quick action cards */}
+        {messages.length === 0 && !isGenerating && !stream.html && (
+          <EmptyChatState
+            agentName={agentName}
+            actions={emptyStateActions}
+            onOpenCommandPalette={onOpenCommandPalette}
+            onNewSession={onNewSession}
+            onSearch={onOpenSearch}
+            onRefresh={onRefreshSessions}
+            onSettings={onOpenSettings}
+          />
+        )}
+
         {/* Infinite scroll sentinel + "load more" indicator */}
         {hasMore && (
           <div ref={sentinelRef} className="flex items-center justify-center py-2 text-muted-foreground/60 text-[0.667rem] tracking-widest uppercase select-none">

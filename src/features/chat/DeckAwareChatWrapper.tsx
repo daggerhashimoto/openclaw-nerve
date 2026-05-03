@@ -21,9 +21,19 @@ import type { DeckColumn } from '@/contexts/DeckContext';
 export function DeckAwareChatWrapper({
   singleChat,
   currentSessionKey,
+  onOpenCommandPalette,
+  onOpenSearch,
+  onRefreshSessions,
+  onOpenSettings,
+  onNewSession,
 }: {
   singleChat: ReactNode;
   currentSessionKey: string;
+  onOpenCommandPalette?: () => void;
+  onOpenSearch?: () => void;
+  onRefreshSessions?: () => void;
+  onOpenSettings?: () => void;
+  onNewSession?: () => void;
 }) {
   const { layoutMode, columns, ensureColumn } = useDeck();
   const { sessions } = useSessionContext();
@@ -58,12 +68,19 @@ export function DeckAwareChatWrapper({
       return (
         <SessionScope sessionKey={column.sessionKey}>
           <ChatProvider>
-            <ScopedChatPanel agentName={getAgentName(column.sessionKey)} />
+            <ScopedChatPanel
+              agentName={getAgentName(column.sessionKey)}
+              onOpenCommandPalette={onOpenCommandPalette}
+              onOpenSearch={onOpenSearch}
+              onRefreshSessions={onRefreshSessions}
+              onOpenSettings={onOpenSettings}
+              onNewSession={onNewSession}
+            />
           </ChatProvider>
         </SessionScope>
       );
     },
-    [getAgentName],
+    [getAgentName, onOpenCommandPalette, onOpenSearch, onRefreshSessions, onOpenSettings, onNewSession],
   );
 
   if (layoutMode === 'single') {
@@ -92,7 +109,14 @@ export function DeckAwareChatWrapper({
  * ScopedChatPanel — A ChatPanel that reads its chat state from
  * the scoped ChatProvider (via SessionScope).
  */
-function ScopedChatPanel({ agentName }: { agentName?: string }) {
+function ScopedChatPanel({ agentName, onOpenCommandPalette, onOpenSearch, onRefreshSessions, onOpenSettings, onNewSession }: {
+  agentName?: string;
+  onOpenCommandPalette?: () => void;
+  onOpenSearch?: () => void;
+  onRefreshSessions?: () => void;
+  onOpenSettings?: () => void;
+  onNewSession?: () => void;
+}) {
   const {
     messages,
     handleSend,
@@ -126,6 +150,11 @@ function ScopedChatPanel({ agentName }: { agentName?: string }) {
       agentName={agentName ?? 'Agent'}
       loadMore={loadMore}
       hasMore={hasMore}
+      onOpenCommandPalette={onOpenCommandPalette}
+      onOpenSearch={onOpenSearch}
+      onRefreshSessions={onRefreshSessions}
+      onOpenSettings={onOpenSettings}
+      onNewSession={onNewSession}
     />
   );
 }

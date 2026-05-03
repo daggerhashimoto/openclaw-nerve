@@ -46,6 +46,7 @@ import { isImageFile } from '@/features/file-browser/utils/fileTypes';
 import { buildAgentRootSessionKey, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
 import { shouldGuardWorkspaceSwitch } from '@/features/workspace/workspaceSwitchGuard';
 import { getWorkspaceAgentId, getWorkspaceRootSessionKey } from '@/features/workspace/workspaceScope';
+import { useDeck } from '@/contexts/DeckContext';
 
 // Lazy-loaded features (not needed in initial bundle)
 const SettingsDrawer = lazy(() => import('@/features/settings/SettingsDrawer').then(m => ({ default: m.SettingsDrawer })));
@@ -671,11 +672,19 @@ export default function App({ onLogout }: AppProps) {
     }
   }, [discardAllDirtyFiles, pendingWorkspaceSwitch, workspaceSwitchAction]);
 
+  // Deck context — when in deck mode, clicking an agent adds a column
+  const { layoutMode, addColumn } = useDeck();
+
   const handleSessionChange = useCallback((key: string) => {
+    if (layoutMode === 'deck') {
+      // In deck mode, add agent as a new column instead of switching session
+      addColumn(key, getWorkspaceAgentId(key));
+      return;
+    }
     void requestWorkspaceTransition(key, getWorkspaceSwitchLabel(key), async () => {
       setCurrentSession(key);
     });
-  }, [getWorkspaceSwitchLabel, requestWorkspaceTransition, setCurrentSession]);
+  }, [addColumn, getWorkspaceSwitchLabel, layoutMode, requestWorkspaceTransition, setCurrentSession]);
 
   const handleSpawnSession = useCallback((opts: SpawnSessionOpts) => {
     const targetSessionKey = opts.kind === 'root'
@@ -823,9 +832,18 @@ export default function App({ onLogout }: AppProps) {
                 onOpenBeadId={openBeadId}
                 showCommandPaletteButton={commandPaletteButtonVisible && !paletteOpen && !settingsOpen && viewMode === 'chat'}
                 onOpenCommandPalette={handleOpenPalette}
+                onOpenSearch={toggleSearch}
+                onRefreshSessions={refreshSessions}
+                onOpenSettings={openSettings}
+                onNewSession={openSpawnDialog}
               />
             }
             currentSessionKey={currentSession}
+            onOpenCommandPalette={handleOpenPalette}
+            onOpenSearch={toggleSearch}
+            onRefreshSessions={refreshSessions}
+            onOpenSettings={openSettings}
+            onNewSession={openSpawnDialog}
           />
         </PanelErrorBoundary>
       }

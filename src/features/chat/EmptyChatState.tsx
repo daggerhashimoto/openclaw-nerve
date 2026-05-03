@@ -54,8 +54,8 @@ export function EmptyChatState({
     }] : []),
     ...(onSearch ? [{
       id: 'search',
-      label: 'Search Messages',
-      description: 'Find something in history',
+      label: 'Search History',
+      description: 'Search across all sessions',
       icon: <Search size={16} />,
       shortcut: '⌘F',
       action: onSearch,

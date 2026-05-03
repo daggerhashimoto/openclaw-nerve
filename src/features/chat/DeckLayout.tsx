@@ -31,12 +31,10 @@ export function DeckLayout({
   const [resizing, setResizing] = useState<{ leftId: string; rightId: string } | null>(null);
 
   // ── Resize logic ──────────────────────────────────────────────────────
-  // Uses incremental delta tracking: each mousemove computes the delta
-  // from the LAST position (not from drag start), so the ratio change is
-  // proportional and feels natural regardless of how far you drag.
-  // The SENSITIVITY multiplier controls how fast columns resize.
+  // Incremental delta tracking: each mousemove computes delta from
+  // the LAST position, so resizing feels proportional and controlled.
 
-  const SENSITIVITY = 0.003; // ~0.3% flex change per pixel of mouse movement
+  const SENSITIVITY = 0.002; // flex-ratio change per pixel of mouse movement
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent, leftId: string, rightId: string) => {
@@ -48,7 +46,6 @@ export function DeckLayout({
       const onMouseMove = (ev: MouseEvent) => {
         const deltaX = ev.clientX - lastX;
         lastX = ev.clientX;
-        // Small pixel delta → small ratio delta, so it feels smooth
         const deltaRatio = deltaX * SENSITIVITY;
         resizeColumn(leftId, rightId, deltaRatio);
       };
@@ -81,30 +78,24 @@ export function DeckLayout({
     );
   }
 
-  const totalFlex = columns.reduce((sum, c) => sum + c.flex, 0);
-
   return (
     <div
       ref={containerRef}
-      className={cn('h-full flex min-h-0', className)}
+      className={cn('h-full flex min-h-0 overflow-hidden', className)}
     >
       {columns.map((col, idx) => {
         const isActive = col.id === activeColumnId;
         const label = getSessionLabel(col.sessionKey);
         const agentName = getAgentName?.(col.sessionKey);
-        const widthPercent = (col.flex / totalFlex) * 100;
-        const isLast = idx === columns.length - 1;
 
         return (
           <div
             key={col.id}
-            className={cn(
-              // min-w-0 + overflow-hidden prevents ChatPanel's intrinsic
-              // min-width from pushing columns beyond their allocated space
-              'min-w-0 overflow-hidden flex flex-col h-full',
-              isLast ? 'flex-1' : '',
-            )}
-            style={!isLast ? { width: `${widthPercent}%`, flexShrink: 0 } : undefined}
+            className="min-w-0 overflow-hidden flex flex-col h-full"
+            // CSS flex: <grow> <shrink> <basis>
+            // grow=col.flex, shrink=1, basis=0% → columns share space
+            // proportionally and can shrink below content size (min-w-0)
+            style={{ flex: `${col.flex} 1 0%` }}
           >
             <ChatColumn
               columnId={col.id}

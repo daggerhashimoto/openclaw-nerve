@@ -252,7 +252,7 @@ export function ThemeEditorPanel({ overrides, setOverride, resetAll, resetOne }:
   const [copiedFormat, setCopiedFormat] = useState<string | null>(null);
 
   const specsByGroup = useMemo(() => getSpecsByGroup(), []);
-  const overrideCount = Object.keys(overrides).length;
+  const overrideCount = overrides ? Object.keys(overrides).length : 0;
 
   const toggleGroup = useCallback((group: string) => {
     setExpandedGroups(prev => {
@@ -289,7 +289,7 @@ export function ThemeEditorPanel({ overrides, setOverride, resetAll, resetOne }:
 
   // Export
   const handleExportCSS = useCallback(() => {
-    if (overrideCount === 0) return;
+    if (!overrides || overrideCount === 0) return;
     const lines = Object.entries(overrides)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([prop, val]) => `  ${prop}: ${val};`);
@@ -301,7 +301,7 @@ export function ThemeEditorPanel({ overrides, setOverride, resetAll, resetOne }:
   }, [overrides, overrideCount]);
 
   const handleExportJSON = useCallback(() => {
-    if (overrideCount === 0) return;
+    if (!overrides || overrideCount === 0) return;
     const json = JSON.stringify(overrides, null, 2);
     navigator.clipboard.writeText(json).then(() => {
       setCopiedFormat('JSON');

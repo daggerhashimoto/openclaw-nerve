@@ -385,7 +385,7 @@ export function AppearanceSettings() {
           <Monitor size={14} className="text-primary" />
           <span className="text-sm font-medium text-foreground flex-1 text-left">
             Theme Editor
-            {Object.keys(themeOverrides).length > 0 && (
+            {themeOverrides && Object.keys(themeOverrides).length > 0 && (
               <span className="ml-2 text-[0.6rem] font-bold bg-primary/15 text-primary px-1.5 py-0.5 rounded-full">
                 {Object.keys(themeOverrides).length}
               </span>

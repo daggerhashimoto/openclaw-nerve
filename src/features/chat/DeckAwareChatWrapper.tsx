@@ -132,6 +132,11 @@ function ScopedChatPanel({ agentName, onOpenCommandPalette, onOpenSearch, onRefr
     hasMore,
   } = useChat();
 
+  // Local search state for deck columns — each column manages its own
+  const [localSearchOpen, setLocalSearchOpen] = useState(false);
+  const toggleSearch = useCallback(() => setLocalSearchOpen(prev => !prev), []);
+  const closeSearch = useCallback(() => setLocalSearchOpen(false), []);
+
   return (
     <ChatPanel
       id="deck-chat"
@@ -145,13 +150,13 @@ function ScopedChatPanel({ agentName, onOpenCommandPalette, onOpenSearch, onRefr
       currentToolDescription={currentToolDescription}
       activityLog={activityLog}
       onReset={handleReset}
-      searchOpen={false}
-      onSearchClose={() => {}}
+      searchOpen={localSearchOpen}
+      onSearchClose={closeSearch}
       agentName={agentName ?? 'Agent'}
       loadMore={loadMore}
       hasMore={hasMore}
       onOpenCommandPalette={onOpenCommandPalette}
-      onOpenSearch={onOpenSearch}
+      onOpenSearch={toggleSearch}
       onRefreshSessions={onRefreshSessions}
       onOpenSettings={onOpenSettings}
       onNewSession={onNewSession}

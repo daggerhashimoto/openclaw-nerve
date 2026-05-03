@@ -11,7 +11,7 @@
  * - Badge showing how many variables have been overridden
  */
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { ChevronDown, RotateCcw, Copy, Download, Search, X, Palette } from 'lucide-react';
 import { VARIABLE_SPECS, GROUP_META, getSpecsByGroup, isPlainColor } from '@/lib/variable-specs';
 import type { VariableSpec, VariableGroup } from '@/lib/theme-schema';

@@ -39,11 +39,35 @@ import {
 
 let wss: WebSocketServer;
 
+async function waitForAssertion(assertion: () => void): Promise<void> {
+  const deadline = Date.now() + 500;
+  let lastError: unknown;
+
+  while (Date.now() < deadline) {
+    try {
+      assertion();
+      return;
+    } catch (err) {
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+
+  if (lastError) throw lastError;
+  assertion();
+}
+
 async function importFreshGatewayRpc() {
   for (const client of wss.clients) client.close();
   await new Promise((resolve) => setTimeout(resolve, 10));
   vi.resetModules();
   return await import('./gateway-rpc.js');
+}
+
+function broadcastGatewayMessage(message: unknown): void {
+  for (const client of wss.clients) {
+    client.send(JSON.stringify(message));
+  }
 }
 
 describe('gateway-rpc (persistent WebSocket)', () => {
@@ -229,6 +253,85 @@ describe('gateway-rpc (persistent WebSocket)', () => {
       connectMode = 'close';
       const { gatewayRpcCall } = await importFreshGatewayRpc();
       await expect(gatewayRpcCall('test.method', {})).rejects.toThrow(/closed before connect completed/i);
+    });
+  });
+
+  describe('subscribeGatewayEvents', () => {
+    it('notifies subscribers of parsed gateway event messages', async () => {
+      rpcHandler = () => ({ ok: true });
+      const { gatewayRpcCall, subscribeGatewayEvents } = await importFreshGatewayRpc();
+      const listener = vi.fn();
+      subscribeGatewayEvents(listener);
+
+      await gatewayRpcCall('test.method', { foo: 'bar' });
+      broadcastGatewayMessage({
+        type: 'event',
+        event: 'chat',
+        seq: 7,
+        stateVersion: 'state-1',
+        payload: { sessionKey: 'agent:main:main', runId: 'run-1', state: 'started' },
+      });
+
+      await waitForAssertion(() => expect(listener).toHaveBeenCalledTimes(1));
+      expect(listener).toHaveBeenCalledWith({
+        type: 'event',
+        event: 'chat',
+        seq: 7,
+        stateVersion: 'state-1',
+        payload: { sessionKey: 'agent:main:main', runId: 'run-1', state: 'started' },
+      });
+    });
+
+    it('stops notifying after idempotent unsubscribe', async () => {
+      rpcHandler = () => ({ ok: true });
+      const { gatewayRpcCall, subscribeGatewayEvents } = await importFreshGatewayRpc();
+      const listener = vi.fn();
+      const unsubscribe = subscribeGatewayEvents(listener);
+
+      await gatewayRpcCall('test.method', {});
+      broadcastGatewayMessage({ type: 'event', event: 'chat', payload: { state: 'started' } });
+      await waitForAssertion(() => expect(listener).toHaveBeenCalledTimes(1));
+
+      unsubscribe();
+      unsubscribe();
+      broadcastGatewayMessage({ type: 'event', event: 'chat', payload: { state: 'delta' } });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('isolates subscriber failures and keeps the RPC connection usable', async () => {
+      rpcHandler = () => ({ ok: true });
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { gatewayRpcCall, subscribeGatewayEvents } = await importFreshGatewayRpc();
+      const throwingListener = vi.fn(() => {
+        throw new Error('subscriber failed');
+      });
+      const normalListener = vi.fn();
+
+      subscribeGatewayEvents(throwingListener);
+      subscribeGatewayEvents(normalListener);
+
+      await gatewayRpcCall('test.method', {});
+      broadcastGatewayMessage({ type: 'event', event: 'agent', payload: { ok: true } });
+
+      await waitForAssertion(() => expect(normalListener).toHaveBeenCalledTimes(1));
+      expect(throwingListener).toHaveBeenCalledTimes(1);
+      await expect(gatewayRpcCall('test.after-event', {})).resolves.toEqual({ ok: true });
+      expect(warnSpy).toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('resolves RPC responses without broadcasting them as gateway events', async () => {
+      rpcHandler = () => ({ result: 'ok' });
+      const { gatewayRpcCall, subscribeGatewayEvents } = await importFreshGatewayRpc();
+      const listener = vi.fn();
+      subscribeGatewayEvents(listener);
+
+      await expect(gatewayRpcCall('test.method', {})).resolves.toEqual({ result: 'ok' });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      expect(listener).not.toHaveBeenCalled();
     });
   });
 

@@ -1,5 +1,6 @@
 import { gatewayRpcCall } from '../gateway-rpc.js';
 import { ChatRuntime, type ChatRuntimeRpc } from './runtime.js';
+import { startChatRuntimeGatewaySupervisor } from './supervisor.js';
 
 const DEFAULT_MAX_PATCHES_PER_SESSION = 1_000;
 const MAX_PATCHES_PER_SESSION_LIMIT = 10_000;
@@ -13,6 +14,7 @@ export function getChatRuntime(): ChatRuntime {
       rpc: gatewayRpcCall as ChatRuntimeRpc,
       maxPatchesPerSession: getMaxPatchesPerSession(),
     });
+    startChatRuntimeGatewaySupervisor(runtime);
   }
 
   return runtime;

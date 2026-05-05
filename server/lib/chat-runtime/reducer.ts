@@ -71,13 +71,13 @@ export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEven
       let existing = itemOfKind(draft.items[itemId], 'user_message');
       let turn: TimelineTurn | undefined;
       if (isStaleOptimisticUserRetry(draft, existing, event)) break;
-      if (event.messageId && event.idempotencyKey) {
+      if (event.idempotencyKey) {
         const optimisticItemId = userItemId({
           sessionKey: event.sessionKey,
           idempotencyKey: event.idempotencyKey,
         });
         const optimisticItem = itemOfKind(draft.items[optimisticItemId], 'user_message');
-        if (optimisticItem && optimisticItemId !== itemId) {
+        if (optimisticItem) {
           const optimisticTurn = optimisticItem.turnId
             ? draft.turns.find((candidate) => candidate.id === optimisticItem.turnId)
             : undefined;

@@ -29,6 +29,7 @@ import agentLogRoutes from './routes/agent-log.js';
 import tokensRoutes from './routes/tokens.js';
 import memoriesRoutes from './routes/memories.js';
 import eventsRoutes from './routes/events.js';
+import chatRuntimeRoutes from './routes/chat-runtime.js';
 import serverInfoRoutes from './routes/server-info.js';
 import codexLimitsRoutes from './routes/codex-limits.js';
 import claudeCodeLimitsRoutes from './routes/claude-code-limits.js';
@@ -78,7 +79,11 @@ app.use(
 app.use('*', authMiddleware);
 // Apply compression to all routes except SSE (compression buffers chunks and breaks streaming)
 app.use('*', async (c, next) => {
-  if (c.req.path === '/api/events' || c.req.path === '/api/files/raw') return next();
+  if (
+    c.req.path === '/api/events' ||
+    c.req.path === '/api/chat-runtime/stream' ||
+    c.req.path === '/api/files/raw'
+  ) return next();
   return compress()(c, next);
 });
 app.use('*', cacheHeaders);
@@ -87,7 +92,7 @@ app.use('*', cacheHeaders);
 
 const routes = [
   healthRoutes, authRoutes, ttsRoutes, transcribeRoutes, agentLogRoutes,
-  tokensRoutes, memoriesRoutes, eventsRoutes, serverInfoRoutes,
+  tokensRoutes, memoriesRoutes, eventsRoutes, chatRuntimeRoutes, serverInfoRoutes,
   codexLimitsRoutes, claudeCodeLimitsRoutes, versionRoutes, versionCheckRoutes,
   gatewayRoutes, connectDefaultsRoutes,
   workspaceRoutes, cronsRoutes, sessionsRoutes, skillsRoutes, filesRoutes, apiKeysRoutes,

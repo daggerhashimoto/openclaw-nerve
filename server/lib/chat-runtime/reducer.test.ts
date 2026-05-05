@@ -770,6 +770,53 @@ describe('chat runtime reducer', () => {
     });
   });
 
+  it('moves a run-bound optimistic retry into an existing real run without leaving an empty optimistic turn', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'user_message_committed',
+      sessionKey: 'agent:main:main',
+      idempotencyKey: 'ik-1',
+      text: 'user 1',
+      at: 1000,
+    });
+    const optimisticTurnId = timeline.turns[0].id;
+    timeline = reduceRuntimeEvent(timeline, { type: 'assistant_delta', sessionKey: 'agent:main:main', runId: 'run-1', text: 'partial', at: 1001 });
+    const realTurnId = timeline.turns.find((turn) => turn.runId === 'run-1')?.id;
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'user_message_committed',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      idempotencyKey: 'ik-1',
+      text: 'user 1',
+      at: 1002,
+    });
+
+    const userItemId = 'user:agent:main:main:ik-1';
+    const userItems = Object.values(timeline.items).filter((item) => item.kind === 'user_message');
+    const realTurn = timeline.turns.find((turn) => turn.id === realTurnId);
+    const optimisticTurn = timeline.turns.find((turn) => turn.id === optimisticTurnId);
+    const turnsReferencingUser = timeline.turns.filter((turn) => turn.inputItemIds.includes(userItemId));
+
+    expect(userItems).toHaveLength(1);
+    expect(userItems[0]).toMatchObject({
+      id: userItemId,
+      text: 'user 1',
+      idempotencyKey: 'ik-1',
+      pending: true,
+      status: 'provisional',
+      source: 'optimistic',
+      turnId: realTurnId,
+      runId: 'run-1',
+    });
+    expect(realTurn).toMatchObject({
+      status: 'running',
+      inputItemIds: [userItemId],
+      outputItemIds: ['assistant:agent:main:main:run-1:answer'],
+    });
+    expect(optimisticTurn).toMatchObject({ status: 'aborted', inputItemIds: [], outputItemIds: [] });
+    expect(turnsReferencingUser).toHaveLength(1);
+  });
+
   it('moves a message-id user item between turns without leaving stale input references', () => {
     let timeline = createEmptyTimeline('agent:main:main');
     timeline = reduceRuntimeEvent(timeline, {

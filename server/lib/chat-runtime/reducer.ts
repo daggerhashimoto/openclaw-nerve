@@ -1,0 +1,577 @@
+import {
+  assistantItemId,
+  fingerprintText,
+  thinkingItemId,
+  toolCallItemId,
+  toolGroupItemId,
+  turnId,
+  userItemId,
+} from './id.js';
+import type {
+  AssistantTimelineItem,
+  RuntimeEvent,
+  SessionTimeline,
+  ThinkingTimelineItem,
+  TimelineItem,
+  TimelineOrderKey,
+  TimelinePatchOp,
+  TimelineTurn,
+  ToolCallTimelineItem,
+  ToolGroupTimelineItem,
+  UserTimelineItem,
+} from './types.js';
+
+const USER_BLOCK = 0;
+const THINKING_BLOCK = 10;
+const TOOL_BLOCK = 20;
+const ASSISTANT_BLOCK = 100;
+const OUTPUT_BLOCK_STEP = 10;
+
+export function createEmptyTimeline(sessionKey: string): SessionTimeline {
+  return {
+    sessionKey,
+    version: 0,
+    cursor: '0',
+    hydrationState: 'cold',
+    turns: [],
+    items: {},
+    updatedAt: 0,
+  };
+}
+
+export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEvent): SessionTimeline {
+  if (event.sessionKey !== timeline.sessionKey) return timeline;
+
+  const draft = cloneTimeline(timeline);
+
+  switch (event.type) {
+    case 'turn_started': {
+      const turn = ensureTurn(draft, event.runId, event.at);
+      if (!isTerminalTurnStatus(turn.status)) {
+        turn.status = 'running';
+        turn.finalizedAt = undefined;
+      }
+      break;
+    }
+
+    case 'user_message_committed': {
+      const runId = event.runId ?? optimisticRunId(event);
+      let itemId = userItemId({
+        sessionKey: event.sessionKey,
+        messageId: event.messageId,
+        idempotencyKey: event.idempotencyKey,
+        text: event.text,
+        timestamp: event.at,
+      });
+      let existing = itemOfKind(draft.items[itemId], 'user_message');
+      let turn: TimelineTurn | undefined;
+      if (isStaleOptimisticUserRetry(draft, existing, event)) break;
+      if (event.messageId && event.idempotencyKey) {
+        const optimisticItemId = userItemId({
+          sessionKey: event.sessionKey,
+          idempotencyKey: event.idempotencyKey,
+        });
+        const optimisticItem = itemOfKind(draft.items[optimisticItemId], 'user_message');
+        if (optimisticItem && optimisticItemId !== itemId) {
+          const optimisticTurn = optimisticItem.turnId
+            ? draft.turns.find((candidate) => candidate.id === optimisticItem.turnId)
+            : undefined;
+          const persistedRunId = event.runId;
+          const realRunTurn = persistedRunId
+            ? draft.turns.find((candidate) => candidate.runId === persistedRunId || candidate.id === turnId(event.sessionKey, persistedRunId))
+            : undefined;
+          itemId = optimisticItemId;
+          existing = optimisticItem;
+
+          if (
+            event.runId &&
+            optimisticTurn &&
+            realRunTurn &&
+            realRunTurn.id !== optimisticTurn.id &&
+            isPromptOnlyInputTurn(optimisticTurn, optimisticItemId)
+          ) {
+            turn = realRunTurn;
+            removeValue(optimisticTurn.inputItemIds, optimisticItemId);
+            neutralizeTurn(optimisticTurn, event.at);
+          } else if (event.runId && optimisticTurn && isPromptOnlyInputTurn(optimisticTurn, optimisticItemId)) {
+            optimisticTurn.runId = event.runId;
+            turn = optimisticTurn;
+          }
+        }
+      }
+      turn = turn ?? ensureTurn(draft, runId, event.at);
+      const isHistoryBacked = Boolean(event.messageId);
+      const orderKey = existing?.turnId && existing.turnId !== turn.id
+        ? orderKeyFor(turn, USER_BLOCK, turn.inputItemIds.length)
+        : existing?.orderKey ?? orderKeyFor(turn, USER_BLOCK, turn.inputItemIds.length);
+      const item: UserTimelineItem = {
+        ...baseItem(existing, itemId, event.sessionKey, turn, orderKey, event.at),
+        kind: 'user_message',
+        text: event.text,
+        idempotencyKey: event.idempotencyKey,
+        messageId: event.messageId,
+        pending: isHistoryBacked ? false : true,
+        status: isHistoryBacked ? 'complete' : 'provisional',
+        source: isHistoryBacked ? 'history' : 'optimistic',
+      };
+
+      draft.items[itemId] = item;
+      detachInputItemFromOtherTurns(draft, itemId, turn.id);
+      appendUnique(turn.inputItemIds, itemId);
+      break;
+    }
+
+    case 'thinking_started':
+    case 'thinking_delta':
+    case 'thinking_final': {
+      const turn = ensureTurn(draft, event.runId, event.at);
+      if (shouldIgnoreEventForTerminalTurn(turn, event)) break;
+
+      const itemId = thinkingItemId(event.sessionKey, event.runId, event.blockIndex);
+      const existing = itemOfKind(draft.items[itemId], 'thinking');
+      if (event.type !== 'thinking_final' && existing && isTerminalItemStatus(existing.status)) break;
+
+      const isFinal = event.type === 'thinking_final';
+      const text = event.type === 'thinking_started' ? existing?.text ?? '' : event.text;
+      if (!existing) closeOpenToolGroupsForOutputBoundary(draft, turn, event.at);
+      const item: ThinkingTimelineItem = {
+        ...baseItem(
+          existing,
+          itemId,
+          event.sessionKey,
+          turn,
+          existing?.orderKey ?? nextOutputOrderKey(draft, turn, THINKING_BLOCK + event.blockIndex),
+          event.at,
+        ),
+        kind: 'thinking',
+        text,
+        durationMs: isFinal ? event.durationMs : existing?.durationMs,
+        status: isFinal ? 'complete' : 'running',
+        source: isFinal ? 'history' : 'live',
+      };
+
+      draft.items[itemId] = item;
+      appendUnique(turn.outputItemIds, itemId);
+      break;
+    }
+
+    case 'tool_started':
+    case 'tool_finished': {
+      const turn = ensureTurn(draft, event.runId, event.at);
+      const toolId = toolCallItemId(event.sessionKey, event.runId, event.toolCallId);
+      const existingTool = itemOfKind(draft.items[toolId], 'tool_call');
+      if (isTerminalTurnStatus(turn.status)) {
+        if (event.type === 'tool_finished' && existingTool) {
+          draft.items[toolId] = buildToolItem(existingTool, toolId, draft, turn, event);
+          closeToolGroupsForTurn(draft, turn, event.at, groupTerminalStatusForTurn(turn));
+        }
+        break;
+      }
+
+      const nextTool = buildToolItem(existingTool, toolId, draft, turn, event);
+
+      draft.items[toolId] = nextTool;
+      upsertToolGroup(draft, turn, toolId, event.at);
+      break;
+    }
+
+    case 'assistant_delta':
+    case 'assistant_final': {
+      const turn = ensureTurn(draft, event.runId, event.at);
+      if (shouldIgnoreEventForTerminalTurn(turn, event)) break;
+
+      const itemId = assistantItemId(event.sessionKey, event.runId);
+      const existing = itemOfKind(draft.items[itemId], 'assistant_message');
+      if (event.type === 'assistant_delta' && existing && isTerminalItemStatus(existing.status)) break;
+      if (event.type === 'assistant_delta' && existing && event.at < existing.updatedAt) break;
+
+      const isFinal = event.type === 'assistant_final';
+      closeOpenToolGroupsForOutputBoundary(draft, turn, event.at);
+      const item: AssistantTimelineItem = {
+        ...baseItem(
+          existing,
+          itemId,
+          event.sessionKey,
+          turn,
+          existing?.orderKey ?? nextOutputOrderKey(draft, turn, ASSISTANT_BLOCK),
+          event.at,
+        ),
+        kind: 'assistant_message',
+        text: event.text,
+        isStreaming: !isFinal,
+        finalText: isFinal ? event.text : existing?.finalText,
+        stopReason: isFinal ? event.stopReason : existing?.stopReason,
+        status: isFinal ? 'complete' : 'running',
+        source: isFinal ? 'history' : 'live',
+      };
+
+      draft.items[itemId] = item;
+      appendUnique(turn.outputItemIds, itemId);
+      break;
+    }
+
+    case 'turn_finalized': {
+      const turn = ensureTurn(draft, event.runId, event.at);
+      if (isTerminalTurnStatus(turn.status)) break;
+
+      turn.status = 'finalized';
+      turn.finalizedAt = event.at;
+      closeToolGroupsForTurn(draft, turn, event.at, 'finalized');
+      break;
+    }
+
+    case 'turn_failed': {
+      const turn = ensureTurn(draft, event.runId, event.at);
+      if (isTerminalTurnStatus(turn.status)) break;
+
+      turn.status = 'failed';
+      turn.finalizedAt = event.at;
+      closeToolGroupsForTurn(draft, turn, event.at, 'failed');
+      break;
+    }
+
+    case 'history_snapshot': {
+      draft.hydrationState = 'ready';
+      break;
+    }
+  }
+
+  return advanceTimeline(draft, event.at);
+}
+
+export function timelineItemsInOrder(timeline: SessionTimeline): TimelineItem[] {
+  return Object.values(timeline.items).sort(compareItems);
+}
+
+export function buildPatchFromTimeline(timeline: SessionTimeline): TimelinePatchOp[] {
+  return [
+    { op: 'set_hydration_state', state: timeline.hydrationState },
+    ...timeline.turns.map((turn) => ({ op: 'upsert_turn' as const, turn })),
+    ...timelineItemsInOrder(timeline).map((item) => ({ op: 'upsert_item' as const, item })),
+  ];
+}
+
+function cloneTimeline(timeline: SessionTimeline): SessionTimeline {
+  return {
+    ...timeline,
+    turns: timeline.turns.map((turn) => ({
+      ...turn,
+      orderBase: { ...turn.orderBase },
+      inputItemIds: [...turn.inputItemIds],
+      outputItemIds: [...turn.outputItemIds],
+    })),
+    items: { ...timeline.items },
+  };
+}
+
+function ensureTurn(timeline: SessionTimeline, runId: string, at: number): TimelineTurn {
+  const id = turnId(timeline.sessionKey, runId);
+  const existing = timeline.turns.find((turn) => turn.id === id || turn.runId === runId);
+  if (existing) return existing;
+
+  const turn: TimelineTurn = {
+    id,
+    sessionKey: timeline.sessionKey,
+    runId,
+    status: 'running',
+    startedAt: at,
+    inputItemIds: [],
+    outputItemIds: [],
+    orderBase: { turn: timeline.turns.length, block: 0, sub: 0 },
+  };
+  timeline.turns.push(turn);
+  return turn;
+}
+
+function baseItem<TItem extends TimelineItem | undefined>(
+  existing: TItem,
+  id: string,
+  sessionKey: string,
+  turn: TimelineTurn,
+  orderKey: TimelineOrderKey,
+  at: number,
+): Omit<TimelineItem, 'kind'> {
+  return {
+    id,
+    sessionKey,
+    turnId: turn.id,
+    runId: turn.runId,
+    orderKey,
+    createdAt: existing?.createdAt ?? at,
+    updatedAt: Math.max(existing?.updatedAt ?? at, at),
+    status: existing?.status ?? 'running',
+    source: existing?.source ?? 'live',
+  };
+}
+
+function buildToolItem(
+  existing: ToolCallTimelineItem | undefined,
+  itemId: string,
+  timeline: SessionTimeline,
+  turn: TimelineTurn,
+  event: Extract<RuntimeEvent, { type: 'tool_started' | 'tool_finished' }>,
+): ToolCallTimelineItem {
+  const isFinished = event.type === 'tool_finished';
+  const isFailed = isFinished && Boolean(event.error);
+  const terminalStatus = existing?.status === 'complete' || existing?.status === 'failed';
+  return {
+    ...baseItem(
+      existing,
+      itemId,
+      event.sessionKey,
+      turn,
+      existing?.orderKey ?? orderKeyFor(turn, TOOL_BLOCK, nextToolSub(timeline, turn)),
+      event.at,
+    ),
+    kind: 'tool_call',
+    toolCallId: event.toolCallId,
+    name: event.type === 'tool_started' ? event.name : existing?.name ?? 'unknown',
+    args: event.type === 'tool_started' ? event.args : existing?.args ?? {},
+    result: isFinished ? event.result : existing?.result,
+    error: isFinished ? event.error : existing?.error,
+    status: isFinished ? (isFailed ? 'failed' : 'complete') : terminalStatus ? existing.status : 'running',
+    source: isFinished || terminalStatus ? 'history' : 'live',
+  };
+}
+
+function upsertToolGroup(timeline: SessionTimeline, turn: TimelineTurn, toolId: string, at: number): void {
+  const existing = findToolGroupContainingTool(timeline, turn, toolId) ?? findOpenToolGroupForTurn(timeline, turn);
+  const groupId = existing?.id ?? toolGroupItemId(timeline.sessionKey, turn.runId, nextToolGroupIndex(timeline, turn));
+  const childItemIds = existing?.childItemIds ? [...existing.childItemIds] : [];
+  appendUnique(childItemIds, toolId);
+  const allChildrenTerminal = areToolGroupChildrenTerminal(timeline, childItemIds);
+  const isClosed = Boolean(existing?.closed) || allChildrenTerminal;
+
+  const group: ToolGroupTimelineItem = {
+    ...baseItem(
+      existing,
+      groupId,
+      timeline.sessionKey,
+      turn,
+      existing?.orderKey ?? nextOutputOrderKey(timeline, turn, TOOL_BLOCK),
+      at,
+    ),
+    kind: 'tool_group',
+    childItemIds,
+    closed: isClosed,
+    status: isClosed ? closedToolGroupStatus(timeline, childItemIds, existing?.status) : 'running',
+    source: isClosed ? 'history' : 'live',
+  };
+
+  timeline.items[groupId] = group;
+  alignToolGroupChildOrder(timeline, group, at);
+  appendUnique(turn.outputItemIds, groupId);
+  removeValue(turn.outputItemIds, toolId);
+}
+
+function findToolGroupContainingTool(timeline: SessionTimeline, turn: TimelineTurn, toolId: string): ToolGroupTimelineItem | undefined {
+  return toolGroupsForTurn(timeline, turn).find((group) => group.childItemIds.includes(toolId));
+}
+
+function findOpenToolGroupForTurn(timeline: SessionTimeline, turn: TimelineTurn): ToolGroupTimelineItem | undefined {
+  return toolGroupsForTurn(timeline, turn).find((group) => !group.closed);
+}
+
+function toolGroupsForTurn(timeline: SessionTimeline, turn: TimelineTurn): ToolGroupTimelineItem[] {
+  return Object.values(timeline.items)
+    .map((item) => itemOfKind(item, 'tool_group'))
+    .filter((group): group is ToolGroupTimelineItem => Boolean(group && group.turnId === turn.id))
+    .sort(compareItems);
+}
+
+function nextToolGroupIndex(timeline: SessionTimeline, turn: TimelineTurn): number {
+  let index = 0;
+  while (timeline.items[toolGroupItemId(timeline.sessionKey, turn.runId, index)]) index += 1;
+  return index;
+}
+
+function nextOutputOrderKey(timeline: SessionTimeline, turn: TimelineTurn, preferredBlock: number): TimelineOrderKey {
+  const lastOutputOrderKey = [...turn.outputItemIds]
+    .reverse()
+    .map((itemId) => timeline.items[itemId]?.orderKey)
+    .find((orderKey): orderKey is TimelineOrderKey => Boolean(orderKey));
+
+  if (!lastOutputOrderKey) return orderKeyFor(turn, preferredBlock, 0);
+  if (lastOutputOrderKey.block >= preferredBlock) {
+    return orderKeyFor(turn, lastOutputOrderKey.block + OUTPUT_BLOCK_STEP, 0);
+  }
+  return orderKeyFor(turn, preferredBlock, 0);
+}
+
+function alignToolGroupChildOrder(timeline: SessionTimeline, group: ToolGroupTimelineItem, at: number): void {
+  group.childItemIds.forEach((childItemId, index) => {
+    const child = itemOfKind(timeline.items[childItemId], 'tool_call');
+    if (!child) return;
+
+    const orderKey = { ...group.orderKey, sub: group.orderKey.sub + index + 1 };
+    timeline.items[childItemId] = {
+      ...child,
+      orderKey,
+      updatedAt: Math.max(child.updatedAt, at),
+    };
+  });
+}
+
+function areToolGroupChildrenTerminal(timeline: SessionTimeline, childItemIds: string[]): boolean {
+  return childItemIds.every((childItemId) => {
+    const child = itemOfKind(timeline.items[childItemId], 'tool_call');
+    return child ? isTerminalItemStatus(child.status) : false;
+  });
+}
+
+function closedToolGroupStatus(
+  timeline: SessionTimeline,
+  childItemIds: string[],
+  existingStatus?: TimelineItem['status'],
+): ToolGroupTimelineItem['status'] {
+  if (areToolGroupChildrenTerminal(timeline, childItemIds)) return 'complete';
+  if (existingStatus && existingStatus !== 'running') return existingStatus;
+  return 'failed';
+}
+
+function closeOpenToolGroupsForOutputBoundary(timeline: SessionTimeline, turn: TimelineTurn, at: number): void {
+  for (const group of toolGroupsForTurn(timeline, turn)) {
+    if (group.closed) continue;
+
+    const childItemIds = [...group.childItemIds];
+    timeline.items[group.id] = {
+      ...group,
+      childItemIds,
+      closed: true,
+      status: closedToolGroupStatus(timeline, childItemIds, group.status),
+      source: 'history',
+      updatedAt: at,
+    };
+  }
+}
+
+function closeToolGroupsForTurn(
+  timeline: SessionTimeline,
+  turn: TimelineTurn,
+  at: number,
+  terminalStatus: 'finalized' | 'failed',
+): void {
+  for (const item of Object.values(timeline.items)) {
+    const group = itemOfKind(item, 'tool_group');
+    if (!group || group.turnId !== turn.id) continue;
+
+    const childItemIds = [...group.childItemIds];
+    const allChildrenTerminal = childItemIds.every((childItemId) => {
+      const child = itemOfKind(timeline.items[childItemId], 'tool_call');
+      return child ? isTerminalItemStatus(child.status) : false;
+    });
+
+    timeline.items[group.id] = {
+      ...group,
+      childItemIds,
+      closed: true,
+      status: allChildrenTerminal || terminalStatus === 'finalized' ? 'complete' : 'failed',
+      source: 'history',
+      updatedAt: at,
+    };
+  }
+}
+
+function itemOfKind<TKind extends TimelineItem['kind']>(
+  item: TimelineItem | undefined,
+  kind: TKind,
+): Extract<TimelineItem, { kind: TKind }> | undefined {
+  return item?.kind === kind ? (item as Extract<TimelineItem, { kind: TKind }>) : undefined;
+}
+
+function orderKeyFor(turn: TimelineTurn, block: number, sub: number): TimelineOrderKey {
+  return { turn: turn.orderBase.turn, block, sub };
+}
+
+function nextToolSub(timeline: SessionTimeline, turn: TimelineTurn): number {
+  return Object.values(timeline.items).filter((item) => item.kind === 'tool_call' && item.turnId === turn.id).length + 1;
+}
+
+function appendUnique(values: string[], value: string): void {
+  if (!values.includes(value)) values.push(value);
+}
+
+function removeValue(values: string[], value: string): void {
+  const index = values.indexOf(value);
+  if (index !== -1) values.splice(index, 1);
+}
+
+function detachInputItemFromOtherTurns(timeline: SessionTimeline, itemId: string, retainedTurnId: string): void {
+  for (const turn of timeline.turns) {
+    if (turn.id !== retainedTurnId) removeValue(turn.inputItemIds, itemId);
+  }
+}
+
+function neutralizeTurn(turn: TimelineTurn, at: number): void {
+  turn.runId = `superseded:${turn.runId}`;
+  turn.status = 'aborted';
+  turn.finalizedAt = turn.finalizedAt ?? at;
+  turn.inputItemIds = [];
+  turn.outputItemIds = [];
+}
+
+function isPromptOnlyInputTurn(turn: TimelineTurn, inputItemId: string): boolean {
+  return turn.outputItemIds.length === 0 && turn.inputItemIds.length === 1 && turn.inputItemIds[0] === inputItemId;
+}
+
+function isStaleOptimisticUserRetry(
+  timeline: SessionTimeline,
+  existing: UserTimelineItem | undefined,
+  event: Extract<RuntimeEvent, { type: 'user_message_committed' }>,
+): boolean {
+  if (event.messageId || !event.idempotencyKey) return false;
+
+  const historyItem = existing ?? Object.values(timeline.items).find((item) =>
+    item.kind === 'user_message' &&
+    item.idempotencyKey === event.idempotencyKey &&
+    Boolean(item.messageId),
+  );
+  return Boolean(historyItem && historyItem.status === 'complete' && historyItem.source === 'history');
+}
+
+function isTerminalItemStatus(status: TimelineItem['status']): boolean {
+  return status === 'complete' || status === 'failed' || status === 'aborted';
+}
+
+function isTerminalTurnStatus(status: TimelineTurn['status']): boolean {
+  return status === 'finalized' || status === 'failed' || status === 'aborted';
+}
+
+function groupTerminalStatusForTurn(turn: TimelineTurn): 'finalized' | 'failed' {
+  return turn.status === 'failed' || turn.status === 'aborted' ? 'failed' : 'finalized';
+}
+
+function shouldIgnoreEventForTerminalTurn(turn: TimelineTurn, event: RuntimeEvent): boolean {
+  if (!isTerminalTurnStatus(turn.status)) return false;
+  return (
+    event.type === 'assistant_delta' ||
+    event.type === 'thinking_started' ||
+    event.type === 'thinking_delta'
+  );
+}
+
+function compareItems(left: TimelineItem, right: TimelineItem): number {
+  return (
+    left.orderKey.turn - right.orderKey.turn ||
+    left.orderKey.block - right.orderKey.block ||
+    left.orderKey.sub - right.orderKey.sub ||
+    left.createdAt - right.createdAt ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function optimisticRunId(event: Extract<RuntimeEvent, { type: 'user_message_committed' }>): string {
+  if (event.messageId) return `optimistic:message:${event.messageId}`;
+  if (event.idempotencyKey) return `optimistic:idempotency:${event.idempotencyKey}`;
+  return `optimistic:fallback:${event.at}:${fingerprintText(event.text)}`;
+}
+
+function advanceTimeline(timeline: SessionTimeline, at: number): SessionTimeline {
+  const version = timeline.version + 1;
+  return {
+    ...timeline,
+    version,
+    cursor: String(version),
+    updatedAt: Math.max(timeline.updatedAt, at),
+  };
+}

@@ -19,6 +19,10 @@ export function assistantItemId(sessionKey: string, runId: string): string {
   return `assistant:${sessionKey}:${encodeSuffixPart(runId)}:answer`;
 }
 
+export function assistantSegmentItemId(sessionKey: string, runId: string, segmentIndex: number): string {
+  return `assistant:${sessionKey}:${encodeSuffixPart(runId)}:segment:${segmentIndex}`;
+}
+
 export function toolCallItemId(sessionKey: string, runId: string, toolCallId: string): string {
   return `tool:${sessionKey}:${encodeSuffixPart(runId)}:${encodeSuffixPart(toolCallId)}`;
 }

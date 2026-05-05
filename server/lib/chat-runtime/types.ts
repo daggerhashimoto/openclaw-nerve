@@ -55,6 +55,7 @@ export interface AssistantTimelineItem extends TimelineItemBase {
   kind: 'assistant_message';
   text: string;
   isStreaming: boolean;
+  segmentIndex?: number;
   finalText?: string;
   stopReason?: string;
 }
@@ -103,8 +104,8 @@ export type RuntimeEvent =
   | { type: 'thinking_final'; sessionKey: string; runId: string; blockIndex: number; text: string; durationMs?: number; at: number }
   | { type: 'tool_started'; sessionKey: string; runId: string; toolCallId: string; name: string; args: unknown; at: number }
   | { type: 'tool_finished'; sessionKey: string; runId: string; toolCallId: string; result?: unknown; error?: string; at: number }
-  | { type: 'assistant_delta'; sessionKey: string; runId: string; text: string; at: number; seq?: number }
-  | { type: 'assistant_final'; sessionKey: string; runId: string; text: string; stopReason?: string; at: number }
+  | { type: 'assistant_delta'; sessionKey: string; runId: string; text: string; at: number; seq?: number; segmentIndex?: number }
+  | { type: 'assistant_final'; sessionKey: string; runId: string; text: string; stopReason?: string; at: number; segmentIndex?: number }
   | { type: 'turn_finalized'; sessionKey: string; runId: string; at: number }
   | { type: 'turn_failed'; sessionKey: string; runId: string; error: string; at: number }
   | { type: 'history_snapshot'; sessionKey: string; messages: HistoryMessage[]; at: number };

@@ -191,8 +191,18 @@ function adaptAssistantHistoryMessage(
 
   if (Array.isArray(message.content)) {
     let thinkingBlockIndex = 0;
+    let textSegmentIndex = 0;
     message.content.forEach((block) => {
       if (!isRecord(block)) return;
+
+      if (block.type === 'text') {
+        const text = extractText(block);
+        if (hasText(text)) {
+          events.push({ type: 'assistant_final', sessionKey, runId, segmentIndex: textSegmentIndex, text, at });
+          textSegmentIndex += 1;
+        }
+        return;
+      }
 
       if (block.type === 'thinking') {
         const text = extractThinkingText(block);
@@ -224,11 +234,11 @@ function adaptAssistantHistoryMessage(
         if (event) events.push(event);
       }
     });
-  }
-
-  const text = extractAssistantHistoryFinalText(message);
-  if (hasText(text)) {
-    events.push({ type: 'assistant_final', sessionKey, runId, text, at });
+  } else {
+    const text = extractText(message);
+    if (hasText(text)) {
+      events.push({ type: 'assistant_final', sessionKey, runId, text, at });
+    }
   }
   events.push({ type: 'turn_finalized', sessionKey, runId, at });
 
@@ -274,17 +284,6 @@ function extractAssistantMessageText(value: unknown): string | undefined {
   return extractText(value);
 }
 
-function extractAssistantHistoryFinalText(message: HistoryMessage): string | undefined {
-  if (!Array.isArray(message.content)) return extractText(message);
-
-  const lastToolIndex = message.content.reduce((lastIndex, block, blockIndex) => (
-    isRecord(block) && isToolBoundaryBlock(block) ? blockIndex : lastIndex
-  ), -1);
-  if (lastToolIndex === -1) return textBlocksText(message.content);
-
-  return textBlocksText(message.content.slice(lastToolIndex + 1));
-}
-
 function extractText(value: unknown): string | undefined {
   if (typeof value === 'string') return value;
   if (!isRecord(value)) return undefined;
@@ -301,13 +300,6 @@ function extractText(value: unknown): string | undefined {
   }
 
   return typeof value.text === 'string' ? value.text : undefined;
-}
-
-function textBlocksText(blocks: HistoryContentBlock[]): string | undefined {
-  const parts = blocks.flatMap((block) => (
-    block.type === 'text' && typeof block.text === 'string' ? [block.text] : []
-  ));
-  return parts.length > 0 ? parts.join('\n') : undefined;
 }
 
 function toolFinishedEvent(
@@ -471,10 +463,6 @@ function toolResultErrorMessage(record: Record<string, unknown>): string {
 
 function hasText(value: string | undefined): value is string {
   return typeof value === 'string' && value.length > 0;
-}
-
-function isToolBoundaryBlock(block: Record<string, unknown>): boolean {
-  return block.type === 'tool_use' || block.type === 'toolCall' || isToolResultBlock(block);
 }
 
 function isToolResultBlock(block: Record<string, unknown>): boolean {

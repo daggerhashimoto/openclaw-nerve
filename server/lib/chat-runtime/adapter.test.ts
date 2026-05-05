@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { adaptGatewayEvent, adaptHistorySnapshot } from './adapter.js';
+import { createEmptyTimeline, reduceRuntimeEvent, timelineItemsInOrder } from './reducer.js';
 
 describe('OpenClaw chat runtime adapter', () => {
   it('adapts chat started and delta events', () => {
@@ -289,32 +290,54 @@ describe('OpenClaw chat runtime adapter', () => {
     ]);
   });
 
-  it('uses post-tool assistant text as the history final answer', () => {
+  it('replays assistant history text segments around tool groups in content order', () => {
     const events = adaptHistorySnapshot('agent:main:main', [
       {
         role: 'assistant',
         runId: 'run-1',
         timestamp: 1000,
         content: [
-          { type: 'text', text: 'I will check.' },
+          { type: 'text', text: 'assistant A' },
           { type: 'tool_use', id: 'tool-1', name: 'exec', input: { cmd: 'pwd' } },
           { type: 'tool_result', toolCallId: 'tool-1', content: '/tmp/project' },
-          { type: 'text', text: 'The project is in /tmp/project.' },
+          { type: 'text', text: 'assistant B' },
+          { type: 'tool_use', id: 'tool-2', name: 'read', input: { file: 'package.json' } },
+          { type: 'tool_result', toolCallId: 'tool-2', content: 'package contents' },
+          { type: 'text', text: 'assistant C' },
         ],
       },
     ]);
 
     expect(events.map((event) => event.type)).toEqual([
       'history_snapshot',
+      'assistant_final',
+      'tool_started',
+      'tool_finished',
+      'assistant_final',
       'tool_started',
       'tool_finished',
       'assistant_final',
       'turn_finalized',
     ]);
-    expect(events.find((event) => event.type === 'assistant_final')).toMatchObject({
-      type: 'assistant_final',
-      text: 'The project is in /tmp/project.',
-    });
+    expect(events.filter((event) => event.type === 'assistant_final')).toMatchObject([
+      { type: 'assistant_final', text: 'assistant A', segmentIndex: 0 },
+      { type: 'assistant_final', text: 'assistant B', segmentIndex: 1 },
+      { type: 'assistant_final', text: 'assistant C', segmentIndex: 2 },
+    ]);
+
+    let timeline = createEmptyTimeline('agent:main:main');
+    for (const event of events) timeline = reduceRuntimeEvent(timeline, event);
+
+    const topLevelOutput = timelineItemsInOrder(timeline)
+      .filter((item) => timeline.turns[0].outputItemIds.includes(item.id))
+      .map((item) => `${item.kind}:${'text' in item ? item.text : item.id}`);
+    expect(topLevelOutput).toEqual([
+      'assistant_message:assistant A',
+      'tool_group:tool-group:agent:main:main:run-1:0',
+      'assistant_message:assistant B',
+      'tool_group:tool-group:agent:main:main:run-1:1',
+      'assistant_message:assistant C',
+    ]);
   });
 
   it('skips invalid gateway payloads', () => {

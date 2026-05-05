@@ -1,5 +1,6 @@
 import {
   assistantItemId,
+  assistantSegmentItemId,
   fingerprintText,
   thinkingItemId,
   toolCallItemId,
@@ -26,6 +27,10 @@ const THINKING_BLOCK = 10;
 const TOOL_BLOCK = 20;
 const ASSISTANT_BLOCK = 100;
 const OUTPUT_BLOCK_STEP = 10;
+
+type AssistantItemResolution =
+  | { action: 'upsert'; itemId: string; useEventOrder: boolean }
+  | { action: 'ignore' };
 
 export function createEmptyTimeline(sessionKey: string): SessionTimeline {
   return {
@@ -180,25 +185,31 @@ export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEven
       const turn = ensureTurn(draft, event.runId, event.at);
       if (shouldIgnoreEventForTerminalTurn(turn, event)) break;
 
-      const itemId = assistantItemId(event.sessionKey, event.runId);
+      const resolution = resolveAssistantTimelineItem(draft, turn, event);
+      if (resolution.action === 'ignore') break;
+      const itemId = resolution.itemId;
       const existing = itemOfKind(draft.items[itemId], 'assistant_message');
       if (event.type === 'assistant_delta' && existing && isTerminalItemStatus(existing.status)) break;
       if (event.type === 'assistant_delta' && existing && event.at < existing.updatedAt) break;
 
       const isFinal = event.type === 'assistant_final';
       closeOpenToolGroupsForOutputBoundary(draft, turn, event.at);
+      const orderKey = resolution.useEventOrder
+        ? nextOutputOrderKey(draft, turn, ASSISTANT_BLOCK)
+        : existing?.orderKey ?? nextOutputOrderKey(draft, turn, ASSISTANT_BLOCK);
       const item: AssistantTimelineItem = {
         ...baseItem(
           existing,
           itemId,
           event.sessionKey,
           turn,
-          existing?.orderKey ?? nextOutputOrderKey(draft, turn, ASSISTANT_BLOCK),
+          orderKey,
           event.at,
         ),
         kind: 'assistant_message',
         text: event.text,
         isStreaming: !isFinal,
+        segmentIndex: event.segmentIndex ?? existing?.segmentIndex,
         finalText: isFinal ? event.text : existing?.finalText,
         stopReason: isFinal ? event.stopReason : existing?.stopReason,
         status: isFinal ? 'complete' : 'running',
@@ -481,6 +492,84 @@ function itemOfKind<TKind extends TimelineItem['kind']>(
 
 function orderKeyFor(turn: TimelineTurn, block: number, sub: number): TimelineOrderKey {
   return { turn: turn.orderBase.turn, block, sub };
+}
+
+function resolveAssistantTimelineItem(
+  timeline: SessionTimeline,
+  turn: TimelineTurn,
+  event: Extract<RuntimeEvent, { type: 'assistant_delta' | 'assistant_final' }>,
+): AssistantItemResolution {
+  const defaultItemId = assistantItemId(event.sessionKey, event.runId);
+  const segmentItemId = event.segmentIndex === undefined
+    ? undefined
+    : assistantSegmentItemId(event.sessionKey, event.runId, event.segmentIndex);
+  if (event.type === 'assistant_final' && event.segmentIndex === undefined) {
+    const matchingSegment = findSegmentedAssistantItemForText(timeline, turn, event.text);
+    if (matchingSegment) return { action: 'upsert', itemId: matchingSegment.id, useEventOrder: false };
+    if (hasSegmentedAssistantItemsForTurn(timeline, turn)) return { action: 'ignore' };
+  }
+
+  if (segmentItemId && timeline.items[segmentItemId]) {
+    return { action: 'upsert', itemId: segmentItemId, useEventOrder: false };
+  }
+
+  const defaultItem = itemOfKind(timeline.items[defaultItemId], 'assistant_message');
+  if (defaultItem && isSameTurnRunItem(defaultItem, turn)) {
+    if (event.segmentIndex === undefined || defaultItem.segmentIndex === event.segmentIndex) {
+      return { action: 'upsert', itemId: defaultItemId, useEventOrder: false };
+    }
+
+    if (event.type === 'assistant_final' && defaultItem.segmentIndex === undefined) {
+      if (assistantTextMatches(defaultItem, event.text)) {
+        removeValue(turn.outputItemIds, defaultItemId);
+        return { action: 'upsert', itemId: defaultItemId, useEventOrder: true };
+      }
+      removeDefaultAssistantItemIfSuperseded(timeline, turn, defaultItemId);
+    }
+  }
+
+  return event.segmentIndex === undefined
+    ? { action: 'upsert', itemId: defaultItemId, useEventOrder: false }
+    : { action: 'upsert', itemId: segmentItemId ?? defaultItemId, useEventOrder: false };
+}
+
+function isSameTurnRunItem(
+  item: TimelineItem,
+  turn: TimelineTurn,
+): boolean {
+  return item.turnId === turn.id && item.runId === turn.runId;
+}
+
+function assistantTextMatches(item: AssistantTimelineItem, text: string): boolean {
+  return item.text === text || item.finalText === text;
+}
+
+function findSegmentedAssistantItemForText(
+  timeline: SessionTimeline,
+  turn: TimelineTurn,
+  text: string,
+): AssistantTimelineItem | undefined {
+  return segmentedAssistantItemsForTurn(timeline, turn).find((item) => assistantTextMatches(item, text));
+}
+
+function hasSegmentedAssistantItemsForTurn(timeline: SessionTimeline, turn: TimelineTurn): boolean {
+  return segmentedAssistantItemsForTurn(timeline, turn).length > 0;
+}
+
+function segmentedAssistantItemsForTurn(timeline: SessionTimeline, turn: TimelineTurn): AssistantTimelineItem[] {
+  return Object.values(timeline.items).flatMap((item) => {
+    const assistant = itemOfKind(item, 'assistant_message');
+    return assistant && isSameTurnRunItem(assistant, turn) && assistant.segmentIndex !== undefined ? [assistant] : [];
+  });
+}
+
+function removeDefaultAssistantItemIfSuperseded(
+  timeline: SessionTimeline,
+  turn: TimelineTurn,
+  defaultItemId: string,
+): void {
+  delete timeline.items[defaultItemId];
+  removeValue(turn.outputItemIds, defaultItemId);
 }
 
 function nextToolSub(timeline: SessionTimeline, turn: TimelineTurn): number {

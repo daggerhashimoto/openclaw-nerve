@@ -74,6 +74,415 @@ describe('chat runtime reducer', () => {
     expect(assistantItems[0].text).toBe('final answer');
   });
 
+  it('reuses the default assistant item when matching history segment 0 replays after live final', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, { type: 'turn_started', sessionKey: 'agent:main:main', runId: 'run-1', at: 1000 });
+    timeline = reduceRuntimeEvent(timeline, { type: 'assistant_delta', sessionKey: 'agent:main:main', runId: 'run-1', text: 'final', at: 1001 });
+    timeline = reduceRuntimeEvent(timeline, { type: 'assistant_final', sessionKey: 'agent:main:main', runId: 'run-1', text: 'final answer', at: 1002 });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 0,
+      text: 'final answer',
+      at: 1003,
+    });
+
+    const defaultAssistantId = 'assistant:agent:main:main:run-1:answer';
+    const segmentAssistantId = 'assistant:agent:main:main:run-1:segment:0';
+    const assistantItems = Object.values(timeline.items).filter((item) => item.kind === 'assistant_message');
+
+    expect(assistantItems).toHaveLength(1);
+    expect(timeline.items[defaultAssistantId]).toMatchObject({
+      kind: 'assistant_message',
+      text: 'final answer',
+      finalText: 'final answer',
+      status: 'complete',
+      isStreaming: false,
+      updatedAt: 1003,
+    });
+    expect(timeline.items[segmentAssistantId]).toBeUndefined();
+    expect(timeline.turns[0].outputItemIds).toEqual([defaultAssistantId]);
+  });
+
+  it('removes a superseded default assistant item when non-matching segmented history starts', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, { type: 'turn_started', sessionKey: 'agent:main:main', runId: 'run-1', at: 1000 });
+    timeline = reduceRuntimeEvent(timeline, { type: 'assistant_final', sessionKey: 'agent:main:main', runId: 'run-1', text: 'live default final', at: 1001 });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 0,
+      text: 'history segment 0',
+      at: 1002,
+    });
+
+    const defaultAssistantId = 'assistant:agent:main:main:run-1:answer';
+    const segment0AssistantId = 'assistant:agent:main:main:run-1:segment:0';
+    const assistantItems = Object.values(timeline.items).filter((item) => item.kind === 'assistant_message');
+    const assistantPatchItems = buildPatchFromTimeline(timeline)
+      .filter((op) => op.op === 'upsert_item' && op.item.kind === 'assistant_message')
+      .map((op) => op.item);
+
+    expect(assistantItems).toHaveLength(1);
+    expect(timeline.items[defaultAssistantId]).toBeUndefined();
+    expect(timeline.items[segment0AssistantId]).toMatchObject({
+      kind: 'assistant_message',
+      text: 'history segment 0',
+      segmentIndex: 0,
+      status: 'complete',
+    });
+    expect(timeline.turns[0].outputItemIds).toEqual([segment0AssistantId]);
+    expect(assistantPatchItems).toHaveLength(1);
+    expect(assistantPatchItems[0].id).toBe(segment0AssistantId);
+  });
+
+  it('does not emit an orphan default assistant item when segmented history replaces live final output', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, { type: 'turn_started', sessionKey: 'agent:main:main', runId: 'run-1', at: 1000 });
+    timeline = reduceRuntimeEvent(timeline, { type: 'assistant_final', sessionKey: 'agent:main:main', runId: 'run-1', text: 'assistant C', at: 1001 });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 0,
+      text: 'assistant A',
+      at: 1002,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_started',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-1',
+      name: 'exec',
+      args: { cmd: 'pwd' },
+      at: 1003,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_finished',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-1',
+      result: 'ok',
+      at: 1004,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 1,
+      text: 'assistant B',
+      at: 1005,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_started',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-2',
+      name: 'read',
+      args: { file: 'x' },
+      at: 1006,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_finished',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-2',
+      result: 'done',
+      at: 1007,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 2,
+      text: 'assistant C',
+      at: 1008,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      text: 'assistant C',
+      at: 1009,
+    });
+
+    const defaultAssistantId = 'assistant:agent:main:main:run-1:answer';
+    const segment2AssistantId = 'assistant:agent:main:main:run-1:segment:2';
+    const assistantItems = Object.values(timeline.items).filter((item) => item.kind === 'assistant_message');
+    const assistantCItems = assistantItems.filter((item) => item.text === 'assistant C');
+    const assistantPatchItems = buildPatchFromTimeline(timeline)
+      .filter((op) => op.op === 'upsert_item' && op.item.kind === 'assistant_message')
+      .map((op) => op.item);
+    const orderedTopLevel = timelineItemsInOrder(timeline)
+      .filter((item) => timeline.turns[0].outputItemIds.includes(item.id))
+      .map((item) => `${item.kind}:${'text' in item ? item.text : item.id}`);
+
+    expect(assistantItems).toHaveLength(3);
+    expect(assistantCItems).toHaveLength(1);
+    expect(timeline.items[defaultAssistantId]).toBeUndefined();
+    expect(timeline.items[segment2AssistantId]).toMatchObject({
+      kind: 'assistant_message',
+      text: 'assistant C',
+      finalText: 'assistant C',
+      status: 'complete',
+      segmentIndex: 2,
+      updatedAt: 1009,
+    });
+    expect(assistantPatchItems).toHaveLength(3);
+    expect(assistantPatchItems.map((item) => item.id)).toEqual([
+      'assistant:agent:main:main:run-1:segment:0',
+      'assistant:agent:main:main:run-1:segment:1',
+      segment2AssistantId,
+    ]);
+    expect(orderedTopLevel).toEqual([
+      'assistant_message:assistant A',
+      'tool_group:tool-group:agent:main:main:run-1:0',
+      'assistant_message:assistant B',
+      'tool_group:tool-group:agent:main:main:run-1:1',
+      'assistant_message:assistant C',
+    ]);
+    expect(timeline.turns[0].outputItemIds).toEqual([
+      'assistant:agent:main:main:run-1:segment:0',
+      'tool-group:agent:main:main:run-1:0',
+      'assistant:agent:main:main:run-1:segment:1',
+      'tool-group:agent:main:main:run-1:1',
+      segment2AssistantId,
+    ]);
+  });
+
+  it('ignores non-matching unsegmented assistant final after segmented history exists', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 0,
+      text: 'assistant A',
+      at: 1000,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 1,
+      text: 'assistant B',
+      at: 1001,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      text: 'stale live final',
+      at: 1002,
+    });
+
+    const defaultAssistantId = 'assistant:agent:main:main:run-1:answer';
+    const assistantItems = Object.values(timeline.items).filter((item) => item.kind === 'assistant_message');
+    const assistantPatchItems = buildPatchFromTimeline(timeline)
+      .filter((op) => op.op === 'upsert_item' && op.item.kind === 'assistant_message')
+      .map((op) => op.item);
+
+    expect(timeline.items[defaultAssistantId]).toBeUndefined();
+    expect(assistantItems.map((item) => item.text)).toEqual(['assistant A', 'assistant B']);
+    expect(timeline.turns[0].outputItemIds).toEqual([
+      'assistant:agent:main:main:run-1:segment:0',
+      'assistant:agent:main:main:run-1:segment:1',
+    ]);
+    expect(assistantPatchItems.map((item) => item.id)).toEqual([
+      'assistant:agent:main:main:run-1:segment:0',
+      'assistant:agent:main:main:run-1:segment:1',
+    ]);
+  });
+
+  it('preserves multiple assistant history segments around completed tool groups', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 0,
+      text: 'assistant A',
+      at: 1000,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_started',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-1',
+      name: 'exec',
+      args: { cmd: 'pwd' },
+      at: 1001,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_finished',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-1',
+      result: 'ok',
+      at: 1002,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 1,
+      text: 'assistant B',
+      at: 1003,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_started',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-2',
+      name: 'read',
+      args: { file: 'x' },
+      at: 1004,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_finished',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-2',
+      result: 'done',
+      at: 1005,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 2,
+      text: 'assistant C',
+      at: 1006,
+    });
+
+    const orderedTopLevel = timelineItemsInOrder(timeline)
+      .filter((item) => timeline.turns[0].outputItemIds.includes(item.id))
+      .map((item) => `${item.kind}:${'text' in item ? item.text : item.id}`);
+
+    expect(Object.values(timeline.items).filter((item) => item.kind === 'assistant_message')).toHaveLength(3);
+    expect(orderedTopLevel).toEqual([
+      'assistant_message:assistant A',
+      'tool_group:tool-group:agent:main:main:run-1:0',
+      'assistant_message:assistant B',
+      'tool_group:tool-group:agent:main:main:run-1:1',
+      'assistant_message:assistant C',
+    ]);
+  });
+
+  it('orders assistant history segments around tool groups and thinking while keeping duplicate segments stable', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 0,
+      text: 'assistant A',
+      at: 1000,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_started',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-1',
+      name: 'exec',
+      args: { cmd: 'pwd' },
+      at: 1001,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 1,
+      text: 'assistant B',
+      at: 1002,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_finished',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-1',
+      result: 'ok',
+      at: 1003,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'thinking_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      blockIndex: 0,
+      text: 'thinking',
+      at: 1004,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_started',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-2',
+      name: 'read',
+      args: { file: 'x' },
+      at: 1005,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_finished',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-2',
+      result: 'done',
+      at: 1006,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 2,
+      text: 'assistant C',
+      at: 1007,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_final',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      segmentIndex: 1,
+      text: 'assistant B',
+      at: 1008,
+    });
+
+    const segment0Id = 'assistant:agent:main:main:run-1:segment:0';
+    const segment1Id = 'assistant:agent:main:main:run-1:segment:1';
+    const segment2Id = 'assistant:agent:main:main:run-1:segment:2';
+    const group0Id = 'tool-group:agent:main:main:run-1:0';
+    const group1Id = 'tool-group:agent:main:main:run-1:1';
+    const thinkingId = 'thinking:agent:main:main:run-1:0';
+    const assistantItems = Object.values(timeline.items).filter((item) => item.kind === 'assistant_message');
+    const topLevelOutputIds = timelineItemsInOrder(timeline)
+      .filter((item) => timeline.turns[0].outputItemIds.includes(item.id))
+      .map((item) => item.id);
+
+    expect(assistantItems).toHaveLength(3);
+    expect(timeline.items[segment1Id]).toMatchObject({
+      kind: 'assistant_message',
+      text: 'assistant B',
+      status: 'complete',
+      updatedAt: 1008,
+    });
+    expect(timeline.items[group0Id]).toMatchObject({
+      kind: 'tool_group',
+      closed: true,
+      status: 'complete',
+      childItemIds: ['tool:agent:main:main:run-1:tool-1'],
+    });
+    expect(topLevelOutputIds).toEqual([
+      segment0Id,
+      group0Id,
+      segment1Id,
+      thinkingId,
+      group1Id,
+      segment2Id,
+    ]);
+    expect(timeline.turns[0].outputItemIds).toEqual(topLevelOutputIds);
+  });
+
   it('keeps old finalized assistant items while a new turn runs', () => {
     let timeline = createEmptyTimeline('agent:main:main');
     timeline = reduceRuntimeEvent(timeline, { type: 'assistant_final', sessionKey: 'agent:main:main', runId: 'run-old', text: 'old answer', at: 1000 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assistantItemId,
+  assistantSegmentItemId,
   fingerprintText,
   thinkingItemId,
   toolCallItemId,
@@ -16,6 +17,13 @@ describe('chat runtime ids', () => {
     expect(toolCallItemId('agent:main:main', 'run-1', 'tool-7')).toBe('tool:agent:main:main:run-1:tool-7');
     expect(toolGroupItemId('agent:main:main', 'run-1', 2)).toBe('tool-group:agent:main:main:run-1:2');
     expect(thinkingItemId('agent:main:main', 'run-1', 0)).toBe('thinking:agent:main:main:run-1:0');
+  });
+
+  it('creates stable assistant segment IDs without changing the default assistant ID', () => {
+    expect(assistantItemId('agent:main:main', 'run-1')).toBe('assistant:agent:main:main:run-1:answer');
+    expect(assistantSegmentItemId('agent:main:main', 'run-1', 0)).toBe('assistant:agent:main:main:run-1:segment:0');
+    expect(assistantSegmentItemId('agent:main:main', 'run-1', 1)).toBe('assistant:agent:main:main:run-1:segment:1');
+    expect(assistantSegmentItemId('agent:main:main', 'run-1', 0)).not.toBe(assistantItemId('agent:main:main', 'run-1'));
   });
 
   it('uses gateway message id for user items when present', () => {
@@ -74,6 +82,9 @@ describe('chat runtime ids', () => {
   it('encodes delimiter-containing run ids so tuple boundaries do not collide', () => {
     expect(turnId('agent:main:main', 'run:1')).not.toBe(turnId('agent:main:main:run', '1'));
     expect(assistantItemId('agent:main:main', 'run:1')).not.toBe(assistantItemId('agent:main:main:run', '1'));
+    expect(assistantSegmentItemId('agent:main:main', 'run:1', 0)).not.toBe(
+      assistantSegmentItemId('agent:main:main:run', '1', 0),
+    );
     expect(toolGroupItemId('agent:main:main', 'run:1', 2)).not.toBe(toolGroupItemId('agent:main:main:run', '1', 2));
     expect(thinkingItemId('agent:main:main', 'run:1', 0)).not.toBe(thinkingItemId('agent:main:main:run', '1', 0));
   });

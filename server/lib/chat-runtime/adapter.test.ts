@@ -43,6 +43,116 @@ describe('OpenClaw chat runtime adapter', () => {
     ]);
   });
 
+  it('adapts current OpenClaw item-stream tool events', () => {
+    expect(adaptGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        sessionKey: 'agent:main:main',
+        runId: 'run-1',
+        stream: 'item',
+        data: {
+          itemId: 'tool:call-1',
+          phase: 'start',
+          kind: 'tool',
+          title: 'exec pwd (in ~/.openclaw/workspace)',
+          status: 'running',
+          name: 'exec',
+          meta: 'pwd (in ~/.openclaw/workspace)',
+          toolCallId: 'call-1',
+        },
+      },
+    })).toEqual([
+      {
+        type: 'tool_started',
+        sessionKey: 'agent:main:main',
+        runId: 'run-1',
+        toolCallId: 'call-1',
+        name: 'exec',
+        args: { command: 'pwd (in ~/.openclaw/workspace)' },
+        at: expect.any(Number),
+      },
+    ]);
+
+    expect(adaptGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        sessionKey: 'agent:main:main',
+        runId: 'run-1',
+        stream: 'item',
+        data: {
+          itemId: 'tool:call-1',
+          phase: 'end',
+          kind: 'tool',
+          title: 'exec pwd (in ~/.openclaw/workspace)',
+          status: 'completed',
+          name: 'exec',
+          meta: 'pwd (in ~/.openclaw/workspace)',
+          toolCallId: 'call-1',
+        },
+      },
+    })).toEqual([
+      {
+        type: 'tool_finished',
+        sessionKey: 'agent:main:main',
+        runId: 'run-1',
+        toolCallId: 'call-1',
+        at: expect.any(Number),
+      },
+    ]);
+  });
+
+  it('adapts current OpenClaw command-output completions without command sibling duplication', () => {
+    expect(adaptGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        sessionKey: 'agent:main:main',
+        runId: 'run-1',
+        stream: 'item',
+        data: {
+          itemId: 'command:call-1',
+          phase: 'start',
+          kind: 'command',
+          title: 'command pwd (in ~/.openclaw/workspace)',
+          status: 'running',
+          name: 'exec',
+          toolCallId: 'call-1',
+        },
+      },
+    })).toEqual([]);
+
+    expect(adaptGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        sessionKey: 'agent:main:main',
+        runId: 'run-1',
+        stream: 'command_output',
+        data: {
+          itemId: 'command:call-1',
+          phase: 'end',
+          title: 'command pwd (in ~/.openclaw/workspace)',
+          toolCallId: 'call-1',
+          name: 'exec',
+          output: '/Users/cd0x23/.openclaw/workspace',
+          status: 'completed',
+          exitCode: 0,
+        },
+      },
+    })).toEqual([
+      {
+        type: 'tool_finished',
+        sessionKey: 'agent:main:main',
+        runId: 'run-1',
+        toolCallId: 'call-1',
+        result: '/Users/cd0x23/.openclaw/workspace',
+        at: expect.any(Number),
+      },
+    ]);
+  });
+
   it('adapts assistant history content blocks into ordered runtime events', () => {
     const events = adaptHistorySnapshot('agent:main:main', [
       {
@@ -244,6 +354,65 @@ describe('OpenClaw chat runtime adapter', () => {
       { type: 'tool_finished', sessionKey: 'agent:main:main', runId: 'history:message:tool-1', toolCallId: 'tool-1', result: 'ok', at: 1000 },
       { type: 'tool_finished', sessionKey: 'agent:main:main', runId: 'run-2', toolCallId: 'tool-2', result: 'done', at: 1001 },
     ]);
+    expect(events.filter((event) => event.type === 'turn_finalized').map((event) => event.runId)).toEqual([
+      'history:message:tool-1',
+      'run-2',
+    ]);
+  });
+
+  it('keeps same-run standalone tool history open until every tool result is replayed', () => {
+    const events = adaptHistorySnapshot('agent:main:main', [
+      {
+        role: 'toolResult',
+        runId: 'run-1',
+        id: 'tool-1',
+        timestamp: 1000,
+        content: 'first result',
+      },
+      {
+        role: 'toolResult',
+        runId: 'run-1',
+        id: 'tool-2',
+        timestamp: 1001,
+        content: 'second result',
+      },
+    ]);
+    let timeline = createEmptyTimeline('agent:main:main');
+
+    for (const event of events) timeline = reduceRuntimeEvent(timeline, event);
+
+    const toolItems = Object.values(timeline.items).filter((item) => item.kind === 'tool_call');
+    expect(events.filter((event) => event.type === 'turn_finalized')).toEqual([
+      { type: 'turn_finalized', sessionKey: 'agent:main:main', runId: 'run-1', at: 1001 },
+    ]);
+    expect(toolItems).toMatchObject([
+      { toolCallId: 'tool-1', result: 'first result', status: 'complete' },
+      { toolCallId: 'tool-2', result: 'second result', status: 'complete' },
+    ]);
+    expect(timeline.turns).toMatchObject([
+      { runId: 'run-1', status: 'finalized' },
+    ]);
+  });
+
+  it('does not leave standalone tool history turns running after hydration', () => {
+    const events = adaptHistorySnapshot('agent:main:main', [
+      {
+        role: 'tool',
+        id: 'tool-orphan',
+        timestamp: 1000,
+        content: 'orphan result',
+      },
+    ]);
+    let timeline = createEmptyTimeline('agent:main:main');
+
+    for (const event of events) timeline = reduceRuntimeEvent(timeline, event);
+
+    expect(timeline.turns).toEqual([
+      expect.objectContaining({
+        runId: 'history:message:tool-orphan',
+        status: 'finalized',
+      }),
+    ]);
   });
 
   it('marks errored standalone tool history messages as failed tool calls', () => {
@@ -258,7 +427,8 @@ describe('OpenClaw chat runtime adapter', () => {
       },
     ] as unknown as Parameters<typeof adaptHistorySnapshot>[1];
 
-    expect(adaptHistorySnapshot('agent:main:main', messages).filter((event) => event.type === 'tool_finished')).toEqual([
+    const events = adaptHistorySnapshot('agent:main:main', messages);
+    expect(events.filter((event) => event.type === 'tool_finished')).toEqual([
       {
         type: 'tool_finished',
         sessionKey: 'agent:main:main',
@@ -269,6 +439,9 @@ describe('OpenClaw chat runtime adapter', () => {
         at: 1000,
       },
     ]);
+    expect(events.find((event) => event.type === 'turn_finalized')).toMatchObject({
+      runId: 'run-1',
+    });
   });
 
   it('uses the last assistant message for mixed-role chat finals', () => {

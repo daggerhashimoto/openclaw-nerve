@@ -66,6 +66,15 @@ export interface ChatSendAck {
   status?: ChatSendStatus;
 }
 
+export interface ChatRuntimeSendAck {
+  ok: true;
+  sessionKey: string;
+  cursor: string;
+  runId?: string;
+}
+
+type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
 // ─── Build optimistic user message ─────────────────────────────────────────────
 
 /**
@@ -142,4 +151,51 @@ export async function sendChatMessage(params: {
     runId: typeof ack.runId === 'string' ? ack.runId : undefined,
     status,
   };
+}
+
+export async function sendChatRuntimeMessage(params: {
+  sessionKey: string;
+  text: string;
+  idempotencyKey: string;
+  fetchImpl?: FetchFn;
+}): Promise<ChatRuntimeSendAck> {
+  const { sessionKey, text, idempotencyKey, fetchImpl = fetch } = params;
+  const res = await fetchImpl(`/api/chat-runtime/sessions/${encodeURIComponent(sessionKey)}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: applyVoiceTTSHint(text), idempotencyKey }),
+  });
+
+  const body = await parseJsonBody(res);
+
+  if (!res.ok || !isRuntimeSendAck(body)) {
+    const error = isRuntimeSendError(body)
+      ? body.error
+      : `chat runtime send failed with HTTP ${res.status}`;
+    throw new Error(error);
+  }
+
+  return body;
+}
+
+async function parseJsonBody(res: Response): Promise<unknown> {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function isRuntimeSendAck(value: unknown): value is ChatRuntimeSendAck {
+  if (!isRecord(value)) return false;
+  if (value.ok !== true) return false;
+  return typeof value.sessionKey === 'string' && typeof value.cursor === 'string';
+}
+
+function isRuntimeSendError(value: unknown): value is { ok: false; error: string } {
+  return isRecord(value) && value.ok === false && typeof value.error === 'string';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

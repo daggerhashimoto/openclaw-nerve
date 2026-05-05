@@ -39,12 +39,13 @@ describe('chat runtime reducer', () => {
     let timeline = createEmptyTimeline('agent:main:main');
     timeline = reduceRuntimeEvent(timeline, { type: 'assistant_delta', sessionKey: 'agent:main:main', runId: 'run-1', text: 'hello', seq: 2, at: 1002 });
     const updatedAt = timeline.items['assistant:agent:main:main:run-1:answer'].updatedAt;
-    timeline = reduceRuntimeEvent(timeline, { type: 'assistant_delta', sessionKey: 'agent:main:main', runId: 'run-1', text: 'hel', seq: 1, at: 1001 });
+    timeline = reduceRuntimeEvent(timeline, { type: 'assistant_delta', sessionKey: 'agent:main:main', runId: 'run-1', text: 'hel', seq: 1, at: 1003 });
 
     let assistantItem = timeline.items['assistant:agent:main:main:run-1:answer'];
     expect(assistantItem).toMatchObject({
       kind: 'assistant_message',
       text: 'hello',
+      seq: 2,
       status: 'running',
       source: 'live',
       isStreaming: true,
@@ -369,6 +370,40 @@ describe('chat runtime reducer', () => {
       'tool_group:tool-group:agent:main:main:run-1:1',
       'assistant_message:assistant C',
     ]);
+  });
+
+  it('preserves a live tool result when a later terminal event has no result payload', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_started',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-1',
+      name: 'exec',
+      args: { command: 'pwd' },
+      at: 1000,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_finished',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-1',
+      result: '/Users/cd0x23/.openclaw/workspace',
+      at: 1001,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'tool_finished',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      toolCallId: 'tool-1',
+      at: 1002,
+    });
+
+    expect(timeline.items['tool:agent:main:main:run-1:tool-1']).toMatchObject({
+      kind: 'tool_call',
+      result: '/Users/cd0x23/.openclaw/workspace',
+      status: 'complete',
+    });
   });
 
   it('orders assistant history segments around tool groups and thinking while keeping duplicate segments stable', () => {

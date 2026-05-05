@@ -31,6 +31,10 @@ export function adaptHistorySnapshot(sessionKey: string, messages: HistoryMessag
     { type: 'history_snapshot', sessionKey, messages, at: fallbackAt },
   ];
   let lastAssistantRunId: string | undefined;
+  const finalizedRunAts = new Map<string, number>();
+  const noteFinalizedRun = (runId: string, at: number) => {
+    finalizedRunAts.set(runId, Math.max(finalizedRunAts.get(runId) ?? at, at));
+  };
 
   messages.forEach((message, messageIndex) => {
     const at = messageTime(message, fallbackAt);
@@ -60,14 +64,23 @@ export function adaptHistorySnapshot(sessionKey: string, messages: HistoryMessag
       lastAssistantRunId = runId;
 
       events.push(...adaptAssistantHistoryMessage(sessionKey, runId, message, at));
+      noteFinalizedRun(runId, at);
       return;
     }
 
     if (message.role === 'tool' || message.role === 'toolResult') {
       const runId = readNonEmptyString(message, 'runId') ?? lastAssistantRunId ?? historyFallbackRunId(message, messageIndex);
-      events.push(...adaptToolHistoryMessage(sessionKey, runId, message, at));
+      const toolEvents = adaptToolHistoryMessage(sessionKey, runId, message, at);
+      if (toolEvents.length > 0) {
+        events.push(...toolEvents);
+        noteFinalizedRun(runId, at);
+      }
     }
   });
+
+  for (const [runId, at] of finalizedRunAts) {
+    events.push({ type: 'turn_finalized', sessionKey, runId, at });
+  }
 
   return events;
 }
@@ -137,12 +150,34 @@ function adaptChatEvent(payload: Record<string, unknown>, seq?: number): Runtime
 }
 
 function adaptAgentEvent(payload: Record<string, unknown>): RuntimeEvent[] {
-  const sessionKey = readNonEmptyString(payload, 'sessionKey');
-  const runId = readNonEmptyString(payload, 'runId') ?? readNonEmptyString(payload, 'id');
   const stream = readNonEmptyString(payload, 'stream');
   const data = payload.data;
-  if (!sessionKey || !runId || stream !== 'tool' || !isRecord(data)) return [];
+  if (!isRecord(data)) return [];
 
+  const sessionKey = readNonEmptyString(payload, 'sessionKey') ?? readNonEmptyString(data, 'sessionKey');
+  const runId = readNonEmptyString(payload, 'runId') ?? readNonEmptyString(payload, 'id') ?? readNonEmptyString(data, 'runId');
+  if (!sessionKey || !runId) return [];
+
+  if (stream === 'tool') {
+    return adaptLegacyToolStreamEvent(sessionKey, runId, data);
+  }
+
+  if (stream === 'item') {
+    return adaptItemStreamEvent(sessionKey, runId, data);
+  }
+
+  if (stream === 'command_output') {
+    return adaptCommandOutputStreamEvent(sessionKey, runId, data);
+  }
+
+  return [];
+}
+
+function adaptLegacyToolStreamEvent(
+  sessionKey: string,
+  runId: string,
+  data: Record<string, unknown>,
+): RuntimeEvent[] {
   const phase = readNonEmptyString(data, 'phase');
   const toolCallId = readNonEmptyString(data, 'toolCallId') ?? readNonEmptyString(data, 'id');
   if (!phase || !toolCallId) return [];
@@ -164,21 +199,123 @@ function adaptAgentEvent(payload: Record<string, unknown>): RuntimeEvent[] {
     }];
   }
 
-  if (phase === 'result') {
-    const event: Extract<RuntimeEvent, { type: 'tool_finished' }> = {
-      type: 'tool_finished',
-      sessionKey,
-      runId,
-      toolCallId,
-      at,
-    };
-    if (Object.hasOwn(data, 'result')) event.result = data.result;
-    const error = optionalErrorMessage(data);
-    if (error) event.error = error;
-    return [event];
+  if (isToolFinishPhase(phase)) {
+    return [buildToolFinishedEvent(sessionKey, runId, toolCallId, data, at)];
   }
 
   return [];
+}
+
+function adaptItemStreamEvent(
+  sessionKey: string,
+  runId: string,
+  data: Record<string, unknown>,
+): RuntimeEvent[] {
+  const kind = readNonEmptyString(data, 'kind');
+  if (kind !== 'tool') return [];
+
+  const phase = readNonEmptyString(data, 'phase');
+  const toolCallId = toolCallIdFrom(data);
+  if (!phase || !toolCallId) return [];
+
+  const at = Date.now();
+
+  if (phase === 'start') {
+    const name = readNonEmptyString(data, 'name');
+    if (!name) return [];
+
+    return [{
+      type: 'tool_started',
+      sessionKey,
+      runId,
+      toolCallId,
+      name,
+      args: toolArgsFromAgentItem(data),
+      at,
+    }];
+  }
+
+  if (isToolFinishPhase(phase)) {
+    return [buildToolFinishedEvent(sessionKey, runId, toolCallId, data, at)];
+  }
+
+  return [];
+}
+
+function adaptCommandOutputStreamEvent(
+  sessionKey: string,
+  runId: string,
+  data: Record<string, unknown>,
+): RuntimeEvent[] {
+  const phase = readNonEmptyString(data, 'phase');
+  const toolCallId = toolCallIdFrom(data);
+  if (!phase || !toolCallId || !isToolFinishPhase(phase)) return [];
+
+  return [buildToolFinishedEvent(sessionKey, runId, toolCallId, data, Date.now())];
+}
+
+function buildToolFinishedEvent(
+  sessionKey: string,
+  runId: string,
+  toolCallId: string,
+  data: Record<string, unknown>,
+  at: number,
+): Extract<RuntimeEvent, { type: 'tool_finished' }> {
+  const event: Extract<RuntimeEvent, { type: 'tool_finished' }> = {
+    type: 'tool_finished',
+    sessionKey,
+    runId,
+    toolCallId,
+    at,
+  };
+
+  const result = toolStreamResultValue(data);
+  if (result !== undefined) event.result = result;
+  const error = optionalErrorMessage(data) ?? toolStatusError(data);
+  if (error) event.error = error;
+  return event;
+}
+
+function toolArgsFromAgentItem(data: Record<string, unknown>): unknown {
+  if (Object.hasOwn(data, 'args')) return data.args;
+  if (Object.hasOwn(data, 'input')) return data.input;
+  if (Object.hasOwn(data, 'arguments')) return data.arguments;
+
+  const name = readNonEmptyString(data, 'name');
+  const preview = readNonEmptyString(data, 'meta') ?? readNonEmptyString(data, 'title');
+  const command = commandPreviewFromAgentItem(name, preview);
+  return command ? { command } : {};
+}
+
+function commandPreviewFromAgentItem(name: string | undefined, preview: string | undefined): string | undefined {
+  if (!preview) return undefined;
+  if (!name) return preview;
+
+  const prefix = `${name} `;
+  return preview.toLowerCase().startsWith(prefix.toLowerCase())
+    ? preview.slice(prefix.length).trim()
+    : preview;
+}
+
+function toolStreamResultValue(data: Record<string, unknown>): unknown {
+  if (Object.hasOwn(data, 'result')) return data.result;
+  if (Object.hasOwn(data, 'output')) return data.output;
+  if (Object.hasOwn(data, 'summary')) return data.summary;
+  if (Object.hasOwn(data, 'progressText')) return data.progressText;
+  return undefined;
+}
+
+function isToolFinishPhase(phase: string): boolean {
+  return phase === 'result' || phase === 'end' || phase === 'complete' || phase === 'completed';
+}
+
+function toolStatusError(data: Record<string, unknown>): string | undefined {
+  const status = readNonEmptyString(data, 'status');
+  if (status !== 'failed' && status !== 'error') return undefined;
+
+  const result = toolStreamResultValue(data);
+  if (typeof result === 'string' && result.trim()) return result;
+  return 'tool failed';
 }
 
 function adaptAssistantHistoryMessage(
@@ -240,8 +377,6 @@ function adaptAssistantHistoryMessage(
       events.push({ type: 'assistant_final', sessionKey, runId, text, at });
     }
   }
-  events.push({ type: 'turn_finalized', sessionKey, runId, at });
-
   return events;
 }
 

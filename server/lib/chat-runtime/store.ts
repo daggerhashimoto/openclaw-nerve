@@ -47,6 +47,15 @@ export class ChatTimelineStore {
     return patches;
   }
 
+  replaceEvents(sessionKey: string, events: RuntimeEvent[]): TimelinePatch {
+    if (events.some((event) => event.sessionKey !== sessionKey)) {
+      throw new Error('cannot replace a timeline with events from another session');
+    }
+
+    return this.applySessionEvents(events, { mode: 'replace', sessionKey })
+      ?? this.replaceWithEmptyTimeline(sessionKey);
+  }
+
   snapshot(sessionKey: string, reason: TimelineSnapshot['reason']): TimelineSnapshot {
     return {
       type: 'snapshot',
@@ -92,12 +101,16 @@ export class ChatTimelineStore {
     return timeline;
   }
 
-  private applySessionEvents(events: RuntimeEvent[]): TimelinePatch | undefined {
+  private applySessionEvents(
+    events: RuntimeEvent[],
+    options: { mode: 'append' } | { mode: 'replace'; sessionKey: string } = { mode: 'append' },
+  ): TimelinePatch | undefined {
     const firstEvent = events[0];
     if (!firstEvent) return undefined;
 
-    const current = this.getOrCreateTimeline(firstEvent.sessionKey);
-    let next = current;
+    const sessionKey = options.mode === 'replace' ? options.sessionKey : firstEvent.sessionKey;
+    const current = this.getOrCreateTimeline(sessionKey);
+    let next = options.mode === 'replace' ? createEmptyTimeline(sessionKey) : current;
     let createdAt = firstEvent.at;
 
     for (const event of events) {
@@ -112,11 +125,44 @@ export class ChatTimelineStore {
       cursor: String(version),
       updatedAt: Math.max(next.updatedAt, createdAt),
     };
-    this.timelines.set(firstEvent.sessionKey, next);
+    this.timelines.set(sessionKey, next);
 
-    const patch = this.replayBuffer.append(firstEvent.sessionKey, buildPatchFromTimeline(next), createdAt);
-    this.publish(firstEvent.sessionKey, patch);
+    const patch = this.replayBuffer.append(sessionKey, this.patchOpsForTimelineChange(current, next), createdAt);
+    this.publish(sessionKey, patch);
     return cloneTimelinePatch(patch);
+  }
+
+  private replaceWithEmptyTimeline(sessionKey: string): TimelinePatch {
+    const current = this.getOrCreateTimeline(sessionKey);
+    const next = {
+      ...createEmptyTimeline(sessionKey),
+      hydrationState: 'ready' as const,
+      version: current.version + 1,
+      cursor: String(current.version + 1),
+      updatedAt: Date.now(),
+    };
+    this.timelines.set(sessionKey, next);
+
+    const patch = this.replayBuffer.append(sessionKey, this.patchOpsForTimelineChange(current, next), next.updatedAt);
+    this.publish(sessionKey, patch);
+    return cloneTimelinePatch(patch);
+  }
+
+  private patchOpsForTimelineChange(current: SessionTimeline, next: SessionTimeline): ReturnType<typeof buildPatchFromTimeline> {
+    const nextTurnIds = new Set(next.turns.map((turn) => turn.id));
+    const nextItemIds = new Set(Object.keys(next.items));
+    const turnRemovals = current.turns
+      .filter((turn) => !nextTurnIds.has(turn.id))
+      .map((turn) => ({ op: 'remove_turn' as const, id: turn.id, reason: 'compaction' as const }));
+    const removals = Object.keys(current.items)
+      .filter((itemId) => !nextItemIds.has(itemId))
+      .map((id) => ({ op: 'remove_item' as const, id, reason: 'compaction' as const }));
+
+    return [
+      ...turnRemovals,
+      ...removals,
+      ...buildPatchFromTimeline(next),
+    ];
   }
 
   private publish(sessionKey: string, patch: TimelinePatch): void {

@@ -1,3 +1,6 @@
+import type { ActivityLogEntry, ProcessingStage } from '@/contexts/ChatContext';
+import type { ChatMsg } from '@/features/chat/types';
+
 export type TimelineHydrationState = 'cold' | 'hydrating' | 'ready' | 'stale';
 export type TimelineTurnStatus = 'running' | 'finalized' | 'failed' | 'aborted';
 export type TimelineItemStatus = 'provisional' | 'running' | 'complete' | 'failed' | 'aborted';
@@ -14,7 +17,15 @@ export interface TimelineItemBase {
   sessionKey: string;
   turnId?: string;
   runId?: string;
-  kind: 'user_message' | 'thinking' | 'tool_group' | 'tool_call' | 'assistant_message' | 'system_event';
+  kind:
+    | 'user_message'
+    | 'assistant_message'
+    | 'assistant_segment'
+    | 'thinking'
+    | 'tool_group'
+    | 'tool_call'
+    | 'tool_result'
+    | 'system_event';
   orderKey: TimelineOrderKey;
   createdAt: number;
   updatedAt: number;
@@ -51,8 +62,16 @@ export interface ToolCallTimelineItem extends TimelineItemBase {
   error?: string;
 }
 
+export interface ToolResultTimelineItem extends TimelineItemBase {
+  kind: 'tool_result';
+  toolCallId?: string;
+  text?: string;
+  result?: unknown;
+  error?: string;
+}
+
 export interface AssistantTimelineItem extends TimelineItemBase {
-  kind: 'assistant_message';
+  kind: 'assistant_message' | 'assistant_segment';
   text: string;
   isStreaming: boolean;
   seq?: number;
@@ -72,6 +91,7 @@ export type TimelineItem =
   | ThinkingTimelineItem
   | ToolGroupTimelineItem
   | ToolCallTimelineItem
+  | ToolResultTimelineItem
   | AssistantTimelineItem
   | SystemTimelineItem;
 
@@ -97,43 +117,6 @@ export interface SessionTimeline {
   updatedAt: number;
 }
 
-export type RuntimeEvent =
-  | { type: 'turn_started'; sessionKey: string; runId: string; at: number; seq?: number }
-  | { type: 'user_message_committed'; sessionKey: string; runId?: string; messageId?: string; idempotencyKey?: string; text: string; at: number }
-  | { type: 'thinking_started'; sessionKey: string; runId: string; blockIndex: number; at: number }
-  | { type: 'thinking_delta'; sessionKey: string; runId: string; blockIndex: number; text: string; at: number }
-  | { type: 'thinking_final'; sessionKey: string; runId: string; blockIndex: number; text: string; durationMs?: number; at: number }
-  | { type: 'tool_started'; sessionKey: string; runId: string; toolCallId: string; name: string; args: unknown; at: number }
-  | { type: 'tool_finished'; sessionKey: string; runId: string; toolCallId: string; result?: unknown; error?: string; at: number }
-  | { type: 'assistant_delta'; sessionKey: string; runId: string; text: string; at: number; seq?: number; segmentIndex?: number }
-  | { type: 'assistant_final'; sessionKey: string; runId: string; text: string; stopReason?: string; at: number; segmentIndex?: number }
-  | { type: 'turn_finalized'; sessionKey: string; runId: string; at: number }
-  | { type: 'turn_failed'; sessionKey: string; runId: string; error: string; at: number }
-  | { type: 'history_snapshot'; sessionKey: string; messages: HistoryMessage[]; at: number };
-
-export interface HistoryContentBlock {
-  type: 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'image' | string;
-  text?: string;
-  thinking?: string;
-  id?: string;
-  toolCallId?: string;
-  name?: string;
-  input?: unknown;
-  arguments?: unknown;
-  content?: unknown;
-}
-
-export interface HistoryMessage {
-  role: 'user' | 'assistant' | 'tool' | 'toolResult' | 'system';
-  content: string | HistoryContentBlock[];
-  timestamp?: string | number;
-  createdAt?: string | number;
-  ts?: string | number;
-  id?: string;
-  messageId?: string;
-  runId?: string;
-}
-
 export type TimelinePatchOp =
   | { op: 'upsert_turn'; turn: TimelineTurn }
   | { op: 'upsert_item'; item: TimelineItem }
@@ -154,4 +137,23 @@ export interface TimelineSnapshot {
   cursor: string;
   timeline: SessionTimeline;
   reason: 'initial' | 'cursor_expired' | 'hydration' | 'manual';
+}
+
+export interface RuntimeTimelineState {
+  sessionKey: string;
+  cursor: string;
+  timeline: SessionTimeline;
+}
+
+export interface TimelineProjection {
+  messages: ChatMsg[];
+  isGenerating: boolean;
+  processingStage: ProcessingStage;
+  lastEventTimestamp: number;
+  activityLog: ActivityLogEntry[];
+  currentToolDescription: string | null;
+}
+
+export interface TimelineProjectionOptions {
+  failedIdempotencyKeys?: ReadonlySet<string>;
 }

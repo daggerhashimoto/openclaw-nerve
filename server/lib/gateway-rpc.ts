@@ -143,6 +143,7 @@ function buildConnectParams(nonce: string) {
     role,
     scopes,
     auth: { token },
+    caps: ['tool-events'],
     device: createDeviceBlock({
       clientId,
       clientMode,

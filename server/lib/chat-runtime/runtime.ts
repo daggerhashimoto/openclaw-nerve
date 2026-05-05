@@ -67,7 +67,13 @@ export class ChatRuntime {
   private async hydrateSessionFromRpc(sessionKey: string, limit: number): Promise<void> {
     try {
       const result = await this.rpc('chat.history', { sessionKey, limit });
-      this.applyRuntimeEvents(adaptHistorySnapshot(sessionKey, historyMessagesFromRpcResult(result)));
+      const events = adaptHistorySnapshot(sessionKey, historyMessagesFromRpcResult(result));
+      if (this.hasRunningTurn(sessionKey)) {
+        this.flushQueuedGatewayEvents(sessionKey);
+        return;
+      }
+
+      this.store.replaceEvents(sessionKey, events);
       this.flushQueuedGatewayEvents(sessionKey);
     } catch (error) {
       this.queuedGatewayEvents.delete(sessionKey);
@@ -103,6 +109,10 @@ export class ChatRuntime {
 
   private applyRuntimeEvents(events: RuntimeEvent[]): TimelinePatch[] {
     return this.store.applyEvents(events);
+  }
+
+  private hasRunningTurn(sessionKey: string): boolean {
+    return this.store.getTimeline(sessionKey).turns.some((turn) => turn.status === 'running');
   }
 
   private queueGatewayEvent(event: RuntimeEvent): void {

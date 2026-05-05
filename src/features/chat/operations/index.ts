@@ -7,8 +7,8 @@ export {
   groupToolMessages,
   tagIntermediateMessages,
 } from './loadHistory';
-export { buildUserMessage, sendChatMessage } from './sendMessage';
-export type { ChatSendAck, ChatSendStatus } from './sendMessage';
+export { buildUserMessage, sendChatMessage, sendChatRuntimeMessage } from './sendMessage';
+export type { ChatRuntimeSendAck, ChatSendAck, ChatSendStatus } from './sendMessage';
 export {
   classifyStreamEvent,
   extractStreamDelta,

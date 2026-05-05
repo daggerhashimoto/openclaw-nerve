@@ -310,6 +310,177 @@ describe('ChatRuntime', () => {
     ]);
   });
 
+  it('applies current OpenClaw live item tool events before the final assistant message', () => {
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({ messages: [] }),
+    });
+
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'chat',
+      payload: { state: 'started', sessionKey: 'agent:main:main', runId: 'run-live' },
+    });
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        sessionKey: 'agent:main:main',
+        runId: 'run-live',
+        stream: 'item',
+        data: {
+          phase: 'start',
+          kind: 'tool',
+          name: 'exec',
+          meta: 'pwd (in ~/.openclaw/workspace)',
+          toolCallId: 'call-1',
+        },
+      },
+    });
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        sessionKey: 'agent:main:main',
+        runId: 'run-live',
+        stream: 'command_output',
+        data: {
+          phase: 'end',
+          toolCallId: 'call-1',
+          output: '/Users/cd0x23/.openclaw/workspace',
+          status: 'completed',
+        },
+      },
+    });
+    runtime.applyGatewayEvent(liveAssistantFinalEvent('agent:main:main', 'run-live', 'done'));
+
+    const snapshot = runtime.snapshot('agent:main:main', 'manual');
+    const topLevelOutput = snapshot.timeline.turns[0].outputItemIds.map((itemId) => snapshot.timeline.items[itemId]);
+
+    expect(topLevelOutput.map((item) => item?.kind)).toEqual(['tool_group', 'assistant_message']);
+    expect(Object.values(snapshot.timeline.items).find((item) => item.kind === 'tool_call')).toMatchObject({
+      kind: 'tool_call',
+      name: 'exec',
+      result: '/Users/cd0x23/.openclaw/workspace',
+      status: 'complete',
+    });
+    expect(assistantItemsFromSnapshot(snapshot)).toMatchObject([
+      { text: 'done', status: 'complete' },
+    ]);
+  });
+
+  it('replaces idle live timelines with canonical history during hydration', async () => {
+    const publishedPatches: TimelinePatch[] = [];
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: 'run command' }],
+            timestamp: 1000,
+            __openclaw: { id: 'user-history' },
+          },
+          {
+            role: 'assistant',
+            content: [
+              { type: 'toolCall', id: 'tool-history', name: 'exec', arguments: { command: 'pwd' } },
+            ],
+            timestamp: 1001,
+            __openclaw: { id: 'assistant-tool-history' },
+          },
+          {
+            role: 'toolResult',
+            toolCallId: 'tool-history',
+            content: [{ type: 'text', text: '/workspace' }],
+            timestamp: 1002,
+          },
+          {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'done' }],
+            timestamp: 1003,
+            __openclaw: { id: 'assistant-final-history' },
+          },
+        ],
+      }),
+    });
+    runtime.subscribe('agent:main:main', (patch) => publishedPatches.push(patch));
+
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'chat',
+      payload: { state: 'started', sessionKey: 'agent:main:main', runId: 'run-live' },
+    });
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        sessionKey: 'agent:main:main',
+        runId: 'run-live',
+        stream: 'item',
+        data: { phase: 'start', kind: 'tool', name: 'exec', meta: 'pwd', toolCallId: 'tool-live' },
+      },
+    });
+    runtime.applyGatewayEvent(liveAssistantFinalEvent('agent:main:main', 'run-live', 'done'));
+
+    await runtime.hydrateSession('agent:main:main');
+
+    const snapshot = runtime.snapshot('agent:main:main', 'manual');
+    const items = Object.values(snapshot.timeline.items);
+    const replacementPatch = publishedPatches.find((patch) =>
+      patch.ops.some((op) => op.op === 'set_hydration_state' && op.state === 'ready'),
+    );
+    expect(items.filter((item) => item.runId === 'run-live')).toHaveLength(0);
+    expect(items.filter((item) => item.kind === 'user_message')).toHaveLength(1);
+    expect(items.filter((item) => item.kind === 'tool_call')).toHaveLength(1);
+    expect(assistantItemsFromSnapshot(snapshot)).toHaveLength(1);
+    expect(assistantItemsFromSnapshot(snapshot)[0]).toMatchObject({ text: 'done' });
+    expect(replacementPatch?.ops).toContainEqual({
+      op: 'remove_turn',
+      id: 'turn:agent:main:main:run-live',
+      reason: 'compaction',
+    });
+  });
+
+  it('keeps active live timelines during hydration so mid-turn replay is not lost', async () => {
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({
+        messages: [
+          {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'older history answer' }],
+            timestamp: 1000,
+            __openclaw: { id: 'older-history' },
+          },
+        ],
+      }),
+    });
+
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'chat',
+      payload: { state: 'started', sessionKey: 'agent:main:main', runId: 'run-live' },
+    });
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        sessionKey: 'agent:main:main',
+        runId: 'run-live',
+        stream: 'item',
+        data: { phase: 'start', kind: 'tool', name: 'exec', meta: 'sleep 10', toolCallId: 'tool-live' },
+      },
+    });
+
+    await runtime.hydrateSession('agent:main:main');
+
+    const snapshot = runtime.snapshot('agent:main:main', 'manual');
+    expect(Object.values(snapshot.timeline.items).filter((item) => item.runId === 'run-live')).toHaveLength(2);
+    expect(Object.values(snapshot.timeline.items).filter((item) => item.kind === 'tool_call')).toHaveLength(1);
+    expect(assistantItemsFromSnapshot(snapshot)).toHaveLength(0);
+  });
+
   it('shares concurrent hydration work until the RPC resolves', async () => {
     const sessionKey = 'agent:concurrent:main';
     const historyRpc = deferred<unknown>();
@@ -345,8 +516,7 @@ describe('ChatRuntime', () => {
     const sessionKey = 'agent:reentrant:main';
     const calls: Array<{ method: string; params: unknown }> = [];
     let reentered = false;
-    let runtime!: ChatRuntime;
-    runtime = new ChatRuntime({
+    const runtime = new ChatRuntime({
       maxPatchesPerSession: 10,
       rpc: (method, params) => {
         calls.push({ method, params });
@@ -368,8 +538,7 @@ describe('ChatRuntime', () => {
 
   it('queues same-stack gateway events emitted from history RPC until after history applies', async () => {
     const sessionKey = 'agent:same-stack-live:main';
-    let runtime!: ChatRuntime;
-    runtime = new ChatRuntime({
+    const runtime = new ChatRuntime({
       maxPatchesPerSession: 10,
       rpc: () => {
         const patches = runtime.applyGatewayEvent(

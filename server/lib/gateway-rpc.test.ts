@@ -161,6 +161,7 @@ describe('gateway-rpc (persistent WebSocket)', () => {
           mode: 'webchat',
         },
         auth: { token: 'test-token' },
+        caps: ['tool-events'],
         device: {
           id: 'device-123',
           publicKey: 'pubkey-123',

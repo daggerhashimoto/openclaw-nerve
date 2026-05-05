@@ -190,7 +190,7 @@ export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEven
       const itemId = resolution.itemId;
       const existing = itemOfKind(draft.items[itemId], 'assistant_message');
       if (event.type === 'assistant_delta' && existing && isTerminalItemStatus(existing.status)) break;
-      if (event.type === 'assistant_delta' && existing && event.at < existing.updatedAt) break;
+      if (event.type === 'assistant_delta' && existing && shouldIgnoreAssistantDelta(existing, event)) break;
 
       const isFinal = event.type === 'assistant_final';
       closeOpenToolGroupsForOutputBoundary(draft, turn, event.at);
@@ -209,6 +209,7 @@ export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEven
         kind: 'assistant_message',
         text: event.text,
         isStreaming: !isFinal,
+        seq: event.type === 'assistant_delta' ? event.seq ?? existing?.seq : existing?.seq,
         segmentIndex: event.segmentIndex ?? existing?.segmentIndex,
         finalText: isFinal ? event.text : existing?.finalText,
         stopReason: isFinal ? event.stopReason : existing?.stopReason,
@@ -338,8 +339,8 @@ function buildToolItem(
     toolCallId: event.toolCallId,
     name: event.type === 'tool_started' ? event.name : existing?.name ?? 'unknown',
     args: event.type === 'tool_started' ? event.args : existing?.args ?? {},
-    result: isFinished ? event.result : existing?.result,
-    error: isFinished ? event.error : existing?.error,
+    result: isFinished ? event.result ?? existing?.result : existing?.result,
+    error: isFinished ? event.error ?? existing?.error : existing?.error,
     status: isFinished ? (isFailed ? 'failed' : 'complete') : terminalStatus ? existing.status : 'running',
     source: isFinished || terminalStatus ? 'history' : 'live',
   };
@@ -542,6 +543,14 @@ function isSameTurnRunItem(
 
 function assistantTextMatches(item: AssistantTimelineItem, text: string): boolean {
   return item.text === text || item.finalText === text;
+}
+
+function shouldIgnoreAssistantDelta(
+  existing: AssistantTimelineItem,
+  event: Extract<RuntimeEvent, { type: 'assistant_delta' }>,
+): boolean {
+  if (event.seq !== undefined && existing.seq !== undefined) return event.seq < existing.seq;
+  return event.at < existing.updatedAt;
 }
 
 function findSegmentedAssistantItemForText(

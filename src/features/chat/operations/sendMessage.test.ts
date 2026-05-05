@@ -1,6 +1,12 @@
 /** Tests for sendMessage — message building and RPC sending. */
 import { describe, it, expect, vi } from 'vitest';
-import { appendUploadManifest, applyVoiceTTSHint, buildUserMessage, sendChatMessage } from './sendMessage';
+import {
+  appendUploadManifest,
+  applyVoiceTTSHint,
+  buildUserMessage,
+  sendChatMessage,
+  sendChatRuntimeMessage,
+} from './sendMessage';
 import type { OutgoingUploadPayload, UploadAttachmentDescriptor } from '../types';
 
 function makeUploadPayload(overrides: Partial<OutgoingUploadPayload> = {}): OutgoingUploadPayload {
@@ -293,5 +299,56 @@ describe('sendChatMessage', () => {
     await expect(sendChatMessage({
       rpc, sessionKey: 's', text: 'hi', idempotencyKey: 'k',
     })).rejects.toThrow('connection failed');
+  });
+});
+
+describe('sendChatRuntimeMessage', () => {
+  it('posts text messages to the server replay runtime', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        ok: true,
+        sessionKey: 'agent:main:main',
+        cursor: '12',
+        runId: 'run-1',
+      }),
+    });
+
+    const result = await sendChatRuntimeMessage({
+      fetchImpl,
+      sessionKey: 'agent:main:main',
+      text: 'hello runtime',
+      idempotencyKey: 'idem-1',
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      '/api/chat-runtime/sessions/agent%3Amain%3Amain/messages',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'hello runtime', idempotencyKey: 'idem-1' }),
+      }),
+    );
+    expect(result).toEqual({
+      ok: true,
+      sessionKey: 'agent:main:main',
+      cursor: '12',
+      runId: 'run-1',
+    });
+  });
+
+  it('throws a useful error when the runtime send fails', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: vi.fn().mockResolvedValue({ ok: false, error: 'chat.send failed: offline' }),
+    });
+
+    await expect(sendChatRuntimeMessage({
+      fetchImpl,
+      sessionKey: 's1',
+      text: 'hello',
+      idempotencyKey: 'idem-fail',
+    })).rejects.toThrow('chat.send failed: offline');
   });
 });

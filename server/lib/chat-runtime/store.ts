@@ -23,13 +23,28 @@ export class ChatTimelineStore {
   }
 
   applyEvent(event: RuntimeEvent): TimelinePatch {
-    const current = this.getOrCreateTimeline(event.sessionKey);
-    const next = reduceRuntimeEvent(current, event);
-    this.timelines.set(event.sessionKey, next);
+    const [patch] = this.applyEvents([event]);
+    if (!patch) throw new Error('failed to apply runtime event');
+    return patch;
+  }
 
-    const patch = this.replayBuffer.append(event.sessionKey, buildPatchFromTimeline(next), event.at);
-    this.publish(event.sessionKey, patch);
-    return cloneTimelinePatch(patch);
+  applyEvents(events: RuntimeEvent[]): TimelinePatch[] {
+    const patches: TimelinePatch[] = [];
+    let groupStart = 0;
+
+    while (groupStart < events.length) {
+      const sessionKey = events[groupStart]?.sessionKey;
+      if (!sessionKey) break;
+
+      let groupEnd = groupStart + 1;
+      while (events[groupEnd]?.sessionKey === sessionKey) groupEnd += 1;
+
+      const patch = this.applySessionEvents(events.slice(groupStart, groupEnd));
+      if (patch) patches.push(patch);
+      groupStart = groupEnd;
+    }
+
+    return patches;
   }
 
   snapshot(sessionKey: string, reason: TimelineSnapshot['reason']): TimelineSnapshot {
@@ -75,6 +90,33 @@ export class ChatTimelineStore {
     const timeline = createEmptyTimeline(sessionKey);
     this.timelines.set(sessionKey, timeline);
     return timeline;
+  }
+
+  private applySessionEvents(events: RuntimeEvent[]): TimelinePatch | undefined {
+    const firstEvent = events[0];
+    if (!firstEvent) return undefined;
+
+    const current = this.getOrCreateTimeline(firstEvent.sessionKey);
+    let next = current;
+    let createdAt = firstEvent.at;
+
+    for (const event of events) {
+      next = reduceRuntimeEvent(next, event);
+      createdAt = Math.max(createdAt, event.at);
+    }
+
+    const version = current.version + 1;
+    next = {
+      ...next,
+      version,
+      cursor: String(version),
+      updatedAt: Math.max(next.updatedAt, createdAt),
+    };
+    this.timelines.set(firstEvent.sessionKey, next);
+
+    const patch = this.replayBuffer.append(firstEvent.sessionKey, buildPatchFromTimeline(next), createdAt);
+    this.publish(firstEvent.sessionKey, patch);
+    return cloneTimelinePatch(patch);
   }
 
   private publish(sessionKey: string, patch: TimelinePatch): void {

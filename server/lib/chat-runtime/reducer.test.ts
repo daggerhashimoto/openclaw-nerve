@@ -1223,6 +1223,21 @@ describe('chat runtime reducer', () => {
     expect(thinkingItems[0]).toMatchObject({ text: 'reasoned fully', status: 'complete', durationMs: 2500 });
   });
 
+  it('marks running thinking complete when the turn finalizes', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, { type: 'thinking_delta', sessionKey: 'agent:main:main', runId: 'run-1', blockIndex: 0, text: 'reasoning live', at: 1000 });
+    timeline = reduceRuntimeEvent(timeline, { type: 'turn_finalized', sessionKey: 'agent:main:main', runId: 'run-1', at: 1001 });
+
+    const thinkingItems = Object.values(timeline.items).filter((item) => item.kind === 'thinking');
+    expect(thinkingItems).toHaveLength(1);
+    expect(thinkingItems[0]).toMatchObject({
+      text: 'reasoning live',
+      status: 'complete',
+      source: 'history',
+      updatedAt: 1001,
+    });
+  });
+
   it('does not regress a finalized thinking item when a stale delta arrives', () => {
     let timeline = createEmptyTimeline('agent:main:main');
     timeline = reduceRuntimeEvent(timeline, { type: 'thinking_final', sessionKey: 'agent:main:main', runId: 'run-1', blockIndex: 0, text: 'reasoned fully', durationMs: 2500, at: 1000 });

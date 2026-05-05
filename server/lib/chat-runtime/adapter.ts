@@ -120,19 +120,21 @@ function adaptChatEvent(payload: Record<string, unknown>, seq?: number): Runtime
   }
 
   if (state === 'final') {
-    const text = extractFinalText(payload);
-    const events: RuntimeEvent[] = [];
-    if (hasText(text)) {
-      const stopReason = readNonEmptyString(payload, 'stopReason');
-      const finalEvent: Extract<RuntimeEvent, { type: 'assistant_final' }> = {
-        type: 'assistant_final',
-        sessionKey,
-        runId,
-        text,
-        at,
-      };
-      if (stopReason) finalEvent.stopReason = stopReason;
-      events.push(finalEvent);
+    const events = adaptChatFinalContentBlocks(sessionKey, runId, payload, at);
+    if (events.length === 0) {
+      const text = extractFinalText(payload);
+      if (hasText(text)) {
+        const stopReason = readNonEmptyString(payload, 'stopReason');
+        const finalEvent: Extract<RuntimeEvent, { type: 'assistant_final' }> = {
+          type: 'assistant_final',
+          sessionKey,
+          runId,
+          text,
+          at,
+        };
+        if (stopReason) finalEvent.stopReason = stopReason;
+        events.push(finalEvent);
+      }
     }
     events.push({ type: 'turn_finalized', sessionKey, runId, at });
     return events;
@@ -168,6 +170,10 @@ function adaptAgentEvent(payload: Record<string, unknown>): RuntimeEvent[] {
 
   if (stream === 'command_output') {
     return adaptCommandOutputStreamEvent(sessionKey, runId, data);
+  }
+
+  if (stream === 'thinking') {
+    return adaptThinkingStreamEvent(sessionKey, runId, data);
   }
 
   return [];
@@ -254,6 +260,32 @@ function adaptCommandOutputStreamEvent(
   return [buildToolFinishedEvent(sessionKey, runId, toolCallId, data, Date.now())];
 }
 
+function adaptThinkingStreamEvent(
+  sessionKey: string,
+  runId: string,
+  data: Record<string, unknown>,
+): RuntimeEvent[] {
+  const phase = readNonEmptyString(data, 'phase');
+  const text = thinkingStreamTextValue(data);
+  const blockIndex = readInteger(data, 'blockIndex')
+    ?? readInteger(data, 'contentIndex')
+    ?? readInteger(data, 'index')
+    ?? 0;
+  const at = Date.now();
+
+  if (phase === 'start' && !hasText(text)) {
+    return [{ type: 'thinking_started', sessionKey, runId, blockIndex, at }];
+  }
+
+  if (!hasText(text)) return [];
+
+  if (phase === 'end' || phase === 'complete' || phase === 'completed') {
+    return [{ type: 'thinking_final', sessionKey, runId, blockIndex, text, at }];
+  }
+
+  return [{ type: 'thinking_delta', sessionKey, runId, blockIndex, text, at }];
+}
+
 function buildToolFinishedEvent(
   sessionKey: string,
   runId: string,
@@ -303,6 +335,25 @@ function toolStreamResultValue(data: Record<string, unknown>): unknown {
   if (Object.hasOwn(data, 'summary')) return data.summary;
   if (Object.hasOwn(data, 'progressText')) return data.progressText;
   return undefined;
+}
+
+function thinkingStreamTextValue(data: Record<string, unknown>): string | undefined {
+  return readNonEmptyString(data, 'text')
+    ?? readNonEmptyString(data, 'content')
+    ?? readNonEmptyString(data, 'thinking')
+    ?? readNonEmptyString(data, 'reasoning')
+    ?? readNonEmptyString(data, 'delta');
+}
+
+function readInteger(source: unknown, key: string): number | undefined {
+  if (!isRecord(source)) return undefined;
+
+  const value = source[key];
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
+  if (typeof value !== 'string' || !/^\d+$/.test(value.trim())) return undefined;
+
+  const parsed = Number(value.trim());
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
 function isToolFinishPhase(phase: string): boolean {
@@ -390,6 +441,18 @@ function adaptToolHistoryMessage(
   return event ? [event] : [];
 }
 
+function adaptChatFinalContentBlocks(
+  sessionKey: string,
+  runId: string,
+  payload: Record<string, unknown>,
+  at: number,
+): RuntimeEvent[] {
+  const message = finalAssistantPayloadMessage(payload);
+  if (!isRecord(message) || !Array.isArray(message.content)) return [];
+
+  return adaptAssistantHistoryMessage(sessionKey, runId, message as unknown as HistoryMessage, at);
+}
+
 function extractFinalText(payload: Record<string, unknown>): string | undefined {
   if (Array.isArray(payload.messages)) {
     for (const candidate of [...payload.messages].reverse()) {
@@ -407,6 +470,23 @@ function extractFinalText(payload: Record<string, unknown>): string | undefined 
   }
 
   return undefined;
+}
+
+function finalAssistantPayloadMessage(payload: Record<string, unknown>): unknown {
+  if (Array.isArray(payload.messages)) {
+    for (const candidate of [...payload.messages].reverse()) {
+      if (isAssistantLikeMessage(candidate)) return candidate;
+    }
+  }
+
+  return isAssistantLikeMessage(payload.message) ? payload.message : undefined;
+}
+
+function isAssistantLikeMessage(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+
+  const role = readNonEmptyString(value, 'role');
+  return !role || role === 'assistant';
 }
 
 function extractAssistantMessageText(value: unknown): string | undefined {

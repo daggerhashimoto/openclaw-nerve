@@ -153,6 +153,31 @@ describe('OpenClaw chat runtime adapter', () => {
     ]);
   });
 
+  it('adapts current OpenClaw live thinking stream events', () => {
+    expect(adaptGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        sessionKey: 'agent:main:main',
+        runId: 'run-1',
+        stream: 'thinking',
+        data: {
+          text: 'I should inspect the project first.',
+          delta: ' first.',
+        },
+      },
+    })).toEqual([
+      {
+        type: 'thinking_delta',
+        sessionKey: 'agent:main:main',
+        runId: 'run-1',
+        blockIndex: 0,
+        text: 'I should inspect the project first.',
+        at: expect.any(Number),
+      },
+    ]);
+  });
+
   it('adapts assistant history content blocks into ordered runtime events', () => {
     const events = adaptHistorySnapshot('agent:main:main', [
       {
@@ -530,6 +555,56 @@ describe('OpenClaw chat runtime adapter', () => {
       seq: 5,
     })).toEqual([
       { type: 'assistant_final', sessionKey: 'agent:main:main', runId: 'run-1', text: 'done', at: expect.any(Number) },
+      { type: 'turn_finalized', sessionKey: 'agent:main:main', runId: 'run-1', at: expect.any(Number) },
+    ]);
+  });
+
+  it('adapts thinking blocks from chat final assistant content before finalizing the turn', () => {
+    expect(adaptGatewayEvent({
+      type: 'event',
+      event: 'chat',
+      payload: {
+        state: 'final',
+        sessionKey: 'agent:main:main',
+        runId: 'run-1',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'reasoned through it' },
+            { type: 'text', text: 'done' },
+          ],
+        },
+      },
+    })).toEqual([
+      { type: 'thinking_final', sessionKey: 'agent:main:main', runId: 'run-1', blockIndex: 0, text: 'reasoned through it', at: expect.any(Number) },
+      { type: 'assistant_final', sessionKey: 'agent:main:main', runId: 'run-1', segmentIndex: 0, text: 'done', at: expect.any(Number) },
+      { type: 'turn_finalized', sessionKey: 'agent:main:main', runId: 'run-1', at: expect.any(Number) },
+    ]);
+  });
+
+  it('uses the last assistant message when chat final messages include thinking content', () => {
+    expect(adaptGatewayEvent({
+      type: 'event',
+      event: 'chat',
+      payload: {
+        state: 'final',
+        sessionKey: 'agent:main:main',
+        runId: 'run-1',
+        messages: [
+          { role: 'assistant', content: [{ type: 'text', text: 'older' }] },
+          { role: 'user', content: 'follow-up user text' },
+          {
+            role: 'assistant',
+            content: [
+              { type: 'thinking', thinking: 'latest reasoning' },
+              { type: 'text', text: 'latest answer' },
+            ],
+          },
+        ],
+      },
+    })).toEqual([
+      { type: 'thinking_final', sessionKey: 'agent:main:main', runId: 'run-1', blockIndex: 0, text: 'latest reasoning', at: expect.any(Number) },
+      { type: 'assistant_final', sessionKey: 'agent:main:main', runId: 'run-1', segmentIndex: 0, text: 'latest answer', at: expect.any(Number) },
       { type: 'turn_finalized', sessionKey: 'agent:main:main', runId: 'run-1', at: expect.any(Number) },
     ]);
   });

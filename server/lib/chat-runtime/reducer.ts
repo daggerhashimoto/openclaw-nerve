@@ -228,6 +228,7 @@ export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEven
 
       turn.status = 'finalized';
       turn.finalizedAt = event.at;
+      closeThinkingItemsForTurn(draft, turn, event.at, 'complete');
       closeToolGroupsForTurn(draft, turn, event.at, 'finalized');
       break;
     }
@@ -238,6 +239,7 @@ export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEven
 
       turn.status = 'failed';
       turn.finalizedAt = event.at;
+      closeThinkingItemsForTurn(draft, turn, event.at, 'failed');
       closeToolGroupsForTurn(draft, turn, event.at, 'failed');
       break;
     }
@@ -453,6 +455,25 @@ function closeOpenToolGroupsForOutputBoundary(timeline: SessionTimeline, turn: T
       status: closedToolGroupStatus(timeline, childItemIds, group.status),
       source: 'history',
       updatedAt: at,
+    };
+  }
+}
+
+function closeThinkingItemsForTurn(
+  timeline: SessionTimeline,
+  turn: TimelineTurn,
+  at: number,
+  status: 'complete' | 'failed',
+): void {
+  for (const item of Object.values(timeline.items)) {
+    const thinking = itemOfKind(item, 'thinking');
+    if (!thinking || thinking.turnId !== turn.id || isTerminalItemStatus(thinking.status)) continue;
+
+    timeline.items[thinking.id] = {
+      ...thinking,
+      status,
+      source: 'history',
+      updatedAt: Math.max(thinking.updatedAt, at),
     };
   }
 }

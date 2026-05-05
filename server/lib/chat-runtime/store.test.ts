@@ -369,6 +369,46 @@ describe('ChatRuntime', () => {
     ]);
   });
 
+  it('applies current OpenClaw live thinking stream before the final assistant message', () => {
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({ messages: [] }),
+    });
+
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'chat',
+      payload: { state: 'started', sessionKey: 'agent:main:main', runId: 'run-live' },
+    });
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        sessionKey: 'agent:main:main',
+        runId: 'run-live',
+        stream: 'thinking',
+        data: {
+          text: 'I should inspect the project first.',
+          delta: ' first.',
+        },
+      },
+    });
+    runtime.applyGatewayEvent(liveAssistantFinalEvent('agent:main:main', 'run-live', 'done'));
+
+    const snapshot = runtime.snapshot('agent:main:main', 'manual');
+    const topLevelOutput = snapshot.timeline.turns[0].outputItemIds.map((itemId) => snapshot.timeline.items[itemId]);
+
+    expect(topLevelOutput.map((item) => item?.kind)).toEqual(['thinking', 'assistant_message']);
+    expect(topLevelOutput[0]).toMatchObject({
+      kind: 'thinking',
+      text: 'I should inspect the project first.',
+      status: 'complete',
+    });
+    expect(assistantItemsFromSnapshot(snapshot)).toMatchObject([
+      { text: 'done', status: 'complete' },
+    ]);
+  });
+
   it('replaces idle live timelines with canonical history during hydration', async () => {
     const publishedPatches: TimelinePatch[] = [];
     const runtime = new ChatRuntime({

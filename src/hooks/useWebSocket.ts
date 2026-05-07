@@ -20,6 +20,7 @@ interface UseWebSocketReturn {
 
 const RECONNECT_BASE_DELAY = 1000;
 const RECONNECT_MAX_DELAY = 30000;
+const CONNECT_TIMEOUT_MS = 10000;
 const INSTANCE_ID_STORAGE_KEY = 'oc-webchat-instance-id';
 
 function generateInstanceId(): string {
@@ -62,6 +63,7 @@ export function useWebSocket(): UseWebSocketReturn {
   const connectReqIdRef = useRef<string | null>(null);
   const connectResolveRef = useRef<(() => void) | null>(null);
   const connectRejectRef = useRef<((e: Error) => void) | null>(null);
+  const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onEvent = useRef<((msg: GatewayEvent) => void) | null>(null);
   
   // Auto-reconnect state
@@ -94,6 +96,31 @@ export function useWebSocket(): UseWebSocketReturn {
     }
   }, []);
 
+  const clearConnectTimeout = useCallback(() => {
+    if (connectTimeoutRef.current) {
+      clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const settleConnectFailure = useCallback((err: Error) => {
+    clearConnectTimeout();
+    connectReqIdRef.current = null;
+    const reject = connectRejectRef.current;
+    connectResolveRef.current = null;
+    connectRejectRef.current = null;
+    reject?.(err);
+  }, [clearConnectTimeout]);
+
+  const settleConnectSuccess = useCallback(() => {
+    clearConnectTimeout();
+    connectReqIdRef.current = null;
+    const resolve = connectResolveRef.current;
+    connectResolveRef.current = null;
+    connectRejectRef.current = null;
+    resolve?.();
+  }, [clearConnectTimeout]);
+
   const rpc = useCallback((method: string, params: Record<string, unknown> = {}): Promise<unknown> => {
     return new Promise((resolve, reject) => {
       const ws = wsRef.current;
@@ -120,6 +147,7 @@ export function useWebSocket(): UseWebSocketReturn {
       }
       if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
       rejectPending(new Error('Disconnected'));
+      clearConnectTimeout();
       connectReqIdRef.current = null;
       connectResolveRef.current = resolve;
       connectRejectRef.current = reject;
@@ -145,6 +173,17 @@ export function useWebSocket(): UseWebSocketReturn {
         return;
       }
       wsRef.current = ws;
+
+      connectTimeoutRef.current = setTimeout(() => {
+        if (gen !== connectionGenRef.current) return;
+        const err = new Error('Connection timed out');
+        if (!isReconnect) {
+          setConnectError('Connection timed out — retry');
+        }
+        settleConnectFailure(err);
+        setConnectionState(hasConnectedRef.current ? 'reconnecting' : 'disconnected');
+        ws.close();
+      }, CONNECT_TIMEOUT_MS);
 
       ws.onopen = () => {
         setConnectionState(isReconnect ? 'reconnecting' : 'connecting');
@@ -181,7 +220,6 @@ export function useWebSocket(): UseWebSocketReturn {
         if (msg.type === 'res') {
           const response = msg as GatewayResponse;
           if (response.id === connectReqIdRef.current) {
-            connectReqIdRef.current = null;
             if (response.ok) {
               // Success! Reset reconnect counter
               reconnectAttemptRef.current = 0;
@@ -189,15 +227,15 @@ export function useWebSocket(): UseWebSocketReturn {
               setReconnectAttempt(0);
               setConnectError('');
               setConnectionState('connected');
-              connectResolveRef.current?.();
+              settleConnectSuccess();
             } else {
               const errMsg = 'Auth failed: ' + (response.error?.message || 'unknown');
               setConnectError(errMsg);
               setConnectionState('disconnected');
               // Treat auth failures during reconnect like transient failures so the
               // socket keeps retrying instead of getting stuck until a manual reload.
+              settleConnectFailure(new Error(errMsg));
               ws.close();
-              connectRejectRef.current?.(new Error(errMsg));
             }
             return;
           }
@@ -228,10 +266,15 @@ export function useWebSocket(): UseWebSocketReturn {
       };
 
       ws.onclose = () => {
-        rejectPending(new Error('WebSocket disconnected'));
-
         // Stale connection: a newer doConnect has already superseded this one
         if (gen !== connectionGenRef.current) return;
+
+        clearConnectTimeout();
+        rejectPending(new Error('WebSocket disconnected'));
+
+        if (connectRejectRef.current) {
+          settleConnectFailure(new Error('WebSocket disconnected before connect completed'));
+        }
 
         // Don't reconnect if intentionally disconnected, no credentials, or never connected
         if (intentionalDisconnectRef.current || !credentialsRef.current || !hasConnectedRef.current) {
@@ -262,7 +305,7 @@ export function useWebSocket(): UseWebSocketReturn {
         }, delay);
       };
     });
-  }, [rejectPending]);
+  }, [clearConnectTimeout, rejectPending, settleConnectFailure, settleConnectSuccess]);
   
   // Store doConnect in ref so it can reference itself for reconnection
   useEffect(() => {
@@ -273,6 +316,7 @@ export function useWebSocket(): UseWebSocketReturn {
   useEffect(() => {
     return () => {
       clearReconnectTimeout();
+      clearConnectTimeout();
       if (wsRef.current) {
         intentionalDisconnectRef.current = true; // prevent reconnect on cleanup close
         wsRef.current.close();
@@ -280,11 +324,12 @@ export function useWebSocket(): UseWebSocketReturn {
       }
       rejectPending(new Error('Component unmounted'));
     };
-  }, [clearReconnectTimeout, rejectPending]);
+  }, [clearConnectTimeout, clearReconnectTimeout, rejectPending]);
 
   const disconnect = useCallback(() => {
     intentionalDisconnectRef.current = true;
     clearReconnectTimeout();
+    clearConnectTimeout();
     reconnectAttemptRef.current = 0;
     setReconnectAttempt(0);
     credentialsRef.current = null;
@@ -293,8 +338,9 @@ export function useWebSocket(): UseWebSocketReturn {
       wsRef.current = null;
     }
     rejectPending(new Error('Disconnected'));
+    settleConnectFailure(new Error('Disconnected'));
     setConnectionState('disconnected');
-  }, [rejectPending, clearReconnectTimeout]);
+  }, [clearConnectTimeout, clearReconnectTimeout, rejectPending, settleConnectFailure]);
 
   const connect = useCallback((url: string, token: string): Promise<void> => {
     // Store credentials for reconnection

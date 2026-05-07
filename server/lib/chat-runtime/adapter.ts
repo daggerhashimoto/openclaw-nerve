@@ -32,8 +32,12 @@ export function adaptHistorySnapshot(sessionKey: string, messages: HistoryMessag
   ];
   let lastAssistantRunId: string | undefined;
   const finalizedRunAts = new Map<string, number>();
+  const userRunAts = new Map<string, number>();
   const noteFinalizedRun = (runId: string, at: number) => {
     finalizedRunAts.set(runId, Math.max(finalizedRunAts.get(runId) ?? at, at));
+  };
+  const noteUserRun = (runId: string, at: number) => {
+    userRunAts.set(runId, Math.max(userRunAts.get(runId) ?? at, at));
   };
 
   messages.forEach((message, messageIndex) => {
@@ -43,19 +47,20 @@ export function adaptHistorySnapshot(sessionKey: string, messages: HistoryMessag
       const text = extractText(message);
       if (text === undefined) return;
 
+      const runId = readNonEmptyString(message, 'runId') ?? historyUserRunId(message, messageIndex);
       const event: Extract<RuntimeEvent, { type: 'user_message_committed' }> = {
         type: 'user_message_committed',
         sessionKey,
+        runId,
         text,
         at,
       };
-      const runId = readNonEmptyString(message, 'runId');
       const messageId = historyMessageIdentity(message);
       const idempotencyKey = readNonEmptyString(message, 'idempotencyKey');
-      if (runId) event.runId = runId;
       if (messageId) event.messageId = messageId;
       if (idempotencyKey) event.idempotencyKey = idempotencyKey;
       events.push(event);
+      noteUserRun(runId, at);
       return;
     }
 
@@ -79,6 +84,10 @@ export function adaptHistorySnapshot(sessionKey: string, messages: HistoryMessag
   });
 
   for (const [runId, at] of finalizedRunAts) {
+    events.push({ type: 'turn_finalized', sessionKey, runId, at });
+  }
+  for (const [runId, at] of userRunAts) {
+    if (finalizedRunAts.has(runId)) continue;
     events.push({ type: 'turn_finalized', sessionKey, runId, at });
   }
 
@@ -596,6 +605,19 @@ function historyFallbackRunId(message: HistoryMessage, messageIndex: number): st
   if (timestamp !== undefined) return `history:time:${timestamp}:index:${messageIndex}`;
 
   return `history:index:${messageIndex}`;
+}
+
+function historyUserRunId(message: HistoryMessage, messageIndex: number): string {
+  const messageIdentity = historyMessageIdentity(message);
+  if (messageIdentity) return `history:user:${messageIdentity}`;
+
+  const seq = openClawSeq(message);
+  if (seq !== undefined) return `history:user-seq:${seq}`;
+
+  const timestamp = messageTimeIdentity(message);
+  if (timestamp !== undefined) return `history:user-time:${timestamp}:index:${messageIndex}`;
+
+  return `history:user-index:${messageIndex}`;
 }
 
 function historyMessageIdentity(message: HistoryMessage): string | undefined {

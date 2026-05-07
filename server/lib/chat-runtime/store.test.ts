@@ -39,6 +39,10 @@ function assistantItemsFromSnapshot(snapshot: ReturnType<ChatRuntime['snapshot']
   return Object.values(snapshot.timeline.items).filter((item) => item.kind === 'assistant_message');
 }
 
+function thinkingItemsFromSnapshot(snapshot: ReturnType<ChatRuntime['snapshot']>) {
+  return Object.values(snapshot.timeline.items).filter((item) => item.kind === 'thinking');
+}
+
 function assistantTextsInTurnOrder(snapshot: ReturnType<ChatRuntime['snapshot']>): string[] {
   return snapshot.timeline.turns.flatMap((turn) =>
     turn.outputItemIds.flatMap((itemId) => {
@@ -293,6 +297,46 @@ describe('ChatRuntime', () => {
     ]);
   });
 
+  it('hydrates persisted user prompts as inactive history instead of active optimistic turns', async () => {
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({
+        messages: [
+          {
+            role: 'user',
+            messageId: 'prompt-1',
+            timestamp: 1000,
+            content: 'hello',
+          },
+          {
+            role: 'assistant',
+            messageId: 'answer-1',
+            timestamp: 1001,
+            content: 'answer',
+          },
+        ],
+      }),
+    });
+
+    await runtime.hydrateSession('agent:main:main');
+
+    const snapshot = runtime.snapshot('agent:main:main', 'hydration');
+    expect(snapshot.timeline.turns.map((turn) => ({ runId: turn.runId, status: turn.status }))).toEqual([
+      { runId: 'history:user:prompt-1', status: 'finalized' },
+      { runId: 'history:message:answer-1', status: 'finalized' },
+    ]);
+    expect(userItemsFromSnapshot(snapshot)).toMatchObject([
+      {
+        kind: 'user_message',
+        text: 'hello',
+        status: 'complete',
+        source: 'history',
+        pending: false,
+      },
+    ]);
+    expect(snapshot.timeline.turns.filter((turn) => turn.status === 'running')).toEqual([]);
+  });
+
   it('uses custom history limits when hydrating', async () => {
     const calls: Array<{ method: string; params: unknown }> = [];
     const runtime = new ChatRuntime({
@@ -409,6 +453,78 @@ describe('ChatRuntime', () => {
     ]);
   });
 
+  it('applies live thinking stream events that only include the run id', () => {
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({ messages: [] }),
+    });
+
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'chat',
+      payload: { state: 'started', sessionKey: 'agent:main:main', runId: 'run-live' },
+    });
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        runId: 'run-live',
+        stream: 'thinking',
+        data: {
+          text: 'I can stream once the run is known.',
+          delta: ' known.',
+        },
+      },
+    });
+
+    const snapshot = runtime.snapshot('agent:main:main', 'manual');
+    const thinkingItems = Object.values(snapshot.timeline.items).filter((item) => item.kind === 'thinking');
+
+    expect(thinkingItems).toHaveLength(1);
+    expect(thinkingItems[0]).toMatchObject({
+      kind: 'thinking',
+      text: 'I can stream once the run is known.',
+      status: 'running',
+    });
+  });
+
+  it('buffers run-scoped live thinking until the session-bearing chat event arrives', () => {
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({ messages: [] }),
+    });
+
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        runId: 'run-live',
+        stream: 'thinking',
+        data: {
+          text: 'Reasoning arrived before chat started.',
+          delta: ' started.',
+        },
+      },
+    });
+    expect(runtime.snapshot('agent:main:main', 'manual').timeline.turns).toEqual([]);
+
+    runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'chat',
+      payload: { state: 'started', sessionKey: 'agent:main:main', runId: 'run-live' },
+    });
+
+    const snapshot = runtime.snapshot('agent:main:main', 'manual');
+    const thinkingItems = Object.values(snapshot.timeline.items).filter((item) => item.kind === 'thinking');
+
+    expect(thinkingItems).toHaveLength(1);
+    expect(thinkingItems[0]).toMatchObject({
+      kind: 'thinking',
+      text: 'Reasoning arrived before chat started.',
+      status: 'running',
+    });
+  });
+
   it('replaces idle live timelines with canonical history during hydration', async () => {
     const publishedPatches: TimelinePatch[] = [];
     const runtime = new ChatRuntime({
@@ -482,7 +598,7 @@ describe('ChatRuntime', () => {
     });
   });
 
-  it('keeps active live timelines during hydration so mid-turn replay is not lost', async () => {
+  it('ignores unrelated canonical history during hydration without losing an active live timeline', async () => {
     const runtime = new ChatRuntime({
       maxPatchesPerSession: 10,
       rpc: async () => ({
@@ -519,6 +635,250 @@ describe('ChatRuntime', () => {
     expect(Object.values(snapshot.timeline.items).filter((item) => item.runId === 'run-live')).toHaveLength(2);
     expect(Object.values(snapshot.timeline.items).filter((item) => item.kind === 'tool_call')).toHaveLength(1);
     expect(assistantItemsFromSnapshot(snapshot)).toHaveLength(0);
+  });
+
+  it('merges persisted thinking from history into a running live turn without duplicating the prompt', async () => {
+    const sessionKey = 'agent:active-thinking:main';
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({
+        messages: [
+          {
+            role: 'user',
+            messageId: 'history-user-1',
+            timestamp: 1000,
+            content: 'explain the plan',
+          },
+          {
+            role: 'assistant',
+            messageId: 'history-assistant-1',
+            timestamp: 1001,
+            content: [
+              { type: 'thinking', thinking: 'I should compare the runtime and history paths.' },
+              { type: 'text', text: 'Here is the plan.' },
+            ],
+          },
+        ],
+      }),
+    });
+
+    runtime.applyOptimisticUserMessage({
+      sessionKey,
+      runId: 'run-live',
+      text: 'explain the plan',
+      idempotencyKey: 'idem-active-prompt',
+      at: 999,
+    });
+
+    await runtime.hydrateSession(sessionKey);
+
+    const snapshot = runtime.snapshot(sessionKey, 'manual');
+    expect(userItemsFromSnapshot(snapshot)).toHaveLength(1);
+    expect(userItemsFromSnapshot(snapshot)[0]).toMatchObject({
+      kind: 'user_message',
+      text: 'explain the plan',
+      idempotencyKey: 'idem-active-prompt',
+      messageId: 'history-user-1',
+      pending: false,
+      source: 'history',
+    });
+    expect(thinkingItemsFromSnapshot(snapshot)).toMatchObject([
+      {
+        kind: 'thinking',
+        runId: 'run-live',
+        text: 'I should compare the runtime and history paths.',
+        status: 'complete',
+      },
+    ]);
+    expect(assistantItemsFromSnapshot(snapshot)).toMatchObject([
+      {
+        kind: 'assistant_message',
+        runId: 'run-live',
+        text: 'Here is the plan.',
+        status: 'complete',
+      },
+    ]);
+    expect(snapshot.timeline.turns.map((turn) => turn.runId)).toEqual(['run-live']);
+  });
+
+  it('does not append unrelated older history below the running turn during active hydration', async () => {
+    const sessionKey = 'agent:active-unrelated-history:main';
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({
+        messages: [
+          {
+            role: 'user',
+            messageId: 'older-user-1',
+            timestamp: 1000,
+            content: 'older question',
+          },
+          {
+            role: 'assistant',
+            messageId: 'older-assistant-1',
+            timestamp: 1001,
+            content: 'older answer',
+          },
+        ],
+      }),
+    });
+
+    runtime.applyOptimisticUserMessage({
+      sessionKey,
+      runId: 'run-live',
+      text: 'current question',
+      idempotencyKey: 'idem-current-question',
+      at: 10_000,
+    });
+
+    await runtime.hydrateSession(sessionKey);
+
+    const snapshot = runtime.snapshot(sessionKey, 'manual');
+    expect(snapshot.timeline.turns.map((turn) => turn.runId)).toEqual(['run-live']);
+    expect(userItemsFromSnapshot(snapshot)).toMatchObject([
+      { text: 'current question', source: 'optimistic' },
+    ]);
+    expect(assistantItemsFromSnapshot(snapshot)).toHaveLength(0);
+  });
+
+  it('does not bind stale same-text history to the active turn during mid-run refresh', async () => {
+    const sessionKey = 'agent:active-stale-same-text:main';
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({
+        messages: [
+          {
+            role: 'user',
+            messageId: 'older-user-1',
+            timestamp: 1000,
+            content: 'repeatable prompt',
+          },
+          {
+            role: 'assistant',
+            messageId: 'older-assistant-1',
+            timestamp: 1001,
+            content: [
+              { type: 'thinking', thinking: 'Old reasoning should stay old.' },
+              { type: 'text', text: 'Old answer should not attach to the active run.' },
+            ],
+          },
+        ],
+      }),
+    });
+
+    runtime.applyOptimisticUserMessage({
+      sessionKey,
+      runId: 'run-live',
+      text: 'repeatable prompt',
+      idempotencyKey: 'idem-repeatable-prompt',
+      at: 120_000,
+    });
+
+    await runtime.hydrateSession(sessionKey);
+
+    const snapshot = runtime.snapshot(sessionKey, 'manual');
+    expect(snapshot.timeline.turns).toMatchObject([
+      { runId: 'run-live', status: 'running' },
+    ]);
+    expect(thinkingItemsFromSnapshot(snapshot)).toHaveLength(0);
+    expect(assistantItemsFromSnapshot(snapshot)).toHaveLength(0);
+    expect(userItemsFromSnapshot(snapshot)).toMatchObject([
+      { text: 'repeatable prompt', idempotencyKey: 'idem-repeatable-prompt' },
+    ]);
+  });
+
+  it('does not finalize a running turn when history has only the matching user prompt', async () => {
+    const sessionKey = 'agent:active-user-only:main';
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({
+        messages: [
+          {
+            role: 'user',
+            messageId: 'history-user-1',
+            timestamp: 1000,
+            content: 'keep streaming',
+          },
+        ],
+      }),
+    });
+
+    runtime.applyOptimisticUserMessage({
+      sessionKey,
+      runId: 'run-live',
+      text: 'keep streaming',
+      idempotencyKey: 'idem-user-only',
+      at: 999,
+    });
+
+    await runtime.hydrateSession(sessionKey);
+
+    expect(runtime.snapshot(sessionKey, 'manual').timeline.turns).toMatchObject([
+      { runId: 'run-live', status: 'running' },
+    ]);
+  });
+
+  it('polls canonical history during an active live turn so history-only thinking appears without refresh', async () => {
+    vi.useFakeTimers();
+    try {
+      const sessionKey = 'agent:active-thinking-poll:main';
+      let messages: Array<{
+        role: 'user' | 'assistant';
+        messageId: string;
+        timestamp: number;
+        content: string | Array<{ type: string; thinking?: string; text?: string }>;
+      }> = [];
+      const calls: Array<{ method: string; params: unknown }> = [];
+      const runtime = new ChatRuntime({
+        maxPatchesPerSession: 10,
+        rpc: async (method, params) => {
+          calls.push({ method, params });
+          return { messages };
+        },
+      });
+
+      runtime.applyOptimisticUserMessage({
+        sessionKey,
+        runId: 'run-live',
+        text: 'show live thinking',
+        idempotencyKey: 'idem-live-thinking',
+        at: 1000,
+      });
+
+      messages = [
+        {
+          role: 'user',
+          messageId: 'history-user-1',
+          timestamp: 1000,
+          content: 'show live thinking',
+        },
+        {
+          role: 'assistant',
+          messageId: 'history-assistant-1',
+          timestamp: 1001,
+          content: [
+            { type: 'thinking', thinking: 'Reasoning became available through history.' },
+            { type: 'text', text: 'Visible answer.' },
+          ],
+        },
+      ];
+
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(calls).toContainEqual({
+        method: 'chat.history',
+        params: { sessionKey, limit: 500 },
+      });
+      expect(thinkingItemsFromSnapshot(runtime.snapshot(sessionKey, 'manual'))).toMatchObject([
+        {
+          kind: 'thinking',
+          runId: 'run-live',
+          text: 'Reasoning became available through history.',
+        },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shares concurrent hydration work until the RPC resolves', async () => {

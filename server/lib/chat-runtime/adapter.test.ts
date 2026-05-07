@@ -677,6 +677,37 @@ describe('OpenClaw chat runtime adapter', () => {
     ])).toEqual([
       { type: 'history_snapshot', sessionKey: 'agent:main:main', messages: expect.any(Array), at: expect.any(Number) },
       { type: 'user_message_committed', sessionKey: 'agent:main:main', runId: 'run-1', messageId: 'msg-1', text: 'hello', at: 1000 },
+      { type: 'turn_finalized', sessionKey: 'agent:main:main', runId: 'run-1', at: 1000 },
+    ]);
+  });
+
+  it('finalizes persisted user-only history turns', () => {
+    const events = adaptHistorySnapshot('agent:main:main', [
+      {
+        role: 'user',
+        messageId: 'msg-1',
+        timestamp: 1000,
+        content: 'hello',
+      },
+      {
+        role: 'assistant',
+        messageId: 'answer-1',
+        timestamp: 1001,
+        content: 'answer',
+      },
+    ]);
+
+    expect(events).toContainEqual({
+      type: 'user_message_committed',
+      sessionKey: 'agent:main:main',
+      runId: 'history:user:msg-1',
+      messageId: 'msg-1',
+      text: 'hello',
+      at: 1000,
+    });
+    expect(events.filter((event) => event.type === 'turn_finalized').map((event) => event.runId)).toEqual([
+      'history:message:answer-1',
+      'history:user:msg-1',
     ]);
   });
 

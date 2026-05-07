@@ -108,9 +108,18 @@ app.use('*', async (c, next) => {
   if (c.req.path.startsWith('/api/')) return next();
   return serveStatic({ root: './dist/' })(c, next);
 });
-// SPA fallback — serve index.html for non-API routes (client-side routing)
+// SPA fallback — serve index.html only for extensionless app routes.
+// If a hashed asset or other static file is missing, return 404 instead of
+// silently serving index.html. That avoids stale post-upgrade bundles loading
+// HTML as JavaScript after a deploy/release switch.
 app.get('*', async (c, next) => {
   if (c.req.path.startsWith('/api/')) return next();
+
+  const looksLikeStaticFile = c.req.path.startsWith('/assets/') || (c.req.path !== '/' && c.req.path.includes('.'));
+  if (looksLikeStaticFile) {
+    return c.notFound();
+  }
+
   return serveStatic({ root: './dist/', path: 'index.html' })(c, next);
 });
 

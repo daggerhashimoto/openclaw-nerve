@@ -201,6 +201,52 @@ describe('OpenClaw chat runtime adapter', () => {
     ]);
   });
 
+  it('preserves user image content blocks from history snapshots', () => {
+    const events = adaptHistorySnapshot('agent:main:main', [
+      {
+        role: 'user',
+        messageId: 'msg-user-image',
+        timestamp: 1000,
+        content: [
+          { type: 'text', text: 'look at this' },
+          { type: 'image', data: 'inline-base64', mimeType: 'image/png' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'source-base64' } },
+        ],
+      },
+    ] as unknown as Parameters<typeof adaptHistorySnapshot>[1]);
+
+    expect(events.find((event) => event.type === 'user_message_committed')).toMatchObject({
+      type: 'user_message_committed',
+      text: 'look at this',
+      images: [
+        {
+          mimeType: 'image/png',
+          content: 'inline-base64',
+          preview: 'data:image/png;base64,inline-base64',
+          name: 'image',
+        },
+        {
+          mimeType: 'image/jpeg',
+          content: 'source-base64',
+          preview: 'data:image/jpeg;base64,source-base64',
+          name: 'image',
+        },
+      ],
+    });
+
+    let timeline = createEmptyTimeline('agent:main:main');
+    for (const event of events) timeline = reduceRuntimeEvent(timeline, event);
+
+    const userItem = timelineItemsInOrder(timeline).find((item) => item.kind === 'user_message');
+    expect(userItem).toMatchObject({
+      kind: 'user_message',
+      images: [
+        { mimeType: 'image/png', content: 'inline-base64' },
+        { mimeType: 'image/jpeg', content: 'source-base64' },
+      ],
+    });
+  });
+
   it('uses thinking-block ordinals for mixed assistant history content', () => {
     const events = adaptHistorySnapshot('agent:main:main', [
       {

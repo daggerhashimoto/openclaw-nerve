@@ -2,7 +2,14 @@ import { createHash } from 'node:crypto';
 import { adaptGatewayEvent, adaptHistorySnapshot, type AdapterGatewayEvent } from './adapter.js';
 import { ChatTimelineStore } from './store.js';
 import type { ReplayResult } from './replay-buffer.js';
-import type { HistoryMessage, RuntimeEvent, TimelinePatch, TimelineSnapshot } from './types.js';
+import type {
+  HistoryMessage,
+  RuntimeEvent,
+  TimelineMessageImage,
+  TimelinePatch,
+  TimelineSnapshot,
+  TimelineUploadAttachment,
+} from './types.js';
 
 const ACTIVE_HISTORY_SYNC_INTERVAL_MS = 1500;
 const ACTIVE_HISTORY_BINDING_CLOCK_SKEW_MS = 30_000;
@@ -19,6 +26,8 @@ export interface OptimisticUserMessageInput {
   runId?: string;
   text: string;
   idempotencyKey: string;
+  images?: TimelineMessageImage[];
+  uploadAttachments?: TimelineUploadAttachment[];
   at?: number;
 }
 
@@ -149,6 +158,8 @@ export class ChatRuntime {
     };
 
     if (input.runId !== undefined) event.runId = input.runId;
+    if (input.images?.length) event.images = input.images;
+    if (input.uploadAttachments?.length) event.uploadAttachments = input.uploadAttachments;
     this.rememberRunSession(event);
 
     const patch = this.store.applyEvent(event);

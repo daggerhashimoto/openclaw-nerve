@@ -317,6 +317,7 @@ describe('chat runtime routes', () => {
     const invalidRequests: RequestInit[] = [
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' },
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idempotencyKey: 'idem-1' }) },
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '   ', idempotencyKey: 'idem-blank' }) },
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'hello', idempotencyKey: '   ' }) },
     ];
 
@@ -368,6 +369,141 @@ describe('chat runtime routes', () => {
       runId: 'run-123',
       cursor: '18',
     });
+  });
+
+  it('applies media metadata to optimistic runtime sends and forwards gateway attachments', async () => {
+    const optimisticPatch = createPatch('agent:main:main', '17');
+    const runBindingPatch = createPatch('agent:main:main', '18');
+    const runtime = createFakeRuntime({
+      applyOptimisticUserMessage: vi.fn((input: { runId?: string }) => input.runId ? runBindingPatch : optimisticPatch),
+    });
+    const { app } = await buildRouteApp(runtime);
+    gatewayRpcCallMock.mockResolvedValue({ runId: 'run-media' });
+
+    const res = await app.request('/api/chat-runtime/sessions/agent%3Amain%3Amain/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: 'look at this',
+        idempotencyKey: 'idem-media',
+        images: [
+          {
+            mimeType: 'image/png',
+            content: 'base64-image',
+            preview: 'data:image/png;base64,base64-image',
+            name: 'image.png',
+          },
+        ],
+        uploadPayload: {
+          descriptors: [
+            {
+              id: 'att-1',
+              origin: 'upload',
+              mode: 'inline',
+              name: 'image.png',
+              mimeType: 'image/png',
+              sizeBytes: 100,
+              inline: {
+                encoding: 'base64',
+                base64: 'base64-image',
+                base64Bytes: 100,
+                compressed: false,
+              },
+              policy: { forwardToSubagents: false },
+            },
+          ],
+          manifest: {
+            enabled: true,
+            exposeInlineBase64ToAgent: false,
+            allowSubagentForwarding: false,
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(runtime.applyOptimisticUserMessage).toHaveBeenNthCalledWith(1, {
+      sessionKey: 'agent:main:main',
+      text: 'look at this',
+      idempotencyKey: 'idem-media',
+      images: [
+        {
+          mimeType: 'image/png',
+          content: 'base64-image',
+          preview: 'data:image/png;base64,base64-image',
+          name: 'image.png',
+        },
+      ],
+      uploadAttachments: [
+        expect.objectContaining({ id: 'att-1', name: 'image.png' }),
+      ],
+    });
+    expect(gatewayRpcCallMock).toHaveBeenCalledWith('chat.send', expect.objectContaining({
+      sessionKey: 'agent:main:main',
+      message: expect.stringContaining('<nerve-upload-manifest>'),
+      deliver: false,
+      idempotencyKey: 'idem-media',
+      attachments: [{ mimeType: 'image/png', content: 'base64-image' }],
+    }));
+    const gatewayMessage = gatewayRpcCallMock.mock.calls[0]?.[1]?.message as string;
+    expect(gatewayMessage).toContain('"base64":""');
+    expect(runtime.applyOptimisticUserMessage).toHaveBeenNthCalledWith(2, {
+      sessionKey: 'agent:main:main',
+      text: 'look at this',
+      idempotencyKey: 'idem-media',
+      runId: 'run-media',
+      images: [
+        {
+          mimeType: 'image/png',
+          content: 'base64-image',
+          preview: 'data:image/png;base64,base64-image',
+          name: 'image.png',
+        },
+      ],
+      uploadAttachments: [
+        expect.objectContaining({ id: 'att-1', name: 'image.png' }),
+      ],
+    });
+  });
+
+  it('accepts image-only runtime sends', async () => {
+    const runtime = createFakeRuntime();
+    const { app } = await buildRouteApp(runtime);
+    gatewayRpcCallMock.mockResolvedValue({ runId: 'run-image-only' });
+
+    const res = await app.request('/api/chat-runtime/sessions/agent%3Amain%3Amain/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: '',
+        idempotencyKey: 'idem-image-only',
+        images: [
+          {
+            mimeType: 'image/png',
+            content: 'base64-image',
+          },
+        ],
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(runtime.applyOptimisticUserMessage).toHaveBeenNthCalledWith(1, {
+      sessionKey: 'agent:main:main',
+      text: '',
+      idempotencyKey: 'idem-image-only',
+      images: [
+        {
+          mimeType: 'image/png',
+          content: 'base64-image',
+          preview: 'data:image/png;base64,base64-image',
+          name: 'image',
+        },
+      ],
+    });
+    expect(gatewayRpcCallMock).toHaveBeenCalledWith('chat.send', expect.objectContaining({
+      message: '',
+      attachments: [{ mimeType: 'image/png', content: 'base64-image' }],
+    }));
   });
 
   it('marks the server-side optimistic message failed when chat.send fails', async () => {

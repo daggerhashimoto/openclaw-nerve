@@ -120,6 +120,8 @@ export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEven
         pending: isHistoryBacked ? false : true,
         status: isHistoryBacked ? 'complete' : 'provisional',
         source: isHistoryBacked ? 'history' : 'optimistic',
+        images: event.images ?? existing?.images,
+        uploadAttachments: event.uploadAttachments ?? existing?.uploadAttachments,
       };
 
       draft.items[itemId] = item;

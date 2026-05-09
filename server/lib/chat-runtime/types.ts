@@ -22,12 +22,23 @@ export interface TimelineItemBase {
   source: TimelineItemSource;
 }
 
+export interface TimelineMessageImage {
+  mimeType: string;
+  content: string;
+  preview: string;
+  name: string;
+}
+
+export type TimelineUploadAttachment = Record<string, unknown>;
+
 export interface UserTimelineItem extends TimelineItemBase {
   kind: 'user_message';
   text: string;
   idempotencyKey?: string;
   messageId?: string;
   pending?: boolean;
+  images?: TimelineMessageImage[];
+  uploadAttachments?: TimelineUploadAttachment[];
 }
 
 export interface ThinkingTimelineItem extends TimelineItemBase {
@@ -99,7 +110,7 @@ export interface SessionTimeline {
 
 export type RuntimeEvent =
   | { type: 'turn_started'; sessionKey: string; runId: string; at: number; seq?: number }
-  | { type: 'user_message_committed'; sessionKey: string; runId?: string; messageId?: string; idempotencyKey?: string; text: string; at: number }
+  | { type: 'user_message_committed'; sessionKey: string; runId?: string; messageId?: string; idempotencyKey?: string; text: string; images?: TimelineMessageImage[]; uploadAttachments?: TimelineUploadAttachment[]; at: number }
   | { type: 'thinking_started'; sessionKey: string; runId: string; blockIndex: number; at: number }
   | { type: 'thinking_delta'; sessionKey: string; runId: string; blockIndex: number; text: string; at: number }
   | { type: 'thinking_final'; sessionKey: string; runId: string; blockIndex: number; text: string; durationMs?: number; at: number }
@@ -122,6 +133,14 @@ export interface HistoryContentBlock {
   input?: unknown;
   arguments?: unknown;
   content?: unknown;
+  data?: string;
+  mimeType?: string;
+  omitted?: boolean;
+  source?: {
+    type?: string;
+    media_type?: string;
+    data?: string;
+  };
 }
 
 export interface HistoryMessage {

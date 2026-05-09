@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
-import type { ImageAttachment } from '@/features/chat/types';
+import type { ImageAttachment, OutgoingUploadPayload } from '@/features/chat/types';
 
 describe('ChatContext subscription stability', () => {
   beforeEach(() => {
@@ -83,10 +83,14 @@ describe('ChatContext subscription stability', () => {
     expect(subscribeMock).not.toHaveBeenCalled();
   });
 
-  it('uses gateway send fallback for image messages without runtime POST duplication', async () => {
+  it('sends image messages through the runtime POST with media metadata', async () => {
     const { ChatProvider, useChat, fetchMock, rpcMock, subscribeMock } = await setup();
 
-    let send: ((text: string, images?: ImageAttachment[]) => Promise<void>) | null = null;
+    let send: ((
+      text: string,
+      images?: ImageAttachment[],
+      uploadPayload?: OutgoingUploadPayload,
+    ) => Promise<void>) | null = null;
 
     function Consumer() {
       const chat = useChat();
@@ -113,17 +117,55 @@ describe('ChatContext subscription stability', () => {
       preview: 'data:image/png;base64,base64-image',
       name: 'image.png',
     };
+    const uploadPayload: OutgoingUploadPayload = {
+      descriptors: [
+        {
+          id: 'att-1',
+          origin: 'upload',
+          mode: 'inline',
+          name: 'image.png',
+          mimeType: 'image/png',
+          sizeBytes: 100,
+          inline: {
+            encoding: 'base64',
+            base64: 'base64-image',
+            base64Bytes: 100,
+            compressed: false,
+          },
+          policy: { forwardToSubagents: false },
+        },
+      ],
+      manifest: {
+        enabled: true,
+        exposeInlineBase64ToAgent: false,
+        allowSubagentForwarding: false,
+      },
+    };
     await act(async () => {
-      await send!('look at this', [image]);
+      await send!('look at this', [image], uploadPayload);
     });
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(rpcMock).toHaveBeenCalledWith('chat.send', expect.objectContaining({
-      sessionKey: 'main',
-      message: 'look at this',
-      deliver: false,
-      attachments: [{ mimeType: 'image/png', content: 'base64-image' }],
-    }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/chat-runtime/sessions/main/messages',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"images"'),
+      }),
+    );
+    const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string) as {
+      images?: unknown[];
+      uploadPayload?: OutgoingUploadPayload;
+    };
+    expect(body.images).toEqual([
+      {
+        mimeType: 'image/png',
+        content: 'base64-image',
+        preview: 'data:image/png;base64,base64-image',
+        name: 'image.png',
+      },
+    ]);
+    expect(body.uploadPayload?.descriptors).toHaveLength(1);
+    expect(rpcMock).not.toHaveBeenCalled();
     expect(subscribeMock).not.toHaveBeenCalled();
   });
 });

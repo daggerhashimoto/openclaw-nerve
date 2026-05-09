@@ -157,25 +157,41 @@ export async function sendChatRuntimeMessage(params: {
   sessionKey: string;
   text: string;
   idempotencyKey: string;
+  images?: ImageAttachment[];
+  uploadPayload?: OutgoingUploadPayload;
   fetchImpl?: FetchFn;
 }): Promise<ChatRuntimeSendAck> {
-  const { sessionKey, text, idempotencyKey, fetchImpl = fetch } = params;
+  const { sessionKey, text, idempotencyKey, images, uploadPayload, fetchImpl = fetch } = params;
+  const requestBody = {
+    text,
+    idempotencyKey,
+    ...(images?.length ? {
+      images: images.map((image) => ({
+        mimeType: image.mimeType,
+        content: image.content,
+        preview: image.preview,
+        name: image.name,
+      })),
+    } : {}),
+    ...(uploadPayload?.descriptors.length ? { uploadPayload } : {}),
+  };
+
   const res = await fetchImpl(`/api/chat-runtime/sessions/${encodeURIComponent(sessionKey)}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: applyVoiceTTSHint(text), idempotencyKey }),
+    body: JSON.stringify(requestBody),
   });
 
-  const body = await parseJsonBody(res);
+  const responseBody = await parseJsonBody(res);
 
-  if (!res.ok || !isRuntimeSendAck(body)) {
-    const error = isRuntimeSendError(body)
-      ? body.error
+  if (!res.ok || !isRuntimeSendAck(responseBody)) {
+    const error = isRuntimeSendError(responseBody)
+      ? responseBody.error
       : `chat runtime send failed with HTTP ${res.status}`;
     throw new Error(error);
   }
 
-  return body;
+  return responseBody;
 }
 
 async function parseJsonBody(res: Response): Promise<unknown> {

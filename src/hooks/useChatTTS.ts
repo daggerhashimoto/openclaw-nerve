@@ -57,7 +57,6 @@ export function useChatTTS({ soundEnabled, speak }: UseChatTTSDeps) {
   /** Clear the played-sounds dedup set (called on chat_started). */
   const resetPlayedSounds = useCallback(() => {
     playedSoundsRef.current.clear();
-    lastMessageWasVoiceRef.current = false;
   }, []);
 
   /**

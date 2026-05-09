@@ -177,6 +177,96 @@ describe('chat runtime projection', () => {
       streaming: true,
     });
   });
+
+  it('projects user media metadata from runtime items', () => {
+    const turn = makeTurn('session-1', 'run-media', 0, 'finalized');
+    const timeline = makeTimeline('session-1', [turn], {
+      'user-media': {
+        ...userItem(turn, 'user-media', 'please inspect', 0),
+        images: [
+          {
+            mimeType: 'image/png',
+            content: 'base64-image',
+            preview: 'data:image/png;base64,base64-image',
+            name: 'capture.png',
+          },
+        ],
+        uploadAttachments: [
+          {
+            id: 'att-1',
+            origin: 'upload',
+            mode: 'inline',
+            name: 'capture.png',
+            mimeType: 'image/png',
+            sizeBytes: 123,
+            inline: {
+              encoding: 'base64',
+              base64: '',
+              base64Bytes: 123,
+              compressed: false,
+            },
+            policy: { forwardToSubagents: false },
+          },
+        ],
+      },
+    });
+
+    const projection = projectTimeline(timeline);
+
+    expect(projection.messages).toHaveLength(1);
+    expect(projection.messages[0]).toMatchObject({
+      msgId: 'user-media',
+      role: 'user',
+      rawText: 'please inspect',
+      images: [{ mimeType: 'image/png', name: 'capture.png' }],
+      uploadAttachments: [{ id: 'att-1', name: 'capture.png' }],
+    });
+  });
+
+  it('projects image-only user runtime items as visible bubbles', () => {
+    const turn = makeTurn('session-1', 'run-image-only', 0, 'finalized');
+    const timeline = makeTimeline('session-1', [turn], {
+      'user-image-only': {
+        ...userItem(turn, 'user-image-only', '', 0),
+        images: [
+          {
+            mimeType: 'image/png',
+            content: 'base64-image',
+            preview: 'data:image/png;base64,base64-image',
+            name: 'capture.png',
+          },
+        ],
+      },
+    });
+
+    const projection = projectTimeline(timeline);
+
+    expect(projection.messages).toHaveLength(1);
+    expect(projection.messages[0]).toMatchObject({
+      msgId: 'user-image-only',
+      role: 'user',
+      rawText: '',
+      images: [{ mimeType: 'image/png', name: 'capture.png' }],
+    });
+  });
+
+  it('keeps assistant TTS marker text available while hiding the marker from chat', () => {
+    const turn = makeTurn('session-1', 'run-tts', 0, 'finalized');
+    const timeline = makeTimeline('session-1', [turn], {
+      'assistant-tts': assistantItem(turn, 'assistant-tts', 'Visible reply.\n\n[tts:Spoken reply.]', 100, false),
+    });
+
+    const projection = projectTimeline(timeline);
+
+    expect(projection.messages).toHaveLength(1);
+    expect(projection.messages[0]).toMatchObject({
+      msgId: 'assistant-tts',
+      role: 'assistant',
+      rawText: 'Visible reply.',
+      ttsText: 'Spoken reply.',
+    });
+    expect(projection.messages[0].html).not.toContain('[tts:');
+  });
 });
 
 function makeTimeline(

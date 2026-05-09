@@ -1,4 +1,4 @@
-import type { HistoryContentBlock, HistoryMessage, RuntimeEvent } from './types.js';
+import type { HistoryContentBlock, HistoryMessage, RuntimeEvent, TimelineMessageImage } from './types.js';
 
 export interface AdapterGatewayEvent {
   type: 'event';
@@ -45,7 +45,8 @@ export function adaptHistorySnapshot(sessionKey: string, messages: HistoryMessag
 
     if (message.role === 'user') {
       const text = extractText(message);
-      if (text === undefined) return;
+      const images = extractImageBlocks(message);
+      if (text === undefined && images.length === 0) return;
 
       const explicitRunId = readNonEmptyString(message, 'runId');
       const runId = explicitRunId ?? historyUserRunId(message, messageIndex);
@@ -53,13 +54,14 @@ export function adaptHistorySnapshot(sessionKey: string, messages: HistoryMessag
         type: 'user_message_committed',
         sessionKey,
         runId,
-        text,
+        text: text ?? '',
         at,
       };
       const messageId = historyMessageIdentity(message);
       const idempotencyKey = readNonEmptyString(message, 'idempotencyKey');
       if (messageId) event.messageId = messageId;
       if (idempotencyKey) event.idempotencyKey = idempotencyKey;
+      if (images.length > 0) event.images = images;
       events.push(event);
       if (!explicitRunId) noteFinalizableUserRun(runId, at);
       return;
@@ -525,6 +527,36 @@ function extractText(value: unknown): string | undefined {
   }
 
   return typeof value.text === 'string' ? value.text : undefined;
+}
+
+function imageBlockToMessageImage(block: HistoryContentBlock): TimelineMessageImage | null {
+  if (block.data && block.mimeType) {
+    return {
+      mimeType: block.mimeType,
+      content: block.data,
+      preview: `data:${block.mimeType};base64,${block.data}`,
+      name: 'image',
+    };
+  }
+
+  const source = block.source;
+  if (!source?.data || !source.media_type) return null;
+
+  return {
+    mimeType: source.media_type,
+    content: source.data,
+    preview: `data:${source.media_type};base64,${source.data}`,
+    name: 'image',
+  };
+}
+
+function extractImageBlocks(message: HistoryMessage): TimelineMessageImage[] {
+  if (!Array.isArray(message.content)) return [];
+
+  return message.content
+    .filter((block) => block.type === 'image')
+    .map(imageBlockToMessageImage)
+    .filter((image): image is TimelineMessageImage => Boolean(image));
 }
 
 function toolFinishedEvent(

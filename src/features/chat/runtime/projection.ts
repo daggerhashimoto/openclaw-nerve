@@ -1,6 +1,7 @@
 import type { ChatMessage } from '@/types';
 import { splitToolCallMessage, tagIntermediateMessages } from '@/features/chat/operations';
 import type { ChatMsg, ToolGroupEntry } from '@/features/chat/types';
+import { extractTTSMarkers } from '@/features/tts/useTTS';
 import { describeToolUse, renderMarkdown, renderToolResults } from '@/utils/helpers';
 import type {
   SessionTimeline,
@@ -94,12 +95,16 @@ function projectUserItem(
     item.status === 'provisional' ||
     item.status === 'running'
   );
-  return splitMessageWithStableIds({
+  const projected = splitMessageWithStableIds({
     role: 'user',
     content: item.text,
     timestamp: item.createdAt,
-  }, item.id).map((message) => ({
+  }, item.id);
+  const messages = projected.length > 0 ? projected : fallbackUserMessagesForMedia(item);
+
+  return messages.map((message) => ({
     ...message,
+    ...(message.role === 'user' ? userMediaProps(item) : {}),
     pending: message.role === 'user' ? pending : message.pending,
     failed: message.role === 'user' ? failed : message.failed,
   }));
@@ -109,6 +114,8 @@ function projectAssistantItem(
   item: Extract<TimelineItem, { kind: 'assistant_message' | 'assistant_segment' }>,
 ): ChatMsg[] {
   if (!item.text.trim() && !item.isStreaming) return [];
+  const { ttsText } = extractTTSMarkers(item.text);
+  const spokenText = ttsText?.trim();
   return splitMessageWithStableIds({
     role: 'assistant',
     content: item.text,
@@ -116,6 +123,7 @@ function projectAssistantItem(
   }, item.id).map((message) => ({
     ...message,
     streaming: item.isStreaming || item.status === 'running',
+    ...(message.role === 'assistant' && spokenText ? { ttsText: spokenText } : {}),
   }));
 }
 
@@ -179,6 +187,28 @@ function splitMessageWithStableIds(message: ChatMessage, baseId: string): ChatMs
     ...chatMessage,
     msgId: split.length === 1 ? baseId : `${baseId}:${index}`,
   }));
+}
+
+function fallbackUserMessagesForMedia(item: UserTimelineItem): ChatMsg[] {
+  if (!item.images?.length && !item.uploadAttachments?.length) return [];
+
+  return [{
+    msgId: item.id,
+    role: 'user',
+    html: renderToolResults(renderMarkdown(item.text)),
+    rawText: item.text,
+    timestamp: dateFromMs(item.createdAt),
+    streaming: false,
+    ...userMediaProps(item),
+    ...(item.text.startsWith('[voice] ') ? { isVoice: true } : {}),
+  }];
+}
+
+function userMediaProps(item: UserTimelineItem): Pick<ChatMsg, 'images' | 'uploadAttachments'> {
+  return {
+    ...(item.images?.length ? { images: item.images } : {}),
+    ...(item.uploadAttachments?.length ? { uploadAttachments: item.uploadAttachments } : {}),
+  };
 }
 
 function groupConsecutiveToolCalls(messages: ChatMsg[]): ChatMsg[] {

@@ -9,11 +9,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useGateway } from './GatewayContext';
 import { useSessionContext } from './SessionContext';
 import { useSettings } from './SettingsContext';
-import { sendChatMessage, sendChatRuntimeMessage } from '@/features/chat/operations';
+import { sendChatRuntimeMessage } from '@/features/chat/operations';
 import { useChatRuntime } from '@/features/chat/runtime/useChatRuntime';
 import type { ImageAttachment, ChatMsg, OutgoingUploadPayload } from '@/features/chat/types';
-import type { RecoveryReason } from '@/features/chat/operations';
+import type { FinalMessageData, RecoveryReason } from '@/features/chat/operations';
 import { useChatTTS } from '@/hooks/useChatTTS';
+import type { ChatMessage } from '@/types';
 
 /** Processing stages for enhanced thinking indicator */
 export type ProcessingStage = 'thinking' | 'tool_use' | 'streaming' | null;
@@ -96,18 +97,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   } = runtime;
 
   const ttsHook = useChatTTS({ soundEnabled: soundEnabledRef, speak: speakRef });
-  const { playCompletionPing } = ttsHook;
+  const { handleFinalTTS, playCompletionPing, resetPlayedSounds, trackVoiceMessage } = ttsHook;
 
   const isGenerating = runtimeIsGenerating || pendingSendCount > 0;
   const processingStage = runtimeProcessingStage ?? (pendingSendCount > 0 ? 'thinking' : null);
 
   const wasRuntimeGeneratingRef = useRef(false);
+  const activeTTSRequestRef = useRef<{ idempotencyKey: string; sentAt: number; runId?: string } | null>(null);
   useEffect(() => {
     if (wasRuntimeGeneratingRef.current && !runtimeIsGenerating) {
-      playCompletionPing();
+      const activeTTSRequest = activeTTSRequestRef.current;
+      if (activeTTSRequest) {
+        handleFinalTTS(finalMessageDataFromRuntimeMessages(messages, activeTTSRequest), true);
+        activeTTSRequestRef.current = null;
+      } else {
+        playCompletionPing();
+      }
     }
     wasRuntimeGeneratingRef.current = runtimeIsGenerating;
-  }, [runtimeIsGenerating, playCompletionPing]);
+  }, [handleFinalTTS, messages, runtimeIsGenerating, playCompletionPing]);
 
   const handleSend = useCallback(async (
     text: string,
@@ -119,28 +127,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : `ik-${Date.now()}`;
     clearUserMessageFailure(idempotencyKey);
+    resetPlayedSounds();
+    trackVoiceMessage(text);
+    activeTTSRequestRef.current = { idempotencyKey, sentAt: Date.now() };
     setPendingSendCount((count) => count + 1);
 
     try {
-      if (images?.length || uploadPayload?.descriptors.length) {
-        await sendChatMessage({
-          rpc,
-          sessionKey,
-          text,
-          images,
-          uploadPayload,
-          idempotencyKey,
-        });
-        reload();
-        return;
-      }
-
-      await sendChatRuntimeMessage({
+      const ack = await sendChatRuntimeMessage({
         sessionKey,
         text,
         idempotencyKey,
+        images,
+        uploadPayload,
       });
+      if (ack.runId && activeTTSRequestRef.current?.idempotencyKey === idempotencyKey) {
+        activeTTSRequestRef.current = { ...activeTTSRequestRef.current, runId: ack.runId };
+      }
     } catch (err) {
+      if (activeTTSRequestRef.current?.idempotencyKey === idempotencyKey) {
+        activeTTSRequestRef.current = null;
+      }
       markUserMessageFailed(idempotencyKey);
       reload();
       console.debug('[ChatContext] Send request failed:', err);
@@ -151,7 +157,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     clearUserMessageFailure,
     markUserMessageFailed,
     reload,
-    rpc,
+    resetPlayedSounds,
+    trackVoiceMessage,
   ]);
 
   const handleAbort = useCallback(async () => {
@@ -229,6 +236,41 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       {children}
     </ChatContext.Provider>
   );
+}
+
+function finalMessageDataFromRuntimeMessages(
+  messages: ChatMsg[],
+  activeRequest: { sentAt: number; runId?: string },
+): FinalMessageData | null {
+  const finalMessage = [...messages]
+    .reverse()
+    .find((message) => isRuntimeFinalAssistantMessage(message, activeRequest));
+  if (!finalMessage) return null;
+
+  const message: ChatMessage = {
+    role: 'assistant',
+    content: finalMessage.rawText,
+    timestamp: finalMessage.timestamp.getTime(),
+  };
+
+  return {
+    message,
+    text: finalMessage.rawText,
+    ttsText: finalMessage.ttsText ?? null,
+    charts: finalMessage.charts ?? [],
+  };
+}
+
+function isRuntimeFinalAssistantMessage(
+  message: ChatMsg,
+  activeRequest: { sentAt: number; runId?: string },
+): boolean {
+  if (message.role !== 'assistant') return false;
+  if (message.isThinking || message.intermediate || message.streaming) return false;
+  if (activeRequest.runId && message.msgId?.includes(activeRequest.runId)) return true;
+
+  const timestamp = message.timestamp.getTime();
+  return Number.isFinite(timestamp) && timestamp >= activeRequest.sentAt - 30_000;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- hook export is intentional

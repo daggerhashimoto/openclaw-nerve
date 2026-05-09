@@ -18,8 +18,29 @@ const nonBlankString = (field: string) => z
   .refine((value) => value.trim().length > 0, `${field} must be a non-empty string`);
 
 const sendMessageSchema = z.object({
-  text: nonBlankString('text'),
+  text: z.string(),
   idempotencyKey: nonBlankString('idempotencyKey'),
+  images: z.array(z.object({
+    mimeType: nonBlankString('images[].mimeType'),
+    content: nonBlankString('images[].content'),
+    preview: z.string().optional(),
+    name: z.string().optional(),
+  })).optional(),
+  uploadPayload: z.object({
+    descriptors: z.array(z.object({}).passthrough()),
+    manifest: z.object({
+      enabled: z.boolean(),
+      exposeInlineBase64ToAgent: z.boolean(),
+      allowSubagentForwarding: z.boolean(),
+    }).passthrough(),
+  }).passthrough().optional(),
+}).refine((value) => (
+  value.text.trim().length > 0 ||
+  Boolean(value.images?.length) ||
+  Boolean(value.uploadPayload?.descriptors.length)
+), {
+  path: ['text'],
+  message: 'text or attachments must be provided',
 });
 
 app.get('/api/chat-runtime/stream', async (c) => {
@@ -173,25 +194,37 @@ app.post('/api/chat-runtime/sessions/:sessionKey/messages', async (c) => {
   }
 
   const runtime = getChatRuntime();
-  const optimisticPatch = runtime.applyOptimisticUserMessage({
+  const images = normalizeMessageImages(parsed.data.images);
+  const uploadAttachments = parsed.data.uploadPayload?.descriptors;
+  const gatewayMessage = applyVoiceTTSHint(appendUploadManifest(parsed.data.text, parsed.data.uploadPayload));
+  const optimisticInput = {
     sessionKey,
     text: parsed.data.text,
     idempotencyKey: parsed.data.idempotencyKey,
-  });
+    ...(images.length > 0 ? { images } : {}),
+    ...(uploadAttachments?.length ? { uploadAttachments } : {}),
+  };
+  const optimisticPatch = runtime.applyOptimisticUserMessage(optimisticInput);
 
   try {
-    const gatewayResult = await gatewayRpcCall('chat.send', {
+    const gatewayParams: Record<string, unknown> = {
       sessionKey,
-      message: parsed.data.text,
+      message: gatewayMessage,
       deliver: false,
       idempotencyKey: parsed.data.idempotencyKey,
-    });
+    };
+    if (images.length > 0) {
+      gatewayParams.attachments = images.map((image) => ({
+        mimeType: image.mimeType,
+        content: image.content,
+      }));
+    }
+
+    const gatewayResult = await gatewayRpcCall('chat.send', gatewayParams);
     const runId = extractRunId(gatewayResult);
     const committedPatch = runId
       ? runtime.applyOptimisticUserMessage({
-        sessionKey,
-        text: parsed.data.text,
-        idempotencyKey: parsed.data.idempotencyKey,
+        ...optimisticInput,
         runId,
       })
       : optimisticPatch;
@@ -213,6 +246,61 @@ app.post('/api/chat-runtime/sessions/:sessionKey/messages', async (c) => {
     return c.json({ ok: false, error }, 502);
   }
 });
+
+type ParsedUploadPayload = z.infer<typeof sendMessageSchema>['uploadPayload'];
+type ParsedImage = NonNullable<z.infer<typeof sendMessageSchema>['images']>[number];
+
+const VOICE_PREFIX = '[voice] ';
+const TTS_HINT = '\n\n[system: User sent a voice message. Always include your full text reply AND a [tts:...] marker so it plays back as audio. Never send only TTS markers - the response must be readable in chat too. TTS marker format: [tts: your spoken text here] - place it at the end of your reply. Example reply:\n\nHere is my text response.\n\n[tts: Here is my text response.]]';
+const UPLOAD_MANIFEST_OPEN = '<nerve-upload-manifest>';
+const UPLOAD_MANIFEST_CLOSE = '</nerve-upload-manifest>';
+
+function applyVoiceTTSHint(text: string): string {
+  if (!text.startsWith(VOICE_PREFIX)) return text;
+  return text + TTS_HINT;
+}
+
+function appendUploadManifest(text: string, uploadPayload?: ParsedUploadPayload): string {
+  if (!uploadPayload?.manifest.enabled) return text;
+  if (uploadPayload.descriptors.length === 0) return text;
+
+  const manifest = {
+    version: 1,
+    attachments: uploadPayload.descriptors.map((descriptor) =>
+      sanitizeUploadDescriptor(descriptor, uploadPayload.manifest.exposeInlineBase64ToAgent),
+    ),
+  };
+
+  return `${text}\n\n${UPLOAD_MANIFEST_OPEN}${JSON.stringify(manifest)}${UPLOAD_MANIFEST_CLOSE}`;
+}
+
+function sanitizeUploadDescriptor(
+  descriptor: Record<string, unknown>,
+  exposeInlineBase64ToAgent: boolean,
+): Record<string, unknown> {
+  const inline = descriptor.inline;
+  if (descriptor.mode !== 'inline' || !isRecord(inline)) {
+    return descriptor;
+  }
+
+  return {
+    ...descriptor,
+    inline: {
+      ...inline,
+      previewUrl: undefined,
+      base64: exposeInlineBase64ToAgent && typeof inline.base64 === 'string' ? inline.base64 : '',
+    },
+  };
+}
+
+function normalizeMessageImages(images: ParsedImage[] | undefined) {
+  return (images ?? []).map((image) => ({
+    mimeType: image.mimeType,
+    content: image.content,
+    preview: image.preview || `data:${image.mimeType};base64,${image.content}`,
+    name: image.name || 'image',
+  }));
+}
 
 function normalizeCursor(cursor: string | undefined): string | null {
   const normalized = cursor?.trim();

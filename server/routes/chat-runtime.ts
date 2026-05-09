@@ -13,6 +13,7 @@ const PING_INTERVAL_MS = 30_000;
 const uploadFeatureConfig = getUploadFeatureConfig();
 const MAX_INLINE_ATTACHMENT_BYTES = Math.max(1, Math.floor(uploadFeatureConfig.inlineAttachmentMaxMb * 1024 * 1024));
 const MAX_INLINE_BASE64_CHARS = Math.max(1, Math.ceil(MAX_INLINE_ATTACHMENT_BYTES * 4 / 3));
+const MAX_IMAGE_PREVIEW_CHARS = MAX_INLINE_BASE64_CHARS + 128;
 
 type CatchupBaseline =
   | { kind: 'patches'; patches: TimelinePatch[]; coveredCursor?: string }
@@ -42,7 +43,10 @@ const sendMessageSchema = z.object({
   images: z.array(z.object({
     mimeType: nonBlankString('images[].mimeType'),
     content: nonBlankString('images[].content', MAX_INLINE_BASE64_CHARS),
-    preview: z.string().optional(),
+    preview: z.string().max(
+      MAX_IMAGE_PREVIEW_CHARS,
+      `images[].preview must be at most ${MAX_IMAGE_PREVIEW_CHARS} characters`,
+    ).optional(),
     name: z.string().optional(),
   })).optional(),
   uploadPayload: z.object({

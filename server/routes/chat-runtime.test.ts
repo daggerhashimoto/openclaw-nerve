@@ -368,6 +368,15 @@ describe('chat runtime routes', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             text: 'hello',
+            idempotencyKey: 'idem-large-preview',
+            images: [{ mimeType: 'image/png', content: 'AA', preview: `data:image/png;base64,${'A'.repeat(200)}` }],
+          }),
+        },
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: 'hello',
             idempotencyKey: 'idem-large-inline',
             uploadPayload: {
               descriptors: [

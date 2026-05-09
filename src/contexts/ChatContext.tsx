@@ -15,6 +15,7 @@ import type { ImageAttachment, ChatMsg, OutgoingUploadPayload } from '@/features
 import type { FinalMessageData, RecoveryReason } from '@/features/chat/operations';
 import { useChatTTS } from '@/hooks/useChatTTS';
 import type { ChatMessage } from '@/types';
+import { encodeRuntimeIdPart } from '../../shared/chat-runtime-id';
 
 /** Processing stages for enhanced thinking indicator */
 export type ProcessingStage = 'thinking' | 'tool_use' | 'streaming' | null;
@@ -270,7 +271,8 @@ function isRuntimeFinalAssistantMessage(message: ChatMsg): boolean {
 
 function runtimeMessageIdHasRunToken(msgId: string | undefined, runId: string): boolean {
   if (!msgId) return false;
-  return new RegExp(`(^|[-_.:])${escapeRegExp(runId)}($|[-_.:])`).test(msgId);
+  const encodedRunId = encodeRuntimeIdPart(runId);
+  return new RegExp(`(^|[-_.:])${escapeRegExp(encodedRunId)}($|[-_.:])`).test(msgId);
 }
 
 function singleTimestampFallbackCandidate(messages: ChatMsg[], sentAt: number): ChatMsg | null {

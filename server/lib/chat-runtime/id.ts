@@ -1,14 +1,8 @@
 import { createHash } from 'node:crypto';
-
-const SIMPLE_ID_PART = /^[A-Za-z0-9._-]+$/;
+import { encodeRuntimeIdPart as encodeSuffixPart } from '../../../shared/chat-runtime-id.js';
 
 function cleanPart(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
-}
-
-function encodeSuffixPart(value: string): string {
-  if (SIMPLE_ID_PART.test(value)) return value;
-  return `~${Buffer.from(value, 'utf8').toString('base64url')}`;
 }
 
 export function turnId(sessionKey: string, runId: string): string {

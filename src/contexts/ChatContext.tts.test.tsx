@@ -128,6 +128,63 @@ describe('ChatContext runtime TTS playback', () => {
     expect(speakMock).toHaveBeenCalledTimes(1);
   });
 
+  it('matches runtime final message run IDs encoded in assistant message IDs', async () => {
+    const { ChatProvider, useChat, setRuntimeState, speakMock } = await setup({
+      runtimeAck: { ok: true, sessionKey: 'main', cursor: '1', runId: 'run:1' },
+    });
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return null;
+    }
+
+    const { rerender } = render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+
+    await act(async () => {
+      await send!('[voice] hello');
+    });
+
+    setRuntimeState({ isGenerating: true });
+    rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    setRuntimeState({
+      isGenerating: false,
+      messages: [
+        {
+          msgId: 'assistant:main:~cnVuOjE:answer',
+          role: 'assistant',
+          html: '<p>Encoded reply.</p>',
+          rawText: 'Encoded reply.',
+          timestamp: new Date(Date.now() + 1000),
+          ttsText: 'Encoded spoken reply.',
+        },
+      ],
+    });
+    rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(speakMock).toHaveBeenCalledWith('Encoded spoken reply.'));
+    expect(speakMock).toHaveBeenCalledTimes(1);
+  });
+
   it('does not select an ambiguous timestamp fallback when chat.send returns no run ID', async () => {
     const { ChatProvider, useChat, setRuntimeState, speakMock } = await setup({
       runtimeAck: { ok: true, sessionKey: 'main', cursor: '1' },

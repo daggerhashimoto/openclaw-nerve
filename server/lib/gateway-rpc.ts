@@ -78,6 +78,7 @@ const gatewayEventListeners = new Set<GatewayEventListener>();
 
 export function subscribeGatewayEvents(listener: GatewayEventListener): () => void {
   gatewayEventListeners.add(listener);
+  ensureConnection();
 
   let subscribed = true;
   return () => {

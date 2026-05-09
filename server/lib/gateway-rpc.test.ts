@@ -258,6 +258,26 @@ describe('gateway-rpc (persistent WebSocket)', () => {
   });
 
   describe('subscribeGatewayEvents', () => {
+    it('opens the gateway connection when subscribing before any RPC call', async () => {
+      const { subscribeGatewayEvents } = await importFreshGatewayRpc();
+      const listener = vi.fn();
+      const unsubscribe = subscribeGatewayEvents(listener);
+
+      await waitForAssertion(() => expect(lastConnectParams).toMatchObject({
+        auth: { token: 'test-token' },
+        caps: ['tool-events'],
+      }));
+
+      broadcastGatewayMessage({
+        type: 'event',
+        event: 'chat',
+        payload: { sessionKey: 'agent:main:main', runId: 'run-1', state: 'started' },
+      });
+
+      await waitForAssertion(() => expect(listener).toHaveBeenCalledTimes(1));
+      unsubscribe();
+    });
+
     it('notifies subscribers of parsed gateway event messages', async () => {
       rpcHandler = () => ({ ok: true });
       const { gatewayRpcCall, subscribeGatewayEvents } = await importFreshGatewayRpc();

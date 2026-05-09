@@ -96,6 +96,43 @@ describe('chat runtime client reducer', () => {
     expect(afterSnapshot.timeline.hydrationState).toBe('ready');
     expect(orderedTimelineItems(afterSnapshot.timeline).map((item) => item.id)).toEqual(['user-b', 'user-a']);
   });
+
+  it('ignores stale snapshots after newer live patches', () => {
+    const state = createEmptyRuntimeTimelineState('session-1');
+    const turn = makeTurn('session-1', 'run-1', 0);
+    const freshUser = makeUserItem('session-1', turn, 'user-1', 'fresh live patch', 10);
+    const staleUser = makeUserItem('session-1', turn, 'user-1', 'stale snapshot', 5);
+
+    const afterPatch = applyTimelinePatch(state, {
+      sessionKey: 'session-1',
+      cursor: '10',
+      createdAt: 10,
+      ops: [
+        { op: 'upsert_turn', turn },
+        { op: 'upsert_item', item: freshUser },
+      ],
+    });
+
+    const afterSnapshot = applyTimelineSnapshot(afterPatch, {
+      type: 'snapshot',
+      sessionKey: 'session-1',
+      cursor: '5',
+      reason: 'hydration',
+      timeline: {
+        sessionKey: 'session-1',
+        version: 5,
+        cursor: '5',
+        hydrationState: 'ready',
+        turns: [turn],
+        items: { 'user-1': staleUser },
+        updatedAt: 5,
+      },
+    });
+
+    expect(afterSnapshot).toBe(afterPatch);
+    expect(afterSnapshot.cursor).toBe('10');
+    expect(afterSnapshot.timeline.items['user-1']).toMatchObject({ text: 'fresh live patch' });
+  });
 });
 
 function makePatch(sessionKey: string, cursor: string, ops: TimelinePatch['ops']): TimelinePatch {

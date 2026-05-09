@@ -71,6 +71,28 @@ describe('chat runtime routes', () => {
     }
   });
 
+  it('parses SSE events split across stream chunks', async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: patch\ndata: {"sessionKey":"session-1",'));
+        controller.enqueue(encoder.encode('"cursor":"1","ops":[],"createdAt":1}\n\n'));
+      },
+    });
+
+    const events = await readUntilEvent(stream.getReader(), 'patch');
+
+    expect(events).toContainEqual({
+      event: 'patch',
+      data: {
+        sessionKey: 'session-1',
+        cursor: '1',
+        ops: [],
+        createdAt: 1,
+      },
+    });
+  });
+
   it('hydrates before replaying retained patches and subscribing', async () => {
     const replayedPatch = createPatch('session-1', '4');
     const runtime = createFakeRuntime({
@@ -493,15 +515,29 @@ async function readUntilEventCount(
 ): Promise<Array<{ event: string; data: unknown }>> {
   const decoder = new TextDecoder();
   const events: Array<{ event: string; data: unknown }> = [];
+  let bufferedText = '';
 
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const { value, done } = await reader.read();
     expect(done).toBe(false);
-    events.push(...parseSseEvents(decoder.decode(value)));
+    bufferedText += decoder.decode(value, { stream: true });
+    const [completeText, remainingText] = splitCompleteSseText(bufferedText);
+    bufferedText = remainingText;
+    events.push(...parseSseEvents(completeText));
     if (events.filter((event) => event.event === eventName).length >= count) return events;
   }
 
   throw new Error(`SSE event ${eventName} was not received`);
+}
+
+function splitCompleteSseText(text: string): [completeText: string, remainingText: string] {
+  const lastDelimiterIndex = text.lastIndexOf('\n\n');
+  if (lastDelimiterIndex === -1) return ['', text];
+
+  return [
+    text.slice(0, lastDelimiterIndex + 2),
+    text.slice(lastDelimiterIndex + 2),
+  ];
 }
 
 function parseSseEvents(text: string): Array<{ event: string; data: unknown }> {

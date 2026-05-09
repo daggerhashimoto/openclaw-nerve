@@ -53,6 +53,7 @@ import beadsRoutes from './routes/beads.js';
 // activity routes removed — tab dropped from workspace panel
 
 const app = new Hono();
+const STATIC_FILE_EXTENSION_PATTERN = /\.(?:avif|css|csv|eot|gif|html?|ico|jpe?g|js|json|map|mjs|mp3|mp4|ogg|otf|png|svg|ttf|txt|wasm|webmanifest|webm|webp|woff2?|xml)$/i;
 
 // ── Middleware ────────────────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ app.use('*', async (c, next) => {
 app.get('*', async (c, next) => {
   if (c.req.path.startsWith('/api/')) return next();
 
-  const looksLikeStaticFile = c.req.path.startsWith('/assets/') || (c.req.path !== '/' && c.req.path.includes('.'));
+  const looksLikeStaticFile = c.req.path.startsWith('/assets/') || STATIC_FILE_EXTENSION_PATTERN.test(c.req.path);
   if (looksLikeStaticFile) {
     return c.notFound();
   }

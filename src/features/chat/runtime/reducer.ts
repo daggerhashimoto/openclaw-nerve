@@ -32,6 +32,10 @@ export function applyTimelineSnapshot(
   snapshot: TimelineSnapshot,
 ): RuntimeTimelineState {
   if (snapshot.sessionKey !== state.sessionKey) return state;
+  const cursorComparison = compareCursor(snapshot.cursor, state.cursor);
+  if (cursorComparison < 0) return state;
+  if (cursorComparison === 0 && state.timeline.hydrationState !== 'cold') return state;
+
   const timeline = cloneTimeline(snapshot.timeline);
   return {
     sessionKey: state.sessionKey,

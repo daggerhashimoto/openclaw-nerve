@@ -1,3 +1,4 @@
+import { StrictMode, type ReactNode } from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatRuntime } from './useChatRuntime';
@@ -99,6 +100,19 @@ describe('useChatRuntime', () => {
     });
 
     expect(MockEventSource.latest().url).toBe('/api/chat-runtime/stream?sessionKey=session-1&cursor=7');
+  });
+
+  it('schedules one reconnect timer after a stream error under Strict Mode', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <StrictMode>{children}</StrictMode>
+    );
+    renderHook(() => useChatRuntime({ sessionKey: 'session-1', reconnectBaseDelayMs: 25 }), { wrapper });
+
+    act(() => {
+      MockEventSource.latest().onerror?.();
+    });
+
+    expect(vi.getTimerCount()).toBe(1);
   });
 
   it('ignores events from a closed stream after switching sessions', () => {

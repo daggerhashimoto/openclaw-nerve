@@ -467,6 +467,8 @@ function closedToolGroupStatus(
   childItemIds: string[],
   existingStatus?: TimelineItem['status'],
 ): ToolGroupTimelineItem['status'] {
+  const childStatuses = childItemIds.map((childItemId) => itemOfKind(timeline.items[childItemId], 'tool_call')?.status);
+  if (childStatuses.some((status) => status === 'failed' || status === 'aborted')) return 'failed';
   if (areToolGroupChildrenTerminal(timeline, childItemIds)) return 'complete';
   if (existingStatus && existingStatus !== 'running') return existingStatus;
   return 'failed';
@@ -477,6 +479,7 @@ function closeOpenToolGroupsForOutputBoundary(timeline: SessionTimeline, turn: T
     if (group.closed) continue;
 
     const childItemIds = [...group.childItemIds];
+    terminalizeToolGroupChildren(timeline, childItemIds, at, 'failed');
     timeline.items[group.id] = {
       ...group,
       childItemIds,
@@ -518,18 +521,43 @@ function closeToolGroupsForTurn(
     if (!group || group.turnId !== turn.id) continue;
 
     const childItemIds = [...group.childItemIds];
-    const allChildrenTerminal = childItemIds.every((childItemId) => {
-      const child = itemOfKind(timeline.items[childItemId], 'tool_call');
-      return child ? isTerminalItemStatus(child.status) : false;
-    });
+    terminalizeToolGroupChildren(
+      timeline,
+      childItemIds,
+      at,
+      terminalStatus === 'finalized' ? 'complete' : 'failed',
+    );
 
     timeline.items[group.id] = {
       ...group,
       childItemIds,
       closed: true,
-      status: allChildrenTerminal || terminalStatus === 'finalized' ? 'complete' : 'failed',
+      status: closedToolGroupStatus(
+        timeline,
+        childItemIds,
+        terminalStatus === 'finalized' ? 'complete' : 'failed',
+      ),
       source: 'history',
       updatedAt: at,
+    };
+  }
+}
+
+function terminalizeToolGroupChildren(
+  timeline: SessionTimeline,
+  childItemIds: string[],
+  at: number,
+  status: 'complete' | 'failed',
+): void {
+  for (const childItemId of childItemIds) {
+    const child = itemOfKind(timeline.items[childItemId], 'tool_call');
+    if (!child || isTerminalItemStatus(child.status)) continue;
+
+    timeline.items[childItemId] = {
+      ...child,
+      status,
+      source: 'history',
+      updatedAt: Math.max(child.updatedAt, at),
     };
   }
 }

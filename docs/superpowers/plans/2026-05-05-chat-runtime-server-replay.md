@@ -62,32 +62,32 @@ Create the runtime under a new server module. Keep the old chat path intact unti
 
 ### Frontend Files
 
-- Create `src/features/chat-runtime/types.ts`
+- Create `src/features/chat/runtime/types.ts`
   - Browser-facing timeline view and SSE message types matching the server public contract.
-- Create `src/features/chat-runtime/timelineClient.ts`
+- Create `src/features/chat/runtime/timelineClient.ts`
   - SSE client plus snapshot/patch application helpers.
-- Create `src/features/chat-runtime/timelineStore.ts`
+- Create `src/features/chat/runtime/timelineStore.ts`
   - Small browser-side store hook for snapshots, patches, cursor, and hydration state.
-- Create `src/features/chat-runtime/runtimeFlag.ts`
+- Create `src/features/chat/runtime/runtimeFlag.ts`
   - Browser feature flag helper for staged rollout.
-- Create `src/features/chat-runtime/sendRuntimeMessage.ts`
+- Create `src/features/chat/runtime/sendRuntimeMessage.ts`
   - Browser send helper for the runtime endpoint.
-- Create `src/features/chat-runtime/ChatRuntimePanel.tsx`
+- Create `src/features/chat/runtime/ChatRuntimePanel.tsx`
   - Runtime chat panel wrapper combining timeline rendering and the existing input bar.
-- Create `src/features/chat-runtime/ChatTimeline.tsx`
+- Create `src/features/chat/runtime/ChatTimeline.tsx`
   - Renders timeline items by kind.
-- Create `src/features/chat-runtime/TimelineToolBlock.tsx`
+- Create `src/features/chat/runtime/TimelineToolBlock.tsx`
   - Tool group and tool call renderer.
-- Create `src/features/chat-runtime/TimelineThinkingBlock.tsx`
+- Create `src/features/chat/runtime/TimelineThinkingBlock.tsx`
   - Thinking renderer.
-- Create `src/features/chat-runtime/TimelineAssistantBlock.tsx`
+- Create `src/features/chat/runtime/TimelineAssistantBlock.tsx`
   - Assistant message renderer, including streaming state.
-- Create `src/features/chat-runtime/index.ts`
+- Create `src/features/chat/runtime/index.ts`
 
 ### Frontend Tests
 
-- Create `src/features/chat-runtime/timelineClient.test.ts`
-- Create `src/features/chat-runtime/ChatTimeline.test.tsx`
+- Create `src/features/chat/runtime/timelineClient.test.ts`
+- Create `src/features/chat/runtime/ChatTimeline.test.tsx`
 
 ### Existing Files To Modify
 
@@ -1870,16 +1870,16 @@ git commit -m "feat(chat-runtime): supervise gateway event stream"
 ## Task 8: Browser Timeline Client
 
 **Files:**
-- Create: `src/features/chat-runtime/types.ts`
-- Create: `src/features/chat-runtime/timelineClient.ts`
-- Create: `src/features/chat-runtime/timelineClient.test.ts`
-- Create: `src/features/chat-runtime/index.ts`
+- Create: `src/features/chat/runtime/types.ts`
+- Create: `src/features/chat/runtime/timelineClient.ts`
+- Create: `src/features/chat/runtime/timelineClient.test.ts`
+- Create: `src/features/chat/runtime/index.ts`
 
 ### Steps
 
 - [ ] **Step 1: Write client reducer tests**
 
-Create `src/features/chat-runtime/timelineClient.test.ts`.
+Create `src/features/chat/runtime/timelineClient.test.ts`.
 
 ```ts
 import { describe, expect, it } from 'vitest';
@@ -1943,7 +1943,7 @@ describe('timeline client patch application', () => {
 
 - [ ] **Step 2: Add browser runtime types**
 
-Create `src/features/chat-runtime/types.ts`. Keep it aligned with the public server shape, but do not import from server files.
+Create `src/features/chat/runtime/types.ts`. Keep it aligned with the public server shape, but do not import from server files.
 
 ```ts
 export interface TimelineOrderKey {
@@ -2064,7 +2064,7 @@ export interface TimelineSnapshotMessage {
 
 - [ ] **Step 3: Add patch application helper**
 
-Create `src/features/chat-runtime/timelineClient.ts`.
+Create `src/features/chat/runtime/timelineClient.ts`.
 
 ```ts
 import type { TimelineItemView, TimelinePatchMessage, TimelineSnapshotMessage, TimelineStateView, TimelineTurnView } from './types';
@@ -2130,7 +2130,7 @@ export function createRuntimeEventSource(sessionKey: string, cursor: string | nu
 
 - [ ] **Step 4: Add barrel export**
 
-Create `src/features/chat-runtime/index.ts`.
+Create `src/features/chat/runtime/index.ts`.
 
 ```ts
 export * from './types';
@@ -2142,7 +2142,7 @@ export * from './timelineClient';
 Run:
 
 ```bash
-npm test -- --run src/features/chat-runtime/timelineClient.test.ts
+npm test -- --run src/features/chat/runtime/timelineClient.test.ts
 ```
 
 Expected: pass.
@@ -2150,7 +2150,7 @@ Expected: pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/features/chat-runtime/types.ts src/features/chat-runtime/timelineClient.ts src/features/chat-runtime/timelineClient.test.ts src/features/chat-runtime/index.ts
+git add src/features/chat/runtime/types.ts src/features/chat/runtime/timelineClient.ts src/features/chat/runtime/timelineClient.test.ts src/features/chat/runtime/index.ts
 git commit -m "feat(chat-runtime): add browser timeline client"
 ```
 
@@ -2159,18 +2159,18 @@ git commit -m "feat(chat-runtime): add browser timeline client"
 ## Task 9: Browser Runtime Hook And Renderer
 
 **Files:**
-- Create: `src/features/chat-runtime/timelineStore.ts`
-- Create: `src/features/chat-runtime/ChatTimeline.tsx`
-- Create: `src/features/chat-runtime/TimelineAssistantBlock.tsx`
-- Create: `src/features/chat-runtime/TimelineThinkingBlock.tsx`
-- Create: `src/features/chat-runtime/TimelineToolBlock.tsx`
-- Test: `src/features/chat-runtime/ChatTimeline.test.tsx`
+- Create: `src/features/chat/runtime/timelineStore.ts`
+- Create: `src/features/chat/runtime/ChatTimeline.tsx`
+- Create: `src/features/chat/runtime/TimelineAssistantBlock.tsx`
+- Create: `src/features/chat/runtime/TimelineThinkingBlock.tsx`
+- Create: `src/features/chat/runtime/TimelineToolBlock.tsx`
+- Test: `src/features/chat/runtime/ChatTimeline.test.tsx`
 
 ### Steps
 
 - [ ] **Step 1: Write renderer test**
 
-Create `src/features/chat-runtime/ChatTimeline.test.tsx`.
+Create `src/features/chat/runtime/ChatTimeline.test.tsx`.
 
 ```tsx
 import { render, screen } from '@testing-library/react';
@@ -2236,7 +2236,7 @@ describe('ChatTimeline', () => {
 
 - [ ] **Step 2: Add runtime hook**
 
-Create `src/features/chat-runtime/timelineStore.ts`.
+Create `src/features/chat/runtime/timelineStore.ts`.
 
 ```ts
 import { useEffect, useRef, useState } from 'react';
@@ -2284,7 +2284,7 @@ export function useChatRuntimeTimeline(sessionKey: string | null): TimelineState
 
 - [ ] **Step 3: Add simple renderers**
 
-Create `src/features/chat-runtime/TimelineAssistantBlock.tsx`.
+Create `src/features/chat/runtime/TimelineAssistantBlock.tsx`.
 
 ```tsx
 import { MarkdownRenderer } from '@/features/markdown/MarkdownRenderer';
@@ -2307,7 +2307,7 @@ export function TimelineAssistantBlock({ item, agentName }: { item: Extract<Time
 }
 ```
 
-Create `src/features/chat-runtime/TimelineThinkingBlock.tsx`.
+Create `src/features/chat/runtime/TimelineThinkingBlock.tsx`.
 
 ```tsx
 import { MarkdownRenderer } from '@/features/markdown/MarkdownRenderer';
@@ -2330,7 +2330,7 @@ export function TimelineThinkingBlock({ item }: { item: Extract<TimelineItemView
 }
 ```
 
-Create `src/features/chat-runtime/TimelineToolBlock.tsx`.
+Create `src/features/chat/runtime/TimelineToolBlock.tsx`.
 
 ```tsx
 import type { TimelineItemView } from './types';
@@ -2355,7 +2355,7 @@ export function TimelineToolBlock({ item }: { item: Extract<TimelineItemView, { 
 
 - [ ] **Step 4: Add timeline renderer**
 
-Create `src/features/chat-runtime/ChatTimeline.tsx`.
+Create `src/features/chat/runtime/ChatTimeline.tsx`.
 
 ```tsx
 import type { TimelineStateView } from './types';
@@ -2393,7 +2393,7 @@ export function ChatTimeline({ state, agentName = 'Agent' }: { state: TimelineSt
 Run:
 
 ```bash
-npm test -- --run src/features/chat-runtime/ChatTimeline.test.tsx
+npm test -- --run src/features/chat/runtime/ChatTimeline.test.tsx
 ```
 
 Expected: pass.
@@ -2401,7 +2401,7 @@ Expected: pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/features/chat-runtime/timelineStore.ts src/features/chat-runtime/ChatTimeline.tsx src/features/chat-runtime/TimelineAssistantBlock.tsx src/features/chat-runtime/TimelineThinkingBlock.tsx src/features/chat-runtime/TimelineToolBlock.tsx src/features/chat-runtime/ChatTimeline.test.tsx
+git add src/features/chat/runtime/timelineStore.ts src/features/chat/runtime/ChatTimeline.tsx src/features/chat/runtime/TimelineAssistantBlock.tsx src/features/chat/runtime/TimelineThinkingBlock.tsx src/features/chat/runtime/TimelineToolBlock.tsx src/features/chat/runtime/ChatTimeline.test.tsx
 git commit -m "feat(chat-runtime): render server timeline"
 ```
 
@@ -2412,7 +2412,7 @@ git commit -m "feat(chat-runtime): render server timeline"
 **Files:**
 - Modify: `server/lib/config.ts`
 - Modify: `src/App.tsx`
-- Modify: `src/features/chat-runtime/index.ts`
+- Modify: `src/features/chat/runtime/index.ts`
 - Test: existing app/chat tests if they cover App
 
 ### Steps
@@ -2435,7 +2435,7 @@ chatRuntimeEnabled: boolean;
 
 - [ ] **Step 2: Add frontend flag helper**
 
-Create `src/features/chat-runtime/runtimeFlag.ts`.
+Create `src/features/chat/runtime/runtimeFlag.ts`.
 
 ```ts
 export function isChatRuntimeEnabled(): boolean {
@@ -2447,7 +2447,7 @@ export function isChatRuntimeEnabled(): boolean {
 }
 ```
 
-Export it from `src/features/chat-runtime/index.ts`.
+Export it from `src/features/chat/runtime/index.ts`.
 
 ```ts
 export * from './runtimeFlag';
@@ -2512,7 +2512,7 @@ Expected: pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add server/lib/config.ts src/App.tsx src/features/chat-runtime/runtimeFlag.ts src/features/chat-runtime/index.ts
+git add server/lib/config.ts src/App.tsx src/features/chat/runtime/runtimeFlag.ts src/features/chat/runtime/index.ts
 git commit -m "feat(chat-runtime): gate timeline renderer"
 ```
 
@@ -2521,15 +2521,15 @@ git commit -m "feat(chat-runtime): gate timeline renderer"
 ## Task 11: Runtime Send Path In Browser
 
 **Files:**
-- Create: `src/features/chat-runtime/sendRuntimeMessage.ts`
+- Create: `src/features/chat/runtime/sendRuntimeMessage.ts`
 - Modify: runtime integration from Task 10
-- Test: `src/features/chat-runtime/timelineClient.test.ts`
+- Test: `src/features/chat/runtime/timelineClient.test.ts`
 
 ### Steps
 
 - [ ] **Step 1: Add send helper**
 
-Create `src/features/chat-runtime/sendRuntimeMessage.ts`.
+Create `src/features/chat/runtime/sendRuntimeMessage.ts`.
 
 ```ts
 export interface SendRuntimeMessageResult {
@@ -2556,7 +2556,7 @@ export async function sendRuntimeMessage(sessionKey: string, text: string): Prom
 
 - [ ] **Step 2: Export send helper**
 
-Modify `src/features/chat-runtime/index.ts`:
+Modify `src/features/chat/runtime/index.ts`:
 
 ```ts
 export * from './sendRuntimeMessage';
@@ -2566,7 +2566,7 @@ export * from './sendRuntimeMessage';
 
 If the runtime branch from Task 10 does not include `InputBar`, create a small `ChatRuntimePanel` component that renders `ChatTimeline` plus `InputBar`.
 
-Create `src/features/chat-runtime/ChatRuntimePanel.tsx`.
+Create `src/features/chat/runtime/ChatRuntimePanel.tsx`.
 
 ```tsx
 import { useCallback } from 'react';
@@ -2614,7 +2614,7 @@ Expected: pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/features/chat-runtime/sendRuntimeMessage.ts src/features/chat-runtime/ChatRuntimePanel.tsx src/features/chat-runtime/index.ts src/App.tsx
+git add src/features/chat/runtime/sendRuntimeMessage.ts src/features/chat/runtime/ChatRuntimePanel.tsx src/features/chat/runtime/index.ts src/App.tsx
 git commit -m "feat(chat-runtime): send messages through runtime api"
 ```
 
@@ -2647,7 +2647,7 @@ if (process.env.NODE_ENV === 'development') {
 
 Add to `docs/API.md`:
 
-```md
+````md
 ## Chat Runtime
 
 ### `GET /api/chat-runtime/stream?sessionKey=<key>&cursor=<cursor>`
@@ -2682,7 +2682,7 @@ The response is:
   "cursor": "runtime-cursor"
 }
 ```
-```
+````
 
 - [ ] **Step 3: Document architecture**
 
@@ -2734,8 +2734,8 @@ npm test -- --run \
   server/lib/chat-runtime/store.test.ts \
   server/lib/chat-runtime/gateway-supervisor.test.ts \
   server/routes/chat-runtime.test.ts \
-  src/features/chat-runtime/timelineClient.test.ts \
-  src/features/chat-runtime/ChatTimeline.test.tsx
+  src/features/chat/runtime/timelineClient.test.ts \
+  src/features/chat/runtime/ChatTimeline.test.tsx
 ```
 
 Expected: pass.
@@ -2880,7 +2880,7 @@ Send one prompt and confirm runtime path is active.
 - [ ] **Step 6: Commit cutover**
 
 ```bash
-git add src/features/chat-runtime/runtimeFlag.ts src/App.tsx src/features/chat/ChatPanel.tsx src/contexts/ChatContext.tsx src/hooks/useChatMessages.ts src/hooks/useChatStreaming.ts src/hooks/useChatRecovery.ts
+git add src/features/chat/runtime/runtimeFlag.ts src/App.tsx src/features/chat/ChatPanel.tsx src/contexts/ChatContext.tsx src/hooks/useChatMessages.ts src/hooks/useChatStreaming.ts src/hooks/useChatRecovery.ts
 git commit -m "feat(chat-runtime): default chat to server timeline"
 ```
 
@@ -2888,7 +2888,7 @@ git commit -m "feat(chat-runtime): default chat to server timeline"
 
 ## Final Verification Checklist
 
-- [ ] `npm test -- --run server/lib/chat-runtime/id.test.ts server/lib/chat-runtime/reducer.test.ts server/lib/chat-runtime/adapter.test.ts server/lib/chat-runtime/replay-buffer.test.ts server/lib/chat-runtime/store.test.ts server/lib/chat-runtime/gateway-supervisor.test.ts server/routes/chat-runtime.test.ts src/features/chat-runtime/timelineClient.test.ts src/features/chat-runtime/ChatTimeline.test.tsx`
+- [ ] `npm test -- --run server/lib/chat-runtime/id.test.ts server/lib/chat-runtime/reducer.test.ts server/lib/chat-runtime/adapter.test.ts server/lib/chat-runtime/replay-buffer.test.ts server/lib/chat-runtime/store.test.ts server/lib/chat-runtime/gateway-supervisor.test.ts server/routes/chat-runtime.test.ts src/features/chat/runtime/timelineClient.test.ts src/features/chat/runtime/ChatTimeline.test.tsx`
 - [ ] `npm run lint`
 - [ ] `git diff --check`
 - [ ] `npm run build`

@@ -1041,9 +1041,12 @@ describe('chat runtime reducer', () => {
     timeline = reduceRuntimeEvent(timeline, { type: 'turn_finalized', sessionKey: 'agent:main:main', runId: 'run-1', at: 1001 });
 
     const groups = Object.values(timeline.items).filter((item) => item.kind === 'tool_group');
+    const toolCalls = Object.values(timeline.items).filter((item) => item.kind === 'tool_call');
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ status: 'complete', source: 'history', closed: true });
     expect(groups[0].childItemIds).toEqual(['tool:agent:main:main:run-1:tool-1']);
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0]).toMatchObject({ status: 'complete', source: 'history', updatedAt: 1001 });
     expect(timeline.turns[0].outputItemIds).toEqual(['tool-group:agent:main:main:run-1:0']);
   });
 
@@ -1053,9 +1056,12 @@ describe('chat runtime reducer', () => {
     timeline = reduceRuntimeEvent(timeline, { type: 'turn_failed', sessionKey: 'agent:main:main', runId: 'run-1', error: 'boom', at: 1001 });
 
     const groups = Object.values(timeline.items).filter((item) => item.kind === 'tool_group');
+    const toolCalls = Object.values(timeline.items).filter((item) => item.kind === 'tool_call');
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ status: 'failed', source: 'history', closed: true });
     expect(groups[0].childItemIds).toEqual(['tool:agent:main:main:run-1:tool-1']);
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0]).toMatchObject({ status: 'failed', source: 'history', updatedAt: 1001 });
     expect(timeline.turns[0].outputItemIds).toEqual(['tool-group:agent:main:main:run-1:0']);
   });
 

@@ -58,6 +58,7 @@ export function useChatRuntime({
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptsRef = useRef(0);
   const cursorRef = useRef('0');
   const connectionIdRef = useRef(0);
   const connectRef = useRef<() => void>(() => undefined);
@@ -81,20 +82,19 @@ export function useChatRuntime({
     closeEventSource();
     setConnected(false);
 
-    setReconnectAttempts((previous) => {
-      const nextAttempt = delayMs === 0 ? previous : previous + 1;
-      const computedDelay = delayMs ?? Math.min(
-        reconnectBaseDelayMs * Math.pow(1.5, previous),
-        reconnectMaxDelayMs,
-      );
+    const previous = reconnectAttemptsRef.current;
+    const nextAttempt = delayMs === 0 ? previous : previous + 1;
+    const computedDelay = delayMs ?? Math.min(
+      reconnectBaseDelayMs * Math.pow(1.5, previous),
+      reconnectMaxDelayMs,
+    );
 
-      reconnectTimeoutRef.current = setTimeout(() => {
-        reconnectTimeoutRef.current = null;
-        connectRef.current();
-      }, computedDelay);
-
-      return nextAttempt;
-    });
+    reconnectAttemptsRef.current = nextAttempt;
+    setReconnectAttempts(nextAttempt);
+    reconnectTimeoutRef.current = setTimeout(() => {
+      reconnectTimeoutRef.current = null;
+      connectRef.current();
+    }, computedDelay);
   }, [
     clearReconnectTimer,
     closeEventSource,
@@ -147,6 +147,7 @@ export function useChatRuntime({
       if (!isCurrentConnection()) return;
       setConnected(true);
       setError(null);
+      reconnectAttemptsRef.current = 0;
       setReconnectAttempts(0);
     };
 
@@ -207,6 +208,7 @@ export function useChatRuntime({
     clearReconnectTimer();
     setConnected(false);
     setError(null);
+    reconnectAttemptsRef.current = 0;
     setReconnectAttempts(0);
     setVisibleCount(DEFAULT_VISIBLE_COUNT);
     setFailedIdempotencyKeys(new Set());

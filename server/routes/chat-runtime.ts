@@ -13,7 +13,8 @@ const PING_INTERVAL_MS = 30_000;
 const uploadFeatureConfig = getUploadFeatureConfig();
 const MAX_INLINE_ATTACHMENT_BYTES = Math.max(1, Math.floor(uploadFeatureConfig.inlineAttachmentMaxMb * 1024 * 1024));
 const MAX_INLINE_BASE64_CHARS = Math.max(1, Math.ceil(MAX_INLINE_ATTACHMENT_BYTES * 4 / 3));
-const MAX_IMAGE_PREVIEW_CHARS = MAX_INLINE_BASE64_CHARS + 128;
+const MAX_IMAGE_MIME_TYPE_CHARS = 96;
+const MAX_IMAGE_PREVIEW_CHARS = MAX_INLINE_BASE64_CHARS + 'data:'.length + ';base64,'.length + MAX_IMAGE_MIME_TYPE_CHARS;
 
 type CatchupBaseline =
   | { kind: 'patches'; patches: TimelinePatch[]; coveredCursor?: string }
@@ -41,7 +42,7 @@ const sendMessageSchema = z.object({
   text: z.string(),
   idempotencyKey: nonBlankString('idempotencyKey'),
   images: z.array(z.object({
-    mimeType: nonBlankString('images[].mimeType'),
+    mimeType: nonBlankString('images[].mimeType', MAX_IMAGE_MIME_TYPE_CHARS),
     content: nonBlankString('images[].content', MAX_INLINE_BASE64_CHARS),
     preview: z.string().max(
       MAX_IMAGE_PREVIEW_CHARS,
@@ -293,9 +294,15 @@ function normalizeMessageImages(images: ParsedImage[] | undefined) {
   return (images ?? []).map((image) => ({
     mimeType: image.mimeType,
     content: image.content,
-    preview: image.preview || `data:${image.mimeType};base64,${image.content}`,
+    preview: normalizeImagePreview(image),
     name: image.name || 'image',
   }));
+}
+
+function normalizeImagePreview(image: ParsedImage): string {
+  const fallback = `data:${image.mimeType};base64,${image.content}`;
+  if (!image.preview) return fallback;
+  return image.preview.length <= MAX_IMAGE_PREVIEW_CHARS ? image.preview : fallback;
 }
 
 function normalizeCursor(cursor: string | undefined): string | null {

@@ -271,7 +271,7 @@ function isActiveTurn(
     item.source === 'history' &&
     item.status === 'complete'
   );
-  if (onlyCompletedHistoryInputs) return false;
+  if (onlyCompletedHistoryInputs && isSyntheticHistoryInputRun(turn.runId)) return false;
 
   const outputItems = turnItems.filter((item) => item.kind !== 'user_message');
   if (outputItems.length > 0) return true;
@@ -280,6 +280,13 @@ function isActiveTurn(
     if (item.kind !== 'user_message') return true;
     return !item.idempotencyKey || !failedIdempotencyKeys?.has(item.idempotencyKey);
   });
+}
+
+function isSyntheticHistoryInputRun(runId: string): boolean {
+  return (
+    runId.startsWith('history:user:') ||
+    runId.startsWith('optimistic:message:history-')
+  );
 }
 
 function isActiveItem(

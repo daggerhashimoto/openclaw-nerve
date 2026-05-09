@@ -91,15 +91,30 @@ describe('chat runtime projection', () => {
   });
 
   it('does not treat completed history-only input turns as generating', () => {
-    const turn = makeTurn('session-1', 'optimistic:message:history-user', 0, 'running');
+    for (const runId of ['history:user:history-user', 'optimistic:message:history-user']) {
+      const turn = makeTurn('session-1', runId, 0, 'running');
+      const timeline = makeTimeline('session-1', [turn], {
+        'user-history': userItem(turn, 'user-history', 'old unanswered prompt', 0),
+      });
+
+      const projection = projectTimeline(timeline);
+
+      expect(projection.isGenerating).toBe(false);
+      expect(projection.processingStage).toBeNull();
+      expect(projection.messages[0]).toMatchObject({ pending: false, failed: false });
+    }
+  });
+
+  it('keeps concrete user-only history turns generating while live output can still attach', () => {
+    const turn = makeTurn('session-1', 'run-live', 0, 'running');
     const timeline = makeTimeline('session-1', [turn], {
-      'user-history': userItem(turn, 'user-history', 'old unanswered prompt', 0),
+      'user-live': userItem(turn, 'user-live', 'current prompt', 0),
     });
 
     const projection = projectTimeline(timeline);
 
-    expect(projection.isGenerating).toBe(false);
-    expect(projection.processingStage).toBeNull();
+    expect(projection.isGenerating).toBe(true);
+    expect(projection.processingStage).toBe('thinking');
     expect(projection.messages[0]).toMatchObject({ pending: false, failed: false });
   });
 

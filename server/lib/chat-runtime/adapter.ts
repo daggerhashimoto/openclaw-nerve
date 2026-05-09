@@ -531,23 +531,35 @@ function extractText(value: unknown): string | undefined {
 
 function imageBlockToMessageImage(block: HistoryContentBlock): TimelineMessageImage | null {
   if (block.data && block.mimeType) {
+    const content = normalizeBase64(block.data);
+    if (!content) return null;
     return {
       mimeType: block.mimeType,
-      content: block.data,
-      preview: `data:${block.mimeType};base64,${block.data}`,
-      name: 'image',
+      content,
+      preview: `data:${block.mimeType};base64,${content}`,
+      name: block.name || 'image',
     };
   }
 
   const source = block.source;
   if (!source?.data || !source.media_type) return null;
+  const content = normalizeBase64(source.data);
+  if (!content) return null;
 
   return {
     mimeType: source.media_type,
-    content: source.data,
-    preview: `data:${source.media_type};base64,${source.data}`,
-    name: 'image',
+    content,
+    preview: `data:${source.media_type};base64,${content}`,
+    name: source.filename || block.name || 'image',
   };
+}
+
+function normalizeBase64(value: string): string | null {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  if (normalized.length % 4 === 1) return null;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) return null;
+  return normalized;
 }
 
 function extractImageBlocks(message: HistoryMessage): TimelineMessageImage[] {

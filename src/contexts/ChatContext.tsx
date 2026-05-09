@@ -242,9 +242,10 @@ function finalMessageDataFromRuntimeMessages(
   messages: ChatMsg[],
   activeRequest: { sentAt: number; runId?: string },
 ): FinalMessageData | null {
-  const finalMessage = [...messages]
-    .reverse()
-    .find((message) => isRuntimeFinalAssistantMessage(message, activeRequest));
+  const candidates = messages.filter(isRuntimeFinalAssistantMessage);
+  const finalMessage = activeRequest.runId
+    ? [...candidates].reverse().find((message) => runtimeMessageIdHasRunToken(message.msgId, activeRequest.runId!))
+    : singleTimestampFallbackCandidate(candidates, activeRequest.sentAt);
   if (!finalMessage) return null;
 
   const message: ChatMessage = {
@@ -261,16 +262,27 @@ function finalMessageDataFromRuntimeMessages(
   };
 }
 
-function isRuntimeFinalAssistantMessage(
-  message: ChatMsg,
-  activeRequest: { sentAt: number; runId?: string },
-): boolean {
+function isRuntimeFinalAssistantMessage(message: ChatMsg): boolean {
   if (message.role !== 'assistant') return false;
   if (message.isThinking || message.intermediate || message.streaming) return false;
-  if (activeRequest.runId && message.msgId?.includes(activeRequest.runId)) return true;
+  return true;
+}
 
-  const timestamp = message.timestamp.getTime();
-  return Number.isFinite(timestamp) && timestamp >= activeRequest.sentAt - 30_000;
+function runtimeMessageIdHasRunToken(msgId: string | undefined, runId: string): boolean {
+  if (!msgId) return false;
+  return new RegExp(`(^|[-_.:])${escapeRegExp(runId)}($|[-_.:])`).test(msgId);
+}
+
+function singleTimestampFallbackCandidate(messages: ChatMsg[], sentAt: number): ChatMsg | null {
+  const candidates = messages.filter((message) => {
+    const timestamp = message.timestamp.getTime();
+    return Number.isFinite(timestamp) && timestamp >= sentAt;
+  });
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- hook export is intentional

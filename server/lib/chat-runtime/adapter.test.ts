@@ -209,8 +209,9 @@ describe('OpenClaw chat runtime adapter', () => {
         timestamp: 1000,
         content: [
           { type: 'text', text: 'look at this' },
-          { type: 'image', data: 'inline-base64', mimeType: 'image/png' },
-          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'source-base64' } },
+          { type: 'image', data: 'aW5saW5lLWJhc2U2NA==', mimeType: 'image/png', name: 'inline.png' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'c291cmNlLWJhc2U2NA==', filename: 'source.jpg' } },
+          { type: 'image', data: 'not base64?', mimeType: 'image/gif', name: 'broken.gif' },
         ],
       },
     ] as unknown as Parameters<typeof adaptHistorySnapshot>[1]);
@@ -219,19 +220,19 @@ describe('OpenClaw chat runtime adapter', () => {
       type: 'user_message_committed',
       text: 'look at this',
       images: [
-        {
-          mimeType: 'image/png',
-          content: 'inline-base64',
-          preview: 'data:image/png;base64,inline-base64',
-          name: 'image',
-        },
-        {
-          mimeType: 'image/jpeg',
-          content: 'source-base64',
-          preview: 'data:image/jpeg;base64,source-base64',
-          name: 'image',
-        },
-      ],
+          {
+            mimeType: 'image/png',
+            content: 'aW5saW5lLWJhc2U2NA==',
+            preview: 'data:image/png;base64,aW5saW5lLWJhc2U2NA==',
+            name: 'inline.png',
+          },
+          {
+            mimeType: 'image/jpeg',
+            content: 'c291cmNlLWJhc2U2NA==',
+            preview: 'data:image/jpeg;base64,c291cmNlLWJhc2U2NA==',
+            name: 'source.jpg',
+          },
+        ],
     });
 
     let timeline = createEmptyTimeline('agent:main:main');
@@ -241,8 +242,8 @@ describe('OpenClaw chat runtime adapter', () => {
     expect(userItem).toMatchObject({
       kind: 'user_message',
       images: [
-        { mimeType: 'image/png', content: 'inline-base64' },
-        { mimeType: 'image/jpeg', content: 'source-base64' },
+        { mimeType: 'image/png', content: 'aW5saW5lLWJhc2U2NA==', name: 'inline.png' },
+        { mimeType: 'image/jpeg', content: 'c291cmNlLWJhc2U2NA==', name: 'source.jpg' },
       ],
     });
   });

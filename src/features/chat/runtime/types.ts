@@ -122,6 +122,7 @@ export interface SessionTimeline {
 export type TimelinePatchOp =
   | { op: 'upsert_turn'; turn: TimelineTurn }
   | { op: 'upsert_item'; item: TimelineItem }
+  | { op: 'bind_user_message_run'; idempotencyKey: string; runId: string; at: number }
   | { op: 'remove_item'; id: string; reason: 'compaction' | 'user_reset' }
   | { op: 'remove_turn'; id: string; reason: 'compaction' | 'user_reset' }
   | { op: 'set_hydration_state'; state: TimelineHydrationState };

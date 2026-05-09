@@ -1,3 +1,5 @@
+import type { UploadAttachmentDescriptorForManifest } from '../../../shared/chat-upload-manifest.js';
+
 export type TimelineHydrationState = 'cold' | 'hydrating' | 'ready' | 'stale';
 export type TimelineTurnStatus = 'running' | 'finalized' | 'failed' | 'aborted';
 export type TimelineItemStatus = 'provisional' | 'running' | 'complete' | 'failed' | 'aborted';
@@ -29,7 +31,7 @@ export interface TimelineMessageImage {
   name: string;
 }
 
-export type TimelineUploadAttachment = Record<string, unknown>;
+export type TimelineUploadAttachment = UploadAttachmentDescriptorForManifest;
 
 export interface UserTimelineItem extends TimelineItemBase {
   kind: 'user_message';
@@ -111,6 +113,7 @@ export interface SessionTimeline {
 export type RuntimeEvent =
   | { type: 'turn_started'; sessionKey: string; runId: string; at: number; seq?: number }
   | { type: 'user_message_committed'; sessionKey: string; runId?: string; messageId?: string; idempotencyKey?: string; text: string; images?: TimelineMessageImage[]; uploadAttachments?: TimelineUploadAttachment[]; at: number }
+  | { type: 'user_message_run_bound'; sessionKey: string; idempotencyKey: string; runId: string; at: number }
   | { type: 'thinking_started'; sessionKey: string; runId: string; blockIndex: number; at: number }
   | { type: 'thinking_delta'; sessionKey: string; runId: string; blockIndex: number; text: string; at: number }
   | { type: 'thinking_final'; sessionKey: string; runId: string; blockIndex: number; text: string; durationMs?: number; at: number }
@@ -136,10 +139,16 @@ export interface HistoryContentBlock {
   data?: string;
   mimeType?: string;
   omitted?: boolean;
+  /**
+   * Image history mirrors provider payloads: block-level mimeType is Nerve
+   * camelCase, while source.media_type must stay snake_case for Anthropic
+   * content blocks consumed by adapter.ts imageBlockToMessageImage.
+   */
   source?: {
     type?: string;
     media_type?: string;
     data?: string;
+    filename?: string;
   };
 }
 
@@ -157,6 +166,7 @@ export interface HistoryMessage {
 export type TimelinePatchOp =
   | { op: 'upsert_turn'; turn: TimelineTurn }
   | { op: 'upsert_item'; item: TimelineItem }
+  | { op: 'bind_user_message_run'; idempotencyKey: string; runId: string; at: number }
   | { op: 'remove_item'; id: string; reason: 'compaction' | 'user_reset' }
   | { op: 'remove_turn'; id: string; reason: 'compaction' | 'user_reset' }
   | { op: 'set_hydration_state'; state: TimelineHydrationState };

@@ -61,6 +61,8 @@ export function applyTimelinePatch(
       upsertTurn(timeline, op.turn);
     } else if (op.op === 'upsert_item') {
       timeline.items[op.item.id] = cloneItem(op.item);
+    } else if (op.op === 'bind_user_message_run') {
+      bindUserMessageRun(timeline, op);
     } else if (op.op === 'remove_item') {
       removeItem(timeline, op.id);
     } else if (op.op === 'remove_turn') {
@@ -127,6 +129,30 @@ function removeTurn(timeline: SessionTimeline, turnId: string): void {
   }
 }
 
+function bindUserMessageRun(
+  timeline: SessionTimeline,
+  op: Extract<TimelinePatch['ops'][number], { op: 'bind_user_message_run' }>,
+): void {
+  const item = Object.values(timeline.items).find((candidate) =>
+    candidate.kind === 'user_message' &&
+    candidate.idempotencyKey === op.idempotencyKey
+  );
+  if (!item || item.kind !== 'user_message') return;
+
+  timeline.items[item.id] = {
+    ...item,
+    runId: op.runId,
+    updatedAt: Math.max(item.updatedAt, op.at),
+  };
+
+  const turn = item.turnId
+    ? timeline.turns.find((candidate) => candidate.id === item.turnId)
+    : undefined;
+  if (turn && !isTerminalTurnStatus(turn.status)) {
+    turn.runId = op.runId;
+  }
+}
+
 function cloneTimeline(timeline: SessionTimeline): SessionTimeline {
   return {
     ...timeline,
@@ -177,6 +203,10 @@ function compareItems(left: TimelineItem, right: TimelineItem): number {
     left.createdAt - right.createdAt ||
     left.id.localeCompare(right.id)
   );
+}
+
+function isTerminalTurnStatus(status: TimelineTurn['status']): boolean {
+  return status === 'finalized' || status === 'failed' || status === 'aborted';
 }
 
 function cursorToVersion(cursor: string, fallback: number): number {

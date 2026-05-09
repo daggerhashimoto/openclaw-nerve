@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { gatewayRpcCall } from '../lib/gateway-rpc.js';
 import { getChatRuntime } from '../lib/chat-runtime/singleton.js';
 import type { TimelinePatch, TimelineSnapshot } from '../lib/chat-runtime/types.js';
+import { appendUploadManifest, applyVoiceTTSHint } from '../../shared/chat-upload-manifest.js';
 
 const app = new Hono();
 
@@ -27,7 +28,20 @@ const sendMessageSchema = z.object({
     name: z.string().optional(),
   })).optional(),
   uploadPayload: z.object({
-    descriptors: z.array(z.object({}).passthrough()),
+    descriptors: z.array(z.object({
+      id: nonBlankString('uploadPayload.descriptors[].id'),
+      origin: nonBlankString('uploadPayload.descriptors[].origin'),
+      mode: nonBlankString('uploadPayload.descriptors[].mode'),
+      name: nonBlankString('uploadPayload.descriptors[].name'),
+      mimeType: nonBlankString('uploadPayload.descriptors[].mimeType'),
+      sizeBytes: z.number().finite().nonnegative(),
+      inline: z.record(z.string(), z.unknown()).optional(),
+      reference: z.unknown().optional(),
+      preparation: z.unknown().optional(),
+      policy: z.object({
+        forwardToSubagents: z.boolean(),
+      }).passthrough(),
+    }).passthrough()),
     manifest: z.object({
       enabled: z.boolean(),
       exposeInlineBase64ToAgent: z.boolean(),
@@ -223,8 +237,9 @@ app.post('/api/chat-runtime/sessions/:sessionKey/messages', async (c) => {
     const gatewayResult = await gatewayRpcCall('chat.send', gatewayParams);
     const runId = extractRunId(gatewayResult);
     const committedPatch = runId
-      ? runtime.applyOptimisticUserMessage({
-        ...optimisticInput,
+      ? runtime.bindRunIdToOptimisticUserMessage({
+        sessionKey,
+        idempotencyKey: parsed.data.idempotencyKey,
         runId,
       })
       : optimisticPatch;
@@ -247,51 +262,7 @@ app.post('/api/chat-runtime/sessions/:sessionKey/messages', async (c) => {
   }
 });
 
-type ParsedUploadPayload = z.infer<typeof sendMessageSchema>['uploadPayload'];
 type ParsedImage = NonNullable<z.infer<typeof sendMessageSchema>['images']>[number];
-
-const VOICE_PREFIX = '[voice] ';
-const TTS_HINT = '\n\n[system: User sent a voice message. Always include your full text reply AND a [tts:...] marker so it plays back as audio. Never send only TTS markers - the response must be readable in chat too. TTS marker format: [tts: your spoken text here] - place it at the end of your reply. Example reply:\n\nHere is my text response.\n\n[tts: Here is my text response.]]';
-const UPLOAD_MANIFEST_OPEN = '<nerve-upload-manifest>';
-const UPLOAD_MANIFEST_CLOSE = '</nerve-upload-manifest>';
-
-function applyVoiceTTSHint(text: string): string {
-  if (!text.startsWith(VOICE_PREFIX)) return text;
-  return text + TTS_HINT;
-}
-
-function appendUploadManifest(text: string, uploadPayload?: ParsedUploadPayload): string {
-  if (!uploadPayload?.manifest.enabled) return text;
-  if (uploadPayload.descriptors.length === 0) return text;
-
-  const manifest = {
-    version: 1,
-    attachments: uploadPayload.descriptors.map((descriptor) =>
-      sanitizeUploadDescriptor(descriptor, uploadPayload.manifest.exposeInlineBase64ToAgent),
-    ),
-  };
-
-  return `${text}\n\n${UPLOAD_MANIFEST_OPEN}${JSON.stringify(manifest)}${UPLOAD_MANIFEST_CLOSE}`;
-}
-
-function sanitizeUploadDescriptor(
-  descriptor: Record<string, unknown>,
-  exposeInlineBase64ToAgent: boolean,
-): Record<string, unknown> {
-  const inline = descriptor.inline;
-  if (descriptor.mode !== 'inline' || !isRecord(inline)) {
-    return descriptor;
-  }
-
-  return {
-    ...descriptor,
-    inline: {
-      ...inline,
-      previewUrl: undefined,
-      base64: exposeInlineBase64ToAgent && typeof inline.base64 === 'string' ? inline.base64 : '',
-    },
-  };
-}
 
 function normalizeMessageImages(images: ParsedImage[] | undefined) {
   return (images ?? []).map((image) => ({

@@ -65,6 +65,48 @@ describe('chat runtime client reducer', () => {
     expect(afterRemoval.timeline.items).toEqual({});
   });
 
+  it('applies lightweight run binding patches without replacing user media', () => {
+    const state = createEmptyRuntimeTimelineState('session-1');
+    const turn = makeTurn('session-1', 'optimistic:idempotency:idem-1', 0);
+    const user = {
+      ...makeUserItem('session-1', turn, 'user-1', 'hello', 1),
+      idempotencyKey: 'idem-1',
+      images: [{
+        mimeType: 'image/png',
+        content: 'base64-image',
+        preview: 'data:image/png;base64,base64-image',
+        name: 'image.png',
+      }],
+    };
+
+    const afterOptimistic = applyTimelinePatch(state, {
+      sessionKey: 'session-1',
+      cursor: '1',
+      createdAt: 1,
+      ops: [
+        { op: 'upsert_turn', turn },
+        { op: 'upsert_item', item: user },
+      ],
+    });
+    const afterBind = applyTimelinePatch(afterOptimistic, {
+      sessionKey: 'session-1',
+      cursor: '2',
+      createdAt: 2,
+      ops: [{
+        op: 'bind_user_message_run',
+        idempotencyKey: 'idem-1',
+        runId: 'run-real',
+        at: 2,
+      }],
+    });
+
+    expect(afterBind.timeline.turns[0]).toMatchObject({ runId: 'run-real' });
+    expect(afterBind.timeline.items['user-1']).toMatchObject({
+      runId: 'run-real',
+      images: user.images,
+    });
+  });
+
   it('replaces the timeline from snapshots and preserves server ordering', () => {
     const state = createEmptyRuntimeTimelineState('session-1');
     const turnA = makeTurn('session-1', 'run-a', 1);

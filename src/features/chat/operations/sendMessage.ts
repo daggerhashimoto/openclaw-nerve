@@ -4,57 +4,11 @@
  * Extracted from ChatContext.handleSend. No React hooks, setState, or refs.
  */
 import { generateMsgId } from '@/features/chat/types';
-import type { ChatMsg, ImageAttachment, OutgoingUploadPayload, UploadAttachmentDescriptor } from '@/features/chat/types';
+import type { ChatMsg, ImageAttachment, OutgoingUploadPayload } from '@/features/chat/types';
 import { renderMarkdown, renderToolResults } from '@/utils/helpers';
+import { appendUploadManifest, applyVoiceTTSHint } from '../../../../shared/chat-upload-manifest';
 
-// ─── Voice → TTS prompt hint ───────────────────────────────────────────────────
-const VOICE_PREFIX = '[voice] ';
-const TTS_HINT = '\n\n[system: User sent a voice message. Always include your full text reply AND a [tts:...] marker so it plays back as audio. Never send only TTS markers — the response must be readable in chat too. TTS marker format: [tts: your spoken text here] — place it at the end of your reply. Example reply:\n\nHere is my text response.\n\n[tts: Here is my text response.]]';
-const UPLOAD_MANIFEST_OPEN = '<nerve-upload-manifest>';
-const UPLOAD_MANIFEST_CLOSE = '</nerve-upload-manifest>';
-
-/** Detect voice messages and append a TTS prompt hint for the agent. */
-export function applyVoiceTTSHint(text: string): string {
-  if (!text.startsWith(VOICE_PREFIX)) return text;
-  return text + TTS_HINT;
-}
-
-function sanitizeUploadDescriptor(
-  descriptor: UploadAttachmentDescriptor,
-  exposeInlineBase64ToAgent: boolean,
-): UploadAttachmentDescriptor {
-  if (descriptor.mode !== 'inline' || !descriptor.inline) {
-    return descriptor;
-  }
-
-  const inline = {
-    ...descriptor.inline,
-    previewUrl: undefined,
-    base64: exposeInlineBase64ToAgent ? descriptor.inline.base64 : '',
-  };
-
-  return {
-    ...descriptor,
-    inline,
-  };
-}
-
-export function appendUploadManifest(
-  text: string,
-  uploadPayload?: OutgoingUploadPayload,
-): string {
-  if (!uploadPayload?.manifest.enabled) return text;
-  if (uploadPayload.descriptors.length === 0) return text;
-
-  const manifest = {
-    version: 1,
-    attachments: uploadPayload.descriptors.map((descriptor) =>
-      sanitizeUploadDescriptor(descriptor, uploadPayload.manifest.exposeInlineBase64ToAgent),
-    ),
-  };
-
-  return `${text}\n\n${UPLOAD_MANIFEST_OPEN}${JSON.stringify(manifest)}${UPLOAD_MANIFEST_CLOSE}`;
-}
+export { appendUploadManifest, applyVoiceTTSHint };
 
 // ─── RPC type alias ────────────────────────────────────────────────────────────
 type RpcFn = (method: string, params: Record<string, unknown>) => Promise<unknown>;

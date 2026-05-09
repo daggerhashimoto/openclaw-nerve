@@ -130,6 +130,33 @@ export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEven
       break;
     }
 
+    case 'user_message_run_bound': {
+      const itemId = userItemId({
+        sessionKey: event.sessionKey,
+        idempotencyKey: event.idempotencyKey,
+      });
+      const item = itemOfKind(draft.items[itemId], 'user_message')
+        ?? Object.values(draft.items).find((candidate) =>
+          candidate.kind === 'user_message' &&
+          candidate.idempotencyKey === event.idempotencyKey
+        );
+      if (!item || item.kind !== 'user_message') break;
+
+      draft.items[item.id] = {
+        ...item,
+        runId: event.runId,
+        updatedAt: Math.max(item.updatedAt, event.at),
+      };
+
+      const turn = item.turnId
+        ? draft.turns.find((candidate) => candidate.id === item.turnId)
+        : undefined;
+      if (turn && !isTerminalTurnStatus(turn.status)) {
+        turn.runId = event.runId;
+      }
+      break;
+    }
+
     case 'thinking_started':
     case 'thinking_delta':
     case 'thinking_final': {

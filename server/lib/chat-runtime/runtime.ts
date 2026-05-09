@@ -38,6 +38,13 @@ export interface FailedOptimisticUserMessageInput {
   at?: number;
 }
 
+export interface BindRunIdToOptimisticUserMessageInput {
+  sessionKey: string;
+  idempotencyKey: string;
+  runId: string;
+  at?: number;
+}
+
 type TimelineSubscriber = (patch: TimelinePatch) => void;
 
 interface ActiveHistoryBinding {
@@ -175,6 +182,20 @@ export class ChatRuntime {
       error: input.error,
       at: input.at ?? Date.now(),
     });
+    this.updateActiveHistorySync(input.sessionKey);
+    return patch;
+  }
+
+  bindRunIdToOptimisticUserMessage(input: BindRunIdToOptimisticUserMessageInput): TimelinePatch {
+    const event: Extract<RuntimeEvent, { type: 'user_message_run_bound' }> = {
+      type: 'user_message_run_bound',
+      sessionKey: input.sessionKey,
+      idempotencyKey: input.idempotencyKey,
+      runId: input.runId,
+      at: input.at ?? Date.now(),
+    };
+    this.rememberRunSession(event);
+    const patch = this.store.applyEvent(event);
     this.updateActiveHistorySync(input.sessionKey);
     return patch;
   }

@@ -11,6 +11,7 @@ interface FakeRuntime {
   snapshot: ReturnType<typeof vi.fn>;
   subscribe: ReturnType<typeof vi.fn>;
   applyOptimisticUserMessage: ReturnType<typeof vi.fn>;
+  bindRunIdToOptimisticUserMessage: ReturnType<typeof vi.fn>;
   failOptimisticUserMessage: ReturnType<typeof vi.fn>;
   emitPatch: (patch: TimelinePatch) => void;
 }
@@ -319,6 +320,22 @@ describe('chat runtime routes', () => {
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idempotencyKey: 'idem-1' }) },
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '   ', idempotencyKey: 'idem-blank' }) },
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'hello', idempotencyKey: '   ' }) },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: 'hello',
+          idempotencyKey: 'idem-bad-upload',
+          uploadPayload: {
+            descriptors: [{ name: 'missing-required-fields.png' }],
+            manifest: {
+              enabled: true,
+              exposeInlineBase64ToAgent: false,
+              allowSubagentForwarding: false,
+            },
+          },
+        }),
+      },
     ];
 
     for (const init of invalidRequests) {
@@ -334,7 +351,8 @@ describe('chat runtime routes', () => {
     const optimisticPatch = createPatch('agent:main:main', '17');
     const runBindingPatch = createPatch('agent:main:main', '18');
     const runtime = createFakeRuntime({
-      applyOptimisticUserMessage: vi.fn((input: { runId?: string }) => input.runId ? runBindingPatch : optimisticPatch),
+      applyOptimisticUserMessage: vi.fn(() => optimisticPatch),
+      bindRunIdToOptimisticUserMessage: vi.fn(() => runBindingPatch),
     });
     const { app } = await buildRouteApp(runtime);
     gatewayRpcCallMock.mockResolvedValue({ runId: 'run-123' });
@@ -357,9 +375,9 @@ describe('chat runtime routes', () => {
       deliver: false,
       idempotencyKey: 'idem-123',
     });
-    expect(runtime.applyOptimisticUserMessage).toHaveBeenNthCalledWith(2, {
+    expect(runtime.applyOptimisticUserMessage).toHaveBeenCalledTimes(1);
+    expect(runtime.bindRunIdToOptimisticUserMessage).toHaveBeenCalledWith({
       sessionKey: 'agent:main:main',
-      text: 'hello runtime',
       idempotencyKey: 'idem-123',
       runId: 'run-123',
     });
@@ -375,7 +393,8 @@ describe('chat runtime routes', () => {
     const optimisticPatch = createPatch('agent:main:main', '17');
     const runBindingPatch = createPatch('agent:main:main', '18');
     const runtime = createFakeRuntime({
-      applyOptimisticUserMessage: vi.fn((input: { runId?: string }) => input.runId ? runBindingPatch : optimisticPatch),
+      applyOptimisticUserMessage: vi.fn(() => optimisticPatch),
+      bindRunIdToOptimisticUserMessage: vi.fn(() => runBindingPatch),
     });
     const { app } = await buildRouteApp(runtime);
     gatewayRpcCallMock.mockResolvedValue({ runId: 'run-media' });
@@ -447,22 +466,11 @@ describe('chat runtime routes', () => {
     }));
     const gatewayMessage = gatewayRpcCallMock.mock.calls[0]?.[1]?.message as string;
     expect(gatewayMessage).toContain('"base64":""');
-    expect(runtime.applyOptimisticUserMessage).toHaveBeenNthCalledWith(2, {
+    expect(runtime.applyOptimisticUserMessage).toHaveBeenCalledTimes(1);
+    expect(runtime.bindRunIdToOptimisticUserMessage).toHaveBeenCalledWith({
       sessionKey: 'agent:main:main',
-      text: 'look at this',
       idempotencyKey: 'idem-media',
       runId: 'run-media',
-      images: [
-        {
-          mimeType: 'image/png',
-          content: 'base64-image',
-          preview: 'data:image/png;base64,base64-image',
-          name: 'image.png',
-        },
-      ],
-      uploadAttachments: [
-        expect.objectContaining({ id: 'att-1', name: 'image.png' }),
-      ],
     });
   });
 
@@ -596,6 +604,7 @@ function createFakeRuntime(overrides: Partial<FakeRuntime> = {}): FakeRuntime {
       return () => subscribers.delete(subscriber);
     }),
     applyOptimisticUserMessage: vi.fn(({ sessionKey }: { sessionKey: string }) => createPatch(sessionKey, '1')),
+    bindRunIdToOptimisticUserMessage: vi.fn(({ sessionKey }: { sessionKey: string }) => createPatch(sessionKey, '3')),
     failOptimisticUserMessage: vi.fn(({ sessionKey }: { sessionKey: string }) => createPatch(sessionKey, '2')),
     emitPatch: (patch: TimelinePatch) => {
       for (const subscriber of [...subscribers]) subscriber(patch);

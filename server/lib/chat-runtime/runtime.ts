@@ -487,7 +487,7 @@ function isPlausibleActiveHistoryUserMessage(
   if (message.runId === activeRunId) return true;
 
   const at = historyMessageTime(message);
-  if (at === undefined) return true;
+  if (at === undefined) return false;
   return at >= activeStartedAt - ACTIVE_HISTORY_BINDING_CLOCK_SKEW_MS;
 }
 

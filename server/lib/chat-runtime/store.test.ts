@@ -820,6 +820,50 @@ describe('ChatRuntime', () => {
     ]);
   });
 
+  it('does not bind untimestamped same-text history to the active turn during mid-run refresh', async () => {
+    const sessionKey = 'agent:active-untimestamped-same-text:main';
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({
+        messages: [
+          {
+            role: 'user',
+            messageId: 'older-user-1',
+            content: 'repeatable prompt',
+          },
+          {
+            role: 'assistant',
+            messageId: 'older-assistant-1',
+            content: [
+              { type: 'thinking', thinking: 'Old reasoning should stay old.' },
+              { type: 'text', text: 'Old answer should not attach to the active run.' },
+            ],
+          },
+        ],
+      }),
+    });
+
+    runtime.applyOptimisticUserMessage({
+      sessionKey,
+      runId: 'run-live',
+      text: 'repeatable prompt',
+      idempotencyKey: 'idem-repeatable-prompt',
+      at: 120_000,
+    });
+
+    await runtime.hydrateSession(sessionKey);
+
+    const snapshot = runtime.snapshot(sessionKey, 'manual');
+    expect(snapshot.timeline.turns).toMatchObject([
+      { runId: 'run-live', status: 'running' },
+    ]);
+    expect(thinkingItemsFromSnapshot(snapshot)).toHaveLength(0);
+    expect(assistantItemsFromSnapshot(snapshot)).toHaveLength(0);
+    expect(userItemsFromSnapshot(snapshot)).toMatchObject([
+      { text: 'repeatable prompt', idempotencyKey: 'idem-repeatable-prompt' },
+    ]);
+  });
+
   it('does not finalize a running turn when history has only the matching user prompt', async () => {
     const sessionKey = 'agent:active-user-only:main';
     const runtime = new ChatRuntime({

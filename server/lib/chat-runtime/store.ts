@@ -1,6 +1,6 @@
-import { buildPatchFromTimeline, createEmptyTimeline, reduceRuntimeEvent } from './reducer.js';
+import { buildPatchFromTimeline, createEmptyTimeline, reduceRuntimeEvent, timelineItemsInOrder } from './reducer.js';
 import { ReplayBuffer, type ReplayResult } from './replay-buffer.js';
-import type { RuntimeEvent, SessionTimeline, TimelinePatch, TimelineSnapshot } from './types.js';
+import type { RuntimeEvent, SessionTimeline, TimelinePatch, TimelinePatchOp, TimelineSnapshot } from './types.js';
 
 interface ChatTimelineStoreOptions {
   maxPatchesPerSession: number;
@@ -127,7 +127,11 @@ export class ChatTimelineStore {
     };
     this.timelines.set(sessionKey, next);
 
-    const patch = this.replayBuffer.append(sessionKey, this.patchOpsForTimelineChange(current, next), createdAt);
+    const patch = this.replayBuffer.append(
+      sessionKey,
+      this.patchOpsForTimelineChange(current, next, options.mode),
+      createdAt,
+    );
     this.publish(sessionKey, patch);
     return cloneTimelinePatch(patch);
   }
@@ -143,12 +147,16 @@ export class ChatTimelineStore {
     };
     this.timelines.set(sessionKey, next);
 
-    const patch = this.replayBuffer.append(sessionKey, this.patchOpsForTimelineChange(current, next), next.updatedAt);
+    const patch = this.replayBuffer.append(sessionKey, this.patchOpsForTimelineChange(current, next, 'replace'), next.updatedAt);
     this.publish(sessionKey, patch);
     return cloneTimelinePatch(patch);
   }
 
-  private patchOpsForTimelineChange(current: SessionTimeline, next: SessionTimeline): ReturnType<typeof buildPatchFromTimeline> {
+  private patchOpsForTimelineChange(
+    current: SessionTimeline,
+    next: SessionTimeline,
+    mode: 'append' | 'replace',
+  ): TimelinePatchOp[] {
     const nextTurnIds = new Set(next.turns.map((turn) => turn.id));
     const nextItemIds = new Set(Object.keys(next.items));
     const turnRemovals = current.turns
@@ -158,10 +166,40 @@ export class ChatTimelineStore {
       .filter((itemId) => !nextItemIds.has(itemId))
       .map((id) => ({ op: 'remove_item' as const, id, reason: 'compaction' as const }));
 
+    if (mode === 'replace') {
+      return [
+        ...turnRemovals,
+        ...removals,
+        ...buildPatchFromTimeline(next),
+      ];
+    }
+
+    const currentTurnsById = new Map(current.turns.map((turn) => [turn.id, turn]));
+    const currentItems = current.items;
+    const ops: TimelinePatchOp[] = [];
+
+    if (current.hydrationState !== next.hydrationState) {
+      ops.push({ op: 'set_hydration_state', state: next.hydrationState });
+    }
+
+    for (const turn of next.turns) {
+      const previous = currentTurnsById.get(turn.id);
+      if (!previous || !sameTimelineValue(previous, turn)) {
+        ops.push({ op: 'upsert_turn', turn });
+      }
+    }
+
+    for (const item of timelineItemsInOrder(next)) {
+      const previous = currentItems[item.id];
+      if (!previous || !sameTimelineValue(previous, item)) {
+        ops.push({ op: 'upsert_item', item });
+      }
+    }
+
     return [
       ...turnRemovals,
       ...removals,
-      ...buildPatchFromTimeline(next),
+      ...ops,
     ];
   }
 
@@ -189,4 +227,8 @@ function cloneTimelinePatch(patch: TimelinePatch): TimelinePatch {
 
 function cloneSessionTimeline(timeline: SessionTimeline): SessionTimeline {
   return structuredClone(timeline);
+}
+
+function sameTimelineValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }

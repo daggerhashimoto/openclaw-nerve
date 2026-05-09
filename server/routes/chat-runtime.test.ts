@@ -11,6 +11,7 @@ interface FakeRuntime {
   snapshot: ReturnType<typeof vi.fn>;
   subscribe: ReturnType<typeof vi.fn>;
   applyOptimisticUserMessage: ReturnType<typeof vi.fn>;
+  failOptimisticUserMessage: ReturnType<typeof vi.fn>;
   emitPatch: (patch: TimelinePatch) => void;
 }
 
@@ -347,10 +348,12 @@ describe('chat runtime routes', () => {
     });
   });
 
-  it('returns 502 when chat.send fails after the optimistic patch', async () => {
+  it('marks the server-side optimistic message failed when chat.send fails', async () => {
     const optimisticPatch = createPatch('session-fail', '18');
+    const failedPatch = createPatch('session-fail', '19');
     const runtime = createFakeRuntime({
       applyOptimisticUserMessage: vi.fn(() => optimisticPatch),
+      failOptimisticUserMessage: vi.fn(() => failedPatch),
     });
     const { app } = await buildRouteApp(runtime);
     gatewayRpcCallMock.mockRejectedValue(new Error('gateway unavailable'));
@@ -362,6 +365,11 @@ describe('chat runtime routes', () => {
     });
 
     expect(runtime.applyOptimisticUserMessage).toHaveBeenCalledTimes(1);
+    expect(runtime.failOptimisticUserMessage).toHaveBeenCalledWith({
+      sessionKey: 'session-fail',
+      idempotencyKey: 'idem-fail',
+      error: 'chat.send failed: gateway unavailable',
+    });
     expect(gatewayRpcCallMock).toHaveBeenCalledWith('chat.send', {
       sessionKey: 'session-fail',
       message: 'hello runtime',
@@ -430,6 +438,7 @@ function createFakeRuntime(overrides: Partial<FakeRuntime> = {}): FakeRuntime {
       return () => subscribers.delete(subscriber);
     }),
     applyOptimisticUserMessage: vi.fn(({ sessionKey }: { sessionKey: string }) => createPatch(sessionKey, '1')),
+    failOptimisticUserMessage: vi.fn(({ sessionKey }: { sessionKey: string }) => createPatch(sessionKey, '2')),
     emitPatch: (patch: TimelinePatch) => {
       for (const subscriber of [...subscribers]) subscriber(patch);
     },

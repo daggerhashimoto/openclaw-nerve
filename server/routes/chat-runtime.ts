@@ -204,7 +204,13 @@ app.post('/api/chat-runtime/sessions/:sessionKey/messages', async (c) => {
     });
   } catch (err) {
     const message = errorMessage(err);
-    return c.json({ ok: false, error: `chat.send failed: ${message}` }, 502);
+    const error = `chat.send failed: ${message}`;
+    runtime.failOptimisticUserMessage({
+      sessionKey,
+      idempotencyKey: parsed.data.idempotencyKey,
+      error,
+    });
+    return c.json({ ok: false, error }, 502);
   }
 });
 

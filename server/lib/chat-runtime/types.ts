@@ -109,6 +109,7 @@ export type RuntimeEvent =
   | { type: 'assistant_final'; sessionKey: string; runId: string; text: string; stopReason?: string; at: number; segmentIndex?: number }
   | { type: 'turn_finalized'; sessionKey: string; runId: string; at: number }
   | { type: 'turn_failed'; sessionKey: string; runId: string; error: string; at: number }
+  | { type: 'user_message_failed'; sessionKey: string; idempotencyKey: string; error: string; at: number }
   | { type: 'history_snapshot'; sessionKey: string; messages: HistoryMessage[]; at: number };
 
 export interface HistoryContentBlock {

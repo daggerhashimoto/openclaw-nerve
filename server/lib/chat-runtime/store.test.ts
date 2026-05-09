@@ -211,6 +211,39 @@ describe('ChatTimelineStore', () => {
     expect(expectPatchReplay(store.replayAfter('agent:main:main', first.cursor))).toEqual([second, third]);
   });
 
+  it('emits only changed turns and items for append patches after hydration', () => {
+    const sessionKey = 'agent:delta-patch:main';
+    const store = new ChatTimelineStore({ maxPatchesPerSession: 10 });
+    store.replaceEvents(sessionKey, [
+      { type: 'history_snapshot', sessionKey, messages: [], at: 1000 },
+      assistantFinal(sessionKey, 'history-1', 'old answer 1', 1001),
+      { type: 'turn_finalized', sessionKey, runId: 'history-1', at: 1001 },
+      assistantFinal(sessionKey, 'history-2', 'old answer 2', 1002),
+      { type: 'turn_finalized', sessionKey, runId: 'history-2', at: 1002 },
+    ]);
+
+    const startPatch = store.applyEvent(turnStarted(sessionKey, 'run-live', 2000));
+    expect(turnRunIds(startPatch)).toEqual(['run-live']);
+    expect(startPatch.ops.filter((op) => op.op === 'upsert_item')).toEqual([]);
+
+    const deltaPatch = store.applyEvent(assistantDelta(sessionKey, 'run-live', 'live answer', 2001));
+    const upsertedItems = deltaPatch.ops
+      .filter((op): op is Extract<TimelinePatchOp, { op: 'upsert_item' }> => op.op === 'upsert_item')
+      .map((op) => op.item);
+
+    expect(turnRunIds(deltaPatch)).toEqual(['run-live']);
+    expect(upsertedItems).toHaveLength(1);
+    expect(upsertedItems[0]).toMatchObject({
+      kind: 'assistant_message',
+      runId: 'run-live',
+      text: 'live answer',
+    });
+    expect(deltaPatch.ops).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ op: 'upsert_item', item: expect.objectContaining({ text: 'old answer 1' }) }),
+      expect.objectContaining({ op: 'upsert_item', item: expect.objectContaining({ text: 'old answer 2' }) }),
+    ]));
+  });
+
   it('does not publish same-session patches after unsubscribe is called twice or notify other sessions', () => {
     const store = new ChatTimelineStore({ maxPatchesPerSession: 10 });
     const sessionAPatches: TimelinePatch[] = [];
@@ -1364,6 +1397,54 @@ describe('ChatRuntime', () => {
     } finally {
       nowSpy.mockRestore();
     }
+  });
+
+  it('marks failed optimistic user messages terminal in the server timeline', () => {
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: async () => ({ messages: [] }),
+    });
+
+    runtime.applyOptimisticUserMessage({
+      sessionKey: 'agent:failed-send:main',
+      text: 'will not reach gateway',
+      idempotencyKey: 'idem-failed-send',
+      at: 1000,
+    });
+
+    const failedPatch = runtime.failOptimisticUserMessage({
+      sessionKey: 'agent:failed-send:main',
+      idempotencyKey: 'idem-failed-send',
+      error: 'chat.send failed: gateway unavailable',
+      at: 1001,
+    });
+    const snapshot = runtime.snapshot('agent:failed-send:main', 'manual');
+
+    expect(failedPatch.ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        op: 'upsert_turn',
+        turn: expect.objectContaining({ status: 'failed' }),
+      }),
+      expect.objectContaining({
+        op: 'upsert_item',
+        item: expect.objectContaining({
+          kind: 'user_message',
+          idempotencyKey: 'idem-failed-send',
+          pending: false,
+          status: 'failed',
+        }),
+      }),
+    ]));
+    expect(snapshot.timeline.turns).toMatchObject([
+      { runId: 'optimistic:idempotency:idem-failed-send', status: 'failed' },
+    ]);
+    expect(userItemsFromSnapshot(snapshot)).toMatchObject([
+      {
+        idempotencyKey: 'idem-failed-send',
+        pending: false,
+        status: 'failed',
+      },
+    ]);
   });
 
   it('delegates subscribe, replayAfter, and snapshot behavior to the store', () => {

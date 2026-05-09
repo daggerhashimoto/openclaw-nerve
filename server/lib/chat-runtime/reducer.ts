@@ -244,6 +244,35 @@ export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEven
       break;
     }
 
+    case 'user_message_failed': {
+      const itemId = userItemId({
+        sessionKey: event.sessionKey,
+        idempotencyKey: event.idempotencyKey,
+      });
+      const item = itemOfKind(draft.items[itemId], 'user_message')
+        ?? Object.values(draft.items).find((candidate) =>
+          candidate.kind === 'user_message' &&
+          candidate.idempotencyKey === event.idempotencyKey
+        );
+      if (!item || item.kind !== 'user_message') break;
+
+      draft.items[item.id] = {
+        ...item,
+        pending: false,
+        status: 'failed',
+        updatedAt: Math.max(item.updatedAt, event.at),
+      };
+
+      const turn = draft.turns.find((candidate) => candidate.id === item.turnId);
+      if (turn && !isTerminalTurnStatus(turn.status)) {
+        turn.status = 'failed';
+        turn.finalizedAt = event.at;
+        closeThinkingItemsForTurn(draft, turn, event.at, 'failed');
+        closeToolGroupsForTurn(draft, turn, event.at, 'failed');
+      }
+      break;
+    }
+
     case 'history_snapshot': {
       draft.hydrationState = 'ready';
       break;

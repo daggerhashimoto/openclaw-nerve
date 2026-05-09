@@ -22,6 +22,13 @@ export interface OptimisticUserMessageInput {
   at?: number;
 }
 
+export interface FailedOptimisticUserMessageInput {
+  sessionKey: string;
+  idempotencyKey: string;
+  error: string;
+  at?: number;
+}
+
 type TimelineSubscriber = (patch: TimelinePatch) => void;
 
 interface ActiveHistoryBinding {
@@ -145,6 +152,18 @@ export class ChatRuntime {
     this.rememberRunSession(event);
 
     const patch = this.store.applyEvent(event);
+    this.updateActiveHistorySync(input.sessionKey);
+    return patch;
+  }
+
+  failOptimisticUserMessage(input: FailedOptimisticUserMessageInput): TimelinePatch {
+    const patch = this.store.applyEvent({
+      type: 'user_message_failed',
+      sessionKey: input.sessionKey,
+      idempotencyKey: input.idempotencyKey,
+      error: input.error,
+      at: input.at ?? Date.now(),
+    });
     this.updateActiveHistorySync(input.sessionKey);
     return patch;
   }

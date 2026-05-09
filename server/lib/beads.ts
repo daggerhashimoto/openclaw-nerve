@@ -189,15 +189,30 @@ function resolveExistingRealPath(candidatePath: string): string | null {
   }
 }
 
-function isPathWithinRoot(candidatePath: string, rootPath: string): boolean {
+function resolveRealPathForContainment(candidatePath: string): string {
   const normalizedCandidate = path.resolve(candidatePath);
-  const normalizedRoot = path.resolve(rootPath);
+  const missingSegments: string[] = [];
+  let current = normalizedCandidate;
 
-  const candidateRealPath = resolveExistingRealPath(normalizedCandidate);
-  const rootRealPath = resolveExistingRealPath(normalizedRoot);
+  while (true) {
+    const realCurrent = resolveExistingRealPath(current);
+    if (realCurrent) {
+      return path.join(realCurrent, ...missingSegments.reverse());
+    }
 
-  const containmentCandidate = candidateRealPath ?? normalizedCandidate;
-  const containmentRoot = rootRealPath ?? normalizedRoot;
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return normalizedCandidate;
+    }
+
+    missingSegments.push(path.basename(current));
+    current = parent;
+  }
+}
+
+function isPathWithinRoot(candidatePath: string, rootPath: string): boolean {
+  const containmentCandidate = resolveRealPathForContainment(candidatePath);
+  const containmentRoot = resolveRealPathForContainment(rootPath);
   const relative = path.relative(containmentRoot, containmentCandidate);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }

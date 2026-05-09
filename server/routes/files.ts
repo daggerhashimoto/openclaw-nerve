@@ -26,13 +26,25 @@ const MIME_MAP: Record<string, string> = {
 };
 
 /** Directories we allow serving files from. */
-function allowedPrefixes(): string[] {
+async function allowedPrefixes(): Promise<string[]> {
   const home = os.homedir();
-  return [
+  const prefixes = [
     '/tmp',
+    os.tmpdir(),
     path.join(home, '.openclaw'),
     config.memoryDir,
-  ].filter(Boolean);
+  ].filter(Boolean).map((prefix) => path.resolve(prefix));
+
+  const canonicalPrefixes = await Promise.all(
+    prefixes.map(async (prefix) => fs.promises.realpath(prefix).catch(() => prefix)),
+  );
+
+  return Array.from(new Set([...prefixes, ...canonicalPrefixes]));
+}
+
+function isPathWithinPrefix(candidate: string, prefix: string): boolean {
+  const relative = path.relative(prefix, candidate);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 app.get('/api/files', async (c) => {
@@ -48,8 +60,8 @@ app.get('/api/files', async (c) => {
   if (!mime) return c.text('Not an allowed file type', 403);
 
   // Directory prefix check
-  const prefixes = allowedPrefixes();
-  const allowed = prefixes.some((prefix) => resolved.startsWith(prefix + path.sep) || resolved === prefix);
+  const prefixes = await allowedPrefixes();
+  const allowed = prefixes.some((prefix) => isPathWithinPrefix(resolved, prefix));
   if (!allowed) return c.text('Access denied', 403);
 
   // Resolve symlinks and re-check prefix to prevent symlink traversal
@@ -59,7 +71,7 @@ app.get('/api/files', async (c) => {
   } catch {
     return c.text('Not found', 404);
   }
-  const realAllowed = prefixes.some((prefix) => realPath.startsWith(prefix + path.sep) || realPath === prefix);
+  const realAllowed = prefixes.some((prefix) => isPathWithinPrefix(realPath, prefix));
   if (!realAllowed) return c.text('Access denied', 403);
 
   try {

@@ -677,7 +677,46 @@ describe('OpenClaw chat runtime adapter', () => {
     ])).toEqual([
       { type: 'history_snapshot', sessionKey: 'agent:main:main', messages: expect.any(Array), at: expect.any(Number) },
       { type: 'user_message_committed', sessionKey: 'agent:main:main', runId: 'run-1', messageId: 'msg-1', text: 'hello', at: 1000 },
-      { type: 'turn_finalized', sessionKey: 'agent:main:main', runId: 'run-1', at: 1000 },
+    ]);
+  });
+
+  it('keeps concrete user-only history runs open for live streaming after hydrate', () => {
+    const events = adaptHistorySnapshot('agent:main:main', [
+      {
+        role: 'user',
+        runId: 'run-live',
+        messageId: 'msg-live',
+        timestamp: 1000,
+        content: 'start work',
+      },
+    ]);
+
+    expect(events.filter((event) => event.type === 'turn_finalized' && event.runId === 'run-live')).toEqual([]);
+
+    let timeline = createEmptyTimeline('agent:main:main');
+    for (const event of events) timeline = reduceRuntimeEvent(timeline, event);
+
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'thinking_delta',
+      sessionKey: 'agent:main:main',
+      runId: 'run-live',
+      blockIndex: 0,
+      text: 'reasoning live',
+      at: 1001,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_delta',
+      sessionKey: 'agent:main:main',
+      runId: 'run-live',
+      text: 'partial answer',
+      at: 1002,
+    });
+
+    expect(timeline.turns.find((turn) => turn.runId === 'run-live')?.status).toBe('running');
+    expect(timelineItemsInOrder(timeline).map((item) => `${item.kind}:${'text' in item ? item.text : ''}`)).toEqual([
+      'user_message:start work',
+      'thinking:reasoning live',
+      'assistant_message:partial answer',
     ]);
   });
 

@@ -32,12 +32,12 @@ export function adaptHistorySnapshot(sessionKey: string, messages: HistoryMessag
   ];
   let lastAssistantRunId: string | undefined;
   const finalizedRunAts = new Map<string, number>();
-  const userRunAts = new Map<string, number>();
+  const finalizableUserRunAts = new Map<string, number>();
   const noteFinalizedRun = (runId: string, at: number) => {
     finalizedRunAts.set(runId, Math.max(finalizedRunAts.get(runId) ?? at, at));
   };
-  const noteUserRun = (runId: string, at: number) => {
-    userRunAts.set(runId, Math.max(userRunAts.get(runId) ?? at, at));
+  const noteFinalizableUserRun = (runId: string, at: number) => {
+    finalizableUserRunAts.set(runId, Math.max(finalizableUserRunAts.get(runId) ?? at, at));
   };
 
   messages.forEach((message, messageIndex) => {
@@ -47,7 +47,8 @@ export function adaptHistorySnapshot(sessionKey: string, messages: HistoryMessag
       const text = extractText(message);
       if (text === undefined) return;
 
-      const runId = readNonEmptyString(message, 'runId') ?? historyUserRunId(message, messageIndex);
+      const explicitRunId = readNonEmptyString(message, 'runId');
+      const runId = explicitRunId ?? historyUserRunId(message, messageIndex);
       const event: Extract<RuntimeEvent, { type: 'user_message_committed' }> = {
         type: 'user_message_committed',
         sessionKey,
@@ -60,7 +61,7 @@ export function adaptHistorySnapshot(sessionKey: string, messages: HistoryMessag
       if (messageId) event.messageId = messageId;
       if (idempotencyKey) event.idempotencyKey = idempotencyKey;
       events.push(event);
-      noteUserRun(runId, at);
+      if (!explicitRunId) noteFinalizableUserRun(runId, at);
       return;
     }
 
@@ -86,7 +87,7 @@ export function adaptHistorySnapshot(sessionKey: string, messages: HistoryMessag
   for (const [runId, at] of finalizedRunAts) {
     events.push({ type: 'turn_finalized', sessionKey, runId, at });
   }
-  for (const [runId, at] of userRunAts) {
+  for (const [runId, at] of finalizableUserRunAts) {
     if (finalizedRunAts.has(runId)) continue;
     events.push({ type: 'turn_finalized', sessionKey, runId, at });
   }

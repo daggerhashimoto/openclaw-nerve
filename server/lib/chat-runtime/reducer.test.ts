@@ -690,6 +690,67 @@ describe('chat runtime reducer', () => {
     expect(itemOps.some((op) => op.item.id === 'user:agent:main:main:msg-1')).toBe(false);
   });
 
+  it('rebinds a no-runId optimistic turn when live chat starts', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'user_message_committed',
+      sessionKey: 'agent:main:main',
+      idempotencyKey: 'ik-1',
+      text: 'hello',
+      at: 1000,
+    });
+    const optimisticTurnId = timeline.turns[0].id;
+    const optimisticUserItemId = timeline.turns[0].inputItemIds[0];
+
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'turn_started',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      at: 1001,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_delta',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      text: 'partial',
+      at: 1002,
+    });
+
+    const userItems = Object.values(timeline.items).filter((item) => item.kind === 'user_message');
+    const assistantItems = Object.values(timeline.items).filter((item) => item.kind === 'assistant_message');
+
+    expect(timeline.turns).toHaveLength(1);
+    expect(timeline.turns[0]).toMatchObject({
+      id: optimisticTurnId,
+      runId: 'run-1',
+      status: 'running',
+      inputItemIds: [optimisticUserItemId],
+      outputItemIds: ['assistant:agent:main:main:run-1:answer'],
+    });
+    expect(userItems).toHaveLength(1);
+    expect(userItems[0]).toMatchObject({
+      id: optimisticUserItemId,
+      turnId: optimisticTurnId,
+      runId: 'run-1',
+      idempotencyKey: 'ik-1',
+      pending: true,
+      status: 'provisional',
+      source: 'optimistic',
+    });
+    expect(assistantItems).toHaveLength(1);
+    expect(assistantItems[0]).toMatchObject({
+      id: 'assistant:agent:main:main:run-1:answer',
+      turnId: optimisticTurnId,
+      runId: 'run-1',
+      text: 'partial',
+    });
+    expect(timeline.turns.some((turn) => turn.runId.startsWith('optimistic:'))).toBe(false);
+    expect(timelineItemsInOrder(timeline).map((item) => `${item.kind}:${'text' in item ? item.text : ''}`)).toEqual([
+      'user_message:hello',
+      'assistant_message:partial',
+    ]);
+  });
+
   it('does not downgrade a reconciled user item when a stale optimistic retry arrives', () => {
     let timeline = createEmptyTimeline('agent:main:main');
     const optimisticEvent = {

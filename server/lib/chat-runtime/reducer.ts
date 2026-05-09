@@ -51,7 +51,9 @@ export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEven
 
   switch (event.type) {
     case 'turn_started': {
-      const turn = ensureTurn(draft, event.runId, event.at);
+      const turn = findExistingTurn(draft, event.runId)
+        ?? rebindSinglePendingOptimisticPromptTurn(draft, event.runId, event.at)
+        ?? ensureTurn(draft, event.runId, event.at);
       if (!isTerminalTurnStatus(turn.status)) {
         turn.status = 'running';
         turn.finalizedAt = undefined;
@@ -309,7 +311,7 @@ function cloneTimeline(timeline: SessionTimeline): SessionTimeline {
 
 function ensureTurn(timeline: SessionTimeline, runId: string, at: number): TimelineTurn {
   const id = turnId(timeline.sessionKey, runId);
-  const existing = timeline.turns.find((turn) => turn.id === id || turn.runId === runId);
+  const existing = findExistingTurn(timeline, runId);
   if (existing) return existing;
 
   const turn: TimelineTurn = {
@@ -323,6 +325,44 @@ function ensureTurn(timeline: SessionTimeline, runId: string, at: number): Timel
     orderBase: { turn: timeline.turns.length, block: 0, sub: 0 },
   };
   timeline.turns.push(turn);
+  return turn;
+}
+
+function findExistingTurn(timeline: SessionTimeline, runId: string): TimelineTurn | undefined {
+  const id = turnId(timeline.sessionKey, runId);
+  return timeline.turns.find((turn) => turn.id === id || turn.runId === runId);
+}
+
+function rebindSinglePendingOptimisticPromptTurn(
+  timeline: SessionTimeline,
+  runId: string,
+  at: number,
+): TimelineTurn | undefined {
+  const candidates = timeline.turns
+    .map((turn) => {
+      if (!turn.runId.startsWith('optimistic:')) return undefined;
+      if (isTerminalTurnStatus(turn.status)) return undefined;
+      if (turn.inputItemIds.length !== 1 || turn.outputItemIds.length !== 0) return undefined;
+
+      const input = itemOfKind(timeline.items[turn.inputItemIds[0]], 'user_message');
+      if (!input || input.source !== 'optimistic' || input.pending === false) return undefined;
+
+      return { turn, input };
+    })
+    .filter((candidate): candidate is { turn: TimelineTurn; input: UserTimelineItem } => Boolean(candidate));
+
+  if (candidates.length !== 1) return undefined;
+
+  const { turn, input } = candidates[0];
+  turn.runId = runId;
+  turn.status = 'running';
+  turn.finalizedAt = undefined;
+  timeline.items[input.id] = {
+    ...input,
+    runId,
+    turnId: turn.id,
+    updatedAt: Math.max(input.updatedAt, at),
+  };
   return turn;
 }
 

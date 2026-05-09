@@ -171,6 +171,9 @@ export class ChatRuntime {
   private applyRuntimeEvents(events: RuntimeEvent[]): TimelinePatch[] {
     this.rememberRunSessions(events);
     const patches = this.store.applyEvents(events);
+    for (const event of events) {
+      patches.push(...this.flushPendingAgentEvents(event));
+    }
     for (const sessionKey of new Set(events.map((event) => event.sessionKey))) {
       this.updateActiveHistorySync(sessionKey);
     }

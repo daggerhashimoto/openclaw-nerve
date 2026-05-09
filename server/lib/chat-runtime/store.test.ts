@@ -1128,6 +1128,47 @@ describe('ChatRuntime', () => {
     ]);
   });
 
+  it('flushes run-scoped agent events when their chat start is replayed after hydration', async () => {
+    const sessionKey = 'agent:queued-sessionless-agent:main';
+    const historyRpc = deferred<unknown>();
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 10,
+      rpc: () => historyRpc.promise,
+    });
+
+    const hydration = runtime.hydrateSession(sessionKey);
+
+    expect(runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'agent',
+      payload: {
+        runId: 'run-live',
+        stream: 'thinking',
+        data: {
+          text: 'Reasoning arrived before chat start during hydration.',
+          delta: ' hydration.',
+        },
+      },
+    })).toEqual([]);
+    expect(runtime.applyGatewayEvent({
+      type: 'event',
+      event: 'chat',
+      payload: { state: 'started', sessionKey, runId: 'run-live' },
+    })).toEqual([]);
+
+    historyRpc.resolve({ messages: [] });
+    await hydration;
+
+    expect(thinkingItemsFromSnapshot(runtime.snapshot(sessionKey, 'hydration'))).toMatchObject([
+      {
+        kind: 'thinking',
+        runId: 'run-live',
+        text: 'Reasoning arrived before chat start during hydration.',
+        status: 'running',
+      },
+    ]);
+  });
+
   it('keeps hydration promise visible to subscriber microtasks during history publication', async () => {
     const sessionKey = 'agent:subscriber-rehydrate:main';
     const calls: Array<{ method: string; params: unknown }> = [];

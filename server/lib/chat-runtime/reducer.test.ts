@@ -913,6 +913,67 @@ describe('chat runtime reducer', () => {
     expect(turnsReferencingUser).toHaveLength(1);
   });
 
+  it('merges a run-bound optimistic prompt into an existing real run turn', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'user_message_committed',
+      sessionKey: 'agent:main:main',
+      idempotencyKey: 'ik-1',
+      text: 'user 1',
+      at: 1000,
+    });
+    const firstOptimisticTurnId = timeline.turns[0].id;
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'user_message_committed',
+      sessionKey: 'agent:main:main',
+      idempotencyKey: 'ik-2',
+      text: 'user 2',
+      at: 1001,
+    });
+    const secondOptimisticTurnId = timeline.turns[1].id;
+
+    timeline = reduceRuntimeEvent(timeline, { type: 'turn_started', sessionKey: 'agent:main:main', runId: 'run-1', at: 1002 });
+    const realTurnId = timeline.turns.find((turn) => turn.runId === 'run-1')?.id;
+    timeline = reduceRuntimeEvent(timeline, { type: 'assistant_delta', sessionKey: 'agent:main:main', runId: 'run-1', text: 'partial', at: 1003 });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'user_message_run_bound',
+      sessionKey: 'agent:main:main',
+      idempotencyKey: 'ik-1',
+      runId: 'run-1',
+      at: 1004,
+    });
+
+    const userItemId = 'user:agent:main:main:ik-1';
+    const userItems = Object.values(timeline.items).filter((item) => item.kind === 'user_message');
+    const realTurn = timeline.turns.find((turn) => turn.id === realTurnId);
+    const firstOptimisticTurn = timeline.turns.find((turn) => turn.id === firstOptimisticTurnId);
+    const secondOptimisticTurn = timeline.turns.find((turn) => turn.id === secondOptimisticTurnId);
+    const runTurns = timeline.turns.filter((turn) => turn.runId === 'run-1');
+    const turnsReferencingUser = timeline.turns.filter((turn) => turn.inputItemIds.includes(userItemId));
+
+    expect(runTurns).toHaveLength(1);
+    expect(userItems.find((item) => item.id === userItemId)).toMatchObject({
+      turnId: realTurnId,
+      runId: 'run-1',
+      idempotencyKey: 'ik-1',
+      status: 'provisional',
+      source: 'optimistic',
+    });
+    expect(realTurn).toMatchObject({
+      status: 'running',
+      inputItemIds: [userItemId],
+      outputItemIds: ['assistant:agent:main:main:run-1:answer'],
+    });
+    expect(firstOptimisticTurn).toMatchObject({ status: 'aborted', inputItemIds: [], outputItemIds: [] });
+    expect(secondOptimisticTurn).toMatchObject({
+      id: secondOptimisticTurnId,
+      runId: 'optimistic:idempotency:ik-2',
+      status: 'running',
+      inputItemIds: ['user:agent:main:main:ik-2'],
+    });
+    expect(turnsReferencingUser).toHaveLength(1);
+  });
+
   it('moves a message-id user item between turns without leaving stale input references', () => {
     let timeline = createEmptyTimeline('agent:main:main');
     timeline = reduceRuntimeEvent(timeline, {

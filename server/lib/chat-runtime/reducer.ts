@@ -142,17 +142,36 @@ export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEven
         );
       if (!item || item.kind !== 'user_message') break;
 
+      const sourceTurn = item.turnId
+        ? draft.turns.find((candidate) => candidate.id === item.turnId)
+        : undefined;
+      const existingRunTurn = findExistingTurn(draft, event.runId);
+      const shouldMoveIntoExistingRunTurn = Boolean(
+        sourceTurn &&
+        existingRunTurn &&
+        existingRunTurn.id !== sourceTurn.id &&
+        isPromptOnlyInputTurn(sourceTurn, item.id),
+      );
+      const targetTurn = shouldMoveIntoExistingRunTurn ? existingRunTurn : sourceTurn;
+      const orderKey = shouldMoveIntoExistingRunTurn && targetTurn
+        ? orderKeyFor(targetTurn, USER_BLOCK, targetTurn.inputItemIds.length)
+        : item.orderKey;
+
       draft.items[item.id] = {
         ...item,
         runId: event.runId,
+        turnId: targetTurn?.id ?? item.turnId,
+        orderKey,
         updatedAt: Math.max(item.updatedAt, event.at),
       };
 
-      const turn = item.turnId
-        ? draft.turns.find((candidate) => candidate.id === item.turnId)
-        : undefined;
-      if (turn && !isTerminalTurnStatus(turn.status)) {
-        turn.runId = event.runId;
+      if (shouldMoveIntoExistingRunTurn && sourceTurn && targetTurn) {
+        removeValue(sourceTurn.inputItemIds, item.id);
+        detachInputItemFromOtherTurns(draft, item.id, targetTurn.id);
+        appendUnique(targetTurn.inputItemIds, item.id);
+        neutralizeTurn(sourceTurn, event.at);
+      } else if (sourceTurn && !isTerminalTurnStatus(sourceTurn.status)) {
+        sourceTurn.runId = event.runId;
       }
       break;
     }

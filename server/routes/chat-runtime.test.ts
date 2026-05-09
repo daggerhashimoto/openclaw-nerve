@@ -347,6 +347,72 @@ describe('chat runtime routes', () => {
     }
   });
 
+  it('rejects image and inline upload payloads over the chat runtime schema limit', async () => {
+    const originalInlineLimit = process.env.NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB;
+    process.env.NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB = '0.000001';
+
+    try {
+      const { app } = await buildRouteApp();
+      const invalidRequests: RequestInit[] = [
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: 'hello',
+            idempotencyKey: 'idem-large-image',
+            images: [{ mimeType: 'image/png', content: 'abcd' }],
+          }),
+        },
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: 'hello',
+            idempotencyKey: 'idem-large-inline',
+            uploadPayload: {
+              descriptors: [
+                {
+                  id: 'att-large',
+                  origin: 'upload',
+                  mode: 'inline',
+                  name: 'large.png',
+                  mimeType: 'image/png',
+                  sizeBytes: 4,
+                  inline: {
+                    encoding: 'base64',
+                    base64: 'abcd',
+                    base64Bytes: 4,
+                    compressed: false,
+                  },
+                  policy: { forwardToSubagents: false },
+                },
+              ],
+              manifest: {
+                enabled: true,
+                exposeInlineBase64ToAgent: false,
+                allowSubagentForwarding: false,
+              },
+            },
+          }),
+        },
+      ];
+
+      for (const init of invalidRequests) {
+        const res = await app.request('/api/chat-runtime/sessions/session-post/messages', init);
+        expect(res.status).toBe(400);
+        const json = await res.json() as { ok: boolean; error: string };
+        expect(json.ok).toBe(false);
+        expect(json.error).toBeTruthy();
+      }
+    } finally {
+      if (originalInlineLimit === undefined) {
+        delete process.env.NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB;
+      } else {
+        process.env.NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB = originalInlineLimit;
+      }
+    }
+  });
+
   it('applies an optimistic user message, sends chat.send, and returns cursor/runId', async () => {
     const optimisticPatch = createPatch('agent:main:main', '17');
     const runBindingPatch = createPatch('agent:main:main', '18');

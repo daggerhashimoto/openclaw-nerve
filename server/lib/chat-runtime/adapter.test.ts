@@ -220,19 +220,19 @@ describe('OpenClaw chat runtime adapter', () => {
       type: 'user_message_committed',
       text: 'look at this',
       images: [
-          {
-            mimeType: 'image/png',
-            content: 'aW5saW5lLWJhc2U2NA==',
-            preview: 'data:image/png;base64,aW5saW5lLWJhc2U2NA==',
-            name: 'inline.png',
-          },
-          {
-            mimeType: 'image/jpeg',
-            content: 'c291cmNlLWJhc2U2NA==',
-            preview: 'data:image/jpeg;base64,c291cmNlLWJhc2U2NA==',
-            name: 'source.jpg',
-          },
-        ],
+        {
+          mimeType: 'image/png',
+          content: 'aW5saW5lLWJhc2U2NA==',
+          preview: 'data:image/png;base64,aW5saW5lLWJhc2U2NA==',
+          name: 'inline.png',
+        },
+        {
+          mimeType: 'image/jpeg',
+          content: 'c291cmNlLWJhc2U2NA==',
+          preview: 'data:image/jpeg;base64,c291cmNlLWJhc2U2NA==',
+          name: 'source.jpg',
+        },
+      ],
     });
 
     let timeline = createEmptyTimeline('agent:main:main');
@@ -246,6 +246,52 @@ describe('OpenClaw chat runtime adapter', () => {
         { mimeType: 'image/jpeg', content: 'c291cmNlLWJhc2U2NA==', name: 'source.jpg' },
       ],
     });
+  });
+
+  it('preserves omitted user image blocks as session media references', () => {
+    const events = adaptHistorySnapshot('agent:main:main', [
+      {
+        role: 'user',
+        messageId: 'msg-user-omitted-image',
+        timestamp: 1775131617235,
+        content: [
+          { type: 'text', text: 'look at the omitted image' },
+          { type: 'image', omitted: true, mimeType: 'image/png' },
+        ],
+      },
+    ]);
+
+    expect(events.find((event) => event.type === 'user_message_committed')).toMatchObject({
+      type: 'user_message_committed',
+      text: 'look at the omitted image',
+      images: [
+        {
+          mimeType: 'image/png',
+          content: '',
+          preview: '/api/sessions/media?sessionKey=agent%3Amain%3Amain&timestamp=1775131617235&imageIndex=0',
+          name: 'message-1775131617235-image-0.png',
+        },
+      ],
+    });
+  });
+
+  it('does not synthesize omitted user image references without a persisted timestamp', () => {
+    const events = adaptHistorySnapshot('agent:main:main', [
+      {
+        role: 'user',
+        messageId: 'msg-user-untimed-image',
+        content: [
+          { type: 'text', text: 'untimed omitted image' },
+          { type: 'image', omitted: true, mimeType: 'image/png' },
+        ],
+      },
+    ]);
+
+    expect(events.find((event) => event.type === 'user_message_committed')).toMatchObject({
+      type: 'user_message_committed',
+      text: 'untimed omitted image',
+    });
+    expect(events.find((event) => event.type === 'user_message_committed')).not.toHaveProperty('images');
   });
 
   it('uses thinking-block ordinals for mixed assistant history content', () => {

@@ -45,7 +45,7 @@ export function adaptHistorySnapshot(sessionKey: string, messages: HistoryMessag
 
     if (message.role === 'user') {
       const text = extractText(message);
-      const images = extractImageBlocks(message);
+      const images = extractImageBlocks(sessionKey, message);
       if (text === undefined && images.length === 0) return;
 
       const explicitRunId = readNonEmptyString(message, 'runId');
@@ -529,7 +529,13 @@ function extractText(value: unknown): string | undefined {
   return typeof value.text === 'string' ? value.text : undefined;
 }
 
-function imageBlockToMessageImage(block: HistoryContentBlock): TimelineMessageImage | null {
+interface ImageBlockContext {
+  sessionKey: string;
+  messageTimestampMs?: number;
+  imageIndex: number;
+}
+
+function imageBlockToMessageImage(block: HistoryContentBlock, context: ImageBlockContext): TimelineMessageImage | null {
   if (block.data && block.mimeType) {
     const content = normalizeBase64(block.data);
     if (!content) return null;
@@ -542,16 +548,35 @@ function imageBlockToMessageImage(block: HistoryContentBlock): TimelineMessageIm
   }
 
   const source = block.source;
-  if (!source?.data || !source.media_type) return null;
-  const content = normalizeBase64(source.data);
-  if (!content) return null;
+  if (source?.data && source.media_type) {
+    const content = normalizeBase64(source.data);
+    if (!content) return null;
 
+    return {
+      mimeType: source.media_type,
+      content,
+      preview: `data:${source.media_type};base64,${content}`,
+      name: source.filename || block.name || 'image',
+    };
+  }
+
+  if (!block.omitted || !Number.isFinite(context.messageTimestampMs)) return null;
+  const mimeType = block.mimeType || source?.media_type || 'image/png';
+  const timestamp = context.messageTimestampMs as number;
+  const extension = imageExtensionFromMimeType(mimeType);
   return {
-    mimeType: source.media_type,
-    content,
-    preview: `data:${source.media_type};base64,${content}`,
-    name: source.filename || block.name || 'image',
+    mimeType,
+    content: '',
+    preview: `/api/sessions/media?sessionKey=${encodeURIComponent(context.sessionKey)}&timestamp=${timestamp}&imageIndex=${context.imageIndex}`,
+    name: `message-${timestamp}-image-${context.imageIndex}.${extension}`,
   };
+}
+
+function imageExtensionFromMimeType(mimeType?: string): string {
+  if (!mimeType?.startsWith('image/')) return 'png';
+  const subtype = mimeType.slice('image/'.length).toLowerCase();
+  if (subtype === 'jpeg') return 'jpg';
+  return subtype || 'png';
 }
 
 function normalizeBase64(value: string): string | null {
@@ -562,13 +587,21 @@ function normalizeBase64(value: string): string | null {
   return normalized;
 }
 
-function extractImageBlocks(message: HistoryMessage): TimelineMessageImage[] {
+function extractImageBlocks(sessionKey: string, message: HistoryMessage): TimelineMessageImage[] {
   if (!Array.isArray(message.content)) return [];
 
-  return message.content
-    .filter((block) => block.type === 'image')
-    .map(imageBlockToMessageImage)
-    .filter((image): image is TimelineMessageImage => Boolean(image));
+  const timestamp = messageTimeIdentity(message);
+  let imageIndex = 0;
+  const images: TimelineMessageImage[] = [];
+
+  for (const block of message.content) {
+    if (block.type !== 'image') continue;
+    const image = imageBlockToMessageImage(block, { sessionKey, messageTimestampMs: timestamp, imageIndex });
+    if (image) images.push(image);
+    imageIndex += 1;
+  }
+
+  return images;
 }
 
 function toolFinishedEvent(

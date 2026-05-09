@@ -4,26 +4,44 @@ import { z } from 'zod';
 import { gatewayRpcCall } from '../lib/gateway-rpc.js';
 import { getChatRuntime } from '../lib/chat-runtime/singleton.js';
 import type { TimelinePatch, TimelineSnapshot } from '../lib/chat-runtime/types.js';
+import { getUploadFeatureConfig } from '../lib/upload-config.js';
 import { appendUploadManifest, applyVoiceTTSHint } from '../../shared/chat-upload-manifest.js';
 
 const app = new Hono();
 
 const PING_INTERVAL_MS = 30_000;
+const uploadFeatureConfig = getUploadFeatureConfig();
+const MAX_INLINE_ATTACHMENT_BYTES = Math.max(1, Math.floor(uploadFeatureConfig.inlineAttachmentMaxMb * 1024 * 1024));
+const MAX_INLINE_BASE64_CHARS = Math.max(1, Math.ceil(MAX_INLINE_ATTACHMENT_BYTES * 4 / 3));
 
 type CatchupBaseline =
   | { kind: 'patches'; patches: TimelinePatch[]; coveredCursor?: string }
   | { kind: 'snapshot'; snapshot: TimelineSnapshot; coveredCursor: string };
 
-const nonBlankString = (field: string) => z
-  .string()
+const nonBlankString = (field: string, maxLength?: number) => {
+  let schema = z.string();
+  if (maxLength !== undefined) {
+    schema = schema.max(maxLength, `${field} must be at most ${maxLength} characters`);
+  }
+  return schema
   .refine((value) => value.trim().length > 0, `${field} must be a non-empty string`);
+};
+
+const inlinePayloadWithinLimit = (inline: unknown): boolean => {
+  if (inline === undefined) return true;
+  try {
+    return JSON.stringify(inline).length <= MAX_INLINE_BASE64_CHARS;
+  } catch {
+    return false;
+  }
+};
 
 const sendMessageSchema = z.object({
   text: z.string(),
   idempotencyKey: nonBlankString('idempotencyKey'),
   images: z.array(z.object({
     mimeType: nonBlankString('images[].mimeType'),
-    content: nonBlankString('images[].content'),
+    content: nonBlankString('images[].content', MAX_INLINE_BASE64_CHARS),
     preview: z.string().optional(),
     name: z.string().optional(),
   })).optional(),
@@ -41,7 +59,10 @@ const sendMessageSchema = z.object({
       policy: z.object({
         forwardToSubagents: z.boolean(),
       }).passthrough(),
-    }).passthrough()),
+    }).passthrough().refine((descriptor) => inlinePayloadWithinLimit(descriptor.inline), {
+      path: ['inline'],
+      message: `uploadPayload.descriptors[].inline must serialize to at most ${MAX_INLINE_BASE64_CHARS} characters`,
+    })),
     manifest: z.object({
       enabled: z.boolean(),
       exposeInlineBase64ToAgent: z.boolean(),

@@ -1,8 +1,12 @@
 /** Regression test: ChatContext should not subscribe to gateway chat events for rendering. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, act, waitFor } from '@testing-library/react';
-import { useEffect } from 'react';
+import { render, act, waitFor, screen } from '@testing-library/react';
+import { useEffect, type ReactElement, type ReactNode } from 'react';
 import type { ImageAttachment, OutgoingUploadPayload } from '@/features/chat/types';
+import type { useChatRuntime } from '@/features/chat/runtime/useChatRuntime';
+import type { GranularAgentState, Session } from '@/types';
+
+type RuntimeState = ReturnType<typeof useChatRuntime>;
 
 describe('ChatContext subscription stability', () => {
   beforeEach(() => {
@@ -14,14 +18,26 @@ describe('ChatContext subscription stability', () => {
     vi.unstubAllGlobals();
   });
 
-  async function setup() {
+  async function setup(options: {
+    agentStatus?: Record<string, GranularAgentState>;
+    sessions?: Session[];
+    runtimeState?: Partial<RuntimeState>;
+  } = {}) {
     const subscribeMock = vi.fn(() => () => {});
     const rpcMock = vi.fn(async () => ({}));
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({ ok: true, sessionKey: 'main', cursor: '1', runId: 'run-1' }),
     }));
+    const runtimeState = {
+      ...makeRuntimeState(),
+      ...options.runtimeState,
+    };
     vi.stubGlobal('fetch', fetchMock);
+
+    vi.doMock('@/features/chat/runtime/useChatRuntime', () => ({
+      useChatRuntime: vi.fn(() => runtimeState),
+    }));
 
     vi.doMock('./GatewayContext', () => ({
       useGateway: () => ({
@@ -34,7 +50,8 @@ describe('ChatContext subscription stability', () => {
     vi.doMock('./SessionContext', () => ({
       useSessionContext: () => ({
         currentSession: 'main',
-        sessions: [],
+        sessions: options.sessions ?? [],
+        agentStatus: options.agentStatus ?? {},
       }),
     }));
 
@@ -168,4 +185,124 @@ describe('ChatContext subscription stability', () => {
     expect(rpcMock).not.toHaveBeenCalled();
     expect(subscribeMock).not.toHaveBeenCalled();
   });
+
+  it('does not keep the chat generating indicator stuck when gateway status is settled after the last runtime event', async () => {
+    const { ChatProvider, useChat } = await setup({
+      agentStatus: {
+        main: { status: 'IDLE', since: 2_000 },
+      },
+      runtimeState: {
+        isGenerating: true,
+        processingStage: 'thinking',
+        lastEventTimestamp: 1_000,
+      },
+    });
+
+    renderRuntimeState(ChatProvider, useChat);
+
+    expectRuntimeState('false', '');
+  });
+
+  it('keeps showing runtime generation when the runtime event is newer than a stale settled gateway status', async () => {
+    const { ChatProvider, useChat } = await setup({
+      agentStatus: {
+        main: { status: 'IDLE', since: 1_000 },
+      },
+      runtimeState: {
+        isGenerating: true,
+        processingStage: 'thinking',
+        lastEventTimestamp: 2_000,
+      },
+    });
+
+    renderRuntimeState(ChatProvider, useChat);
+
+    expectRuntimeState('true', 'thinking');
+  });
+
+  it('does not keep the chat generating indicator stuck after refresh when the session row is settled', async () => {
+    const { ChatProvider, useChat } = await setup({
+      sessions: [{
+        sessionKey: 'main',
+        state: 'idle',
+        updatedAt: 2_000,
+      }],
+      runtimeState: {
+        isGenerating: true,
+        processingStage: 'thinking',
+        lastEventTimestamp: 1_000,
+      },
+    });
+
+    renderRuntimeState(ChatProvider, useChat);
+
+    expectRuntimeState('false', '');
+  });
+
+  it('keeps showing runtime generation when the settled session row is older than the runtime event', async () => {
+    const { ChatProvider, useChat } = await setup({
+      sessions: [{
+        sessionKey: 'main',
+        state: 'idle',
+        updatedAt: 1_000,
+      }],
+      runtimeState: {
+        isGenerating: true,
+        processingStage: 'thinking',
+        lastEventTimestamp: 2_000,
+      },
+    });
+
+    renderRuntimeState(ChatProvider, useChat);
+
+    expectRuntimeState('true', 'thinking');
+  });
 });
+
+function renderRuntimeState(
+  ChatProvider: (props: { children: ReactNode }) => ReactElement,
+  useChat: () => { isGenerating: boolean; processingStage: string | null },
+): void {
+  function Consumer() {
+    const chat = useChat();
+    return (
+      <div
+        data-testid="runtime-state"
+        data-generating={String(chat.isGenerating)}
+        data-stage={chat.processingStage ?? ''}
+      />
+    );
+  }
+
+  render(
+    <ChatProvider>
+      <Consumer />
+    </ChatProvider>,
+  );
+}
+
+function expectRuntimeState(generating: string, stage: string): void {
+  expect(screen.getByTestId('runtime-state').getAttribute('data-generating')).toBe(generating);
+  expect(screen.getByTestId('runtime-state').getAttribute('data-stage')).toBe(stage);
+}
+
+function makeRuntimeState(): RuntimeState {
+  return {
+    messages: [],
+    isGenerating: false,
+    processingStage: null,
+    lastEventTimestamp: 0,
+    activityLog: [],
+    currentToolDescription: null,
+    stream: { html: '' },
+    connected: true,
+    error: null,
+    cursor: '0',
+    hasMore: false,
+    loadMore: vi.fn(() => false),
+    reload: vi.fn(),
+    reset: vi.fn(),
+    markUserMessageFailed: vi.fn(),
+    clearUserMessageFailure: vi.fn(),
+  };
+}

@@ -14,7 +14,7 @@ import { useChatRuntime } from '@/features/chat/runtime/useChatRuntime';
 import type { ImageAttachment, ChatMsg, OutgoingUploadPayload } from '@/features/chat/types';
 import type { FinalMessageData, RecoveryReason } from '@/features/chat/operations';
 import { useChatTTS } from '@/hooks/useChatTTS';
-import type { ChatMessage } from '@/types';
+import { getSessionKey, type ChatMessage, type GranularAgentState, type Session } from '@/types';
 import { encodeRuntimeIdPart } from '../../shared/chat-runtime-id';
 
 /** Processing stages for enhanced thinking indicator */
@@ -67,7 +67,7 @@ const ChatContext = createContext<ChatContextValue | null>(null);
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { rpc } = useGateway();
-  const { currentSession } = useSessionContext();
+  const { currentSession, sessions, agentStatus = {} } = useSessionContext();
   const { soundEnabled, speak } = useSettings();
 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -107,8 +107,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const ttsHook = useChatTTS({ soundEnabled: soundEnabledRef, speak: speakRef });
   const { handleFinalTTS, playCompletionPing, resetPlayedSounds, trackVoiceMessage } = ttsHook;
 
-  const isGenerating = runtimeIsGenerating || pendingSendCount > 0;
-  const processingStage = runtimeProcessingStage ?? (pendingSendCount > 0 ? 'thinking' : null);
+  const currentGatewayStatus = agentStatus[currentSession || ''];
+  const currentSessionDetails = currentSession
+    ? sessions.find((session) => getSessionKey(session) === currentSession)
+    : undefined;
+  const gatewaySettledAfterRuntime = isSettledGatewayStatusCurrent(
+    currentGatewayStatus,
+    lastEventTimestamp,
+  ) || isSettledSessionCurrent(
+    currentSessionDetails,
+    lastEventTimestamp,
+  );
+  const effectiveRuntimeIsGenerating = runtimeIsGenerating && !gatewaySettledAfterRuntime;
+  const isGenerating = effectiveRuntimeIsGenerating || pendingSendCount > 0;
+  const processingStage = effectiveRuntimeIsGenerating
+    ? runtimeProcessingStage
+    : pendingSendCount > 0
+      ? 'thinking'
+      : null;
 
   const wasRuntimeGeneratingRef = useRef(false);
   const activeTTSRequestsRef = useRef<Map<string, ActiveTTSRequest>>(new Map());
@@ -318,6 +334,47 @@ function singleTimestampFallbackCandidate(messages: ChatMsg[], sentAt: number): 
     return Number.isFinite(timestamp) && timestamp >= sentAt;
   });
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+function isSettledGatewayStatusCurrent(
+  status: GranularAgentState | undefined,
+  runtimeUpdatedAt: number,
+): boolean {
+  if (!status) return false;
+  if (status.status !== 'IDLE' && status.status !== 'DONE' && status.status !== 'ERROR') return false;
+  return Number.isFinite(status.since) && status.since >= runtimeUpdatedAt;
+}
+
+const SETTLED_SESSION_STATES = new Set(['idle', 'done', 'error', 'final', 'aborted', 'completed', 'failed']);
+const BUSY_SESSION_STATES = new Set(['running', 'thinking', 'tool_use', 'delta', 'started', 'streaming']);
+
+function isSettledSessionCurrent(
+  session: Session | undefined,
+  runtimeUpdatedAt: number,
+): boolean {
+  if (!session) return false;
+  if (session.busy || session.processing) return false;
+
+  const state = normalizedSessionState(session);
+  if (!state || BUSY_SESSION_STATES.has(state) || !SETTLED_SESSION_STATES.has(state)) return false;
+
+  const updatedAt = sessionUpdatedAt(session);
+  return Number.isFinite(updatedAt) && updatedAt >= runtimeUpdatedAt;
+}
+
+function normalizedSessionState(session: Session): string | undefined {
+  const value = session.state ?? session.agentState ?? session.status;
+  return typeof value === 'string' ? value.trim().toLowerCase() : undefined;
+}
+
+function sessionUpdatedAt(session: Session): number {
+  if (typeof session.updatedAt === 'number') return session.updatedAt;
+  if (typeof session.lastActivity === 'number') return session.lastActivity;
+  if (typeof session.lastActivity === 'string') {
+    const parsed = Date.parse(session.lastActivity);
+    return Number.isFinite(parsed) ? parsed : Number.NaN;
+  }
+  return Number.NaN;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- hook export is intentional

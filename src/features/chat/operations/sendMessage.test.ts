@@ -337,6 +337,45 @@ describe('sendChatRuntimeMessage', () => {
     });
   });
 
+  it('sanitizes inline upload descriptors before posting to the server replay runtime', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        ok: true,
+        sessionKey: 'agent:main:main',
+        cursor: '12',
+      }),
+    });
+    const uploadPayload = makeUploadPayload();
+
+    await sendChatRuntimeMessage({
+      fetchImpl,
+      sessionKey: 'agent:main:main',
+      text: 'look at this',
+      idempotencyKey: 'idem-image',
+      images: [{
+        id: 'img-1',
+        mimeType: 'image/png',
+        content: 'YmFzZTY0LWJ5dGVz',
+        preview: 'data:image/png;base64,YmFzZTY0LWJ5dGVz',
+        name: 'small.png',
+      }],
+      uploadPayload,
+    });
+
+    const body = JSON.parse((fetchImpl.mock.calls[0]?.[1] as RequestInit).body as string) as {
+      uploadPayload: OutgoingUploadPayload;
+    };
+    expect(body.uploadPayload.descriptors[0].inline?.base64).toBe('');
+    expect(body.uploadPayload.descriptors[0].inline?.previewUrl).toBeUndefined();
+    expect(body.uploadPayload.descriptors[0].inline?.base64Bytes).toBe(12);
+    expect(body.uploadPayload.descriptors[1].reference).toEqual({
+      kind: 'local_path',
+      path: '/workspace/capture.mov',
+      uri: 'file:///workspace/capture.mov',
+    });
+  });
+
   it('throws a useful error when the runtime send fails', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: false,

@@ -6,7 +6,7 @@
 import { generateMsgId } from '@/features/chat/types';
 import type { ChatMsg, ImageAttachment, OutgoingUploadPayload } from '@/features/chat/types';
 import { renderMarkdown, renderToolResults } from '@/utils/helpers';
-import { appendUploadManifest, applyVoiceTTSHint } from '../../../../shared/chat-upload-manifest';
+import { appendUploadManifest, applyVoiceTTSHint, sanitizeUploadDescriptor } from '../../../../shared/chat-upload-manifest';
 
 export { appendUploadManifest, applyVoiceTTSHint };
 
@@ -116,6 +116,7 @@ export async function sendChatRuntimeMessage(params: {
   fetchImpl?: FetchFn;
 }): Promise<ChatRuntimeSendAck> {
   const { sessionKey, text, idempotencyKey, images, uploadPayload, fetchImpl = fetch } = params;
+  const runtimeUploadPayload = sanitizeRuntimeUploadPayload(uploadPayload);
   const requestBody = {
     text,
     idempotencyKey,
@@ -127,7 +128,7 @@ export async function sendChatRuntimeMessage(params: {
         name: image.name,
       })),
     } : {}),
-    ...(uploadPayload?.descriptors.length ? { uploadPayload } : {}),
+    ...(runtimeUploadPayload?.descriptors.length ? { uploadPayload: runtimeUploadPayload } : {}),
   };
 
   const res = await fetchImpl(`/api/chat-runtime/sessions/${encodeURIComponent(sessionKey)}/messages`, {
@@ -146,6 +147,17 @@ export async function sendChatRuntimeMessage(params: {
   }
 
   return responseBody;
+}
+
+function sanitizeRuntimeUploadPayload(uploadPayload: OutgoingUploadPayload | undefined): OutgoingUploadPayload | undefined {
+  if (!uploadPayload?.descriptors.length) return undefined;
+
+  return {
+    ...uploadPayload,
+    descriptors: uploadPayload.descriptors.map((descriptor) =>
+      sanitizeUploadDescriptor(descriptor, uploadPayload.manifest.exposeInlineBase64ToAgent),
+    ),
+  };
 }
 
 async function parseJsonBody(res: Response): Promise<unknown> {

@@ -14,6 +14,7 @@ const uploadFeatureConfig = getUploadFeatureConfig();
 const MAX_INLINE_ATTACHMENT_BYTES = Math.max(1, Math.floor(uploadFeatureConfig.inlineAttachmentMaxMb * 1024 * 1024));
 const MAX_INLINE_BASE64_CHARS = Math.max(1, Math.ceil(MAX_INLINE_ATTACHMENT_BYTES * 4 / 3));
 const MAX_IMAGE_MIME_TYPE_CHARS = 96;
+const MAX_IMAGE_NAME_CHARS = 256;
 const MAX_IMAGE_PREVIEW_CHARS = MAX_INLINE_BASE64_CHARS + 'data:'.length + ';base64,'.length + MAX_IMAGE_MIME_TYPE_CHARS;
 const MAX_UPLOAD_DESCRIPTOR_METADATA_CHARS = Math.max(1, Math.floor(uploadFeatureConfig.inlineImageContextMaxBytes));
 
@@ -58,7 +59,10 @@ const sendMessageSchema = z.object({
       MAX_IMAGE_PREVIEW_CHARS,
       `images[].preview must be at most ${MAX_IMAGE_PREVIEW_CHARS} characters`,
     ).optional(),
-    name: z.string().optional(),
+    name: z.string().max(
+      MAX_IMAGE_NAME_CHARS,
+      `images[].name must be at most ${MAX_IMAGE_NAME_CHARS} characters`,
+    ).optional(),
   })).optional(),
   uploadPayload: z.object({
     descriptors: z.array(z.object({
@@ -307,7 +311,7 @@ function normalizeMessageImages(images: ParsedImage[] | undefined) {
     mimeType: image.mimeType,
     content: image.content,
     preview: normalizeImagePreview(image),
-    name: image.name || 'image',
+    name: normalizeImageName(image),
   }));
 }
 
@@ -315,6 +319,11 @@ function normalizeImagePreview(image: ParsedImage): string {
   const fallback = `data:${image.mimeType};base64,${image.content}`;
   if (!image.preview) return fallback;
   return image.preview.length <= MAX_IMAGE_PREVIEW_CHARS ? image.preview : fallback;
+}
+
+function normalizeImageName(image: ParsedImage): string {
+  if (!image.name) return 'image';
+  return image.name.length <= MAX_IMAGE_NAME_CHARS ? image.name : image.name.slice(0, MAX_IMAGE_NAME_CHARS);
 }
 
 function normalizeCursor(cursor: string | undefined): string | null {

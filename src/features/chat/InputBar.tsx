@@ -574,7 +574,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     }
 
     const inlineCapBytes = getInlineAttachmentMaxBytes(uploadConfig);
-    const accepted: File[] = [];
+    const accepted: Array<{ file: File; mode: UploadMode }> = [];
     let firstError: string | null = null;
 
     for (const file of filesToStage) {
@@ -597,14 +597,35 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         continue;
       }
 
-      accepted.push(file);
+      accepted.push({ file, mode: defaultMode });
     }
 
     if (accepted.length > 0) {
       try {
-        const staged = await importBrowserUploadsToCanonicalReferences(accepted);
-        const next = staged.map((artifact, index) => {
-          const sourceFile = accepted[index];
+        const referenceFiles = accepted
+          .filter((item) => item.mode === 'file_reference')
+          .map((item) => item.file);
+        const references = referenceFiles.length > 0
+          ? await importBrowserUploadsToCanonicalReferences(referenceFiles)
+          : [];
+        let referenceIndex = 0;
+
+        const next = accepted.map(({ file, mode }) => {
+          if (mode === 'inline') {
+            return {
+              id: crypto.randomUUID ? crypto.randomUUID() : `att-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              file,
+              origin: 'upload' as const,
+              mode,
+              previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+            };
+          }
+
+          const artifact = references[referenceIndex++];
+          if (!artifact) {
+            throw new Error(`Failed to resolve upload reference for "${file.name}".`);
+          }
+          const sourceFile = file;
           const mimeType = artifact.mimeType || sourceFile?.type || 'application/octet-stream';
           const stagedFile = createServerPathBackedFile({
             name: sourceFile?.name || artifact.originalName,

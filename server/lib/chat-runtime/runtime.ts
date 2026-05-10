@@ -570,7 +570,16 @@ function historyMessageHasAttachmentSignal(message: HistoryMessage): boolean {
     return message.content.includes(UPLOAD_MANIFEST_OPEN) && message.content.includes(UPLOAD_MANIFEST_CLOSE);
   }
 
-  return message.content.some((block) => isRecord(block) && block.type === 'image');
+  return message.content.some((block) => {
+    if (!isRecord(block)) return false;
+    if (block.type === 'image' || block.type === 'file' || block.type === 'document') return true;
+    const text = typeof block.text === 'string'
+      ? block.text
+      : typeof block.content === 'string'
+        ? block.content
+        : '';
+    return text.includes(UPLOAD_MANIFEST_OPEN) && text.includes(UPLOAD_MANIFEST_CLOSE);
+  });
 }
 
 function isPlausibleActiveHistoryUserMessage(

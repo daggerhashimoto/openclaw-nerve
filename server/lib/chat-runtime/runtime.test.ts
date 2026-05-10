@@ -65,6 +65,76 @@ describe('ChatRuntime', () => {
     expect(turn).toMatchObject({ runId: 'run-image-only', status: 'finalized' });
   });
 
+  it('binds attachment-only active history snapshots when the manifest is inside a text block', async () => {
+    const sessionKey = 'agent:block-manifest:main';
+    const rpc = vi.fn(async (method: string) => {
+      expect(method).toBe('chat.history');
+      return {
+        messages: [
+          {
+            role: 'user',
+            timestamp: 1100,
+            content: [
+              {
+                type: 'text',
+                text: `${UPLOAD_MANIFEST_OPEN}{"version":1,"attachments":[{"id":"att-1"}]}${UPLOAD_MANIFEST_CLOSE}`,
+              },
+            ],
+          },
+          {
+            role: 'assistant',
+            timestamp: 1200,
+            content: 'I can use the attachment.',
+          },
+        ],
+      };
+    });
+    const runtime = new ChatRuntime({ rpc, maxPatchesPerSession: 20 });
+
+    runtime.applyOptimisticUserMessage({
+      sessionKey,
+      text: '',
+      idempotencyKey: 'idem-block-manifest',
+      uploadAttachments: [{
+        id: 'att-1',
+        origin: 'upload',
+        mode: 'file_reference',
+        name: 'notes.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 64,
+        policy: { forwardToSubagents: false },
+      }],
+      at: 1000,
+    });
+    runtime.bindRunIdToOptimisticUserMessage({
+      sessionKey,
+      idempotencyKey: 'idem-block-manifest',
+      runId: 'run-block-manifest',
+      at: 1001,
+    });
+
+    await runtime.hydrateSession(sessionKey);
+
+    const snapshot = runtime.snapshot(sessionKey, 'manual');
+    const assistant = Object.values(snapshot.timeline.items).find((item) => item.kind === 'assistant_message');
+    const user = Object.values(snapshot.timeline.items).find((item) => item.kind === 'user_message');
+    const turn = snapshot.timeline.turns.find((candidate) => candidate.runId === 'run-block-manifest');
+
+    expect(assistant).toMatchObject({
+      kind: 'assistant_message',
+      runId: 'run-block-manifest',
+      text: 'I can use the attachment.',
+      status: 'complete',
+    });
+    expect(user).toMatchObject({
+      kind: 'user_message',
+      runId: 'run-block-manifest',
+      text: '',
+      uploadAttachments: [expect.objectContaining({ id: 'att-1' })],
+    });
+    expect(turn).toMatchObject({ runId: 'run-block-manifest', status: 'finalized' });
+  });
+
   it('binds voice active history snapshots after the gateway appends the TTS system hint', async () => {
     const sessionKey = 'agent:voice:main';
     const rpc = vi.fn(async (method: string) => {

@@ -87,6 +87,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const speakRef = useRef(speak);
   const runtimeMessagesRef = useRef<ChatMsg[]>([]);
   const catchupTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const ttsExpiryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
     currentSessionRef.current = currentSession || '';
@@ -132,6 +133,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => () => {
     for (const timer of catchupTimersRef.current) clearTimeout(timer);
     catchupTimersRef.current.clear();
+    for (const timer of ttsExpiryTimersRef.current.values()) clearTimeout(timer);
+    ttsExpiryTimersRef.current.clear();
   }, []);
 
   const ttsHook = useChatTTS({ soundEnabled: soundEnabledRef, speak: speakRef });
@@ -163,25 +166,48 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const wasRuntimeGeneratingRef = useRef(false);
   const activeTTSRequestsRef = useRef<Map<string, ActiveTTSRequest>>(new Map());
   useEffect(() => {
-    if (wasRuntimeGeneratingRef.current && !runtimeIsGenerating) {
+    const clearTTSExpiryTimer = (idempotencyKey: string) => {
+      const timer = ttsExpiryTimersRef.current.get(idempotencyKey);
+      if (!timer) return;
+      clearTimeout(timer);
+      ttsExpiryTimersRef.current.delete(idempotencyKey);
+    };
+    const scheduleTTSExpiry = (request: ActiveTTSRequest) => {
+      if (ttsExpiryTimersRef.current.has(request.idempotencyKey)) return;
+      const remainingMs = Math.max(0, TTS_REQUEST_MAX_AGE_MS - (Date.now() - request.sentAt));
+      const timer = setTimeout(() => {
+        ttsExpiryTimersRef.current.delete(request.idempotencyKey);
+        if (activeTTSRequestsRef.current.delete(request.idempotencyKey)) {
+          playCompletionPing();
+        }
+      }, remainingMs);
+      ttsExpiryTimersRef.current.set(request.idempotencyKey, timer);
+    };
+
+    if (!runtimeIsGenerating && (wasRuntimeGeneratingRef.current || activeTTSRequestsRef.current.size > 0)) {
       const activeTTSRequests = [...activeTTSRequestsRef.current.values()]
         .sort((a, b) => a.sentAt - b.sentAt);
       if (activeTTSRequests.length > 0) {
         let playedAudio = false;
+        let sawFinalMessage = false;
         for (const activeTTSRequest of activeTTSRequests) {
           const finalMessageData = finalMessageDataFromRuntimeMessages(messages, activeTTSRequest);
           if (finalMessageData) {
+            sawFinalMessage = true;
+            clearTTSExpiryTimer(activeTTSRequest.idempotencyKey);
             playedAudio = handleFinalTTS(finalMessageData, true, {
               voiceFallback: activeTTSRequest.voiceFallback,
               completionPing: false,
             }) || playedAudio;
+            activeTTSRequestsRef.current.delete(activeTTSRequest.idempotencyKey);
+          } else {
+            scheduleTTSExpiry(activeTTSRequest);
           }
-          activeTTSRequestsRef.current.delete(activeTTSRequest.idempotencyKey);
         }
-        if (!playedAudio) {
+        if (sawFinalMessage && !playedAudio) {
           playCompletionPing();
         }
-      } else {
+      } else if (wasRuntimeGeneratingRef.current) {
         playCompletionPing();
       }
     }
@@ -482,6 +508,8 @@ function runtimeMessageHasOptimisticIdentity(message: ChatMsg, send: OptimisticS
 function runtimeUserMessageId(sessionKey: string, idempotencyKey: string): string {
   return `user:${sessionKey}:${encodeRuntimeIdPart(idempotencyKey)}`;
 }
+
+const TTS_REQUEST_MAX_AGE_MS = 5_000;
 
 function isSettledGatewayStatusCurrent(
   status: GranularAgentState | undefined,

@@ -8,6 +8,7 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    "rootDir": "..",
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true,

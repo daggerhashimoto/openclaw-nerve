@@ -10,7 +10,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import https from 'node:https';
-import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import app from './app.js';
 import { releaseWhisperContext } from './services/whisper-local.js';
@@ -20,8 +19,7 @@ import { startFileWatcher, stopFileWatcher } from './lib/file-watcher.js';
 
 // ── Startup banner + validation ──────────────────────────────────────
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const pkgPath = path.resolve(__dirname, '..', 'package.json');
+const pkgPath = path.resolve(process.cwd(), 'package.json');
 const pkgVersion: string = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version || '0.0.0';
 
 printStartupBanner(pkgVersion);

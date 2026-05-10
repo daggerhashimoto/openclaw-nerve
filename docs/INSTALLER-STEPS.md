@@ -318,7 +318,7 @@ Service setup is OS-specific.
 ### 5A.1 Unit generation (`setup_systemd`)
 Creates a unit file at `/etc/systemd/system/nerve.service` with:
 
-- `ExecStart=<node> server-dist/index.js`
+- `ExecStart=<node> server-dist/server/index.js`
 - `WorkingDirectory=<INSTALL_DIR>`
 - `EnvironmentFile=<INSTALL_DIR>/.env`
 - `NODE_ENV=production`
@@ -355,7 +355,7 @@ Creates `<INSTALL_DIR>/start.sh` that:
 
 - changes into `<INSTALL_DIR>` first so manual invocation resolves `.env` the same way as the service
 - sets `NODE_ENV=production`
-- executes `node server-dist/index.js`
+- executes `node server-dist/server/index.js`
 
 The Node server loads `.env` at runtime, so config updates still take effect on restart without rewriting the plist.
 

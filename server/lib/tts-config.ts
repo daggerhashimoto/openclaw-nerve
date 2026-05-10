@@ -10,12 +10,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { getEdgeTtsVoice, getQwen3Language, getFallbackInfo, resolveLanguage } from './language.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+const PROJECT_ROOT = process.env.NERVE_PROJECT_ROOT || process.cwd();
 const CONFIG_PATH = path.join(PROJECT_ROOT, 'tts-config.json');
 
 export interface TTSVoiceConfig {

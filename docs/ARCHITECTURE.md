@@ -671,7 +671,7 @@ npm run prod         # Builds frontend + backend, then starts
 # Equivalent to:
 npm run build        # tsc -b && vite build → dist/
 npm run build:server # tsc -p config/tsconfig.server.json → server-dist/
-npm start            # node server-dist/index.js
+npm start            # node server-dist/server/index.js
 ```
 
 ### Vite Configuration

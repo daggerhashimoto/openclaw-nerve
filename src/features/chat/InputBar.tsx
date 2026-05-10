@@ -289,6 +289,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const fileInputRef = useRef<HTMLInputElement>(null);
   const deferredResizeFrameRef = useRef<number | null>(null);
   const deferredResizeSettledFrameRef = useRef<number | null>(null);
+  const hasHydratedDraftRef = useRef(false);
   const [draftText, setDraftText] = useState(() => persistedComposerSnapshot.text);
   const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>(() => persistedComposerSnapshot.stagedAttachments);
   const [uploadConfig, setUploadConfig] = useState<UploadFeatureConfig>(DEFAULT_UPLOAD_FEATURE_CONFIG);
@@ -401,7 +402,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
-    if (input.value !== draftText) {
+    if (hasHydratedDraftRef.current) return;
+
+    hasHydratedDraftRef.current = true;
+    if (input.value === '' && draftText) {
       input.value = draftText;
     }
     resizeInput();
@@ -569,6 +573,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     if (selected.length === 0) return;
     setAttachmentError(null);
 
+    const input = inputRef.current;
+    if (input && input.value !== draftText) {
+      setDraftText(input.value);
+    }
+
     if (!uploadsEnabled) {
       setAttachmentError('Uploads are disabled by configuration.');
       return;
@@ -665,7 +674,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     if (firstError) {
       setAttachmentError(firstError);
     }
-  }, [stagedAttachments.length, uploadConfig, uploadsEnabled]);
+  }, [draftText, stagedAttachments.length, uploadConfig, uploadsEnabled]);
 
   // Drag & drop handlers (exposed via className on parent)
   const handleDragOver = useCallback((e: React.DragEvent) => {

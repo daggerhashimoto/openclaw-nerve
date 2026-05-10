@@ -81,7 +81,7 @@ echo "NERVE_AUTH=false" >> .env
 **Fix:**
 ```bash
 npm run build:server   # Compiles server/ → server-dist/
-npm start              # Then runs node server-dist/index.js
+npm start              # Then runs node server-dist/server/index.js
 ```
 
 ### Chunk size warnings during `vite build`

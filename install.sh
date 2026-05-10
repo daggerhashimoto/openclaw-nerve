@@ -1049,7 +1049,7 @@ Type=simple
 User=${install_user}
 Group=${install_user}
 WorkingDirectory=${working_dir}
-ExecStart=${node_bin} server-dist/index.js
+ExecStart=${node_bin} server-dist/server/index.js
 EnvironmentFile=${working_dir}/.env
 Environment=NODE_ENV=production
 Environment=HOME=${install_home}
@@ -1113,7 +1113,7 @@ SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
 cd "\${SCRIPT_DIR}"
 export PATH="${node_dir_escaped}:\${PATH}"
 export NODE_ENV=production
-exec node "\${SCRIPT_DIR}/server-dist/index.js"
+exec node "\${SCRIPT_DIR}/server-dist/server/index.js"
 STARTEOF
   chmod +x "$start_script"
 

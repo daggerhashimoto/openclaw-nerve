@@ -12,7 +12,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_GATEWAY_URL,
   DEFAULT_PORT,
@@ -24,8 +23,7 @@ import {
   SUPPORTED_LANGUAGES,
 } from './constants.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+const PROJECT_ROOT = process.env.NERVE_PROJECT_ROOT || process.cwd();
 
 const HOME = process.env.HOME || os.homedir();
 const SUPPORTED_LANGUAGE_CODES = new Set(SUPPORTED_LANGUAGES.map((l) => l.code));

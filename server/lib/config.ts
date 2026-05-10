@@ -22,8 +22,9 @@ import {
   DEFAULT_LANGUAGE,
   SUPPORTED_LANGUAGES,
 } from './constants.js';
+import { resolveProjectRoot } from './project-root.js';
 
-const PROJECT_ROOT = process.env.NERVE_PROJECT_ROOT || process.cwd();
+const PROJECT_ROOT = resolveProjectRoot(import.meta.url);
 
 const HOME = process.env.HOME || os.homedir();
 const SUPPORTED_LANGUAGE_CODES = new Set(SUPPORTED_LANGUAGES.map((l) => l.code));

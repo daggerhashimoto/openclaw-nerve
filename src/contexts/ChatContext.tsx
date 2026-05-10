@@ -272,7 +272,19 @@ function isRuntimeFinalAssistantMessage(message: ChatMsg): boolean {
 function runtimeMessageIdHasRunToken(msgId: string | undefined, runId: string): boolean {
   if (!msgId) return false;
   const encodedRunId = encodeRuntimeIdPart(runId);
-  return new RegExp(`(^|[-_.:])${escapeRegExp(encodedRunId)}($|[-_.:])`).test(msgId);
+  const parts = msgId.split(':');
+  if (parts[0] !== 'assistant') return false;
+
+  const lastPart = parts[parts.length - 1];
+  if (lastPart === 'answer') {
+    return parts[parts.length - 2] === encodedRunId;
+  }
+
+  if (parts[parts.length - 2] === 'segment') {
+    return parts[parts.length - 3] === encodedRunId;
+  }
+
+  return false;
 }
 
 function singleTimestampFallbackCandidate(messages: ChatMsg[], sentAt: number): ChatMsg | null {
@@ -281,10 +293,6 @@ function singleTimestampFallbackCandidate(messages: ChatMsg[], sentAt: number): 
     return Number.isFinite(timestamp) && timestamp >= sentAt;
   });
   return candidates.length === 1 ? candidates[0] : null;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- hook export is intentional

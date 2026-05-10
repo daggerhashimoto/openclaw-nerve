@@ -6,8 +6,10 @@ import { Hono } from 'hono';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { resolveProjectRoot } from '../lib/project-root.js';
 
-const pkg = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf-8')) as {
+const projectDir = resolveProjectRoot(import.meta.url);
+const pkg = JSON.parse(readFileSync(resolve(projectDir, 'package.json'), 'utf-8')) as {
   version: string;
   name: string;
 };

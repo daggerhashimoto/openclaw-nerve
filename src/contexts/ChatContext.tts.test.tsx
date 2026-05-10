@@ -185,6 +185,73 @@ describe('ChatContext runtime TTS playback', () => {
     expect(speakMock).toHaveBeenCalledTimes(1);
   });
 
+  it('matches runtime final message run IDs only from the assistant ID run segment', async () => {
+    const { ChatProvider, useChat, setRuntimeState, speakMock } = await setup({
+      runtimeAck: { ok: true, sessionKey: 'main', cursor: '1', runId: 'main' },
+    });
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return null;
+    }
+
+    const { rerender } = render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+
+    await act(async () => {
+      await send!('[voice] hello');
+    });
+
+    setRuntimeState({ isGenerating: true });
+    rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    const now = Date.now();
+    setRuntimeState({
+      isGenerating: false,
+      messages: [
+        {
+          msgId: 'assistant:main:main:answer',
+          role: 'assistant',
+          html: '<p>Correct reply.</p>',
+          rawText: 'Correct reply.',
+          timestamp: new Date(now + 1000),
+          ttsText: 'Correct spoken reply.',
+        },
+        {
+          msgId: 'assistant:main:run-other:answer',
+          role: 'assistant',
+          html: '<p>Wrong reply.</p>',
+          rawText: 'Wrong reply.',
+          timestamp: new Date(now + 2000),
+          ttsText: 'Wrong spoken reply.',
+        },
+      ],
+    });
+    rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(speakMock).toHaveBeenCalledWith('Correct spoken reply.'));
+    expect(speakMock).not.toHaveBeenCalledWith('Wrong spoken reply.');
+    expect(speakMock).toHaveBeenCalledTimes(1);
+  });
+
   it('does not select an ambiguous timestamp fallback when chat.send returns no run ID', async () => {
     const { ChatProvider, useChat, setRuntimeState, speakMock } = await setup({
       runtimeAck: { ok: true, sessionKey: 'main', cursor: '1' },

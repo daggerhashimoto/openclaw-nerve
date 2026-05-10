@@ -5,7 +5,7 @@ import { gatewayRpcCall } from '../lib/gateway-rpc.js';
 import { getChatRuntime } from '../lib/chat-runtime/singleton.js';
 import type { TimelinePatch, TimelineSnapshot } from '../lib/chat-runtime/types.js';
 import { getUploadFeatureConfig } from '../lib/upload-config.js';
-import { appendUploadManifest, applyVoiceTTSHint } from '../../shared/chat-upload-manifest.js';
+import { appendUploadManifest, applyVoiceTTSHint, sanitizeUploadDescriptor } from '../../shared/chat-upload-manifest.js';
 
 const app = new Hono();
 
@@ -63,6 +63,9 @@ const sendMessageSchema = z.object({
       MAX_IMAGE_NAME_CHARS,
       `images[].name must be at most ${MAX_IMAGE_NAME_CHARS} characters`,
     ).optional(),
+  }).refine((image) => image.preview === undefined || isTrustedImagePreview(image.preview, image.mimeType), {
+    path: ['preview'],
+    message: 'images[].preview must be a data image URL',
   })).optional(),
   uploadPayload: z.object({
     descriptors: z.array(z.object({
@@ -251,8 +254,9 @@ app.post('/api/chat-runtime/sessions/:sessionKey/messages', async (c) => {
 
   const runtime = getChatRuntime();
   const images = normalizeMessageImages(parsed.data.images);
-  const uploadAttachments = parsed.data.uploadPayload?.descriptors;
-  const gatewayMessage = applyVoiceTTSHint(appendUploadManifest(parsed.data.text, parsed.data.uploadPayload));
+  const uploadPayload = sanitizeRuntimeUploadPayload(parsed.data.uploadPayload);
+  const uploadAttachments = uploadPayload?.descriptors;
+  const gatewayMessage = applyVoiceTTSHint(appendUploadManifest(parsed.data.text, uploadPayload));
   const optimisticInput = {
     sessionKey,
     text: parsed.data.text,
@@ -318,12 +322,31 @@ function normalizeMessageImages(images: ParsedImage[] | undefined) {
 function normalizeImagePreview(image: ParsedImage): string {
   const fallback = `data:${image.mimeType};base64,${image.content}`;
   if (!image.preview) return fallback;
-  return image.preview.length <= MAX_IMAGE_PREVIEW_CHARS ? image.preview : fallback;
+  return isTrustedImagePreview(image.preview, image.mimeType) ? image.preview.trim() : fallback;
 }
 
 function normalizeImageName(image: ParsedImage): string {
   if (!image.name) return 'image';
   return image.name.length <= MAX_IMAGE_NAME_CHARS ? image.name : image.name.slice(0, MAX_IMAGE_NAME_CHARS);
+}
+
+type ParsedUploadPayload = NonNullable<z.infer<typeof sendMessageSchema>['uploadPayload']>;
+
+function sanitizeRuntimeUploadPayload(uploadPayload: ParsedUploadPayload | undefined): ParsedUploadPayload | undefined {
+  if (!uploadPayload?.descriptors.length) return undefined;
+
+  return {
+    ...uploadPayload,
+    descriptors: uploadPayload.descriptors.map((descriptor) =>
+      sanitizeUploadDescriptor(descriptor, uploadPayload.manifest.exposeInlineBase64ToAgent),
+    ),
+  };
+}
+
+function isTrustedImagePreview(preview: string, mimeType: string): boolean {
+  const trimmed = preview.trim();
+  const prefix = `data:${mimeType};base64,`;
+  return trimmed.startsWith(prefix) && trimmed.length > prefix.length;
 }
 
 function normalizeCursor(cursor: string | undefined): string | null {

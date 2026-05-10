@@ -9,8 +9,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 import { compareSemver, resolveLatestVersion } from '../lib/release-source.js';
+import { resolveProjectRoot } from '../lib/project-root.js';
 
-const projectDir = process.cwd();
+const projectDir = resolveProjectRoot(import.meta.url);
 const pkg = JSON.parse(readFileSync(resolve(projectDir, 'package.json'), 'utf-8')) as {
   version: string;
 };

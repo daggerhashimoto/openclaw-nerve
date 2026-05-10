@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { UPLOAD_MANIFEST_CLOSE, UPLOAD_MANIFEST_OPEN } from '../../../shared/chat-upload-manifest.js';
 import { adaptGatewayEvent, adaptHistorySnapshot, type AdapterGatewayEvent } from './adapter.js';
 import { ChatTimelineStore } from './store.js';
 import type { ReplayResult } from './replay-buffer.js';
@@ -50,6 +51,7 @@ type TimelineSubscriber = (patch: TimelinePatch) => void;
 interface ActiveHistoryBinding {
   runId: string;
   idempotencyKey?: string;
+  text: string;
 }
 
 export class ChatRuntime {
@@ -265,12 +267,15 @@ export class ChatRuntime {
         if (!input || input.kind !== 'user_message') return [];
 
         const normalizedText = normalizeHistoryText(input.text);
-        if (!normalizedText) return [];
+        const hasAttachmentSignal = userItemHasAttachmentSignal(input);
+        if (!normalizedText && !hasAttachmentSignal) return [];
 
         return [{
           runId: turn.runId,
           startedAt: turn.startedAt,
           normalizedText,
+          hasAttachmentSignal,
+          text: input.text,
           idempotencyKey: input.idempotencyKey,
         }];
       });
@@ -283,11 +288,17 @@ export class ChatRuntime {
 
         const message = messages[index];
         if (message?.role !== 'user') continue;
-        if (normalizeHistoryText(historyMessageText(message)) !== turn.normalizedText) continue;
+        const messageText = normalizeHistoryText(historyMessageText(message));
+        if (turn.normalizedText) {
+          if (messageText !== turn.normalizedText) continue;
+        } else {
+          if (messageText) continue;
+          if (!historyMessageHasAttachmentSignal(message)) continue;
+        }
         if (!isPlausibleActiveHistoryUserMessage(message, turn.startedAt, turn.runId)) continue;
 
         claimedIndexes.add(index);
-        const binding: ActiveHistoryBinding = { runId: turn.runId };
+        const binding: ActiveHistoryBinding = { runId: turn.runId, text: turn.text };
         if (turn.idempotencyKey) binding.idempotencyKey = turn.idempotencyKey;
         bindings.set(index, binding);
         break;
@@ -470,6 +481,9 @@ function bindHistoryMessageToActiveRun(message: HistoryMessage, binding: ActiveH
     runId: binding.runId,
   };
   if (binding.idempotencyKey) enriched.idempotencyKey = binding.idempotencyKey;
+  if (message.role === 'user') {
+    enriched.content = bindHistoryUserContentToActiveText(message.content, binding.text);
+  }
   return enriched;
 }
 
@@ -508,7 +522,55 @@ function historyMessageText(message: HistoryMessage): string | undefined {
 }
 
 function normalizeHistoryText(text: string | undefined): string {
-  return text?.replace(/\s+/g, ' ').trim() ?? '';
+  return stripUploadManifestText(text ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function stripUploadManifestText(text: string): string {
+  let next = text;
+
+  while (true) {
+    const openIndex = next.indexOf(UPLOAD_MANIFEST_OPEN);
+    if (openIndex === -1) return next;
+
+    const closeIndex = next.indexOf(UPLOAD_MANIFEST_CLOSE, openIndex + UPLOAD_MANIFEST_OPEN.length);
+    if (closeIndex === -1) return next;
+
+    next = next.slice(0, openIndex) + next.slice(closeIndex + UPLOAD_MANIFEST_CLOSE.length);
+  }
+}
+
+function bindHistoryUserContentToActiveText(
+  content: HistoryMessage['content'],
+  text: string,
+): HistoryMessage['content'] {
+  if (typeof content === 'string') return text;
+
+  let replacedText = false;
+  const nextContent = content.flatMap((block) => {
+    if (!isRecord(block) || block.type !== 'text') return [block];
+    if (replacedText || !text) return [];
+
+    replacedText = true;
+    return [{ ...block, text }];
+  });
+
+  if (text && !replacedText) {
+    return [{ type: 'text', text }, ...nextContent];
+  }
+
+  return nextContent;
+}
+
+function userItemHasAttachmentSignal(item: Extract<RuntimeEvent, { type: 'user_message_committed' }> | { images?: unknown[]; uploadAttachments?: unknown[] }): boolean {
+  return Boolean(item.images?.length || item.uploadAttachments?.length);
+}
+
+function historyMessageHasAttachmentSignal(message: HistoryMessage): boolean {
+  if (typeof message.content === 'string') {
+    return message.content.includes(UPLOAD_MANIFEST_OPEN) && message.content.includes(UPLOAD_MANIFEST_CLOSE);
+  }
+
+  return message.content.some((block) => isRecord(block) && block.type === 'image');
 }
 
 function isPlausibleActiveHistoryUserMessage(

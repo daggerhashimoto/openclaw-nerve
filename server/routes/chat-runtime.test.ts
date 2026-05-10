@@ -325,6 +325,19 @@ describe('chat runtime routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: 'hello',
+          idempotencyKey: 'idem-external-preview',
+          images: [{
+            mimeType: 'image/png',
+            content: 'base64-image',
+            preview: 'https://example.test/tracker.png',
+          }],
+        }),
+      },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: 'hello',
           idempotencyKey: 'idem-bad-upload',
           uploadPayload: {
             descriptors: [{ name: 'missing-required-fields.png' }],
@@ -595,6 +608,59 @@ describe('chat runtime routes', () => {
       idempotencyKey: 'idem-media',
       runId: 'run-media',
     });
+  });
+
+  it('redacts inline upload descriptor data before writing optimistic runtime state', async () => {
+    const runtime = createFakeRuntime();
+    const { app } = await buildRouteApp(runtime);
+    gatewayRpcCallMock.mockResolvedValue({ runId: 'run-redacted-media' });
+
+    const res = await app.request('/api/chat-runtime/sessions/agent%3Amain%3Amain/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: 'look at this',
+        idempotencyKey: 'idem-redacted-media',
+        uploadPayload: {
+          descriptors: [
+            {
+              id: 'att-redacted',
+              origin: 'upload',
+              mode: 'inline',
+              name: 'image.png',
+              mimeType: 'image/png',
+              sizeBytes: 100,
+              inline: {
+                encoding: 'base64',
+                base64: 'base64-image',
+                base64Bytes: 100,
+                previewUrl: 'data:image/png;base64,base64-image',
+                compressed: false,
+              },
+              policy: { forwardToSubagents: false },
+            },
+          ],
+          manifest: {
+            enabled: true,
+            exposeInlineBase64ToAgent: false,
+            allowSubagentForwarding: false,
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(runtime.applyOptimisticUserMessage).toHaveBeenCalledWith(expect.objectContaining({
+      uploadAttachments: [
+        expect.objectContaining({
+          inline: expect.objectContaining({
+            base64: '',
+            base64Bytes: 100,
+            previewUrl: undefined,
+          }),
+        }),
+      ],
+    }));
   });
 
   it('accepts image-only runtime sends', async () => {

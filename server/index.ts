@@ -16,10 +16,11 @@ import { releaseWhisperContext } from './services/whisper-local.js';
 import { config, validateConfig, printStartupBanner, probeGateway } from './lib/config.js';
 import { setupWebSocketProxy, closeAllWebSockets } from './lib/ws-proxy.js';
 import { startFileWatcher, stopFileWatcher } from './lib/file-watcher.js';
+import { resolveProjectRoot } from './lib/project-root.js';
 
 // ── Startup banner + validation ──────────────────────────────────────
 
-const pkgPath = path.resolve(process.cwd(), 'package.json');
+const pkgPath = path.resolve(resolveProjectRoot(import.meta.url), 'package.json');
 const pkgVersion: string = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version || '0.0.0';
 
 printStartupBanner(pkgVersion);

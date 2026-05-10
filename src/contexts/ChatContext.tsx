@@ -59,6 +59,7 @@ interface ChatContextValue {
 
 interface ActiveTTSRequest {
   idempotencyKey: string;
+  text: string;
   sentAt: number;
   runId?: string;
   voiceFallback: boolean;
@@ -172,15 +173,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       clearTimeout(timer);
       ttsExpiryTimersRef.current.delete(idempotencyKey);
     };
-    const scheduleTTSExpiry = (request: ActiveTTSRequest) => {
+    const scheduleStaleTTSCleanup = (request: ActiveTTSRequest) => {
       if (ttsExpiryTimersRef.current.has(request.idempotencyKey)) return;
-      const remainingMs = Math.max(0, TTS_REQUEST_MAX_AGE_MS - (Date.now() - request.sentAt));
       const timer = setTimeout(() => {
         ttsExpiryTimersRef.current.delete(request.idempotencyKey);
-        if (activeTTSRequestsRef.current.delete(request.idempotencyKey)) {
-          playCompletionPing();
-        }
-      }, remainingMs);
+        activeTTSRequestsRef.current.delete(request.idempotencyKey);
+      }, TTS_STALE_REQUEST_TTL_MS);
       ttsExpiryTimersRef.current.set(request.idempotencyKey, timer);
     };
 
@@ -201,7 +199,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             }) || playedAudio;
             activeTTSRequestsRef.current.delete(activeTTSRequest.idempotencyKey);
           } else {
-            scheduleTTSExpiry(activeTTSRequest);
+            scheduleStaleTTSCleanup(activeTTSRequest);
           }
         }
         if (sawFinalMessage && !playedAudio) {
@@ -237,6 +235,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     trackVoiceMessage(text);
     activeTTSRequestsRef.current.set(idempotencyKey, {
       idempotencyKey,
+      text,
       sentAt,
       voiceFallback: text.startsWith('[voice] '),
     });
@@ -365,12 +364,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
 function finalMessageDataFromRuntimeMessages(
   messages: ChatMsg[],
-  activeRequest: { sentAt: number; runId?: string },
+  activeRequest: { idempotencyKey: string; text: string; sentAt: number; runId?: string },
 ): FinalMessageData | null {
   const candidates = messages.filter(isRuntimeFinalAssistantMessage);
   const finalMessage = activeRequest.runId
     ? [...candidates].reverse().find((message) => runtimeMessageIdHasRunToken(message.msgId, activeRequest.runId!))
-    : singleTimestampFallbackCandidate(candidates, activeRequest.sentAt);
+      ?? finalMessageAfterMatchingUserPrompt(messages, activeRequest)
+      ?? singleTimestampFallbackCandidate(candidates, activeRequest.sentAt)
+    : finalMessageAfterMatchingUserPrompt(messages, activeRequest)
+      ?? singleTimestampFallbackCandidate(candidates, activeRequest.sentAt);
   if (!finalMessage) return null;
 
   const message: ChatMessage = {
@@ -391,6 +393,48 @@ function isRuntimeFinalAssistantMessage(message: ChatMsg): boolean {
   if (message.role !== 'assistant') return false;
   if (message.isThinking || message.intermediate || message.streaming) return false;
   return true;
+}
+
+function finalMessageAfterMatchingUserPrompt(
+  messages: ChatMsg[],
+  activeRequest: Pick<ActiveTTSRequest, 'idempotencyKey' | 'text'>,
+): ChatMsg | null {
+  const userIndex = messages.findIndex((message) =>
+    message.role === 'user' && userMessageMatchesActiveRequest(message, activeRequest)
+  );
+  if (userIndex === -1) return null;
+
+  const candidates: ChatMsg[] = [];
+  for (const message of messages.slice(userIndex + 1)) {
+    if (message.role === 'user') break;
+    if (isRuntimeFinalAssistantMessage(message)) candidates.push(message);
+  }
+
+  if (candidates.length === 0) return null;
+  return [...candidates].reverse().find((message) => Boolean(message.ttsText)) ?? candidates[candidates.length - 1];
+}
+
+function userMessageMatchesActiveRequest(
+  message: ChatMsg,
+  activeRequest: Pick<ActiveTTSRequest, 'idempotencyKey' | 'text'>,
+): boolean {
+  if (message.tempId === activeRequest.idempotencyKey) return true;
+  if (message.msgId?.endsWith(`:${encodeRuntimeIdPart(activeRequest.idempotencyKey)}`)) return true;
+
+  const sentText = activeRequest.text.trim();
+  const messageText = message.rawText.trim();
+  if (!sentText || !messageText) return false;
+  const sentTextWithoutVoicePrefix = stripVoicePrefix(sentText);
+  return [sentText, sentTextWithoutVoicePrefix].some((candidate) =>
+    Boolean(candidate) && (
+      messageText === candidate ||
+      messageText.startsWith(`${candidate}\n\n[system:`)
+    )
+  );
+}
+
+function stripVoicePrefix(text: string): string {
+  return text.replace(/^\[voice\]\s*/, '').trim();
 }
 
 function runtimeMessageIdHasRunToken(msgId: string | undefined, runId: string): boolean {
@@ -509,7 +553,7 @@ function runtimeUserMessageId(sessionKey: string, idempotencyKey: string): strin
   return `user:${sessionKey}:${encodeRuntimeIdPart(idempotencyKey)}`;
 }
 
-const TTS_REQUEST_MAX_AGE_MS = 5_000;
+const TTS_STALE_REQUEST_TTL_MS = 5 * 60_000;
 
 function isSettledGatewayStatusCurrent(
   status: GranularAgentState | undefined,

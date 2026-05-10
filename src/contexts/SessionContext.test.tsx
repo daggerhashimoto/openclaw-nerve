@@ -732,6 +732,53 @@ describe('SessionContext', () => {
     expect(playPingMock).toHaveBeenCalledTimes(1);
   });
 
+  it('dedupes background completion pings when lifecycle and chat terminal events arrive for the same root', async () => {
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            { sessionKey: 'agent:main:main', label: 'Main' },
+            { sessionKey: 'agent:reviewer:main', label: 'Reviewer' },
+          ],
+        };
+      }
+      return {};
+    });
+
+    render(
+      <SessionProvider>
+        <SessionUnreadProbe />
+      </SessionProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:main:main');
+    });
+
+    await act(async () => {
+      subscribedHandler?.({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:reviewer:main',
+          stream: 'lifecycle',
+          data: { phase: 'end' },
+        },
+      });
+      subscribedHandler?.({
+        type: 'event',
+        event: 'chat',
+        payload: {
+          sessionKey: 'agent:reviewer:main',
+          state: 'final',
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(playPingMock).toHaveBeenCalledTimes(1);
+  });
+
   it('does not mark the currently viewed root unread or ping for its own chat events', async () => {
     rpcMock.mockImplementation(async (method: string) => {
       if (method === 'sessions.list') {

@@ -21,6 +21,7 @@ import {
 
 const BUSY_STATES = new Set(['running', 'thinking', 'tool_use', 'delta', 'started']);
 const IDLE_STATES = new Set(['idle', 'done', 'error', 'final', 'aborted', 'completed']);
+const TERMINAL_PING_DEDUP_MS = 5_000;
 
 // Use the full session list for the sidebar so older root chats stay visible.
 const FULL_SESSIONS_LIMIT = 1000;
@@ -80,6 +81,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const soundEnabledRef = useRef(soundEnabled);
   const logStateRef = useRef<Record<string, boolean>>({});
   const toolSeenRef = useRef<Map<string, number>>(new Map());
+  const terminalPingSeenRef = useRef<Map<string, number>>(new Map());
   const doneTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const delayedRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -277,8 +279,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUnreadSessionKeys(next);
   }, []);
 
-  const pingSession = useCallback((sessionKey: string) => {
-    if (!sessionKey || currentSessionRef.current === sessionKey || !soundEnabledRef.current) return;
+  const pingSession = useCallback((sessionKey: string, runId?: string) => {
+    if (!sessionKey || isCurrentSessionKey(sessionKey, currentSessionRef.current) || !soundEnabledRef.current) return;
+    const now = Date.now();
+    const dedupeKey = runId ? `${sessionKey}:${runId}` : sessionKey;
+    const lastPingAt = terminalPingSeenRef.current.get(dedupeKey);
+    if (lastPingAt && now - lastPingAt < TERMINAL_PING_DEDUP_MS) return;
+    terminalPingSeenRef.current.set(dedupeKey, now);
     playPing();
   }, []);
 
@@ -690,7 +697,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
               setGranularStatus(sk, { status: 'DONE', since: Date.now() });
               if (isTopLevelAgentSessionKey(sk)) {
                 markSessionUnread(sk);
-                pingSession(sk);
+                pingSession(sk, eventRunId(ap));
               }
               refreshSessions();
               scheduleDelayedRefresh();
@@ -698,7 +705,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
               setGranularStatus(sk, { status: 'ERROR', since: Date.now() });
               if (isTopLevelAgentSessionKey(sk)) {
                 markSessionUnread(sk);
-                pingSession(sk);
+                pingSession(sk, eventRunId(ap));
               }
               refreshSessions();
             }
@@ -735,7 +742,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setGranularStatus(sk, { status: 'DONE', since: Date.now() });
             if (isTopLevelAgentSessionKey(sk)) {
               markSessionUnread(sk);
-              pingSession(sk);
+              pingSession(sk, eventRunId(cp));
             }
             refreshSessions();
             // Delayed refresh to catch token counts that may not be available immediately.
@@ -744,7 +751,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setGranularStatus(sk, { status: 'ERROR', since: Date.now() });
             if (isTopLevelAgentSessionKey(sk)) {
               markSessionUnread(sk);
-              pingSession(sk);
+              pingSession(sk, eventRunId(cp));
             }
           } else if (state === 'aborted') {
             setGranularStatus(sk, { status: 'IDLE', since: Date.now() });
@@ -971,4 +978,27 @@ export function useSessionContext() {
   const ctx = useContext(SessionContext);
   if (!ctx) throw new Error('useSessionContext must be used within SessionProvider');
   return ctx;
+}
+
+function isCurrentSessionKey(sessionKey: string, currentSessionKey: string): boolean {
+  return canonicalSessionKey(sessionKey) === canonicalSessionKey(currentSessionKey);
+}
+
+function canonicalSessionKey(sessionKey: string): string {
+  return sessionKey === 'main' ? MAIN_SESSION_KEY : sessionKey;
+}
+
+function eventRunId(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const record = payload as Record<string, unknown>;
+  const direct = stringValue(record.runId) ?? stringValue(record.id);
+  if (direct) return direct;
+  const data = record.data;
+  if (!data || typeof data !== 'object') return undefined;
+  const dataRecord = data as Record<string, unknown>;
+  return stringValue(dataRecord.runId) ?? stringValue(dataRecord.id);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }

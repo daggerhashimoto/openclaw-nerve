@@ -14,6 +14,7 @@ describe('ChatContext runtime TTS playback', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('speaks the active runtime final message TTS marker once generation completes', async () => {
@@ -191,6 +192,381 @@ describe('ChatContext runtime TTS playback', () => {
 
     await waitFor(() => expect(speakMock).toHaveBeenCalledWith('Delayed spoken reply.'));
     expect(speakMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for delayed final messages after long-running voice turns before playing a fallback ping', async () => {
+    const { ChatProvider, useChat, setRuntimeState, speakMock, playPingMock } = await setup({
+      soundEnabled: true,
+    });
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return null;
+    }
+
+    const { rerender } = render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-10T15:00:00.000Z'));
+
+    await act(async () => {
+      await send!('[voice] hello after a long run');
+    });
+
+    await act(async () => {
+      setRuntimeState({ isGenerating: true });
+      rerender(
+        <ChatProvider>
+          <Consumer />
+        </ChatProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000);
+    });
+
+    await act(async () => {
+      setRuntimeState({ isGenerating: false, messages: [] });
+      rerender(
+        <ChatProvider>
+          <Consumer />
+        </ChatProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(playPingMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      setRuntimeState({
+        isGenerating: false,
+        messages: [{
+          msgId: 'assistant:main:run-1:answer',
+          role: 'assistant',
+          html: '<p>Delayed long reply.</p>',
+          rawText: 'Delayed long reply.',
+          timestamp: new Date(Date.now() + 1000),
+          ttsText: 'Delayed long spoken reply.',
+        }],
+      });
+      rerender(
+        <ChatProvider>
+          <Consumer />
+        </ChatProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    expect(speakMock).toHaveBeenCalledWith('Delayed long spoken reply.');
+    expect(speakMock).toHaveBeenCalledTimes(1);
+    expect(playPingMock).not.toHaveBeenCalled();
+  });
+
+  it('retains pending TTS requests when final projection arrives after the grace window', async () => {
+    const { ChatProvider, useChat, setRuntimeState, speakMock, playPingMock } = await setup({
+      soundEnabled: true,
+    });
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return null;
+    }
+
+    const { rerender } = render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-10T15:30:00.000Z'));
+
+    await act(async () => {
+      await send!('[voice] late final projection');
+    });
+
+    await act(async () => {
+      setRuntimeState({ isGenerating: true });
+      rerender(
+        <ChatProvider>
+          <Consumer />
+        </ChatProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      setRuntimeState({ isGenerating: false, messages: [] });
+      rerender(
+        <ChatProvider>
+          <Consumer />
+        </ChatProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+
+    expect(playPingMock).not.toHaveBeenCalled();
+    expect(speakMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      setRuntimeState({
+        isGenerating: false,
+        messages: [{
+          msgId: 'assistant:main:run-1:answer',
+          role: 'assistant',
+          html: '<p>Late final reply.</p>',
+          rawText: 'Late final reply.',
+          timestamp: new Date(Date.now() + 1000),
+          ttsText: 'Late final spoken reply.',
+        }],
+      });
+      rerender(
+        <ChatProvider>
+          <Consumer />
+        </ChatProvider>,
+      );
+      await Promise.resolve();
+    });
+
+    expect(speakMock).toHaveBeenCalledWith('Late final spoken reply.');
+    expect(speakMock).toHaveBeenCalledTimes(1);
+    expect(playPingMock).not.toHaveBeenCalled();
+  });
+
+  it('speaks a single unambiguous persisted final message when live run id matching is unavailable', async () => {
+    const { ChatProvider, useChat, setRuntimeState, speakMock } = await setup({
+      runtimeAck: { ok: true, sessionKey: 'main', cursor: '1', runId: 'live-run-1' },
+    });
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return null;
+    }
+
+    const { rerender } = render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+
+    await act(async () => {
+      await send!('[voice] hello from history');
+    });
+
+    setRuntimeState({ isGenerating: true });
+    rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    setRuntimeState({
+      isGenerating: false,
+      messages: [
+        {
+          msgId: 'assistant:main:history:message:assistant-1',
+          role: 'assistant',
+          html: '<p>Persisted reply.</p>',
+          rawText: 'Persisted reply.',
+          timestamp: new Date(Date.now() + 1000),
+          ttsText: 'Persisted spoken reply.',
+        },
+      ],
+    });
+    rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(speakMock).toHaveBeenCalledWith('Persisted spoken reply.'));
+    expect(speakMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('speaks the final message after the matching optimistic voice prompt when timestamp fallback is ambiguous', async () => {
+    const { ChatProvider, useChat, setRuntimeState, speakMock, playPingMock, fetchMock } = await setup({
+      runtimeAck: { ok: true, sessionKey: 'main', cursor: '1' },
+      soundEnabled: true,
+    });
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return null;
+    }
+
+    const { rerender } = render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+    const sentAt = Date.now();
+
+    await act(async () => {
+      await send!('[voice] hello from ambiguous history');
+    });
+
+    const requestBody = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)) as {
+      idempotencyKey: string;
+    };
+
+    setRuntimeState({ isGenerating: true });
+    rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    setRuntimeState({
+      isGenerating: false,
+      messages: [
+        {
+          msgId: 'assistant:main:history:message:older',
+          role: 'assistant',
+          html: '<p>Older reply.</p>',
+          rawText: 'Older reply.',
+          timestamp: new Date(sentAt + 100),
+        },
+        {
+          msgId: `user:main:${requestBody.idempotencyKey}`,
+          role: 'user',
+          html: '<p>[voice] hello from ambiguous history</p>',
+          rawText: '[voice] hello from ambiguous history',
+          timestamp: new Date(sentAt + 200),
+          tempId: requestBody.idempotencyKey,
+        },
+        {
+          msgId: 'assistant:main:history:message:active-final',
+          role: 'assistant',
+          html: '<p>Active reply.</p>',
+          rawText: 'Active reply.',
+          timestamp: new Date(sentAt + 300),
+          ttsText: 'Active spoken reply.',
+        },
+      ],
+    });
+    rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(speakMock).toHaveBeenCalledWith('Active spoken reply.'));
+    expect(speakMock).toHaveBeenCalledTimes(1);
+    expect(playPingMock).not.toHaveBeenCalled();
+  });
+
+  it('speaks the final message after a replayed voice prompt when idempotency metadata is missing', async () => {
+    const { ChatProvider, useChat, setRuntimeState, speakMock, playPingMock } = await setup({
+      runtimeAck: { ok: true, sessionKey: 'main', cursor: '1' },
+      soundEnabled: true,
+    });
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return null;
+    }
+
+    const { rerender } = render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+    const sentAt = Date.now();
+    const voiceText = '[voice] replayed user prompt without metadata';
+
+    await act(async () => {
+      await send!(voiceText);
+    });
+
+    setRuntimeState({ isGenerating: true });
+    rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    setRuntimeState({
+      isGenerating: false,
+      messages: [
+        {
+          msgId: 'assistant:main:history:message:older',
+          role: 'assistant',
+          html: '<p>Older reply.</p>',
+          rawText: 'Older reply.',
+          timestamp: new Date(sentAt + 100),
+        },
+        {
+          msgId: 'user:main:history:user:replayed',
+          role: 'user',
+          html: '<p>replayed user prompt without metadata</p>',
+          rawText: 'replayed user prompt without metadata',
+          timestamp: new Date(sentAt + 200),
+        },
+        {
+          msgId: 'assistant:main:history:message:active-final',
+          role: 'assistant',
+          html: '<p>Replayed reply.</p>',
+          rawText: 'Replayed reply.',
+          timestamp: new Date(sentAt + 300),
+          ttsText: 'Replayed spoken reply.',
+        },
+      ],
+    });
+    rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(speakMock).toHaveBeenCalledWith('Replayed spoken reply.'));
+    expect(speakMock).toHaveBeenCalledTimes(1);
+    expect(playPingMock).not.toHaveBeenCalled();
   });
 
   it('matches runtime final message run IDs encoded in assistant message IDs', async () => {
@@ -460,24 +836,27 @@ describe('ChatContext runtime TTS playback', () => {
 async function setup(options: {
   runtimeAck?: { ok: true; sessionKey: string; cursor: string; runId?: string };
   runtimeAcks?: Array<{ ok: true; sessionKey: string; cursor: string; runId?: string }>;
+  soundEnabled?: boolean;
 } = {}) {
   const speakMock = vi.fn();
+  const playPingMock = vi.fn();
   let runtimeState = makeRuntimeState();
   let runtimeAckIndex = 0;
 
-  vi.stubGlobal('fetch', vi.fn(async () => ({
+  const fetchMock = vi.fn(async () => ({
     ok: true,
     json: async () => options.runtimeAcks?.[runtimeAckIndex++]
       ?? options.runtimeAck
       ?? { ok: true, sessionKey: 'main', cursor: '1', runId: 'run-1' },
-  })));
+  }));
+  vi.stubGlobal('fetch', fetchMock);
 
   vi.doMock('@/features/chat/runtime/useChatRuntime', () => ({
     useChatRuntime: vi.fn(() => runtimeState),
   }));
 
   vi.doMock('@/features/voice/audio-feedback', () => ({
-    playPing: vi.fn(),
+    playPing: playPingMock,
   }));
 
   vi.doMock('./GatewayContext', () => ({
@@ -497,7 +876,7 @@ async function setup(options: {
 
   vi.doMock('./SettingsContext', () => ({
     useSettings: () => ({
-      soundEnabled: false,
+      soundEnabled: options.soundEnabled ?? false,
       speak: speakMock,
     }),
   }));
@@ -506,6 +885,8 @@ async function setup(options: {
   return {
     ...mod,
     speakMock,
+    playPingMock,
+    fetchMock,
     setRuntimeState(next: Partial<RuntimeState>) {
       runtimeState = { ...runtimeState, ...next };
     },

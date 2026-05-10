@@ -121,7 +121,7 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
 Switch an existing install to `next`:
 
 ```bash
-cd ~/nerve
+cd ~/nerve # installer default; manual clone: cd openclaw-nerve
 git fetch origin
 git switch next || git switch -c next --track origin/next
 git pull --ff-only
@@ -133,8 +133,9 @@ npm run prod
 Keep `next` updated:
 
 ```bash
-cd ~/nerve
+cd ~/nerve # installer default; manual clone: cd openclaw-nerve
 git fetch origin
+git switch next || git switch -c next --track origin/next
 git pull --ff-only
 npm install
 npm run build

@@ -15,6 +15,7 @@ import type { ImageAttachment, ChatMsg, OutgoingUploadPayload } from '@/features
 import type { FinalMessageData, RecoveryReason } from '@/features/chat/operations';
 import { useChatTTS } from '@/hooks/useChatTTS';
 import { getSessionKey, type ChatMessage, type GranularAgentState, type Session } from '@/types';
+import { renderMarkdown, renderToolResults } from '@/utils/helpers';
 import { encodeRuntimeIdPart } from '../../shared/chat-runtime-id';
 
 /** Processing stages for enhanced thinking indicator */
@@ -63,6 +64,13 @@ interface ActiveTTSRequest {
   voiceFallback: boolean;
 }
 
+interface OptimisticSend {
+  idempotencyKey: string;
+  text: string;
+  sentAt: number;
+  msg: ChatMsg;
+}
+
 const ChatContext = createContext<ChatContextValue | null>(null);
 
 export function ChatProvider({ children }: { children: ReactNode }) {
@@ -72,10 +80,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [pendingSendCount, setPendingSendCount] = useState(0);
+  const [optimisticSends, setOptimisticSends] = useState<OptimisticSend[]>([]);
 
   const currentSessionRef = useRef(currentSession || '');
   const soundEnabledRef = useRef(soundEnabled);
   const speakRef = useRef(speak);
+  const runtimeMessagesRef = useRef<ChatMsg[]>([]);
+  const catchupTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
   useEffect(() => {
     currentSessionRef.current = currentSession || '';
@@ -104,8 +115,31 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     clearUserMessageFailure,
   } = runtime;
 
+  useEffect(() => {
+    runtimeMessagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    if (optimisticSends.length === 0 || messages.length === 0) return;
+    const unmatched = optimisticSends.filter((send) =>
+      !messages.some((message) => runtimeMessageHasOptimisticIdentity(message, send))
+    );
+    if (unmatched.length !== optimisticSends.length) {
+      setOptimisticSends(unmatched);
+    }
+  }, [messages, optimisticSends]);
+
+  useEffect(() => () => {
+    for (const timer of catchupTimersRef.current) clearTimeout(timer);
+    catchupTimersRef.current.clear();
+  }, []);
+
   const ttsHook = useChatTTS({ soundEnabled: soundEnabledRef, speak: speakRef });
   const { handleFinalTTS, playCompletionPing, resetPlayedSounds, trackVoiceMessage } = ttsHook;
+  const displayMessages = useMemo(
+    () => mergeOptimisticMessages(messages, optimisticSends),
+    [messages, optimisticSends],
+  );
 
   const currentGatewayStatus = agentStatus[currentSession || ''];
   const currentSessionDetails = currentSession
@@ -162,15 +196,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const sessionKey = currentSessionRef.current;
     if (!sessionKey) return;
 
-    const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : `ik-${Date.now()}`;
+    const idempotencyKey = createIdempotencyKey();
+    const sentAt = Date.now();
+    const optimisticSend = createOptimisticSend({
+      sessionKey,
+      idempotencyKey,
+      text,
+      images,
+      uploadPayload,
+      sentAt,
+    });
     clearUserMessageFailure(idempotencyKey);
     resetPlayedSounds();
     trackVoiceMessage(text);
     activeTTSRequestsRef.current.set(idempotencyKey, {
       idempotencyKey,
-      sentAt: Date.now(),
+      sentAt,
       voiceFallback: text.startsWith('[voice] '),
     });
+    setOptimisticSends((current) => [...current, optimisticSend]);
     setPendingSendCount((count) => count + 1);
 
     try {
@@ -187,9 +231,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           activeTTSRequestsRef.current.set(idempotencyKey, { ...activeTTSRequest, runId: ack.runId });
         }
       }
+      const catchupTimer = setTimeout(() => {
+        catchupTimersRef.current.delete(catchupTimer);
+        const runtimeHasSend = runtimeMessagesRef.current.some((message) =>
+          runtimeMessageMatchesOptimisticSend(message, optimisticSend)
+        );
+        if (!runtimeHasSend) reload();
+      }, 750);
+      catchupTimersRef.current.add(catchupTimer);
     } catch (err) {
       activeTTSRequestsRef.current.delete(idempotencyKey);
       markUserMessageFailed(idempotencyKey);
+      setOptimisticSends((current) => current.map((send) =>
+        send.idempotencyKey === idempotencyKey
+          ? { ...send, msg: { ...send.msg, pending: false, failed: true } }
+          : send,
+      ));
       reload();
       console.debug('[ChatContext] Send request failed:', err);
     } finally {
@@ -238,7 +295,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [reload]);
 
   const value = useMemo<ChatContextValue>(() => ({
-    messages,
+    messages: displayMessages,
     isGenerating,
     stream,
     processingStage,
@@ -255,7 +312,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     confirmReset,
     cancelReset,
   }), [
-    messages,
+    displayMessages,
     isGenerating,
     stream,
     processingStage,
@@ -335,6 +392,106 @@ function singleTimestampFallbackCandidate(messages: ChatMsg[], sentAt: number): 
   });
   return candidates.length === 1 ? candidates[0] : null;
 }
+
+function createOptimisticSend(params: {
+  sessionKey: string;
+  idempotencyKey: string;
+  text: string;
+  images?: ImageAttachment[];
+  uploadPayload?: OutgoingUploadPayload;
+  sentAt: number;
+}): OptimisticSend {
+  const { sessionKey, idempotencyKey, text, images, uploadPayload, sentAt } = params;
+  const msg: ChatMsg = {
+    msgId: runtimeUserMessageId(sessionKey, idempotencyKey),
+    role: 'user',
+    html: renderToolResults(renderMarkdown(text)),
+    rawText: text,
+    timestamp: new Date(sentAt),
+    pending: true,
+    tempId: idempotencyKey,
+    ...(text.startsWith('[voice] ') ? { isVoice: true } : {}),
+    ...(images?.length ? {
+      images: images.map((image) => ({
+        mimeType: image.mimeType,
+        content: image.content,
+        preview: image.preview,
+        name: image.name,
+      })),
+    } : {}),
+    ...(uploadPayload?.descriptors.length ? { uploadAttachments: uploadPayload.descriptors } : {}),
+  };
+
+  return {
+    idempotencyKey,
+    text,
+    sentAt,
+    msg,
+  };
+}
+
+let fallbackIdCounter = 0;
+
+function createIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  fallbackIdCounter += 1;
+  return `ik-${Date.now()}-${fallbackIdCounter}`;
+}
+
+function mergeOptimisticMessages(runtimeMessages: ChatMsg[], optimisticSends: OptimisticSend[]): ChatMsg[] {
+  if (optimisticSends.length === 0) return runtimeMessages;
+
+  const merged = [...runtimeMessages];
+  for (const send of unmatchedOptimisticSends(runtimeMessages, optimisticSends)) {
+
+    const insertionIndex = merged.findIndex((message) => message.timestamp.getTime() > send.sentAt);
+    if (insertionIndex === -1) {
+      merged.push(send.msg);
+    } else {
+      merged.splice(insertionIndex, 0, send.msg);
+    }
+  }
+
+  return merged;
+}
+
+function unmatchedOptimisticSends(runtimeMessages: ChatMsg[], optimisticSends: OptimisticSend[]): OptimisticSend[] {
+  const matchedRuntimeIndexes = new Set<number>();
+
+  return optimisticSends.filter((send) => {
+    const matchedIndex = runtimeMessages.findIndex((message, index) =>
+      !matchedRuntimeIndexes.has(index) && runtimeMessageMatchesOptimisticSend(message, send)
+    );
+    if (matchedIndex === -1) return true;
+    matchedRuntimeIndexes.add(matchedIndex);
+    return false;
+  });
+}
+
+function runtimeMessageMatchesOptimisticSend(message: ChatMsg, send: OptimisticSend): boolean {
+  if (message.role !== 'user') return false;
+  if (runtimeMessageHasOptimisticIdentity(message, send)) return true;
+  const timestampDelta = Math.abs(message.timestamp.getTime() - send.sentAt);
+  return timestampDelta <= OPTIMISTIC_TEXT_MATCH_WINDOW_MS &&
+    normalizeUserMessageText(message.rawText) === normalizeUserMessageText(send.text);
+}
+
+function runtimeMessageHasOptimisticIdentity(message: ChatMsg, send: OptimisticSend): boolean {
+  return message.msgId === send.msg.msgId || message.tempId === send.idempotencyKey;
+}
+
+function normalizeUserMessageText(text: string): string {
+  return text.replace(TTS_SYSTEM_HINT_RE, '').trim();
+}
+
+function runtimeUserMessageId(sessionKey: string, idempotencyKey: string): string {
+  return `user:${sessionKey}:${encodeRuntimeIdPart(idempotencyKey)}`;
+}
+
+const TTS_SYSTEM_HINT_RE = /\s*\[system: User sent a voice message\.[\s\S]*$/;
+const OPTIMISTIC_TEXT_MATCH_WINDOW_MS = 5 * 60 * 1000;
 
 function isSettledGatewayStatusCurrent(
   status: GranularAgentState | undefined,

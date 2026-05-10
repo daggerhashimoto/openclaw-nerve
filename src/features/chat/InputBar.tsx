@@ -521,7 +521,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   const effectiveSttInputMode = sttProvider === 'openai' ? 'local' : sttInputMode;
 
-  const { voiceState, interimTranscript, wakeWordEnabled, toggleWakeWord, error: voiceError, clearError: clearVoiceError } = useVoiceInput((text) => {
+  const { voiceState, interimTranscript, wakeWordEnabled, toggleWakeWord, error: voiceError, clearError: clearVoiceError } = useVoiceInput(async (text) => {
     const input = inputRef.current;
     if (input) {
       input.value = '';
@@ -530,7 +530,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       input.style.opacity = '';
     }
     setDraftText('');
-    onSend('[voice] ' + text);
+    await onSend('[voice] ' + text);
+    clearVoiceError();
   }, agentName, voiceLang, voicePhrasesVersion, effectiveSttInputMode);
 
   // Live transcription preview: write interim transcript to textarea during recording

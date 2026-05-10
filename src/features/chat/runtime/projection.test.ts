@@ -90,6 +90,27 @@ describe('chat runtime projection', () => {
     expect(projection.messages[0]).toMatchObject({ pending: false, failed: false });
   });
 
+  it('strips voice TTS send hints from replayed user messages', () => {
+    const turn = makeTurn('session-1', 'history:user:voice', 0, 'finalized');
+    const timeline = makeTimeline('session-1', [turn], {
+      'user-voice': userItem(
+        turn,
+        'user-voice',
+        '[voice] hello\n\n[system: User sent a voice message. Always include a [tts:...] marker.]',
+        0,
+      ),
+    });
+
+    const projection = projectTimeline(timeline);
+
+    expect(projection.messages[0]).toMatchObject({
+      msgId: 'user-voice',
+      role: 'user',
+      rawText: 'hello',
+      isVoice: true,
+    });
+  });
+
   it('does not treat completed history-only input turns as generating', () => {
     for (const runId of ['history:user:history-user', 'optimistic:message:history-user']) {
       const turn = makeTurn('session-1', runId, 0, 'running');

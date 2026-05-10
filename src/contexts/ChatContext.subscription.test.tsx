@@ -16,6 +16,7 @@ describe('ChatContext subscription stability', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   async function setup(options: {
@@ -63,7 +64,7 @@ describe('ChatContext subscription stability', () => {
     }));
 
     const mod = await import('./ChatContext');
-    return { ...mod, fetchMock, rpcMock, subscribeMock };
+    return { ...mod, fetchMock, rpcMock, subscribeMock, runtimeState };
   }
 
   it('sends through runtime POST without registering a gateway chat subscription', async () => {
@@ -256,6 +257,201 @@ describe('ChatContext subscription stability', () => {
     renderRuntimeState(ChatProvider, useChat);
 
     expectRuntimeState('true', 'thinking');
+  });
+
+  it('shows a local optimistic voice bubble while waiting for runtime replay', async () => {
+    const { ChatProvider, useChat, fetchMock } = await setup();
+    let resolveFetch: ((response: Response) => void) | null = null;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    }));
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return (
+        <div data-testid="messages" data-generating={String(chat.isGenerating)}>
+          {chat.messages.map((message) => (
+            <div
+              key={message.msgId}
+              data-role={message.role}
+              data-pending={String(Boolean(message.pending))}
+              data-voice={String(Boolean(message.isVoice))}
+            >
+              {message.rawText}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+
+    await act(async () => {
+      void send!('[voice] hello from voice');
+      await Promise.resolve();
+    });
+
+    const messages = screen.getByTestId('messages');
+    expect(messages.getAttribute('data-generating')).toBe('true');
+    expect(screen.getByText('[voice] hello from voice')).toHaveAttribute('data-pending', 'true');
+    expect(screen.getByText('[voice] hello from voice')).toHaveAttribute('data-voice', 'true');
+
+    await act(async () => {
+      resolveFetch!(new Response(JSON.stringify({ ok: true, sessionKey: 'main', cursor: '1', runId: 'run-1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    });
+  });
+
+  it('does not duplicate the local voice bubble when runtime history catches up with the persisted voice message', async () => {
+    const { ChatProvider, useChat, runtimeState } = await setup();
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return (
+        <div data-testid="messages">
+          {chat.messages.map((message) => (
+            <div key={message.msgId} data-role={message.role}>{message.rawText}</div>
+          ))}
+        </div>
+      );
+    }
+
+    const view = render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+
+    await act(async () => {
+      await send!('[voice] hello from voice');
+    });
+
+    expect(screen.getAllByText(/\[voice\] hello from voice/)).toHaveLength(1);
+
+    runtimeState.messages = [{
+      msgId: 'user:main:history-message',
+      role: 'user',
+      html: '<p>[voice] hello from voice</p>',
+      rawText: '[voice] hello from voice\n\n[system: User sent a voice message. Always include TTS.]',
+      timestamp: new Date(Date.now() + 1000),
+      isVoice: true,
+    }];
+
+    view.rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    expect(screen.getAllByText(/\[voice\] hello from voice/)).toHaveLength(1);
+  });
+
+  it('matches optimistic voice sends to runtime history one-to-one when text repeats', async () => {
+    const { ChatProvider, useChat, runtimeState } = await setup();
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return (
+        <div data-testid="messages">
+          {chat.messages.map((message) => (
+            <div key={message.msgId} data-role={message.role}>{message.rawText}</div>
+          ))}
+        </div>
+      );
+    }
+
+    const view = render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+
+    await act(async () => {
+      await send!('[voice] repeat');
+      await send!('[voice] repeat');
+    });
+
+    expect(screen.getAllByText('[voice] repeat')).toHaveLength(2);
+
+    runtimeState.messages = [{
+      msgId: 'user:main:history-message',
+      role: 'user',
+      html: '<p>[voice] repeat</p>',
+      rawText: '[voice] repeat',
+      timestamp: new Date(Date.now() + 1000),
+      isVoice: true,
+    }];
+
+    view.rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    expect(screen.getAllByText('[voice] repeat')).toHaveLength(2);
+  });
+
+  it('reconnects runtime replay after send when the stream has not observed the optimistic voice message', async () => {
+    const { ChatProvider, useChat, runtimeState } = await setup();
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return null;
+    }
+
+    render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+
+    vi.useFakeTimers();
+
+    await act(async () => {
+      await send!('[voice] hello from voice');
+    });
+
+    expect(runtimeState.reload).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(750);
+    });
+
+    expect(runtimeState.reload).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -95,9 +95,10 @@ function projectUserItem(
     item.status === 'provisional' ||
     item.status === 'running'
   );
+  const text = stripVoiceTTSHint(item.text);
   const projected = splitMessageWithStableIds({
     role: 'user',
-    content: item.text,
+    content: text,
     timestamp: item.createdAt,
   }, item.id);
   const messages = projected.length > 0 ? projected : fallbackUserMessagesForMedia(item);
@@ -191,16 +192,17 @@ function splitMessageWithStableIds(message: ChatMessage, baseId: string): ChatMs
 
 function fallbackUserMessagesForMedia(item: UserTimelineItem): ChatMsg[] {
   if (!item.images?.length && !item.uploadAttachments?.length) return [];
+  const text = stripVoiceTTSHint(item.text);
 
   return [{
     msgId: item.id,
     role: 'user',
-    html: renderToolResults(renderMarkdown(item.text)),
-    rawText: item.text,
+    html: renderToolResults(renderMarkdown(text)),
+    rawText: text,
     timestamp: dateFromMs(item.createdAt),
     streaming: false,
     ...userMediaProps(item),
-    ...(item.text.startsWith('[voice] ') ? { isVoice: true } : {}),
+    ...(text.startsWith('[voice] ') ? { isVoice: true } : {}),
   }];
 }
 
@@ -209,6 +211,12 @@ function userMediaProps(item: UserTimelineItem): Pick<ChatMsg, 'images' | 'uploa
     ...(item.images?.length ? { images: item.images } : {}),
     ...(item.uploadAttachments?.length ? { uploadAttachments: item.uploadAttachments } : {}),
   };
+}
+
+const TTS_SYSTEM_HINT_RE = /\s*\[system: User sent a voice message\.[\s\S]*$/;
+
+function stripVoiceTTSHint(text: string): string {
+  return text.replace(TTS_SYSTEM_HINT_RE, '').trim();
 }
 
 function groupConsecutiveToolCalls(messages: ChatMsg[]): ChatMsg[] {

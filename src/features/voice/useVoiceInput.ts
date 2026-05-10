@@ -140,7 +140,7 @@ export function resolveRecognitionLang(language: string): string {
 }
 
 export function useVoiceInput(
-  onTranscription: (text: string) => void,
+  onTranscription: (text: string) => void | Promise<void>,
   agentName: string = 'Agent',
   language: string = 'en',
   phrasesVersion: number = 0,
@@ -492,7 +492,7 @@ export function useVoiceInput(
           }
         }
 
-        if (cleaned) onTranscriptionRef.current(cleaned);
+        if (cleaned) await onTranscriptionRef.current(cleaned);
         setError(null);
       } catch (err) {
         console.error('Transcription failed:', err);

@@ -45,6 +45,11 @@ interface UseChatTTSDeps {
   speak: React.RefObject<(text: string) => void>;
 }
 
+interface HandleFinalTTSOptions {
+  voiceFallback?: boolean;
+  completionPing?: boolean;
+}
+
 export function useChatTTS({ soundEnabled, speak }: UseChatTTSDeps) {
   const lastMessageWasVoiceRef = useRef(false);
   const playedSoundsRef = useRef<Set<string>>(new Set());
@@ -63,19 +68,35 @@ export function useChatTTS({ soundEnabled, speak }: UseChatTTSDeps) {
    * Handle TTS for a completed assistant turn.
    * Called from chat_final processing when the run is the active run.
    */
-  const handleFinalTTS = useCallback((finalData: FinalMessageData | null, isActiveRun: boolean) => {
-    if (!isActiveRun) return;
+  const handleFinalTTS = useCallback((
+    finalData: FinalMessageData | null,
+    isActiveRun: boolean,
+    options: HandleFinalTTSOptions = {},
+  ): boolean => {
+    if (!isActiveRun) return false;
 
     if (finalData?.ttsText && !playedSoundsRef.current.has(finalData.ttsText)) {
       playedSoundsRef.current.add(finalData.ttsText);
       speak.current(finalData.ttsText);
-    } else if (!finalData?.ttsText && lastMessageWasVoiceRef.current && finalData?.text) {
+      return true;
+    }
+
+    const shouldUseVoiceFallback = options.voiceFallback ?? lastMessageWasVoiceRef.current;
+    if (!finalData?.ttsText && shouldUseVoiceFallback && finalData?.text) {
       // Voice fallback: agent forgot [tts:...] marker — auto-speak cleaned response
       const fallback = buildVoiceFallbackText(finalData.text);
-      if (fallback) speak.current(fallback);
-    } else if (soundEnabled.current) {
-      playPing();
+      if (fallback) {
+        speak.current(fallback);
+        return true;
+      }
     }
+
+    if (options.completionPing !== false && soundEnabled.current) {
+      playPing();
+      return true;
+    }
+
+    return false;
   }, [soundEnabled, speak]);
 
   /** Play the completion ping sound if sound is enabled. */

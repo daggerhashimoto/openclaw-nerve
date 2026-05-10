@@ -319,17 +319,92 @@ describe('ChatContext runtime TTS playback', () => {
     });
     expect(speakMock).not.toHaveBeenCalled();
   });
+
+  it('speaks final TTS for overlapping runtime sends', async () => {
+    const { ChatProvider, useChat, setRuntimeState, speakMock } = await setup({
+      runtimeAcks: [
+        { ok: true, sessionKey: 'main', cursor: '1', runId: 'run-1' },
+        { ok: true, sessionKey: 'main', cursor: '2', runId: 'run-2' },
+      ],
+    });
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return null;
+    }
+
+    const { rerender } = render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+
+    await act(async () => {
+      await send!('[voice] first');
+      await send!('[voice] second');
+    });
+
+    setRuntimeState({ isGenerating: true });
+    rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    const now = Date.now();
+    setRuntimeState({
+      isGenerating: false,
+      messages: [
+        {
+          msgId: 'assistant:main:run-1:answer',
+          role: 'assistant',
+          html: '<p>First reply.</p>',
+          rawText: 'First reply.',
+          timestamp: new Date(now + 1000),
+          ttsText: 'First spoken reply.',
+        },
+        {
+          msgId: 'assistant:main:run-2:answer',
+          role: 'assistant',
+          html: '<p>Second reply.</p>',
+          rawText: 'Second reply.',
+          timestamp: new Date(now + 2000),
+          ttsText: 'Second spoken reply.',
+        },
+      ],
+    });
+    rerender(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(speakMock).toHaveBeenCalledWith('First spoken reply.'));
+    expect(speakMock).toHaveBeenCalledWith('Second spoken reply.');
+    expect(speakMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 async function setup(options: {
   runtimeAck?: { ok: true; sessionKey: string; cursor: string; runId?: string };
+  runtimeAcks?: Array<{ ok: true; sessionKey: string; cursor: string; runId?: string }>;
 } = {}) {
   const speakMock = vi.fn();
   let runtimeState = makeRuntimeState();
+  let runtimeAckIndex = 0;
 
   vi.stubGlobal('fetch', vi.fn(async () => ({
     ok: true,
-    json: async () => options.runtimeAck ?? { ok: true, sessionKey: 'main', cursor: '1', runId: 'run-1' },
+    json: async () => options.runtimeAcks?.[runtimeAckIndex++]
+      ?? options.runtimeAck
+      ?? { ok: true, sessionKey: 'main', cursor: '1', runId: 'run-1' },
   })));
 
   vi.doMock('@/features/chat/runtime/useChatRuntime', () => ({

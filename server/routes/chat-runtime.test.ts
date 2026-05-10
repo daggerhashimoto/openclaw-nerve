@@ -375,7 +375,7 @@ describe('chat runtime routes', () => {
           body: JSON.stringify({
             text: 'hello',
             idempotencyKey: 'idem-large-image',
-            images: [{ mimeType: 'image/png', content: 'abcd' }],
+            images: [{ mimeType: 'image/png', content: 'abcde' }],
           }),
         },
         {
@@ -479,6 +479,44 @@ describe('chat runtime routes', () => {
         delete process.env.NERVE_UPLOAD_INLINE_IMAGE_CONTEXT_MAX_BYTES;
       } else {
         process.env.NERVE_UPLOAD_INLINE_IMAGE_CONTEXT_MAX_BYTES = originalMetadataLimit;
+      }
+    }
+  });
+
+  it('accepts padded base64 content at the configured byte limit', async () => {
+    const originalInlineLimit = process.env.NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB;
+    process.env.NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB = '0.000001';
+
+    try {
+      const runtime = createFakeRuntime();
+      const { app } = await buildRouteApp(runtime);
+      gatewayRpcCallMock.mockResolvedValue({ runId: 'run-one-byte-image' });
+
+      const res = await app.request('/api/chat-runtime/sessions/agent%3Amain%3Amain/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: 'one byte image',
+          idempotencyKey: 'idem-one-byte-image',
+          images: [{ mimeType: 'image/png', content: 'AA==' }],
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(runtime.applyOptimisticUserMessage).toHaveBeenCalledWith(expect.objectContaining({
+        images: [
+          expect.objectContaining({
+            mimeType: 'image/png',
+            content: 'AA==',
+            preview: 'data:image/png;base64,AA==',
+          }),
+        ],
+      }));
+    } finally {
+      if (originalInlineLimit === undefined) {
+        delete process.env.NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB;
+      } else {
+        process.env.NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB = originalInlineLimit;
       }
     }
   });

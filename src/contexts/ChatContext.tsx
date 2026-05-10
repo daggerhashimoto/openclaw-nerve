@@ -56,6 +56,13 @@ interface ChatContextValue {
   cancelReset: () => void;
 }
 
+interface ActiveTTSRequest {
+  idempotencyKey: string;
+  sentAt: number;
+  runId?: string;
+  voiceFallback: boolean;
+}
+
 const ChatContext = createContext<ChatContextValue | null>(null);
 
 export function ChatProvider({ children }: { children: ReactNode }) {
@@ -104,13 +111,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const processingStage = runtimeProcessingStage ?? (pendingSendCount > 0 ? 'thinking' : null);
 
   const wasRuntimeGeneratingRef = useRef(false);
-  const activeTTSRequestRef = useRef<{ idempotencyKey: string; sentAt: number; runId?: string } | null>(null);
+  const activeTTSRequestsRef = useRef<Map<string, ActiveTTSRequest>>(new Map());
   useEffect(() => {
     if (wasRuntimeGeneratingRef.current && !runtimeIsGenerating) {
-      const activeTTSRequest = activeTTSRequestRef.current;
-      if (activeTTSRequest) {
-        handleFinalTTS(finalMessageDataFromRuntimeMessages(messages, activeTTSRequest), true);
-        activeTTSRequestRef.current = null;
+      const activeTTSRequests = [...activeTTSRequestsRef.current.values()]
+        .sort((a, b) => a.sentAt - b.sentAt);
+      if (activeTTSRequests.length > 0) {
+        let playedAudio = false;
+        for (const activeTTSRequest of activeTTSRequests) {
+          const finalMessageData = finalMessageDataFromRuntimeMessages(messages, activeTTSRequest);
+          if (finalMessageData) {
+            playedAudio = handleFinalTTS(finalMessageData, true, {
+              voiceFallback: activeTTSRequest.voiceFallback,
+              completionPing: false,
+            }) || playedAudio;
+          }
+          activeTTSRequestsRef.current.delete(activeTTSRequest.idempotencyKey);
+        }
+        if (!playedAudio) {
+          playCompletionPing();
+        }
       } else {
         playCompletionPing();
       }
@@ -130,7 +150,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     clearUserMessageFailure(idempotencyKey);
     resetPlayedSounds();
     trackVoiceMessage(text);
-    activeTTSRequestRef.current = { idempotencyKey, sentAt: Date.now() };
+    activeTTSRequestsRef.current.set(idempotencyKey, {
+      idempotencyKey,
+      sentAt: Date.now(),
+      voiceFallback: text.startsWith('[voice] '),
+    });
     setPendingSendCount((count) => count + 1);
 
     try {
@@ -141,13 +165,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         images,
         uploadPayload,
       });
-      if (ack.runId && activeTTSRequestRef.current?.idempotencyKey === idempotencyKey) {
-        activeTTSRequestRef.current = { ...activeTTSRequestRef.current, runId: ack.runId };
+      if (ack.runId) {
+        const activeTTSRequest = activeTTSRequestsRef.current.get(idempotencyKey);
+        if (activeTTSRequest) {
+          activeTTSRequestsRef.current.set(idempotencyKey, { ...activeTTSRequest, runId: ack.runId });
+        }
       }
     } catch (err) {
-      if (activeTTSRequestRef.current?.idempotencyKey === idempotencyKey) {
-        activeTTSRequestRef.current = null;
-      }
+      activeTTSRequestsRef.current.delete(idempotencyKey);
       markUserMessageFailed(idempotencyKey);
       reload();
       console.debug('[ChatContext] Send request failed:', err);

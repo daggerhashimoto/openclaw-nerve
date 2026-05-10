@@ -106,6 +106,7 @@ function projectUserItem(
 
   return messages.map((message) => ({
     ...message,
+    ...(message.role === 'user' ? { html: renderMarkdown(message.rawText) } : {}),
     ...(message.role === 'user' ? userMediaProps(item) : {}),
     tempId: message.role === 'user' ? item.idempotencyKey : message.tempId,
     pending: message.role === 'user' ? pending : message.pending,
@@ -199,7 +200,7 @@ function fallbackUserMessagesForMedia(item: UserTimelineItem): ChatMsg[] {
   return [{
     msgId: item.id,
     role: 'user',
-    html: renderToolResults(renderMarkdown(text)),
+    html: renderMarkdown(text),
     rawText: text,
     timestamp: dateFromMs(item.createdAt),
     streaming: false,

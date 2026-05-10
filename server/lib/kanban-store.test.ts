@@ -43,6 +43,13 @@ afterEach(async () => {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+async function createTestProjectRoot(): Promise<string> {
+  const projectRoot = path.join(tmpDir, 'project');
+  await fs.promises.mkdir(projectRoot, { recursive: true });
+  await fs.promises.writeFile(path.join(projectRoot, 'package.json'), '{"name":"openclaw-nerve-test"}');
+  return projectRoot;
+}
+
 async function createSampleTask(overrides: Partial<Parameters<KanbanStore['createTask']>[0]> = {}): Promise<KanbanTask> {
   return store.createTask({
     title: 'Test task',
@@ -1449,8 +1456,9 @@ describe('migration', () => {
 
 describe('default path and legacy migration', () => {
   it('stores default data under NERVE_DATA_DIR/kanban', async () => {
+    const projectRoot = await createTestProjectRoot();
     process.env.NERVE_DATA_DIR = path.join(tmpDir, 'nerve-data');
-    process.env.NERVE_PROJECT_ROOT = path.join(tmpDir, 'project');
+    process.env.NERVE_PROJECT_ROOT = projectRoot;
 
     const defaultStore = new KanbanStore();
     await defaultStore.init();
@@ -1463,7 +1471,7 @@ describe('default path and legacy migration', () => {
   });
 
   it('migrates legacy server-dist data into the canonical store', async () => {
-    const projectRoot = path.join(tmpDir, 'project');
+    const projectRoot = await createTestProjectRoot();
     const legacyPath = path.join(projectRoot, 'server-dist', 'data', 'kanban', 'tasks.json');
     process.env.NERVE_DATA_DIR = path.join(tmpDir, 'nerve-data');
     process.env.NERVE_PROJECT_ROOT = projectRoot;
@@ -1482,7 +1490,7 @@ describe('default path and legacy migration', () => {
   });
 
   it('lazy-initializes and migrates before reads', async () => {
-    const projectRoot = path.join(tmpDir, 'project');
+    const projectRoot = await createTestProjectRoot();
     const legacyPath = path.join(projectRoot, 'server-dist', 'data', 'kanban', 'tasks.json');
     process.env.NERVE_DATA_DIR = path.join(tmpDir, 'nerve-data');
     process.env.NERVE_PROJECT_ROOT = projectRoot;
@@ -1499,7 +1507,7 @@ describe('default path and legacy migration', () => {
   });
 
   it('migrates legacy server data into the canonical store', async () => {
-    const projectRoot = path.join(tmpDir, 'project');
+    const projectRoot = await createTestProjectRoot();
     const legacyPath = path.join(projectRoot, 'server', 'data', 'kanban', 'tasks.json');
     process.env.NERVE_DATA_DIR = path.join(tmpDir, 'nerve-data');
     process.env.NERVE_PROJECT_ROOT = projectRoot;
@@ -1517,7 +1525,7 @@ describe('default path and legacy migration', () => {
   });
 
   it('prefers the canonical store when canonical and legacy data both exist', async () => {
-    const projectRoot = path.join(tmpDir, 'project');
+    const projectRoot = await createTestProjectRoot();
     const canonicalDir = path.join(tmpDir, 'nerve-data', 'kanban');
     const legacyPath = path.join(projectRoot, 'server-dist', 'data', 'kanban', 'tasks.json');
     process.env.NERVE_DATA_DIR = path.join(tmpDir, 'nerve-data');
@@ -1540,7 +1548,7 @@ describe('default path and legacy migration', () => {
   });
 
   it('prefers the richer legacy candidate over an empty one', async () => {
-    const projectRoot = path.join(tmpDir, 'project');
+    const projectRoot = await createTestProjectRoot();
     const emptyLegacyPath = path.join(projectRoot, 'server-dist', 'data', 'kanban', 'tasks.json');
     const richLegacyPath = path.join(projectRoot, 'server', 'data', 'kanban', 'tasks.json');
     process.env.NERVE_DATA_DIR = path.join(tmpDir, 'nerve-data');

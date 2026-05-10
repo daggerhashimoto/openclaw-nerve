@@ -578,6 +578,87 @@ describe('InputBar', () => {
     });
   });
 
+  it('downgrades oversized exposed-inline browser images to file references', async () => {
+    uploadConfigResponse.exposeInlineBase64ToAgent = true;
+    uploadConfigResponse.inlineImageContextMaxBytes = 32_768;
+    const onSend = vi.fn();
+    vi.mocked(compressImage).mockImplementation(async (file: File) => ({
+      base64: 'x'.repeat(200_000),
+      mimeType: file.type || 'application/octet-stream',
+      preview: `data:${file.type};base64,oversized-${file.name}`,
+      width: 512,
+      height: 512,
+      bytes: 150_000,
+      iterations: 8,
+      attempts: [],
+      targetBytes: 29_491,
+      maxBytes: 32_768,
+      minDimension: 512,
+    }));
+
+    render(<InputBar onSend={onSend} isGenerating={false} />);
+
+    const textarea = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+    fireEvent.input(textarea, { target: { value: 'ship staged upload' } });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await waitFor(() => {
+      expect(fileInput.accept).toBe('*/*');
+    });
+
+    const image = new File([new Uint8Array(80_000)], 'oversized-context.png', { type: 'image/png' });
+
+    fireEvent.change(fileInput, {
+      target: { files: [image] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('oversized-context.png')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText('Send message'));
+
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledTimes(1);
+    });
+    expect(compressImage).toHaveBeenCalledWith(image, expect.objectContaining({
+      contextMaxBytes: uploadConfigResponse.inlineImageContextMaxBytes,
+    }));
+
+    const [text, attachments, uploadPayload] = onSend.mock.calls[0] as [
+      string,
+      Array<{ mimeType: string; content: string; name: string }>?,
+      {
+        descriptors: Array<{
+          origin: string;
+          mode: string;
+          inline?: { base64: string };
+          reference?: { kind: string; path: string; uri: string };
+          preparation?: { outcome: string };
+        }>;
+      }?,
+    ];
+    expect(text).toBe('ship staged upload');
+    expect(attachments).toBeUndefined();
+    expect(uploadPayload?.descriptors).toHaveLength(1);
+    expect(uploadPayload?.descriptors[0]).toMatchObject({
+      origin: 'upload',
+      mode: 'file_reference',
+      reference: {
+        kind: 'local_path',
+        path: '/workspace/.temp/nerve-uploads/2026/03/21/1-oversized-context.png',
+        uri: 'file:///workspace/.temp/nerve-uploads/2026/03/21/1-oversized-context.png',
+      },
+      preparation: {
+        outcome: 'downgraded_to_file_reference',
+      },
+    });
+    expect(uploadPayload?.descriptors[0].inline).toBeUndefined();
+
+    const fetchUrls = vi.mocked(global.fetch).mock.calls.map(([input]) => String(input));
+    expect(fetchUrls.some((url) => url.includes('/api/upload-reference/resolve'))).toBe(true);
+  });
+
   it('keeps browser uploads on the staged file-reference transport path', async () => {
     const onSend = vi.fn();
     render(<InputBar onSend={onSend} isGenerating={false} />);

@@ -505,6 +505,64 @@ describe('useVoiceInput', () => {
       consoleSpy.mockRestore();
     });
 
+    it('should restore voice state before the outbound send completes', async () => {
+      let resolveSend!: () => void;
+      const sendPromise = new Promise<void>((resolve) => {
+        resolveSend = resolve;
+      });
+      const onTranscription = vi.fn(() => sendPromise);
+      const { result } = renderHook(() => useVoiceInput(onTranscription, 'Agent', 'en', 0, 'local'));
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(onTranscription).toHaveBeenCalledWith('transcribed text');
+      expect(result.current.voiceState).toBe('idle');
+
+      resolveSend();
+      await act(async () => {
+        await sendPromise;
+      });
+    });
+
+    it('should report send failures separately from transcription failures', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const onTranscription = vi.fn().mockRejectedValue(new Error('network down'));
+      const { result } = renderHook(() => useVoiceInput(onTranscription, 'Agent', 'en', 0, 'local'));
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(onTranscription).toHaveBeenCalledWith('transcribed text');
+      expect(result.current.voiceState).toBe('idle');
+      expect(result.current.error).toBe('Send failed: network down');
+
+      consoleSpy.mockRestore();
+    });
+
     it('should submit browser transcript directly in browser mode', async () => {
       const onTranscription = vi.fn();
       const { result } = renderHook(() => useVoiceInput(onTranscription, 'Agent', 'en', 0, 'browser'));

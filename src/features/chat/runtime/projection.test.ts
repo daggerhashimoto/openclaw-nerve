@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { renderMarkdown } from '@/utils/helpers';
 import { projectTimeline } from './projection';
 import type {
   AssistantTimelineItem,
@@ -269,6 +270,34 @@ describe('chat runtime projection', () => {
       rawText: '',
       images: [{ mimeType: 'image/png', name: 'capture.png' }],
     });
+  });
+
+  it('uses normal markdown rendering for media fallback user bubbles', () => {
+    const turn = makeTurn('session-1', 'run-media-fallback', 0, 'finalized');
+    const text = 'caption \x00TOOLRESULT_START\x00not a tool result\x00TOOLRESULT_END\x00';
+    const timeline = makeTimeline('session-1', [turn], {
+      'user-media-fallback': {
+        ...userItem(turn, 'user-media-fallback', text, 0),
+        images: [
+          {
+            mimeType: 'image/png',
+            content: 'base64-image',
+            preview: 'data:image/png;base64,base64-image',
+            name: 'capture.png',
+          },
+        ],
+      },
+    });
+
+    const projection = projectTimeline(timeline);
+
+    expect(projection.messages[0]).toMatchObject({
+      msgId: 'user-media-fallback',
+      role: 'user',
+      rawText: text,
+    });
+    expect(projection.messages[0].html).toBe(renderMarkdown(text));
+    expect(projection.messages[0].html).not.toContain('tool-result-details');
   });
 
   it('keeps assistant TTS marker text available while hiding the marker from chat', () => {

@@ -1001,9 +1001,49 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       };
     }
 
+    if (
+      item.origin === 'upload'
+      && uploadConfig.inlineImageAutoDowngradeToFileReference
+      && uploadConfig.fileReferenceEnabled
+    ) {
+      const [reference] = await importBrowserUploadsToCanonicalReferences([item.file]);
+      if (!reference) {
+        throw new Error(`Failed to resolve upload reference for "${item.file.name}".`);
+      }
+      const fallbackFile = createServerPathBackedFile({
+        name: item.file.name || reference.originalName,
+        absolutePath: reference.absolutePath,
+        sizeBytes: reference.sizeBytes,
+        mimeType: reference.mimeType || item.file.type || 'application/octet-stream',
+      });
+
+      return {
+        descriptor: await buildFileReferenceDescriptor({
+          ...item,
+          file: fallbackFile,
+          mode: 'file_reference',
+          relativePath: reference.canonicalPath,
+        }, {
+          ...preparation,
+          sourceMode: 'inline',
+          finalMode: 'file_reference',
+          outcome: 'downgraded_to_file_reference',
+          reason: `${fallbackReason} Imported browser upload as a file reference (${formatFileSize(inlineBase64Bytes)} > ${formatFileSize(inlineImageMaxBytes)}).`,
+          originalMimeType: item.file.type || 'application/octet-stream',
+          originalSizeBytes: item.file.size,
+          inlineBase64Bytes,
+          contextSafetyMaxBytes: inlineImageMaxBytes,
+          inlineFallbackReason: 'minimum inline dimension reached; used imported file reference fallback',
+          localPathAvailable: true,
+        }),
+      };
+    }
+
     if (item.origin === 'upload') {
       throw new Error(
-        `"${item.file.name}" was blocked after adaptive inline shrinking reached the minimum dimension (${uploadConfig.inlineImageShrinkMinDimension}px) and browser uploads cannot preserve a true file-reference fallback (${formatFileSize(inlineBase64Bytes)} > ${formatFileSize(inlineImageMaxBytes)}). Send a smaller image or browse by path.`,
+        uploadConfig.fileReferenceEnabled
+          ? `"${item.file.name}" was blocked after adaptive inline shrinking reached the minimum dimension (${uploadConfig.inlineImageShrinkMinDimension}px) and file-reference fallback is disabled for this upload (${formatFileSize(inlineBase64Bytes)} > ${formatFileSize(inlineImageMaxBytes)}). Send a smaller image or browse by path.`
+          : `"${item.file.name}" was blocked after adaptive inline shrinking reached the minimum dimension (${uploadConfig.inlineImageShrinkMinDimension}px) and file-reference mode is disabled (${formatFileSize(inlineBase64Bytes)} > ${formatFileSize(inlineImageMaxBytes)}). Send a smaller image or enable file-reference mode.`,
       );
     }
 

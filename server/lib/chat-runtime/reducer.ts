@@ -170,7 +170,11 @@ export function reduceRuntimeEvent(timeline: SessionTimeline, event: RuntimeEven
         detachInputItemFromOtherTurns(draft, item.id, targetTurn.id);
         appendUnique(targetTurn.inputItemIds, item.id);
         neutralizeTurn(sourceTurn, event.at);
-      } else if (sourceTurn && !isTerminalTurnStatus(sourceTurn.status)) {
+      } else if (
+        sourceTurn &&
+        !isTerminalTurnStatus(sourceTurn.status) &&
+        (!existingRunTurn || existingRunTurn.id === sourceTurn.id)
+      ) {
         sourceTurn.runId = event.runId;
       }
       break;

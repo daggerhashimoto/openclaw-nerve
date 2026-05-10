@@ -16,7 +16,17 @@ export function findProjectRootFromDirectory(startDir: string): string | undefin
 
 export function resolveProjectRoot(importMetaUrl?: string): string {
   const configuredRoot = process.env.NERVE_PROJECT_ROOT?.trim();
-  if (configuredRoot) return path.resolve(configuredRoot);
+  if (configuredRoot) {
+    const resolved = path.resolve(configuredRoot);
+    let isDirectory = false;
+    try {
+      isDirectory = fs.statSync(resolved).isDirectory();
+    } catch {
+      isDirectory = false;
+    }
+    if (isDirectory && fs.existsSync(path.join(resolved, 'package.json'))) return resolved;
+    throw new Error(`NERVE_PROJECT_ROOT does not contain package.json: ${resolved}`);
+  }
 
   if (importMetaUrl) {
     const moduleDir = path.dirname(fileURLToPath(importMetaUrl));

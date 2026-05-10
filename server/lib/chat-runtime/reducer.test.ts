@@ -974,6 +974,53 @@ describe('chat runtime reducer', () => {
     expect(turnsReferencingUser).toHaveLength(1);
   });
 
+  it('does not rewrite an output-bearing optimistic turn to a run id that already has a turn', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'user_message_committed',
+      sessionKey: 'agent:main:main',
+      idempotencyKey: 'ik-1',
+      text: 'user 1',
+      at: 1000,
+    });
+    const sourceTurnId = timeline.turns[0].id;
+    const optimisticRunId = timeline.turns[0].runId;
+
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'assistant_delta',
+      sessionKey: 'agent:main:main',
+      runId: optimisticRunId,
+      text: 'optimistic output',
+      at: 1001,
+    });
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'turn_started',
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      at: 1002,
+    });
+    const realRunTurnId = timeline.turns.find((turn) => turn.runId === 'run-1')?.id;
+
+    timeline = reduceRuntimeEvent(timeline, {
+      type: 'user_message_run_bound',
+      sessionKey: 'agent:main:main',
+      idempotencyKey: 'ik-1',
+      runId: 'run-1',
+      at: 1003,
+    });
+
+    const runTurns = timeline.turns.filter((turn) => turn.runId === 'run-1');
+    const sourceTurn = timeline.turns.find((turn) => turn.id === sourceTurnId);
+
+    expect(runTurns).toHaveLength(1);
+    expect(runTurns[0].id).toBe(realRunTurnId);
+    expect(sourceTurn).toMatchObject({
+      id: sourceTurnId,
+      runId: optimisticRunId,
+    });
+    expect(sourceTurn?.outputItemIds).toHaveLength(1);
+  });
+
   it('moves a message-id user item between turns without leaving stale input references', () => {
     let timeline = createEmptyTimeline('agent:main:main');
     timeline = reduceRuntimeEvent(timeline, {

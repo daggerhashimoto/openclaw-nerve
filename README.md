@@ -110,7 +110,7 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
 
 <details><summary><strong>Try the next branch</strong></summary>
 
-`master` is the stable branch. Use `next` if you want the latest Nerve work before it lands in `master`, including newer chat runtime behavior, live tool/thinking bubble rendering, attachment handling, voice/TTS improvements, and other features still being validated.
+`master` is the stable branch. Use `next` if you want the latest Nerve work before it lands in `master`.
 
 Fresh install from `next`:
 

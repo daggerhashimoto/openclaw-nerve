@@ -425,7 +425,7 @@ describe('InputBar', () => {
     });
 
     expect(compressImage).toHaveBeenCalledWith(smallImage, expect.objectContaining({
-      contextMaxBytes: uploadConfigResponse.inlineImageContextMaxBytes,
+      contextMaxBytes: uploadConfigResponse.inlineAttachmentMaxMb * 1024 * 1024,
     }));
 
     const [text, attachments, uploadPayload] = onSend.mock.calls[0] as [
@@ -499,7 +499,7 @@ describe('InputBar', () => {
       expect(onSend).toHaveBeenCalledTimes(1);
     });
     expect(compressImage).toHaveBeenCalledWith(image, expect.objectContaining({
-      contextMaxBytes: uploadConfigResponse.inlineImageContextMaxBytes,
+      contextMaxBytes: uploadConfigResponse.inlineAttachmentMaxMb * 1024 * 1024,
     }));
     expect(onSend.mock.calls[0][1]).toEqual([
       expect.objectContaining({
@@ -518,7 +518,7 @@ describe('InputBar', () => {
     });
   });
 
-  it('blocks browser image sends when inline compression cannot fit the budget', async () => {
+  it('sends browser image uploads that fit the attachment cap even when they exceed the prompt context budget', async () => {
     const onSend = vi.fn();
     vi.mocked(compressImage).mockImplementation(async (file: File) => ({
       base64: 'x'.repeat(200_000),
@@ -557,12 +557,25 @@ describe('InputBar', () => {
     fireEvent.click(screen.getByLabelText('Send message'));
 
     await waitFor(() => {
-      expect(screen.getByText(/browser uploads cannot preserve a true file-reference fallback/i)).toBeInTheDocument();
+      expect(onSend).toHaveBeenCalledTimes(1);
     });
     expect(compressImage).toHaveBeenCalledWith(image, expect.objectContaining({
-      contextMaxBytes: uploadConfigResponse.inlineImageContextMaxBytes,
+      contextMaxBytes: uploadConfigResponse.inlineAttachmentMaxMb * 1024 * 1024,
     }));
-    expect(onSend).not.toHaveBeenCalled();
+    expect(onSend.mock.calls[0][1]).toEqual([
+      expect.objectContaining({
+        mimeType: 'image/png',
+        content: 'x'.repeat(200_000),
+        name: 'oversized-inline.png',
+      }),
+    ]);
+    expect(onSend.mock.calls[0][2].descriptors[0]).toMatchObject({
+      mode: 'inline',
+      inline: {
+        base64: 'x'.repeat(200_000),
+        compressed: true,
+      },
+    });
   });
 
   it('keeps browser uploads on the staged file-reference transport path', async () => {

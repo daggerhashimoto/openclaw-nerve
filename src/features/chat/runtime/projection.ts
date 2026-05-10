@@ -3,6 +3,7 @@ import { splitToolCallMessage, tagIntermediateMessages } from '@/features/chat/o
 import type { ChatMsg, ToolGroupEntry } from '@/features/chat/types';
 import { extractTTSMarkers } from '@/features/tts/useTTS';
 import { describeToolUse, renderMarkdown, renderToolResults } from '@/utils/helpers';
+import { stripVoiceTTSHint } from '../../../../shared/chat-upload-manifest';
 import type {
   SessionTimeline,
   TimelineItem,
@@ -106,6 +107,7 @@ function projectUserItem(
   return messages.map((message) => ({
     ...message,
     ...(message.role === 'user' ? userMediaProps(item) : {}),
+    tempId: message.role === 'user' ? item.idempotencyKey : message.tempId,
     pending: message.role === 'user' ? pending : message.pending,
     failed: message.role === 'user' ? failed : message.failed,
   }));
@@ -211,12 +213,6 @@ function userMediaProps(item: UserTimelineItem): Pick<ChatMsg, 'images' | 'uploa
     ...(item.images?.length ? { images: item.images } : {}),
     ...(item.uploadAttachments?.length ? { uploadAttachments: item.uploadAttachments } : {}),
   };
-}
-
-const TTS_SYSTEM_HINT_RE = /\s*\[system: User sent a voice message\.[\s\S]*$/;
-
-function stripVoiceTTSHint(text: string): string {
-  return text.replace(TTS_SYSTEM_HINT_RE, '').trim();
 }
 
 function groupConsecutiveToolCalls(messages: ChatMsg[]): ChatMsg[] {

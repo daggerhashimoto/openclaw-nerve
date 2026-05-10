@@ -43,6 +43,8 @@ const jsonPayloadWithinLimit = (value: unknown, maxChars: number): boolean => {
 const inlinePayloadWithinLimit = (inline: unknown): boolean =>
   jsonPayloadWithinLimit(inline, MAX_INLINE_BASE64_CHARS);
 
+const uploadModeSchema = z.enum(['inline', 'file_reference']);
+
 const descriptorMetadataWithinLimit = (descriptor: Record<string, unknown>): boolean => {
   const metadata = { ...descriptor };
   delete metadata.inline;
@@ -71,7 +73,7 @@ const sendMessageSchema = z.object({
     descriptors: z.array(z.object({
       id: nonBlankString('uploadPayload.descriptors[].id'),
       origin: nonBlankString('uploadPayload.descriptors[].origin'),
-      mode: nonBlankString('uploadPayload.descriptors[].mode'),
+      mode: uploadModeSchema,
       name: nonBlankString('uploadPayload.descriptors[].name'),
       mimeType: nonBlankString('uploadPayload.descriptors[].mimeType'),
       sizeBytes: z.number().finite().nonnegative(),

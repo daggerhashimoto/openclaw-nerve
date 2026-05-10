@@ -58,7 +58,7 @@ describe('chat runtime projection', () => {
       failedIdempotencyKeys: new Set(['idem-live']),
     });
 
-    expect(projection.messages[0]).toMatchObject({ pending: false, failed: true });
+    expect(projection.messages[0]).toMatchObject({ pending: false, failed: true, tempId: 'idem-live' });
     expect(projection.isGenerating).toBe(true);
     expect(projection.processingStage).toBe('tool_use');
     expect(projection.currentToolDescription).toContain('npm run test');

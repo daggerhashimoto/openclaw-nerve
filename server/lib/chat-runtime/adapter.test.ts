@@ -211,6 +211,8 @@ describe('OpenClaw chat runtime adapter', () => {
           { type: 'text', text: 'look at this' },
           { type: 'image', data: 'aW5saW5lLWJhc2U2NA==', mimeType: 'image/png', name: 'inline.png' },
           { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'c291cmNlLWJhc2U2NA==', filename: 'source.jpg' } },
+          { type: 'image', data: 'aW5s\n aW5lLWJhc2U2NA==', mimeType: 'image/png', name: 'folded.png' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: '-_8', filename: 'urlsafe.png' } },
           { type: 'image', data: 'not base64?', mimeType: 'image/gif', name: 'broken.gif' },
         ],
       },
@@ -232,6 +234,18 @@ describe('OpenClaw chat runtime adapter', () => {
           preview: 'data:image/jpeg;base64,c291cmNlLWJhc2U2NA==',
           name: 'source.jpg',
         },
+        {
+          mimeType: 'image/png',
+          content: 'aW5saW5lLWJhc2U2NA==',
+          preview: 'data:image/png;base64,aW5saW5lLWJhc2U2NA==',
+          name: 'folded.png',
+        },
+        {
+          mimeType: 'image/png',
+          content: '+/8=',
+          preview: 'data:image/png;base64,+/8=',
+          name: 'urlsafe.png',
+        },
       ],
     });
 
@@ -244,6 +258,8 @@ describe('OpenClaw chat runtime adapter', () => {
       images: [
         { mimeType: 'image/png', content: 'aW5saW5lLWJhc2U2NA==', name: 'inline.png' },
         { mimeType: 'image/jpeg', content: 'c291cmNlLWJhc2U2NA==', name: 'source.jpg' },
+        { mimeType: 'image/png', content: 'aW5saW5lLWJhc2U2NA==', name: 'folded.png' },
+        { mimeType: 'image/png', content: '+/8=', name: 'urlsafe.png' },
       ],
     });
   });

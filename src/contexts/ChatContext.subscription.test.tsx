@@ -317,6 +317,7 @@ describe('ChatContext subscription stability', () => {
 
   it('does not duplicate the local voice bubble when runtime history catches up with the persisted voice message', async () => {
     const { ChatProvider, useChat, runtimeState } = await setup();
+    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'idem-voice-stable') });
 
     let send: ((text: string) => Promise<void>) | null = null;
 
@@ -350,6 +351,7 @@ describe('ChatContext subscription stability', () => {
 
     runtimeState.messages = [{
       msgId: 'user:main:history-message',
+      tempId: 'idem-voice-stable',
       role: 'user',
       html: '<p>[voice] hello from voice</p>',
       rawText: '[voice] hello from voice\n\n[system: User sent a voice message. Always include TTS.]',
@@ -368,6 +370,10 @@ describe('ChatContext subscription stability', () => {
 
   it('matches optimistic voice sends to runtime history one-to-one when text repeats', async () => {
     const { ChatProvider, useChat, runtimeState } = await setup();
+    const randomUUID = vi.fn()
+      .mockReturnValueOnce('idem-repeat-1')
+      .mockReturnValueOnce('idem-repeat-2');
+    vi.stubGlobal('crypto', { randomUUID });
 
     let send: ((text: string) => Promise<void>) | null = null;
 
@@ -402,6 +408,7 @@ describe('ChatContext subscription stability', () => {
 
     runtimeState.messages = [{
       msgId: 'user:main:history-message',
+      tempId: 'idem-repeat-1',
       role: 'user',
       html: '<p>[voice] repeat</p>',
       rawText: '[voice] repeat',
@@ -416,6 +423,60 @@ describe('ChatContext subscription stability', () => {
     );
 
     expect(screen.getAllByText('[voice] repeat')).toHaveLength(2);
+  });
+
+  it('keeps a new optimistic bubble when an older runtime message has the same text', async () => {
+    const { ChatProvider, useChat, runtimeState } = await setup({
+      runtimeState: {
+        messages: [{
+          msgId: 'user:main:older-repeat',
+          role: 'user',
+          html: '<p>[voice] repeat</p>',
+          rawText: '[voice] repeat',
+          timestamp: new Date(Date.now() - 1000),
+          isVoice: true,
+        }],
+      },
+    });
+
+    let send: ((text: string) => Promise<void>) | null = null;
+
+    function Consumer() {
+      const chat = useChat();
+      useEffect(() => {
+        send = chat.handleSend;
+      }, [chat]);
+      return (
+        <div data-testid="messages">
+          {chat.messages.map((message) => (
+            <div key={message.msgId} data-role={message.role}>{message.rawText}</div>
+          ))}
+        </div>
+      );
+    }
+
+    render(
+      <ChatProvider>
+        <Consumer />
+      </ChatProvider>,
+    );
+
+    await waitFor(() => expect(send).not.toBeNull());
+
+    vi.useFakeTimers();
+
+    await act(async () => {
+      await send!('[voice] repeat');
+    });
+
+    expect(screen.getAllByText('[voice] repeat')).toHaveLength(2);
+    expect(runtimeState.reload).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(750);
+    });
+
+    expect(runtimeState.reload).toHaveBeenCalledTimes(1);
   });
 
   it('reconnects runtime replay after send when the stream has not observed the optimistic voice message', async () => {

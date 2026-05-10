@@ -64,4 +64,60 @@ describe('ChatRuntime', () => {
     });
     expect(turn).toMatchObject({ runId: 'run-image-only', status: 'finalized' });
   });
+
+  it('binds voice active history snapshots after the gateway appends the TTS system hint', async () => {
+    const sessionKey = 'agent:voice:main';
+    const rpc = vi.fn(async (method: string) => {
+      expect(method).toBe('chat.history');
+      return {
+        messages: [
+          {
+            role: 'user',
+            timestamp: 1100,
+            content: '[voice] summarize this\n\n[system: User sent a voice message. Always include your full text reply AND a [tts:...] marker.]',
+          },
+          {
+            role: 'assistant',
+            timestamp: 1200,
+            content: 'Summary complete.\n\n[tts: Summary complete.]',
+          },
+        ],
+      };
+    });
+    const runtime = new ChatRuntime({ rpc, maxPatchesPerSession: 20 });
+
+    runtime.applyOptimisticUserMessage({
+      sessionKey,
+      text: '[voice] summarize this',
+      idempotencyKey: 'idem-voice',
+      at: 1000,
+    });
+    runtime.bindRunIdToOptimisticUserMessage({
+      sessionKey,
+      idempotencyKey: 'idem-voice',
+      runId: 'run-voice',
+      at: 1001,
+    });
+
+    await runtime.hydrateSession(sessionKey);
+
+    const snapshot = runtime.snapshot(sessionKey, 'manual');
+    const assistant = Object.values(snapshot.timeline.items).find((item) => item.kind === 'assistant_message');
+    const user = Object.values(snapshot.timeline.items).find((item) => item.kind === 'user_message');
+    const turn = snapshot.timeline.turns.find((candidate) => candidate.runId === 'run-voice');
+
+    expect(assistant).toMatchObject({
+      kind: 'assistant_message',
+      runId: 'run-voice',
+      text: 'Summary complete.\n\n[tts: Summary complete.]',
+      status: 'complete',
+    });
+    expect(user).toMatchObject({
+      kind: 'user_message',
+      runId: 'run-voice',
+      text: '[voice] summarize this',
+      idempotencyKey: 'idem-voice',
+    });
+    expect(turn).toMatchObject({ runId: 'run-voice', status: 'finalized' });
+  });
 });

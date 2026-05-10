@@ -349,6 +349,37 @@ describe('chat runtime routes', () => {
           },
         }),
       },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: 'hello',
+          idempotencyKey: 'idem-uppercase-inline-mode',
+          uploadPayload: {
+            descriptors: [{
+              id: 'att-uppercase-inline',
+              origin: 'upload',
+              mode: 'INLINE',
+              name: 'image.png',
+              mimeType: 'image/png',
+              sizeBytes: 100,
+              inline: {
+                encoding: 'base64',
+                base64: 'base64-image',
+                base64Bytes: 100,
+                previewUrl: 'data:image/png;base64,base64-image',
+                compressed: false,
+              },
+              policy: { forwardToSubagents: false },
+            }],
+            manifest: {
+              enabled: true,
+              exposeInlineBase64ToAgent: false,
+              allowSubagentForwarding: false,
+            },
+          },
+        }),
+      },
     ];
 
     for (const init of invalidRequests) {

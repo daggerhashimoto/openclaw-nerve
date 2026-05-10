@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { UPLOAD_MANIFEST_CLOSE, UPLOAD_MANIFEST_OPEN } from '../../../shared/chat-upload-manifest.js';
+import { stripVoiceTTSHint, UPLOAD_MANIFEST_CLOSE, UPLOAD_MANIFEST_OPEN } from '../../../shared/chat-upload-manifest.js';
 import { adaptGatewayEvent, adaptHistorySnapshot, type AdapterGatewayEvent } from './adapter.js';
 import { ChatTimelineStore } from './store.js';
 import type { ReplayResult } from './replay-buffer.js';
@@ -522,7 +522,7 @@ function historyMessageText(message: HistoryMessage): string | undefined {
 }
 
 function normalizeHistoryText(text: string | undefined): string {
-  return stripUploadManifestText(text ?? '').replace(/\s+/g, ' ').trim();
+  return stripVoiceTTSHint(stripUploadManifestText(text ?? '')).replace(/\s+/g, ' ').trim();
 }
 
 function stripUploadManifestText(text: string): string {

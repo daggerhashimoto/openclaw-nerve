@@ -580,9 +580,12 @@ function imageExtensionFromMimeType(mimeType?: string): string {
 }
 
 function normalizeBase64(value: string): string | null {
-  const normalized = value.trim();
+  let normalized = value.replace(/\s+/g, '');
   if (!normalized) return null;
+  normalized = normalized.replace(/-/g, '+').replace(/_/g, '/');
   if (normalized.length % 4 === 1) return null;
+  const padding = (4 - (normalized.length % 4)) % 4;
+  if (padding > 0) normalized += '='.repeat(padding);
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) return null;
   return normalized;
 }

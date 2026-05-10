@@ -472,26 +472,16 @@ function unmatchedOptimisticSends(runtimeMessages: ChatMsg[], optimisticSends: O
 
 function runtimeMessageMatchesOptimisticSend(message: ChatMsg, send: OptimisticSend): boolean {
   if (message.role !== 'user') return false;
-  if (runtimeMessageHasOptimisticIdentity(message, send)) return true;
-  const timestampDelta = Math.abs(message.timestamp.getTime() - send.sentAt);
-  return timestampDelta <= OPTIMISTIC_TEXT_MATCH_WINDOW_MS &&
-    normalizeUserMessageText(message.rawText) === normalizeUserMessageText(send.text);
+  return runtimeMessageHasOptimisticIdentity(message, send);
 }
 
 function runtimeMessageHasOptimisticIdentity(message: ChatMsg, send: OptimisticSend): boolean {
   return message.msgId === send.msg.msgId || message.tempId === send.idempotencyKey;
 }
 
-function normalizeUserMessageText(text: string): string {
-  return text.replace(TTS_SYSTEM_HINT_RE, '').trim();
-}
-
 function runtimeUserMessageId(sessionKey: string, idempotencyKey: string): string {
   return `user:${sessionKey}:${encodeRuntimeIdPart(idempotencyKey)}`;
 }
-
-const TTS_SYSTEM_HINT_RE = /\s*\[system: User sent a voice message\.[\s\S]*$/;
-const OPTIMISTIC_TEXT_MATCH_WINDOW_MS = 5 * 60 * 1000;
 
 function isSettledGatewayStatusCurrent(
   status: GranularAgentState | undefined,

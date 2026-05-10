@@ -15,6 +15,7 @@ const MAX_INLINE_ATTACHMENT_BYTES = Math.max(1, Math.floor(uploadFeatureConfig.i
 const MAX_INLINE_BASE64_CHARS = Math.max(1, Math.ceil(MAX_INLINE_ATTACHMENT_BYTES * 4 / 3));
 const MAX_IMAGE_MIME_TYPE_CHARS = 96;
 const MAX_IMAGE_PREVIEW_CHARS = MAX_INLINE_BASE64_CHARS + 'data:'.length + ';base64,'.length + MAX_IMAGE_MIME_TYPE_CHARS;
+const MAX_UPLOAD_DESCRIPTOR_METADATA_CHARS = Math.max(1, Math.floor(uploadFeatureConfig.inlineImageContextMaxBytes));
 
 type CatchupBaseline =
   | { kind: 'patches'; patches: TimelinePatch[]; coveredCursor?: string }
@@ -29,13 +30,22 @@ const nonBlankString = (field: string, maxLength?: number) => {
   .refine((value) => value.trim().length > 0, `${field} must be a non-empty string`);
 };
 
-const inlinePayloadWithinLimit = (inline: unknown): boolean => {
-  if (inline === undefined) return true;
+const jsonPayloadWithinLimit = (value: unknown, maxChars: number): boolean => {
+  if (value === undefined) return true;
   try {
-    return JSON.stringify(inline).length <= MAX_INLINE_BASE64_CHARS;
+    return JSON.stringify(value).length <= maxChars;
   } catch {
     return false;
   }
+};
+
+const inlinePayloadWithinLimit = (inline: unknown): boolean =>
+  jsonPayloadWithinLimit(inline, MAX_INLINE_BASE64_CHARS);
+
+const descriptorMetadataWithinLimit = (descriptor: Record<string, unknown>): boolean => {
+  const metadata = { ...descriptor };
+  delete metadata.inline;
+  return jsonPayloadWithinLimit(metadata, MAX_UPLOAD_DESCRIPTOR_METADATA_CHARS);
 };
 
 const sendMessageSchema = z.object({
@@ -67,6 +77,8 @@ const sendMessageSchema = z.object({
     }).passthrough().refine((descriptor) => inlinePayloadWithinLimit(descriptor.inline), {
       path: ['inline'],
       message: `uploadPayload.descriptors[].inline must serialize to at most ${MAX_INLINE_BASE64_CHARS} characters`,
+    }).refine((descriptor) => descriptorMetadataWithinLimit(descriptor), {
+      message: `uploadPayload.descriptors[] metadata must serialize to at most ${MAX_UPLOAD_DESCRIPTOR_METADATA_CHARS} characters`,
     })),
     manifest: z.object({
       enabled: z.boolean(),

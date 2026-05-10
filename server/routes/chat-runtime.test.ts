@@ -347,9 +347,11 @@ describe('chat runtime routes', () => {
     }
   });
 
-  it('rejects image and inline upload payloads over the chat runtime schema limit', async () => {
+  it('rejects image and upload payloads over the chat runtime schema limit', async () => {
     const originalInlineLimit = process.env.NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB;
+    const originalMetadataLimit = process.env.NERVE_UPLOAD_INLINE_IMAGE_CONTEXT_MAX_BYTES;
     process.env.NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB = '0.000001';
+    process.env.NERVE_UPLOAD_INLINE_IMAGE_CONTEXT_MAX_BYTES = '128';
 
     try {
       const { app } = await buildRouteApp();
@@ -404,6 +406,38 @@ describe('chat runtime routes', () => {
             },
           }),
         },
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: 'hello',
+            idempotencyKey: 'idem-large-upload-metadata',
+            uploadPayload: {
+              descriptors: [
+                {
+                  id: 'att-large-metadata',
+                  origin: 'upload',
+                  mode: 'file_reference',
+                  name: 'large-metadata.png',
+                  mimeType: 'image/png',
+                  sizeBytes: 4,
+                  reference: {
+                    kind: 'local_path',
+                    path: `/workspace/${'A'.repeat(200)}.png`,
+                    uri: `file:///workspace/${'A'.repeat(200)}.png`,
+                  },
+                  preparation: { reason: 'A'.repeat(200) },
+                  policy: { forwardToSubagents: false },
+                },
+              ],
+              manifest: {
+                enabled: true,
+                exposeInlineBase64ToAgent: false,
+                allowSubagentForwarding: false,
+              },
+            },
+          }),
+        },
       ];
 
       for (const init of invalidRequests) {
@@ -418,6 +452,11 @@ describe('chat runtime routes', () => {
         delete process.env.NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB;
       } else {
         process.env.NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB = originalInlineLimit;
+      }
+      if (originalMetadataLimit === undefined) {
+        delete process.env.NERVE_UPLOAD_INLINE_IMAGE_CONTEXT_MAX_BYTES;
+      } else {
+        process.env.NERVE_UPLOAD_INLINE_IMAGE_CONTEXT_MAX_BYTES = originalMetadataLimit;
       }
     }
   });

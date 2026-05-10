@@ -1,5 +1,5 @@
 export const VOICE_PREFIX = '[voice] ';
-export const TTS_HINT = '\n\n[system: User sent a voice message. Always include your full text reply AND a [tts:...] marker so it plays back as audio. Never send only TTS markers - the response must be readable in chat too. TTS marker format: [tts: your spoken text here] - place it at the end of your reply. Example reply:\n\nHere is my text response.\n\n[tts: Here is my text response.]]';
+export const TTS_HINT = '\n\n[system: User sent a voice message. Always include your full text reply AND a [tts:...] marker so it plays back as audio. Never send only TTS markers - the response must be readable in chat too. TTS marker format: [tts: your spoken text here] - place it at the end of your reply. Example reply:\n\nHere is my text response.\n\n[tts: Here is my text response.]';
 export const UPLOAD_MANIFEST_OPEN = '<nerve-upload-manifest>';
 export const UPLOAD_MANIFEST_CLOSE = '</nerve-upload-manifest>';
 export type UploadAttachmentModeForManifest = 'inline' | 'file_reference';

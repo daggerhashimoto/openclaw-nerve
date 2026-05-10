@@ -1,4 +1,4 @@
-import { act, render, waitFor } from '@testing-library/react';
+import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatMsg } from '@/features/chat/types';
@@ -13,6 +13,7 @@ describe('ChatContext runtime TTS playback', () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
@@ -444,9 +445,7 @@ describe('ChatContext runtime TTS playback', () => {
       await send!('[voice] hello from ambiguous history');
     });
 
-    const requestBody = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)) as {
-      idempotencyKey: string;
-    };
+    const requestBody = findRuntimeSendRequestBody(fetchMock);
 
     setRuntimeState({ isGenerating: true });
     rerender(
@@ -912,4 +911,30 @@ function makeRuntimeState(): RuntimeState {
     markUserMessageFailed: vi.fn(),
     clearUserMessageFailure: vi.fn(),
   };
+}
+
+function findRuntimeSendRequestBody(fetchMock: ReturnType<typeof vi.fn>): { idempotencyKey: string } {
+  const sendCall = fetchMock.mock.calls.find(([input, init]) => {
+    const body = (init as RequestInit | undefined)?.body;
+    return requestUrl(input).includes('/api/chat-runtime/sessions/')
+      && typeof body === 'string'
+      && body.includes('"idempotencyKey"');
+  });
+
+  expect(sendCall).toBeDefined();
+  const body = (sendCall?.[1] as RequestInit | undefined)?.body;
+  if (typeof body !== 'string') {
+    throw new Error('Expected runtime chat send request body');
+  }
+  return JSON.parse(body) as { idempotencyKey: string };
+}
+
+function requestUrl(input: unknown): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.toString();
+  if (input && typeof input === 'object' && 'url' in input) {
+    const url = (input as { url?: unknown }).url;
+    return typeof url === 'string' ? url : '';
+  }
+  return '';
 }

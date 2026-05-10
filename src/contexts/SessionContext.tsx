@@ -985,6 +985,7 @@ function isCurrentSessionKey(sessionKey: string, currentSessionKey: string): boo
 }
 
 function canonicalSessionKey(sessionKey: string): string {
+  // Runtime chat callers still use the short legacy key for the main session.
   return sessionKey === 'main' ? MAIN_SESSION_KEY : sessionKey;
 }
 

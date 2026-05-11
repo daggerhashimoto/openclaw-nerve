@@ -8,6 +8,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useLocale, type Locale } from '@/i18n';
 import NerveLogo from '../../components/NerveLogo';
 
 interface LoginPageProps {
@@ -19,6 +20,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { locale, setLocale, t, supportedLocales, localeLabels } = useLocale();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -45,46 +47,67 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
               <NerveLogo size={30} />
             </div>
             <div className="mt-6 text-[0.667rem] font-medium uppercase tracking-[0.32em] text-primary/80">
-              Private Cockpit Access
+              {t('login.kicker')}
             </div>
             <h1 className="mt-3 max-w-[12ch] text-4xl font-semibold tracking-[-0.05em] text-foreground sm:text-5xl">
-              Sign in to your agent control surface
+              {t('login.title')}
             </h1>
             <p className="mt-4 max-w-[48ch] text-sm leading-6 text-muted-foreground sm:text-base">
-              Nerve is the high visibility workspace for OpenClaw agents. Authenticate once, then manage chats, tasks, files, memory, and telemetry from one place.
+              {t('login.description')}
             </p>
 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               <div className="shell-panel rounded-2xl px-4 py-3">
-                <div className="text-[0.667rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">Sessions</div>
-                <div className="mt-2 text-sm font-medium text-foreground">Live agent context</div>
+                <div className="text-[0.667rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">{t('login.featureSessions')}</div>
+                <div className="mt-2 text-sm font-medium text-foreground">{t('login.sessions')}</div>
               </div>
               <div className="shell-panel rounded-2xl px-4 py-3">
-                <div className="text-[0.667rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">Workspace</div>
-                <div className="mt-2 text-sm font-medium text-foreground">Files, memory, and skills</div>
+                <div className="text-[0.667rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">{t('login.featureWorkspace')}</div>
+                <div className="mt-2 text-sm font-medium text-foreground">{t('login.workspace')}</div>
               </div>
               <div className="shell-panel rounded-2xl px-4 py-3">
-                <div className="text-[0.667rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">Telemetry</div>
-                <div className="mt-2 text-sm font-medium text-foreground">Costs, events, and uptime</div>
+                <div className="text-[0.667rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">{t('login.featureTelemetry')}</div>
+                <div className="mt-2 text-sm font-medium text-foreground">{t('login.telemetry')}</div>
               </div>
             </div>
           </div>
 
           <div className="px-6 py-8 sm:px-8">
             <div className="text-[0.667rem] font-medium uppercase tracking-[0.3em] text-primary/80">
-              Authentication Required
+              {t('login.authenticationRequired')}
             </div>
             <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-foreground">
-              Unlock Nerve
+              {t('login.heading')}
             </h2>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              Enter the password configured for this deployment. Your gateway token also works if password auth is using the fallback path.
+              {t('login.body')}
             </p>
+
+            <div className="mt-6 rounded-3xl border border-border/70 bg-background/70 p-4">
+              <label htmlFor="login-language" className="mb-2 block text-[0.733rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                {t('login.languageLabel')}
+              </label>
+              <select
+                id="login-language"
+                value={locale}
+                onChange={(e) => setLocale(e.target.value as Locale)}
+                className="w-full rounded-2xl border border-border/70 bg-card/95 px-4 py-3 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+              >
+                {supportedLocales.map((nextLocale) => (
+                  <option key={nextLocale} value={nextLocale}>
+                    {localeLabels[nextLocale]}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {t('login.languageHelp')}
+              </p>
+            </div>
 
             <form onSubmit={handleSubmit} className="mt-8 space-y-4">
               <div>
                 <label htmlFor="nerve-password" className="mb-2 block text-[0.733rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">
-                  Password
+                  {t('login.passwordLabel')}
                 </label>
                 <Input
                   ref={inputRef}
@@ -92,7 +115,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password"
+                  placeholder={t('login.passwordPlaceholder')}
                   autoComplete="current-password"
                   disabled={submitting}
                 />
@@ -110,12 +133,12 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
                 size="lg"
                 className="w-full text-[0.733rem] uppercase tracking-[0.22em]"
               >
-                {submitting ? 'Signing In…' : 'Enter Nerve'}
+                {submitting ? t('login.submitting') : t('login.submit')}
               </Button>
             </form>
 
             <div className="mt-6 text-xs leading-5 text-muted-foreground">
-              Need to recover access? Check the gateway configuration or deployment notes where the token was originally set.
+              {t('login.needHelp')}
             </div>
           </div>
         </div>

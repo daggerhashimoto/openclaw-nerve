@@ -13,16 +13,25 @@ interface SessionPayload {
   exp: number;
   /** Issued-at timestamp (ms since epoch) */
   iat: number;
+  orgId?: string;
+  organizationName?: string;
+  userId?: string;
+  userName?: string;
 }
 
 /**
  * Create a signed session token.
  * Format: base64url(JSON payload).base64url(HMAC-SHA256 signature)
  */
-export function createSession(secret: string, ttlMs: number): string {
+export function createSession(
+  secret: string,
+  ttlMs: number,
+  extras: Partial<Omit<SessionPayload, 'exp' | 'iat'>> = {},
+): string {
   const payload: SessionPayload = {
     exp: Date.now() + ttlMs,
     iat: Date.now(),
+    ...extras,
   };
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const sig = crypto.createHmac('sha256', secret).update(payloadB64).digest('base64url');

@@ -11,11 +11,14 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { AuthGate } from '@/features/auth'
+import { LocaleProvider } from '@/i18n'
 
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
     <StrictMode>
-      <AuthGate />
+      <LocaleProvider>
+        <AuthGate />
+      </LocaleProvider>
     </StrictMode>
   </ErrorBoundary>,
 )

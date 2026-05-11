@@ -74,6 +74,12 @@ export const config = {
   // Agent identity (used in UI)
   agentName: process.env.AGENT_NAME || 'Agent',
 
+  // Organization and user identity for enterprise deployments
+  organizationId: process.env.NERVE_ORG_ID || 'organization',
+  organizationName: process.env.NERVE_ORGANIZATION_NAME || 'Organization',
+  userId: process.env.NERVE_USER_ID || 'operator',
+  userName: process.env.NERVE_USER_NAME || 'Operator',
+
   home: HOME,
 
   // Paths (configurable via env, with OpenClaw defaults)

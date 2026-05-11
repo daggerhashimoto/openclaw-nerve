@@ -127,6 +127,11 @@ app.get('/api/server-info', rateLimitGeneral, async (c) => {
     gatewayStartedAt: await getGatewayStartedAt(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     agentName: config.agentName,
+    organizationId: config.organizationId,
+    organizationName: config.organizationName,
+    userId: config.userId,
+    userName: config.userName,
+    language: config.language,
     defaultAgentWorkspaceRoot: getDefaultAgentWorkspaceRoot(),
   });
 });

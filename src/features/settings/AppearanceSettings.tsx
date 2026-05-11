@@ -2,6 +2,7 @@ import { Monitor, Eye, Type, Activity, ALargeSmall, Code2, Columns3, Command } f
 import { Switch } from '@/components/ui/switch';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useLocale, localeLabels, SUPPORTED_LOCALES } from '@/i18n';
 import { themes, themeNames, type ThemeName } from '@/lib/themes';
 import { fonts, fontNames, type FontName } from '@/lib/fonts';
 
@@ -62,6 +63,12 @@ export function AppearanceSettings() {
     editorFontSize,
     setEditorFontSize,
   } = useSettings();
+  const { locale, setLocale } = useLocale();
+
+  const languageOptions = SUPPORTED_LOCALES.map((value) => ({
+    value,
+    label: localeLabels[value],
+  }));
 
   const handleThemeChange = (next: string) => {
     setTheme(next as ThemeName);
@@ -95,6 +102,27 @@ export function AppearanceSettings() {
             onChange={handleThemeChange}
             options={themeNames.map((name) => ({ value: name, label: themes[name].label }))}
             ariaLabel="Select theme"
+            triggerClassName={INLINE_SELECT_TRIGGER_CLASS}
+            menuClassName={INLINE_SELECT_MENU_CLASS}
+          />
+        </div>
+      </div>
+
+      {/* Language selector */}
+      <div className="cockpit-row items-start justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <Type size={14} className="text-primary" />
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground">Language</span>
+            <span className="text-xs text-muted-foreground">Select the application language for this browser.</span>
+          </div>
+        </div>
+        <div className="relative w-full sm:w-auto">
+          <InlineSelect
+            value={locale}
+            onChange={setLocale}
+            options={languageOptions}
+            ariaLabel="Select language"
             triggerClassName={INLINE_SELECT_TRIGGER_CLASS}
             menuClassName={INLINE_SELECT_MENU_CLASS}
           />

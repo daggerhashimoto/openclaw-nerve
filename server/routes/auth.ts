@@ -62,8 +62,13 @@ app.post('/api/auth/login', rateLimitAuth, async (c) => {
       return c.json({ error: 'Invalid password' }, 401);
     }
 
-    // Create signed session token
-    const token = createSession(config.sessionSecret, config.sessionTtlMs);
+    // Create signed session token with organization/user context
+    const token = createSession(config.sessionSecret, config.sessionTtlMs, {
+      orgId: config.organizationId,
+      organizationName: config.organizationName,
+      userId: config.userId,
+      userName: config.userName,
+    });
 
     // Set HttpOnly, SameSite=Strict cookie
     setCookie(c, SESSION_COOKIE_NAME, token, {
@@ -95,7 +100,16 @@ app.post('/api/auth/logout', (c) => {
  */
 app.get('/api/auth/status', (c) => {
   if (!config.auth) {
-    return c.json({ authEnabled: false, authenticated: true });
+    return c.json({
+      authEnabled: false,
+      authenticated: true,
+      session: {
+        orgId: config.organizationId,
+        organizationName: config.organizationName,
+        userId: config.userId,
+        userName: config.userName,
+      },
+    });
   }
 
   const token = getCookie(c, SESSION_COOKIE_NAME);
@@ -104,6 +118,12 @@ app.get('/api/auth/status', (c) => {
   return c.json({
     authEnabled: true,
     authenticated: !!session,
+    session: session ? {
+      orgId: session.orgId,
+      organizationName: session.organizationName,
+      userId: session.userId,
+      userName: session.userName,
+    } : null,
   });
 });
 

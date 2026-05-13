@@ -1,4 +1,4 @@
-import { Monitor, Eye, Type, Activity, ALargeSmall, Code2, Columns3, Command } from 'lucide-react';
+import { Monitor, Eye, Type, Activity, ALargeSmall, Code2, Columns3, Command, Gauge } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -53,6 +53,8 @@ export function AppearanceSettings() {
     toggleCommandPaletteButtonVisible,
     kanbanVisible,
     toggleKanbanVisible,
+    performanceMode,
+    togglePerformanceMode,
     theme,
     setTheme,
     font,
@@ -78,6 +80,22 @@ export function AppearanceSettings() {
           <span className="text-primary">◆</span>
           Appearance
         </span>
+      </div>
+
+      {/* Performance mode */}
+      <div className="cockpit-row items-start justify-between">
+        <div className="flex items-center gap-3">
+          <Gauge size={14} className={performanceMode ? 'text-green' : 'text-muted-foreground'} aria-hidden="true" />
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground" id="performance-mode-label">Performance mode</span>
+            <span className="text-xs text-muted-foreground">Freeze cosmetic live visuals and use slower shell timers.</span>
+          </div>
+        </div>
+        <Switch
+          checked={performanceMode}
+          onCheckedChange={togglePerformanceMode}
+          aria-labelledby="performance-mode-label"
+        />
       </div>
 
       {/* Theme selector */}

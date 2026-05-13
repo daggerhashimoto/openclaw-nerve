@@ -3,6 +3,7 @@ import { createContext, useContext, useCallback, useRef, useEffect, useState, us
 import { useWebSocket } from '@/hooks/useWebSocket';
 import type { GatewayEvent } from '@/types';
 import { isTopLevelAgentSessionKey } from '@/features/sessions/sessionKeys';
+import { isPerformanceModePreferenceEnabled } from '@/lib/performanceMode';
 
 type EventHandler = (msg: GatewayEvent) => void;
 
@@ -122,7 +123,9 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
     if (activityBuckets.current.length > 30) activityBuckets.current.shift();
     const blocks = '▁▂▃▄▅▆▇█';
     const max = Math.max(1, ...activityBuckets.current);
-    setSparkline(activityBuckets.current.slice(-15).map(v => blocks[Math.min(7, Math.floor((v / max) * 7))]).join(''));
+    if (!isPerformanceModePreferenceEnabled()) {
+      setSparkline(activityBuckets.current.slice(-15).map(v => blocks[Math.min(7, Math.floor((v / max) * 7))]).join(''));
+    }
   }, []);
 
   // Poll status when connected

@@ -126,6 +126,7 @@ export default function App({ onLogout }: AppProps) {
     setTheme, setFont,
     kanbanVisible,
     commandPaletteButtonVisible,
+    performanceMode,
   } = useSettings();
 
   // Connection management (extracted hook)
@@ -986,6 +987,7 @@ export default function App({ onLogout }: AppProps) {
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           showKanbanView={kanbanVisible}
+          performanceMode={performanceMode}
         />
       )}
 
@@ -1119,6 +1121,7 @@ export default function App({ onLogout }: AppProps) {
           sparkline={sparkline}
           contextTokens={contextTokens}
           contextLimit={contextLimit}
+          performanceMode={performanceMode}
         />
       </div>
 

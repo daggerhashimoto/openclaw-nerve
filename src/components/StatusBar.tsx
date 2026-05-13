@@ -15,6 +15,8 @@ interface StatusBarProps {
   contextTokens?: number;
   /** Context window limit in tokens (omit to hide the meter). */
   contextLimit?: number;
+  /** Freeze non-essential live telemetry for lower idle repaint cost. */
+  performanceMode?: boolean;
 }
 
 function formatUptime(seconds: number): string {
@@ -47,7 +49,7 @@ async function fetchServerInfo(): Promise<{ serverTime?: number; gatewayStartedA
  * Shows connection state, server time, session count, gateway uptime,
  * an optional context-window meter, a sparkline, and the app version.
  */
-export function StatusBar({ connectionState, sessionCount, sparkline, contextTokens, contextLimit }: StatusBarProps) {
+export function StatusBar({ connectionState, sessionCount, sparkline, contextTokens, contextLimit, performanceMode = false }: StatusBarProps) {
   useGateway(); // Keep gateway context connected
 
   // Server time: offset between local clock and server clock
@@ -56,6 +58,9 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
   const [gatewayStartedAt, setGatewayStartedAt] = useState<number | null>(null);
   // Ticking display values
   const [now, setNow] = useState(() => Date.now());
+  const [documentVisible, setDocumentVisible] = useState(() => (
+    typeof document === 'undefined' || document.visibilityState !== 'hidden'
+  ));
 
   // Use connectionState as key to trigger CSS animation on change
   const flashKey = connectionState;
@@ -83,11 +88,24 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
     return () => { signal.cancelled = true; };
   }, [connectionState, syncServerInfo]);
 
-  // Tick every second
+  // Pause decorative ticking while hidden; performance mode uses a slow visible tick.
   useEffect(() => {
-    const iv = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(iv);
+    if (typeof document === 'undefined') return;
+    const handleVisibility = () => {
+      const visible = document.visibilityState !== 'hidden';
+      setDocumentVisible(visible);
+      if (visible) setNow(Date.now());
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
+
+  useEffect(() => {
+    if (!documentVisible) return;
+    const intervalMs = performanceMode ? 60_000 : 1000;
+    const iv = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(iv);
+  }, [documentVisible, performanceMode]);
 
   const statusColor = connectionState === 'connected'
     ? 'border-green/30 bg-green/10 text-green'
@@ -164,9 +182,11 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
 
       {/* Right side telemetry (hidden on smaller screens) */}
       <div className="ml-3 hidden shrink-0 items-center gap-2 lg:flex">
-        <span className="rounded-full border border-border/70 bg-background/75 px-2.5 py-1 font-mono text-[0.667rem] tracking-[-0.08em] text-muted-foreground">
-          {sparkline}<span className="ml-1 text-primary animate-alive">_</span>
-        </span>
+        {!performanceMode && (
+          <span className="rounded-full border border-border/70 bg-background/75 px-2.5 py-1 font-mono text-[0.667rem] tracking-[-0.08em] text-muted-foreground">
+            {sparkline}<span className="ml-1 text-primary animate-alive">_</span>
+          </span>
+        )}
         <span className="text-[0.6rem] font-medium uppercase tracking-[0.18em] text-muted-foreground/55">v{__APP_VERSION__}</span>
         <UpdateBadge />
       </div>

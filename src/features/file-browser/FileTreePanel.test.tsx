@@ -149,6 +149,32 @@ describe('FileTreePanel', () => {
 
       expect(revealPath).toHaveBeenCalledTimes(1);
     });
+
+    it('virtualizes large root lists instead of rendering every row', () => {
+      const entries = Array.from({ length: 120 }, (_, index) => ({
+        name: `file-${String(index).padStart(3, '0')}.txt`,
+        path: `file-${String(index).padStart(3, '0')}.txt`,
+        type: 'file' as const,
+        children: null,
+      }));
+      mockUseFileTree.mockReturnValue({
+        ...defaultMockHook,
+        entries,
+      });
+
+      render(
+        <FileTreePanel
+          workspaceAgentId="main"
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+        />,
+      );
+
+      expect(screen.getByText('file-000.txt')).toBeInTheDocument();
+      expect(screen.queryByText('file-119.txt')).toBeNull();
+    });
   });
 
   describe('header display', () => {

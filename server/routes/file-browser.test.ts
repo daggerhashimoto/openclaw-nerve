@@ -144,6 +144,47 @@ describe('file-browser routes', () => {
       expect(names).toContain('.plans');
     });
 
+    it('caps tree responses and reports pagination metadata', async () => {
+      for (let index = 0; index < 12; index += 1) {
+        await fs.writeFile(path.join(tmpDir, `file-${String(index).padStart(2, '0')}.txt`), 'x');
+      }
+
+      const app = await buildApp();
+      const firstPage = await app.request('/api/files/tree?limit=5');
+      expect(firstPage.status).toBe(200);
+      const firstJson = (await firstPage.json()) as {
+        ok: boolean;
+        entries: Array<{ name: string }>;
+        totalEntries: number;
+        returnedEntries: number;
+        limit: number;
+        cursor: number;
+        truncated: boolean;
+        nextCursor?: string;
+      };
+
+      expect(firstJson.ok).toBe(true);
+      expect(firstJson.entries).toHaveLength(5);
+      expect(firstJson.returnedEntries).toBe(5);
+      expect(firstJson.totalEntries).toBeGreaterThan(5);
+      expect(firstJson.limit).toBe(5);
+      expect(firstJson.cursor).toBe(0);
+      expect(firstJson.truncated).toBe(true);
+      expect(firstJson.nextCursor).toBe('5');
+
+      const secondPage = await app.request(`/api/files/tree?limit=5&cursor=${firstJson.nextCursor}`);
+      expect(secondPage.status).toBe(200);
+      const secondJson = (await secondPage.json()) as {
+        entries: Array<{ name: string }>;
+        cursor: number;
+      };
+
+      expect(secondJson.cursor).toBe(5);
+      expect(secondJson.entries.map((entry) => entry.name)).not.toEqual(
+        firstJson.entries.map((entry) => entry.name),
+      );
+    });
+
     it('includes hidden workspace entries when showHidden=true via remote gateway fallback', async () => {
       const app = await buildApp({
         remote: true,

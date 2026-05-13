@@ -5,10 +5,15 @@
  * Double-click a file to open it as an editor tab.
  */
 
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { PanelLeftClose, RefreshCw, X } from 'lucide-react';
 import { FileTreeNode } from './FileTreeNode';
 import { buildFileTreeMenuActions } from './fileTreeMenuActions';
+import {
+  FILE_TREE_OVERSCAN_ROWS,
+  FILE_TREE_ROW_HEIGHT,
+  flattenVisibleFileTree,
+} from './fileTreeRows';
 import { useFileTree } from './hooks/useFileTree';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -146,16 +151,41 @@ export function FileTreePanel({
   }, [revealPath, revealRequest, workspaceAgentId]);
 
   const panelRef = useRef<HTMLDivElement>(null);
+  const treeScrollRef = useRef<HTMLDivElement>(null);
   const widthRef = useRef(loadWidth());
   const draggingRef = useRef(false);
   const [width, setWidth] = useState(() => {
     return collapsed ? COLLAPSED_WIDTH : loadWidth();
   });
+  const [treeScrollTop, setTreeScrollTop] = useState(0);
+  const [treeViewportHeight, setTreeViewportHeight] = useState(0);
 
   // Handle external collapsed state changes (e.g., from mobile button)
   useEffect(() => {
     const targetWidth = collapsed ? COLLAPSED_WIDTH : widthRef.current;
     setWidth(targetWidth);
+  }, [collapsed]);
+
+  useEffect(() => {
+    const scrollEl = treeScrollRef.current;
+    if (!scrollEl) return undefined;
+
+    const updateViewport = () => {
+      setTreeViewportHeight(scrollEl.clientHeight);
+    };
+
+    updateViewport();
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(updateViewport)
+      : null;
+    resizeObserver?.observe(scrollEl);
+    window.addEventListener('resize', updateViewport);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateViewport);
+    };
   }, [collapsed]);
 
   const [contextMenu, setContextMenu] = useState<ScopedContextMenu | null>(null);
@@ -237,6 +267,42 @@ export function FileTreePanel({
   const visibleRenameState = renameState?.agentId === workspaceAgentId ? renameState : null;
   const visibleDragSource = dragSource?.agentId === workspaceAgentId ? dragSource.entry : null;
   const visibleDropTargetPath = dropTargetPath?.agentId === workspaceAgentId ? dropTargetPath.path : null;
+  const flatRows = useMemo(() => flattenVisibleFileTree(entries, expandedPaths), [entries, expandedPaths]);
+  const rawStartIndex = Math.floor(treeScrollTop / FILE_TREE_ROW_HEIGHT) - FILE_TREE_OVERSCAN_ROWS;
+  const maxStartIndex = Math.max(0, flatRows.length - 1);
+  const visibleStartIndex = Math.min(maxStartIndex, Math.max(0, rawStartIndex));
+  const visibleCapacity = treeViewportHeight > 0
+    ? Math.ceil(treeViewportHeight / FILE_TREE_ROW_HEIGHT) + FILE_TREE_OVERSCAN_ROWS * 2
+    : 80;
+  const visibleEndIndex = Math.min(flatRows.length, visibleStartIndex + visibleCapacity);
+  const virtualRows = flatRows.slice(visibleStartIndex, visibleEndIndex);
+  const virtualTreeHeight = flatRows.length * FILE_TREE_ROW_HEIGHT;
+
+  useEffect(() => {
+    if (!selectedPath) return;
+    const scrollEl = treeScrollRef.current;
+    if (!scrollEl) return;
+
+    const selectedIndex = flatRows.findIndex((row) => row.entry.path === selectedPath);
+    if (selectedIndex < 0) return;
+
+    const viewportHeight = scrollEl.clientHeight || treeViewportHeight;
+    if (viewportHeight <= 0) return;
+
+    const rowTop = selectedIndex * FILE_TREE_ROW_HEIGHT;
+    const rowBottom = rowTop + FILE_TREE_ROW_HEIGHT;
+    const currentTop = scrollEl.scrollTop;
+    const currentBottom = currentTop + viewportHeight;
+
+    if (rowTop < currentTop) {
+      scrollEl.scrollTop = rowTop;
+      setTreeScrollTop(rowTop);
+    } else if (rowBottom > currentBottom) {
+      const nextTop = rowBottom - viewportHeight;
+      scrollEl.scrollTop = nextTop;
+      setTreeScrollTop(nextTop);
+    }
+  }, [flatRows, selectedPath, treeViewportHeight]);
 
   useEffect(() => {
     workspaceAgentIdRef.current = workspaceAgentId;
@@ -811,7 +877,13 @@ export function FileTreePanel({
         </div>
 
         {/* Tree content */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden py-1" role="tree" aria-label="File explorer">
+        <div
+          ref={treeScrollRef}
+          className="flex-1 overflow-y-auto overflow-x-hidden py-1"
+          role="tree"
+          aria-label="File explorer"
+          onScroll={(event) => setTreeScrollTop(event.currentTarget.scrollTop)}
+        >
           {loading ? (
             <div className="flex items-center gap-2 px-3 py-4 text-xs text-muted-foreground">
               <RefreshCw className="animate-spin" size={12} />
@@ -832,35 +904,46 @@ export function FileTreePanel({
               Empty workspace
             </div>
           ) : (
-            entries.map((entry) => (
-              <FileTreeNode
-                key={entry.path}
-                entry={entry}
-                depth={0}
-                expandedPaths={expandedPaths}
-                selectedPath={selectedPath}
-                loadingPaths={loadingPaths}
-                onToggleDir={toggleDirectory}
-                onOpenFile={onOpenFile}
-                onTouchLongPress={isCompactLayout ? undefined : openTouchContextMenu}
-                onSelect={selectFile}
-                onContextMenu={handleContextMenu}
-                dragSourcePath={visibleDragSource?.path || null}
-                dropTargetPath={visibleDropTargetPath}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                onDragOverDirectory={handleDragOverDirectory}
-                onDragLeaveDirectory={handleDragLeaveDirectory}
-                onDropDirectory={handleDropDirectory}
-                renamingPath={visibleRenameState?.path || null}
-                renameValue={visibleRenameState?.value || ''}
-                onRenameChange={handleRenameChange}
-                onRenameCommit={() => { void commitRename(); }}
-                onRenameCancel={cancelRename}
-                compact={isCompactLayout}
-                onOpenActions={openCompactActionsMenu}
-              />
-            ))
+            <div className="relative" style={{ height: virtualTreeHeight }}>
+              {virtualRows.map((row) => (
+                <div
+                  key={row.entry.path}
+                  className="absolute left-0 right-0"
+                  style={{
+                    top: row.index * FILE_TREE_ROW_HEIGHT,
+                    height: FILE_TREE_ROW_HEIGHT,
+                  }}
+                >
+                  <FileTreeNode
+                    entry={row.entry}
+                    depth={row.depth}
+                    expandedPaths={expandedPaths}
+                    selectedPath={selectedPath}
+                    loadingPaths={loadingPaths}
+                    onToggleDir={toggleDirectory}
+                    onOpenFile={onOpenFile}
+                    onTouchLongPress={isCompactLayout ? undefined : openTouchContextMenu}
+                    onSelect={selectFile}
+                    onContextMenu={handleContextMenu}
+                    dragSourcePath={visibleDragSource?.path || null}
+                    dropTargetPath={visibleDropTargetPath}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    onDragOverDirectory={handleDragOverDirectory}
+                    onDragLeaveDirectory={handleDragLeaveDirectory}
+                    onDropDirectory={handleDropDirectory}
+                    renamingPath={visibleRenameState?.path || null}
+                    renameValue={visibleRenameState?.value || ''}
+                    onRenameChange={handleRenameChange}
+                    onRenameCommit={() => { void commitRename(); }}
+                    onRenameCancel={cancelRename}
+                    renderChildren={false}
+                    compact={isCompactLayout}
+                    onOpenActions={openCompactActionsMenu}
+                  />
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>

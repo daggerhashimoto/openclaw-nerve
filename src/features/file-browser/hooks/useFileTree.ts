@@ -3,6 +3,8 @@ import { getWorkspaceStorageKey } from '@/features/workspace/workspaceScope';
 import type { TreeEntry } from '../types';
 
 const DEFAULT_AGENT_ID = 'main';
+const MAX_RESTORED_EXPANDED_PATHS = 64;
+const RESTORE_EXPANSION_CONCURRENCY = 4;
 
 function normalizeAgentId(agentId?: string): string {
   return agentId?.trim() || DEFAULT_AGENT_ID;
@@ -87,22 +89,64 @@ function clearEntryFromTree(entries: TreeEntry[], targetPath: string): TreeEntry
   });
 }
 
-function findEntry(entries: TreeEntry[], targetPath: string): TreeEntry | null {
-  for (const entry of entries) {
-    if (entry.path === targetPath) return entry;
-    if (entry.type === 'directory' && entry.children) {
-      const found = findEntry(entry.children, targetPath);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
 function buildTreeUrl(dirPath: string, agentId: string, showHiddenEntries: boolean): string {
   const params = new URLSearchParams({ depth: '1', agentId });
   if (showHiddenEntries) params.set('showHidden', 'true');
   if (dirPath) params.set('path', dirPath);
   return `/api/files/tree?${params.toString()}`;
+}
+
+function pathDepth(path: string): number {
+  return path.split('/').filter(Boolean).length;
+}
+
+function orderedExpansionPaths(paths: Set<string>): string[] {
+  return [...paths]
+    .map((path, index) => ({ path, index }))
+    .sort((a, b) => {
+      const depthDiff = pathDepth(a.path) - pathDepth(b.path);
+      return depthDiff || a.index - b.index;
+    })
+    .map((entry) => entry.path);
+}
+
+function limitRestoredExpandedPaths(paths: Set<string>): Set<string> {
+  if (paths.size <= MAX_RESTORED_EXPANDED_PATHS) return paths;
+  return new Set(orderedExpansionPaths(paths).slice(0, MAX_RESTORED_EXPANDED_PATHS));
+}
+
+function indexEntries(entries: TreeEntry[]): Map<string, TreeEntry> {
+  const index = new Map<string, TreeEntry>();
+  const stack = [...entries];
+
+  while (stack.length > 0) {
+    const entry = stack.pop()!;
+    index.set(entry.path, entry);
+    if (entry.type === 'directory' && entry.children) {
+      stack.push(...entry.children);
+    }
+  }
+
+  return index;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex]!);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
 }
 
 /** Hook for managing file tree state with workspace info and persistence. */
@@ -116,6 +160,7 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
   const [selectedPath, setSelectedPathState] = useState<string | null>(() => loadSelectedPath(scopedAgentId));
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
   const [workspaceInfo, setWorkspaceInfo] = useState<{ isCustomWorkspace: boolean; rootPath: string } | null>(null);
+  const entryIndexRef = useRef<Map<string, TreeEntry>>(new Map());
   const mountedRef = useRef(true);
   const agentIdRef = useRef(scopedAgentId);
   const stateOwnerAgentRef = useRef(scopedAgentId);
@@ -124,7 +169,9 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
 
   const ownsVisibleState = stateOwnerAgentRef.current === scopedAgentId;
   const visibleEntries = ownsVisibleState ? entries : [];
-  const visibleExpandedPaths = ownsVisibleState ? expandedPaths : loadExpandedPaths(scopedAgentId);
+  const visibleExpandedPaths = ownsVisibleState
+    ? expandedPaths
+    : limitRestoredExpandedPaths(loadExpandedPaths(scopedAgentId));
   const visibleSelectedPath = ownsVisibleState ? selectedPath : loadSelectedPath(scopedAgentId);
   const visibleLoadingPaths = ownsVisibleState ? loadingPaths : new Set<string>();
   const visibleWorkspaceInfo = ownsVisibleState ? workspaceInfo : null;
@@ -139,6 +186,7 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
 
   useEffect(() => {
     entriesRef.current = entries;
+    entryIndexRef.current = indexEntries(entries);
   }, [entries]);
 
   // Persist expanded paths
@@ -172,7 +220,12 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
             return next;
           });
 
-          setEntries((prev) => clearEntryFromTree(prev, dirPath));
+          setEntries((prev) => {
+            const next = clearEntryFromTree(prev, dirPath);
+            entriesRef.current = next;
+            entryIndexRef.current = indexEntries(next);
+            return next;
+          });
         }
         return null;
       }
@@ -193,12 +246,14 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
     if (agentIdRef.current !== requestAgentId) return;
 
     const requestVersion = ++requestVersionRef.current;
-    const persistedExpandedPaths = loadExpandedPaths(requestAgentId);
+    const persistedExpandedPaths = limitRestoredExpandedPaths(loadExpandedPaths(requestAgentId));
     const persistedSelectedPath = loadSelectedPath(requestAgentId);
 
     stateOwnerAgentRef.current = requestAgentId;
     setLoading(true);
     setError(null);
+    entriesRef.current = [];
+    entryIndexRef.current = new Map();
     setEntries([]);
     setLoadingPaths(new Set());
     setWorkspaceInfo(null);
@@ -212,11 +267,11 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
       let tree = children;
 
       if (persistedExpandedPaths.size > 0) {
-        const promises = [...persistedExpandedPaths].map(async (path) => {
+        const hydrationPaths = orderedExpansionPaths(persistedExpandedPaths);
+        const results = await mapWithConcurrency(hydrationPaths, RESTORE_EXPANSION_CONCURRENCY, async (path) => {
           const dirChildren = await fetchChildren(path, requestAgentId);
           return dirChildren ? { path, children: dirChildren } : null;
         });
-        const results = await Promise.all(promises);
         if (!mountedRef.current || requestVersionRef.current !== requestVersion || agentIdRef.current !== requestAgentId) return;
 
         for (const result of results) {
@@ -226,6 +281,8 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
         }
       }
 
+      entriesRef.current = tree;
+      entryIndexRef.current = indexEntries(tree);
       setEntries(tree);
     } else {
       setError('Failed to load file tree');
@@ -251,7 +308,7 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
 
     if (expandedPaths.has(dirPath)) return;
 
-    const entry = findEntry(entries, dirPath);
+    const entry = entryIndexRef.current.get(dirPath);
     if (entry?.children !== null && entry?.children !== undefined) return;
 
     const requestAgentId = agentIdRef.current;
@@ -266,9 +323,14 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
     });
 
     if (children) {
-      setEntries((prev) => mergeChildren(prev, dirPath, children));
+      setEntries((prev) => {
+        const next = mergeChildren(prev, dirPath, children);
+        entriesRef.current = next;
+        entryIndexRef.current = indexEntries(next);
+        return next;
+      });
     }
-  }, [entries, expandedPaths, fetchChildren]);
+  }, [expandedPaths, fetchChildren]);
 
   const selectFile = useCallback((filePath: string, targetAgentId = scopedAgentId) => {
     const requestAgentId = normalizeAgentId(targetAgentId);
@@ -292,18 +354,26 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
 
     if (!dirPath) {
       setEntries((prev) => {
-        return children.map((fresh) => {
+        const next = children.map((fresh) => {
           const existing = prev.find((entry) => entry.path === fresh.path);
           if (existing?.children && fresh.type === 'directory') {
             return { ...fresh, children: existing.children };
           }
           return fresh;
         });
+        entriesRef.current = next;
+        entryIndexRef.current = indexEntries(next);
+        return next;
       });
       return;
     }
 
-    setEntries((prev) => mergeChildren(prev, dirPath, children));
+    setEntries((prev) => {
+      const next = mergeChildren(prev, dirPath, children);
+      entriesRef.current = next;
+      entryIndexRef.current = indexEntries(next);
+      return next;
+    });
   }, [fetchChildren]);
 
   /**
@@ -321,7 +391,7 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
   }, [expandedPaths, refreshDirectory]);
 
   const ensureDirectoryLoaded = useCallback(async (dirPath: string, requestAgentId = agentIdRef.current) => {
-    const entry = findEntry(entriesRef.current, dirPath);
+    const entry = entryIndexRef.current.get(dirPath);
     if (entry?.type !== 'directory') return;
     if (entry.children !== null && entry.children !== undefined) return;
 
@@ -339,6 +409,7 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
       setEntries((prev) => {
         const next = mergeChildren(prev, dirPath, children);
         entriesRef.current = next;
+        entryIndexRef.current = indexEntries(next);
         return next;
       });
     }

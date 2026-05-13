@@ -15,6 +15,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
+import { BoundedSSEWriter } from '../lib/sse-backpressure.js';
 
 const app = new Hono();
 
@@ -71,46 +72,49 @@ app.get('/api/events', async (c) => {
     const tag = `[sse:${clientId}]`;
     let connected = true;
     let resolveDisconnect: (() => void) | undefined;
+    let writer: BoundedSSEWriter | null = null;
+    let pingTimer: ReturnType<typeof setInterval> | null = null;
 
     _sseClients.set(clientId, { connectedAt: Date.now() });
     console.log(`${tag} Client connected (active=${_sseClients.size})`);
 
     const onMessage = (payload: SSEEvent) => {
       if (!connected) return;
-      try {
-        stream.writeSSE({ event: payload.event, data: JSON.stringify(payload) });
-      } catch {
-        disconnect();
-      }
+      writer?.enqueue({ event: payload.event, data: JSON.stringify(payload) });
     };
 
-    function disconnect() {
+    function disconnect(reason = 'client disconnect') {
       if (!connected) return;
       connected = false;
-      clearInterval(pingTimer);
+      if (pingTimer) clearInterval(pingTimer);
       broadcaster.off('message', onMessage);
       _sseClients.delete(clientId);
-      console.log(`${tag} Client disconnected (active=${_sseClients.size})`);
+      writer?.close();
+      console.log(`${tag} Client disconnected: ${reason} (active=${_sseClients.size})`);
       resolveDisconnect?.();
     }
 
+    writer = new BoundedSSEWriter(stream, {
+      label: tag,
+      onDisconnect: disconnect,
+    });
+
     broadcaster.on('message', onMessage);
 
-    await stream.writeSSE({
+    writer.enqueue({
       event: 'connected',
       data: JSON.stringify({ event: 'connected', ts: Date.now() }),
     });
 
-    const pingTimer = setInterval(() => {
-      if (!connected) { clearInterval(pingTimer); return; }
-      try {
-        stream.writeSSE({ event: 'ping', data: JSON.stringify({ event: 'ping', ts: Date.now() }) });
-      } catch {
-        disconnect();
+    pingTimer = setInterval(() => {
+      if (!connected) {
+        if (pingTimer) clearInterval(pingTimer);
+        return;
       }
+      writer?.enqueue({ event: 'ping', data: JSON.stringify({ event: 'ping', ts: Date.now() }) });
     }, PING_INTERVAL_MS);
 
-    stream.onAbort(() => disconnect());
+    stream.onAbort(() => disconnect('abort'));
 
     // Keep stream open until client disconnects (no polling needed)
     await new Promise<void>((resolve) => {

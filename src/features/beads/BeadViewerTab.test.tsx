@@ -59,7 +59,7 @@ describe('BeadViewerTab', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Dependency/ }));
-    fireEvent.click(screen.getByRole('link', { name: 'related' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'related' }));
 
     await waitFor(() => {
       expect(onOpenBeadId).toHaveBeenNthCalledWith(1, {
@@ -88,8 +88,8 @@ describe('BeadViewerTab', () => {
       />,
     );
 
-    const plainLink = screen.getByRole('link', { name: '/workspace/src/plain.tsx' });
-    const codeLink = screen.getByRole('link', { name: '/workspace/src/code.tsx' });
+    const plainLink = await screen.findByRole('link', { name: '/workspace/src/plain.tsx' });
+    const codeLink = await screen.findByRole('link', { name: '/workspace/src/code.tsx' });
 
     expect(codeLink.closest('code')).not.toBeNull();
 

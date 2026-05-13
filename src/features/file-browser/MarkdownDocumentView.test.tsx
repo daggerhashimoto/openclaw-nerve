@@ -46,7 +46,7 @@ describe('MarkdownDocumentView', () => {
     markdownRendererSpy.mockClear();
   });
 
-  it('renders preview mode with light full-width gutters and no nested card', () => {
+  it('renders preview mode with light full-width gutters and no nested card', async () => {
     render(
       <MarkdownDocumentView
         file={file}
@@ -56,13 +56,13 @@ describe('MarkdownDocumentView', () => {
       />,
     );
 
-    const renderer = screen.getByTestId('markdown-renderer');
+    const renderer = await screen.findByTestId('markdown-renderer');
     expect(renderer.closest('article')).toBeNull();
     expect(renderer.parentElement).toHaveClass('px-4');
     expect(renderer.parentElement).toHaveClass('md:px-6');
   });
 
-  it('uses a segmented button switcher to toggle between preview and edit', () => {
+  it('uses a segmented button switcher to toggle between preview and edit', async () => {
     render(
       <MarkdownDocumentView
         file={file}
@@ -79,16 +79,16 @@ describe('MarkdownDocumentView', () => {
 
     expect(previewButton).toHaveAttribute('aria-pressed', 'true');
     expect(editButton).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByTestId('markdown-renderer')).toBeInTheDocument();
+    expect(await screen.findByTestId('markdown-renderer')).toBeInTheDocument();
 
     fireEvent.click(editButton);
 
     expect(editButton).toHaveAttribute('aria-pressed', 'true');
     expect(previewButton).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByTestId('file-editor')).toBeInTheDocument();
+    expect(await screen.findByTestId('file-editor')).toBeInTheDocument();
   });
 
-  it('passes bead and workspace handlers through to the markdown renderer while preserving document path fallback', () => {
+  it('passes bead and workspace handlers through to the markdown renderer while preserving document path fallback', async () => {
     const onOpenBeadId = vi.fn();
     const onOpenWorkspacePath = vi.fn();
 
@@ -104,6 +104,7 @@ describe('MarkdownDocumentView', () => {
       />,
     );
 
+    await screen.findByTestId('markdown-renderer');
     expect(markdownRendererSpy).toHaveBeenCalled();
     const props = markdownRendererSpy.mock.calls.at(-1)?.[0];
     expect(props.currentDocumentPath).toBe('docs/guide.md');

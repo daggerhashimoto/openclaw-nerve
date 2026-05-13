@@ -41,7 +41,7 @@ vi.mock('@/contexts/SettingsContext', () => ({
   useSettings: () => mockUseSettings(),
 }));
 
-vi.mock('@/features/kanban', () => ({
+vi.mock('@/features/kanban/KanbanQuickView', () => ({
   KanbanQuickView: () => <div data-testid="kanban-tab" />,
 }));
 

@@ -45,18 +45,71 @@ export default defineConfig({
     sourcemap: false, // No sourcemaps in production
     rollupOptions: {
       output: {
-        manualChunks: {
+        manualChunks(id) {
+          const normalized = id.split(path.sep).join('/');
+          if (!normalized.includes('/node_modules/')) return undefined;
+
           // Core React libraries (most stable, cache-friendly)
-          'react-vendor': ['react', 'react-dom'],
-          
+          if (
+            normalized.includes('/node_modules/react/') ||
+            normalized.includes('/node_modules/react-dom/') ||
+            normalized.includes('/node_modules/scheduler/')
+          ) {
+            return 'react-vendor';
+          }
+
           // Markdown rendering (heavy with highlight.js)
-          'markdown': ['react-markdown', 'remark-gfm', 'highlight.js'],
-          
+          if (
+            normalized.includes('/node_modules/react-markdown/') ||
+            normalized.includes('/node_modules/remark-gfm/') ||
+            normalized.includes('/node_modules/highlight.js/')
+          ) {
+            return 'markdown';
+          }
+
+          // Charts (loaded only when chat messages contain chart blocks)
+          if (
+            normalized.includes('/node_modules/recharts/') ||
+            normalized.includes('/node_modules/victory-vendor/') ||
+            normalized.includes('/node_modules/d3-')
+          ) {
+            return 'charts-vendor';
+          }
+          if (normalized.includes('/node_modules/lightweight-charts/')) {
+            return 'lightweight-charts';
+          }
+
+          // CodeMirror editor shell (loaded only when file editing is opened)
+          if (
+            normalized.includes('/node_modules/@codemirror/state/') ||
+            normalized.includes('/node_modules/@codemirror/view/') ||
+            normalized.includes('/node_modules/@codemirror/commands/') ||
+            normalized.includes('/node_modules/@codemirror/search/') ||
+            normalized.includes('/node_modules/@codemirror/language/') ||
+            normalized.includes('/node_modules/@lezer/highlight/') ||
+            normalized.includes('/node_modules/style-mod/') ||
+            normalized.includes('/node_modules/w3c-keyname/') ||
+            normalized.includes('/node_modules/crelt/')
+          ) {
+            return 'editor-vendor';
+          }
+
           // UI components (radix + lucide icons)
-          'ui-vendor': ['lucide-react'],
-          
+          if (normalized.includes('/node_modules/lucide-react/')) {
+            return 'ui-vendor';
+          }
+
           // Utility libraries
-          'utils': ['clsx', 'tailwind-merge', 'class-variance-authority', 'dompurify'],
+          if (
+            normalized.includes('/node_modules/clsx/') ||
+            normalized.includes('/node_modules/tailwind-merge/') ||
+            normalized.includes('/node_modules/class-variance-authority/') ||
+            normalized.includes('/node_modules/dompurify/')
+          ) {
+            return 'utils';
+          }
+
+          return undefined;
         },
       },
     },

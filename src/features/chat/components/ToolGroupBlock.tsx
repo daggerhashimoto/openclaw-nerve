@@ -1,11 +1,14 @@
-import { useState, useMemo, memo } from 'react';
+import { lazy, Suspense, useState, useMemo, memo } from 'react';
 import { ChevronRight, Wrench } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { Card, CardContent } from '@/components/ui/card';
-import { DiffView } from '../DiffView';
-import { FileContentView } from '../FileContentView';
 import { extractEditBlocks, extractWriteBlocks } from '../edit-blocks';
 import type { ChatMsg, ToolGroupEntry } from '../types';
+
+const DiffView = lazy(() => import('../DiffView').then((module) => ({ default: module.DiffView })));
+const FileContentView = lazy(() =>
+  import('../FileContentView').then((module) => ({ default: module.FileContentView })),
+);
 
 interface ToolGroupBlockProps {
   msg: ChatMsg;
@@ -49,17 +52,21 @@ function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
       <CollapsibleContent>
         <div className="ml-6 mr-2 mb-2 mt-1 border-l-2 border-border/40 pl-3">
           {editBlocks.length > 0 ? (
-            <div className="space-y-2">
-              {editBlocks.map((block, i) => (
-                <DiffView key={i} oldText={block.oldText} newText={block.newText} filePath={block.filePath} />
-              ))}
-            </div>
+            <Suspense fallback={<div className="text-xs text-muted-foreground">Loading diff...</div>}>
+              <div className="space-y-2">
+                {editBlocks.map((block, i) => (
+                  <DiffView key={i} oldText={block.oldText} newText={block.newText} filePath={block.filePath} />
+                ))}
+              </div>
+            </Suspense>
           ) : (
-            <div className="space-y-2">
-              {writeBlocks.map((block, i) => (
-                <FileContentView key={i} content={block.content} filePath={block.filePath} />
-              ))}
-            </div>
+            <Suspense fallback={<div className="text-xs text-muted-foreground">Loading file preview...</div>}>
+              <div className="space-y-2">
+                {writeBlocks.map((block, i) => (
+                  <FileContentView key={i} content={block.content} filePath={block.filePath} />
+                ))}
+              </div>
+            </Suspense>
           )}
         </div>
       </CollapsibleContent>

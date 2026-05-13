@@ -1,8 +1,13 @@
-import { useCallback } from 'react';
+import { lazy, Suspense, useCallback } from 'react';
 import { AlertTriangle, ArrowUpRight, CircleDot, FileText, GitBranch, Loader2 } from 'lucide-react';
-import { MarkdownRenderer } from '@/features/markdown/MarkdownRenderer';
 import { useBeadDetail } from './useBeadDetail';
 import type { BeadLinkTarget } from './links';
+
+const MarkdownRenderer = lazy(() =>
+  import('@/features/markdown/MarkdownRenderer').then((module) => ({
+    default: module.MarkdownRenderer,
+  })),
+);
 
 interface BeadViewerTabProps {
   beadTarget: BeadLinkTarget;
@@ -138,15 +143,24 @@ export function BeadViewerTab({ beadTarget, onOpenBeadId, onOpenWorkspacePath, p
                 <CircleDot size={13} />
                 <span>Notes</span>
               </div>
-              <MarkdownRenderer
-                content={bead.notes}
-                currentDocumentPath={beadTarget.currentDocumentPath}
-                workspaceAgentId={beadTarget.workspaceAgentId}
-                onOpenBeadId={openBeadWithContext}
-                onOpenWorkspacePath={onOpenWorkspacePath}
-                pathLinkPrefixes={pathLinkPrefixes}
-                pathLinkAliases={pathLinkAliases}
-              />
+              <Suspense
+                fallback={(
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 size={14} className="animate-spin" />
+                    Loading notes...
+                  </div>
+                )}
+              >
+                <MarkdownRenderer
+                  content={bead.notes}
+                  currentDocumentPath={beadTarget.currentDocumentPath}
+                  workspaceAgentId={beadTarget.workspaceAgentId}
+                  onOpenBeadId={openBeadWithContext}
+                  onOpenWorkspacePath={onOpenWorkspacePath}
+                  pathLinkPrefixes={pathLinkPrefixes}
+                  pathLinkAliases={pathLinkAliases}
+                />
+              </Suspense>
             </div>
           ) : null}
 

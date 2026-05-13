@@ -1,14 +1,17 @@
-import React, { useMemo, memo } from 'react';
+import React, { lazy, Suspense, useMemo, memo } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { Card, CardContent } from '@/components/ui/card';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { decodeHtmlEntities } from '@/lib/formatting';
 import { escapeRegex } from '@/lib/constants';
-import { DiffView } from './DiffView';
-import { FileContentView } from './FileContentView';
 import { extractEditBlocks, extractWriteBlocks } from './edit-blocks';
 import type { ChatMsg } from './types';
+
+const DiffView = lazy(() => import('./DiffView').then((module) => ({ default: module.DiffView })));
+const FileContentView = lazy(() =>
+  import('./FileContentView').then((module) => ({ default: module.FileContentView })),
+);
 
 interface ToolCallBlockProps {
   msg: ChatMsg;
@@ -57,17 +60,21 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
           <CollapsibleContent>
             <CardContent className="border-t border-border/40 bg-background/42 px-3 py-3">
               {editBlocks.length > 0 ? (
-                <div className="space-y-2">
-                  {editBlocks.map((block, i) => (
-                    <DiffView key={i} oldText={block.oldText} newText={block.newText} filePath={block.filePath} />
-                  ))}
-                </div>
+                <Suspense fallback={<div className="text-xs text-muted-foreground">Loading diff...</div>}>
+                  <div className="space-y-2">
+                    {editBlocks.map((block, i) => (
+                      <DiffView key={i} oldText={block.oldText} newText={block.newText} filePath={block.filePath} />
+                    ))}
+                  </div>
+                </Suspense>
               ) : writeBlocks.length > 0 ? (
-                <div className="space-y-2">
-                  {writeBlocks.map((block, i) => (
-                    <FileContentView key={i} content={block.content} filePath={block.filePath} />
-                  ))}
-                </div>
+                <Suspense fallback={<div className="text-xs text-muted-foreground">Loading file preview...</div>}>
+                  <div className="space-y-2">
+                    {writeBlocks.map((block, i) => (
+                      <FileContentView key={i} content={block.content} filePath={block.filePath} />
+                    ))}
+                  </div>
+                </Suspense>
               ) : (
                 <div
                   className="msg-body whitespace-pre-wrap text-[0.8rem] font-mono opacity-85 max-h-[300px] overflow-y-auto"

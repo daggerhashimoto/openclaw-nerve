@@ -227,25 +227,22 @@ export function useChatRuntime({
   }, [clearReconnectTimer, closeEventSource, enabled, sessionKey]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  const currentVisible = timelineState.timeline.orderedItems?.length === 0
+    ? 0
+    : Math.max(DEFAULT_VISIBLE_COUNT, visibleCount);
   const projection = useMemo(() => projectTimeline(timelineState.timeline, {
     failedIdempotencyKeys,
-  }), [failedIdempotencyKeys, timelineState.timeline]);
+    visibleCount: currentVisible,
+  }), [currentVisible, failedIdempotencyKeys, timelineState.timeline]);
 
-  const visibleMessages = useMemo(() => {
-    const currentVisible = projection.messages.length === 0
-      ? 0
-      : Math.max(DEFAULT_VISIBLE_COUNT, Math.min(visibleCount, projection.messages.length));
-    return projection.messages.slice(-currentVisible);
-  }, [projection.messages, visibleCount]);
-
-  const hasMore = projection.messages.length > visibleMessages.length;
+  const hasMore = projection.totalMessages > projection.messages.length;
 
   const loadMore = useCallback(() => {
-    if (projection.messages.length <= visibleCount) return false;
-    const nextVisible = Math.min(projection.messages.length, visibleCount + LOAD_MORE_BATCH);
+    if (projection.totalMessages <= visibleCount) return false;
+    const nextVisible = Math.min(projection.totalMessages, visibleCount + LOAD_MORE_BATCH);
     setVisibleCount(nextVisible);
-    return nextVisible < projection.messages.length;
-  }, [projection.messages.length, visibleCount]);
+    return nextVisible < projection.totalMessages;
+  }, [projection.totalMessages, visibleCount]);
 
   const reload = useCallback(() => {
     scheduleReconnect(0);
@@ -272,7 +269,7 @@ export function useChatRuntime({
   }, []);
 
   return {
-    messages: visibleMessages,
+    messages: projection.messages,
     isGenerating: projection.isGenerating,
     processingStage: projection.processingStage,
     lastEventTimestamp: projection.lastEventTimestamp,

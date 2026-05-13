@@ -175,6 +175,38 @@ describe('chat runtime client reducer', () => {
     expect(afterSnapshot.cursor).toBe('10');
     expect(afterSnapshot.timeline.items['user-1']).toMatchObject({ text: 'fresh live patch' });
   });
+
+  it('preserves unchanged timeline item references and ordered indexes across patches', () => {
+    const state = createEmptyRuntimeTimelineState('session-1');
+    const turnA = makeTurn('session-1', 'run-a', 0);
+    const turnB = makeTurn('session-1', 'run-b', 1);
+    const initial = applyTimelinePatch(state, {
+      sessionKey: 'session-1',
+      cursor: '1',
+      createdAt: 1,
+      ops: [
+        { op: 'upsert_turn', turn: turnA },
+        { op: 'upsert_turn', turn: turnB },
+        { op: 'upsert_item', item: makeUserItem('session-1', turnA, 'user-a', 'first', 1) },
+        { op: 'upsert_item', item: makeUserItem('session-1', turnB, 'user-b', 'second', 2) },
+      ],
+    });
+    const unchanged = initial.timeline.items['user-a'];
+
+    const afterPatch = applyTimelinePatch(initial, {
+      sessionKey: 'session-1',
+      cursor: '2',
+      createdAt: 2,
+      ops: [
+        { op: 'upsert_item', item: makeUserItem('session-1', turnB, 'user-b', 'second updated', 3) },
+      ],
+    });
+
+    expect(afterPatch.timeline.items['user-a']).toBe(unchanged);
+    expect(orderedTimelineItems(afterPatch.timeline).map((item) => item.id)).toEqual(['user-a', 'user-b']);
+    expect(afterPatch.timeline.itemsByTurnId?.[turnA.id].map((item) => item.id)).toEqual(['user-a']);
+    expect(afterPatch.timeline.itemsByTurnId?.[turnB.id].map((item) => item.id)).toEqual(['user-b']);
+  });
 });
 
 function makePatch(sessionKey: string, cursor: string, ops: TimelinePatch['ops']): TimelinePatch {

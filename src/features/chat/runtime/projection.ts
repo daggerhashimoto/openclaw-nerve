@@ -1,5 +1,5 @@
 import type { ChatMessage } from '@/types';
-import { splitToolCallMessage, tagIntermediateMessages } from '@/features/chat/operations';
+import { splitToolCallMessage } from '@/features/chat/operations';
 import type { ChatMsg, ToolGroupEntry } from '@/features/chat/types';
 import { extractTTSMarkers } from '@/features/tts/useTTS';
 import { describeToolUse, renderMarkdown, renderToolResults } from '@/utils/helpers';
@@ -14,22 +14,21 @@ import type {
   ToolResultTimelineItem,
   UserTimelineItem,
 } from './types';
-import { orderedTimelineItems } from './reducer';
+import { orderedTimelineItems, timelineItemsByTurnId } from './reducer';
 
 export function projectTimeline(
   timeline: SessionTimeline,
   options: TimelineProjectionOptions = {},
 ): TimelineProjection {
   const orderedItems = orderedTimelineItems(timeline);
+  const itemsByTurnId = timelineItemsByTurnId(timeline);
   const activeTurnIds = new Set(
     timeline.turns
-      .filter((turn) => isActiveTurn(turn, orderedItems, options.failedIdempotencyKeys))
+      .filter((turn) => isActiveTurn(turn, itemsByTurnId[turn.id] ?? [], options.failedIdempotencyKeys))
       .map((turn) => turn.id),
   );
   const projectionContext = { ...options, activeTurnIds };
-  const messages = tagIntermediateMessages(groupConsecutiveToolCalls(
-    orderedItems.flatMap((item) => projectItem(item, projectionContext)),
-  ));
+  const { messages, totalMessages } = projectMessages(orderedItems, projectionContext, options.visibleCount);
   const runningTool = findLastRunningTool(orderedItems, activeTurnIds);
   const streamingAssistant = orderedItems.some((item) =>
     (item.kind === 'assistant_message' || item.kind === 'assistant_segment') &&
@@ -43,6 +42,7 @@ export function projectTimeline(
 
   return {
     messages,
+    totalMessages,
     isGenerating,
     processingStage: runningTool
       ? 'tool_use'
@@ -82,6 +82,68 @@ function projectItem(
     case 'system_event':
       return projectSystemItem(item);
   }
+}
+
+function projectMessages(
+  orderedItems: TimelineItem[],
+  options: ProjectionContext,
+  visibleCount?: number,
+): { messages: ChatMsg[]; totalMessages: number } {
+  if (!Number.isFinite(visibleCount) || visibleCount === undefined || visibleCount < 0) {
+    const messages = tagIntermediateMessagesLinear(groupConsecutiveToolCalls(
+      orderedItems.flatMap((item) => projectItem(item, options)),
+    ));
+    return { messages, totalMessages: messages.length };
+  }
+
+  if (visibleCount === 0) {
+    return { messages: [], totalMessages: countProjectedMessages(orderedItems) };
+  }
+
+  const visibleMessages: ChatMsg[] = [];
+  let totalMessages = 0;
+  let index = orderedItems.length - 1;
+
+  while (index >= 0) {
+    const item = orderedItems[index];
+    if (item.kind === 'tool_group') {
+      index--;
+      continue;
+    }
+
+    if (item.kind === 'tool_call') {
+      const toolItems: ToolCallTimelineItem[] = [];
+      let nextIndex = index;
+      for (; nextIndex >= 0; nextIndex--) {
+        const candidate = orderedItems[nextIndex];
+        if (candidate.kind === 'tool_group') continue;
+        if (candidate.kind !== 'tool_call') break;
+        toolItems.unshift(candidate);
+      }
+
+      totalMessages += 1;
+      if (visibleMessages.length < visibleCount) {
+        const grouped = groupConsecutiveToolCalls(toolItems.map(projectToolCallItem));
+        visibleMessages.unshift(...grouped);
+      }
+      index = nextIndex;
+      continue;
+    }
+
+    const messageCount = countProjectedItemMessages(item);
+    totalMessages += messageCount;
+    if (messageCount > 0 && visibleMessages.length < visibleCount) {
+      const remaining = visibleCount - visibleMessages.length;
+      const projected = projectItem(item, options);
+      visibleMessages.unshift(...projected.slice(-remaining));
+    }
+    index--;
+  }
+
+  return {
+    messages: tagIntermediateMessagesLinear(visibleMessages),
+    totalMessages,
+  };
 }
 
 function projectUserItem(
@@ -256,6 +318,69 @@ function groupConsecutiveToolCalls(messages: ChatMsg[]): ChatMsg[] {
   return grouped;
 }
 
+function tagIntermediateMessagesLinear(messages: ChatMsg[]): ChatMsg[] {
+  const tagged = messages.map((message) => ({ ...message }));
+  let hasToolAfterBeforeNextUser = false;
+
+  for (let index = tagged.length - 1; index >= 0; index--) {
+    const message = tagged[index];
+    if (message.role === 'user') {
+      hasToolAfterBeforeNextUser = false;
+      continue;
+    }
+    if (message.role === 'tool' || message.role === 'toolResult' || message.toolGroup) {
+      hasToolAfterBeforeNextUser = true;
+      continue;
+    }
+    if (
+      message.role === 'assistant' &&
+      !message.isThinking &&
+      hasToolAfterBeforeNextUser &&
+      !(message.charts?.length)
+    ) {
+      message.intermediate = true;
+    }
+  }
+
+  return tagged;
+}
+
+function countProjectedMessages(orderedItems: TimelineItem[]): number {
+  let count = 0;
+  let inToolRun = false;
+
+  for (const item of orderedItems) {
+    if (item.kind === 'tool_group') continue;
+    if (item.kind === 'tool_call') {
+      if (!inToolRun) count += 1;
+      inToolRun = true;
+      continue;
+    }
+    inToolRun = false;
+    count += countProjectedItemMessages(item);
+  }
+
+  return count;
+}
+
+function countProjectedItemMessages(item: TimelineItem): number {
+  switch (item.kind) {
+    case 'tool_group':
+    case 'tool_call':
+      return 0;
+    case 'assistant_message':
+    case 'assistant_segment':
+      return item.text.trim() || item.isStreaming ? 1 : 0;
+    case 'thinking':
+      return item.text.trim() ? 1 : 0;
+    case 'user_message':
+      return item.text.trim() || item.images?.length || item.uploadAttachments?.length ? 1 : 0;
+    case 'tool_result':
+    case 'system_event':
+      return 1;
+  }
+}
+
 function buildActivityLog(
   orderedItems: TimelineItem[],
   activeTurnIds: ReadonlySet<string>,
@@ -293,12 +418,11 @@ function findLastRunningTool(
 
 function isActiveTurn(
   turn: TimelineTurn,
-  orderedItems: TimelineItem[],
+  turnItems: TimelineItem[],
   failedIdempotencyKeys?: ReadonlySet<string>,
 ): boolean {
   if (turn.status !== 'running') return false;
 
-  const turnItems = orderedItems.filter((item) => item.turnId === turn.id);
   if (turnItems.length === 0) return true;
 
   const onlyCompletedHistoryInputs = turnItems.every((item) =>

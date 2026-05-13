@@ -317,6 +317,53 @@ describe('chat runtime projection', () => {
     });
     expect(projection.messages[0].html).not.toContain('[tts:');
   });
+
+  it.each([500, 2_000, 10_000])(
+    'projects only the visible tail for a %i-turn timeline while preserving total count',
+    (turnCount) => {
+      const timeline = makeLargeTimeline('session-scale', turnCount);
+
+      const projection = projectTimeline(timeline, { visibleCount: 50 });
+
+      expect(projection.totalMessages).toBe(turnCount * 2);
+      expect(projection.messages).toHaveLength(50);
+      expect(projection.messages[0]).toMatchObject({
+        msgId: `user-${turnCount - 25}`,
+        rawText: `prompt ${turnCount - 25}`,
+      });
+      expect(projection.messages.at(-1)).toMatchObject({
+        msgId: `assistant-${turnCount - 1}`,
+        rawText: `answer ${turnCount - 1}`,
+      });
+      expect(projection.isGenerating).toBe(false);
+    },
+  );
+
+  it('keeps grouped tools and intermediate tagging intact when projecting a visible window', () => {
+    const firstTurn = makeTurn('session-1', 'run-1', 0, 'finalized');
+    const liveTurn = makeTurn('session-1', 'run-2', 1, 'running');
+    const timeline = makeTimeline('session-1', [firstTurn, liveTurn], {
+      'user-old': userItem(firstTurn, 'user-old', 'old prompt', 0),
+      'assistant-old': assistantItem(firstTurn, 'assistant-old', 'old answer', 1, false),
+      'user-live': userItem(liveTurn, 'user-live', 'inspect please', 10),
+      'assistant-plan': assistantItem(liveTurn, 'assistant-plan', 'I will inspect.', 11, false),
+      'tool-read': toolItem(liveTurn, 'tool-read', 'read', { path: '/tmp/a' }, 12, 'complete'),
+      'tool-exec': toolItem(liveTurn, 'tool-exec', 'exec', { command: 'pwd' }, 13, 'complete'),
+      'assistant-final': assistantItem(liveTurn, 'assistant-final', 'Done.', 100, true),
+    });
+
+    const projection = projectTimeline(timeline, { visibleCount: 3 });
+
+    expect(projection.totalMessages).toBe(6);
+    expect(projection.messages.map((message) => message.msgId)).toEqual([
+      'assistant-plan',
+      'tool-group:tool-read:tool-exec',
+      'assistant-final',
+    ]);
+    expect(projection.messages[0]).toMatchObject({ intermediate: true });
+    expect(projection.messages[1].toolGroup).toHaveLength(2);
+    expect(projection.processingStage).toBe('streaming');
+  });
 });
 
 function makeTimeline(
@@ -462,4 +509,18 @@ function assistantItem(
     status: isStreaming ? 'running' : 'complete',
     source: isStreaming ? 'live' : 'history',
   };
+}
+
+function makeLargeTimeline(sessionKey: string, turnCount: number): SessionTimeline {
+  const turns: TimelineTurn[] = [];
+  const items: Record<string, TimelineItem> = {};
+
+  for (let index = 0; index < turnCount; index++) {
+    const turn = makeTurn(sessionKey, `run-${index}`, index, 'finalized');
+    turns.push(turn);
+    items[`user-${index}`] = userItem(turn, `user-${index}`, `prompt ${index}`, 0);
+    items[`assistant-${index}`] = assistantItem(turn, `assistant-${index}`, `answer ${index}`, 1, false);
+  }
+
+  return makeTimeline(sessionKey, turns, items);
 }

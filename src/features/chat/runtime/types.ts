@@ -117,6 +117,10 @@ export interface SessionTimeline {
   turns: TimelineTurn[];
   items: Record<string, TimelineItem>;
   updatedAt: number;
+  orderedItems?: TimelineItem[];
+  itemIndexById?: Record<string, number>;
+  itemsByTurnId?: Record<string, TimelineItem[]>;
+  turnIndexById?: Record<string, number>;
 }
 
 export type TimelinePatchOp =
@@ -150,6 +154,7 @@ export interface RuntimeTimelineState {
 
 export interface TimelineProjection {
   messages: ChatMsg[];
+  totalMessages: number;
   isGenerating: boolean;
   processingStage: ProcessingStage;
   lastEventTimestamp: number;
@@ -159,4 +164,5 @@ export interface TimelineProjection {
 
 export interface TimelineProjectionOptions {
   failedIdempotencyKeys?: ReadonlySet<string>;
+  visibleCount?: number;
 }

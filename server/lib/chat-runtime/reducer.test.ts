@@ -1056,7 +1056,7 @@ describe('chat runtime reducer', () => {
 
     expect(group0).toMatchObject({
       kind: 'tool_group',
-      status: 'failed',
+      status: 'running',
       source: 'history',
       closed: true,
       childItemIds: [tool1Id],
@@ -1089,9 +1089,8 @@ describe('chat runtime reducer', () => {
       .map((item) => item.id);
     orderedIds = timelineItemsInOrder(timeline).map((item) => item.id);
 
-    expect(group0).toMatchObject({ status: 'failed', source: 'history', closed: true, childItemIds: [tool1Id] });
-    expect(group1).toMatchObject({ source: 'history', closed: true, childItemIds: [tool2Id] });
-    expect(group1).not.toMatchObject({ status: 'running' });
+    expect(group0).toMatchObject({ status: 'running', source: 'history', closed: true, childItemIds: [tool1Id] });
+    expect(group1).toMatchObject({ status: 'running', source: 'history', closed: true, childItemIds: [tool2Id] });
     expect(orderedIds.indexOf(group1Id)).toBeLessThan(orderedIds.indexOf(assistantId));
     expect(orderedTopLevelIds).toEqual([group0Id, thinkingId, group1Id, assistantId]);
   });
@@ -1318,5 +1317,34 @@ describe('chat runtime reducer', () => {
       source: 'history',
       durationMs: 2500,
     });
+  });
+
+  it('keeps tool group status running when closed with no terminal or failed children', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    timeline = reduceRuntimeEvent(timeline, { type: 'turn_started', sessionKey: 'agent:main:main', runId: 'run-1', at: 1000 });
+    timeline = reduceRuntimeEvent(timeline, { type: 'tool_started', sessionKey: 'agent:main:main', runId: 'run-1', toolCallId: 'call-1', name: 'bash', args: {}, at: 1001 });
+    // No tool_finished/failed. Then start an assistant delta which currently force-closes the group.
+    timeline = reduceRuntimeEvent(timeline, { type: 'assistant_delta', sessionKey: 'agent:main:main', runId: 'run-1', text: 'mid-stream text', at: 1002 });
+
+    const groups = Object.values(timeline.items).filter((item) => item.kind === 'tool_group');
+    expect(groups).toHaveLength(1);
+    expect(groups[0].status).toBe('running');
+  });
+
+  it('finalizes a running tool child when its own completion event arrives after an assistant delta', () => {
+    let timeline = createEmptyTimeline('agent:main:main');
+    // 1. Start a turn.
+    timeline = reduceRuntimeEvent(timeline, { type: 'turn_started', sessionKey: 'agent:main:main', runId: 'run-1', at: 1000 });
+    // 2. Start a tool call.
+    timeline = reduceRuntimeEvent(timeline, { type: 'tool_started', sessionKey: 'agent:main:main', runId: 'run-1', toolCallId: 'call-1', name: 'bash', args: { command: 'ls' }, at: 1001 });
+    // 3. An assistant delta arrives before the tool finishes (the output boundary crossing).
+    timeline = reduceRuntimeEvent(timeline, { type: 'assistant_delta', sessionKey: 'agent:main:main', runId: 'run-1', text: 'here is the result', at: 1002 });
+    // 4. The tool completion event finally arrives.
+    timeline = reduceRuntimeEvent(timeline, { type: 'tool_finished', sessionKey: 'agent:main:main', runId: 'run-1', toolCallId: 'call-1', result: 'file.txt', at: 1003 });
+
+    // 5. The tool call item must be complete, not stuck at 'running'.
+    const toolCalls = Object.values(timeline.items).filter((item) => item.kind === 'tool_call');
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0].status).toBe('complete');
   });
 });

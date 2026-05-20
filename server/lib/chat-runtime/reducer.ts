@@ -511,7 +511,7 @@ function closedToolGroupStatus(
   if (childStatuses.some((status) => status === 'failed' || status === 'aborted')) return 'failed';
   if (areToolGroupChildrenTerminal(timeline, childItemIds)) return 'complete';
   if (existingStatus && existingStatus !== 'running') return existingStatus;
-  return 'failed';
+  return 'running';
 }
 
 function closeOpenToolGroupsForOutputBoundary(timeline: SessionTimeline, turn: TimelineTurn, at: number): void {
@@ -519,7 +519,6 @@ function closeOpenToolGroupsForOutputBoundary(timeline: SessionTimeline, turn: T
     if (group.closed) continue;
 
     const childItemIds = [...group.childItemIds];
-    terminalizeToolGroupChildren(timeline, childItemIds, at, 'failed');
     timeline.items[group.id] = {
       ...group,
       childItemIds,

@@ -174,6 +174,13 @@ app.get('/api/chat-runtime/stream', async (c) => {
       const queuedLivePatches: TimelinePatch[] = [];
       let forwardLivePatches = false;
 
+      // Invariant: `connected` is already false if the client aborted during
+      // hydrateSession (single-threaded JS, the check at line above catches
+      // it). This second guard is belt-and-suspenders so that any future
+      // refactor that introduces a real async step between the hydration
+      // await and the subscribe call (e.g. an awaited pre-subscribe RPC)
+      // cannot silently attach a listener that disconnect() already tore down.
+      if (!connected) return;
       unsubscribe = runtime.subscribe(sessionKey, (patch) => {
         if (forwardLivePatches) {
           enqueueJsonEvent('patch', patch);

@@ -832,6 +832,40 @@ describe('chat runtime routes', () => {
       await reader.cancel();
     }
   });
+
+  it('does not subscribe after the client aborts mid-hydration', async () => {
+    // Documents the invariant that subscribe is never called when the client
+    // aborted mid-hydration. Note: today this passes even without the
+    // belt-and-suspenders guard at line ~97 of chat-runtime.ts — the line-90
+    // guard already catches it. The test exists so a future refactor that
+    // introduces a real async step between hydration and subscribe (which
+    // would defeat the line-90 guard) cannot land silently.
+    const { app, runtime } = await buildRouteApp();
+    let hydrationResolve: (() => void) | undefined;
+    runtime.hydrateSession.mockImplementation(
+      () => new Promise<void>((resolve) => { hydrationResolve = resolve; }),
+    );
+
+    // Start the SSE request; the response is returned immediately (streaming).
+    const res = await app.request('/api/chat-runtime/stream?sessionKey=agent%3Amain%3Amain');
+    const reader = res.body!.getReader();
+
+    // Wait a few microtasks so the SSE handler enters and registers onAbort + awaits hydrate.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Cancel the response reader — this triggers stream.abort() => disconnect().
+    await reader.cancel();
+
+    // Now resolve hydration so the post-await code runs.
+    hydrationResolve?.();
+
+    // Drain any remaining microtasks.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(runtime.subscribe).not.toHaveBeenCalled();
+  });
 });
 
 async function buildRouteApp(runtime = createFakeRuntime()) {

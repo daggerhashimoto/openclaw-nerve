@@ -291,6 +291,19 @@ describe('ChatTimelineStore', () => {
 
     expect(store.replayAfter('agent:main:main', first.cursor)).toEqual({ kind: 'snapshot_required' });
   });
+
+  it('marks timeline ready after replaceEvents even without a history_snapshot event', () => {
+    const store = new ChatTimelineStore({ maxPatchesPerSession: 16 });
+    const sessionKey = 'agent:main:main';
+
+    store.replaceEvents(sessionKey, [
+      { type: 'turn_started', sessionKey, runId: 'run-1', at: 1000 },
+      { type: 'turn_finalized', sessionKey, runId: 'run-1', at: 1001 },
+    ]);
+
+    const snapshot = store.snapshot(sessionKey, 'manual');
+    expect(snapshot.timeline.hydrationState).toBe('ready');
+  });
 });
 
 describe('ChatRuntime', () => {

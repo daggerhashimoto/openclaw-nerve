@@ -121,6 +121,10 @@ export class ChatTimelineStore {
     const version = current.version + 1;
     next = {
       ...next,
+      // Replace always represents a hydration / reset boundary, so the timeline
+      // is by definition ready after the replay completes — regardless of
+      // whether the input contained an explicit history_snapshot event.
+      hydrationState: options.mode === 'replace' ? 'ready' : next.hydrationState,
       version,
       cursor: String(version),
       updatedAt: Math.max(next.updatedAt, createdAt),

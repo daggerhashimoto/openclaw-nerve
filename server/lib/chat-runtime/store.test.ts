@@ -1705,4 +1705,40 @@ describe('ChatRuntime', () => {
       },
     });
   });
+
+  it('dedupes a second applyOptimisticUserMessage with the same idempotencyKey when rebinding to a runId', () => {
+    // The chat-runtime route calls applyOptimisticUserMessage twice with the same idempotencyKey:
+    // once before chat.send (no runId) to seed the optimistic bubble, and once after chat.send
+    // returns to rebind the message to the real runId. The reducer dedupes by idempotencyKey —
+    // the second call updates the existing item in place rather than creating a duplicate.
+    const runtime = new ChatRuntime({
+      maxPatchesPerSession: 16,
+      rpc: async () => ({ messages: [] }),
+    });
+    const sessionKey = 'agent:main:main';
+
+    runtime.applyOptimisticUserMessage({
+      sessionKey,
+      text: 'hello',
+      idempotencyKey: 'idem-1',
+      at: 1000,
+    });
+    runtime.applyOptimisticUserMessage({
+      sessionKey,
+      text: 'hello',
+      idempotencyKey: 'idem-1',
+      runId: 'run-1',
+      at: 1001,
+    });
+
+    const snapshot = runtime.snapshot(sessionKey, 'live');
+    const userMessages = Object.values(snapshot.timeline.items).filter((item) => item.kind === 'user_message');
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0]).toMatchObject({
+      kind: 'user_message',
+      text: 'hello',
+      idempotencyKey: 'idem-1',
+      runId: 'run-1',
+    });
+  });
 });

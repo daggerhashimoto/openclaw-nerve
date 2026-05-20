@@ -273,6 +273,12 @@ app.post('/api/chat-runtime/sessions/:sessionKey/messages', async (c) => {
     ...(images.length > 0 ? { images } : {}),
     ...(uploadAttachments?.length ? { uploadAttachments } : {}),
   };
+  // applyOptimisticUserMessage is called twice with the same idempotencyKey:
+  // once before chat.send (no runId — user sees an optimistic bubble) and once
+  // after we know the runId. The runtime's store dedupes by idempotencyKey, so
+  // the second call rebinds the run association without producing a duplicate
+  // user message. Regression test:
+  //   server/lib/chat-runtime/store.test.ts 'dedupes a second applyOptimisticUserMessage'
   const optimisticPatch = runtime.applyOptimisticUserMessage(optimisticInput);
 
   try {

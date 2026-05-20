@@ -386,11 +386,11 @@ function snapshotBaseline(snapshot: TimelineSnapshot): CatchupBaseline {
   };
 }
 
-function isPatchCoveredByBaseline(patch: TimelinePatch, coveredCursor: string | undefined): boolean {
+export function isPatchCoveredByBaseline(patch: TimelinePatch, coveredCursor: string | undefined): boolean {
   return coveredCursor !== undefined && compareCursor(patch.cursor, coveredCursor) <= 0;
 }
 
-function compareCursor(left: string, right: string): number {
+export function compareCursor(left: string, right: string): number {
   const leftNumber = Number(left);
   const rightNumber = Number(right);
   if (
@@ -402,7 +402,12 @@ function compareCursor(left: string, right: string): number {
     return leftNumber - rightNumber;
   }
 
-  return left === right ? 0 : 1;
+  // Non-numeric or out-of-safe-int cursors are treated as "covered" (0).
+  // The cursor contract is stringified safe-integer monotonic — anything
+  // else is treated conservatively: drop the patch rather than risk
+  // re-delivering a stale one. Throwing here would tear down the SSE
+  // handler, which is worse than dropping a single patch.
+  return 0;
 }
 
 function errorMessage(err: unknown): string {

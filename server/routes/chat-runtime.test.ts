@@ -833,6 +833,32 @@ describe('chat runtime routes', () => {
     }
   });
 
+  describe('compareCursor (exported)', () => {
+    it('returns 0 for equal numeric cursors', async () => {
+      const { compareCursor } = await import('./chat-runtime.js');
+      expect(compareCursor('5', '5')).toBe(0);
+    });
+
+    it('returns sign-correct delta for numeric cursors', async () => {
+      const { compareCursor } = await import('./chat-runtime.js');
+      expect(compareCursor('3', '5')).toBeLessThan(0);
+      expect(compareCursor('7', '5')).toBeGreaterThan(0);
+    });
+
+    it('treats malformed cursors as covered (returns 0) rather than advancing', async () => {
+      const { compareCursor } = await import('./chat-runtime.js');
+      expect(compareCursor('not-a-number', '5')).toBe(0);
+      expect(compareCursor('5', 'also-bad')).toBe(0);
+      expect(compareCursor('not-a-number', 'also-bad')).toBe(0);
+    });
+
+    it('treats out-of-safe-int cursors as covered', async () => {
+      const { compareCursor } = await import('./chat-runtime.js');
+      const huge = String(Number.MAX_SAFE_INTEGER) + '0';
+      expect(compareCursor(huge, '5')).toBe(0);
+    });
+  });
+
   it('does not subscribe after the client aborts mid-hydration', async () => {
     // Documents the invariant that subscribe is never called when the client
     // aborted mid-hydration. Note: today this passes even without the

@@ -304,6 +304,25 @@ describe('ChatTimelineStore', () => {
     const snapshot = store.snapshot(sessionKey, 'manual');
     expect(snapshot.timeline.hydrationState).toBe('ready');
   });
+
+  it('logs and removes a subscriber that throws', () => {
+    const store = new ChatTimelineStore({ maxPatchesPerSession: 16 });
+    const sessionKey = 'agent:main:main';
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const thrower = vi.fn(() => { throw new Error('subscriber boom'); });
+
+    store.subscribe(sessionKey, thrower);
+    store.applyEvents([
+      { type: 'turn_started', sessionKey, runId: 'run-1', at: 1000 },
+    ]);
+
+    expect(thrower).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalled();
+    const message = String(errorSpy.mock.calls[0]?.[0] ?? '');
+    expect(message.toLowerCase()).toMatch(/subscriber|chat-runtime/);
+
+    errorSpy.mockRestore();
+  });
 });
 
 describe('ChatRuntime', () => {

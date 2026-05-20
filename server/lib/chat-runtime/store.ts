@@ -219,7 +219,11 @@ export class ChatTimelineStore {
 
       try {
         subscriber(cloneTimelinePatch(patch));
-      } catch {
+      } catch (err) {
+        console.error(
+          `chat-runtime subscriber threw for sessionKey=${sessionKey} cursor=${patch.cursor}; removing.`,
+          err,
+        );
         sessionSubscribers.delete(subscriber);
       }
     }

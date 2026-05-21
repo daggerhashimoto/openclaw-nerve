@@ -3,6 +3,7 @@ import { createContext, useContext, useCallback, useRef, useEffect, useState, us
 import { useWebSocket } from '@/hooks/useWebSocket';
 import type { GatewayEvent } from '@/types';
 import { isTopLevelAgentSessionKey } from '@/features/sessions/sessionKeys';
+import { isPerformanceModePreferenceEnabled } from '@/lib/performanceMode';
 
 type EventHandler = (msg: GatewayEvent) => void;
 
@@ -116,7 +117,11 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
       console.debug('[GatewayContext] Failed to poll status:', err);
     }
 
-    // Update activity sparkline
+    // Update activity sparkline (skip all tracking + math in performance mode)
+    if (isPerformanceModePreferenceEnabled()) {
+      currentBucketEvents.current = 0;
+      return;
+    }
     activityBuckets.current.push(currentBucketEvents.current);
     currentBucketEvents.current = 0;
     if (activityBuckets.current.length > 30) activityBuckets.current.shift();

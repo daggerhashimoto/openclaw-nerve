@@ -165,6 +165,121 @@ describe('gateway detection and repair', () => {
     ]));
   });
 
+  it('uses OPENCLAW_CONFIG_PATH when detecting gateway config', async () => {
+    const customConfigPath = path.join(tempHome, 'custom', 'openclaw-alt.json');
+    mkdirSync(path.dirname(customConfigPath), { recursive: true });
+    writeFileSync(customConfigPath, JSON.stringify({
+      gateway: {
+        port: 19999,
+        auth: { token: 'custom-token' },
+        tools: { allow: [] },
+      },
+    }, null, 2));
+    process.env.OPENCLAW_CONFIG_PATH = customConfigPath;
+
+    const { mod } = await importGatewayDetect();
+    const detected = mod.detectGatewayConfig();
+
+    expect(detected).toEqual({
+      token: 'custom-token',
+      url: 'http://127.0.0.1:19999',
+    });
+  });
+
+  it('uses OPENCLAW_CONFIG_PATH when patching gateway tool allowlist', async () => {
+    const customConfigPath = path.join(tempHome, 'custom', 'openclaw-alt.json');
+    mkdirSync(path.dirname(customConfigPath), { recursive: true });
+    writeFileSync(customConfigPath, JSON.stringify({
+      gateway: {
+        auth: { token: 'custom-token' },
+        tools: { allow: [] },
+      },
+    }, null, 2));
+    process.env.OPENCLAW_CONFIG_PATH = customConfigPath;
+
+    const { mod } = await importGatewayDetect();
+    const result = mod.patchGatewayToolsAllow();
+
+    expect(result.ok).toBe(true);
+    expect(result.configPath).toBe(customConfigPath);
+
+    const updatedCustom = JSON.parse(readFileSync(customConfigPath, 'utf8'));
+    expect(updatedCustom.gateway.tools.allow).toEqual(['cron', 'gateway', 'sessions_spawn']);
+
+    const unchangedDefault = JSON.parse(readFileSync(path.join(tempHome, '.openclaw', 'openclaw.json'), 'utf8'));
+    expect(unchangedDefault.gateway.tools.allow).toEqual(['cron', 'gateway']);
+  });
+
+  it('writes device repair under the OPENCLAW_HOME derived from OPENCLAW_CONFIG_PATH', async () => {
+    const customHome = path.join(tempHome, 'custom');
+    const customConfigPath = path.join(customHome, 'openclaw.json');
+    mkdirSync(path.join(customHome, 'devices'), { recursive: true });
+    mkdirSync(path.join(customHome, 'identity'), { recursive: true });
+
+    writeFileSync(customConfigPath, JSON.stringify({
+      gateway: { port: 19999, auth: { token: 'custom-token' } },
+    }, null, 2));
+    writeFileSync(path.join(customHome, 'identity', 'device.json'), JSON.stringify({
+      deviceId: 'custom-gateway-device',
+      publicKeyPem: '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA2sI3DpP2u80EIk1BddY5hAzvY4xXHzkwmo7aX6ixkm0=\n-----END PUBLIC KEY-----\n',
+    }, null, 2));
+    writeFileSync(path.join(customHome, 'devices', 'paired.json'), JSON.stringify({
+      'custom-gateway-device': {
+        deviceId: 'custom-gateway-device',
+        scopes: ['operator.read'],
+        tokens: {
+          operator: { token: 'custom-token', scopes: ['operator.read'] },
+        },
+      },
+    }, null, 2));
+    writeFileSync(path.join(customHome, 'identity', 'device-auth.json'), JSON.stringify({
+      version: 1,
+      deviceId: 'custom-gateway-device',
+      tokens: {
+        operator: { token: 'custom-token', scopes: ['operator.read'] },
+      },
+    }, null, 2));
+
+    process.env.OPENCLAW_CONFIG_PATH = customConfigPath;
+
+    const { mod } = await importGatewayDetect();
+    const result = mod.fixGatewayDeviceScopes();
+    expect(result.ok).toBe(true);
+
+    const repairedCustom = JSON.parse(readFileSync(path.join(customHome, 'devices', 'paired.json'), 'utf8'));
+    expect(repairedCustom['custom-gateway-device'].scopes).toEqual(expect.arrayContaining(FULL_OPERATOR_SCOPES));
+
+    const repairedIdentity = JSON.parse(readFileSync(path.join(customHome, 'identity', 'device-auth.json'), 'utf8'));
+    expect(repairedIdentity.tokens.operator.scopes).toEqual(expect.arrayContaining(FULL_OPERATOR_SCOPES));
+
+    const untouchedDefault = JSON.parse(readFileSync(path.join(tempHome, '.openclaw', 'devices', 'paired.json'), 'utf8'));
+    expect(untouchedDefault['gateway-device'].scopes).toEqual(FULL_OPERATOR_SCOPES);
+    expect(untouchedDefault['custom-gateway-device']).toBeUndefined();
+  });
+
+  it('uses OPENCLAW_CONFIG_PATH when patching gateway allowed origins', async () => {
+    const customConfigPath = path.join(tempHome, 'custom', 'openclaw-alt.json');
+    mkdirSync(path.dirname(customConfigPath), { recursive: true });
+    writeFileSync(customConfigPath, JSON.stringify({
+      gateway: { controlUi: { allowedOrigins: [] } },
+    }, null, 2));
+    process.env.OPENCLAW_CONFIG_PATH = customConfigPath;
+
+    const { mod } = await importGatewayDetect();
+    const result = mod.patchGatewayAllowedOrigins('http://custom.local:3080');
+
+    expect(result.ok).toBe(true);
+    expect(result.configPath).toBe(customConfigPath);
+
+    const updatedCustom = JSON.parse(readFileSync(customConfigPath, 'utf8'));
+    expect(updatedCustom.gateway.controlUi.allowedOrigins).toContain('http://custom.local:3080');
+
+    const unchangedDefault = JSON.parse(
+      readFileSync(path.join(tempHome, '.openclaw', 'openclaw.json'), 'utf8'),
+    );
+    expect(unchangedDefault.gateway.controlUi.allowedOrigins).not.toContain('http://custom.local:3080');
+  });
+
   it('prefers a detected config token over a stale shell env token during setup', async () => {
     process.env.OPENCLAW_GATEWAY_TOKEN = 'stale-shell-token';
 

@@ -70,12 +70,16 @@ async function getContext(): Promise<WhisperContext> {
   // Prevent concurrent initialization (multiple requests hitting at same time)
   if (contextInitializing) return contextInitializing;
 
-  // Pick the GPU backend: Vulkan on Linux (AMD/Intel/NVIDIA), default (Metal) on macOS.
-  const backend = process.platform === 'linux' ? 'vulkan' : undefined;
+  // Pick the GPU backend: Vulkan on Linux when a GPU is actually detected (covers
+  // AMD/Intel/NVIDIA); fall back to undefined so the underlying library can pick
+  // the default backend (Metal on macOS, CPU when no GPU is present). Forcing
+  // `'vulkan'` on a Linux host without a Vulkan ICD makes initWhisper throw and
+  // takes local STT offline entirely.
+  const backend = process.platform === 'linux' && detectGpu() ? 'vulkan' : undefined;
 
   contextInitializing = initWhisper({
     filePath: modelPath(),
-    useGpu: true, // auto-detects Metal on macOS; Vulkan on Linux; CPU fallback elsewhere
+    useGpu: true, // auto-detects Metal on macOS; Vulkan on Linux when present; CPU fallback elsewhere
   }, backend).then((ctx) => {
     whisperContext = ctx;
     contextInitializing = null;

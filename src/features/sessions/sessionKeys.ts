@@ -156,17 +156,21 @@ export function getSessionDisplayLabel(session: Session, agentName = 'Agent'): s
   const sessionKey = getSessionKey(session);
   const rootId = getRootAgentId(sessionKey);
   const identityName = session.identityName?.trim();
+  const explicitLabel = session.label?.trim();
 
   if (sessionKey === 'agent:main:main') {
+    const normalized = explicitLabel?.toLowerCase();
+    if (explicitLabel && normalized !== 'main' && normalized !== 'heartbeat') return explicitLabel;
     return `${agentName} (main)`;
   }
 
   if (isTopLevelAgentSessionKey(sessionKey)) {
+    if (explicitLabel) return explicitLabel;
     if (identityName && rootId) return `${identityName} (${rootId})`;
     if (rootId) return rootId;
   }
 
-  if (session.label?.trim()) return session.label.trim();
+  if (explicitLabel) return explicitLabel;
   if (session.displayName?.trim()) return session.displayName.trim();
 
   if (isCronSessionKey(sessionKey)) {

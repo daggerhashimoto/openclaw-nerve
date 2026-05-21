@@ -6,6 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-04-21
+
+### Highlights
+
+**Workspace context is much more usable inside chat.** Nerve can now add files and directories to chat, open rendered markdown documents in-app, and follow configurable workspace path links and aliases directly from messages or docs (PR #239, PR #248, PR #271, PR #273, PR #288).
+
+**File browsing works better on real devices.** The file browser now supports in-app PDF viewing, moves compact actions into kebab menus, and handles touch long-press context menus more reliably on mobile (PR #254, PR #299, PR #303, PR #307).
+
+**Session visibility got less confusing.** Spawned child sessions survive refreshes, channel sessions show up in the agent sidebar, root agent labels derive more reliably from identity, and orphaned agent sessions no longer disappear from the tree (PR #226, PR #236, PR #259, PR #297).
+
+**Uploads and shell controls got cleaner.** The paperclip is now the primary upload flow, attachments use a canonical upload reference contract, and the command palette has clearer launchers and visibility toggles across desktop and mobile layouts (PR #229, PR #231, PR #291, PR #292, PR #293).
+
+### Added
+- In-app PDF viewing with file type checks in the file browser (PR #254)
+- An in-app bead viewer with context-safe bead links (PR #275)
+- Configurable workspace path links plus `CHAT_PATH_LINKS` alias mapping for chat references (PR #239, PR #288)
+- File-tree actions to add individual files or whole directories to chat (PR #271, PR #273)
+- A hidden-workspace-entries toggle for the workspace panel (PR #274)
+- Support for adaptive thinking selection in the UI (PR #302)
+
+### Changed
+- The paperclip is now the primary upload entry point in chat (PR #231)
+- Workspace markdown documents now render in a dedicated navigable document view instead of forcing raw file reads (PR #248)
+- Compact file-browser actions now live behind kebab menus to reduce accidental taps and visual noise (PR #307)
+- The command palette now has clearer launchers, mobile entry points, and visibility controls (PR #291, PR #292, PR #293)
+- Built-in Kanban can now be disabled from settings while remaining enabled by default for existing installs (PR #242)
+- The updater now surfaces a copy-paste command during update flows for easier manual recovery (PR #295)
+
+### Fixed
+- Spawned child sessions now remain visible after refresh instead of disappearing from the sidebar (PR #226)
+- Uploaded user images now survive history reconciliation correctly (PR #220)
+- The workspace watcher again refreshes config changes and restores workspace labels correctly (PR #261, PR #284)
+- Local chat path link configuration now self-heals safer defaults, and inline workspace references replay correctly after follow-up renders (PR #267, PR #285)
+- Session roots now derive stable labels from identity, keep inherited effort labels after reload, and continue showing channel and orphaned sessions in the sidebar (PR #236, PR #257, PR #259, PR #297)
+- Kanban assigned execution now falls back to the full session list when needed instead of dropping valid targets (PR #287)
+- Panel dividers stay interactive when the sidebar is collapsed, and resizable panel lint regressions are cleaned up (PR #281, PR #289)
+- ArrowUp history recall, untrusted system event parsing, and nested edit diff rendering all behave correctly in chat again (PR #278, PR #280, PR #308)
+- The server-side upload config endpoint is available again, and subagent lifecycle handling now lives on the server for more reliable spawn cleanup (PR #247, PR #265)
+- Tailscale serve docs and examples now use valid command syntax again (PR #276, PR #277)
+
+### Documentation
+- Refreshed local setup wording in the README to better match current install expectations
+
 ## [1.5.2] - 2026-03-30
 
 ### Highlights

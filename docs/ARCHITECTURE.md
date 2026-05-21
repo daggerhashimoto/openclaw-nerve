@@ -1,6 +1,6 @@
 # Architecture
 
-> **Nerve** is a web interface for OpenClaw — chat, voice input, TTS, and agent monitoring in the browser. It connects to the OpenClaw gateway over WebSocket and provides a rich UI for interacting with AI agents.
+> **Nerve** is a local-first web interface for OpenClaw: chat, voice input, TTS, workspace tooling, and agent monitoring in the browser. It usually talks to the OpenClaw gateway over WebSocket, but some UI surfaces also depend on whether the Nerve server can reach the agent workspace on its own filesystem.
 
 ## System Diagram
 
@@ -38,12 +38,49 @@
 │  └──────────────────────────────────────────────────────────┘    │
 └──────────────────────────────┬───────────────────────────────────┘
                                │ HTTP / WS
-                    ┌──────────┴──────────┐
-                    │  OpenClaw Gateway    │
-                    │  (ws://127.0.0.1:    │
-                    │       18789)         │
-                    └─────────────────────┘
+                    ┌──────────┴───────────────┐
+                    │  OpenClaw Gateway         │
+                    │  (default:                │
+                    │   ws://127.0.0.1:18789,   │
+                    │   but may be remote)      │
+                    └──────────────────────────┘
 ```
+
+## Locality model
+
+Nerve is easiest to reason about if you separate three boundaries:
+
+1. **Browser ↔ Nerve server**
+2. **Nerve server ↔ OpenClaw gateway**
+3. **Nerve server ↔ agent workspace filesystem**
+
+The biggest docs trap is assuming only the gateway matters. It does not.
+
+Full deployment-A behavior depends on **Nerve having local access to the same workspace filesystem as the gateway-backed agent**. That is true in deployment A, and usually also in same-host deployment C. It is **not** true in deployment B, or in split-host deployment C, unless you deliberately mount or replicate the workspace onto the Nerve host.
+
+### What each boundary changes
+
+| Boundary | Local case | Remote case |
+|----------|------------|-------------|
+| Browser ↔ Nerve | Loopback browser access is implicitly trusted for official gateway auto-connect flows | Remote browsers should use `NERVE_AUTH=true`. Trusted authenticated sessions can still get server-side gateway token injection for the official gateway URL |
+| Nerve ↔ Gateway | Default path. Minimal config, loopback origin, simplest support surface | Requires `WS_ALLOWED_HOSTS`, correct gateway `controlUi.allowedOrigins`, and in some cases `NERVE_PUBLIC_ORIGIN` so server-side gateway RPC uses the real browser-facing origin |
+| Nerve ↔ workspace filesystem | Full file browser, file mutations, raw previews, local watchers, and normal workspace UX | Falls back to gateway RPC only where specific routes support it. This is partial, not full parity |
+
+### Remote workspace fallback boundaries
+
+When the Nerve server cannot access the workspace directory locally, the app enters a partial fallback mode.
+
+| Surface | Local workspace | Remote workspace |
+|---------|-----------------|------------------|
+| Allowlisted config files (`SOUL.md`, `TOOLS.md`, `USER.md`, `AGENTS.md`, `HEARTBEAT.md`, `IDENTITY.md`) | Normal local read/write | Gateway fallback read/write for allowlisted top-level files only |
+| File tree | Full nested tree | Top-level listing only |
+| Text file read/write | Any allowed path in the workspace | Top-level text files only |
+| Rename / move / trash / restore | Supported | `501 Not supported for remote workspaces` |
+| Raw image / binary preview | Supported | Not available |
+| Memory data | Full `MEMORY.md` plus recent daily files | Limited fallback for `MEMORY.md`; daily files are local-only, and the current UI treats remote workspaces as a constrained path rather than deployment-A parity |
+| Skills tab | Local `openclaw skills list` scoped to the selected workspace | No dedicated gateway file fallback. Verify behavior in split-topology installs instead of assuming parity |
+
+This is why deployment B and split-host deployment C feel different from deployment A even when chat itself is healthy.
 
 ## Frontend Structure
 
@@ -344,8 +381,8 @@ Applied in order in `app.ts`:
 | `/api/voice-phrases/:lang` | `routes/voice-phrases.ts` | GET, PUT | Read/save language-specific stop/cancel/wake phrase overrides |
 | `/api/agentlog` | `routes/agent-log.ts` | GET, POST | Agent activity log persistence. Zod-validated entries. Mutex-protected file I/O |
 | `/api/tokens` | `routes/tokens.ts` | GET | Token usage statistics — scans session transcripts, persists high water mark |
-| `/api/memories` | `routes/memories.ts` | GET, POST, DELETE | Agent-scoped memory management — reads `MEMORY.md` + daily files, stores/deletes via gateway tool invocation |
-| `/api/memories/section` | `routes/memories.ts` | GET, PUT | Read/replace a specific memory section by title, scoped via `agentId` |
+| `/api/memories` | `routes/memories.ts` | GET, POST, DELETE | Agent-scoped memory management. Full local behavior reads `MEMORY.md` plus daily files. Remote fallback is limited to `MEMORY.md` because gateway file access does not cover subdirectories |
+| `/api/memories/section` | `routes/memories.ts` | GET, PUT | Read/replace a specific memory section by title, scoped via `agentId`. Remote fallback applies to `MEMORY.md`, not daily files |
 | `/api/gateway/models` | `routes/gateway.ts` | GET | Config-backed model catalog from the active OpenClaw config. Returns `{ models, error, source: "config" }` |
 | `/api/gateway/session-info` | `routes/gateway.ts` | GET | Current session model/thinking level |
 | `/api/gateway/session-patch` | `routes/gateway.ts` | POST | HTTP fallback for model changes. Thinking changes belong on WS `sessions.patch` |
@@ -356,23 +393,23 @@ Applied in order in `app.ts`:
 | `/api/gateway/restart` | `routes/gateway.ts` | POST | Restart the OpenClaw gateway service and verify readiness |
 | `/api/sessions/hidden` | `routes/sessions.ts` | GET | List hidden cron-like sessions from stored session metadata |
 | `/api/sessions/:id/model` | `routes/sessions.ts` | GET | Read the actual model used by a session from its transcript |
-| `/api/workspace` | `routes/workspace.ts` | GET | List allowlisted workspace files for the selected agent workspace |
-| `/api/workspace/:key` | `routes/workspace.ts` | GET, PUT | Read/write allowlisted workspace files (`soul`, `tools`, `identity`, `user`, `agents`, `heartbeat`) via `agentId` |
+| `/api/workspace` | `routes/workspace.ts` | GET | List allowlisted workspace files for the selected agent workspace. Falls back to gateway file RPC when the workspace is not local |
+| `/api/workspace/:key` | `routes/workspace.ts` | GET, PUT | Read/write allowlisted workspace files (`soul`, `tools`, `identity`, `user`, `agents`, `heartbeat`) via `agentId`. Remote fallback is top-level allowlisted files only |
 | `/api/crons` | `routes/crons.ts` | GET, POST, PATCH, DELETE | Cron job CRUD via gateway tool invocation |
 | `/api/crons/:id/toggle` | `routes/crons.ts` | POST | Toggle cron enabled/disabled |
 | `/api/crons/:id/run` | `routes/crons.ts` | POST | Run cron job immediately |
 | `/api/crons/:id/runs` | `routes/crons.ts` | GET | Cron run history |
-| `/api/skills` | `routes/skills.ts` | GET | List skills for the selected agent workspace via a scoped OpenClaw config |
+| `/api/skills` | `routes/skills.ts` | GET | List skills for the selected agent workspace via a scoped local OpenClaw config. This route does not use the remote file-browser fallback path |
 | `/api/keys` | `routes/api-keys.ts` | GET, PUT | Read API-key presence and persist updated key values to `.env` |
 | `/api/files` | `routes/files.ts` | GET | Serve local image files (MIME-type restricted, directory traversal blocked) |
-| `/api/files/tree` | `routes/file-browser.ts` | GET | Agent-scoped workspace directory tree (excludes node_modules, .git, etc.) |
-| `/api/files/read` | `routes/file-browser.ts` | GET | Read scoped file contents with mtime for conflict detection |
-| `/api/files/write` | `routes/file-browser.ts` | PUT | Write scoped file contents with optimistic concurrency (409 on conflict) |
-| `/api/files/rename` | `routes/file-browser.ts` | POST | Rename a file or directory within the selected workspace |
-| `/api/files/move` | `routes/file-browser.ts` | POST | Move a file or directory within the selected workspace |
-| `/api/files/trash` | `routes/file-browser.ts` | POST | Trash a file or directory, or permanently delete when using `FILE_BROWSER_ROOT` |
-| `/api/files/restore` | `routes/file-browser.ts` | POST | Restore a trashed file or directory |
-| `/api/files/raw` | `routes/file-browser.ts` | GET | Serve scoped image previews from the selected workspace |
+| `/api/files/tree` | `routes/file-browser.ts` | GET | Agent-scoped workspace directory tree. Full nested tree locally, top-level-only fallback remotely |
+| `/api/files/read` | `routes/file-browser.ts` | GET | Read scoped file contents with mtime for conflict detection. Remote fallback is top-level text files only |
+| `/api/files/write` | `routes/file-browser.ts` | PUT | Write scoped file contents with optimistic concurrency (409 on conflict). Remote fallback is top-level text files only |
+| `/api/files/rename` | `routes/file-browser.ts` | POST | Rename a file or directory within the selected workspace. Local workspaces only |
+| `/api/files/move` | `routes/file-browser.ts` | POST | Move a file or directory within the selected workspace. Local workspaces only |
+| `/api/files/trash` | `routes/file-browser.ts` | POST | Trash a file or directory, or permanently delete when using `FILE_BROWSER_ROOT`. Local workspaces only |
+| `/api/files/restore` | `routes/file-browser.ts` | POST | Restore a trashed file or directory. Local workspaces only |
+| `/api/files/raw` | `routes/file-browser.ts` | GET | Serve scoped image previews from the selected workspace. No remote fallback |
 | `/api/claude-code-limits` | `routes/claude-code-limits.ts` | GET | Claude Code rate limits via PTY + CLI parsing |
 | `/api/codex-limits` | `routes/codex-limits.ts` | GET | Codex rate limits via OpenAI API with local file fallback |
 | `/api/kanban/tasks` | `routes/kanban.ts` | GET, POST | Task CRUD -- list (with filters/pagination) and create |
@@ -453,7 +490,7 @@ Browser WS → /ws?target=ws://gateway:18789/ws → ws-proxy.ts → OpenClaw Gat
 
 1. Client connects to `/ws` endpoint on Nerve server
 2. When auth is enabled, the session cookie is verified on the HTTP upgrade request (rejects with 401 if invalid)
-3. Proxy validates target URL against `WS_ALLOWED_HOSTS` allowlist
+3. Proxy validates target URL against `WS_ALLOWED_HOSTS` allowlist. This matters in hybrid and split-host deployments where the gateway is not on loopback
 4. Proxy opens upstream WebSocket to the gateway
 5. On `connect.challenge` event, proxy intercepts the client's `connect` request and injects Ed25519 device identity (`device` block with signed nonce)
 6. If the gateway rejects the device (close code 1008), proxy retries without device identity (reduced scopes)
@@ -701,9 +738,9 @@ npm test              # Run all tests
 npm run test:coverage # With V8 coverage
 ```
 
-### Test Files
+### Test Coverage Areas
 
-48 test files, 692 tests. Key areas:
+The Vitest suite spans server code, client features, hooks, and shared utilities. Representative areas:
 
 | Area | Files | Coverage |
 |------|-------|----------|

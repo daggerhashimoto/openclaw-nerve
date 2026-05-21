@@ -235,6 +235,9 @@ export function InlineSelect({
               'hover:bg-secondary/80 hover:text-foreground'
             )}
             onPointerDown={(e) => {
+              // Prevent touch browsers from retargeting a follow-up click onto
+              // whatever sits underneath the menu after we close it.
+              e.preventDefault();
               e.stopPropagation();
               onChange(option.value);
               close();

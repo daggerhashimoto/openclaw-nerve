@@ -425,15 +425,20 @@ app.get('/api/files/tree', async (c) => {
   try {
     const remoteFiles = await gatewayFilesList(workspace.agentId);
     const entries = gatewayFilesToTree(remoteFiles, showHidden);
+    const start = Math.min(cursor, entries.length);
+    const pagedEntries = entries.slice(start, start + limit);
+    const nextCursor =
+      start + pagedEntries.length < entries.length ? String(start + pagedEntries.length) : undefined;
     return c.json({
       ok: true,
       root: '.',
-      entries,
+      entries: pagedEntries,
       totalEntries: entries.length,
-      returnedEntries: entries.length,
+      returnedEntries: pagedEntries.length,
       limit,
-      cursor: 0,
-      truncated: false,
+      cursor: start,
+      truncated: Boolean(nextCursor),
+      ...(nextCursor ? { nextCursor } : {}),
       remoteWorkspace: true,
       workspaceInfo: {
         isCustomWorkspace: workspace.isCustomWorkspace,

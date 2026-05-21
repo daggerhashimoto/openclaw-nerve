@@ -36,9 +36,8 @@ function setMarkdownCache(key: string, value: string): void {
  * components so chat runtime projection does not pull highlight.js into the
  * initial bundle. Results are cached (LRU, max 200).
  */
-export function renderMarkdown(text: string, opts: { highlight?: boolean } = {}): string {
+export function renderMarkdown(text: string): string {
   if (!text) return '';
-  void opts;
   const cacheKey = 'nh:' + text;
   const cached = getMarkdownCache(cacheKey);
   if (cached) return cached;

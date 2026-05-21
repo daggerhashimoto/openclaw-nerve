@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createChatPathLinksTemplate } from '../lib/chat-path-links-config.js';
 
 describe('workspace routes', () => {
   let homeDir: string;
@@ -10,6 +11,8 @@ describe('workspace routes', () => {
   let researchWorkspace: string;
   let memoryPath: string;
   let memoryDir: string;
+  let originalHome: string | undefined;
+  let originalUser: string | undefined;
 
   beforeEach(async () => {
     vi.resetModules();
@@ -18,6 +21,10 @@ describe('workspace routes', () => {
     researchWorkspace = path.join(homeDir, '.openclaw', 'workspace-research');
     memoryPath = path.join(mainWorkspace, 'MEMORY.md');
     memoryDir = path.join(mainWorkspace, 'memory');
+    originalHome = process.env.HOME;
+    originalUser = process.env.USER;
+    process.env.HOME = homeDir;
+    process.env.USER = 'tester';
 
     await fs.mkdir(memoryDir, { recursive: true });
     await fs.mkdir(researchWorkspace, { recursive: true });
@@ -25,6 +32,8 @@ describe('workspace routes', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    process.env.HOME = originalHome;
+    process.env.USER = originalUser;
     await fs.rm(homeDir, { recursive: true, force: true });
   });
 
@@ -78,6 +87,29 @@ describe('workspace routes', () => {
     expect(res.status).toBe(200);
     await expect(fs.readFile(path.join(researchWorkspace, 'SOUL.md'), 'utf-8')).resolves.toBe('research soul');
     await expect(fs.readFile(path.join(mainWorkspace, 'SOUL.md'), 'utf-8')).resolves.toBe('main soul');
+  });
+
+  it('self-heals missing local CHAT_PATH_LINKS.json using the shared template', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const app = await buildApp();
+
+    const res = await app.request('/api/workspace/chatPathLinks');
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ok: boolean; content: string };
+    expect(json.ok).toBe(true);
+
+    const expected = createChatPathLinksTemplate({
+      platform: process.platform,
+      homeDir: homeDir,
+      workspaceRoot: mainWorkspace,
+    });
+
+    expect(json.content).toBe(expected);
+    await expect(fs.readFile(path.join(mainWorkspace, 'CHAT_PATH_LINKS.json'), 'utf-8')).resolves.toBe(expected);
+    expect(warnSpy).toHaveBeenCalledWith(
+      `[workspace] Missing CHAT_PATH_LINKS.json; regenerated local default template at ${path.join(mainWorkspace, 'CHAT_PATH_LINKS.json')}`,
+    );
   });
 
   it('lists file existence for the requested agent workspace', async () => {

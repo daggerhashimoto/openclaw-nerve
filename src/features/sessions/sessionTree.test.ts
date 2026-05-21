@@ -177,17 +177,34 @@ describe('buildAgentSidebarTree', () => {
     ]);
   });
 
-  it('hides orphan descendants whose lineage does not resolve to a real agent root', () => {
+  it('hides orphan chains that have no agent root affinity at all', () => {
     const sessions = [
-      session('agent:main:subagent:orphan'),
-      session('agent:main:cron:nightly:run:run123'),
-      session('agent:main:cron:nightly'),
+      session('custom-orphan-root', { label: 'Orphan Root' }),
+      session('custom-orphan-child', {
+        parentSessionKey: 'custom-orphan-root',
+        label: 'Orphan Child',
+      }),
       session('discord:sean'),
     ];
 
     const tree = buildAgentSidebarTree(sessions);
     const flat = flattenTree(tree, {});
     expect(flat.map((node) => node.key)).toEqual([]);
+  });
+
+  it('surfaces orphan descendants with inferable agent roots when cleanup removed the root row', () => {
+    const sessions = [
+      session('agent:main:telegram:direct:123', { displayName: 'Telegram DM' }),
+      session('agent:reviewer:subagent:abc123', { label: 'Worker' }),
+      session('discord:sean', { label: 'Discord Root' }),
+    ];
+
+    const tree = buildAgentSidebarTree(sessions);
+    const flat = flattenTree(tree, {});
+    expect(flat.map((node) => node.key)).toEqual([
+      'agent:main:telegram:direct:123',
+      'agent:reviewer:subagent:abc123',
+    ]);
   });
 
   it('supports explicit parentId chains while still filtering out unrelated roots', () => {
@@ -213,6 +230,49 @@ describe('buildAgentSidebarTree', () => {
     expect(flat.map((node) => node.key)).toEqual([
       'agent:main:main',
       'custom-subagent-key',
+      'custom-cron-key',
+      'custom-cron-run-key',
+    ]);
+  });
+
+  it('supports explicit parentSessionKey chains even when cleanup removed the agent root row', () => {
+    const sessions = [
+      session('custom-cron-key', {
+        parentSessionKey: 'agent:main:main',
+        label: 'Explicit Cron',
+      }),
+      session('custom-cron-run-key', {
+        parentSessionKey: 'custom-cron-key',
+        label: 'Explicit Run',
+      }),
+      session('discord:sean', { label: 'Discord Root' }),
+    ];
+
+    const tree = buildAgentSidebarTree(sessions);
+    const flat = flattenTree(tree, {});
+    expect(flat.map((node) => node.key)).toEqual([
+      'custom-cron-key',
+      'custom-cron-run-key',
+    ]);
+  });
+
+  it('falls back to parentId when parentSessionKey is stale and still keeps the orphan chain visible', () => {
+    const sessions = [
+      session('custom-cron-key', {
+        parentSessionKey: 'stale-parent-key',
+        parentId: ' agent:main:main ',
+        label: 'Explicit Cron',
+      }),
+      session('custom-cron-run-key', {
+        parentSessionKey: 'custom-cron-key',
+        label: 'Explicit Run',
+      }),
+      session('discord:sean', { label: 'Discord Root' }),
+    ];
+
+    const tree = buildAgentSidebarTree(sessions);
+    const flat = flattenTree(tree, {});
+    expect(flat.map((node) => node.key)).toEqual([
       'custom-cron-key',
       'custom-cron-run-key',
     ]);

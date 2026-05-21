@@ -125,6 +125,7 @@ export default function App({ onLogout }: AppProps) {
     toggleEvents, toggleLog, toggleTelemetry,
     setTheme, setFont,
     kanbanVisible,
+    commandPaletteButtonVisible,
   } = useSettings();
 
   // Connection management (extracted hook)
@@ -340,6 +341,9 @@ export default function App({ onLogout }: AppProps) {
   const [chatPathLinkPrefixes, setChatPathLinkPrefixes] = useState<string[]>(
     DEFAULT_CHAT_PATH_LINKS_CONFIG.prefixes,
   );
+  const [chatPathLinkAliases, setChatPathLinkAliases] = useState<Record<string, string>>(
+    DEFAULT_CHAT_PATH_LINKS_CONFIG.aliases,
+  );
   const [addToChatEnabled, setAddToChatEnabled] = useState(false);
 
   useEffect(() => {
@@ -350,19 +354,23 @@ export default function App({ onLogout }: AppProps) {
       .then(async (res) => {
         if (res.status === 404) {
           setChatPathLinkPrefixes(DEFAULT_CHAT_PATH_LINKS_CONFIG.prefixes);
+          setChatPathLinkAliases(DEFAULT_CHAT_PATH_LINKS_CONFIG.aliases);
           return;
         }
         const data = await res.json() as { ok: boolean; content?: string };
         if (!data.ok || !data.content) {
           setChatPathLinkPrefixes(DEFAULT_CHAT_PATH_LINKS_CONFIG.prefixes);
+          setChatPathLinkAliases(DEFAULT_CHAT_PATH_LINKS_CONFIG.aliases);
           return;
         }
         const parsed = parseChatPathLinksConfig(data.content);
         setChatPathLinkPrefixes(parsed.prefixes);
+        setChatPathLinkAliases(parsed.aliases);
       })
       .catch(() => {
         if (!controller.signal.aborted) {
           setChatPathLinkPrefixes(DEFAULT_CHAT_PATH_LINKS_CONFIG.prefixes);
+          setChatPathLinkAliases(DEFAULT_CHAT_PATH_LINKS_CONFIG.aliases);
         }
       });
 
@@ -780,6 +788,7 @@ export default function App({ onLogout }: AppProps) {
       onOpenWorkspacePath={openWorkspacePath}
       onOpenBeadId={openBeadId}
       pathLinkPrefixes={chatPathLinkPrefixes}
+      pathLinkAliases={chatPathLinkAliases}
       chatPanel={
         <PanelErrorBoundary name="Chat">
           <ChatPanel
@@ -807,7 +816,10 @@ export default function App({ onLogout }: AppProps) {
             isMobileTopBarHidden={isMobileTopBarHidden}
             onOpenWorkspacePath={openWorkspacePath}
             pathLinkPrefixes={chatPathLinkPrefixes}
+            pathLinkAliases={chatPathLinkAliases}
             onOpenBeadId={openBeadId}
+            showCommandPaletteButton={commandPaletteButtonVisible && !paletteOpen && !settingsOpen && viewMode === 'chat'}
+            onOpenCommandPalette={handleOpenPalette}
           />
         </PanelErrorBoundary>
       }
@@ -976,7 +988,7 @@ export default function App({ onLogout }: AppProps) {
           showKanbanView={kanbanVisible}
         />
       )}
-      
+
       <PanelErrorBoundary name="Settings">
         <Suspense fallback={null}>
           <SettingsDrawer

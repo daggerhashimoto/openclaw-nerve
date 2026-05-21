@@ -37,4 +37,10 @@ describe('TopBar', () => {
     expect(screen.queryByRole('button', { name: /switch to tasks view/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /switch to chat view/i })).toBeInTheDocument();
   });
+
+  it('does not render a top-bar Commands trigger', () => {
+    renderTopBar();
+
+    expect(screen.queryByRole('button', { name: /open command palette/i })).not.toBeInTheDocument();
+  });
 });

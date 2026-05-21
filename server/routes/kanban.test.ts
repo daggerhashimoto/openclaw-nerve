@@ -1442,6 +1442,57 @@ describe('POST /api/kanban/tasks/:id/execute', () => {
     expect(invokeGatewayToolMock).not.toHaveBeenCalled();
   });
 
+  it('falls back to the full session list when the assigned root is older than the recent-session window', async () => {
+    const invokeGatewayToolMock = vi.fn(async () => ({ sessionKey: 'agent:main:subagent:unexpected' }));
+    const launchMock = vi.fn(async ({ label, parentSessionKey }: { label: string; parentSessionKey: string }) => ({
+      sessionKey: buildMockRootSessionKey(label),
+      parentSessionKey,
+      knownSessionKeysBefore: [parentSessionKey],
+    }));
+
+    vi.doMock('../lib/kanban-subagent-fallback.js', () => ({
+      buildKanbanFallbackRunKey: buildMockRootSessionKey,
+      resolveKanbanFallbackParentSessionKey: vi.fn((assignee?: string) => {
+        if (!assignee || assignee === 'operator') return null;
+        const match = assignee.match(/^agent:([^:]+)/);
+        if (!match || match[1] === 'main') return null;
+        return `agent:${match[1]}:main`;
+      }),
+      launchKanbanFallbackSubagentViaRpc: launchMock,
+    }));
+
+    const gatewayRpcMock = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'sessions.list' && params?.activeMinutes === 7 * 24 * 60) {
+        return { sessions: [{ sessionKey: 'agent:reviewer:main' }] };
+      }
+      if (method === 'sessions.list' && params?.limit === 1000) {
+        return { sessions: [{ sessionKey: 'agent:reviewer:main' }, { sessionKey: 'agent:designer:main' }] };
+      }
+      return {};
+    });
+
+    const app = await buildApp({
+      executionMode: 'primary',
+      invokeGatewayToolMock,
+      gatewayRpcMock,
+    });
+    const task = await createTask(app, { status: 'todo', assignee: 'agent:designer' });
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    expect(res.status).toBe(200);
+
+    expect(gatewayRpcMock).toHaveBeenCalledWith('sessions.list', {
+      activeMinutes: 7 * 24 * 60,
+      limit: 1000,
+    });
+    expect(gatewayRpcMock).toHaveBeenCalledWith('sessions.list', {
+      limit: 1000,
+    });
+    expect(launchMock).toHaveBeenCalledWith(expect.objectContaining({
+      parentSessionKey: 'agent:designer:main',
+    }));
+  });
+
   it.each([
     'agent:designer:main',
     'agent:designer:subagent:child',

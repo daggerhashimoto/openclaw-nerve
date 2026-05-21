@@ -44,6 +44,7 @@ export function ResizablePanels({
   onRightWidthChange,
 }: ResizablePanelsProps) {
   const [localPercent, setLocalPercent] = useState(leftPercent);
+  const [localRightWidth, setLocalRightWidth] = useState<number | null>(rightWidthPx);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
 
@@ -54,6 +55,13 @@ export function ResizablePanels({
       setLocalPercent(leftPercent);
     }
   }, [leftPercent]);
+
+  useEffect(() => {
+    if (!isDragging.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional sync from controlled prop in fixed-width mode
+      setLocalRightWidth(rightWidthPx);
+    }
+  }, [rightWidthPx]);
 
   useLayoutEffect(() => {
     if (!containerRef.current || rightWidthPx !== null || !onRightWidthChange) return;
@@ -74,6 +82,28 @@ export function ResizablePanels({
     return () => observer.disconnect();
   }, [localPercent, onRightWidthChange, rightWidthPx]);
 
+  const clampPercent = useCallback((percent: number) => (
+    Math.max(minLeftPercent, Math.min(maxLeftPercent, percent))
+  ), [minLeftPercent, maxLeftPercent]);
+
+  const applyPointerPosition = useCallback((clientX: number) => {
+    if (!containerRef.current) return null;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const rawPercent = ((clientX - rect.left) / rect.width) * 100;
+    const clampedPercent = clampPercent(rawPercent);
+
+    setLocalPercent(clampedPercent);
+
+    if (rightWidthPx !== null) {
+      const nextRightWidth = rect.width * ((100 - clampedPercent) / 100);
+      setLocalRightWidth(nextRightWidth);
+      onRightWidthChange?.(nextRightWidth);
+    }
+
+    return clampedPercent;
+  }, [clampPercent, onRightWidthChange, rightWidthPx]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     isDragging.current = true;
@@ -82,12 +112,9 @@ export function ResizablePanels({
   }, []);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging.current || !containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const newPercent = ((e.clientX - rect.left) / rect.width) * 100;
-    const clamped = Math.max(minLeftPercent, Math.min(maxLeftPercent, newPercent));
-    setLocalPercent(clamped);
-  }, [minLeftPercent, maxLeftPercent]);
+    if (!isDragging.current) return;
+    applyPointerPosition(e.clientX);
+  }, [applyPointerPosition]);
 
   const handleMouseUp = useCallback(() => {
     if (isDragging.current) {
@@ -102,8 +129,16 @@ export function ResizablePanels({
   const handleDoubleClick = useCallback(() => {
     const defaultPercent = 55;
     setLocalPercent(defaultPercent);
+
+    if (containerRef.current && rightWidthPx !== null) {
+      const containerWidth = containerRef.current.getBoundingClientRect().width;
+      const nextRightWidth = containerWidth * ((100 - defaultPercent) / 100);
+      setLocalRightWidth(nextRightWidth);
+      onRightWidthChange?.(nextRightWidth);
+    }
+
     onResize(defaultPercent);
-  }, [onResize]);
+  }, [onResize, onRightWidthChange, rightWidthPx]);
 
   useEffect(() => {
     window.addEventListener('mousemove', handleMouseMove);
@@ -114,36 +149,35 @@ export function ResizablePanels({
     };
   }, [handleMouseMove, handleMouseUp]);
 
+  const effectiveRightWidth = rightWidthPx !== null ? Math.max(0, localRightWidth ?? rightWidthPx) : null;
+
   return (
     <div ref={containerRef} className="flex-1 flex overflow-hidden">
       {/* Left panel */}
       <div
         className={`min-h-0 overflow-hidden ${leftClassName}`}
-        style={rightWidthPx !== null ? { flex: '1 1 auto', minWidth: 0 } : { flex: `${localPercent} 1 0%`, minWidth: 0 }}
+        style={effectiveRightWidth !== null ? { flex: '1 1 auto', minWidth: 0 } : { flex: `${localPercent} 1 0%`, minWidth: 0 }}
       >
         {left}
       </div>
-      
+
       {/* Resize handle */}
-      {rightWidthPx === null ? (
-        <div
-          onMouseDown={handleMouseDown}
-          onDoubleClick={handleDoubleClick}
-          className="group relative flex w-3 cursor-col-resize shrink-0 items-stretch justify-center"
-          title="Drag to resize. Double click to reset"
-        >
-          <div className="pointer-events-none my-3 w-px rounded-full bg-border transition-colors group-hover:bg-primary/55 group-hover:shadow-[0_0_16px_rgba(0,0,0,0.22)] group-active:bg-primary/70" />
-        </div>
-      ) : (
-        <div className="relative flex w-3 shrink-0 items-stretch justify-center" aria-hidden="true">
-          <div className="pointer-events-none my-3 w-px rounded-full bg-border" />
-        </div>
-      )}
-      
+      <div
+        onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClick}
+        className="group relative flex w-3 cursor-col-resize shrink-0 items-stretch justify-center"
+        title="Drag to resize. Double click to reset"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize panels"
+      >
+        <div className="pointer-events-none my-3 w-px rounded-full bg-border transition-colors group-hover:bg-primary/55 group-hover:shadow-[0_0_16px_rgba(0,0,0,0.22)] group-active:bg-primary/70" />
+      </div>
+
       {/* Right panel */}
       <div
         className={`min-h-0 overflow-hidden ${rightClassName}`}
-        style={rightWidthPx !== null ? { flex: '0 0 auto', width: `${Math.max(0, rightWidthPx)}px`, minWidth: 0 } : { flex: `${100 - localPercent} 1 0%`, minWidth: 0 }}
+        style={effectiveRightWidth !== null ? { flex: '0 0 auto', width: `${effectiveRightWidth}px`, minWidth: 0 } : { flex: `${100 - localPercent} 1 0%`, minWidth: 0 }}
       >
         {right}
       </div>

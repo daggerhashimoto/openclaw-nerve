@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 const { mockUseGateway, mockUseSessionContext } = vi.hoisted(() => ({
   mockUseGateway: vi.fn(),
@@ -159,6 +159,50 @@ describe('useModelEffort', () => {
     });
   });
 
+  it('keeps inherited adaptive effort selected while displaying the effective default value', async () => {
+    mockUseGateway.mockReturnValue({
+      rpc: vi.fn(),
+      connectionState: 'connected',
+      model: 'zai/glm-4.7',
+      thinking: 'adaptive',
+    });
+
+    mockUseSessionContext.mockReturnValue({
+      currentSession: 'agent:main:main',
+      sessions: [
+        { key: 'agent:main:main', model: 'openai-codex/gpt-5.4', thinking: 'adaptive' },
+      ],
+      updateSession: vi.fn(),
+    });
+
+    globalThis.fetch = vi.fn((input: string | URL | Request) => {
+      const url = String(input);
+      if (url === '/api/gateway/models') {
+        return Promise.resolve(jsonResponse({
+          models: [
+            { id: 'openai/gpt-5.4', label: 'gpt-5.4', provider: 'openai', role: 'primary' },
+            { id: 'zai/glm-4.7', label: 'glm-4.7', provider: 'zai', role: 'fallback' },
+          ],
+          error: null,
+        }));
+      }
+      if (url.startsWith('/api/gateway/session-info?sessionKey=')) {
+        return Promise.resolve(jsonResponse({}));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof globalThis.fetch;
+
+    const { result } = renderHook(() => useModelEffort());
+
+    await waitFor(() => {
+      expect(result.current.selectedModel).toBe('primary');
+      expect(result.current.selectedEffort).toBe('thinkingDefault');
+      expect(result.current.selectedEffortLabel).toBe('adaptive');
+      expect(result.current.effortOptions[0]).toEqual({ value: 'thinkingDefault', label: 'adaptive (default)' });
+      expect(result.current.effortOptions).toContainEqual({ value: 'adaptive', label: 'adaptive' });
+    });
+  });
+
   it('uses transcript runtime defaults to label inherited effort when session summaries omit thinking', async () => {
     mockUseGateway.mockReturnValue({
       rpc: vi.fn(),
@@ -215,6 +259,91 @@ describe('useModelEffort', () => {
       expect(result.current.selectedEffort).toBe('high');
       expect(result.current.selectedEffortLabel).toBe('high');
     });
+  });
+
+  it('preserves explicit adaptive effort overrides when present', async () => {
+    mockUseSessionContext.mockReturnValue({
+      currentSession: 'agent:main:subagent:explicit-adaptive',
+      sessions: [
+        { key: 'agent:main:main', model: 'zai/glm-4.7' },
+        { key: 'agent:main:subagent:explicit-adaptive', model: 'zai/glm-4.7', thinking: 'medium', thinkingLevel: 'adaptive' },
+      ],
+      updateSession: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useModelEffort());
+
+    await waitFor(() => {
+      expect(result.current.selectedModel).toBe('primary');
+      expect(result.current.selectedEffort).toBe('adaptive');
+      expect(result.current.selectedEffortLabel).toBe('adaptive');
+    });
+  });
+
+  it('sends explicit off as a real thinking override instead of collapsing it to inherited default', async () => {
+    const rpc = vi.fn().mockResolvedValue({ ok: true });
+    const updateSession = vi.fn();
+
+    mockUseGateway.mockReturnValue({
+      rpc,
+      connectionState: 'connected',
+      model: 'zai/glm-4.7',
+      thinking: 'medium',
+    });
+
+    mockUseSessionContext.mockReturnValue({
+      currentSession: 'agent:main:main',
+      sessions: [
+        { key: 'agent:main:main', model: 'zai/glm-4.7', thinking: 'medium' },
+      ],
+      updateSession,
+    });
+
+    const { result } = renderHook(() => useModelEffort());
+
+    await waitFor(() => {
+      expect(result.current.selectedEffort).toBe('thinkingDefault');
+    });
+
+    await act(async () => {
+      await result.current.handleEffortChange('off');
+    });
+
+    expect(rpc).toHaveBeenCalledWith('sessions.patch', { key: 'agent:main:main', thinkingLevel: 'off' });
+    expect(updateSession).toHaveBeenCalledWith('agent:main:main', { thinkingLevel: 'off' });
+  });
+
+  it('omits thinking overrides when the inherited default option is selected', async () => {
+    const rpc = vi.fn().mockResolvedValue({ ok: true });
+    const updateSession = vi.fn();
+
+    mockUseGateway.mockReturnValue({
+      rpc,
+      connectionState: 'connected',
+      model: 'zai/glm-4.7',
+      thinking: 'adaptive',
+    });
+
+    mockUseSessionContext.mockReturnValue({
+      currentSession: 'agent:main:main',
+      sessions: [
+        { key: 'agent:main:main', model: 'zai/glm-4.7', thinking: 'adaptive', thinkingLevel: 'off' },
+      ],
+      updateSession,
+    });
+
+    const { result } = renderHook(() => useModelEffort());
+
+    await waitFor(() => {
+      expect(result.current.selectedEffort).toBe('off');
+    });
+
+    await act(async () => {
+      await result.current.handleEffortChange('thinkingDefault');
+    });
+
+    expect(rpc).toHaveBeenCalledWith('sessions.patch', { key: 'agent:main:main', thinkingLevel: null });
+    expect(updateSession).toHaveBeenCalledWith('agent:main:main', { thinkingLevel: undefined });
   });
 });
 

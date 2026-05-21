@@ -259,6 +259,13 @@ describe('InputBar', () => {
     });
   });
 
+  it('shows the command palette shortcut in the composer helper copy', () => {
+    render(<InputBar onSend={vi.fn()} isGenerating={false} />);
+
+    expect(screen.getByText(/⌘K command palette/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Ctrl\+F search/i)).not.toBeInTheDocument();
+  });
+
   it('uses the paperclip as the single primary attachment affordance', async () => {
     render(<InputBar onSend={vi.fn()} isGenerating={false} />);
 

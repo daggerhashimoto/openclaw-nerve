@@ -46,8 +46,14 @@ interface ChatPanelProps {
   onOpenWorkspacePath?: (path: string) => void | Promise<void>;
   /** Configured path prefixes that should render as clickable inline path links. */
   pathLinkPrefixes?: string[];
+  /** Configured shorthand aliases that should normalize to canonical workspace paths. */
+  pathLinkAliases?: Record<string, string>;
   /** Open a dedicated bead viewer tab. */
   onOpenBeadId?: (target: BeadLinkTarget) => void | Promise<void>;
+  /** Whether to show the compact Commands launcher inside the composer. */
+  showCommandPaletteButton?: boolean;
+  /** Open the command palette from the compact composer launcher. */
+  onOpenCommandPalette?: () => void;
 }
 
 export interface ChatPanelHandle {
@@ -66,7 +72,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   onToggleMobileTopBar, isMobileTopBarHidden = false,
   onOpenWorkspacePath,
   pathLinkPrefixes,
+  pathLinkAliases,
   onOpenBeadId,
+  showCommandPaletteButton = false,
+  onOpenCommandPalette,
 }, ref) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -345,6 +354,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
                 agentName={agentName}
                 onOpenWorkspacePath={onOpenWorkspacePath}
                 pathLinkPrefixes={pathLinkPrefixes}
+                pathLinkAliases={pathLinkAliases}
                 onOpenBeadId={onOpenBeadId}
               />
             </div>
@@ -389,6 +399,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         isGenerating={isGenerating}
         onWakeWordState={onWakeWordState}
         agentName={agentName}
+        showCommandPaletteButton={showCommandPaletteButton}
+        onOpenCommandPalette={onOpenCommandPalette}
       />
 
     </div>

@@ -11,6 +11,7 @@ interface MarkdownDocumentViewProps {
   onRetry: (path: string) => void;
   onOpenWorkspacePath?: (path: string, basePath?: string) => void | Promise<void>;
   onOpenBeadId?: (target: import('@/features/beads').BeadLinkTarget) => void | Promise<void>;
+  pathLinkAliases?: Record<string, string>;
   workspaceAgentId?: string;
 }
 
@@ -21,6 +22,7 @@ export function MarkdownDocumentView({
   onRetry,
   onOpenWorkspacePath,
   onOpenBeadId,
+  pathLinkAliases,
   workspaceAgentId,
 }: MarkdownDocumentViewProps) {
   const [mode, setMode] = useState<'preview' | 'edit'>('preview');
@@ -96,6 +98,7 @@ export function MarkdownDocumentView({
               currentDocumentPath={file.path}
               onOpenBeadId={onOpenBeadId}
               onOpenWorkspacePath={(targetPath, basePath) => onOpenWorkspacePath?.(targetPath, basePath ?? file.path)}
+              pathLinkAliases={pathLinkAliases}
               workspaceAgentId={workspaceAgentId}
             />
           )}

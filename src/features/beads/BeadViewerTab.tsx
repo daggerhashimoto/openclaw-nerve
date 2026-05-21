@@ -9,6 +9,7 @@ interface BeadViewerTabProps {
   onOpenBeadId?: (target: BeadLinkTarget) => void;
   onOpenWorkspacePath?: (path: string, basePath?: string) => void | Promise<void>;
   pathLinkPrefixes?: string[];
+  pathLinkAliases?: Record<string, string>;
 }
 
 function formatTimestamp(value: string | null): string | null {
@@ -64,7 +65,7 @@ function RelationList({
   );
 }
 
-export function BeadViewerTab({ beadTarget, onOpenBeadId, onOpenWorkspacePath, pathLinkPrefixes }: BeadViewerTabProps) {
+export function BeadViewerTab({ beadTarget, onOpenBeadId, onOpenWorkspacePath, pathLinkPrefixes, pathLinkAliases }: BeadViewerTabProps) {
   const { bead, loading, error } = useBeadDetail(beadTarget);
   const linkedPlan = bead?.linkedPlan ?? null;
 
@@ -144,6 +145,7 @@ export function BeadViewerTab({ beadTarget, onOpenBeadId, onOpenWorkspacePath, p
                 onOpenBeadId={openBeadWithContext}
                 onOpenWorkspacePath={onOpenWorkspacePath}
                 pathLinkPrefixes={pathLinkPrefixes}
+                pathLinkAliases={pathLinkAliases}
               />
             </div>
           ) : null}

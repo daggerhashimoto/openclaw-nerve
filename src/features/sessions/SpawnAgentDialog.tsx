@@ -19,11 +19,17 @@ import {
   getTopLevelAgentSessions,
 } from './sessionKeys';
 
+const INHERITED_THINKING_VALUE = 'thinkingDefault';
+
+type ThinkingSelection = typeof INHERITED_THINKING_VALUE | 'off' | 'low' | 'medium' | 'high' | 'adaptive';
+
 const THINKING_LEVELS: InlineSelectOption[] = [
+  { value: INHERITED_THINKING_VALUE, label: 'Default' },
   { value: 'off', label: 'off' },
   { value: 'low', label: 'low' },
   { value: 'medium', label: 'medium' },
   { value: 'high', label: 'high' },
+  { value: 'adaptive', label: 'adaptive' },
 ];
 const AFTER_RUN_OPTIONS: InlineSelectOption[] = [
   { value: 'keep', label: 'Keep' },
@@ -58,7 +64,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
   const [agentNameInput, setAgentNameInput] = useState('');
   const [parentRootKey, setParentRootKey] = useState('');
   const [model, setModel] = useState<string>('');
-  const [thinking, setThinking] = useState<string>('medium');
+  const [thinking, setThinking] = useState<ThinkingSelection>(INHERITED_THINKING_VALUE);
   const [cleanup, setCleanup] = useState<SubagentCleanupMode>('keep');
   const [spawning, setSpawning] = useState(false);
   const [fetchedModels, setFetchedModels] = useState<ModelEntry[]>([]);
@@ -156,7 +162,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
     setAgentNameInput('');
     setParentRootKey(currentRootKey);
     setModel(defaultModelId);
-    setThinking('medium');
+    setThinking(INHERITED_THINKING_VALUE);
     setCleanup('keep');
     setModelLoadError('');
     setSpawnError('');
@@ -170,6 +176,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
     setSpawning(true);
     setSpawnError('');
     const spawnModel = model === INHERITED_MODEL_VALUE ? undefined : model;
+    const spawnThinking = thinking === INHERITED_THINKING_VALUE ? undefined : thinking;
     try {
       const spawnResult = mode === 'root'
         ? await onSpawn({
@@ -177,7 +184,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
             agentName: agentNameInput.trim(),
             task: task.trim(),
             model: spawnModel,
-            thinking,
+            thinking: spawnThinking,
           })
         : await onSpawn({
             kind: 'subagent',
@@ -185,7 +192,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
             task: task.trim(),
             label: label.trim() || undefined,
             model: spawnModel,
-            thinking,
+            thinking: spawnThinking,
             cleanup,
           });
 
@@ -504,7 +511,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                   <label className="cockpit-field-label mb-2 block">Thinking</label>
                   <InlineSelect
                     value={thinking}
-                    onChange={setThinking}
+                    onChange={(value) => setThinking(value as ThinkingSelection)}
                     options={THINKING_LEVELS}
                     ariaLabel="Select thinking level"
                     disabled={spawning}

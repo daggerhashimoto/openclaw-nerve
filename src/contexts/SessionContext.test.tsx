@@ -367,6 +367,73 @@ describe('SessionContext', () => {
     expect(spawnRouteCalled).toBe(false);
   });
 
+  it('clears the root thinking override when spawnSession is called without an explicit thinking level', async () => {
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return { sessions: [{ sessionKey: 'agent:main:main', label: 'Main' }] };
+      }
+      return {};
+    });
+
+    function SpawnRootDefaultThinking() {
+      const { spawnSession } = useSessionContext();
+      return (
+        <button
+          data-testid="spawn-root-default-thinking"
+          onClick={() => spawnSession({ kind: 'root', agentName: 'DefaultThink', task: 'hi' })}
+        />
+      );
+    }
+
+    render(<SessionProvider><SpawnRootDefaultThinking /></SessionProvider>);
+    await waitFor(() => expect(rpcMock).toHaveBeenCalled());
+
+    await act(async () => {
+      screen.getByTestId('spawn-root-default-thinking').click();
+    });
+
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith('sessions.patch', expect.objectContaining({
+        key: 'agent:defaultthink:main',
+        label: 'DefaultThink',
+        thinkingLevel: null,
+      }));
+    });
+  });
+
+  it.each(['off', 'adaptive'])('preserves explicit %s thinking when spawning a root agent', async (thinking) => {
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return { sessions: [{ sessionKey: 'agent:main:main', label: 'Main' }] };
+      }
+      return {};
+    });
+
+    function SpawnRootExplicitThinking() {
+      const { spawnSession } = useSessionContext();
+      return (
+        <button
+          data-testid={`spawn-root-${thinking}`}
+          onClick={() => spawnSession({ kind: 'root', agentName: `Think ${thinking}`, task: 'hi', thinking })}
+        />
+      );
+    }
+
+    render(<SessionProvider><SpawnRootExplicitThinking /></SessionProvider>);
+    await waitFor(() => expect(rpcMock).toHaveBeenCalled());
+
+    await act(async () => {
+      screen.getByTestId(`spawn-root-${thinking}`).click();
+    });
+
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith('sessions.patch', expect.objectContaining({
+        label: `Think ${thinking}`,
+        thinkingLevel: thinking,
+      }));
+    });
+  });
+
   it('uses a unique config name when spawning a duplicate root agent', async () => {
     rpcMock.mockImplementation(async (method: string) => {
       if (method === 'sessions.list') {

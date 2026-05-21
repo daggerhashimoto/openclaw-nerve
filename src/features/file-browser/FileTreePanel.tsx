@@ -6,8 +6,9 @@
  */
 
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { PanelLeftClose, RefreshCw, Pencil, Trash2, RotateCcw, X, Paperclip } from 'lucide-react';
+import { PanelLeftClose, RefreshCw, X } from 'lucide-react';
 import { FileTreeNode } from './FileTreeNode';
+import { buildFileTreeMenuActions } from './fileTreeMenuActions';
 import { useFileTree } from './hooks/useFileTree';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -23,6 +24,8 @@ const WIDTH_STORAGE_KEY = 'nerve-file-tree-width';
 const MENU_VIEWPORT_PADDING = 8;
 const MENU_CURSOR_OFFSET = 6;
 const MENU_ROW_TOP_OFFSET = 2;
+const TOUCH_MENU_OFFSET_X = 0;
+const TOUCH_MENU_OFFSET_Y = 0;
 const UNDO_TOAST_TTL_MS = 10_000;
 
 /** Load persisted file tree width from localStorage. */
@@ -43,11 +46,6 @@ function getParentDir(filePath: string): string {
 function basename(filePath: string): string {
   const idx = filePath.lastIndexOf('/');
   return idx === -1 ? filePath : filePath.slice(idx + 1);
-}
-
-/** Check if a path points to a trash item. */
-function isTrashItemPath(filePath: string): boolean {
-  return filePath.startsWith('.trash/') && filePath !== '.trash';
 }
 
 export interface FileTreeChangeEvent {
@@ -89,7 +87,14 @@ type FileTreeToastPayload =
 
 type FileTreeToast = FileTreeToastPayload & { agentId: string };
 type ScopedSessionState = { agentId: string; sessionId: number };
-type ScopedContextMenu = ScopedSessionState & { x: number; y: number; entry: TreeEntry };
+type ScopedContextMenu = ScopedSessionState & {
+  x: number;
+  y: number;
+  entry: TreeEntry;
+  source: 'mouse' | 'touch';
+  touchAnchorX?: number;
+  touchAnchorY?: number;
+};
 type ScopedDeleteConfirmation = ScopedSessionState & { entry: TreeEntry };
 type ScopedRenameState = ScopedSessionState & { path: string; value: string };
 type ScopedDragSource = { agentId: string; entry: TreeEntry };
@@ -156,6 +161,7 @@ export function FileTreePanel({
   const [contextMenu, setContextMenu] = useState<ScopedContextMenu | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const contextMenuSessionIdRef = useRef(0);
+  const suppressMouseDownUntilRef = useRef(0);
 
   const [renameState, setRenameState] = useState<ScopedRenameState | null>(null);
   const renameSessionIdRef = useRef(0);
@@ -261,6 +267,7 @@ export function FileTreePanel({
     if (!visibleContextMenu) return;
 
     const onMouseDown = (event: MouseEvent) => {
+      if (visibleContextMenu.source === 'touch' && Date.now() < suppressMouseDownUntilRef.current) return;
       const target = event.target as Node;
       if (contextMenuRef.current?.contains(target)) return;
       setContextMenu(null);
@@ -288,18 +295,38 @@ export function FileTreePanel({
     const width = menuEl.offsetWidth;
     const height = menuEl.offsetHeight;
     const panelRect = panelRef.current?.getBoundingClientRect();
+    const visualViewport = window.visualViewport;
+    const viewportLeft = visualViewport?.offsetLeft ?? 0;
+    const viewportTop = visualViewport?.offsetTop ?? 0;
+    const viewportWidth = visualViewport?.width ?? window.innerWidth;
+    const viewportHeight = visualViewport?.height ?? window.innerHeight;
 
-    const minX = panelRect ? panelRect.left + MENU_VIEWPORT_PADDING : MENU_VIEWPORT_PADDING;
-    const minY = panelRect ? panelRect.top + MENU_VIEWPORT_PADDING : MENU_VIEWPORT_PADDING;
-    const maxX = panelRect
-      ? Math.max(minX, panelRect.right - width - MENU_VIEWPORT_PADDING)
-      : Math.max(MENU_VIEWPORT_PADDING, window.innerWidth - width - MENU_VIEWPORT_PADDING);
-    const maxY = panelRect
-      ? Math.max(minY, panelRect.bottom - height - MENU_VIEWPORT_PADDING)
-      : Math.max(MENU_VIEWPORT_PADDING, window.innerHeight - height - MENU_VIEWPORT_PADDING);
+    const minX = visibleContextMenu.source === 'touch'
+      ? viewportLeft + MENU_VIEWPORT_PADDING
+      : (panelRect ? panelRect.left + MENU_VIEWPORT_PADDING : MENU_VIEWPORT_PADDING);
+    const minY = visibleContextMenu.source === 'touch'
+      ? viewportTop + MENU_VIEWPORT_PADDING
+      : (panelRect ? panelRect.top + MENU_VIEWPORT_PADDING : MENU_VIEWPORT_PADDING);
+    const maxX = visibleContextMenu.source === 'touch'
+      ? Math.max(minX, viewportLeft + viewportWidth - width - MENU_VIEWPORT_PADDING)
+      : (panelRect
+        ? Math.max(minX, panelRect.right - width - MENU_VIEWPORT_PADDING)
+        : Math.max(MENU_VIEWPORT_PADDING, window.innerWidth - width - MENU_VIEWPORT_PADDING));
+    const maxY = visibleContextMenu.source === 'touch'
+      ? Math.max(minY, viewportTop + viewportHeight - height - MENU_VIEWPORT_PADDING)
+      : (panelRect
+        ? Math.max(minY, panelRect.bottom - height - MENU_VIEWPORT_PADDING)
+        : Math.max(MENU_VIEWPORT_PADDING, window.innerHeight - height - MENU_VIEWPORT_PADDING));
 
-    const nextX = Math.min(Math.max(visibleContextMenu.x, minX), maxX);
-    const nextY = Math.min(Math.max(visibleContextMenu.y, minY), maxY);
+    const targetX = visibleContextMenu.source === 'touch'
+      ? (visibleContextMenu.touchAnchorX ?? visibleContextMenu.x)
+      : visibleContextMenu.x;
+    const targetY = visibleContextMenu.source === 'touch'
+      ? ((visibleContextMenu.touchAnchorY ?? visibleContextMenu.y) - height)
+      : visibleContextMenu.y;
+
+    const nextX = Math.min(Math.max(targetX, minX), maxX);
+    const nextY = Math.min(Math.max(targetY, minY), maxY);
 
     if (nextX !== visibleContextMenu.x || nextY !== visibleContextMenu.y) {
       setContextMenu((prev) => (prev ? { ...prev, x: nextX, y: nextY } : prev));
@@ -453,8 +480,48 @@ export function FileTreePanel({
       x: nextX,
       y: nextY,
       entry,
+      source: 'mouse',
     });
   }, [selectFile, workspaceAgentId]);
+
+  const openTouchContextMenu = useCallback((entry: TreeEntry, touchPoint: { x: number; y: number }) => {
+    selectFile(entry.path);
+    contextMenuSessionIdRef.current += 1;
+    suppressMouseDownUntilRef.current = Date.now() + 500;
+    setContextMenu({
+      agentId: workspaceAgentId,
+      sessionId: contextMenuSessionIdRef.current,
+      x: touchPoint.x + TOUCH_MENU_OFFSET_X,
+      y: touchPoint.y + TOUCH_MENU_OFFSET_Y,
+      entry,
+      source: 'touch',
+      touchAnchorX: touchPoint.x,
+      touchAnchorY: touchPoint.y,
+    });
+  }, [selectFile, workspaceAgentId]);
+
+  const openCompactActionsMenu = useCallback((entry: TreeEntry, anchorRect: DOMRect) => {
+    setContextMenu((currentContextMenu) => {
+      if (
+        currentContextMenu
+        && currentContextMenu.agentId === workspaceAgentId
+        && currentContextMenu.source === 'mouse'
+        && currentContextMenu.entry.path === entry.path
+      ) {
+        return null;
+      }
+
+      contextMenuSessionIdRef.current += 1;
+      return {
+        agentId: workspaceAgentId,
+        sessionId: contextMenuSessionIdRef.current,
+        x: anchorRect.right - MENU_CURSOR_OFFSET,
+        y: anchorRect.bottom + MENU_VIEWPORT_PADDING,
+        entry,
+        source: 'mouse',
+      };
+    });
+  }, [workspaceAgentId]);
 
   const startRename = useCallback((entry: TreeEntry) => {
     if (entry.path === '.trash') {
@@ -669,22 +736,30 @@ export function FileTreePanel({
     return null;
   }
 
-  const menuEntry = visibleContextMenu?.entry;
-  const menuPath = menuEntry?.path || '';
-  const menuInTrash = isTrashItemPath(menuPath);
-  const showRestore = menuInTrash;
-  const showAddToChat = Boolean(
-    onAddToChat
-    && menuEntry
-    && !menuPath.startsWith('.trash')
-    && menuPath !== '.trash'
-    && (
-      menuEntry.type === 'directory'
-      || (menuEntry.type === 'file' && addToChatEnabled)
-    ),
-  );
-  const showRename = Boolean(menuEntry && menuPath !== '.trash');
-  const showTrashAction = Boolean(menuEntry && !menuPath.startsWith('.trash') && menuPath !== '.trash');
+  const menuEntry = visibleContextMenu?.entry ?? null;
+  const menuActions = menuEntry
+    ? buildFileTreeMenuActions(menuEntry, {
+        addToChatEnabled,
+        canAddToChat: Boolean(onAddToChat),
+        isCustomWorkspace: Boolean(workspaceInfo?.isCustomWorkspace),
+        onRestore: () => { void restoreEntry(menuEntry.path); },
+        onAddToChat: () => {
+          const itemKind = menuEntry.type === 'directory' ? 'directory' : 'file';
+          void Promise
+            .resolve(onAddToChat?.(menuEntry.path, itemKind, workspaceAgentId))
+            .catch((error: unknown) => {
+              const fallbackMessage = itemKind === 'directory'
+                ? 'Failed to add directory to chat'
+                : 'Failed to add file to chat';
+              const message = error instanceof Error ? error.message : fallbackMessage;
+              console.error('[FileTreePanel] add-to-chat failed:', error);
+              showToastForAgent(workspaceAgentId, { type: 'error', message }, 4500);
+            });
+        },
+        onRename: () => startRename(menuEntry),
+        onTrash: () => { void moveToTrash(menuEntry); },
+      })
+    : [];
 
   return (
     <div
@@ -767,6 +842,7 @@ export function FileTreePanel({
                 loadingPaths={loadingPaths}
                 onToggleDir={toggleDirectory}
                 onOpenFile={onOpenFile}
+                onTouchLongPress={isCompactLayout ? undefined : openTouchContextMenu}
                 onSelect={selectFile}
                 onContextMenu={handleContextMenu}
                 dragSourcePath={visibleDragSource?.path || null}
@@ -781,6 +857,8 @@ export function FileTreePanel({
                 onRenameChange={handleRenameChange}
                 onRenameCommit={() => { void commitRename(); }}
                 onRenameCancel={cancelRename}
+                compact={isCompactLayout}
+                onOpenActions={openCompactActionsMenu}
               />
             ))
           )}
@@ -791,66 +869,37 @@ export function FileTreePanel({
       {visibleContextMenu && menuEntry && (
         <div
           ref={contextMenuRef}
-          className="shell-panel fixed z-50 min-w-[180px] rounded-2xl py-1.5"
-          style={{ left: visibleContextMenu.x, top: visibleContextMenu.y }}
+          className="shell-panel fixed z-50 min-w-[180px] rounded-2xl py-1.5 select-none touch-manipulation"
+          style={{
+            left: visibleContextMenu.x,
+            top: visibleContextMenu.y,
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+            WebkitTouchCallout: 'none',
+          }}
         >
-          {showRestore && (
-            <button
-              className="w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted/60 flex items-center gap-2"
-              onClick={() => {
-                setContextMenu(null);
-                void restoreEntry(menuEntry.path);
-              }}
-            >
-              <RotateCcw size={12} />
-              Restore
-            </button>
-          )}
-
-          {showAddToChat && (
-            <button
-              className="w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted/60 flex items-center gap-2"
-              onClick={() => {
-                setContextMenu(null);
-                const itemKind = menuEntry.type === 'directory' ? 'directory' : 'file';
-                void Promise
-                  .resolve(onAddToChat?.(menuEntry.path, itemKind, workspaceAgentId))
-                  .catch((error: unknown) => {
-                    const fallbackMessage = itemKind === 'directory'
-                      ? 'Failed to add directory to chat'
-                      : 'Failed to add file to chat';
-                    const message = error instanceof Error ? error.message : fallbackMessage;
-                    console.error('[FileTreePanel] add-to-chat failed:', error);
-                    showToastForAgent(workspaceAgentId, { type: 'error', message }, 4500);
-                  });
-              }}
-            >
-              <Paperclip size={12} />
-              Add to chat
-            </button>
-          )}
-
-          {showRename && (
-            <button
-              className="w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted/60 flex items-center gap-2"
-              onClick={() => startRename(menuEntry)}
-            >
-              <Pencil size={12} />
-              Rename
-            </button>
-          )}
-
-          {showTrashAction && (
-            <button
-              className="w-full px-3 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10 flex items-center gap-2"
-              onClick={() => { void moveToTrash(menuEntry); }}
-            >
-              <Trash2 size={12} />
-              {workspaceInfo?.isCustomWorkspace ? 'Permanently Delete' : 'Move to Trash'}
-            </button>
-          )}
-
-          {!showRestore && !showAddToChat && !showRename && !showTrashAction && (
+          {menuActions.length > 0 ? (
+            menuActions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <button
+                  key={action.id}
+                  className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                    action.destructive
+                      ? 'text-destructive hover:bg-destructive/10'
+                      : 'text-foreground hover:bg-muted/60'
+                  }`}
+                  onClick={() => {
+                    setContextMenu(null);
+                    action.onSelect();
+                  }}
+                >
+                  <Icon size={12} />
+                  {action.label}
+                </button>
+              );
+            })
+          ) : (
             <div className="px-3 py-1.5 text-xs text-muted-foreground">
               No actions
             </div>

@@ -93,10 +93,10 @@ describe('sessionKeys', () => {
     expect(pickDefaultSessionKey(sessions)).toBe('agent:main:main');
   });
 
-  it('builds display labels from identity name, then root id for root sessions', () => {
-    expect(getSessionDisplayLabel(session('agent:reviewer:main', { label: 'Reviewer', displayName: 'webchat:reviewer' }), 'Nerve')).toBe('reviewer');
+  it('prefers explicit labels for root sessions, then falls back to identity name and root id', () => {
+    expect(getSessionDisplayLabel(session('agent:reviewer:main', { label: 'Reviewer', displayName: 'webchat:reviewer' }), 'Nerve')).toBe('Reviewer');
+    expect(getSessionDisplayLabel(session('agent:reviewer:main', { label: 'Release QA', identityName: 'Reviewer Prime' }), 'Nerve')).toBe('Release QA');
     expect(getSessionDisplayLabel(session('agent:reviewer:main', { displayName: 'Reviewer Prime' }), 'Nerve')).toBe('reviewer');
-    expect(getSessionDisplayLabel(session('agent:reviewer:main', { label: 'Reviewer' }), 'Nerve')).toBe('reviewer');
     expect(getSessionDisplayLabel(session('agent:reviewer:main', { identityName: 'Reviewer Prime' }), 'Nerve')).toBe('Reviewer Prime (reviewer)');
     expect(getSessionDisplayLabel(session('agent:reviewer:main'), 'Nerve')).toBe('reviewer');
     expect(getSessionDisplayLabel(session('agent:main:main'), 'Nerve')).toBe('Nerve (main)');
@@ -111,7 +111,8 @@ describe('sessionKeys', () => {
     ).toBe('coding');
   });
 
-  it('keeps the main root label canonical even if gateway metadata says heartbeat', () => {
+  it('uses an explicit custom label for the main root, but ignores heartbeat metadata', () => {
+    expect(getSessionDisplayLabel(session('agent:main:main', { label: 'Ops Desk' }), 'Nerve')).toBe('Ops Desk');
     expect(getSessionDisplayLabel(session('agent:main:main', { label: 'heartbeat' }), 'Nerve')).toBe('Nerve (main)');
     expect(getSessionDisplayLabel(session('agent:main:main', { displayName: 'heartbeat' }), 'Nerve')).toBe('Nerve (main)');
   });
@@ -120,5 +121,20 @@ describe('sessionKeys', () => {
     const knownKeys = new Set(['agent:reviewer:main', 'agent:reviewer:subagent:child']);
     const child = session('agent:reviewer:subagent:child', { parentId: 'agent:missing:main' });
     expect(resolveParentSessionKey(child, knownKeys)).toBe('agent:reviewer:main');
+  });
+
+  it('uses parentSessionKey when the gateway provides it', () => {
+    const knownKeys = new Set(['agent:main:main', 'custom-direct-key']);
+    const child = session('custom-direct-key', { parentSessionKey: 'agent:main:main' });
+    expect(resolveParentSessionKey(child, knownKeys)).toBe('agent:main:main');
+  });
+
+  it('falls back to parentId when parentSessionKey is stale', () => {
+    const knownKeys = new Set(['agent:main:main', 'custom-direct-key']);
+    const child = session('custom-direct-key', {
+      parentSessionKey: 'stale-parent-key',
+      parentId: ' agent:main:main ',
+    });
+    expect(resolveParentSessionKey(child, knownKeys)).toBe('agent:main:main');
   });
 });

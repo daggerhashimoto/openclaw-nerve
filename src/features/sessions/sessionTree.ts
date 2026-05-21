@@ -1,6 +1,6 @@
 import type { Session } from '@/types';
 import { getSessionKey } from '@/types';
-import { getSessionType, isTopLevelAgentSessionKey, resolveParentSessionKey } from './sessionKeys';
+import { getExplicitParentCandidates, getRootAgentSessionKey, getSessionType, isTopLevelAgentSessionKey, resolveParentSessionKey } from './sessionKeys';
 
 export interface TreeNode {
   session: Session;
@@ -37,6 +37,7 @@ function buildParentMap(sessions: Session[]): Map<string, string | null> {
 function hasAgentSidebarEligibleLineage(
   sessionKey: string,
   parentMap: Map<string, string | null>,
+  sessionMap: Map<string, Session>,
   memo: Map<string, boolean>,
   visiting = new Set<string>(),
 ): boolean {
@@ -46,9 +47,12 @@ function hasAgentSidebarEligibleLineage(
   visiting.add(sessionKey);
 
   const parentKey = parentMap.get(sessionKey) ?? null;
+  const session = sessionMap.get(sessionKey);
   const result = parentKey === null
     ? isAgentSidebarRootSessionKey(sessionKey)
-    : parentMap.has(parentKey) && hasAgentSidebarEligibleLineage(parentKey, parentMap, memo, visiting);
+      || getExplicitParentCandidates(session).some((explicitParent) => getRootAgentSessionKey(explicitParent) !== null)
+      || getRootAgentSessionKey(sessionKey) !== null
+    : parentMap.has(parentKey) && hasAgentSidebarEligibleLineage(parentKey, parentMap, sessionMap, memo, visiting);
 
   visiting.delete(sessionKey);
   memo.set(sessionKey, result);
@@ -59,8 +63,9 @@ function filterAgentSidebarSessions(
   sessions: Session[],
   parentMap: Map<string, string | null>,
 ): Session[] {
+  const sessionMap = new Map(sessions.map((session) => [getSessionKey(session), session]));
   const memo = new Map<string, boolean>();
-  return sessions.filter((session) => hasAgentSidebarEligibleLineage(getSessionKey(session), parentMap, memo));
+  return sessions.filter((session) => hasAgentSidebarEligibleLineage(getSessionKey(session), parentMap, sessionMap, memo));
 }
 
 function buildTreeNodes(
@@ -137,7 +142,7 @@ function buildTreeNodes(
  * Build a hierarchical tree from a flat list of sessions.
  *
  * Dual strategy:
- * 1. If sessions have `parentId` (gateway v2026.2.9+), use that.
+ * 1. If sessions have `parentSessionKey`/`parentId`, use that.
  * 2. Fallback: parse session key structure to infer parent-child relationships.
  *
  * Returns an array of root-level TreeNodes (usually just one).

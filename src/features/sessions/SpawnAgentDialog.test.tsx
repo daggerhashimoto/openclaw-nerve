@@ -141,13 +141,14 @@ describe('SpawnAgentDialog', () => {
     expect(onSpawn).not.toHaveBeenCalled();
   });
 
-  it('omits model in spawn payload when inherited primary is selected', async () => {
+  it('omits model and thinking in the spawn payload when inherited defaults are selected', async () => {
     const onSpawn = vi.fn(async () => {});
     renderDialog(onSpawn);
 
     fireEvent.click(screen.getByText('New agent'));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Select model' })).toHaveTextContent('primary');
+      expect(screen.getByRole('button', { name: 'Select thinking level' })).toHaveTextContent('Default');
     });
     fireEvent.change(screen.getByPlaceholderText('e.g. reviewer'), { target: { value: 'research' } });
     fireEvent.change(screen.getByPlaceholderText('What should this new agent start working on?'), { target: { value: 'test task' } });
@@ -159,6 +160,36 @@ describe('SpawnAgentDialog', () => {
         agentName: 'research',
         task: 'test task',
         model: undefined,
+        thinking: undefined,
+      }));
+    });
+  });
+
+  it('offers adaptive thinking and forwards it as an explicit spawn override', async () => {
+    const onSpawn = vi.fn(async () => {});
+    renderDialog(onSpawn);
+
+    fireEvent.click(screen.getByText('New agent'));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Select model' })).toHaveTextContent('primary');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select thinking level' }));
+    expect(await screen.findByRole('option', { name: 'Default' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'adaptive' })).toBeInTheDocument();
+    fireEvent.pointerDown(screen.getByRole('option', { name: 'adaptive' }));
+
+    fireEvent.change(screen.getByPlaceholderText('e.g. reviewer'), { target: { value: 'research' } });
+    fireEvent.change(screen.getByPlaceholderText('What should this new agent start working on?'), { target: { value: 'test task' } });
+    fireEvent.click(screen.getByText('Create agent'));
+
+    await waitFor(() => {
+      expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'root',
+        agentName: 'research',
+        task: 'test task',
+        model: undefined,
+        thinking: 'adaptive',
       }));
     });
   });

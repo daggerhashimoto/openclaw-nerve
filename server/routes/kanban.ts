@@ -1165,12 +1165,22 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
 
       const assignedParentSessionKey = resolveKanbanAssigneeRootSessionKey(existing.assignee);
       if (assignedParentSessionKey) {
-        const sessionsResponse = await gatewayRpcCall('sessions.list', {
+        const recentSessionsResponse = await gatewayRpcCall('sessions.list', {
           activeMinutes: PARENT_ROOT_LOOKUP_ACTIVE_MINUTES,
           limit: PARENT_ROOT_LOOKUP_SESSIONS_LIMIT,
         }) as { sessions?: GatewaySessionSummary[] };
-        const sessions = Array.isArray(sessionsResponse.sessions) ? sessionsResponse.sessions : [];
-        if (!sessions.some((session) => getSessionKey(session) === assignedParentSessionKey)) {
+        const recentSessions = Array.isArray(recentSessionsResponse.sessions) ? recentSessionsResponse.sessions : [];
+
+        let parentSessionExists = recentSessions.some((session) => getSessionKey(session) === assignedParentSessionKey);
+        if (!parentSessionExists) {
+          const fullSessionsResponse = await gatewayRpcCall('sessions.list', {
+            limit: PARENT_ROOT_LOOKUP_SESSIONS_LIMIT,
+          }) as { sessions?: GatewaySessionSummary[] };
+          const fullSessions = Array.isArray(fullSessionsResponse.sessions) ? fullSessionsResponse.sessions : [];
+          parentSessionExists = fullSessions.some((session) => getSessionKey(session) === assignedParentSessionKey);
+        }
+
+        if (!parentSessionExists) {
           throw new KanbanExecutionPreflightError(`Parent agent session not found: ${assignedParentSessionKey}`);
         }
 

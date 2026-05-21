@@ -35,9 +35,9 @@ function getEffortKey(sessionKey?: string | null) {
 const INHERITED_MODEL_VALUE = 'primary';
 const INHERITED_EFFORT_VALUE = 'thinkingDefault';
 
-type EffortLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+type EffortLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'adaptive';
 type EffortSelection = typeof INHERITED_EFFORT_VALUE | EffortLevel;
-const EFFORT_OPTIONS: EffortLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+const EFFORT_OPTIONS: EffortLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'adaptive'];
 
 function normalizeEffortLevel(raw: string | null | undefined): EffortLevel | null {
   const normalized = raw?.toLowerCase();
@@ -151,7 +151,7 @@ export interface UseModelEffortReturn {
   uiError: string | null;
 }
 
-/** Hook to manage the model reasoning effort level (low/medium/high). */
+/** Hook to manage the model reasoning effort level selection. */
 export function useModelEffort(): UseModelEffortReturn {
   const { rpc, connectionState, model, thinking } = useGateway();
   const { currentSession, sessions, updateSession } = useSessionContext();
@@ -545,7 +545,7 @@ export function useModelEffort(): UseModelEffortReturn {
 
     try {
       const isInheritedDefault = nextEffort === INHERITED_EFFORT_VALUE;
-      const thinkingValue = isInheritedDefault || nextEffort === 'off' ? null : nextEffort;
+      const thinkingValue = isInheritedDefault ? null : nextEffort;
       try {
         await rpc('sessions.patch', { key: currentSession, thinkingLevel: thinkingValue });
       } catch (wsErr) {

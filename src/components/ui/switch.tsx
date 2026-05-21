@@ -8,6 +8,7 @@ interface SwitchProps {
   className?: string;
   id?: string;
   "aria-label"?: string;
+  "aria-labelledby"?: string;
 }
 
 /**
@@ -17,7 +18,7 @@ interface SwitchProps {
  * with a sliding thumb indicator and green highlight when active.
  */
 export const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
-  ({ checked, onCheckedChange, disabled = false, className = "", id, "aria-label": ariaLabel }, ref) => {
+  ({ checked, onCheckedChange, disabled = false, className = "", id, "aria-label": ariaLabel, "aria-labelledby": ariaLabelledBy }, ref) => {
     return (
       <button
         ref={ref}
@@ -26,6 +27,7 @@ export const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
         role="switch"
         aria-checked={checked}
         aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         disabled={disabled}
         onClick={() => onCheckedChange(!checked)}
         className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer items-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${

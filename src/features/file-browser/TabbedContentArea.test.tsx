@@ -11,6 +11,7 @@ vi.mock('./MarkdownDocumentView', () => ({
     file: OpenFile;
     onOpenBeadId?: (target: { beadId: string }) => void;
     onOpenWorkspacePath?: (path: string, basePath?: string) => void;
+    pathLinkAliases?: Record<string, string>;
     workspaceAgentId?: string;
   }) => {
     markdownDocumentViewSpy(props);
@@ -32,6 +33,7 @@ vi.mock('@/features/beads', () => ({
     onOpenBeadId?: (target: { beadId: string }) => void;
     onOpenWorkspacePath?: (path: string, basePath?: string) => void;
     pathLinkPrefixes?: string[];
+    pathLinkAliases?: Record<string, string>;
   }) => {
     beadViewerTabSpy(props);
     return <div data-testid="bead-viewer-tab">{props.beadTarget.beadId}</div>;
@@ -67,6 +69,7 @@ describe('TabbedContentArea', () => {
         onRetryFile={vi.fn()}
         onOpenWorkspacePath={onOpenWorkspacePath}
         onOpenBeadId={onOpenBeadId}
+        pathLinkAliases={{ 'docs/': '/workspace/docs/' }}
         chatPanel={<div>chat</div>}
       />,
     );
@@ -76,6 +79,7 @@ describe('TabbedContentArea', () => {
     expect(props.file.path).toBe('docs/guide.md');
     expect(props.onOpenBeadId).toBe(onOpenBeadId);
     expect(props.onOpenWorkspacePath).toBe(onOpenWorkspacePath);
+    expect(props.pathLinkAliases).toEqual({ 'docs/': '/workspace/docs/' });
     expect(props.workspaceAgentId).toBe('agent-1');
   });
 
@@ -97,6 +101,7 @@ describe('TabbedContentArea', () => {
         onOpenWorkspacePath={onOpenWorkspacePath}
         onOpenBeadId={onOpenBeadId}
         pathLinkPrefixes={['/workspace/', '~/workspace/']}
+        pathLinkAliases={{ 'docs/': '/workspace/docs/' }}
         chatPanel={<div>chat</div>}
       />,
     );
@@ -112,5 +117,6 @@ describe('TabbedContentArea', () => {
     expect(props.onOpenBeadId).toBe(onOpenBeadId);
     expect(props.onOpenWorkspacePath).toBe(onOpenWorkspacePath);
     expect(props.pathLinkPrefixes).toEqual(['/workspace/', '~/workspace/']);
+    expect(props.pathLinkAliases).toEqual({ 'docs/': '/workspace/docs/' });
   });
 });

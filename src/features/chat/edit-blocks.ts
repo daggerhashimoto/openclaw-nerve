@@ -11,15 +11,31 @@ export function extractEditBlocks(rawText: string): EditBlock[] {
   
   const toolPattern = /\*\*tool:\*\*\s*`(Edit|edit)`\s*\n```json\n([\s\S]*?)```/g;
   let match;
+
+  const collectBlock = (input: Record<string, unknown>, fallbackPath = '') => {
+    const filePath = String(input.file_path || input.path || fallbackPath || '');
+    const oldStr = String(input.old_string || input.oldText || '');
+    const newStr = String(input.new_string || input.newText || '');
+    if (oldStr || newStr) {
+      blocks.push({ filePath, oldText: oldStr, newText: newStr });
+    }
+  };
   
   while ((match = toolPattern.exec(rawText)) !== null) {
     try {
-      const input = JSON.parse(match[2]);
-      const filePath = input.file_path || input.path || '';
-      const oldStr = input.old_string || input.oldText || '';
-      const newStr = input.new_string || input.newText || '';
-      if (oldStr || newStr) {
-        blocks.push({ filePath, oldText: oldStr, newText: newStr });
+      const input = JSON.parse(match[2]) as Record<string, unknown>;
+      const filePath = String(input.file_path || input.path || '');
+
+      if (Array.isArray(input.edits)) {
+        for (const edit of input.edits) {
+          if (edit && typeof edit === 'object') {
+            collectBlock(edit as Record<string, unknown>, filePath);
+          }
+        }
+      }
+
+      if (!Array.isArray(input.edits) || input.edits.length === 0) {
+        collectBlock(input, filePath);
       }
     } catch { /* skip malformed JSON */ }
   }

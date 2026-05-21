@@ -250,6 +250,51 @@ describe('file-browser routes', () => {
       expect(json).toEqual({ ok: true, path: 'src/main.ts', type: 'file', binary: false });
     });
 
+    it('accepts absolute host paths rooted at the real workspace by normalizing them to workspace-relative', async () => {
+      await fs.mkdir(path.join(tmpDir, 'src'));
+      await fs.writeFile(path.join(tmpDir, 'src', 'main.ts'), 'export {};');
+      const app = await buildApp();
+      const absoluteTarget = path.join(tmpDir, 'src', 'main.ts').split(path.sep).join('/');
+
+      const res = await app.request(`/api/files/resolve?path=${encodeURIComponent(absoluteTarget)}`);
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
+      expect(json).toEqual({ ok: true, path: 'src/main.ts', type: 'file', binary: false });
+    });
+
+    it('accepts symlink-expanded absolute host paths for the same workspace root', async () => {
+      await fs.mkdir(path.join(tmpDir, 'src'));
+      await fs.writeFile(path.join(tmpDir, 'src', 'main.ts'), 'export {};');
+      const app = await buildApp();
+      const realTarget = (await fs.realpath(path.join(tmpDir, 'src', 'main.ts'))).split(path.sep).join('/');
+
+      const res = await app.request(`/api/files/resolve?path=${encodeURIComponent(realTarget)}`);
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
+      expect(json).toEqual({ ok: true, path: 'src/main.ts', type: 'file', binary: false });
+    });
+
+    it('keeps absolute host workspace paths rooted even when relativeTo is provided', async () => {
+      await fs.mkdir(path.join(tmpDir, 'src'));
+      await fs.mkdir(path.join(tmpDir, 'notes'));
+      await fs.writeFile(path.join(tmpDir, 'src', 'main.ts'), 'export {};');
+      const app = await buildApp();
+      const absoluteTarget = path.join(tmpDir, 'src', 'main.ts').split(path.sep).join('/');
+
+      const res = await app.request(`/api/files/resolve?path=${encodeURIComponent(absoluteTarget)}&relativeTo=notes/index.md`);
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
+      expect(json).toEqual({ ok: true, path: 'src/main.ts', type: 'file', binary: false });
+    });
+
+    it('treats the absolute workspace root itself as a non-openable root target', async () => {
+      const app = await buildApp();
+      const absoluteRoot = tmpDir.split(path.sep).join('/');
+
+      const res = await app.request(`/api/files/resolve?path=${encodeURIComponent(absoluteRoot)}`);
+      expect(res.status).toBe(404);
+    });
+
     it('returns 403 for invalid or excluded targets', async () => {
       const app = await buildApp();
       const res = await app.request('/api/files/resolve?path=../../etc');

@@ -29,6 +29,7 @@ export interface Session {
   thinkingLevel?: string;
   totalTokens?: number;
   contextTokens?: number;
+  parentSessionKey?: string; // from gateway API (newer session row shape)
   parentId?: string;  // from gateway API (v2026.2.9+)
   inputTokens?: number;
   outputTokens?: number;

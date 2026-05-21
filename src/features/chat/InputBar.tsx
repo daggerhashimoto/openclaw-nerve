@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { Mic, Paperclip, X, Loader2, ArrowUp, FileText, FolderOpen } from 'lucide-react';
+import { Mic, Paperclip, X, Loader2, ArrowUp, FileText, FolderOpen, Command } from 'lucide-react';
 import type { TreeEntry } from '@/features/file-browser';
 import { useVoiceInput } from '@/features/voice/useVoiceInput';
 import { useTabCompletion } from '@/hooks/useTabCompletion';
@@ -40,6 +40,10 @@ interface InputBarProps {
   onWakeWordState?: (enabled: boolean, toggle: () => void) => void;
   /** Agent name for dynamic wake phrase (e.g., "Hey Helena") */
   agentName?: string;
+  /** Whether to show the compact command-palette launcher inside the composer. */
+  showCommandPaletteButton?: boolean;
+  /** Open the command palette from the compact composer launcher. */
+  onOpenCommandPalette?: () => void;
 }
 
 export interface InputBarHandle {
@@ -261,7 +265,14 @@ async function resolveWorkspacePathToCanonicalReference(
 }
 
 /** Chat input bar with file attachments, voice input, and model effort selector. */
-export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function InputBar({ onSend, isGenerating, onWakeWordState, agentName = 'Agent' }, ref) {
+export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function InputBar({
+  onSend,
+  isGenerating,
+  onWakeWordState,
+  agentName = 'Agent',
+  showCommandPaletteButton = false,
+  onOpenCommandPalette,
+}, ref) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const deferredResizeFrameRef = useRef<number | null>(null);
@@ -1237,23 +1248,23 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       />
       {/* Input row */}
       <div
-        className={`flex items-center gap-0 border-t shrink-0 bg-card focus-within:border-t-primary/40 focus-within:shadow-[0_-1px_8px_rgba(232,168,56,0.1)] ${voiceState === 'recording' ? 'border-t-red-500 shadow-[0_-1px_12px_rgba(239,68,68,0.3)]' : 'border-border'}`}
+        className={`flex items-start gap-0 border-t shrink-0 bg-card focus-within:border-t-primary/40 focus-within:shadow-[0_-1px_8px_rgba(232,168,56,0.1)] ${voiceState === 'recording' ? 'border-t-red-500 shadow-[0_-1px_12px_rgba(239,68,68,0.3)]' : 'border-border'}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         {voiceState === 'recording' ? (
-          <span className="pl-3.5 shrink-0 flex items-center gap-1.5">
+          <span className="self-start pl-3.5 pt-3 shrink-0 flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             <Mic size={14} className="text-red-500" />
           </span>
         ) : voiceState === 'transcribing' ? (
-          <span className="pl-3.5 shrink-0 flex items-center gap-1.5">
+          <span className="self-start pl-3.5 pt-3 shrink-0 flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
             <Mic size={14} className="text-primary" />
           </span>
         ) : (
-          <span className="text-primary text-base font-bold pl-3.5 shrink-0 animate-prompt-pulse">›</span>
+          <span className="self-start text-primary text-base leading-none font-bold pl-3.5 pt-3 shrink-0 animate-prompt-pulse">›</span>
         )}
         {/* Uncontrolled textarea — value is read/written via inputRef.
             This is intentional: useTabCompletion and history navigation
@@ -1269,6 +1280,17 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           rows={1}
           className="flex-1 font-mono text-[13px] bg-transparent text-foreground border-none px-2.5 py-3 resize-none outline-none min-h-[42px] max-h-[160px]"
         />
+        {showCommandPaletteButton && onOpenCommandPalette && (
+          <button
+            type="button"
+            onClick={onOpenCommandPalette}
+            className="bg-transparent border-none text-muted-foreground hover:text-primary cursor-pointer px-2.5 self-stretch h-full flex items-center justify-center"
+            title="Open command palette"
+            aria-label="Open command palette"
+          >
+            <Command size={16} aria-hidden="true" />
+          </button>
+        )}
         <button
           type="button"
           onClick={openUploadFilesPicker}
@@ -1295,7 +1317,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             ? 'Recording… Left Shift to send · Double Left Shift to discard'
             : voiceState === 'transcribing'
             ? 'Transcribing…'
-            : 'Enter or ⌘Enter to send · Shift+Enter for newline · Double Left Shift for voice · Ctrl+F search'}
+            : 'Enter or ⌘Enter to send · Shift+Enter for newline · Double Left Shift for voice · ⌘K command palette'}
         </span>
       </div>
       {voiceError && (

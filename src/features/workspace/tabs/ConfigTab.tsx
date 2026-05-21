@@ -8,6 +8,7 @@ import { InlineSelect } from '@/components/ui/InlineSelect';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceFile } from '../hooks/useWorkspaceFile';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { createChatPathLinksTemplate, type ChatPathLinksSeedContext } from '@/features/chat/chatPathLinks';
 import { getWorkspaceStorageKey } from '../workspaceScope';
 import { clearPersistedDraft, readPersistedDraft, writePersistedDraft } from '../persistedDrafts';
 
@@ -42,6 +43,40 @@ function getInitialSelectedKey(agentId: string): string {
 
 function getConfigDraftKind(fileKey: string): string {
   return `config-editor:${fileKey}`;
+}
+
+function getBrowserPlatformSeed(): ChatPathLinksSeedContext['platform'] {
+  if (typeof navigator === 'undefined') return undefined;
+
+  const rawPlatform = (navigator.platform || navigator.userAgent || '').toLowerCase();
+  if (rawPlatform.includes('mac')) return 'macos';
+  if (rawPlatform.includes('win')) return 'windows';
+  if (rawPlatform.includes('linux') || rawPlatform.includes('x11')) return 'linux';
+  return undefined;
+}
+
+async function createSeededChatPathLinksTemplate(agentId: string): Promise<string> {
+  const seedContext: ChatPathLinksSeedContext = {};
+  const platform = getBrowserPlatformSeed();
+  if (platform) {
+    seedContext.platform = platform;
+  }
+
+  try {
+    const params = new URLSearchParams({ depth: '1', agentId });
+    const response = await fetch(`/api/files/tree?${params.toString()}`);
+
+    if (response.ok) {
+      const data = await response.json() as { ok?: boolean; workspaceInfo?: { rootPath?: unknown } };
+      if (data.ok && typeof data.workspaceInfo?.rootPath === 'string' && data.workspaceInfo.rootPath) {
+        seedContext.workspaceRoot = data.workspaceInfo.rootPath;
+      }
+    }
+  } catch {
+    // ignore seed lookup failures and fall back to the base template
+  }
+
+  return createChatPathLinksTemplate(seedContext);
 }
 
 interface ConfigTabProps {
@@ -152,13 +187,13 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
   const handleCreate = useCallback(async () => {
     const label = FILE_OPTIONS.find(f => f.key === selectedKey)?.label || selectedKey;
     const template = selectedKey === 'chatPathLinks'
-      ? '{\n  "prefixes": [\n    "/workspace/"\n  ]\n}\n'
+      ? await createSeededChatPathLinksTemplate(agentId)
       : `# ${label}\n\n`;
     const result = await save(selectedKey, template);
     if (result === 'saved') {
       showFeedback('success', 'File created');
     }
-  }, [selectedKey, save, showFeedback]);
+  }, [agentId, selectedKey, save, showFeedback]);
 
   // Warn before unload when editing is active (issue #9)
   useEffect(() => {

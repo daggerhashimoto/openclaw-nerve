@@ -34,6 +34,7 @@ const {
 } = vi.hoisted(() => {
   const settingsContext = {
     kanbanVisible: true,
+    commandPaletteButtonVisible: true,
   };
   const uploadConfigState = {
     fileReferenceEnabled: true,
@@ -185,6 +186,7 @@ vi.mock('@/contexts/SettingsContext', () => ({
     setTheme: vi.fn(),
     setFont: vi.fn(),
     kanbanVisible: settingsContext.kanbanVisible,
+    commandPaletteButtonVisible: settingsContext.commandPaletteButtonVisible,
   }),
 }));
 
@@ -281,8 +283,14 @@ vi.mock('@/features/connect/ConnectDialog', () => ({
 }));
 
 vi.mock('@/components/TopBar', () => ({
-  TopBar: ({ showKanbanView, viewMode }: { showKanbanView?: boolean; viewMode?: string }) => {
-    topBarRenderSnapshots.push({ showKanbanView, viewMode });
+  TopBar: ({
+    showKanbanView,
+    viewMode,
+  }: {
+    showKanbanView?: boolean;
+    viewMode?: string;
+  }) => {
+    topBarRenderSnapshots.push({ showKanbanView, viewMode } as { showKanbanView?: boolean; viewMode?: string });
     return (
       <div>
         <div data-testid="topbar-show-kanban">{String(showKanbanView ?? true)}</div>
@@ -301,13 +309,19 @@ vi.mock('@/components/ConfirmDialog', () => ({
 }));
 
 vi.mock('@/features/chat/ChatPanel', () => ({
-  ChatPanel: forwardRef((_props: { onOpenBeadId?: (target: { beadId: string; workspaceAgentId?: string }) => void }, ref) => {
+  ChatPanel: forwardRef((props: {
+    onOpenBeadId?: (target: { beadId: string; workspaceAgentId?: string }) => void;
+    showCommandPaletteButton?: boolean;
+    onOpenCommandPalette?: () => void;
+  }, ref) => {
     useImperativeHandle(ref, () => ({
       focusInput: vi.fn(),
       addWorkspacePath: addWorkspacePathSpy,
     }));
 
-    return null;
+    return props.showCommandPaletteButton
+      ? <button type="button" data-testid="chatbox-command-trigger" aria-label="Open command palette" onClick={() => props.onOpenCommandPalette?.()}>Open Commands From Composer</button>
+      : null;
   }),
 }));
 
@@ -333,7 +347,9 @@ vi.mock('@/features/settings/SettingsDrawer', () => ({
 }));
 
 vi.mock('@/features/command-palette/CommandPalette', () => ({
-  CommandPalette: () => null,
+  CommandPalette: ({ open }: { open: boolean }) => (
+    <div data-testid="command-palette-state">{open ? 'open' : 'closed'}</div>
+  ),
 }));
 
 vi.mock('@/features/sessions/SessionList', () => ({
@@ -827,6 +843,7 @@ describe('App kanban visibility gating', () => {
   beforeEach(() => {
     localStorage.clear();
     settingsContext.kanbanVisible = true;
+    settingsContext.commandPaletteButtonVisible = true;
     topBarRenderSnapshots.length = 0;
   });
 
@@ -846,5 +863,48 @@ describe('App kanban visibility gating', () => {
     render(<App />);
 
     expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('chat');
+  });
+
+  it('opens the command palette from the chatbox trigger in desktop layout', () => {
+    render(<App />);
+
+    expect(screen.getByTestId('command-palette-state')).toHaveTextContent('closed');
+
+    fireEvent.click(screen.getByTestId('chatbox-command-trigger'));
+
+    expect(screen.getByTestId('command-palette-state')).toHaveTextContent('open');
+  });
+
+  it('shows the chatbox command trigger in compact layout too', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === '(max-width: 900px)',
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    render(<App />);
+
+    expect(screen.getByTestId('command-palette-state')).toHaveTextContent('closed');
+
+    fireEvent.click(screen.getByTestId('chatbox-command-trigger'));
+
+    expect(screen.getByTestId('command-palette-state')).toHaveTextContent('open');
+  });
+
+  it('hides the chatbox command trigger when the appearance toggle is disabled', () => {
+    settingsContext.commandPaletteButtonVisible = false;
+
+    render(<App />);
+
+    expect(screen.queryByTestId('chatbox-command-trigger')).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('button', { name: /open command palette/i })).toHaveLength(0);
   });
 });

@@ -84,6 +84,7 @@ const defaultMockHook = {
 
 describe('FileTreePanel', () => {
   let mockUseFileTree: vi.MockedFunction<typeof useFileTree>;
+  const originalVisualViewportDescriptor = Object.getOwnPropertyDescriptor(window, 'visualViewport');
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -103,7 +104,14 @@ describe('FileTreePanel', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+    if (originalVisualViewportDescriptor) {
+      Object.defineProperty(window, 'visualViewport', originalVisualViewportDescriptor);
+    } else {
+      // @ts-expect-error test cleanup for ad-hoc property definition
+      delete window.visualViewport;
+    }
     vi.restoreAllMocks();
   });
 
@@ -202,6 +210,401 @@ describe('FileTreePanel', () => {
   });
 
   describe('context menu add to chat', () => {
+    it('opens the shared row menu from a compact actions button without selecting the row', async () => {
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          isCompactLayout={true}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open actions for package.json' }));
+
+      expect(await screen.findByText('Rename')).toBeInTheDocument();
+      expect(defaultMockHook.selectFile).not.toHaveBeenCalled();
+    });
+
+    it('does not toggle a directory when its compact actions button is clicked', async () => {
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          isCompactLayout={true}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open actions for src' }));
+
+      expect(await screen.findByText('Rename')).toBeInTheDocument();
+      expect(defaultMockHook.toggleDirectory).not.toHaveBeenCalled();
+    });
+
+    it('does not open the shared row menu from touch long press in compact layout', async () => {
+      vi.useFakeTimers();
+
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          isCompactLayout={true}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const row = screen.getByTitle('package.json');
+      fireEvent.pointerDown(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 11 });
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+      fireEvent.pointerUp(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 11 });
+
+      expect(screen.queryByText('Add to chat')).not.toBeInTheDocument();
+      expect(screen.queryByText('Rename')).not.toBeInTheDocument();
+    });
+
+    it('closes the shared row menu when the same compact actions button is clicked again', async () => {
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          isCompactLayout={true}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const button = screen.getByRole('button', { name: 'Open actions for package.json' });
+
+      fireEvent.click(button);
+      expect(await screen.findByText('Rename')).toBeInTheDocument();
+
+      fireEvent.mouseDown(button);
+      fireEvent.click(button);
+
+      await waitFor(() => {
+        expect(screen.queryByText('Rename')).not.toBeInTheDocument();
+      });
+    });
+
+    it('opens the shared row menu on touch release after a long press without triggering file open', async () => {
+      vi.useFakeTimers();
+
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const row = screen.getByTitle('package.json');
+      fireEvent.pointerDown(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 0 });
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(screen.queryByText('Add to chat')).not.toBeInTheDocument();
+
+      fireEvent.pointerUp(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 0 });
+
+      expect(screen.getByText('Add to chat')).toBeInTheDocument();
+      expect(mockOnOpenFile).not.toHaveBeenCalled();
+    });
+
+    it('anchors the touch menu with its bottom-left corner at the touch point', async () => {
+      vi.useFakeTimers();
+      const visualViewportMock = {
+        width: 220,
+        height: 280,
+        offsetLeft: 40,
+        offsetTop: 80,
+      };
+      const originalOffsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+      Object.defineProperty(window, 'visualViewport', {
+        configurable: true,
+        value: visualViewportMock,
+      });
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+        configurable: true,
+        get() {
+          return this.classList.contains('shell-panel') ? 40 : 0;
+        },
+      });
+
+      try {
+        render(
+          <FileTreePanel
+            workspaceAgentId="agent-a"
+            onOpenFile={mockOnOpenFile}
+            onAddToChat={mockOnAddToChat}
+            addToChatEnabled={true}
+            onRemapOpenPaths={mockOnRemapOpenPaths}
+            onCloseOpenPaths={mockOnCloseOpenPaths}
+            collapsed={false}
+            onCollapseChange={vi.fn()}
+          />
+        );
+
+        const row = screen.getByTitle('package.json');
+        fireEvent.pointerDown(row, { pointerType: 'touch', clientX: 210, clientY: 300, pointerId: 1 });
+        await act(async () => {
+          vi.advanceTimersByTime(500);
+        });
+        fireEvent.pointerUp(row, { pointerType: 'touch', clientX: 210, clientY: 300, pointerId: 1 });
+
+        const menu = screen.getByText('Add to chat').closest('.shell-panel') as HTMLElement;
+        expect(menu).toHaveStyle({ left: '210px', top: '260px' });
+      } finally {
+        if (originalOffsetHeight) {
+          Object.defineProperty(HTMLElement.prototype, 'offsetHeight', originalOffsetHeight);
+        } else {
+          // @ts-expect-error test cleanup for ad-hoc property definition
+          delete HTMLElement.prototype.offsetHeight;
+        }
+      }
+    });
+
+    it('keeps a touch-opened menu visible when the browser emits a synthetic mousedown after release', async () => {
+      vi.useFakeTimers();
+
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const row = screen.getByTitle('package.json');
+      fireEvent.pointerDown(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 7 });
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+      fireEvent.pointerUp(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 7 });
+      fireEvent.mouseDown(document.body);
+
+      expect(screen.getByText('Add to chat')).toBeInTheDocument();
+    });
+
+    it('keeps the follow-up click suppressed after a touch long press on a directory', async () => {
+      vi.useFakeTimers();
+
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const row = screen.getByTitle('src');
+      fireEvent.pointerDown(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 2 });
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+
+      fireEvent.pointerUp(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 2 });
+      fireEvent.contextMenu(row, new MouseEvent('contextmenu', { bubbles: true }));
+      fireEvent.click(row);
+
+      expect(screen.getByText('Add to chat')).toBeInTheDocument();
+      expect(defaultMockHook.toggleDirectory).not.toHaveBeenCalled();
+    });
+
+    it('clears stale long-press suppression on the next non-touch pointerdown', async () => {
+      vi.useFakeTimers();
+
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const row = screen.getByTitle('src');
+      fireEvent.pointerDown(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 3 });
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+      fireEvent.pointerCancel(row, { pointerType: 'touch', pointerId: 3 });
+
+      fireEvent.pointerDown(row, { pointerType: 'mouse', clientX: 24, clientY: 32 });
+      fireEvent.click(row);
+
+      expect(defaultMockHook.toggleDirectory).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not leave the next interaction suppressed when contextmenu fires without a follow-up click', async () => {
+      vi.useFakeTimers();
+
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const row = screen.getByTitle('src');
+      fireEvent.pointerDown(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 5 });
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+      fireEvent.pointerUp(row, { pointerType: 'touch', clientX: 24, clientY: 32, pointerId: 5 });
+      fireEvent.contextMenu(row, new MouseEvent('contextmenu', { bubbles: true }));
+
+      fireEvent.pointerDown(row, { pointerType: 'mouse', clientX: 24, clientY: 32 });
+      fireEvent.click(row);
+
+      expect(defaultMockHook.toggleDirectory).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels touch long press when the pointer moves beyond tolerance', () => {
+      vi.useFakeTimers();
+
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const row = screen.getByTitle('package.json');
+      fireEvent.pointerDown(row, { pointerType: 'touch', clientX: 10, clientY: 10, pointerId: 4 });
+      fireEvent.pointerMove(row, { pointerType: 'touch', clientX: 40, clientY: 40, pointerId: 4 });
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      expect(screen.queryByText('Add to chat')).not.toBeInTheDocument();
+    });
+
+    it('cancels a triggered long press if the finger moves beyond tolerance before release', async () => {
+      vi.useFakeTimers();
+
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const row = screen.getByTitle('package.json');
+      fireEvent.pointerDown(row, { pointerType: 'touch', clientX: 20, clientY: 20, pointerId: 6 });
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+      fireEvent.pointerMove(row, { pointerType: 'touch', clientX: 40, clientY: 45, pointerId: 6 });
+      fireEvent.pointerUp(row, { pointerType: 'touch', clientX: 40, clientY: 45, pointerId: 6 });
+
+      expect(screen.queryByText('Add to chat')).not.toBeInTheDocument();
+    });
+
+    it('does not open the menu from a mouse pointer long hold', () => {
+      vi.useFakeTimers();
+
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      const row = screen.getByTitle('package.json');
+      fireEvent.pointerDown(row, { pointerType: 'mouse', clientX: 24, clientY: 32 });
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      expect(screen.queryByText('Add to chat')).not.toBeInTheDocument();
+    });
+
+    it('renders menu actions from the shared action builder for files', async () => {
+      render(
+        <FileTreePanel
+          workspaceAgentId="agent-a"
+          onOpenFile={mockOnOpenFile}
+          onAddToChat={mockOnAddToChat}
+          addToChatEnabled={true}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={false}
+          onCollapseChange={vi.fn()}
+        />
+      );
+
+      fireEvent.contextMenu(screen.getByText('package.json'), new MouseEvent('contextmenu', { bubbles: true }));
+
+      expect(await screen.findByText('Add to chat')).toBeInTheDocument();
+      expect(screen.getByText('Rename')).toBeInTheDocument();
+      expect(screen.getByText('Move to Trash')).toBeInTheDocument();
+    });
+
     it('shows "Add to chat" for files when file references are enabled, and calls the callback with the workspace agent', async () => {
       render(
         <FileTreePanel

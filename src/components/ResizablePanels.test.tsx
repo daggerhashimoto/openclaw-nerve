@@ -1,37 +1,42 @@
-/** Tests for the ResizablePanels component. */
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { ResizablePanels } from './ResizablePanels';
 
 describe('ResizablePanels', () => {
-  it('allows the right sidebar to shrink to 15% by clamping the left pane to 85%', () => {
+  it('keeps the divider interactive when right pane width is fixed', () => {
     const onResize = vi.fn();
-    const { container } = render(
+    const onRightWidthChange = vi.fn();
+
+    render(
       <ResizablePanels
-        left={<div>Left</div>}
-        right={<div>Right</div>}
+        left={<div>left</div>}
+        right={<div>right</div>}
         leftPercent={55}
         onResize={onResize}
+        rightWidthPx={320}
+        onRightWidthChange={onRightWidthChange}
       />,
     );
 
-    const panelRoot = container.firstElementChild as HTMLDivElement;
-    vi.spyOn(panelRoot, 'getBoundingClientRect').mockReturnValue({
+    const container = screen.getByText('left').parentElement?.parentElement as HTMLDivElement;
+    vi.spyOn(container, 'getBoundingClientRect').mockReturnValue({
       x: 0,
       y: 0,
-      left: 0,
       top: 0,
+      left: 0,
       right: 1000,
-      bottom: 500,
+      bottom: 600,
       width: 1000,
-      height: 500,
+      height: 600,
       toJSON: () => ({}),
-    } as DOMRect);
+    });
 
-    fireEvent.mouseDown(screen.getByTitle('Drag to resize. Double click to reset'));
-    fireEvent.mouseMove(window, { clientX: 900 });
+    const separator = screen.getByRole('separator', { name: 'Resize panels' });
+    fireEvent.mouseDown(separator, { clientX: 680 });
+    fireEvent.mouseMove(window, { clientX: 700 });
     fireEvent.mouseUp(window);
 
-    expect(onResize).toHaveBeenCalledWith(85);
+    expect(onRightWidthChange).toHaveBeenCalledWith(300);
+    expect(onResize).toHaveBeenCalledWith(70);
   });
 });

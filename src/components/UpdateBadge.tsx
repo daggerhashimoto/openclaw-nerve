@@ -12,9 +12,14 @@ interface VersionCheck {
   current: string;
   latest: string | null;
   updateAvailable: boolean;
+  projectDir?: string | null;
 }
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
 
 /**
  * Shows an update badge next to the version in the status bar
@@ -42,7 +47,13 @@ export function UpdateBadge() {
     return () => { ac.abort(); clearInterval(iv); };
   }, []);
 
-  if (!versionInfo?.updateAvailable || !versionInfo.latest) return null;
+  if (!versionInfo?.updateAvailable || !versionInfo.latest || !versionInfo.projectDir) return null;
+
+  const quotedProjectDir = shellQuote(versionInfo.projectDir);
+  const updateCommand = `cd ${quotedProjectDir} && npm run update -- --yes`;
+  const dryRunCommand = `cd ${quotedProjectDir} && npm run update -- --dry-run`;
+  const pinVersionCommand = `cd ${quotedProjectDir} && npm run update -- --version v${versionInfo.latest} --yes`;
+  const docsCommand = `cd ${quotedProjectDir} && cat docs/UPDATING.md`;
 
   return (
     <>
@@ -67,11 +78,17 @@ export function UpdateBadge() {
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div>
+              <p className="text-xs text-muted-foreground mb-1">Project directory</p>
+              <pre className="bg-secondary rounded-md px-3 py-2 text-xs font-mono text-muted-foreground select-all whitespace-pre-wrap break-all">
+                {versionInfo.projectDir}
+              </pre>
+            </div>
+            <div>
               <p className="text-sm text-muted-foreground mb-2">
-                Run this from the Nerve project directory:
+                Copy and paste this into your OpenClaw session or terminal:
               </p>
-              <pre className="bg-secondary rounded-md px-3 py-2 text-sm font-mono select-all">
-                npm run update -- --yes
+              <pre className="bg-secondary rounded-md px-3 py-2 text-sm font-mono select-all whitespace-pre-wrap break-all">
+                {updateCommand}
               </pre>
             </div>
             <div className="text-xs text-muted-foreground space-y-1">
@@ -82,13 +99,13 @@ export function UpdateBadge() {
               <p className="text-xs text-muted-foreground mb-1">Other options:</p>
               <pre className="bg-secondary rounded-md px-3 py-2 text-xs font-mono text-muted-foreground whitespace-pre-wrap">
 {`# Preview first
-npm run update -- --dry-run
+${dryRunCommand}
 
 # Pin to a specific version
-npm run update -- --version v${versionInfo.latest} --yes
+${pinVersionCommand}
 
 # See full docs
-cat docs/UPDATING.md`}
+${docsCommand}`}
               </pre>
             </div>
           </div>

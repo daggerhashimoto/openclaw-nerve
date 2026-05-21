@@ -24,12 +24,12 @@ interface VersionCache {
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 let cache: VersionCache | null = null;
+const projectDir = resolve(__dirname, '../..');
 
 const app = new Hono();
 
 app.get('/api/version/check', rateLimitGeneral, async (c) => {
   const now = Date.now();
-  const cwd = resolve(__dirname, '../..');
 
   // Serve from cache if fresh.
   if (cache && now - cache.checkedAt < CACHE_TTL_MS) {
@@ -38,10 +38,11 @@ app.get('/api/version/check', rateLimitGeneral, async (c) => {
       latest: cache.latest,
       source: cache.source,
       updateAvailable: compareSemver(cache.latest, pkg.version) > 0,
+      projectDir,
     });
   }
 
-  const latest = await resolveLatestVersion(cwd);
+  const latest = await resolveLatestVersion(projectDir);
   if (!latest) {
     return c.json({
       current: pkg.version,
@@ -49,6 +50,7 @@ app.get('/api/version/check', rateLimitGeneral, async (c) => {
       source: null,
       updateAvailable: false,
       error: 'Could not fetch release or semver tags',
+      projectDir,
     });
   }
 
@@ -63,6 +65,7 @@ app.get('/api/version/check', rateLimitGeneral, async (c) => {
     latest: latest.version,
     source: latest.source,
     updateAvailable: compareSemver(latest.version, pkg.version) > 0,
+    projectDir,
   });
 });
 

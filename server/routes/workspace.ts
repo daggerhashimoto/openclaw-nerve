@@ -19,6 +19,7 @@ import { rateLimitGeneral } from '../middleware/rate-limit.js';
 import { InvalidAgentIdError, resolveAgentWorkspace } from '../lib/agent-workspace.js';
 import { isWorkspaceLocal } from '../lib/workspace-detect.js';
 import { gatewayFilesList, gatewayFilesGet, gatewayFilesSet } from '../lib/gateway-rpc.js';
+import { createChatPathLinksTemplate } from '../lib/chat-path-links-config.js';
 
 const app = new Hono();
 
@@ -59,14 +60,36 @@ app.get('/api/workspace/:key', rateLimitGeneral, async (c) => {
   if (!filename) return c.json({ ok: false, error: 'Unknown file key' }, 400);
 
   const filePath = path.join(workspace.workspaceRoot, filename);
+  const workspaceIsLocal = await isWorkspaceLocal(workspace.workspaceRoot);
 
-  // Try local first
-  try {
-    await fs.access(filePath);
-    const content = await readText(filePath);
-    return c.json({ ok: true, content });
-  } catch {
-    // Local failed — try gateway fallback
+  if (workspaceIsLocal) {
+    try {
+      await fs.access(filePath);
+      const content = await readText(filePath);
+      return c.json({ ok: true, content });
+    } catch (err) {
+      const isMissingChatPathLinks = key === 'chatPathLinks'
+        && (err as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
+
+      if (isMissingChatPathLinks) {
+        const content = createChatPathLinksTemplate({
+          platform: process.platform,
+          homeDir: process.env.HOME,
+          username: process.env.USER ?? process.env.LOGNAME,
+          workspaceRoot: workspace.workspaceRoot,
+        });
+
+        try {
+          await fs.mkdir(path.dirname(filePath), { recursive: true });
+          await fs.writeFile(filePath, content, 'utf-8');
+          console.warn(`[workspace] Missing ${filename}; regenerated local default template at ${filePath}`);
+          return c.json({ ok: true, content });
+        } catch (writeErr) {
+          console.warn('[workspace] Failed to regenerate local chat path links config:', (writeErr as Error).message);
+        }
+      }
+      // Local failed — try gateway fallback
+    }
   }
 
   try {

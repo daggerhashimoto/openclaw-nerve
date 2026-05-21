@@ -77,7 +77,7 @@ describe('BeadViewerTab', () => {
     });
   });
 
-  it('linkifies bead note plain-text workspace paths with the same chat path prefixes', async () => {
+  it('linkifies bead note workspace paths, including inline code spans, with the same chat path prefixes', async () => {
     const onOpenWorkspacePath = vi.fn();
 
     render(
@@ -88,14 +88,18 @@ describe('BeadViewerTab', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('link', { name: '/workspace/src/plain.tsx' }));
+    const plainLink = screen.getByRole('link', { name: '/workspace/src/plain.tsx' });
+    const codeLink = screen.getByRole('link', { name: '/workspace/src/code.tsx' });
+
+    expect(codeLink.closest('code')).not.toBeNull();
+
+    fireEvent.click(plainLink);
+    fireEvent.click(codeLink);
 
     await waitFor(() => {
-      expect(onOpenWorkspacePath).toHaveBeenCalled();
-      expect(onOpenWorkspacePath.mock.calls.at(-1)?.[0]).toBe('/workspace/src/plain.tsx');
+      expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(1, '/workspace/src/plain.tsx', 'notes/beads.md');
+      expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(2, '/workspace/src/code.tsx', 'notes/beads.md');
     });
-
-    expect(screen.queryByRole('link', { name: '/workspace/src/code.tsx' })).toBeNull();
   });
 
   it('opens linked plans via their resolved workspace path and logs async failures', async () => {

@@ -95,6 +95,10 @@ export async function resolveWorkspacePathForRoot(
 ): Promise<string | null> {
   const root = getWorkspaceRoot(workspaceRoot);
   const rootPrefix = root.endsWith(path.sep) ? root : root + path.sep;
+  const realRoot = await fs.realpath(root).catch(() => root);
+  const realRootPrefix = realRoot.endsWith(path.sep) ? realRoot : realRoot + path.sep;
+  const isWithinLexicalRoot = (candidate: string) => candidate === root || candidate.startsWith(rootPrefix);
+  const isWithinRealRoot = (candidate: string) => candidate === realRoot || candidate.startsWith(realRootPrefix);
 
   // Block obvious traversal attempts
   const normalized = path.normalize(relativePath);
@@ -111,17 +115,17 @@ export async function resolveWorkspacePathForRoot(
   const resolved = path.resolve(root, normalized);
 
   // Must be within workspace root
-  if (!resolved.startsWith(rootPrefix) && resolved !== root) {
+  if (!isWithinLexicalRoot(resolved)) {
     return null;
   }
 
   // Resolve symlinks and re-check
   try {
     const real = await fs.realpath(resolved);
-    if (!real.startsWith(rootPrefix) && real !== root) {
+    if (!isWithinRealRoot(real)) {
       return null;
     }
-    return real;
+    return resolved;
   } catch {
     // File doesn't exist
     if (!options?.allowNonExistent) return null;
@@ -133,7 +137,7 @@ export async function resolveWorkspacePathForRoot(
     while (current !== root) {
       try {
         const realCurrent = await fs.realpath(current);
-        if (!realCurrent.startsWith(rootPrefix) && realCurrent !== root) {
+        if (!isWithinRealRoot(realCurrent)) {
           return null;
         }
         return resolved;
@@ -146,13 +150,8 @@ export async function resolveWorkspacePathForRoot(
       }
     }
 
-    try {
-      const realRoot = await fs.realpath(root);
-      if (!realRoot.startsWith(rootPrefix) && realRoot !== root) {
-        return null;
-      }
-    } catch {
-      // Fresh workspace root does not exist yet. That's fine.
+    if (!isWithinRealRoot(realRoot)) {
+      return null;
     }
 
     return resolved;

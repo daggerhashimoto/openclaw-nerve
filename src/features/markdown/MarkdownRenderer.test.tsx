@@ -83,6 +83,122 @@ describe('MarkdownRenderer', () => {
     expect(onOpenWorkspacePath).toHaveBeenCalledWith('/workspace/src/App.tsx', undefined);
   });
 
+  it('rewrites configured shorthand aliases to canonical workspace targets exactly once', () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="Open projects/openclaw-nerve/src/App.tsx now"
+        onOpenWorkspacePath={onOpenWorkspacePath}
+        pathLinkPrefixes={['/workspace/', '/home/derrick/.openclaw/workspace/']}
+        pathLinkAliases={{ 'projects/': '/workspace/projects/' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'projects/openclaw-nerve/src/App.tsx' }));
+    expect(onOpenWorkspacePath).toHaveBeenCalledWith('/workspace/projects/openclaw-nerve/src/App.tsx', undefined);
+  });
+
+  it('linkifies alias-only configs by normalizing rewritten targets to canonical workspace paths', () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="Open projects/openclaw-nerve/src/App.tsx now"
+        onOpenWorkspacePath={onOpenWorkspacePath}
+        pathLinkPrefixes={[]}
+        pathLinkAliases={{ 'projects/': '/workspace/projects/' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'projects/openclaw-nerve/src/App.tsx' }));
+    expect(onOpenWorkspacePath).toHaveBeenCalledWith('/workspace/projects/openclaw-nerve/src/App.tsx', undefined);
+  });
+
+  it('supports alias-only configs that rewrite file workspace urls to canonical workspace paths', () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="Open shortcut/openclaw-nerve/src/App.tsx now"
+        onOpenWorkspacePath={onOpenWorkspacePath}
+        pathLinkPrefixes={[]}
+        pathLinkAliases={{ 'shortcut/': 'file:///workspace/projects/' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'shortcut/openclaw-nerve/src/App.tsx' }));
+    expect(onOpenWorkspacePath).toHaveBeenCalledWith('/workspace/projects/openclaw-nerve/src/App.tsx', undefined);
+  });
+
+  it('supports wrapped alias shorthand without widening interior-token matching', () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="Open 'projects/openclaw-nerve/README.md' and path=projects/nope.md now"
+        onOpenWorkspacePath={onOpenWorkspacePath}
+        pathLinkPrefixes={['/workspace/']}
+        pathLinkAliases={{ 'projects/': '/workspace/projects/' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: "'projects/openclaw-nerve/README.md'" }));
+    expect(onOpenWorkspacePath).toHaveBeenCalledWith('/workspace/projects/openclaw-nerve/README.md', undefined);
+    expect(screen.queryByRole('link', { name: 'projects/nope.md' })).toBeNull();
+  });
+
+  it('prefers the longest matching alias prefix when aliases overlap', () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="Open projects/openclaw-nerve/src/App.tsx now"
+        onOpenWorkspacePath={onOpenWorkspacePath}
+        pathLinkPrefixes={['/workspace/']}
+        pathLinkAliases={{
+          'projects/': '/workspace/projects-generic/',
+          'projects/openclaw-nerve/': '/workspace/projects/openclaw-nerve/',
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'projects/openclaw-nerve/src/App.tsx' }));
+    expect(onOpenWorkspacePath).toHaveBeenCalledWith('/workspace/projects/openclaw-nerve/src/App.tsx', undefined);
+  });
+
+  it('does not recurse through alias-to-alias chains', () => {
+    render(
+      <MarkdownRenderer
+        content="Open shortcut/demo.md now"
+        onOpenWorkspacePath={vi.fn()}
+        pathLinkPrefixes={['/workspace/']}
+        pathLinkAliases={{ 'shortcut/': 'projects/', 'projects/': '/workspace/projects/' }}
+      />,
+    );
+
+    expect(screen.queryByRole('link', { name: 'shortcut/demo.md' })).toBeNull();
+  });
+
+  it('does not linkify /workspace paths when they only appear as an interior token slice', () => {
+    render(
+      <MarkdownRenderer
+        content="Open path=/workspace/src/App.tsx, now"
+        onOpenWorkspacePath={vi.fn()}
+        pathLinkPrefixes={['/workspace/']}
+      />,
+    );
+
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+  });
+
+  it('does not linkify a bare /workspace prefix with no path after it', () => {
+    render(
+      <MarkdownRenderer
+        content="Open /workspace/ later"
+        onOpenWorkspacePath={vi.fn()}
+        pathLinkPrefixes={['/workspace/']}
+      />,
+    );
+
+    expect(screen.queryByRole('link', { name: '/workspace/' })).toBeNull();
+  });
+
   it('passes current document context to inline path references too', () => {
     const onOpenWorkspacePath = vi.fn();
     render(
@@ -120,14 +236,228 @@ describe('MarkdownRenderer', () => {
     consoleError.mockRestore();
   });
 
+  it('does linkify bare workspace/... forms while normalizing them to the canonical workspace target', () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="Open workspace/AGENTS.md and workspace/agents-sections/12-maintenance-and-updates.md now"
+        pathLinkPrefixes={['/workspace/']}
+        onOpenWorkspacePath={onOpenWorkspacePath}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'workspace/AGENTS.md' }));
+    fireEvent.click(screen.getByRole('link', { name: 'workspace/agents-sections/12-maintenance-and-updates.md' }));
+
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(1, '/workspace/AGENTS.md', undefined);
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(2, '/workspace/agents-sections/12-maintenance-and-updates.md', undefined);
+  });
+
+  it('treats bare workspace/... as an intentional shorthand even when host-absolute prefixes are configured', () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="Open workspace/src/App.tsx and workspace/docs/Guide.md now"
+        pathLinkPrefixes={['/home/derrick/.openclaw/workspace/']}
+        onOpenWorkspacePath={onOpenWorkspacePath}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'workspace/src/App.tsx' }));
+    fireEvent.click(screen.getByRole('link', { name: 'workspace/docs/Guide.md' }));
+
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(1, '/workspace/src/App.tsx', undefined);
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(2, '/workspace/docs/Guide.md', undefined);
+  });
+
   it('does not linkify relative paths when only /workspace is configured', () => {
     render(<MarkdownRenderer content="src/App.tsx" pathLinkPrefixes={['/workspace/']} onOpenWorkspacePath={vi.fn()} />);
     expect(screen.queryByRole('link', { name: 'src/App.tsx' })).toBeNull();
   });
 
-  it('does not linkify configured path text inside inline code', () => {
-    render(<MarkdownRenderer content="Use `/workspace/src/App.tsx` later" pathLinkPrefixes={['/workspace/']} onOpenWorkspacePath={vi.fn()} />);
+  it('does not promote interior bare workspace tails or a bare workspace/ prefix into links', () => {
+    render(
+      <MarkdownRenderer
+        content="Open path=workspace/AGENTS.md and workspace/ later"
+        pathLinkPrefixes={['/workspace/']}
+        onOpenWorkspacePath={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+    expect(screen.queryByRole('link', { name: 'workspace/' })).toBeNull();
+  });
+
+  it('linkifies wrapped file URIs while normalizing the opened workspace path', () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="Open file:///workspace/src/App.tsx, now"
+        pathLinkPrefixes={['/workspace/']}
+        onOpenWorkspacePath={onOpenWorkspacePath}
+      />,
+    );
+
+    const link = screen.getByRole('link', { name: 'file:///workspace/src/App.tsx' });
+    expect(link.parentElement?.textContent).toBe('Open file:///workspace/src/App.tsx, now');
+
+    fireEvent.click(link);
+    expect(onOpenWorkspacePath).toHaveBeenCalledWith('/workspace/src/App.tsx', undefined);
+  });
+
+  it('decodes percent-escaped inline workspace link targets before dispatch', () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="Open file:///workspace/My%20Doc.md and /workspace/foo%23bar.md now"
+        pathLinkPrefixes={['/workspace/']}
+        onOpenWorkspacePath={onOpenWorkspacePath}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'file:///workspace/My%20Doc.md' }));
+    fireEvent.click(screen.getByRole('link', { name: '/workspace/foo%23bar.md' }));
+
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(1, '/workspace/My Doc.md', undefined);
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(2, '/workspace/foo#bar.md', undefined);
+  });
+
+  it('linkifies full host-absolute workspace paths while opening the canonical workspace target', () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="Open /home/derrick/.openclaw/workspace/src/App.tsx now"
+        pathLinkPrefixes={['/workspace/', '/home/derrick/.openclaw/workspace/']}
+        onOpenWorkspacePath={onOpenWorkspacePath}
+      />,
+    );
+
+    const link = screen.getByRole('link', { name: '/home/derrick/.openclaw/workspace/src/App.tsx' });
+    expect(link.parentElement?.textContent).toBe('Open /home/derrick/.openclaw/workspace/src/App.tsx now');
+
+    fireEvent.click(link);
+    expect(onOpenWorkspacePath).toHaveBeenCalledWith('/workspace/src/App.tsx', undefined);
+  });
+
+  it('does not promote interior host-absolute workspace tails into links', () => {
+    render(
+      <MarkdownRenderer
+        content="Open path=/home/derrick/.openclaw/workspace/src/App.tsx now"
+        pathLinkPrefixes={['/workspace/', '/home/derrick/.openclaw/workspace/']}
+        onOpenWorkspacePath={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+  });
+
+  it('linkifies wrapped workspace-rooted paths as single inline tokens while normalizing host-absolute forms', () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content={"Open '/workspace/src/App.tsx' \"/workspace/src/Main.tsx\" </workspace/src/Guide.md> 'workspace/src/Inline.tsx' '/home/derrick/.openclaw/workspace/src/Host.tsx' now"}
+        pathLinkPrefixes={['/workspace/', '/home/derrick/.openclaw/workspace/']}
+        onOpenWorkspacePath={onOpenWorkspacePath}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: "'/workspace/src/App.tsx'" }));
+    fireEvent.click(screen.getByRole('link', { name: '"/workspace/src/Main.tsx"' }));
+    fireEvent.click(screen.getByRole('link', { name: '</workspace/src/Guide.md>' }));
+    fireEvent.click(screen.getByRole('link', { name: "'workspace/src/Inline.tsx'" }));
+    fireEvent.click(screen.getByRole('link', { name: "'/home/derrick/.openclaw/workspace/src/Host.tsx'" }));
+
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(1, '/workspace/src/App.tsx', undefined);
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(2, '/workspace/src/Main.tsx', undefined);
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(3, '/workspace/src/Guide.md', undefined);
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(4, '/workspace/src/Inline.tsx', undefined);
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(5, '/workspace/src/Host.tsx', undefined);
+  });
+
+  it('keeps trailing punctuation outside wrapped workspace links', () => {
+    render(
+      <MarkdownRenderer
+        content="Open '/workspace/src/App.tsx', now"
+        pathLinkPrefixes={['/workspace/']}
+        onOpenWorkspacePath={vi.fn()}
+      />,
+    );
+
+    const link = screen.getByRole('link', { name: "'/workspace/src/App.tsx'" });
+    expect(link.parentElement?.textContent).toBe("Open '/workspace/src/App.tsx', now");
+  });
+
+  it('does not linkify bare wrapped workspace prefixes or bare file workspace prefixes', () => {
+    render(
+      <MarkdownRenderer
+        content="Open '/workspace/' and file:///workspace/ later"
+        pathLinkPrefixes={['/workspace/']}
+        onOpenWorkspacePath={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('link', { name: "'/workspace/'" })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'file:///workspace/' })).toBeNull();
+  });
+
+  it('does not turn unmatched wrappers into inner-tail links', () => {
+    render(
+      <MarkdownRenderer
+        content="Open '/workspace/src/App.tsx later"
+        pathLinkPrefixes={['/workspace/']}
+        onOpenWorkspacePath={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('link', { name: "'/workspace/src/App.tsx" })).toBeNull();
     expect(screen.queryByRole('link', { name: '/workspace/src/App.tsx' })).toBeNull();
+  });
+
+  it('linkifies configured path text inside inline code spans', () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="Use `file:///workspace/src/App.tsx` and `/workspace/src/Main.tsx` later"
+        pathLinkPrefixes={['/workspace/']}
+        onOpenWorkspacePath={onOpenWorkspacePath}
+      />,
+    );
+
+    const fileUriLink = screen.getByRole('link', { name: 'file:///workspace/src/App.tsx' });
+    const workspaceLink = screen.getByRole('link', { name: '/workspace/src/Main.tsx' });
+
+    expect(fileUriLink.closest('code')).not.toBeNull();
+    expect(workspaceLink.closest('code')).not.toBeNull();
+
+    fireEvent.click(fileUriLink);
+    fireEvent.click(workspaceLink);
+
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(1, '/workspace/src/App.tsx', undefined);
+    expect(onOpenWorkspacePath).toHaveBeenNthCalledWith(2, '/workspace/src/Main.tsx', undefined);
+  });
+
+  it('does not create nested workspace anchors inside markdown links that wrap inline code', async () => {
+    const onOpenWorkspacePath = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="[`/workspace/src/App.tsx`](docs/todo.md)"
+        pathLinkPrefixes={['/workspace/']}
+        onOpenWorkspacePath={onOpenWorkspacePath}
+      />,
+    );
+
+    const links = screen.getAllByRole('link');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveTextContent('/workspace/src/App.tsx');
+    expect(links[0].querySelector('a')).toBeNull();
+    expect(document.querySelectorAll('code a')).toHaveLength(0);
+
+    fireEvent.click(links[0]);
+
+    await waitFor(() => {
+      expect(onOpenWorkspacePath).toHaveBeenCalledWith('docs/todo.md', undefined);
+    });
+    expect(onOpenWorkspacePath).toHaveBeenCalledTimes(1);
   });
 
   it('opens workspace links in-app when a handler is provided', async () => {

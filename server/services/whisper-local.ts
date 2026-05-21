@@ -70,17 +70,19 @@ async function getContext(): Promise<WhisperContext> {
   // Prevent concurrent initialization (multiple requests hitting at same time)
   if (contextInitializing) return contextInitializing;
 
-  // Pick the GPU backend: Vulkan on Linux only when a Vulkan ICD/runtime is
-  // actually installed; fall back to undefined so initWhisper can pick its
-  // default (Metal on macOS, CPU on Linux without Vulkan). `detectGpu()` is too
-  // permissive here — it returns true on CUDA-only NVIDIA containers where
-  // `nvidia-smi` works but no Vulkan ICD is present, and forcing `'vulkan'` in
-  // that case makes initWhisper throw at context init.
-  const backend = process.platform === 'linux' && hasVulkanBackend() ? 'vulkan' : undefined;
+  // useGpu is meaningful on macOS (triggers Metal) and on Linux when a Vulkan
+  // ICD is present; on Linux without Vulkan we must keep useGpu false too so
+  // initWhisper doesn't fall into "useGpu=true + backend=undefined" territory
+  // and probe on its own. `detectGpu()` is too permissive for the backend
+  // gate — it returns true on CUDA-only NVIDIA containers where nvidia-smi
+  // works but no Vulkan ICD is installed, and forcing 'vulkan' in that case
+  // makes initWhisper throw at context init.
+  const useGpu = process.platform !== 'linux' || hasVulkanBackend();
+  const backend = process.platform === 'linux' && useGpu ? 'vulkan' : undefined;
 
   contextInitializing = initWhisper({
     filePath: modelPath(),
-    useGpu: true, // auto-detects Metal on macOS; Vulkan on Linux when present; CPU fallback elsewhere
+    useGpu, // Metal on macOS; Vulkan on Linux when present; CPU fallback elsewhere
   }, backend).then((ctx) => {
     whisperContext = ctx;
     contextInitializing = null;
@@ -295,8 +297,8 @@ function detectGpu(): boolean {
   try {
     // Try nvidia-smi (CUDA)
     try { execSync('nvidia-smi', { stdio: 'pipe', timeout: 3000 }); gpuDetected = true; return true; } catch { /* no nvidia */ }
-    // Try vulkaninfo
-    try { execSync('vulkaninfo --summary', { stdio: 'pipe', timeout: 3000 }); gpuDetected = true; return true; } catch { /* no vulkan */ }
+    // Reuse the Vulkan probe so vulkaninfo is spawned at most once per process.
+    if (hasVulkanBackend()) { gpuDetected = true; return true; }
     // macOS Metal is always available on Apple Silicon
     if (process.platform === 'darwin' && process.arch === 'arm64') { gpuDetected = true; return true; }
     gpuDetected = false;

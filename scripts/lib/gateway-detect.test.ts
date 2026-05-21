@@ -210,6 +210,43 @@ describe('gateway detection and repair', () => {
     expect(unchangedDefault.gateway.tools.allow).toEqual(['cron', 'gateway']);
   });
 
+  it('writes device repair under the OPENCLAW_HOME derived from OPENCLAW_CONFIG_PATH', async () => {
+    const customHome = path.join(tempHome, 'custom');
+    const customConfigPath = path.join(customHome, 'openclaw.json');
+    mkdirSync(path.join(customHome, 'devices'), { recursive: true });
+    mkdirSync(path.join(customHome, 'identity'), { recursive: true });
+
+    writeFileSync(customConfigPath, JSON.stringify({
+      gateway: { port: 19999, auth: { token: 'custom-token' } },
+    }, null, 2));
+    writeFileSync(path.join(customHome, 'identity', 'device.json'), JSON.stringify({
+      deviceId: 'custom-gateway-device',
+      publicKeyPem: '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA2sI3DpP2u80EIk1BddY5hAzvY4xXHzkwmo7aX6ixkm0=\n-----END PUBLIC KEY-----\n',
+    }, null, 2));
+    writeFileSync(path.join(customHome, 'devices', 'paired.json'), JSON.stringify({
+      'custom-gateway-device': {
+        deviceId: 'custom-gateway-device',
+        scopes: ['operator.read'],
+        tokens: {
+          operator: { token: 'custom-token', scopes: ['operator.read'] },
+        },
+      },
+    }, null, 2));
+
+    process.env.OPENCLAW_CONFIG_PATH = customConfigPath;
+
+    const { mod } = await importGatewayDetect();
+    const result = mod.fixGatewayDeviceScopes();
+    expect(result.ok).toBe(true);
+
+    const repairedCustom = JSON.parse(readFileSync(path.join(customHome, 'devices', 'paired.json'), 'utf8'));
+    expect(repairedCustom['custom-gateway-device'].scopes).toEqual(expect.arrayContaining(FULL_OPERATOR_SCOPES));
+
+    const untouchedDefault = JSON.parse(readFileSync(path.join(tempHome, '.openclaw', 'devices', 'paired.json'), 'utf8'));
+    expect(untouchedDefault['gateway-device'].scopes).toEqual(FULL_OPERATOR_SCOPES);
+    expect(untouchedDefault['custom-gateway-device']).toBeUndefined();
+  });
+
   it('prefers a detected config token over a stale shell env token during setup', async () => {
     process.env.OPENCLAW_GATEWAY_TOKEN = 'stale-shell-token';
 

@@ -1,22 +1,31 @@
 /**
  * Auto-detect gateway token from the local OpenClaw configuration.
  *
- * Reads ~/.openclaw/openclaw.json and extracts the gateway auth token.
- * This avoids requiring users to manually copy-paste the token during setup.
+ * Reads the OpenClaw config (default ~/.openclaw/openclaw.json, override via
+ * OPENCLAW_CONFIG_PATH) and extracts the gateway auth token. Device/identity
+ * files (paired.json, device.json, device-auth.json) live alongside that
+ * config, so when the config path is overridden every other path under the
+ * OpenClaw home shifts with it.
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import type { ExecSyncOptions } from 'node:child_process';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
 
 const HOME = process.env.HOME || os.homedir();
-const DEFAULT_OPENCLAW_CONFIG = join(HOME, '.openclaw', 'openclaw.json');
+const DEFAULT_OPENCLAW_HOME = join(HOME, '.openclaw');
+const DEFAULT_OPENCLAW_CONFIG = join(DEFAULT_OPENCLAW_HOME, 'openclaw.json');
 
 function resolveOpenClawConfigPath(): string {
   return process.env.OPENCLAW_CONFIG_PATH?.trim() || DEFAULT_OPENCLAW_CONFIG;
+}
+
+function resolveOpenClawHome(): string {
+  const overridePath = process.env.OPENCLAW_CONFIG_PATH?.trim();
+  return overridePath ? dirname(overridePath) : DEFAULT_OPENCLAW_HOME;
 }
 
 interface OpenClawConfig {
@@ -259,7 +268,7 @@ function hasFullOperatorScopes(scopes?: string[]): boolean {
 }
 
 function readGatewayDeviceId(): string | null {
-  const deviceJsonPath = join(HOME, '.openclaw', 'identity', 'device.json');
+  const deviceJsonPath = join(resolveOpenClawHome(), 'identity', 'device.json');
   if (!existsSync(deviceJsonPath)) return null;
 
   try {
@@ -309,7 +318,7 @@ function matchesPendingDeviceRequest(item: PendingDeviceRequest, identity: Devic
 }
 
 function localIdentityNeedsScopeFix(targetDeviceId: string): boolean {
-  const identityPath = join(HOME, '.openclaw', 'identity', 'device-auth.json');
+  const identityPath = join(resolveOpenClawHome(), 'identity', 'device-auth.json');
   if (!existsSync(identityPath)) return false;
 
   try {
@@ -352,9 +361,9 @@ function repairPairedDeviceScopes(device: {
  * with full operator scopes + a device-auth.json for the CLI.
  */
 function bootstrapPairedJson(): { ok: boolean; message: string; needsRestart: boolean } {
-  const deviceJsonPath = join(HOME, '.openclaw', 'identity', 'device.json');
-  const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
-  const deviceAuthPath = join(HOME, '.openclaw', 'identity', 'device-auth.json');
+  const deviceJsonPath = join(resolveOpenClawHome(), 'identity', 'device.json');
+  const pairedPath = join(resolveOpenClawHome(), 'devices', 'paired.json');
+  const deviceAuthPath = join(resolveOpenClawHome(), 'identity', 'device-auth.json');
 
   if (!existsSync(deviceJsonPath)) {
     return { ok: false, message: 'No gateway device identity found', needsRestart: false };
@@ -399,7 +408,7 @@ function bootstrapPairedJson(): { ok: boolean; message: string; needsRestart: bo
       },
     };
 
-    const devicesDir = join(HOME, '.openclaw', 'devices');
+    const devicesDir = join(resolveOpenClawHome(), 'devices');
     if (!existsSync(devicesDir)) {
       mkdirSync(devicesDir, { recursive: true, mode: 0o700 });
     }
@@ -444,7 +453,7 @@ function bootstrapPairedJson(): { ok: boolean; message: string; needsRestart: bo
 export function fixGatewayDeviceScopes(opts: {
   targetDeviceId?: string;
 } = {}): { ok: boolean; message: string; needsRestart: boolean } {
-  const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
+  const pairedPath = join(resolveOpenClawHome(), 'devices', 'paired.json');
 
   if (!existsSync(pairedPath)) {
     // Fresh install — no paired.json yet. Bootstrap by creating it with the
@@ -479,7 +488,7 @@ export function fixGatewayDeviceScopes(opts: {
     // and triggers a scope-upgrade request that requires approval scopes to
     // approve, creating another deadlock.
     let identityChanged = false;
-    const identityPath = join(HOME, '.openclaw', 'identity', 'device-auth.json');
+    const identityPath = join(resolveOpenClawHome(), 'identity', 'device-auth.json');
     if (existsSync(identityPath)) {
       try {
         const idRaw = readFileSync(identityPath, 'utf-8');
@@ -604,7 +613,7 @@ export function prePairNerveDevice(gatewayToken?: string): { ok: boolean; messag
   const nerveDir = process.env.NERVE_DATA_DIR
     || join(process.env.HOME || HOME, '.nerve');
   const identityPath = join(nerveDir, 'device-identity.json');
-  const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
+  const pairedPath = join(resolveOpenClawHome(), 'devices', 'paired.json');
 
   if (!existsSync(pairedPath)) {
     // fixGatewayDeviceScopes should have created this — but handle gracefully
@@ -775,11 +784,11 @@ export interface ConfigChange {
  * Detect whether gateway-side operator scopes need repair/bootstrap.
  */
 function needsDeviceScopeFix(): boolean {
-  const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
+  const pairedPath = join(resolveOpenClawHome(), 'devices', 'paired.json');
 
   if (!existsSync(pairedPath)) {
     // Fresh install — needs bootstrap if the gateway identity exists
-    const deviceJsonPath = join(HOME, '.openclaw', 'identity', 'device.json');
+    const deviceJsonPath = join(resolveOpenClawHome(), 'identity', 'device.json');
     return existsSync(deviceJsonPath);
   }
 
@@ -811,7 +820,7 @@ function needsDeviceScopeFix(): boolean {
 function needsPrePair(gatewayToken?: string): boolean {
   const nerveDir = process.env.NERVE_DATA_DIR || join(process.env.HOME || HOME, '.nerve');
   const identityPath = join(nerveDir, 'device-identity.json');
-  const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
+  const pairedPath = join(resolveOpenClawHome(), 'devices', 'paired.json');
 
   if (!existsSync(pairedPath)) return false;
 
@@ -898,7 +907,7 @@ export function detectNeededConfigChanges(opts: {
   gatewayToken?: string;
 }): ConfigChange[] {
   const changes: ConfigChange[] = [];
-  const pairedPath = join(HOME, '.openclaw', 'devices', 'paired.json');
+  const pairedPath = join(resolveOpenClawHome(), 'devices', 'paired.json');
 
   const deviceScopeFixNeeded = needsDeviceScopeFix();
 

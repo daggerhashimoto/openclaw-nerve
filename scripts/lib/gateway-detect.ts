@@ -23,9 +23,16 @@ function resolveOpenClawConfigPath(): string {
   return process.env.OPENCLAW_CONFIG_PATH?.trim() || DEFAULT_OPENCLAW_CONFIG;
 }
 
+/**
+ * Returns the directory that contains the OpenClaw config file.
+ * Device and identity sub-directories (`devices/`, `identity/`) are expected
+ * to be siblings of the config file, matching the default `~/.openclaw` layout.
+ * Composed off of `resolveOpenClawConfigPath` so the two helpers can't drift
+ * if the override/trim logic changes later.
+ */
 function resolveOpenClawHome(): string {
-  const overridePath = process.env.OPENCLAW_CONFIG_PATH?.trim();
-  return overridePath ? dirname(overridePath) : DEFAULT_OPENCLAW_HOME;
+  const configPath = resolveOpenClawConfigPath();
+  return configPath !== DEFAULT_OPENCLAW_CONFIG ? dirname(configPath) : DEFAULT_OPENCLAW_HOME;
 }
 
 interface OpenClawConfig {

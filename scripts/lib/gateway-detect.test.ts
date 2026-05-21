@@ -232,6 +232,13 @@ describe('gateway detection and repair', () => {
         },
       },
     }, null, 2));
+    writeFileSync(path.join(customHome, 'identity', 'device-auth.json'), JSON.stringify({
+      version: 1,
+      deviceId: 'custom-gateway-device',
+      tokens: {
+        operator: { token: 'custom-token', scopes: ['operator.read'] },
+      },
+    }, null, 2));
 
     process.env.OPENCLAW_CONFIG_PATH = customConfigPath;
 
@@ -242,9 +249,35 @@ describe('gateway detection and repair', () => {
     const repairedCustom = JSON.parse(readFileSync(path.join(customHome, 'devices', 'paired.json'), 'utf8'));
     expect(repairedCustom['custom-gateway-device'].scopes).toEqual(expect.arrayContaining(FULL_OPERATOR_SCOPES));
 
+    const repairedIdentity = JSON.parse(readFileSync(path.join(customHome, 'identity', 'device-auth.json'), 'utf8'));
+    expect(repairedIdentity.tokens.operator.scopes).toEqual(expect.arrayContaining(FULL_OPERATOR_SCOPES));
+
     const untouchedDefault = JSON.parse(readFileSync(path.join(tempHome, '.openclaw', 'devices', 'paired.json'), 'utf8'));
     expect(untouchedDefault['gateway-device'].scopes).toEqual(FULL_OPERATOR_SCOPES);
     expect(untouchedDefault['custom-gateway-device']).toBeUndefined();
+  });
+
+  it('uses OPENCLAW_CONFIG_PATH when patching gateway allowed origins', async () => {
+    const customConfigPath = path.join(tempHome, 'custom', 'openclaw-alt.json');
+    mkdirSync(path.dirname(customConfigPath), { recursive: true });
+    writeFileSync(customConfigPath, JSON.stringify({
+      gateway: { controlUi: { allowedOrigins: [] } },
+    }, null, 2));
+    process.env.OPENCLAW_CONFIG_PATH = customConfigPath;
+
+    const { mod } = await importGatewayDetect();
+    const result = mod.patchGatewayAllowedOrigins('http://custom.local:3080');
+
+    expect(result.ok).toBe(true);
+    expect(result.configPath).toBe(customConfigPath);
+
+    const updatedCustom = JSON.parse(readFileSync(customConfigPath, 'utf8'));
+    expect(updatedCustom.gateway.controlUi.allowedOrigins).toContain('http://custom.local:3080');
+
+    const unchangedDefault = JSON.parse(
+      readFileSync(path.join(tempHome, '.openclaw', 'openclaw.json'), 'utf8'),
+    );
+    expect(unchangedDefault.gateway.controlUi.allowedOrigins).not.toContain('http://custom.local:3080');
   });
 
   it('prefers a detected config token over a stale shell env token during setup', async () => {

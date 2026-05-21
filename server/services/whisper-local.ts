@@ -70,10 +70,20 @@ async function getContext(): Promise<WhisperContext> {
   // Prevent concurrent initialization (multiple requests hitting at same time)
   if (contextInitializing) return contextInitializing;
 
+  // useGpu is meaningful on macOS (triggers Metal) and on Linux when a Vulkan
+  // ICD is present; on Linux without Vulkan we must keep useGpu false too so
+  // initWhisper doesn't fall into "useGpu=true + backend=undefined" territory
+  // and probe on its own. `detectGpu()` is too permissive for the backend
+  // gate — it returns true on CUDA-only NVIDIA containers where nvidia-smi
+  // works but no Vulkan ICD is installed, and forcing 'vulkan' in that case
+  // makes initWhisper throw at context init.
+  const useGpu = process.platform !== 'linux' || hasVulkanBackend();
+  const backend = process.platform === 'linux' && useGpu ? 'vulkan' : undefined;
+
   contextInitializing = initWhisper({
     filePath: modelPath(),
-    useGpu: true, // auto-detects Metal on macOS; CPU fallback elsewhere
-  }).then((ctx) => {
+    useGpu, // Metal on macOS; Vulkan on Linux when present; CPU fallback elsewhere
+  }, backend).then((ctx) => {
     whisperContext = ctx;
     contextInitializing = null;
     console.log(`[whisper-local] Model loaded: ${activeModel}`);
@@ -267,6 +277,19 @@ export async function setWhisperModel(model: string): Promise<{ ok: boolean; mes
 // ── System info ──────────────────────────────────────────────────────────────
 
 let gpuDetected: boolean | null = null;
+let vulkanBackendAvailable: boolean | null = null;
+
+/** Probe for a Vulkan ICD/runtime specifically — the stricter check needed before passing 'vulkan' to initWhisper. */
+function hasVulkanBackend(): boolean {
+  if (vulkanBackendAvailable !== null) return vulkanBackendAvailable;
+  try {
+    execSync('vulkaninfo --summary', { stdio: 'pipe', timeout: 3000 });
+    vulkanBackendAvailable = true;
+  } catch {
+    vulkanBackendAvailable = false;
+  }
+  return vulkanBackendAvailable;
+}
 
 /** Check if a GPU is available by looking at Vulkan/Metal/CUDA device presence. */
 function detectGpu(): boolean {
@@ -274,8 +297,8 @@ function detectGpu(): boolean {
   try {
     // Try nvidia-smi (CUDA)
     try { execSync('nvidia-smi', { stdio: 'pipe', timeout: 3000 }); gpuDetected = true; return true; } catch { /* no nvidia */ }
-    // Try vulkaninfo
-    try { execSync('vulkaninfo --summary', { stdio: 'pipe', timeout: 3000 }); gpuDetected = true; return true; } catch { /* no vulkan */ }
+    // Reuse the Vulkan probe so vulkaninfo is spawned at most once per process.
+    if (hasVulkanBackend()) { gpuDetected = true; return true; }
     // macOS Metal is always available on Apple Silicon
     if (process.platform === 'darwin' && process.arch === 'arm64') { gpuDetected = true; return true; }
     gpuDetected = false;
@@ -393,6 +416,7 @@ export async function transcribeLocal(
     const transcribeOpts: TranscribeOptions = {
       temperature: 0.0,
       language: whisperLang,
+      maxThreads: cpus().length,
     };
     const { promise } = ctx.transcribeFile(wavTmp, transcribeOpts);
 

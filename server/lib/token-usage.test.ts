@@ -88,6 +88,46 @@ describe('aggregateTranscriptUsageEntries', () => {
       },
     ]);
   });
+
+  it('ignores +/-Infinity cost totals while preserving token and message counts', () => {
+    const result = aggregateTranscriptUsageEntries([
+      {
+        type: 'message',
+        message: {
+          provider: 'openrouter',
+          usage: {
+            input: 3,
+            output: 2,
+            cost: { total: Number.POSITIVE_INFINITY },
+          },
+        },
+      },
+      {
+        type: 'message',
+        message: {
+          provider: 'openrouter',
+          usage: {
+            input: 4,
+            output: 1,
+            cost: { total: Number.NEGATIVE_INFINITY },
+          },
+        },
+      },
+    ]);
+
+    expect(result.totalCost).toBe(0);
+    expect(result.entries).toEqual([
+      {
+        source: 'openrouter',
+        cost: 0,
+        messageCount: 2,
+        inputTokens: 7,
+        outputTokens: 3,
+        cacheReadTokens: 0,
+        errorCount: 0,
+      },
+    ]);
+  });
 });
 
 describe('resolveSessionTranscriptDirs', () => {

@@ -117,15 +117,17 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
       console.debug('[GatewayContext] Failed to poll status:', err);
     }
 
-    // Update activity sparkline
+    // Update activity sparkline (skip all tracking + math in performance mode)
+    if (isPerformanceModePreferenceEnabled()) {
+      currentBucketEvents.current = 0;
+      return;
+    }
     activityBuckets.current.push(currentBucketEvents.current);
     currentBucketEvents.current = 0;
     if (activityBuckets.current.length > 30) activityBuckets.current.shift();
     const blocks = '▁▂▃▄▅▆▇█';
     const max = Math.max(1, ...activityBuckets.current);
-    if (!isPerformanceModePreferenceEnabled()) {
-      setSparkline(activityBuckets.current.slice(-15).map(v => blocks[Math.min(7, Math.floor((v / max) * 7))]).join(''));
-    }
+    setSparkline(activityBuckets.current.slice(-15).map(v => blocks[Math.min(7, Math.floor((v / max) * 7))]).join(''));
   }, []);
 
   // Poll status when connected

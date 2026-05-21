@@ -58,21 +58,24 @@ describe('BoundedSSEWriter', () => {
 
   it('disconnects when a stream write does not settle before the timeout', async () => {
     vi.useFakeTimers();
-    const onDisconnect = vi.fn();
-    const writer = new BoundedSSEWriter({ writeSSE: vi.fn().mockReturnValue(new Promise(() => {})) }, {
-      label: 'sse-timeout',
-      maxQueueMessages: 4,
-      maxQueueBytes: 1024,
-      writeTimeoutMs: 25,
-      onDisconnect,
-    });
+    try {
+      const onDisconnect = vi.fn();
+      const writer = new BoundedSSEWriter({ writeSSE: vi.fn().mockReturnValue(new Promise(() => {})) }, {
+        label: 'sse-timeout',
+        maxQueueMessages: 4,
+        maxQueueBytes: 1024,
+        writeTimeoutMs: 25,
+        onDisconnect,
+      });
 
-    expect(writer.enqueue({ event: 'one', data: '1' })).toBe(true);
+      expect(writer.enqueue({ event: 'one', data: '1' })).toBe(true);
 
-    await vi.advanceTimersByTimeAsync(26);
+      await vi.advanceTimersByTimeAsync(26);
 
-    expect(onDisconnect).toHaveBeenCalledWith('write timeout');
-    expect(writer.stats()).toMatchObject({ closed: true });
-    vi.useRealTimers();
+      expect(onDisconnect).toHaveBeenCalledWith('write timeout');
+      expect(writer.stats()).toMatchObject({ closed: true });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

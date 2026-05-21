@@ -141,13 +141,29 @@ export class BoundedWebSocketSender {
     try {
       this.socket.send(frame.data, { binary: frame.isBinary }, (err?: Error) => {
         if (err) {
-          this.closeForOverflow(err.message);
+          this.closeForSendError(err);
           return;
         }
         this.drain();
       });
     } catch (err) {
-      this.closeForOverflow(err instanceof Error ? err.message : String(err));
+      this.closeForSendError(err);
+    }
+  }
+
+  /** Transport-level send failure. Distinct from queue overflow — does NOT
+   *  fire `onOverflow` and closes with a generic code, not 1013. */
+  private closeForSendError(err: unknown): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.clearRetryTimer();
+    this.queue = [];
+    this.queuedBytes = 0;
+    this.logger.warn(
+      `[backpressure] send failed for ${this.label}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    if (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING) {
+      this.socket.close();
     }
   }
 

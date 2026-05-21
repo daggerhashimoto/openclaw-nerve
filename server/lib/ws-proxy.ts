@@ -234,14 +234,18 @@ function createGatewayRelay(
     return true;
   }
 
-  /** Flush buffered messages to gateway in FIFO order. */
+  /** Flush buffered messages to gateway in FIFO order. Preserves the unsent tail
+   *  if `sendToGateway` returns false (e.g., backpressure), so frames aren't dropped. */
   function flushPending(): void {
     if (!gwWs || gwWs.readyState !== WebSocket.OPEN || !gwSender) return;
-    for (const msg of pending) {
+    let flushed = 0;
+    while (flushed < pending.length) {
+      const msg = pending[flushed]!;
       if (!sendToGateway(msg.data, msg.isBinary)) break;
+      pendingBytes -= typeof msg.data === 'string' ? Buffer.byteLength(msg.data) : msg.data.length;
+      flushed++;
     }
-    pending = [];
-    pendingBytes = 0;
+    pending = pending.slice(flushed);
   }
 
   /** Clear the challenge nonce timeout if active. */

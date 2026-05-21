@@ -70,12 +70,13 @@ async function getContext(): Promise<WhisperContext> {
   // Prevent concurrent initialization (multiple requests hitting at same time)
   if (contextInitializing) return contextInitializing;
 
-  // Pick the GPU backend: Vulkan on Linux when a GPU is actually detected (covers
-  // AMD/Intel/NVIDIA); fall back to undefined so the underlying library can pick
-  // the default backend (Metal on macOS, CPU when no GPU is present). Forcing
-  // `'vulkan'` on a Linux host without a Vulkan ICD makes initWhisper throw and
-  // takes local STT offline entirely.
-  const backend = process.platform === 'linux' && detectGpu() ? 'vulkan' : undefined;
+  // Pick the GPU backend: Vulkan on Linux only when a Vulkan ICD/runtime is
+  // actually installed; fall back to undefined so initWhisper can pick its
+  // default (Metal on macOS, CPU on Linux without Vulkan). `detectGpu()` is too
+  // permissive here — it returns true on CUDA-only NVIDIA containers where
+  // `nvidia-smi` works but no Vulkan ICD is present, and forcing `'vulkan'` in
+  // that case makes initWhisper throw at context init.
+  const backend = process.platform === 'linux' && hasVulkanBackend() ? 'vulkan' : undefined;
 
   contextInitializing = initWhisper({
     filePath: modelPath(),
@@ -274,6 +275,19 @@ export async function setWhisperModel(model: string): Promise<{ ok: boolean; mes
 // ── System info ──────────────────────────────────────────────────────────────
 
 let gpuDetected: boolean | null = null;
+let vulkanBackendAvailable: boolean | null = null;
+
+/** Probe for a Vulkan ICD/runtime specifically — the stricter check needed before passing 'vulkan' to initWhisper. */
+function hasVulkanBackend(): boolean {
+  if (vulkanBackendAvailable !== null) return vulkanBackendAvailable;
+  try {
+    execSync('vulkaninfo --summary', { stdio: 'pipe', timeout: 3000 });
+    vulkanBackendAvailable = true;
+  } catch {
+    vulkanBackendAvailable = false;
+  }
+  return vulkanBackendAvailable;
+}
 
 /** Check if a GPU is available by looking at Vulkan/Metal/CUDA device presence. */
 function detectGpu(): boolean {

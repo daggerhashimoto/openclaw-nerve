@@ -18,6 +18,7 @@
 import { Hono, type Context } from 'hono';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
+import type { Dirent } from 'node:fs';
 import { Readable } from 'node:stream';
 import path from 'node:path';
 import {
@@ -59,6 +60,26 @@ interface ScopedWorkspace {
   isCustomWorkspace: boolean;
 }
 
+interface DirectoryListing {
+  entries: TreeEntry[];
+  totalEntries: number;
+  returnedEntries: number;
+  limit: number;
+  cursor: number;
+  truncated: boolean;
+  nextCursor?: string;
+}
+
+interface ListingBudget {
+  remaining: number;
+  truncated: boolean;
+}
+
+const DEFAULT_TREE_LIMIT = 1_000;
+const MAX_TREE_LIMIT = 5_000;
+const MAX_TREE_RESPONSE_ENTRIES = 5_000;
+const STAT_CONCURRENCY = 16;
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function resolveScopedWorkspace(agentId?: string): ScopedWorkspace {
@@ -87,72 +108,178 @@ function handleAgentWorkspaceError(c: Context, err: unknown) {
   return c.json({ ok: false, error: message }, 500);
 }
 
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function parseTreeLimit(value: string | undefined): number {
+  return Math.min(parsePositiveInt(value, DEFAULT_TREE_LIMIT), MAX_TREE_LIMIT);
+}
+
+function parseTreeCursor(value: string | undefined): number {
+  return parsePositiveInt(value, 0);
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex]!);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
+}
+
+function shouldIncludeDirent(item: Dirent, basePath: string, showHidden: boolean): boolean {
+  if (isExcluded(item.name)) return false;
+
+  const inTrash = basePath === '.trash' || basePath.startsWith('.trash/');
+  if (inTrash) {
+    return item.name !== '.index.json';
+  }
+
+  if (!showHidden && item.name.startsWith('.') && item.name !== '.nerveignore' && item.name !== '.trash') {
+    return false;
+  }
+
+  return !(config.fileBrowserRoot && item.name === '.trash');
+}
+
+async function listDirectoryPage(
+  dirPath: string,
+  basePath: string,
+  depth: number,
+  showHidden: boolean,
+  options: {
+    cursor: number;
+    limit: number;
+    budget: ListingBudget;
+  },
+): Promise<DirectoryListing> {
+  let items;
+  try {
+    items = await fs.readdir(dirPath, { withFileTypes: true });
+  } catch {
+    return {
+      entries: [],
+      totalEntries: 0,
+      returnedEntries: 0,
+      limit: options.limit,
+      cursor: options.cursor,
+      truncated: false,
+    };
+  }
+
+  const visibleItems = items
+    .filter((item) => shouldIncludeDirent(item, basePath, showHidden))
+    // Sort: directories first, then alphabetical (case-insensitive)
+    .sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+
+  const totalEntries = visibleItems.length;
+  const start = Math.min(options.cursor, totalEntries);
+  const pageItems = visibleItems.slice(start, start + options.limit);
+  const nextCursor = start + pageItems.length < totalEntries ? String(start + pageItems.length) : undefined;
+  const entries: TreeEntry[] = [];
+
+  const directories = pageItems.filter((item) => item.isDirectory());
+  const files = pageItems.filter((item) => item.isFile());
+
+  for (const item of directories) {
+    if (options.budget.remaining <= 0) {
+      options.budget.truncated = true;
+      break;
+    }
+    options.budget.remaining -= 1;
+    const relativePath = basePath ? path.join(basePath, item.name) : item.name;
+    const fullPath = path.join(dirPath, item.name);
+
+    const childListing = depth > 1
+      ? await listDirectoryPage(fullPath, relativePath, depth - 1, showHidden, {
+          cursor: 0,
+          limit: options.limit,
+          budget: options.budget,
+        })
+      : null;
+
+    entries.push({
+      name: item.name,
+      path: relativePath,
+      type: 'directory',
+      children: childListing?.entries ?? null,
+    });
+  }
+
+  const allowedFileCount = Math.min(files.length, Math.max(0, options.budget.remaining));
+  if (allowedFileCount < files.length) {
+    options.budget.truncated = true;
+  }
+  options.budget.remaining -= allowedFileCount;
+
+  const fileEntries = await mapWithConcurrency<Dirent, TreeEntry | null>(
+    files.slice(0, allowedFileCount),
+    STAT_CONCURRENCY,
+    async (item) => {
+      const relativePath = basePath ? path.join(basePath, item.name) : item.name;
+      const fullPath = path.join(dirPath, item.name);
+      try {
+        const stat = await fs.stat(fullPath);
+        return {
+          name: item.name,
+          path: relativePath,
+          type: 'file' as const,
+          size: stat.size,
+          mtime: Math.floor(stat.mtimeMs),
+          binary: isBinary(item.name) || undefined,
+        };
+      } catch {
+        return null;
+      }
+    },
+  );
+
+  entries.push(...fileEntries.filter((entry): entry is TreeEntry => Boolean(entry)));
+
+  return {
+    entries,
+    totalEntries,
+    returnedEntries: entries.length,
+    limit: options.limit,
+    cursor: start,
+    truncated: Boolean(nextCursor) || options.budget.truncated,
+    nextCursor,
+  };
+}
+
 async function listDirectory(
   dirPath: string,
   basePath: string,
   depth: number,
   showHidden: boolean,
-): Promise<TreeEntry[]> {
-  const entries: TreeEntry[] = [];
-
-  let items;
-  try {
-    items = await fs.readdir(dirPath, { withFileTypes: true });
-  } catch {
-    return entries;
-  }
-
-  // Sort: directories first, then alphabetical (case-insensitive)
-  items.sort((a, b) => {
-    if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
-    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  cursor: number,
+  limit: number,
+): Promise<DirectoryListing> {
+  return listDirectoryPage(dirPath, basePath, depth, showHidden, {
+    cursor,
+    limit,
+    budget: {
+      remaining: MAX_TREE_RESPONSE_ENTRIES,
+      truncated: false,
+    },
   });
-
-  for (const item of items) {
-    // Skip excluded names and hidden files (except specific ones)
-    if (isExcluded(item.name)) continue;
-
-    const inTrash = basePath === '.trash' || basePath.startsWith('.trash/');
-    if (inTrash) {
-      // Internal metadata file for restore bookkeeping.
-      if (item.name === '.index.json') continue;
-    // Hide dotfiles unless showHidden=true, except for .nerveignore and .trash; custom roots still hide .trash.
-    } else if (!showHidden && item.name.startsWith('.') && item.name !== '.nerveignore' && item.name !== '.trash') {
-      continue;
-    } else if (config.fileBrowserRoot && item.name === '.trash') {
-      continue;
-    }
-
-    const relativePath = basePath ? path.join(basePath, item.name) : item.name;
-    const fullPath = path.join(dirPath, item.name);
-
-    if (item.isDirectory()) {
-      entries.push({
-        name: item.name,
-        path: relativePath,
-        type: 'directory',
-        children: depth > 1
-          ? await listDirectory(fullPath, relativePath, depth - 1, showHidden)
-          : null,
-      });
-    } else if (item.isFile()) {
-      try {
-        const stat = await fs.stat(fullPath);
-        entries.push({
-          name: item.name,
-          path: relativePath,
-          type: 'file',
-          size: stat.size,
-          mtime: Math.floor(stat.mtimeMs),
-          binary: isBinary(item.name) || undefined,
-        });
-      } catch {
-        // Skip files we can't stat
-      }
-    }
-  }
-
-  return entries;
 }
 
 function handleFileOpError(c: Context, err: unknown) {
@@ -226,6 +353,8 @@ app.get('/api/files/tree', async (c) => {
   const root = workspace.workspaceRoot;
   const subPath = c.req.query('path') || '';
   const depth = Math.min(Math.max(Number(c.req.query('depth')) || 1, 1), 5);
+  const limit = parseTreeLimit(c.req.query('limit'));
+  const cursor = parseTreeCursor(c.req.query('cursor'));
   const showHidden = c.req.query('showHidden') === 'true';
 
   // Check if workspace is local
@@ -254,12 +383,18 @@ app.get('/api/files/tree', async (c) => {
       targetDir = root;
     }
 
-    const entries = await listDirectory(targetDir, subPath, depth, showHidden);
+    const listing = await listDirectory(targetDir, subPath, depth, showHidden, cursor, limit);
 
     return c.json({
       ok: true,
       root: subPath || '.',
-      entries,
+      entries: listing.entries,
+      totalEntries: listing.totalEntries,
+      returnedEntries: listing.returnedEntries,
+      limit: listing.limit,
+      cursor: listing.cursor,
+      truncated: listing.truncated,
+      nextCursor: listing.nextCursor,
       workspaceInfo: {
         isCustomWorkspace: workspace.isCustomWorkspace,
         rootPath: root,
@@ -274,6 +409,11 @@ app.get('/api/files/tree', async (c) => {
       ok: true,
       root: subPath,
       entries: [],
+      totalEntries: 0,
+      returnedEntries: 0,
+      limit,
+      cursor,
+      truncated: false,
       remoteWorkspace: true,
       workspaceInfo: {
         isCustomWorkspace: workspace.isCustomWorkspace,
@@ -285,10 +425,20 @@ app.get('/api/files/tree', async (c) => {
   try {
     const remoteFiles = await gatewayFilesList(workspace.agentId);
     const entries = gatewayFilesToTree(remoteFiles, showHidden);
+    const start = Math.min(cursor, entries.length);
+    const pagedEntries = entries.slice(start, start + limit);
+    const nextCursor =
+      start + pagedEntries.length < entries.length ? String(start + pagedEntries.length) : undefined;
     return c.json({
       ok: true,
       root: '.',
-      entries,
+      entries: pagedEntries,
+      totalEntries: entries.length,
+      returnedEntries: pagedEntries.length,
+      limit,
+      cursor: start,
+      truncated: Boolean(nextCursor),
+      ...(nextCursor ? { nextCursor } : {}),
       remoteWorkspace: true,
       workspaceInfo: {
         isCustomWorkspace: workspace.isCustomWorkspace,
@@ -301,6 +451,11 @@ app.get('/api/files/tree', async (c) => {
       ok: true,
       root: '.',
       entries: [],
+      totalEntries: 0,
+      returnedEntries: 0,
+      limit,
+      cursor: 0,
+      truncated: false,
       remoteWorkspace: true,
       workspaceInfo: {
         isCustomWorkspace: workspace.isCustomWorkspace,

@@ -192,6 +192,7 @@ describe('chat runtime client reducer', () => {
       ],
     });
     const unchanged = initial.timeline.items['user-a'];
+    const changedBefore = initial.timeline.items['user-b'];
 
     const afterPatch = applyTimelinePatch(initial, {
       sessionKey: 'session-1',
@@ -203,6 +204,8 @@ describe('chat runtime client reducer', () => {
     });
 
     expect(afterPatch.timeline.items['user-a']).toBe(unchanged);
+    expect(afterPatch.timeline.items['user-b']).not.toBe(changedBefore);
+    expect(afterPatch.timeline.items['user-b']).toMatchObject({ text: 'second updated' });
     expect(orderedTimelineItems(afterPatch.timeline).map((item) => item.id)).toEqual(['user-a', 'user-b']);
     expect(afterPatch.timeline.itemsByTurnId?.[turnA.id].map((item) => item.id)).toEqual(['user-a']);
     expect(afterPatch.timeline.itemsByTurnId?.[turnB.id].map((item) => item.id)).toEqual(['user-b']);

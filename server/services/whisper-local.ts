@@ -80,10 +80,24 @@ async function getContext(): Promise<WhisperContext> {
   const useGpu = process.platform !== 'linux' || hasVulkanBackend();
   const backend = process.platform === 'linux' && useGpu ? 'vulkan' : undefined;
 
-  contextInitializing = initWhisper({
-    filePath: modelPath(),
-    useGpu, // Metal on macOS; Vulkan on Linux when present; CPU fallback elsewhere
-  }, backend).then((ctx) => {
+  // initWhisper throws synchronously inside the promise if the requested
+  // backend can't initialize (e.g., the ICD manifest probe matched a stale
+  // JSON whose driver library isn't loadable). Fall back to CPU once if the
+  // Vulkan path fails — the probes are heuristics, not load-time guarantees.
+  const initWithFallback = async (): Promise<WhisperContext> => {
+    try {
+      return await initWhisper({ filePath: modelPath(), useGpu }, backend);
+    } catch (err) {
+      if (backend !== 'vulkan') throw err;
+      console.warn(
+        `[whisper-local] Vulkan init failed, retrying on CPU: ${(err as Error).message}`,
+      );
+      vulkanBackendAvailable = false; // poison the cache so future inits skip the probe
+      return initWhisper({ filePath: modelPath(), useGpu: false });
+    }
+  };
+
+  contextInitializing = initWithFallback().then((ctx) => {
     whisperContext = ctx;
     contextInitializing = null;
     console.log(`[whisper-local] Model loaded: ${activeModel}`);

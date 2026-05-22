@@ -117,13 +117,16 @@ describe('TaskDetailDrawer', () => {
   });
 
   describe('result field markdown', () => {
-    it('renders task.result through MarkdownRenderer', async () => {
+    it('forwards task.result verbatim into MarkdownRenderer', async () => {
+      // MarkdownRenderer is mocked above; this asserts the raw string is the
+      // content prop reaching the renderer. The renderer's own GFM transform
+      // (## headings, tables, etc.) is covered by tests inside the markdown
+      // package and is intentionally NOT re-verified here.
       const result = '## Heading\n\n| col | col |\n|--|--|\n| a | b |';
       renderDrawer(makeTask({ result }));
 
       const md = await screen.findByTestId('md');
-      expect(md).toHaveTextContent('## Heading');
-      expect(md).toHaveTextContent('| col | col |');
+      expect(md.textContent).toBe(result);
     });
 
     it('does not render the result block when task.result is empty', () => {
@@ -153,7 +156,22 @@ describe('TaskDetailDrawer', () => {
 
       expect(screen.queryByRole('textbox', { name: /description/i })).not.toBeInTheDocument();
       const md = await screen.findByTestId('md');
-      expect(md).toHaveTextContent('## Hello');
+      expect(md.textContent).toBe('## Hello\n\n- bullet');
+    });
+
+    it('preview reflects edited content, not the task original', async () => {
+      const user = userEvent.setup();
+      renderDrawer(makeTask({ description: 'original copy' }));
+
+      const textarea = screen.getByRole('textbox', { name: /description/i });
+      await user.clear(textarea);
+      await user.type(textarea, 'edited body before toggle');
+
+      await user.click(screen.getByRole('button', { name: /toggle description preview/i }));
+
+      const md = await screen.findByTestId('md');
+      expect(md.textContent).toBe('edited body before toggle');
+      expect(md.textContent).not.toContain('original copy');
     });
 
     it('preserves in-flight edits when toggling off and back on', async () => {
@@ -196,6 +214,37 @@ describe('TaskDetailDrawer', () => {
 
       expect(screen.getByRole('button', { name: /toggle description preview/i })).toHaveAttribute('aria-pressed', 'true');
       expect(screen.getByRole('textbox', { name: /description/i })).toBeInTheDocument();
+    });
+
+    it('also resets to editing when the same task id rerenders with a new object reference', async () => {
+      // The reset effect keys on the task reference, not task.id. A parent
+      // re-render that hands down a fresh object (websocket tick, optimistic
+      // update echo) is expected to behave identically to a task switch.
+      // Pinning that here so a future refactor to [task?.id] surfaces as a
+      // test break instead of a silent UX change.
+      const user = userEvent.setup();
+      const { rerender } = render(
+        <TaskDetailDrawer
+          task={makeTask({ id: 'task-A', description: '# A' })}
+          onClose={vi.fn()}
+          onUpdate={vi.fn(async () => makeTask())}
+          onDelete={vi.fn(async () => {})}
+        />,
+      );
+
+      await user.click(screen.getByRole('button', { name: /toggle description preview/i }));
+      expect(screen.getByRole('button', { name: /toggle description preview/i })).toHaveAttribute('aria-pressed', 'false');
+
+      rerender(
+        <TaskDetailDrawer
+          task={makeTask({ id: 'task-A', description: '# A' })}
+          onClose={vi.fn()}
+          onUpdate={vi.fn(async () => makeTask())}
+          onDelete={vi.fn(async () => {})}
+        />,
+      );
+
+      expect(screen.getByRole('button', { name: /toggle description preview/i })).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('supports keyboard activation of the toggle', async () => {

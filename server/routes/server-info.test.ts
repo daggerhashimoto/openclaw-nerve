@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /** Tests for the GET /api/server-info endpoint. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Hono } from 'hono';
@@ -7,6 +9,13 @@ let readFileImpl: (...args: unknown[]) => Promise<string>;
 
 const runtime = vi.hoisted(() => ({
   platform: 'linux' as NodeJS.Platform,
+  telemetryDisclosure: {
+    telemetryMode: 'minimal' as const,
+    telemetryEnabled: true,
+    telemetryPublicDocUrl: 'https://example.com/telemetry',
+    showFreshInstallNotice: true,
+    freshInstallNoticeId: 'install-2026-04-20',
+  },
 }));
 
 vi.mock('node:os', async (importOriginal) => {
@@ -34,11 +43,20 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 vi.mock('../lib/config.js', () => ({
-  config: { agentName: 'Jen' },
+  config: {
+    agentName: 'Jen',
+    telemetryPublicDocUrl: 'https://example.com/telemetry',
+  },
 }));
 
 vi.mock('../lib/openclaw-config.js', () => ({
   getDefaultAgentWorkspaceRoot: () => '/mock/workspaces',
+}));
+
+vi.mock('../lib/telemetry/runtime.js', () => ({
+  getTelemetryRuntime: vi.fn(() => ({
+    getServerInfoDisclosure: () => runtime.telemetryDisclosure,
+  })),
 }));
 
 vi.mock('../middleware/rate-limit.js', () => ({
@@ -90,6 +108,12 @@ describe('GET /api/server-info', () => {
     expect(typeof json.serverTime).toBe('number');
     expect(json.agentName).toBe('Jen');
     expect(json.defaultAgentWorkspaceRoot).toBe('/mock/workspaces');
+    expect(json.telemetry).toEqual({
+      mode: 'minimal',
+      publicDocUrl: 'https://example.com/telemetry',
+      showFreshInstallNotice: true,
+      freshInstallNoticeId: 'install-2026-04-20',
+    });
   });
 
   it('returns macOS gateway start time from ps output', async () => {
@@ -119,6 +143,12 @@ describe('GET /api/server-info', () => {
     const json = (await res.json()) as Record<string, unknown>;
     expect(json.gatewayStartedAt).toBe(new Date('Tue Mar 31 20:14:31 2026').getTime());
     expect(json.defaultAgentWorkspaceRoot).toBe('/mock/workspaces');
+    expect(json.telemetry).toEqual({
+      mode: 'minimal',
+      publicDocUrl: 'https://example.com/telemetry',
+      showFreshInstallNotice: true,
+      freshInstallNoticeId: 'install-2026-04-20',
+    });
     expect(execCalls).toEqual([
       { file: 'ps', args: ['-axo', 'pid=,comm='] },
       { file: 'ps', args: ['-p', '72246', '-o', 'lstart='] },

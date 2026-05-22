@@ -41,6 +41,7 @@ GATEWAY_TOKEN=""
 GATEWAY_URL_OVERRIDE=""
 ACCESS_MODE=""
 ENV_MISSING=false
+IS_FRESH_INSTALL=false
 
 # ── Colors ────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -122,6 +123,38 @@ check_port() {
 repo_has_local_changes() {
   local repo_dir="$1"
   git -C "$repo_dir" status --porcelain --untracked-files=normal 2>/dev/null | grep -q .
+}
+
+stamp_telemetry() {
+  if ! node scripts/lib/telemetry-stamp.mjs "$@"; then
+    warn "Telemetry stamp failed, continuing"
+  fi
+}
+
+write_env_with_writer() {
+  local gateway_url="$1"
+  local gateway_token="$2"
+  local nerve_port="$3"
+  local telemetry_mode="${4:-}"
+
+  NERVE_SETUP_GATEWAY_URL="$gateway_url" \
+  NERVE_SETUP_GATEWAY_TOKEN="$gateway_token" \
+  NERVE_SETUP_PORT="$nerve_port" \
+  NERVE_SETUP_TELEMETRY_MODE="$telemetry_mode" \
+  ./node_modules/.bin/tsx --eval '
+import { writeEnvFile } from "./scripts/lib/env-writer.ts";
+
+const config = {
+  GATEWAY_URL: process.env.NERVE_SETUP_GATEWAY_URL,
+  GATEWAY_TOKEN: process.env.NERVE_SETUP_GATEWAY_TOKEN,
+  PORT: process.env.NERVE_SETUP_PORT,
+  ...(process.env.NERVE_SETUP_TELEMETRY_MODE
+    ? { NERVE_TELEMETRY_MODE: process.env.NERVE_SETUP_TELEMETRY_MODE }
+    : {}),
+};
+
+writeEnvFile(".env", config);
+'
 }
 
 # Animated dots while a background process runs
@@ -682,10 +715,30 @@ else
       run_with_dots "Fetching tags" git fetch --tags origin -q
       run_with_dots "Checking out ${TARGET_REF}" git checkout --force "$TARGET_REF" -q
     fi
+    IS_FRESH_INSTALL=true
     ok "Cloned to ${INSTALL_DIR}"
   fi
 
   cd "$INSTALL_DIR"
+  # An existing checkout without a configured .env is still a first-time install
+  # for setup defaults and telemetry bootstrap purposes.
+  if [[ "$IS_FRESH_INSTALL" != "true" && ! -f .env ]]; then
+    IS_FRESH_INSTALL=true
+  fi
+
+  # Stamp install-method based on ref kind:
+  # - release/version → release (tagged version installs)
+  # - branch/branch-fallback → source (dev/branch installs)
+  SETUP_INSTALL_METHOD="source"
+  if [[ "$TARGET_REF_KIND" == "release" || "$TARGET_REF_KIND" == "version" ]]; then
+    SETUP_INSTALL_METHOD="release"
+    stamp_telemetry install-method release --source install.sh
+  else
+    stamp_telemetry install-method source --source install.sh
+  fi
+  if [[ "$IS_FRESH_INSTALL" == "true" ]]; then
+    stamp_telemetry bootstrap fresh_install --source install.sh
+  fi
 fi
 
 # ── [3/5] Install & Build ────────────────────────────────────────────
@@ -905,11 +958,11 @@ generate_env_from_gateway() {
         done
       fi
     fi
-    cat > .env <<ENVEOF
-GATEWAY_URL=${gw_url}
-GATEWAY_TOKEN=${gw_token}
-PORT=${nerve_port}
-ENVEOF
+    local telemetry_mode=""
+    if [[ "$IS_FRESH_INSTALL" == "true" ]]; then
+      telemetry_mode="minimal"
+    fi
+    write_env_with_writer "$gw_url" "$gw_token" "$nerve_port" "$telemetry_mode"
     ok "Generated .env from OpenClaw gateway config"
   else
     warn "Cannot auto-generate .env — no gateway token found"
@@ -949,7 +1002,7 @@ else
         if read -r answer < /dev/tty 2>/dev/null; then
           if [[ "$(echo "$answer" | tr "[:upper:]" "[:lower:]")" == "y" ]]; then
             echo ""
-            NERVE_INSTALLER=1 npm run setup < /dev/tty 2>/dev/null || {
+            NERVE_INSTALLER=1 NERVE_SETUP_INSTALL_METHOD="$SETUP_INSTALL_METHOD" NERVE_SETUP_FRESH_INSTALL="$([[ "$IS_FRESH_INSTALL" == "true" ]] && printf '1' || printf '0')" npm run setup < /dev/tty 2>/dev/null || {
               warn "Setup wizard failed (no TTY?) — run ${CYAN}npm run setup${NC} manually"
             }
           else
@@ -963,12 +1016,12 @@ else
       fi
     elif [[ -n "$ACCESS_MODE" ]]; then
       info "Explicit access mode requested — running non-interactive setup wizard..."
-      NERVE_INSTALLER=1 npm run setup -- --defaults --access-mode "$ACCESS_MODE" || {
+      NERVE_INSTALLER=1 NERVE_SETUP_INSTALL_METHOD="$SETUP_INSTALL_METHOD" NERVE_SETUP_FRESH_INSTALL="$([[ "$IS_FRESH_INSTALL" == "true" ]] && printf '1' || printf '0')" npm run setup -- --defaults --access-mode "$ACCESS_MODE" || {
         fail "Setup failed for --access-mode ${ACCESS_MODE}"
         exit 1
       }
     elif [[ "$INTERACTIVE" == "true" ]]; then
-      NERVE_INSTALLER=1 npm run setup < /dev/tty 2>/dev/null || {
+      NERVE_INSTALLER=1 NERVE_SETUP_INSTALL_METHOD="$SETUP_INSTALL_METHOD" NERVE_SETUP_FRESH_INSTALL="$([[ "$IS_FRESH_INSTALL" == "true" ]] && printf '1' || printf '0')" npm run setup < /dev/tty 2>/dev/null || {
         warn "Setup wizard failed — attempting auto-config from gateway..."
         generate_env_from_gateway
       }

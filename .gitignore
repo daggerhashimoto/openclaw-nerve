@@ -51,3 +51,7 @@ server/data/kanban/audit.log
 server-dist/data/kanban/tasks.json
 server-dist/data/kanban/audit.log
 node_modules
+
+# Local worktrees
+.worktrees/
+worktrees/

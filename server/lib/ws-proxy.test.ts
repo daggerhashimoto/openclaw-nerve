@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /** Tests for ws-proxy — connection, relaying, auth, and lifecycle. */
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -46,15 +48,42 @@ vi.mock('./openclaw-bin.js', () => ({
   resolveOpenclawBin: vi.fn(() => '/usr/bin/echo'),
 }));
 
+vi.mock('./gateway-rpc.js', () => ({
+  gatewayRpcCall: vi.fn(),
+}));
+
 import { setupWebSocketProxy, closeAllWebSockets, _internals } from './ws-proxy.js';
 import { config } from './config.js';
 import { verifySession, parseSessionCookie } from './session.js';
 import { createDeviceBlock } from './device-identity.js';
+import { buildToolCallCompletedEvent } from './telemetry/detailed-events.js';
+import { setTelemetryRuntime, type TelemetryRuntime } from './telemetry/runtime.js';
+import { gatewayRpcCall } from './gateway-rpc.js';
 import { createServer as createHttpServer } from 'node:http';
 
 const mockedConfig = config as { auth: boolean; sessionSecret: string };
 const mockedVerifySession = verifySession as ReturnType<typeof vi.fn>;
 const mockedParseSessionCookie = parseSessionCookie as ReturnType<typeof vi.fn>;
+const mockedGatewayRpcCall = gatewayRpcCall as ReturnType<typeof vi.fn>;
+
+const telemetryRuntimeMock = {
+  start: vi.fn(async () => undefined),
+  stop: vi.fn(async () => undefined),
+  getMode: vi.fn(() => 'detailed'),
+  getServerInfoDisclosure: vi.fn(() => ({
+    telemetryMode: 'detailed',
+    telemetryEnabled: true,
+    telemetryPublicDocUrl: 'https://example.com/telemetry',
+    showFreshInstallNotice: false,
+  })),
+  recordSessionCreated: vi.fn(async () => undefined),
+  recordMessageSubmitted: vi.fn(async () => undefined),
+  recordToolCompleted: vi.fn(async () => undefined),
+  markFeatureUsed: vi.fn(async () => undefined),
+  markSessionSeen: vi.fn(async () => ({ firstSeen: false, sessionHash: 'sha256:test-session' })),
+  clearSessionSeen: vi.fn(async () => undefined),
+  reportError: vi.fn(async () => undefined),
+};
 
 function waitForMessage(ws: WebSocket, timeoutMs = 3000): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -92,6 +121,54 @@ function waitForCloseOrError(ws: WebSocket, timeoutMs = 3000): Promise<{ code: n
   });
 }
 
+function waitForJsonMessage<T = Record<string, unknown>>(
+  ws: WebSocket,
+  predicate: (message: Record<string, unknown>) => boolean,
+  timeoutMs = 3000,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ws.off('message', onMessage);
+      reject(new Error('WS JSON message timeout'));
+    }, timeoutMs);
+
+    const onMessage = (data: Buffer | string) => {
+      try {
+        const parsed = JSON.parse(data.toString()) as Record<string, unknown>;
+        if (!predicate(parsed)) return;
+        clearTimeout(timer);
+        ws.off('message', onMessage);
+        resolve(parsed as T);
+      } catch {
+        // Ignore non-JSON frames.
+      }
+    };
+
+    ws.on('message', onMessage);
+  });
+}
+
+async function establishGatewaySession(
+  ws: WebSocket,
+  connectId = 'connect-1',
+  clientId = 'nerve-ui',
+): Promise<void> {
+  await waitForJsonMessage(ws, (message) => message.type === 'event' && message.event === 'connect.challenge');
+
+  ws.send(JSON.stringify({
+    type: 'req',
+    method: 'connect',
+    id: connectId,
+    params: { auth: { token: 'test-token' }, client: { id: clientId, mode: 'webchat' } },
+  }));
+
+  await waitForJsonMessage(ws, (message) => (
+    message.type === 'res'
+    && message.id === connectId
+    && message.ok === true
+  ));
+}
+
 describe('ws-proxy', () => {
   let mockGw: MockGateway;
   let proxyServer: Server;
@@ -111,6 +188,23 @@ describe('ws-proxy', () => {
     mockedConfig.auth = false;
     mockedVerifySession.mockReset();
     mockedParseSessionCookie.mockReset();
+    mockedGatewayRpcCall.mockReset();
+    mockedGatewayRpcCall.mockResolvedValue({ ok: true });
+    telemetryRuntimeMock.recordSessionCreated.mockReset();
+    telemetryRuntimeMock.recordSessionCreated.mockResolvedValue(undefined);
+    telemetryRuntimeMock.recordMessageSubmitted.mockReset();
+    telemetryRuntimeMock.recordMessageSubmitted.mockResolvedValue(undefined);
+    telemetryRuntimeMock.recordToolCompleted.mockReset();
+    telemetryRuntimeMock.recordToolCompleted.mockResolvedValue(undefined);
+    telemetryRuntimeMock.markFeatureUsed.mockReset();
+    telemetryRuntimeMock.markFeatureUsed.mockResolvedValue(undefined);
+    telemetryRuntimeMock.markSessionSeen.mockReset();
+    telemetryRuntimeMock.markSessionSeen.mockResolvedValue({ firstSeen: false, sessionHash: 'sha256:test-session' });
+    telemetryRuntimeMock.clearSessionSeen.mockReset();
+    telemetryRuntimeMock.clearSessionSeen.mockResolvedValue(undefined);
+    telemetryRuntimeMock.reportError.mockReset();
+    telemetryRuntimeMock.reportError.mockResolvedValue(undefined);
+    setTelemetryRuntime(telemetryRuntimeMock as unknown as TelemetryRuntime);
     mockGw.clearReceived();
 
     // Create a new HTTP server and attach ws-proxy
@@ -126,6 +220,7 @@ describe('ws-proxy', () => {
 
   afterEach(async () => {
     closeAllWebSockets();
+    setTelemetryRuntime(null);
     await new Promise<void>((resolve) => {
       proxyServer.close(() => resolve());
     });
@@ -734,6 +829,716 @@ describe('ws-proxy', () => {
       expect(auth.token).toBeUndefined();
 
       ws.close();
+    });
+  });
+
+  describe('telemetry instrumentation', () => {
+    it('records message_submitted when chat.send succeeds through the proxy', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+      mockGw.clearReceived();
+
+      ws.send(JSON.stringify({
+        type: 'req',
+        method: 'chat.send',
+        id: 'chat-send-1',
+        params: {
+          sessionKey: 'agent:main:main',
+          message: 'hello telemetry',
+          idempotencyKey: 'idem-1',
+        },
+      }));
+
+      await mockGw.expectMessages(1);
+      mockGw.broadcast(JSON.stringify({
+        type: 'res',
+        id: 'chat-send-1',
+        ok: true,
+        payload: { runId: 'run-message-1', status: 'started' },
+      }));
+      await waitForJsonMessage(ws, (message) => message.type === 'res' && message.id === 'chat-send-1');
+
+      await vi.waitFor(() => {
+        expect(telemetryRuntimeMock.recordMessageSubmitted).toHaveBeenCalledWith(expect.objectContaining({
+          sessionKey: 'agent:main:main',
+          surface: 'chat',
+        }));
+      });
+
+      ws.close();
+    });
+
+    it('records session_created only the first time a new root session receives a successful message', async () => {
+      telemetryRuntimeMock.markSessionSeen
+        .mockResolvedValueOnce({ firstSeen: true, sessionHash: 'sha256:first-root' })
+        .mockResolvedValueOnce({ firstSeen: false, sessionHash: 'sha256:first-root' });
+
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+      mockGw.clearReceived();
+
+      for (const requestId of ['chat-send-root-1', 'chat-send-root-2']) {
+        ws.send(JSON.stringify({
+          type: 'req',
+          method: 'chat.send',
+          id: requestId,
+          params: {
+            sessionKey: 'agent:main:main',
+            message: `hello from ${requestId}`,
+            idempotencyKey: requestId,
+          },
+        }));
+
+        await mockGw.expectMessages(requestId === 'chat-send-root-1' ? 1 : 2);
+        mockGw.broadcast(JSON.stringify({
+          type: 'res',
+          id: requestId,
+          ok: true,
+          payload: { runId: `run-${requestId}`, status: 'started' },
+        }));
+        await waitForJsonMessage(ws, (message) => message.type === 'res' && message.id === requestId);
+      }
+
+      await vi.waitFor(() => {
+        expect(telemetryRuntimeMock.recordSessionCreated).toHaveBeenCalledTimes(1);
+      });
+
+      expect(telemetryRuntimeMock.recordSessionCreated).toHaveBeenCalledWith(expect.objectContaining({
+        sessionKey: 'agent:main:main',
+        surface: 'sessions',
+        explicit: false,
+      }));
+
+      ws.close();
+    });
+
+    it('marks the sessions feature used when a session label is changed', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+
+      ws.send(JSON.stringify({
+        type: 'req',
+        method: 'sessions.patch',
+        id: 'patch-label-1',
+        params: {
+          key: 'agent:main:main',
+          label: 'Renamed session',
+        },
+      }));
+
+      await waitForJsonMessage(ws, (message) => message.type === 'res' && message.id === 'patch-label-1');
+
+      await vi.waitFor(() => {
+        expect(mockedGatewayRpcCall).toHaveBeenCalledWith('sessions.patch', {
+          key: 'agent:main:main',
+          label: 'Renamed session',
+        });
+        expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('sessions');
+      });
+
+      ws.close();
+    });
+
+    it('does not mark sessions usage for root bootstrap patches and clears stale root state', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+
+      ws.send(JSON.stringify({
+        type: 'req',
+        method: 'sessions.patch',
+        id: 'patch-root-bootstrap-1',
+        params: {
+          key: 'agent:reviewer:main',
+          label: 'Reviewer',
+          model: 'openai/gpt-5.4',
+          thinkingLevel: null,
+        },
+      }));
+
+      await waitForJsonMessage(ws, (message) => message.type === 'res' && message.id === 'patch-root-bootstrap-1');
+
+      await vi.waitFor(() => {
+        expect(mockedGatewayRpcCall).toHaveBeenCalledWith('sessions.patch', {
+          key: 'agent:reviewer:main',
+          label: 'Reviewer',
+          model: 'openai/gpt-5.4',
+          thinkingLevel: null,
+        });
+        expect(telemetryRuntimeMock.clearSessionSeen).toHaveBeenCalledWith('agent:reviewer:main');
+      });
+
+      expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
+
+      ws.close();
+    });
+
+    it('marks the sessions feature used when a session is deleted', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+
+      ws.send(JSON.stringify({
+        type: 'req',
+        method: 'sessions.delete',
+        id: 'delete-session-1',
+        params: {
+          key: 'agent:main:main',
+          deleteTranscript: true,
+        },
+      }));
+
+      await waitForJsonMessage(ws, (message) => message.type === 'res' && message.id === 'delete-session-1');
+
+      await vi.waitFor(() => {
+        expect(mockedGatewayRpcCall).toHaveBeenCalledWith('sessions.delete', {
+          key: 'agent:main:main',
+          deleteTranscript: true,
+        });
+        expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('sessions');
+        expect(telemetryRuntimeMock.clearSessionSeen).toHaveBeenCalledWith('agent:main:main');
+      });
+
+      ws.close();
+    });
+
+    it('marks the sessions feature used when a control-ui label change succeeds through the proxied gateway', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws, 'connect-control-patch-1', 'openclaw-control-ui');
+      mockGw.clearReceived();
+
+      ws.send(JSON.stringify({
+        type: 'req',
+        method: 'sessions.patch',
+        id: 'patch-control-label-1',
+        params: {
+          key: 'agent:main:main',
+          label: 'Renamed from control UI',
+        },
+      }));
+
+      await mockGw.expectMessages(1);
+      mockGw.broadcast(JSON.stringify({
+        type: 'res',
+        id: 'patch-control-label-1',
+        ok: true,
+        payload: { ok: true },
+      }));
+      await waitForJsonMessage(ws, (message) => message.type === 'res' && message.id === 'patch-control-label-1');
+
+      await vi.waitFor(() => {
+        expect(mockedGatewayRpcCall).not.toHaveBeenCalled();
+        expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('sessions');
+      });
+
+      ws.close();
+    });
+
+    it('marks the sessions feature used when a control-ui delete succeeds through the proxied gateway', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws, 'connect-control-delete-1', 'openclaw-control-ui');
+      mockGw.clearReceived();
+
+      ws.send(JSON.stringify({
+        type: 'req',
+        method: 'sessions.delete',
+        id: 'delete-control-session-1',
+        params: {
+          key: 'agent:main:main',
+          deleteTranscript: true,
+        },
+      }));
+
+      await mockGw.expectMessages(1);
+      mockGw.broadcast(JSON.stringify({
+        type: 'res',
+        id: 'delete-control-session-1',
+        ok: true,
+        payload: { ok: true },
+      }));
+      await waitForJsonMessage(ws, (message) => message.type === 'res' && message.id === 'delete-control-session-1');
+
+      await vi.waitFor(() => {
+        expect(mockedGatewayRpcCall).not.toHaveBeenCalled();
+        expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('sessions');
+        expect(telemetryRuntimeMock.clearSessionSeen).toHaveBeenCalledWith('agent:main:main');
+      });
+
+      ws.close();
+    });
+
+    it('does not mark sessions usage for control-ui root bootstrap patches and clears stale root state', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws, 'connect-control-bootstrap-1', 'openclaw-control-ui');
+      mockGw.clearReceived();
+
+      ws.send(JSON.stringify({
+        type: 'req',
+        method: 'sessions.patch',
+        id: 'patch-control-root-bootstrap-1',
+        params: {
+          key: 'agent:reviewer:main',
+          label: 'Reviewer',
+          model: 'openai/gpt-5.4',
+          thinkingLevel: null,
+        },
+      }));
+
+      await mockGw.expectMessages(1);
+      mockGw.broadcast(JSON.stringify({
+        type: 'res',
+        id: 'patch-control-root-bootstrap-1',
+        ok: true,
+        payload: { ok: true },
+      }));
+      await waitForJsonMessage(ws, (message) => message.type === 'res' && message.id === 'patch-control-root-bootstrap-1');
+
+      await vi.waitFor(() => {
+        expect(mockedGatewayRpcCall).not.toHaveBeenCalled();
+        expect(telemetryRuntimeMock.clearSessionSeen).toHaveBeenCalledWith('agent:reviewer:main');
+      });
+
+      expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
+
+      ws.close();
+    });
+
+    it('emits tool_call_completed with coerced tool family and duration bucket on tool result', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:main:main',
+          runId: 'run-tool-success-1',
+          stream: 'tool',
+          data: {
+            phase: 'start',
+            name: 'web_search',
+            toolCallId: 'tool-success-1',
+          },
+        },
+      }));
+
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:main:main',
+          runId: 'run-tool-success-1',
+          stream: 'tool',
+          data: {
+            phase: 'result',
+            toolCallId: 'tool-success-1',
+          },
+        },
+      }));
+
+      await vi.waitFor(() => {
+        expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledTimes(1);
+      });
+
+      const input = telemetryRuntimeMock.recordToolCompleted.mock.calls[0]?.[0] as {
+        toolName: string;
+        success: boolean;
+        startedAt: number;
+        finishedAt: number;
+        surface?: 'chat';
+      };
+
+      const payload = buildToolCallCompletedEvent({
+        identity: { instanceId: 'uuid-1234' },
+        appVersion: '1.5.2',
+        installMethod: 'source',
+        surface: input.surface || 'chat',
+        toolName: input.toolName,
+        success: input.success,
+        startedAt: input.startedAt,
+        finishedAt: input.finishedAt,
+        sentAt: new Date(input.finishedAt).toISOString(),
+      });
+
+      expect(payload.properties.tool_name).toBe('web');
+      expect(payload.properties.duration_bucket).toBe('1_5s');
+      expect(payload.properties.success).toBe(true);
+
+      ws.close();
+    });
+
+    it('emits failed tool_call_completed when a run errors before a pending tool returns', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:main:main',
+          runId: 'run-tool-failure-1',
+          stream: 'tool',
+          data: {
+            phase: 'start',
+            name: 'custom_tool',
+            toolCallId: 'tool-failure-1',
+          },
+        },
+      }));
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'chat',
+        payload: {
+          sessionKey: 'agent:main:main',
+          runId: 'run-tool-failure-1',
+          state: 'error',
+          error: 'tool run exploded',
+        },
+      }));
+
+      await vi.waitFor(() => {
+        expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledTimes(1);
+      });
+
+      const input = telemetryRuntimeMock.recordToolCompleted.mock.calls[0]?.[0] as {
+        toolName: string;
+        success: boolean;
+        startedAt: number;
+        finishedAt: number;
+        surface?: 'chat';
+      };
+
+      const payload = buildToolCallCompletedEvent({
+        identity: { instanceId: 'uuid-1234' },
+        appVersion: '1.5.2',
+        installMethod: 'source',
+        surface: input.surface || 'chat',
+        toolName: input.toolName,
+        success: input.success,
+        startedAt: input.startedAt,
+        finishedAt: input.finishedAt,
+        sentAt: new Date(input.finishedAt).toISOString(),
+      });
+
+      expect(payload.properties.tool_name).toBe('other');
+      expect(payload.properties.success).toBe(false);
+
+      ws.close();
+    });
+
+    it('flushes run-scoped pending tools when a failure frame omits runId but keeps the sessionKey', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:main:main',
+          runId: 'run-tool-failure-missing-run-id-1',
+          stream: 'tool',
+          data: {
+            phase: 'start',
+            name: 'custom_tool',
+            toolCallId: 'tool-failure-missing-run-id-1',
+          },
+        },
+      }));
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'chat',
+        payload: {
+          sessionKey: 'agent:main:main',
+          state: 'error',
+          error: 'tool run exploded without run id',
+        },
+      }));
+
+      await vi.waitFor(() => {
+        expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledTimes(1);
+      });
+
+      expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledWith(expect.objectContaining({
+        toolName: 'custom_tool',
+        success: false,
+        surface: 'chat',
+      }));
+
+      ws.close();
+    });
+
+    it('tracks duplicate toolCallIds independently when their runIds differ', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:alpha:main',
+          runId: 'run-tool-dup-1',
+          stream: 'tool',
+          data: {
+            phase: 'start',
+            name: 'read',
+            toolCallId: 'tool-duplicate-id',
+          },
+        },
+      }));
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:reviewer:main',
+          runId: 'run-tool-dup-2',
+          stream: 'tool',
+          data: {
+            phase: 'start',
+            name: 'write',
+            toolCallId: 'tool-duplicate-id',
+          },
+        },
+      }));
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:alpha:main',
+          runId: 'run-tool-dup-1',
+          stream: 'tool',
+          data: {
+            phase: 'result',
+            toolCallId: 'tool-duplicate-id',
+          },
+        },
+      }));
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:reviewer:main',
+          runId: 'run-tool-dup-2',
+          stream: 'tool',
+          data: {
+            phase: 'result',
+            toolCallId: 'tool-duplicate-id',
+          },
+        },
+      }));
+
+      await vi.waitFor(() => {
+        expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledTimes(2);
+      });
+
+      expect(telemetryRuntimeMock.recordToolCompleted.mock.calls.map(([input]) => (
+        (input as { toolName: string }).toolName
+      ))).toEqual(['read', 'write']);
+
+      ws.close();
+    });
+
+    it('emits failed tool_call_completed when CLI lifecycle ends before a pending tool returns', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:main:main',
+          runId: 'run-tool-lifecycle-end-1',
+          stream: 'tool',
+          data: {
+            phase: 'start',
+            name: 'custom_tool',
+            toolCallId: 'tool-lifecycle-end-1',
+          },
+        },
+      }));
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:main:main',
+          runId: 'run-tool-lifecycle-end-1',
+          stream: 'lifecycle',
+          data: {
+            phase: 'end',
+          },
+        },
+      }));
+
+      await vi.waitFor(() => {
+        expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledTimes(1);
+      });
+
+      expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledWith(expect.objectContaining({
+        toolName: 'custom_tool',
+        success: false,
+        surface: 'chat',
+      }));
+
+      ws.close();
+    });
+
+    it('emits failed tool_call_completed for pending tools without a runId on aborted chat frames', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:main:main',
+          stream: 'tool',
+          data: {
+            phase: 'start',
+            name: 'custom_tool',
+            toolCallId: 'tool-no-run-id-1',
+          },
+        },
+      }));
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'chat',
+        payload: {
+          sessionKey: 'agent:main:main',
+          state: 'aborted',
+        },
+      }));
+
+      await vi.waitFor(() => {
+        expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledTimes(1);
+      });
+
+      expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledWith(expect.objectContaining({
+        toolName: 'custom_tool',
+        success: false,
+        surface: 'chat',
+      }));
+
+      ws.close();
+    });
+
+    it('emits failed tool_call_completed when the gateway disconnects before a pending tool returns', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:main:main',
+          runId: 'run-tool-gateway-close-1',
+          stream: 'tool',
+          data: {
+            phase: 'start',
+            name: 'custom_tool',
+            toolCallId: 'tool-gateway-close-1',
+          },
+        },
+      }));
+
+      mockGw.disconnectAll(1011, 'gateway dropped');
+
+      await vi.waitFor(() => {
+        expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledTimes(1);
+      });
+
+      expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledWith(expect.objectContaining({
+        toolName: 'custom_tool',
+        success: false,
+        surface: 'chat',
+      }));
+    });
+
+    it('emits failed tool_call_completed when the client disconnects before a pending tool returns', async () => {
+      const ws = new WebSocket(
+        `ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(mockGw.url + '/ws')}`,
+      );
+
+      await establishGatewaySession(ws);
+
+      mockGw.broadcast(JSON.stringify({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:main:main',
+          runId: 'run-tool-client-close-1',
+          stream: 'tool',
+          data: {
+            phase: 'start',
+            name: 'custom_tool',
+            toolCallId: 'tool-client-close-1',
+          },
+        },
+      }));
+
+      const closePromise = waitForClose(ws);
+      ws.close();
+      await closePromise;
+
+      await vi.waitFor(() => {
+        expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledTimes(1);
+      });
+
+      expect(telemetryRuntimeMock.recordToolCompleted).toHaveBeenCalledWith(expect.objectContaining({
+        toolName: 'custom_tool',
+        success: false,
+        surface: 'chat',
+      }));
     });
   });
 });

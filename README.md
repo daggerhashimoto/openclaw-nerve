@@ -209,6 +209,10 @@ When you bind it to the network (`HOST=0.0.0.0`), built-in password authenticati
 
 For the full threat model and hardening details, see **[docs/SECURITY.md](docs/SECURITY.md)**.
 
+## Telemetry
+
+Nerve's telemetry is server-controlled and documented publicly. For modes, exact payload fields, domains contacted, retention, and how to turn it off, see **[docs/TELEMETRY.md](docs/TELEMETRY.md)**.
+
 ## Documentation
 
 - **[Architecture](docs/ARCHITECTURE.md)** — codebase structure and system design

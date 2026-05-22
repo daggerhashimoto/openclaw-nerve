@@ -31,6 +31,15 @@ Unless the user clearly asks for something else, use these defaults:
 - if the setup wizard is unavailable, skipped, or fails: fall back to explicit manual config
 - install, configure, and validate before reporting completion
 
+## Telemetry defaults
+
+- Fresh installs created by `install.sh` or `npm run setup` default to `minimal` telemetry.
+- Legacy upgrades stay `off` until explicitly configured.
+- The first-run telemetry notice appears only for fresh installs in `minimal` mode.
+- The first-run notice is informational only. It does not change the server setting.
+- To disable telemetry entirely, set `NERVE_TELEMETRY_MODE=off` in `.env` and restart Nerve.
+- For the exact telemetry contract, see [TELEMETRY.md](./TELEMETRY.md).
+
 ## Existing install handling
 
 If `~/nerve` already exists:
@@ -127,12 +136,14 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
 
 If the installer finishes and the setup wizard is available, use it.
 
-If no TTY is available and the target remains the safe local path, you may use:
+If no TTY is available and this is a brand-new safe local install, you may use:
 
 ```bash
 cd ~/nerve
-npm run setup -- --defaults
+npm run setup -- --defaults --fresh-install
 ```
+
+If you are rerunning setup for an existing checkout or regenerating `.env`, omit `--fresh-install`.
 
 If the requested topology is LAN, Tailscale, remote gateway, cloud, or any other non-localhost path, do not guess. Ask first unless the user already specified that topology clearly.
 

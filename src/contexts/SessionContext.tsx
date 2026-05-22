@@ -18,6 +18,7 @@ import {
   pickDefaultSessionKey,
   getRootAgentId,
 } from '@/features/sessions/sessionKeys';
+import { emitBranchCreated, emitBranchSwitched, emitSessionOpened } from '@/features/telemetry/telemetryClient';
 
 const BUSY_STATES = new Set(['running', 'thinking', 'tool_use', 'delta', 'started']);
 const IDLE_STATES = new Set(['idle', 'done', 'error', 'final', 'aborted', 'completed']);
@@ -40,6 +41,13 @@ export interface SpawnSessionOpts {
   parentSessionKey?: string;
 }
 
+export interface SessionTelemetryDisclosure {
+  mode: 'off' | 'minimal' | 'detailed';
+  publicDocUrl: string;
+  showFreshInstallNotice: boolean;
+  freshInstallNoticeId: string;
+}
+
 interface SessionContextValue {
   sessions: Session[];
   sessionsLoading: boolean;
@@ -58,6 +66,7 @@ interface SessionContextValue {
   agentLogEntries: AgentLogEntry[];
   eventEntries: EventEntry[];
   agentName: string;
+  telemetry: SessionTelemetryDisclosure;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -72,6 +81,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [eventEntries, setEventEntries] = useState<EventEntry[]>([]);
   const [agentStatus, setAgentStatus] = useState<Record<string, GranularAgentState>>({});
   const [agentName, setAgentName] = useState('Agent');
+  const [telemetry, setTelemetry] = useState<SessionTelemetryDisclosure>({
+    mode: 'off',
+    publicDocUrl: '',
+    showFreshInstallNotice: false,
+    freshInstallNoticeId: '',
+  });
   const [defaultAgentWorkspaceRoot, setDefaultAgentWorkspaceRoot] = useState<string | null>(null);
   const [rootIdentityNames, setRootIdentityNames] = useState<Record<string, string>>({});
   const [rootIdentityMisses, setRootIdentityMisses] = useState<Record<string, true>>({});
@@ -117,11 +132,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUnreadSessionKeys(next);
   }, []);
 
-  const setCurrentSession = useCallback((key: string) => {
+  const applyCurrentSession = useCallback((key: string, options?: { emitTelemetry?: boolean }) => {
+    const previousKey = currentSessionRef.current;
     currentSessionRef.current = key;
     setCurrentSessionRaw(key);
     markSessionRead(key);
+    if (options?.emitTelemetry !== false && previousKey && key && previousKey !== key) {
+      void emitSessionOpened();
+    }
   }, [markSessionRead]);
+
+  const setCurrentSession = useCallback((key: string) => {
+    applyCurrentSession(key, { emitTelemetry: true });
+  }, [applyCurrentSession]);
 
   const fetchHiddenCronSessions = useCallback(async (activeMinutes: number, limit: number): Promise<Session[]> => {
     try {
@@ -158,10 +181,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       try {
         const res = await fetch('/api/server-info', { signal: controller.signal });
         if (!res.ok) return;
-        const data = await res.json() as { agentName?: string; defaultAgentWorkspaceRoot?: string | null };
+        const data = await res.json() as {
+          agentName?: string;
+          defaultAgentWorkspaceRoot?: string | null;
+          telemetry?: Partial<SessionTelemetryDisclosure>;
+        };
         if (data.agentName) {
           setAgentName(data.agentName);
         }
+        const nextTelemetry = data.telemetry;
+        setTelemetry({
+          mode: nextTelemetry?.mode === 'minimal' || nextTelemetry?.mode === 'detailed' ? nextTelemetry.mode : 'off',
+          publicDocUrl: typeof nextTelemetry?.publicDocUrl === 'string' ? nextTelemetry.publicDocUrl : '',
+          showFreshInstallNotice: nextTelemetry?.showFreshInstallNotice === true,
+          freshInstallNoticeId: typeof nextTelemetry?.freshInstallNoticeId === 'string' ? nextTelemetry.freshInstallNoticeId : '',
+        });
         setDefaultAgentWorkspaceRoot(
           typeof data.defaultAgentWorkspaceRoot === 'string' && data.defaultAgentWorkspaceRoot.trim()
             ? data.defaultAgentWorkspaceRoot
@@ -601,13 +635,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // If nothing changed, return the same array reference
         return hasChanges ? merged : prev;
       });
-      setCurrentSession(nextCurrentSession);
+      applyCurrentSession(nextCurrentSession, { emitTelemetry: false });
     } catch (err) {
       console.debug('[SessionContext] Failed to refresh sessions:', err);
     } finally {
       setSessionsLoading(false);
     }
-  }, [connectionState, listAuthoritativeSessions, setCurrentSession]);
+  }, [applyCurrentSession, connectionState, listAuthoritativeSessions]);
 
   const refreshSessionsRef = useRef(refreshSessions);
   useEffect(() => {
@@ -832,8 +866,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const descendants = findDescendantSessionKeys(sessionKey, authoritativeSessions);
     const keysToDelete = [...descendants, sessionKey];
     const shouldReplaceCurrent = keysToDelete.includes(currentSessionRef.current);
+    const previousRootSessionKey = currentSessionRef.current
+      ? getRootAgentSessionKey(currentSessionRef.current)
+      : null;
     const remaining = sessionsRef.current.filter(s => !keysToDelete.includes(getSessionKey(s)));
     const nextCurrentSession = shouldReplaceCurrent ? pickDefaultSessionKey(remaining) : currentSessionRef.current;
+    const nextRootSessionKey = nextCurrentSession
+      ? getRootAgentSessionKey(nextCurrentSession)
+      : null;
 
     for (const key of keysToDelete) {
       await rpc('sessions.delete', { key, deleteTranscript: true });
@@ -847,9 +887,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setUnreadSessionKeys(next);
     }
     if (shouldReplaceCurrent) {
-      setCurrentSession(nextCurrentSession);
+      applyCurrentSession(nextCurrentSession, { emitTelemetry: false });
+      if (previousRootSessionKey && nextRootSessionKey && previousRootSessionKey !== nextRootSessionKey) {
+        void emitBranchSwitched({ success: true });
+      }
     }
-  }, [findDescendantSessionKeys, listAuthoritativeSessions, rpc, setCurrentSession]);
+  }, [applyCurrentSession, findDescendantSessionKeys, listAuthoritativeSessions, rpc]);
 
   const spawnSession = useCallback(async (opts: SpawnSessionOpts) => {
     const authoritativeSessions = await listAuthoritativeSessions();
@@ -893,6 +936,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
       await refreshSessions();
       setCurrentSession(sessionKey);
+      void emitBranchCreated();
       return;
     }
 
@@ -957,11 +1001,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     agentLogEntries,
     eventEntries,
     agentName,
+    telemetry,
   }), [
     displaySessions, sessionsLoading, currentSession, setCurrentSession, busyState, agentStatus,
     unreadSessions, markSessionRead,
     abortSession, refreshSessions, deleteSession, spawnSession, renameSession,
-    updateSessionFromEvent, agentLogEntries, eventEntries, agentName,
+    updateSessionFromEvent, agentLogEntries, eventEntries, agentName, telemetry,
   ]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

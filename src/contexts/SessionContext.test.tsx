@@ -7,11 +7,26 @@ import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
 const mockUseGateway = vi.fn();
 const mockUseSettings = vi.fn();
 const playPingMock = vi.fn();
+const telemetryClientMocks = vi.hoisted(() => ({
+  emitSessionOpened: vi.fn(async () => undefined),
+  emitBranchCreated: vi.fn(async () => undefined),
+  emitBranchSwitched: vi.fn(async () => undefined),
+}));
 let rpcMock: ReturnType<typeof vi.fn>;
 let subscribeMock: ReturnType<typeof vi.fn>;
 let connectionStateValue: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' = 'connected';
 let subscribedHandler: ((msg: GatewayEvent) => void) | null = null;
 let soundEnabledValue = true;
+let serverInfoResponse: {
+  agentName?: string;
+  defaultAgentWorkspaceRoot?: string | null;
+  telemetry?: {
+    mode: 'off' | 'minimal' | 'detailed';
+    publicDocUrl: string;
+    showFreshInstallNotice: boolean;
+    freshInstallNoticeId?: string;
+  };
+};
 
 vi.mock('./GatewayContext', () => ({
   useGateway: () => mockUseGateway(),
@@ -23,6 +38,12 @@ vi.mock('./SettingsContext', () => ({
 
 vi.mock('@/features/voice/audio-feedback', () => ({
   playPing: (...args: unknown[]) => playPingMock(...args),
+}));
+
+vi.mock('@/features/telemetry/telemetryClient', () => ({
+  emitSessionOpened: (...args: unknown[]) => telemetryClientMocks.emitSessionOpened(...args),
+  emitBranchCreated: (...args: unknown[]) => telemetryClientMocks.emitBranchCreated(...args),
+  emitBranchSwitched: (...args: unknown[]) => telemetryClientMocks.emitBranchSwitched(...args),
 }));
 
 function jsonResponse(data: unknown): Response {
@@ -58,12 +79,18 @@ function SessionDisplayLabels() {
 }
 
 function SessionRefreshProbe() {
-  const { refreshSessions } = useSessionContext();
+  const { currentSession, refreshSessions, setCurrentSession } = useSessionContext();
 
   return (
-    <button data-testid="refresh-sessions" onClick={() => void refreshSessions()}>
-      Refresh sessions
-    </button>
+    <div>
+      <div data-testid="current-session">{currentSession}</div>
+      <button data-testid="refresh-sessions" onClick={() => void refreshSessions()}>
+        Refresh sessions
+      </button>
+      <button data-testid="select-reviewer" onClick={() => setCurrentSession('agent:reviewer:main')}>
+        Select reviewer
+      </button>
+    </div>
   );
 }
 
@@ -77,6 +104,9 @@ function SessionUnreadProbe() {
       <button data-testid="select-reviewer" onClick={() => setCurrentSession('agent:reviewer:main')}>
         Select reviewer
       </button>
+      <button data-testid="clear-session" onClick={() => setCurrentSession('')}>
+        Clear session
+      </button>
     </div>
   );
 }
@@ -84,6 +114,32 @@ function SessionUnreadProbe() {
 function SessionStatusProbe() {
   const { agentStatus } = useSessionContext();
   return <div data-testid="reviewer-status">{agentStatus['agent:reviewer:main']?.status ?? 'NONE'}</div>;
+}
+
+function SessionDeleteProbe() {
+  const { currentSession, deleteSession } = useSessionContext();
+
+  return (
+    <div>
+      <div data-testid="current-session">{currentSession}</div>
+      <button data-testid="delete-main" onClick={() => void deleteSession('agent:main:main')}>
+        Delete main
+      </button>
+    </div>
+  );
+}
+
+function SessionTelemetryProbe() {
+  const { telemetry } = useSessionContext();
+
+  return (
+    <div>
+      <div data-testid="telemetry-mode">{telemetry.mode}</div>
+      <div data-testid="telemetry-doc">{telemetry.publicDocUrl}</div>
+      <div data-testid="telemetry-fresh">{String(telemetry.showFreshInstallNotice)}</div>
+      <div data-testid="telemetry-notice-id">{telemetry.freshInstallNoticeId}</div>
+    </div>
+  );
 }
 
 describe('SessionContext', () => {
@@ -96,6 +152,18 @@ describe('SessionContext', () => {
     subscribedHandler = null;
     soundEnabledValue = true;
     connectionStateValue = 'connected';
+    telemetryClientMocks.emitSessionOpened.mockReset();
+    telemetryClientMocks.emitBranchCreated.mockReset();
+    telemetryClientMocks.emitBranchSwitched.mockReset();
+    serverInfoResponse = {
+      agentName: 'Jen',
+      telemetry: {
+        mode: 'minimal',
+        publicDocUrl: 'https://example.com/telemetry',
+        showFreshInstallNotice: false,
+        freshInstallNoticeId: '',
+      },
+    };
 
     rpcMock = vi.fn(async (method: string, params?: Record<string, unknown>) => {
       if (method === 'sessions.list') {
@@ -138,7 +206,7 @@ describe('SessionContext', () => {
           ? input.toString()
           : input.url;
 
-      if (url.includes('/api/server-info')) return Promise.resolve(jsonResponse({ agentName: 'Jen' }));
+      if (url.includes('/api/server-info')) return Promise.resolve(jsonResponse(serverInfoResponse));
       if (url.includes('/api/agentlog')) return Promise.resolve(jsonResponse([]));
       if (url.includes('/api/sessions/hidden')) return Promise.resolve(jsonResponse({ ok: true, sessions: [] }));
       return Promise.resolve(jsonResponse({}));
@@ -159,6 +227,147 @@ describe('SessionContext', () => {
     await waitFor(() => {
       expect(rpcMock).toHaveBeenCalledWith('agents.create', expect.objectContaining({ name: 'Test' }));
     });
+  });
+
+  it('exposes telemetry disclosure from server-info', async () => {
+    serverInfoResponse.telemetry = {
+      mode: 'minimal',
+      publicDocUrl: 'https://example.com/telemetry-docs',
+      showFreshInstallNotice: true,
+      freshInstallNoticeId: 'install-2026-04-20',
+    };
+
+    render(<SessionProvider><SessionTelemetryProbe /></SessionProvider>);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('telemetry-mode')).toHaveTextContent('minimal');
+      expect(screen.getByTestId('telemetry-doc')).toHaveTextContent('https://example.com/telemetry-docs');
+      expect(screen.getByTestId('telemetry-fresh')).toHaveTextContent('true');
+      expect(screen.getByTestId('telemetry-notice-id')).toHaveTextContent('install-2026-04-20');
+    });
+  });
+
+  it('emits session_opened when selecting a different session', async () => {
+    render(<SessionProvider><SessionUnreadProbe /></SessionProvider>);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:main:main');
+    });
+    telemetryClientMocks.emitSessionOpened.mockClear();
+
+    await act(async () => {
+      screen.getByTestId('select-reviewer').click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:reviewer:main');
+    });
+    expect(telemetryClientMocks.emitSessionOpened).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not emit session_opened when clearing the current session', async () => {
+    render(<SessionProvider><SessionUnreadProbe /></SessionProvider>);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:main:main');
+    });
+    telemetryClientMocks.emitSessionOpened.mockClear();
+
+    await act(async () => {
+      screen.getByTestId('clear-session').click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('');
+    });
+    expect(telemetryClientMocks.emitSessionOpened).not.toHaveBeenCalled();
+  });
+
+  it('does not emit session_opened when refreshSessions falls back after the current session disappears', async () => {
+    let sessionsListCalls = 0;
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        sessionsListCalls += 1;
+        return sessionsListCalls >= 2
+          ? {
+              sessions: [
+                { sessionKey: 'agent:main:main', label: 'Main' },
+              ],
+            }
+          : {
+              sessions: [
+                { sessionKey: 'agent:main:main', label: 'Main' },
+                { sessionKey: 'agent:reviewer:main', label: 'Reviewer' },
+              ],
+            };
+      }
+      return {};
+    });
+
+    render(<SessionProvider><SessionRefreshProbe /></SessionProvider>);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:main:main');
+    });
+
+    await act(async () => {
+      screen.getByTestId('select-reviewer').click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:reviewer:main');
+    });
+
+    telemetryClientMocks.emitSessionOpened.mockClear();
+
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:main:main');
+    });
+
+    expect(telemetryClientMocks.emitSessionOpened).not.toHaveBeenCalled();
+  });
+
+  it('emits branch_created after a new top-level root agent is created', async () => {
+    function Spawn() {
+      const { spawnSession } = useSessionContext();
+      return <button data-testid="spawn-root" onClick={() => spawnSession({ kind: 'root', agentName: 'New Root', task: 'hi' })} />;
+    }
+
+    render(<SessionProvider><Spawn /></SessionProvider>);
+    await waitFor(() => expect(rpcMock).toHaveBeenCalled());
+    telemetryClientMocks.emitBranchCreated.mockClear();
+
+    await act(async () => {
+      screen.getByTestId('spawn-root').click();
+    });
+
+    await waitFor(() => {
+      expect(telemetryClientMocks.emitBranchCreated).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('emits branch_switched when deleting the active root falls back to a different root', async () => {
+    render(<SessionProvider><SessionDeleteProbe /></SessionProvider>);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:main:main');
+    });
+    telemetryClientMocks.emitBranchSwitched.mockClear();
+
+    await act(async () => {
+      screen.getByTestId('delete-main').click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:designer:main');
+    });
+
+    expect(telemetryClientMocks.emitBranchSwitched).toHaveBeenCalledTimes(1);
+    expect(telemetryClientMocks.emitBranchSwitched).toHaveBeenCalledWith({ success: true });
   });
 
   it('subagent spawn calls /api/sessions/spawn-subagent, refreshes sessions, and switches to the returned child', async () => {

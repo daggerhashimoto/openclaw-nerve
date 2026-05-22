@@ -30,6 +30,7 @@ import tokensRoutes from './routes/tokens.js';
 import memoriesRoutes from './routes/memories.js';
 import eventsRoutes from './routes/events.js';
 import serverInfoRoutes from './routes/server-info.js';
+import telemetryRoutes from './routes/telemetry.js';
 import codexLimitsRoutes from './routes/codex-limits.js';
 import claudeCodeLimitsRoutes from './routes/claude-code-limits.js';
 import versionRoutes from './routes/version.js';
@@ -87,7 +88,7 @@ app.use('*', cacheHeaders);
 
 const routes = [
   healthRoutes, authRoutes, ttsRoutes, transcribeRoutes, agentLogRoutes,
-  tokensRoutes, memoriesRoutes, eventsRoutes, serverInfoRoutes,
+  tokensRoutes, memoriesRoutes, eventsRoutes, serverInfoRoutes, telemetryRoutes,
   codexLimitsRoutes, claudeCodeLimitsRoutes, versionRoutes, versionCheckRoutes,
   gatewayRoutes, connectDefaultsRoutes,
   workspaceRoutes, cronsRoutes, sessionsRoutes, skillsRoutes, filesRoutes, apiKeysRoutes,

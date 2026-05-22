@@ -10,8 +10,19 @@ import { Hono } from 'hono';
 import { config } from '../lib/config.js';
 import { writeEnvKey } from '../lib/env-file.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
+import { getTelemetryRuntime } from '../lib/telemetry/runtime.js';
 
 const app = new Hono();
+
+function runTelemetryInBackground(work: Promise<unknown>): void {
+  void work.catch(() => {});
+}
+
+function markSettingsFeatureUsed(): void {
+  const telemetry = getTelemetryRuntime();
+  if (!telemetry) return;
+  runTelemetryInBackground(telemetry.markFeatureUsed('settings'));
+}
 
 /** GET /api/keys — which API keys are configured */
 app.get('/api/keys', rateLimitGeneral, (c) => {
@@ -48,6 +59,10 @@ app.put('/api/keys', rateLimitGeneral, async (c) => {
       await writeEnvKey('MIMO_API_KEY', val);
       (config as Record<string, unknown>).mimoApiKey = val;
       results.push(val ? 'MIMO_API_KEY saved' : 'MIMO_API_KEY cleared');
+    }
+
+    if (results.length > 0) {
+      markSettingsFeatureUsed();
     }
 
     return c.json({

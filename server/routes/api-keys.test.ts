@@ -1,10 +1,22 @@
+// @vitest-environment node
+
 /** Tests for API key status and persistence routes. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 
+const telemetryRuntimeMock = {
+  markFeatureUsed: vi.fn(async () => undefined),
+};
+
+function resetTelemetryRuntimeMock(): void {
+  telemetryRuntimeMock.markFeatureUsed.mockReset();
+  telemetryRuntimeMock.markFeatureUsed.mockResolvedValue(undefined);
+}
+
 describe('api-keys routes', () => {
   beforeEach(() => {
     vi.resetModules();
+    resetTelemetryRuntimeMock();
   });
 
   afterEach(() => {
@@ -28,6 +40,10 @@ describe('api-keys routes', () => {
 
     vi.doMock('../middleware/rate-limit.js', () => ({
       rateLimitGeneral: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
+    }));
+
+    vi.doMock('../lib/telemetry/runtime.js', () => ({
+      getTelemetryRuntime: vi.fn(() => telemetryRuntimeMock),
     }));
   }
 
@@ -64,5 +80,34 @@ describe('api-keys routes', () => {
     const json = await res.json() as Record<string, unknown>;
     expect(json.ok).toBe(true);
     expect(json.xiaomiKeySet).toBe(true);
+  });
+
+  it('marks settings used when API keys are updated', async () => {
+    mockDeps();
+    const app = await buildApp();
+
+    const res = await app.request('/api/keys', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mimoApiKey: 'sk-mimo' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('settings');
+  });
+
+  it('emits no settings telemetry when API key updates fail', async () => {
+    mockDeps();
+    const app = await buildApp();
+
+    const res = await app.request('/api/keys', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not json',
+    });
+
+    expect(res.status).toBe(400);
+    expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
   });
 });

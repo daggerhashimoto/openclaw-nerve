@@ -30,6 +30,7 @@ const {
   topBarRenderSnapshots,
   tabRenderSnapshots,
   addWorkspacePathSpy,
+  emitBranchSwitchedMock,
   useOpenFilesMock,
 } = vi.hoisted(() => {
   const settingsContext = {
@@ -60,6 +61,12 @@ const {
     agentLogEntries: [],
     eventEntries: [],
     agentName: 'Nerve',
+    telemetry: {
+      mode: 'minimal',
+      publicDocUrl: 'https://example.com/telemetry',
+      showFreshInstallNotice: false,
+      freshInstallNoticeId: '',
+    },
   };
 
   const saveFileByAgent = {
@@ -86,6 +93,7 @@ const {
     saveToastPath: string | null;
   }> = [];
   const addWorkspacePathSpy = vi.fn();
+  const emitBranchSwitchedMock = vi.fn(async () => undefined);
 
   const useOpenFilesMock = vi.fn((agentId: string) => ({
     openFiles: [{ path: 'shared.md', name: 'shared.md', content: 'draft', savedContent: 'draft', dirty: dirtyStateByAgent[agentId] ?? false }],
@@ -119,6 +127,7 @@ const {
     topBarRenderSnapshots,
     tabRenderSnapshots,
     addWorkspacePathSpy,
+    emitBranchSwitchedMock,
     useOpenFilesMock,
   };
 });
@@ -231,6 +240,10 @@ vi.mock('@/hooks/useKeyboardShortcuts', () => ({
 
 vi.mock('@/features/command-palette/commands', () => ({
   createCommands: () => [],
+}));
+
+vi.mock('@/features/telemetry/telemetryClient', () => ({
+  emitBranchSwitched: (...args: unknown[]) => emitBranchSwitchedMock(...args),
 }));
 
 vi.mock('@/features/file-browser', () => ({
@@ -449,6 +462,8 @@ describe('App save toast workspace scoping', () => {
     sessionContext.currentSession = 'agent:alpha:main';
     sessionContext.setCurrentSession.mockReset();
     sessionContext.spawnSession.mockReset();
+    emitBranchSwitchedMock.mockReset();
+    sessionContext.telemetry.showFreshInstallNotice = false;
     Object.values(saveFileByAgent).forEach((mockFn) => mockFn.mockReset());
     Object.values(saveAllDirtyFilesByAgent).forEach((mockFn) => mockFn.mockReset());
     Object.values(discardAllDirtyFilesByAgent).forEach((mockFn) => mockFn.mockReset());
@@ -906,5 +921,95 @@ describe('App kanban visibility gating', () => {
 
     expect(screen.queryByTestId('chatbox-command-trigger')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('button', { name: /open command palette/i })).toHaveLength(0);
+  });
+});
+
+
+describe('App telemetry workspace switching', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionContext.currentSession = 'agent:alpha:main';
+    sessionContext.setCurrentSession.mockReset();
+    sessionContext.spawnSession.mockReset();
+    emitBranchSwitchedMock.mockReset();
+    dirtyStateByAgent.alpha = false;
+    dirtyStateByAgent.bravo = false;
+
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+  });
+
+  it('emits branch_switched when switching to a different top-level root', async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Bravo' }));
+
+    await waitFor(() => {
+      expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:bravo:main');
+      expect(emitBranchSwitchedMock).toHaveBeenCalledWith({ success: true });
+    });
+  });
+
+  it('emits branch_switched when a new top-level root is created and opened', async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Spawn Root Charlie' }));
+
+    await waitFor(() => {
+      expect(sessionContext.spawnSession).toHaveBeenCalledWith({
+        kind: 'root',
+        agentName: 'Charlie',
+        task: 'Investigate workspace guard',
+        model: 'test-model',
+        thinking: 'medium',
+      });
+      expect(emitBranchSwitchedMock).toHaveBeenCalledWith({ success: true });
+    });
+  });
+
+  it('does not emit branch_switched when the first top-level root is created from an empty workspace', async () => {
+    // A first session pick after a fresh start has fromRootSessionKey=null,
+    // which is semantically not a branch switch but a workspace opening. The
+    // emit was previously fired here and inflated the branches feature
+    // boolean / Phase 2 branch_switched counts. The guard in
+    // maybeEmitBranchSwitchTelemetry now suppresses this case.
+    sessionContext.currentSession = '';
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Spawn Root Charlie' }));
+
+    await waitFor(() => {
+      expect(sessionContext.spawnSession).toHaveBeenCalledWith({
+        kind: 'root',
+        agentName: 'Charlie',
+        task: 'Investigate workspace guard',
+        model: 'test-model',
+        thinking: 'medium',
+      });
+    });
+    expect(emitBranchSwitchedMock).not.toHaveBeenCalled();
+  });
+
+  it('does not emit branch_switched when switching between a root and its own subagent', async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alpha Subagent' }));
+
+    await waitFor(() => {
+      expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:alpha:subagent:abc');
+    });
+    expect(emitBranchSwitchedMock).not.toHaveBeenCalled();
   });
 });

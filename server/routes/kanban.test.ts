@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /** Tests for kanban API routes: CRUD, validation, CAS conflicts, reorder, config, workflow. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
@@ -11,6 +13,18 @@ let tmpDir: string;
 type GatewayToolMock = (tool: string, args?: Record<string, unknown>) => Promise<unknown>;
 type GatewayRpcMock = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
 
+const telemetryRuntimeMock = {
+  markFeatureUsed: vi.fn(async () => undefined),
+  recordKanbanTaskCreated: vi.fn(async () => undefined),
+};
+
+function resetKanbanTelemetryMock(): void {
+  telemetryRuntimeMock.markFeatureUsed.mockReset();
+  telemetryRuntimeMock.markFeatureUsed.mockResolvedValue(undefined);
+  telemetryRuntimeMock.recordKanbanTaskCreated.mockReset();
+  telemetryRuntimeMock.recordKanbanTaskCreated.mockResolvedValue(undefined);
+}
+
 function buildMockRootSessionKey(label: string): string {
   const normalized = label
     .toLowerCase()
@@ -21,6 +35,7 @@ function buildMockRootSessionKey(label: string): string {
 
 beforeEach(async () => {
   vi.resetModules();
+  resetKanbanTelemetryMock();
   tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'kanban-route-test-'));
 
   // Default mock for the new root-session helper (tests can override with vi.doMock before buildApp)
@@ -87,6 +102,9 @@ async function buildApp(options: { invokeGatewayToolMock?: GatewayToolMock; gate
   }));
   vi.doMock('../lib/gateway-rpc.js', () => ({
     gatewayRpcCall: gatewayRpcMock,
+  }));
+  vi.doMock('../lib/telemetry/runtime.js', () => ({
+    getTelemetryRuntime: vi.fn(() => telemetryRuntimeMock),
   }));
 
   // Create store from the re-imported module so instanceof checks work
@@ -2789,6 +2807,223 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
     expect(latest?.result).toBeUndefined();
   });
 
+});
+
+describe('kanban telemetry instrumentation', () => {
+  it('marks kanban used and records a detailed event when a task is created', async () => {
+    const app = await buildApp();
+
+    const res = await app.request('/api/kanban/tasks', json({
+      title: 'Telemetry task',
+      createdBy: 'operator',
+    }));
+
+    expect(res.status).toBe(201);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('kanban');
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).toHaveBeenCalledTimes(1);
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).toHaveBeenCalledWith({
+      surface: 'kanban',
+      success: true,
+    });
+  });
+
+  it('emits no kanban telemetry when task creation fails', async () => {
+    const app = await buildApp();
+
+    const res = await app.request('/api/kanban/tasks', json({
+      createdBy: 'operator',
+    }));
+
+    expect(res.status).toBe(400);
+    expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).not.toHaveBeenCalled();
+  });
+
+  it('marks kanban used when a task is reordered', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { title: 'Reorder me' });
+    resetKanbanTelemetryMock();
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/reorder`, json({
+      version: task.version,
+      targetStatus: 'todo',
+      targetIndex: 0,
+    }));
+
+    expect(res.status).toBe(200);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('kanban');
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).not.toHaveBeenCalled();
+  });
+
+  it('emits no kanban telemetry when reorder fails', async () => {
+    const app = await buildApp();
+
+    const res = await app.request('/api/kanban/tasks/missing/reorder', json({
+      version: 1,
+      targetStatus: 'todo',
+      targetIndex: 0,
+    }));
+
+    expect(res.status).toBe(404);
+    expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).not.toHaveBeenCalled();
+  });
+
+  it('marks kanban used when a task is executed', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    resetKanbanTelemetryMock();
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+
+    expect(res.status).toBe(200);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('kanban');
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).not.toHaveBeenCalled();
+  });
+
+  it('emits no kanban telemetry when execute fails', async () => {
+    const app = await buildApp();
+
+    const res = await app.request('/api/kanban/tasks/missing/execute', json({}));
+
+    expect(res.status).toBe(404);
+    expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).not.toHaveBeenCalled();
+  });
+
+  it('marks kanban used and records a detailed event when a create proposal is approved', async () => {
+    const app = await buildApp();
+    const createRes = await app.request('/api/kanban/proposals', json({
+      type: 'create',
+      payload: { title: 'Approve me', priority: 'high' },
+      proposedBy: 'agent:codex',
+    }));
+    const proposal = await createRes.json() as { id: string };
+    resetKanbanTelemetryMock();
+
+    const res = await app.request(`/api/kanban/proposals/${proposal.id}/approve`, { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('kanban');
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).toHaveBeenCalledTimes(1);
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).toHaveBeenCalledWith({
+      surface: 'kanban',
+      success: true,
+    });
+  });
+
+  it('marks kanban used without a create event when an update proposal is approved', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { title: 'Original' });
+    const createRes = await app.request('/api/kanban/proposals', json({
+      type: 'update',
+      payload: { id: task.id, title: 'Updated' },
+      proposedBy: 'agent:codex',
+    }));
+    const proposal = await createRes.json() as { id: string };
+    resetKanbanTelemetryMock();
+
+    const res = await app.request(`/api/kanban/proposals/${proposal.id}/approve`, { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('kanban');
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).not.toHaveBeenCalled();
+  });
+
+  it('marks kanban used when a review task is approved', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    resetKanbanTelemetryMock();
+    await app.request(`/api/kanban/tasks/${task.id}`, jsonPatch({
+      version: task.version,
+      status: 'review',
+    }));
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/approve`, json({}));
+
+    expect(res.status).toBe(200);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('kanban');
+  });
+
+  it('emits no kanban telemetry when approve fails', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    resetKanbanTelemetryMock();
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/approve`, json({}));
+
+    expect(res.status).toBe(409);
+    expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).not.toHaveBeenCalled();
+  });
+
+  it('marks kanban used when a review task is rejected', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    resetKanbanTelemetryMock();
+    await app.request(`/api/kanban/tasks/${task.id}`, jsonPatch({
+      version: task.version,
+      status: 'review',
+    }));
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/reject`, json({
+      note: 'Needs more work',
+    }));
+
+    expect(res.status).toBe(200);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('kanban');
+  });
+
+  it('emits no kanban telemetry when reject fails', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    resetKanbanTelemetryMock();
+    await app.request(`/api/kanban/tasks/${task.id}`, jsonPatch({
+      version: task.version,
+      status: 'review',
+    }));
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/reject`, json({}));
+
+    expect(res.status).toBe(400);
+    expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).not.toHaveBeenCalled();
+  });
+
+  it('marks kanban used when a running task is aborted', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    resetKanbanTelemetryMock();
+    await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    resetKanbanTelemetryMock();
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/abort`, json({
+      note: 'rerun',
+    }));
+
+    expect(res.status).toBe(200);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+    expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('kanban');
+  });
+
+  it('emits no kanban telemetry when abort fails', async () => {
+    const app = await buildApp();
+    const task = await createTask(app, { status: 'todo' });
+    resetKanbanTelemetryMock();
+
+    const res = await app.request(`/api/kanban/tasks/${task.id}/abort`, json({}));
+
+    expect(res.status).toBe(409);
+    expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
+    expect(telemetryRuntimeMock.recordKanbanTaskCreated).not.toHaveBeenCalled();
+  });
 });
 
 // ── Full workflow through HTTP ───────────────────────────────────────

@@ -9,10 +9,11 @@ Nerve is configured via a `.env` file in the project root. All variables have se
 The interactive setup wizard is the recommended way to configure Nerve:
 
 ```bash
-npm run setup               # Interactive setup (6 steps)
-npm run setup -- --check    # Validate existing config & test gateway
-npm run setup -- --defaults # Non-interactive with auto-detected values
-npm run setup -- --help     # Show help
+npm run setup                              # Interactive setup (6 steps)
+npm run setup -- --check                   # Validate existing config & test gateway
+npm run setup -- --defaults                # Non-interactive with auto-detected values
+npm run setup -- --defaults --fresh-install # Brand-new non-interactive install
+npm run setup -- --help                    # Show help
 ```
 
 ### Wizard Steps
@@ -77,7 +78,8 @@ Custom file paths for `MEMORY_PATH`, `MEMORY_DIR`, `SESSIONS_DIR`. Most users sk
 |------|----------|
 | *(none)* | Full interactive wizard. If `.env` exists, asks whether to update or start fresh. |
 | `--check` | Validates all config values, tests gateway connectivity, and exits. Non-destructive. |
-| `--defaults` | Auto-detects gateway token, applies defaults for everything else, writes `.env`. No prompts. |
+| `--defaults` | Auto-detects gateway token, applies defaults for everything else, writes `.env`. No prompts. Does not infer a fresh install on its own. |
+| `--defaults --fresh-install` | Non-interactive brand-new install. Applies fresh-install telemetry defaults when `.env` does not exist yet. |
 | `--defaults --access-mode tailscale-ip` | Non-interactive setup for direct tailnet IP access. |
 | `--defaults --access-mode tailscale-serve` | Non-interactive setup for loopback + Tailscale Serve HTTPS access. |
 
@@ -151,6 +153,42 @@ This allows the browser UI to connect without having to manually enter or store 
 ```bash
 AGENT_NAME=Friday
 ```
+
+### Telemetry
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NERVE_TELEMETRY_MODE` | *(effective default depends on install state)* | Telemetry mode: `off`, `minimal`, or `detailed` |
+| `NERVE_TELEMETRY_DIR` | `<PROJECT_ROOT>/.nerve/telemetry` | Local directory for telemetry metadata and rolling aggregate state |
+| `NERVE_TELEMETRY_PHASE1_BASE_URL` | `https://telemetry-nerve-zone.netlify.app` | Base URL for Phase 1 heartbeat and error delivery |
+| `NERVE_TELEMETRY_PHASE2_BASE_URL` | `https://telemetry-nerve-zone.netlify.app` | Base URL for Phase 2 detailed-event delivery. Keep `detailed` off until `/v1/events` is live there |
+
+```bash
+# Disable telemetry entirely
+NERVE_TELEMETRY_MODE=off
+
+# Or opt into minimal / detailed telemetry explicitly
+NERVE_TELEMETRY_MODE=minimal
+NERVE_TELEMETRY_MODE=detailed
+
+# Optional custom local state dir
+NERVE_TELEMETRY_DIR=<PROJECT_ROOT>/.nerve/telemetry
+
+# Optional endpoint overrides
+NERVE_TELEMETRY_PHASE1_BASE_URL=https://telemetry-nerve-zone.netlify.app
+NERVE_TELEMETRY_PHASE2_BASE_URL=https://telemetry-nerve-zone.netlify.app
+```
+
+Mode resolution is:
+
+1. valid explicit `NERVE_TELEMETRY_MODE` wins
+2. invalid non-empty `NERVE_TELEMETRY_MODE` values fail closed to `off`
+3. otherwise a trusted fresh install resolves to `minimal`
+4. otherwise Nerve resolves to `off`
+
+Fresh installs confirmed by `install.sh` or `npm run setup` default to `minimal`. For non-interactive source setup, pass `--fresh-install` when you want brand-new install defaults. Legacy upgrades stay `off` until explicitly configured. The first-run telemetry notice is informational only.
+
+For the full public contract, exact payload fields, and retention policy, see [TELEMETRY.md](TELEMETRY.md).
 
 ### API Keys (Optional)
 

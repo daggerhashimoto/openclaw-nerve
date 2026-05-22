@@ -31,6 +31,15 @@ This will:
 6. Restart the systemd/launchd service
 7. Verify `/health` and `/api/version` match the target
 
+## Telemetry behavior on install vs upgrade
+
+- Fresh installs created by `install.sh` or `npm run setup` default to `minimal` telemetry.
+- Legacy upgrades stay `off` until explicitly configured.
+- The first-run telemetry notice is shown only for fresh installs in `minimal` mode.
+- That first-run notice is informational only. It is not a toggle and does not change the server setting.
+- To keep telemetry disabled explicitly after an upgrade, set `NERVE_TELEMETRY_MODE=off` in `.env` and restart Nerve.
+- For the exact telemetry contract, see [TELEMETRY.md](./TELEMETRY.md).
+
 ## CLI flags
 
 | Flag | Description |

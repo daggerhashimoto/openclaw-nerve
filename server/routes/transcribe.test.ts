@@ -1,10 +1,22 @@
+// @vitest-environment node
+
 /** Tests for the transcribe config and language routes. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 
+const telemetryRuntimeMock = {
+  markFeatureUsed: vi.fn(async () => undefined),
+};
+
+function resetTelemetryRuntimeMock(): void {
+  telemetryRuntimeMock.markFeatureUsed.mockReset();
+  telemetryRuntimeMock.markFeatureUsed.mockResolvedValue(undefined);
+}
+
 describe('transcribe routes', () => {
   beforeEach(() => {
     vi.resetModules();
+    resetTelemetryRuntimeMock();
   });
 
   afterEach(() => {
@@ -45,6 +57,9 @@ describe('transcribe routes', () => {
     }));
     vi.doMock('../lib/language.js', () => ({
       isLanguageSupported: vi.fn(() => true),
+    }));
+    vi.doMock('../lib/telemetry/runtime.js', () => ({
+      getTelemetryRuntime: vi.fn(() => telemetryRuntimeMock),
     }));
     vi.doMock('../services/openai-whisper.js', () => ({
       transcribe: vi.fn(async () => ({ ok: true, text: 'openai transcription' })),
@@ -106,6 +121,50 @@ describe('transcribe routes', () => {
       expect(json.provider).toBe('openai');
     });
 
+    it('marks settings used when language updates succeed', async () => {
+      mockDeps();
+      const app = await buildApp();
+      const res = await app.request('/api/transcribe/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: 'de' }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+      expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('settings');
+    });
+
+    it('marks settings used when provider updates succeed', async () => {
+      mockDeps();
+      const app = await buildApp();
+      const res = await app.request('/api/transcribe/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'openai' }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+      expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('settings');
+    });
+
+    it('marks settings used when model updates succeed', async () => {
+      mockDeps();
+      const app = await buildApp();
+      const res = await app.request('/api/transcribe/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'small' }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as Record<string, unknown>;
+      expect(json.message).toBe('Model set to small');
+      expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+      expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('settings');
+    });
+
     it('rejects unsupported language', async () => {
       mockDeps();
       const app = await buildApp();
@@ -115,6 +174,19 @@ describe('transcribe routes', () => {
         body: JSON.stringify({ language: 'xx' }),
       });
       expect(res.status).toBe(400);
+    });
+
+    it('emits no settings telemetry when transcription config updates fail', async () => {
+      mockDeps();
+      const app = await buildApp();
+      const res = await app.request('/api/transcribe/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: 'xx' }),
+      });
+
+      expect(res.status).toBe(400);
+      expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
     });
 
     it('accepts valid language', async () => {
@@ -130,7 +202,7 @@ describe('transcribe routes', () => {
       expect(json.language).toBe('de');
     });
 
-    it('rejects bad model', async () => {
+    it('rejects bad model without emitting settings telemetry', async () => {
       mockDeps();
       const app = await buildApp();
       const res = await app.request('/api/transcribe/config', {
@@ -138,7 +210,9 @@ describe('transcribe routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: 'bad-model' }),
       });
+
       expect(res.status).toBe(400);
+      expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
     });
 
     it('returns 400 for invalid JSON', async () => {
@@ -190,6 +264,8 @@ describe('transcribe routes', () => {
       expect(res.status).toBe(200);
       const json = (await res.json()) as Record<string, unknown>;
       expect(json.language).toBe('de');
+      expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+      expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('settings');
     });
 
     it('rejects invalid edgeVoiceGender', async () => {
@@ -212,6 +288,8 @@ describe('transcribe routes', () => {
         body: JSON.stringify({ edgeVoiceGender: 'male' }),
       });
       expect(res.status).toBe(200);
+      expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledTimes(1);
+      expect(telemetryRuntimeMock.markFeatureUsed).toHaveBeenCalledWith('settings');
     });
 
     it('returns 400 for invalid JSON', async () => {
@@ -223,6 +301,20 @@ describe('transcribe routes', () => {
         body: 'not json',
       });
       expect(res.status).toBe(400);
+      expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
+    });
+
+    it('emits no settings telemetry when language updates fail', async () => {
+      mockDeps();
+      const app = await buildApp();
+      const res = await app.request('/api/language', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: 'xx' }),
+      });
+
+      expect(res.status).toBe(400);
+      expect(telemetryRuntimeMock.markFeatureUsed).not.toHaveBeenCalled();
     });
   });
 

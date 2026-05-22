@@ -17,6 +17,7 @@ import { releaseWhisperContext } from './services/whisper-local.js';
 import { config, validateConfig, printStartupBanner, probeGateway } from './lib/config.js';
 import { setupWebSocketProxy, closeAllWebSockets } from './lib/ws-proxy.js';
 import { startFileWatcher, stopFileWatcher } from './lib/file-watcher.js';
+import { createTelemetryRuntime, setTelemetryRuntime } from './lib/telemetry/runtime.js';
 
 // ── Startup banner + validation ──────────────────────────────────────
 
@@ -26,6 +27,12 @@ const pkgVersion: string = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version
 
 printStartupBanner(pkgVersion);
 validateConfig();
+
+const telemetryRuntime = createTelemetryRuntime({ appVersion: pkgVersion });
+setTelemetryRuntime(telemetryRuntime);
+void telemetryRuntime.start().catch((err) => {
+  console.warn('[telemetry] Failed to start telemetry runtime:', (err as Error).message);
+});
 
 // ── Start file watchers ──────────────────────────────────────────────
 
@@ -159,6 +166,8 @@ if (fs.existsSync(config.certPath) && fs.existsSync(config.keyPath)) {
 function shutdown(signal: string) {
   console.log(`\n[openclaw-ui] ${signal} received, shutting down...`);
 
+  setTelemetryRuntime(null);
+  void telemetryRuntime.stop();
   stopFileWatcher();
   closeAllWebSockets();
   releaseWhisperContext().catch(() => {});

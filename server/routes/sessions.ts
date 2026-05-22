@@ -19,6 +19,7 @@ import { config } from '../lib/config.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 import { spawnSubagent } from '../lib/subagent-spawn.js';
 import { normalizeAgentId } from '../lib/agent-workspace.js';
+import { getTelemetryRuntime } from '../lib/telemetry/runtime.js';
 
 const app = new Hono();
 const CRON_SESSION_RE = /^agent:[^:]+:cron:[^:]+(?::run:.+)?$/;
@@ -72,6 +73,13 @@ async function loadSessionStore(): Promise<Record<string, StoredSessionSummary |
 function getAgentIdFromSessionKey(sessionKey: string): string {
   const match = sessionKey.match(/^agent:([^:]+):/);
   return match?.[1] || 'main';
+}
+
+function runInBackground(work: Promise<unknown>): void {
+  void work.catch((err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn('[sessions] spawn-subagent telemetry failed:', message);
+  });
 }
 
 function resolveSessionsDir(agentId?: string): string {
@@ -380,6 +388,15 @@ app.post('/api/sessions/spawn-subagent', rateLimitGeneral, async (c) => {
       thinking: parsed.data.thinking,
       cleanup: parsed.data.cleanup,
     });
+
+    const telemetry = getTelemetryRuntime();
+    if (telemetry) {
+      runInBackground(telemetry.recordSessionCreated({
+        sessionKey: result.sessionKey,
+        surface: 'sessions',
+        explicit: true,
+      }));
+    }
 
     return c.json({
       ok: true,

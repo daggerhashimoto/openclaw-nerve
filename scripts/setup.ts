@@ -12,7 +12,7 @@
 // Show token in prompts so users can verify what they entered
 
 import { existsSync, readdirSync, mkdirSync, copyFileSync, lstatSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { resolve, join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -20,6 +20,7 @@ import { networkInterfaces } from 'node:os';
 import { input, password, confirm, select } from '@inquirer/prompts';
 import { printBanner, section, success, warn, fail, info, dim, promptTheme } from './lib/banner.js';
 import { checkPrerequisites, type PrereqResult } from './lib/prereq-check.js';
+import { resolveFreshInstallDisposition, resolveSetupInstallMethod } from './lib/setup-telemetry.js';
 import {
   isValidUrl,
   isValidPort,
@@ -44,6 +45,7 @@ import { printDeploymentGuides, shouldPrintDeploymentGuides } from './lib/deploy
 
 const PROJECT_ROOT = resolve(process.cwd());
 const ENV_PATH = resolve(PROJECT_ROOT, '.env');
+const TELEMETRY_STAMP_PATH = resolve(PROJECT_ROOT, 'scripts', 'lib', 'telemetry-stamp.mjs');
 const SKILLS_SRC = resolve(PROJECT_ROOT, 'skills');
 const SKILLS_DEST = resolve(homedir(), '.openclaw', 'workspace', 'skills');
 const TOTAL_SECTIONS = 6;
@@ -52,6 +54,7 @@ const args = process.argv.slice(2);
 const isHelp = args.includes('--help') || args.includes('-h');
 const isCheck = args.includes('--check');
 const isDefaults = args.includes('--defaults');
+const isFreshInstallFlag = args.includes('--fresh-install');
 
 type AccessMode = 'local' | 'network' | 'custom' | 'tailscale-ip' | 'tailscale-serve';
 
@@ -96,6 +99,69 @@ function isLoopback(host: string): boolean {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolveTimer => setTimeout(resolveTimer, ms));
+}
+
+function stampTelemetry(
+  kind: 'install-method' | 'bootstrap',
+  value: 'release' | 'source' | 'unknown' | 'fresh_install' | 'upgrade_legacy',
+  options: { ifMissing?: boolean; source?: 'install.sh' | 'setup' | 'runtime' } = {},
+): void {
+  const stampArgs = [TELEMETRY_STAMP_PATH, kind, value];
+  if (options.ifMissing) stampArgs.push('--if-missing');
+  if (options.source) stampArgs.push('--source', options.source);
+
+  const result = spawnSync(process.execPath, stampArgs, {
+    cwd: PROJECT_ROOT,
+    env: process.env,
+    encoding: 'utf8',
+  });
+  const detail = (result.stderr ?? '').trim() || (result.stdout ?? '').trim() || result.error?.message;
+
+  if (result.error || result.status !== 0) {
+    warn(detail || `Telemetry stamp failed (${kind}=${value})`);
+    return;
+  }
+
+  if (detail) {
+    warn(detail);
+  }
+}
+
+function finalizeSetupTelemetry(isFreshInstall: boolean): void {
+  // Only confirmed fresh installs should rewrite provenance.
+  // Legacy installs (missing provenance) must remain unknown, but a real
+  // fresh install should replace any stale per-install markers from older runs.
+  if (isFreshInstall) {
+    stampTelemetry('install-method', resolveSetupInstallMethod(process.env.NERVE_SETUP_INSTALL_METHOD), { source: 'setup' });
+    stampTelemetry('bootstrap', 'fresh_install', { source: 'setup' });
+  }
+}
+
+function hasBuildOutput(): boolean {
+  return existsSync(resolve(PROJECT_ROOT, 'dist')) || existsSync(resolve(PROJECT_ROOT, 'server-dist'));
+}
+
+async function resolveFreshInstall(hasExisting: boolean): Promise<boolean> {
+  const disposition = resolveFreshInstallDisposition({
+    hasExisting,
+    envFreshInstall: process.env.NERVE_SETUP_FRESH_INSTALL === '1',
+    cliFreshInstall: isFreshInstallFlag,
+    invokedFromInstaller: Boolean(process.env.NERVE_INSTALLER),
+    defaultsMode: isDefaults,
+    hasTty: process.stdin.isTTY === true,
+  });
+
+  if (disposition !== 'prompt') {
+    return disposition;
+  }
+
+  return confirm({
+    theme: promptTheme,
+    message: hasBuildOutput()
+      ? 'No existing .env found. Is this a brand-new Nerve install in this checkout?'
+      : 'No existing .env found. Is this a brand-new Nerve install?',
+    default: false,
+  });
 }
 
 /**
@@ -213,6 +279,7 @@ async function main(): Promise<void> {
   Options:
     --check                   Validate existing .env config and test gateway connection
     --defaults                Non-interactive setup using auto-detected values
+    --fresh-install           Treat this run as a brand-new install with fresh-install defaults
     --access-mode <mode>      Explicit non-interactive access mode
     --help, -h                Show this help message
 
@@ -235,6 +302,7 @@ async function main(): Promise<void> {
     npm run setup                                     # Interactive setup
     npm run setup -- --check                          # Validate existing config
     npm run setup -- --defaults                       # Auto-configure with detected values
+    npm run setup -- --defaults --fresh-install       # Brand-new non-interactive install
     npm run setup -- --defaults --access-mode tailscale-serve
 `);
     return;
@@ -269,9 +337,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  const isFreshInstall = await resolveFreshInstall(hasExisting);
+
   // --defaults mode: non-interactive
   if (isDefaults) {
-    await runDefaults(existing, prereqs);
+    await runDefaults(existing, prereqs, isFreshInstall);
     return;
   }
 
@@ -298,6 +368,9 @@ async function main(): Promise<void> {
 
   // Run interactive setup
   const config = await collectInteractive(existing, prereqs);
+  if (isFreshInstall && !config.NERVE_TELEMETRY_MODE) {
+    config.NERVE_TELEMETRY_MODE = 'minimal';
+  }
 
   // Write .env
   if (hasExisting) {
@@ -305,6 +378,7 @@ async function main(): Promise<void> {
     info(`Previous config backed up to ${backupPath.replace(PROJECT_ROOT + '/', '')}`);
   }
   writeEnvFile(ENV_PATH, config);
+  finalizeSetupTelemetry(isFreshInstall);
 
   console.log('');
   success('Configuration written to .env');
@@ -1118,7 +1192,7 @@ async function runCheck(config: EnvConfig): Promise<void> {
 
 // ── --defaults mode ──────────────────────────────────────────────────
 
-async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<void> {
+async function runDefaults(existing: EnvConfig, prereqs: PrereqResult, isFreshInstall: boolean): Promise<void> {
   console.log('');
   info('Non-interactive mode — using defaults where possible');
   console.log('');
@@ -1218,11 +1292,16 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
     process.exit(1);
   }
 
+  if (isFreshInstall && !config.NERVE_TELEMETRY_MODE) {
+    config.NERVE_TELEMETRY_MODE = 'minimal';
+  }
+
   if (existsSync(ENV_PATH)) {
     const backupPath = backupExistingEnv(ENV_PATH);
     info(`Previous config backed up to ${backupPath.replace(PROJECT_ROOT + '/', '')}`);
   }
   writeEnvFile(ENV_PATH, config);
+  finalizeSetupTelemetry(isFreshInstall);
 
   success('Configuration written to .env');
 

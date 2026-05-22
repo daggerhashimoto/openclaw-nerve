@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /** Tests for the sessions API routes. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
@@ -8,11 +10,19 @@ import os from 'node:os';
 describe('sessions routes', () => {
   let tmpDir: string;
   let spawnSubagentMock: ReturnType<typeof vi.fn>;
+  const telemetryRuntimeMock = {
+    recordSessionCreated: vi.fn(async () => undefined),
+    recordMessageSubmitted: vi.fn(async () => undefined),
+  };
 
   beforeEach(async () => {
     vi.resetModules();
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-test-'));
     spawnSubagentMock = vi.fn();
+    telemetryRuntimeMock.recordSessionCreated.mockReset();
+    telemetryRuntimeMock.recordSessionCreated.mockResolvedValue(undefined);
+    telemetryRuntimeMock.recordMessageSubmitted.mockReset();
+    telemetryRuntimeMock.recordMessageSubmitted.mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -38,6 +48,9 @@ describe('sessions routes', () => {
     }));
     vi.doMock('../lib/subagent-spawn.js', () => ({
       spawnSubagent: spawnSubagentMock,
+    }));
+    vi.doMock('../lib/telemetry/runtime.js', () => ({
+      getTelemetryRuntime: vi.fn(() => telemetryRuntimeMock),
     }));
 
     const mod = await import('./sessions.js');
@@ -292,6 +305,67 @@ describe('sessions routes', () => {
     expect(json.sessionKey).toBe('agent:reviewer:subagent:abc-123');
     expect(json.runId).toBe('run-xyz');
     expect(json.mode).toBe('direct');
+  });
+
+  it('records session_created exactly once after a successful spawn-subagent response', async () => {
+    spawnSubagentMock.mockResolvedValueOnce({
+      sessionKey: 'agent:reviewer:subagent:spawned-1',
+      runId: 'run-spawned-1',
+      mode: 'direct',
+    });
+
+    const app = await buildApp();
+    const res = await app.request('/api/sessions/spawn-subagent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parentSessionKey: 'agent:reviewer:main',
+        task: 'do something useful',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(telemetryRuntimeMock.recordSessionCreated).toHaveBeenCalledTimes(1);
+    expect(telemetryRuntimeMock.recordSessionCreated).toHaveBeenCalledWith({
+      sessionKey: 'agent:reviewer:subagent:spawned-1',
+      surface: 'sessions',
+      explicit: true,
+    });
+    expect(telemetryRuntimeMock.recordMessageSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('still returns success when spawn-subagent telemetry recording fails', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    spawnSubagentMock.mockResolvedValueOnce({
+      sessionKey: 'agent:reviewer:subagent:spawned-telemetry-failure',
+      runId: 'run-telemetry-failure',
+      mode: 'direct',
+    });
+    telemetryRuntimeMock.recordSessionCreated.mockRejectedValueOnce(new Error('telemetry write failed'));
+
+    const app = await buildApp();
+    const res = await app.request('/api/sessions/spawn-subagent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parentSessionKey: 'agent:reviewer:main',
+        task: 'do something useful',
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json).toEqual({
+      ok: true,
+      sessionKey: 'agent:reviewer:subagent:spawned-telemetry-failure',
+      runId: 'run-telemetry-failure',
+      mode: 'direct',
+    });
+
+    await Promise.resolve();
+
+    expect(telemetryRuntimeMock.recordSessionCreated).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith('[sessions] spawn-subagent telemetry failed:', 'telemetry write failed');
   });
 
   it('returns marker success payload when helper falls back to marker mode', async () => {

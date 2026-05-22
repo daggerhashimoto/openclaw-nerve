@@ -58,6 +58,50 @@ describe('config module', () => {
     });
   });
 
+  describe('telemetry base URLs', () => {
+    it('defaults both telemetry phases to the live Netlify deployment', async () => {
+      vi.resetModules();
+      delete process.env.NERVE_TELEMETRY_PHASE1_BASE_URL;
+      delete process.env.NERVE_TELEMETRY_PHASE2_BASE_URL;
+
+      const { config } = await import('./config.js');
+      expect(config.telemetryPhase1BaseUrl).toBe('https://telemetry-nerve-zone.netlify.app');
+      expect(config.telemetryPhase2BaseUrl).toBe('https://telemetry-nerve-zone.netlify.app');
+    });
+
+    it('allows both telemetry base URLs to be overridden by env', async () => {
+      vi.resetModules();
+      process.env.NERVE_TELEMETRY_PHASE1_BASE_URL = 'https://phase1.example.com';
+      process.env.NERVE_TELEMETRY_PHASE2_BASE_URL = 'https://phase2.example.com';
+
+      const { config } = await import('./config.js');
+      expect(config.telemetryPhase1BaseUrl).toBe('https://phase1.example.com');
+      expect(config.telemetryPhase2BaseUrl).toBe('https://phase2.example.com');
+    });
+
+    it('falls back to the default telemetry base URLs when env values are invalid', async () => {
+      vi.resetModules();
+      process.env.NERVE_TELEMETRY_PHASE1_BASE_URL = 'not-a-url';
+      process.env.NERVE_TELEMETRY_PHASE2_BASE_URL = 'ftp://phase2.example.com';
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { validateConfig, config } = await import('./config.js');
+      validateConfig();
+
+      expect(config.telemetryPhase1BaseUrl).toBe('https://telemetry-nerve-zone.netlify.app');
+      expect(config.telemetryPhase2BaseUrl).toBe('https://telemetry-nerve-zone.netlify.app');
+
+      const allWarns = warnSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(allWarns).toContain('NERVE_TELEMETRY_PHASE1_BASE_URL');
+      expect(allWarns).toContain('NERVE_TELEMETRY_PHASE2_BASE_URL');
+
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+  });
+
   describe('workspaceWatchRecursive', () => {
     it('defaults to true when env var is unset', async () => {
       vi.resetModules();

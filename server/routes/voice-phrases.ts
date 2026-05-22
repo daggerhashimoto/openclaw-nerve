@@ -16,8 +16,19 @@ import {
   hasCustomPhrases,
   setLanguagePhrases,
 } from '../lib/voice-phrases.js';
+import { getTelemetryRuntime } from '../lib/telemetry/runtime.js';
 
 const app = new Hono();
+
+function runTelemetryInBackground(work: Promise<unknown>): void {
+  void work.catch(() => {});
+}
+
+function markSettingsFeatureUsed(): void {
+  const telemetry = getTelemetryRuntime();
+  if (!telemetry) return;
+  runTelemetryInBackground(telemetry.markFeatureUsed('settings'));
+}
 
 /**
  * GET /api/voice-phrases — effective phrases for current (or specified) language.
@@ -78,6 +89,8 @@ app.put('/api/voice-phrases/:lang', async (c) => {
       cancelPhrases: Array.isArray(body.cancelPhrases) ? body.cancelPhrases : existing.cancelPhrases,
       wakePhrases: Array.isArray(body.wakePhrases) ? body.wakePhrases : existing.wakePhrases,
     });
+
+    markSettingsFeatureUsed();
 
     return c.json({ ok: true, lang });
   } catch {

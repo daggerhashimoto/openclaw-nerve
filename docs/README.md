@@ -13,6 +13,8 @@ Start here when you need setup, operations, or contributor guidance.
 - [Architecture](./ARCHITECTURE.md), codebase structure and system design
 - [Configuration](./CONFIGURATION.md), `.env`, auth, access modes, TTS providers, and UI settings
 - [API](./API.md), backend endpoints and behavior
+- [Telemetry](./TELEMETRY.md), public telemetry contract and mode behavior
+- [Telemetry Feature Booleans](./TELEMETRY-FEATURE-BOOLEANS.md), exact current-code triggers for each Phase 1 feature boolean
 - [Security](./SECURITY.md), threat model and hardening notes
 - [Troubleshooting](./TROUBLESHOOTING.md), common failures and fixes
 - [Updating](./UPDATING.md), built-in updater flow and rollback

@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { config } from '../lib/config.js';
 import { getDefaultAgentWorkspaceRoot } from '../lib/openclaw-config.js';
+import { getTelemetryRuntime } from '../lib/telemetry/runtime.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 
 const app = new Hono();
@@ -122,12 +123,26 @@ async function getGatewayStartedAt(): Promise<number | null> {
 }
 
 app.get('/api/server-info', rateLimitGeneral, async (c) => {
+  const telemetry = getTelemetryRuntime()?.getServerInfoDisclosure() || {
+    telemetryMode: 'off',
+    telemetryEnabled: false,
+    telemetryPublicDocUrl: config.telemetryPublicDocUrl,
+    showFreshInstallNotice: false,
+    freshInstallNoticeId: '',
+  };
+
   return c.json({
     serverTime: Date.now(),
     gatewayStartedAt: await getGatewayStartedAt(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     agentName: config.agentName,
     defaultAgentWorkspaceRoot: getDefaultAgentWorkspaceRoot(),
+    telemetry: {
+      mode: telemetry.telemetryMode,
+      publicDocUrl: telemetry.telemetryPublicDocUrl,
+      showFreshInstallNotice: telemetry.showFreshInstallNotice,
+      freshInstallNoticeId: telemetry.freshInstallNoticeId,
+    },
   });
 });
 

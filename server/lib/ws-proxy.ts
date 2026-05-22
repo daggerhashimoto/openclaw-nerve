@@ -25,6 +25,7 @@ import { createDeviceBlock, getDeviceIdentity } from './device-identity.js';
 import { gatewayRpcCall } from './gateway-rpc.js';
 import { canInjectGatewayToken } from './trust-utils.js';
 import { isAllowedOrigin } from './origin-utils.js';
+import { getTelemetryRuntime } from './telemetry/runtime.js';
 
 /** @internal — exported for test overrides */
 export const _internals = { challengeTimeoutMs: 5_000 };
@@ -40,6 +41,23 @@ const RESTRICTED_METHODS = new Set([
   'sessions.compact',
 ]);
 const CONTROL_UI_CLIENT_ID = 'openclaw-control-ui';
+const ROOT_SESSION_KEY_RE = /^agent:[^:]+:main$/;
+
+interface PendingRequest {
+  method: string;
+  sessionKey?: string;
+  sentAt: number;
+  markSessionsFeatureUsedOnSuccess?: boolean;
+  clearSessionSeenOnSuccess?: boolean;
+}
+
+interface PendingTool {
+  runId?: string;
+  sessionKey?: string;
+  toolCallId: string;
+  toolName: string;
+  startedAt: number;
+}
 
 /**
  * Execute a gateway RPC call, bypassing webchat restrictions.
@@ -47,6 +65,45 @@ const CONTROL_UI_CLIENT_ID = 'openclaw-control-ui';
  */
 function gatewayCall(method: string, params: Record<string, unknown>): Promise<unknown> {
   return gatewayRpcCall(method, params);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function runInBackground(work: Promise<unknown>): void {
+  void work.catch(() => {});
+}
+
+function isRootSessionKey(sessionKey: string | undefined): sessionKey is string {
+  return !!sessionKey && ROOT_SESSION_KEY_RE.test(sessionKey);
+}
+
+function extractSessionKey(params: unknown): string | undefined {
+  if (!isRecord(params)) return undefined;
+  const sessionKey = params.sessionKey ?? params.key;
+  return typeof sessionKey === 'string' ? sessionKey : undefined;
+}
+
+function requestBootstrapsRootSession(method: string, params: unknown): boolean {
+  if (method !== 'sessions.patch' || !isRecord(params)) {
+    return false;
+  }
+
+  const sessionKey = extractSessionKey(params);
+  return isRootSessionKey(sessionKey)
+    && Object.prototype.hasOwnProperty.call(params, 'label')
+    && (
+      Object.prototype.hasOwnProperty.call(params, 'model')
+      || Object.prototype.hasOwnProperty.call(params, 'thinkingLevel')
+    );
+}
+
+function requestChangesSessionLabel(method: string, params: unknown): boolean {
+  return method === 'sessions.patch'
+    && isRecord(params)
+    && Object.prototype.hasOwnProperty.call(params, 'label')
+    && !requestBootstrapsRootSession(method, params);
 }
 
 /** Active WSS instances — used for graceful shutdown */
@@ -213,6 +270,226 @@ function createGatewayRelay(
   const MAX_BYTES = 1024 * 1024; // 1 MB
   let pending: { data: Buffer | string; isBinary: boolean }[] = [];
   let pendingBytes = 0;
+  const pendingRequests = new Map<string, PendingRequest>();
+  const pendingTools = new Map<string, PendingTool>();
+
+  function recordMessageSubmitted(request: PendingRequest): void {
+    const telemetry = getTelemetryRuntime();
+    if (!telemetry) return;
+
+    runInBackground((async () => {
+      await telemetry.recordMessageSubmitted({
+        sessionKey: request.sessionKey,
+        surface: 'chat',
+        occurredAt: request.sentAt,
+      });
+
+      const sessionKey = request.sessionKey;
+      if (!isRootSessionKey(sessionKey)) {
+        return;
+      }
+
+      const seen = await telemetry.markSessionSeen(sessionKey);
+      if (!seen.firstSeen) {
+        return;
+      }
+
+      await telemetry.recordSessionCreated({
+        sessionKey,
+        surface: 'sessions',
+        explicit: false,
+        occurredAt: request.sentAt,
+      });
+    })());
+  }
+
+  function markSessionsFeatureUsed(): void {
+    const telemetry = getTelemetryRuntime();
+    if (!telemetry) return;
+    runInBackground(telemetry.markFeatureUsed('sessions'));
+  }
+
+  function clearRootSessionSeen(sessionKey: string | undefined): void {
+    const telemetry = getTelemetryRuntime();
+    if (!telemetry || !isRootSessionKey(sessionKey)) {
+      return;
+    }
+
+    runInBackground(telemetry.clearSessionSeen(sessionKey));
+  }
+
+  function recordToolCompleted(entry: PendingTool, success: boolean): void {
+    const telemetry = getTelemetryRuntime();
+    if (!telemetry) return;
+
+    const finishedAt = Date.now();
+    runInBackground(telemetry.recordToolCompleted({
+      toolName: entry.toolName,
+      success,
+      startedAt: entry.startedAt,
+      finishedAt,
+      occurredAt: finishedAt,
+      surface: 'chat',
+    }));
+  }
+
+  function getPendingToolKey(
+    runId: string | undefined,
+    toolCallId: string,
+    sessionKey?: string,
+  ): string {
+    // When runId is absent (some gateways omit it), include sessionKey in the
+    // key so the same toolCallId across different sessions does not collide.
+    if (runId) return `${runId}\u0000${toolCallId}`;
+    return `\u0000${sessionKey ?? ''}\u0000${toolCallId}`;
+  }
+
+  function resolvePendingToolKey(options: {
+    runId?: string;
+    sessionKey?: string;
+    toolCallId: string;
+  }): string | undefined {
+    if (options.runId) {
+      const directKey = getPendingToolKey(options.runId, options.toolCallId, options.sessionKey);
+      if (pendingTools.has(directKey)) {
+        return directKey;
+      }
+    }
+
+    const matches = [...pendingTools.entries()].filter(([, entry]) => (
+      entry.toolCallId === options.toolCallId
+      && (!options.sessionKey || entry.sessionKey === options.sessionKey)
+    ));
+
+    if (matches.length === 0) {
+      return undefined;
+    }
+
+    const runlessMatch = matches.find(([, entry]) => entry.runId === undefined);
+    if (runlessMatch) {
+      return runlessMatch[0];
+    }
+
+    if (matches.length === 1) {
+      return matches[0]?.[0];
+    }
+
+    return undefined;
+  }
+
+  function flushPendingTools(
+    success: boolean,
+    predicate: (entry: PendingTool) => boolean = () => true,
+  ): void {
+    for (const [pendingToolKey, entry] of pendingTools.entries()) {
+      if (!predicate(entry)) continue;
+      pendingTools.delete(pendingToolKey);
+      recordToolCompleted(entry, success);
+    }
+  }
+
+  function flushPendingToolsForFailure(runId: string | undefined, sessionKey: string | undefined): void {
+    if (runId) {
+      flushPendingTools(false, (entry) => entry.runId === runId);
+      return;
+    }
+
+    if (sessionKey) {
+      flushPendingTools(false, (entry) => entry.sessionKey === sessionKey);
+      return;
+    }
+
+    flushAllPendingTools(false);
+  }
+
+  function flushAllPendingTools(success: boolean): void {
+    flushPendingTools(success);
+  }
+
+  function handleGatewayTelemetryFrame(message: Record<string, unknown>): void {
+    if (message.type === 'res' && typeof message.id === 'string') {
+      const request = pendingRequests.get(message.id);
+      if (request) {
+        pendingRequests.delete(message.id);
+        if (message.ok === true) {
+          if (request.method === 'chat.send') {
+            recordMessageSubmitted(request);
+          }
+          if (request.markSessionsFeatureUsedOnSuccess) {
+            markSessionsFeatureUsed();
+          }
+          if (request.clearSessionSeenOnSuccess) {
+            clearRootSessionSeen(request.sessionKey);
+          }
+        }
+      }
+      return;
+    }
+
+    if (message.type === 'event' && message.event === 'agent' && isRecord(message.payload)) {
+      const payload = message.payload;
+      const runId = typeof payload.runId === 'string' ? payload.runId : undefined;
+      const sessionKey = typeof payload.sessionKey === 'string' ? payload.sessionKey : undefined;
+      const data = isRecord(payload.data) ? payload.data : null;
+      if (payload.stream === 'tool' && data?.phase === 'start' && typeof data.toolCallId === 'string' && typeof data.name === 'string') {
+        pendingTools.set(getPendingToolKey(runId, data.toolCallId, sessionKey), {
+          runId,
+          sessionKey,
+          toolCallId: data.toolCallId,
+          toolName: data.name,
+          startedAt: Date.now(),
+        });
+        return;
+      }
+
+      if (payload.stream === 'tool' && data?.phase === 'result' && typeof data.toolCallId === 'string') {
+        const pendingToolKey = resolvePendingToolKey({ runId, sessionKey, toolCallId: data.toolCallId });
+        if (!pendingToolKey) return;
+        const pendingTool = pendingTools.get(pendingToolKey);
+        if (!pendingTool) return;
+        pendingTools.delete(pendingToolKey);
+        recordToolCompleted(pendingTool, true);
+        return;
+      }
+
+      if (payload.stream === 'lifecycle' && (data?.phase === 'end' || data?.phase === 'error')) {
+        flushPendingToolsForFailure(runId, sessionKey);
+      }
+      return;
+    }
+
+    if (message.type === 'event' && message.event === 'chat' && isRecord(message.payload)) {
+      const payload = message.payload;
+      if (payload.state === 'error' || payload.state === 'aborted') {
+        flushPendingToolsForFailure(
+          typeof payload.runId === 'string' ? payload.runId : undefined,
+          typeof payload.sessionKey === 'string' ? payload.sessionKey : undefined,
+        );
+      }
+    }
+  }
+
+  function trackPendingRequest(message: Record<string, unknown>): void {
+    if (message.type !== 'req' || typeof message.id !== 'string' || typeof message.method !== 'string') {
+      return;
+    }
+
+    const sessionKey = extractSessionKey(message.params);
+    const markSessionsFeatureUsedOnSuccess = isControlUiClient
+      && (requestChangesSessionLabel(message.method, message.params) || message.method === 'sessions.delete');
+    const clearSessionSeenOnSuccess = isControlUiClient
+      && (message.method === 'sessions.delete' || requestBootstrapsRootSession(message.method, message.params));
+
+    if (message.method === 'chat.send' || markSessionsFeatureUsedOnSuccess || clearSessionSeenOnSuccess) {
+      pendingRequests.set(message.id, {
+        method: message.method,
+        sessionKey,
+        sentAt: Date.now(),
+        markSessionsFeatureUsedOnSuccess,
+        clearSessionSeenOnSuccess,
+      });
+    }
+  }
 
   /** Queue a client message for deferred forwarding. Returns false if limits exceeded. */
   function enqueuePending(data: Buffer | string, isBinary: boolean): boolean {
@@ -306,17 +583,19 @@ function createGatewayRelay(
 
     // Gateway → Client
     gwWs.on('message', (data: Buffer | string, isBinary: boolean) => {
-      // Capture challenge nonce before handshake completes
-      if (!handshakeComplete && !isBinary) {
+      if (!isBinary) {
         try {
-          const msg = JSON.parse(data.toString());
-          if (msg.type === 'event' && msg.event === 'connect.challenge' && msg.payload?.nonce) {
+          const msg = JSON.parse(data.toString()) as Record<string, unknown>;
+          // Capture challenge nonce before handshake completes
+          if (!handshakeComplete && msg.type === 'event' && msg.event === 'connect.challenge' && isRecord(msg.payload) && typeof msg.payload.nonce === 'string') {
             challengeNonce = msg.payload.nonce;
             // If we have a deferred connect message waiting, send it now with identity
             if (savedConnectMsg && !connectSent && gwWs.readyState === WebSocket.OPEN) {
               dispatchConnect(challengeNonce);
             }
           }
+
+          handleGatewayTelemetryFrame(msg);
         } catch { /* ignore */ }
       }
 
@@ -349,6 +628,7 @@ function createGatewayRelay(
     gwWs.on('error', (err) => {
       console.error(`${tag} Gateway error:`, err.message);
       clearChallengeTimer();
+      flushAllPendingTools(false);
       if (!hasRetried || handshakeComplete) clientWs.close();
     });
 
@@ -356,6 +636,7 @@ function createGatewayRelay(
       const reasonStr = reason?.toString() || '';
       console.log(`${tag} Gateway closed: code=${code}, reason=${reasonStr}`);
       clearChallengeTimer();
+      flushAllPendingTools(false);
 
       // Device auth rejected — retry without device identity
       const isDeviceRejection = code === 1008 && (
@@ -383,7 +664,8 @@ function createGatewayRelay(
       // Gateway not open — intercept connect messages and hold them separately
       if (!isBinary) {
         try {
-          const msg = JSON.parse(data.toString());
+          const msg = JSON.parse(data.toString()) as Record<string, unknown>;
+          trackPendingRequest(msg);
           if (msg.type === 'req' && msg.method === 'connect' && msg.params) {
             savedConnectMsg = msg;
             updateClientKindFromConnect(msg);
@@ -404,7 +686,8 @@ function createGatewayRelay(
     if (!handshakeComplete && savedConnectMsg && !connectSent) {
       if (!isBinary) {
         try {
-          const msg = JSON.parse(data.toString());
+          const msg = JSON.parse(data.toString()) as Record<string, unknown>;
+          trackPendingRequest(msg);
           if (msg.type === 'req' && msg.method === 'connect' && msg.params) {
             // Last-write-wins if multiple connect frames arrive before dispatch.
             savedConnectMsg = msg;
@@ -428,7 +711,8 @@ function createGatewayRelay(
     // Gateway is open — parse message for interception
     if (!isBinary) {
       try {
-        const msg = JSON.parse(data.toString());
+        const msg = JSON.parse(data.toString()) as Record<string, unknown>;
+        trackPendingRequest(msg);
 
         // Intercept connect request — defer until challenge nonce arrives
         if (!handshakeComplete && msg.type === 'req' && msg.method === 'connect' && msg.params) {
@@ -444,12 +728,20 @@ function createGatewayRelay(
 
         // Intercept restricted RPC methods for plain webchat clients only.
         // Control UI clients are allowed to call these directly on the gateway.
-        if (msg.type === 'req' && RESTRICTED_METHODS.has(msg.method) && !isControlUiClient) {
+        if (msg.type === 'req' && typeof msg.method === 'string' && RESTRICTED_METHODS.has(msg.method) && !isControlUiClient) {
           const reqId = msg.id;
-          gatewayCall(msg.method, msg.params || {})
+          const method = msg.method;
+          const params = isRecord(msg.params) ? msg.params : {};
+          gatewayCall(method, params)
             .then((result) => {
               if (clientWs.readyState === WebSocket.OPEN) {
                 clientWs.send(JSON.stringify({ type: 'res', id: reqId, ok: true, payload: result }));
+              }
+              if (requestChangesSessionLabel(method, params) || method === 'sessions.delete') {
+                markSessionsFeatureUsed();
+              }
+              if (method === 'sessions.delete' || requestBootstrapsRootSession(method, params)) {
+                clearRootSessionSeen(extractSessionKey(params));
               }
             })
             .catch((err) => {
@@ -474,6 +766,7 @@ function createGatewayRelay(
   clientWs.on('close', (code, reason) => {
     clearInterval(pingTimer);
     clearChallengeTimer();
+    flushAllPendingTools(false);
     const duration = Date.now() - connStartTime;
     console.log(`${tag} Client closed: code=${code}, reason=${reason?.toString()}`);
     console.log(`${tag} Summary: duration=${duration}ms, client->gw=${clientToGatewayCount}, gw->client=${gatewayToClientCount}`);
@@ -482,6 +775,7 @@ function createGatewayRelay(
   clientWs.on('error', (err) => {
     clearInterval(pingTimer);
     clearChallengeTimer();
+    flushAllPendingTools(false);
     console.error(`${tag} Client error:`, err.message);
     if (gwWs) gwWs.close();
   });

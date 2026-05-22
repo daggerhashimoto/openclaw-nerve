@@ -34,6 +34,7 @@ import {
   buildKanbanFallbackRunKey,
   launchKanbanFallbackSubagentViaRpc,
 } from '../lib/kanban-subagent-fallback.js';
+import { getTelemetryRuntime } from '../lib/telemetry/runtime.js';
 import type {
   KanbanTask,
   TaskStatus,
@@ -71,6 +72,27 @@ function parseGatewayResponse(result: unknown): Record<string, unknown> {
 
 const activePollTimers = new Set<ReturnType<typeof setTimeout>>();
 const activeBackgroundTasks = new Set<Promise<unknown>>();
+
+function runTelemetryInBackground(work: Promise<unknown>): void {
+  void work.catch(() => {});
+}
+
+function markKanbanFeatureUsed(): void {
+  const telemetry = getTelemetryRuntime();
+  if (!telemetry) return;
+  runTelemetryInBackground(telemetry.markFeatureUsed('kanban'));
+}
+
+function recordKanbanTaskCreatedTelemetry(): void {
+  const telemetry = getTelemetryRuntime();
+  if (!telemetry) return;
+
+  runTelemetryInBackground(telemetry.markFeatureUsed('kanban'));
+  runTelemetryInBackground(telemetry.recordKanbanTaskCreated({
+    surface: 'kanban',
+    success: true,
+  }));
+}
 
 function trackTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
   const id = setTimeout(() => {
@@ -791,6 +813,7 @@ app.post('/api/kanban/tasks', rateLimitGeneral, async (c) => {
 
   try {
     const task = await store.createTask(parsed.data);
+    recordKanbanTaskCreatedTelemetry();
     return c.json(task, 201);
   } catch (err) {
     const invalidStatusResponse = handleInvalidTaskStatusError(c, err);
@@ -892,6 +915,7 @@ app.post('/api/kanban/tasks/:id/reorder', rateLimitGeneral, async (c) => {
       parsed.data.targetIndex,
       'operator',
     );
+    markKanbanFeatureUsed();
     return c.json(task);
   } catch (err) {
     const invalidStatusResponse = handleInvalidTaskStatusError(c, err);
@@ -1038,6 +1062,11 @@ app.post('/api/kanban/proposals/:id/approve', rateLimitGeneral, async (c) => {
 
   try {
     const { proposal, task } = await store.approveProposal(id);
+    if (proposal.type === 'create') {
+      recordKanbanTaskCreatedTelemetry();
+    } else {
+      markKanbanFeatureUsed();
+    }
     return c.json({ proposal, task });
   } catch (err) {
     const invalidStatusResponse = handleInvalidTaskStatusError(c, err);
@@ -1316,6 +1345,7 @@ Deliver your result as a clear summary of what was done.`,
           }),
       );
 
+      markKanbanFeatureUsed();
       return c.json(execution.task);
     }
 
@@ -1381,6 +1411,7 @@ Deliver your result as a clear summary of what was done.`,
       });
     })());
 
+    markKanbanFeatureUsed();
     return c.json(execution.task);
   } catch (err) {
     if (err instanceof KanbanExecutionPreflightError) {
@@ -1413,6 +1444,7 @@ app.post('/api/kanban/tasks/:id/approve', rateLimitGeneral, async (c) => {
 
   try {
     const task = await store.approveTask(id, parsed.data.note, 'operator');
+    markKanbanFeatureUsed();
     return c.json(task);
   } catch (err) {
     return handleWorkflowError(c, err);
@@ -1441,6 +1473,7 @@ app.post('/api/kanban/tasks/:id/reject', rateLimitGeneral, async (c) => {
 
   try {
     const task = await store.rejectTask(id, parsed.data.note, 'operator');
+    markKanbanFeatureUsed();
     return c.json(task);
   } catch (err) {
     return handleWorkflowError(c, err);
@@ -1470,6 +1503,7 @@ app.post('/api/kanban/tasks/:id/abort', rateLimitGeneral, async (c) => {
 
   try {
     const task = await store.abortTask(id, parsed.data.note, 'operator');
+    markKanbanFeatureUsed();
     return c.json(task);
   } catch (err) {
     return handleWorkflowError(c, err);

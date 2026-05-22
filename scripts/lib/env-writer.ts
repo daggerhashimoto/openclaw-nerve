@@ -30,6 +30,8 @@ export interface EnvConfig {
   NERVE_PASSWORD_HASH?: string;
   NERVE_SESSION_SECRET?: string;
   NERVE_SESSION_TTL?: string;
+  // Telemetry
+  NERVE_TELEMETRY_MODE?: string;
 }
 
 /** Default values (matching server/lib/config.ts). */
@@ -103,6 +105,13 @@ export function generateEnvContent(config: EnvConfig): string {
     if (config.NERVE_SESSION_TTL) authLines.push(`NERVE_SESSION_TTL=${config.NERVE_SESSION_TTL}`);
     lines.push('# Authentication');
     lines.push(...authLines);
+    lines.push('');
+  }
+
+  // Telemetry
+  if (config.NERVE_TELEMETRY_MODE) {
+    lines.push('# Telemetry');
+    lines.push(`NERVE_TELEMETRY_MODE=${config.NERVE_TELEMETRY_MODE}`);
     lines.push('');
   }
 

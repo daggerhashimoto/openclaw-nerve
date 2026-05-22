@@ -138,6 +138,11 @@ describe('TaskDetailDrawer', () => {
       renderDrawer(makeTask({ result: undefined }));
       expect(screen.queryByText('Result')).not.toBeInTheDocument();
     });
+
+    it('does not render the result block for whitespace-only content', () => {
+      renderDrawer(makeTask({ result: '   \n\t  ' }));
+      expect(screen.queryByText('Result')).not.toBeInTheDocument();
+    });
   });
 
   describe('description edit toggle', () => {

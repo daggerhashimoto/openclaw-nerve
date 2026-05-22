@@ -334,7 +334,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
                   ) : (
                     <div className="min-h-[180px] rounded-2xl border border-border/60 bg-background/45 p-3 text-sm text-foreground">
                       <Suspense fallback={<div className="whitespace-pre-wrap">{editDescription}</div>}>
-                        <MarkdownRenderer content={editDescription} />
+                        <MarkdownRenderer content={editDescription} suppressImages />
                       </Suspense>
                     </div>
                   )}
@@ -454,12 +454,12 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
                 </div>
               )}
 
-              {task.result && (
+              {task.result?.trim() && (
                 <div className="cockpit-note space-y-2">
                   <h4 className="cockpit-field-label">Result</h4>
                   <div className="rounded-2xl border border-border/60 bg-background/45 p-3 text-xs text-foreground">
                     <Suspense fallback={<div className="whitespace-pre-wrap">{task.result}</div>}>
-                      <MarkdownRenderer content={task.result} />
+                      <MarkdownRenderer content={task.result} suppressImages />
                     </Suspense>
                   </div>
                 </div>

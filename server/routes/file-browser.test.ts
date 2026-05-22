@@ -33,6 +33,7 @@ describe('file-browser routes', () => {
     fileBrowserRoot?: string;
     remote?: boolean;
     gatewayFilesListResult?: Array<{ name: string; missing?: boolean; size?: number; updatedAtMs?: number }>;
+    fileBrowserMaxTreeEntries?: number;
   }) {
     vi.resetModules();
     vi.doUnmock('../lib/gateway-rpc.js');
@@ -51,6 +52,7 @@ describe('file-browser routes', () => {
         memoryPath: path.join(configuredWorkspace, 'MEMORY.md'),
         memoryDir: path.join(configuredWorkspace, 'memory'),
         fileBrowserRoot: opts?.fileBrowserRoot ?? '',
+        fileBrowserMaxTreeEntries: opts?.fileBrowserMaxTreeEntries ?? 5_000,
         workspaceRemote: false,
       },
       SESSION_COOKIE_NAME: 'nerve_session_3000',
@@ -183,6 +185,197 @@ describe('file-browser routes', () => {
       expect(secondJson.entries.map((entry) => entry.name)).not.toEqual(
         firstJson.entries.map((entry) => entry.name),
       );
+    });
+
+    type PageResponse = {
+      ok: boolean;
+      entries: Array<{
+        name: string;
+        type: 'file' | 'directory';
+        children?: Array<{ name: string }> | null;
+        childrenTruncated?: boolean;
+        childrenNextCursor?: string;
+      }>;
+      totalEntries: number;
+      returnedEntries: number;
+      limit: number;
+      cursor: number;
+      truncated: boolean;
+      nextCursor?: string;
+    };
+
+    it('keeps siblings reachable when recursion exhausts the response budget (issue #345)', async () => {
+      // Bug: a deep subtree exhausting the shared budget would drop later
+      // top-level siblings AND advance nextCursor past them, so a follow-up
+      // paginated request could not reach them.
+      //
+      // Setup: 3 sibling dirs at the root. dir-a's subtree alone (1 + 6 files)
+      // exceeds the budget. We force the regression path by sizing the budget
+      // so it is provably impossible to fit MEMORY.md + dir-a + dir-a's
+      // children + dir-b + dir-c on the first page.
+      await fs.mkdir(path.join(tmpDir, 'dir-a'));
+      await fs.mkdir(path.join(tmpDir, 'dir-b'));
+      await fs.mkdir(path.join(tmpDir, 'dir-c'));
+      for (let i = 0; i < 6; i += 1) {
+        await fs.writeFile(path.join(tmpDir, 'dir-a', `a-${i}.txt`), 'x');
+      }
+      await fs.writeFile(path.join(tmpDir, 'dir-b', 'b-1.txt'), 'x');
+      await fs.writeFile(path.join(tmpDir, 'dir-c', 'c-1.txt'), 'x');
+
+      // Budget = 3. With dirs-first sort the budget pays for dir-a (1) and
+      // then dir-a's recursive descent into its 6 files exhausts it well
+      // before dir-b is reached. dir-b and dir-c must remain reachable via
+      // nextCursor.
+      const app = await buildApp({ fileBrowserMaxTreeEntries: 3 });
+
+      const firstRes = await app.request('/api/files/tree?depth=2&limit=10');
+      expect(firstRes.status).toBe(200);
+      const firstJson = (await firstRes.json()) as PageResponse;
+
+      const firstNames = firstJson.entries.map((e) => e.name);
+      // Precondition: the budget really did force at least one sibling drop.
+      // If this fails, the fixture sizing no longer exercises the regression
+      // and the test would otherwise silently pass.
+      const missingSiblings = ['dir-a', 'dir-b', 'dir-c'].filter(
+        (n) => !firstNames.includes(n),
+      );
+      expect(missingSiblings.length).toBeGreaterThan(0);
+
+      expect(firstJson.truncated).toBe(true);
+      expect(firstJson.nextCursor).toBeDefined();
+
+      const secondRes = await app.request(
+        `/api/files/tree?depth=2&limit=10&cursor=${firstJson.nextCursor}`,
+      );
+      expect(secondRes.status).toBe(200);
+      const secondJson = (await secondRes.json()) as PageResponse;
+      const allReachedNames = new Set([
+        ...firstNames,
+        ...secondJson.entries.map((e) => e.name),
+      ]);
+      expect(allReachedNames.has('dir-a')).toBe(true);
+      expect(allReachedNames.has('dir-b')).toBe(true);
+      expect(allReachedNames.has('dir-c')).toBe(true);
+    });
+
+    it('budget exhausts at the leaf file list — unreached files are reachable on next page', async () => {
+      for (let i = 0; i < 8; i += 1) {
+        await fs.writeFile(path.join(tmpDir, `leaf-${String(i).padStart(2, '0')}.txt`), 'x');
+      }
+
+      // Budget = 3. The single top-level dir has MEMORY.md + 8 files (9 entries).
+      const app = await buildApp({ fileBrowserMaxTreeEntries: 3 });
+
+      const firstRes = await app.request('/api/files/tree?limit=50');
+      expect(firstRes.status).toBe(200);
+      const firstJson = (await firstRes.json()) as PageResponse;
+      expect(firstJson.entries.length).toBeLessThan(firstJson.totalEntries);
+      expect(firstJson.truncated).toBe(true);
+      expect(firstJson.nextCursor).toBeDefined();
+
+      const secondRes = await app.request(
+        `/api/files/tree?limit=50&cursor=${firstJson.nextCursor}`,
+      );
+      expect(secondRes.status).toBe(200);
+      const secondJson = (await secondRes.json()) as PageResponse;
+      const firstNames = firstJson.entries.map((e) => e.name);
+      const secondNames = secondJson.entries.map((e) => e.name);
+      // First page's entries and the next page's entries together cover everything,
+      // with no overlap (the bug was that nextCursor jumped past dropped entries).
+      expect(secondNames).not.toEqual(firstNames);
+      const intersection = firstNames.filter((n) => secondNames.includes(n));
+      expect(intersection).toEqual([]);
+    });
+
+    it('paginates exactly at the directory/file boundary', async () => {
+      await fs.mkdir(path.join(tmpDir, 'dir-1'));
+      await fs.mkdir(path.join(tmpDir, 'dir-2'));
+      await fs.writeFile(path.join(tmpDir, 'file-a.txt'), 'x');
+      await fs.writeFile(path.join(tmpDir, 'file-b.txt'), 'x');
+      // Remove MEMORY.md so the sort order at the root is deterministic
+      // across platforms (case-insensitive locale comparison places uppercase
+      // 'M' before lowercase 'f' on macOS but not on every libc — we don't
+      // need that interaction here).
+      await fs.rm(path.join(tmpDir, 'MEMORY.md'));
+
+      const app = await buildApp();
+
+      // After sort: [dir-1, dir-2, file-a.txt, file-b.txt] (dirs first, then
+      // files alphabetical). limit=2 returns exactly the two dirs;
+      // nextCursor must point at the first file.
+      const firstRes = await app.request('/api/files/tree?limit=2');
+      const firstJson = (await firstRes.json()) as PageResponse;
+      expect(firstJson.entries.map((e) => e.name)).toEqual(['dir-1', 'dir-2']);
+      expect(firstJson.nextCursor).toBe('2');
+
+      const secondRes = await app.request('/api/files/tree?limit=2&cursor=2');
+      const secondJson = (await secondRes.json()) as PageResponse;
+      expect(secondJson.entries.map((e) => e.name)).toEqual(['file-a.txt', 'file-b.txt']);
+    });
+
+    it('surfaces childrenTruncated and childrenNextCursor on a directory whose recursive listing overflowed', async () => {
+      await fs.mkdir(path.join(tmpDir, 'bigchild'));
+      for (let i = 0; i < 8; i += 1) {
+        await fs.writeFile(path.join(tmpDir, 'bigchild', `bc-${String(i).padStart(2, '0')}.txt`), 'x');
+      }
+
+      // Budget covers MEMORY.md (1) + bigchild itself (1) + 3 of its files = 5.
+      const app = await buildApp({ fileBrowserMaxTreeEntries: 5 });
+
+      const res = await app.request('/api/files/tree?depth=2&limit=50');
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as PageResponse;
+      const bigchild = json.entries.find((e) => e.name === 'bigchild');
+      expect(bigchild).toBeDefined();
+      expect(bigchild?.childrenTruncated).toBe(true);
+      expect(bigchild?.childrenNextCursor).toBeDefined();
+
+      // The next page of bigchild's contents should be reachable.
+      const childRes = await app.request(
+        `/api/files/tree?path=bigchild&limit=50&cursor=${bigchild?.childrenNextCursor}`,
+      );
+      expect(childRes.status).toBe(200);
+      const childJson = (await childRes.json()) as PageResponse;
+      expect(childJson.entries.length).toBeGreaterThan(0);
+    });
+
+    it('omits childrenTruncated and childrenNextCursor when the child listing fits', async () => {
+      await fs.mkdir(path.join(tmpDir, 'smallchild'));
+      await fs.writeFile(path.join(tmpDir, 'smallchild', 'one.txt'), 'x');
+      await fs.writeFile(path.join(tmpDir, 'smallchild', 'two.txt'), 'x');
+
+      const app = await buildApp();
+      const res = await app.request('/api/files/tree?depth=2&limit=50');
+      const json = (await res.json()) as PageResponse;
+      const child = json.entries.find((e) => e.name === 'smallchild');
+      expect(child).toBeDefined();
+      expect(child).not.toHaveProperty('childrenTruncated');
+      expect(child).not.toHaveProperty('childrenNextCursor');
+    });
+
+    it('does not set childrenTruncated when depth=1 (no recursion)', async () => {
+      await fs.mkdir(path.join(tmpDir, 'shallow'));
+      await fs.writeFile(path.join(tmpDir, 'shallow', 'leaf.txt'), 'x');
+
+      const app = await buildApp();
+      const res = await app.request('/api/files/tree?depth=1&limit=50');
+      const json = (await res.json()) as PageResponse;
+      const child = json.entries.find((e) => e.name === 'shallow');
+      expect(child).toBeDefined();
+      expect(child?.children).toBeNull();
+      expect(child).not.toHaveProperty('childrenTruncated');
+      expect(child).not.toHaveProperty('childrenNextCursor');
+    });
+
+    it('returns no nextCursor for an empty directory', async () => {
+      await fs.mkdir(path.join(tmpDir, 'empty'));
+      const app = await buildApp();
+      const res = await app.request('/api/files/tree?path=empty');
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as PageResponse;
+      expect(json.returnedEntries).toBe(0);
+      expect(json.truncated).toBe(false);
+      expect(json.nextCursor).toBeUndefined();
     });
 
     it('includes hidden workspace entries when showHidden=true via remote gateway fallback', async () => {

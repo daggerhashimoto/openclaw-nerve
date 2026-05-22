@@ -12,6 +12,10 @@ export interface TreeEntry {
   binary?: boolean;
   /** Directory children — null = not loaded yet, [] = empty. */
   children?: TreeEntry[] | null;
+  /** Set when the recursive listing of this directory was truncated by the response budget. */
+  childrenTruncated?: boolean;
+  /** Cursor to resume the child listing at via `?path=<this.path>&cursor=<childrenNextCursor>`. */
+  childrenNextCursor?: string;
 }
 
 /** An open file tab in the editor. */

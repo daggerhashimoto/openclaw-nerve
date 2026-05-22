@@ -88,6 +88,21 @@ describe('applyAccessPlanToConfig', () => {
     expect(next.WS_ALLOWED_HOSTS).toBeUndefined();
   });
 
+  it.each([
+    ['http://127.0.1.1:18789', '127/8 alternative loopback'],
+    ['http://127.255.255.254:18789', '127/8 high end'],
+    ['http://localhost:18789', 'hostname literal'],
+    ['http://[::1]:18789', 'bracketed IPv6 loopback from URL.hostname'],
+    ['http://[0:0:0:0:0:0:0:1]:18789', 'expanded IPv6 loopback'],
+  ])('treats %s as loopback (%s)', gatewayUrl => {
+    const localPlan = buildAccessPlan({ profile: 'local', port: '3080' });
+    const next = applyAccessPlanToConfig({
+      PORT: '3080',
+      GATEWAY_URL: gatewayUrl,
+    }, localPlan);
+    expect(next.WS_ALLOWED_HOSTS).toBeUndefined();
+  });
+
   it('preserves user-added WS_ALLOWED_HOSTS entries when merging plan + gateway host', () => {
     const tsPlan = buildAccessPlan({
       profile: 'tailscale-ip',

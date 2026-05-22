@@ -31,7 +31,18 @@ function dedupe(values: Array<string | null | undefined>): string[] {
 }
 
 function isLoopback(host: string | null | undefined): boolean {
-  return !host || host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  if (!host) return true;
+  // Node's URL.hostname returns bracketed IPv6 literals (e.g. "[::1]"); strip
+  // the brackets before comparing. Also accept any 127.0.0.0/8 IPv4 loopback
+  // and the expanded IPv6 form.
+  let normalized = host.trim().toLowerCase();
+  if (normalized.startsWith('[') && normalized.endsWith(']')) {
+    normalized = normalized.slice(1, -1);
+  }
+  return normalized === 'localhost'
+    || normalized === '::1'
+    || normalized === '0:0:0:0:0:0:0:1'
+    || /^127(?:\.\d{1,3}){3}$/.test(normalized);
 }
 
 /**

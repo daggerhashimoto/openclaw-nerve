@@ -95,9 +95,14 @@ export const config = {
     const pairs = env.split(',').map(s => s.trim()).filter(Boolean);
     const result: Record<string, string> = {};
     for (const pair of pairs) {
-      const [agentId, workspacePath] = pair.split(':');
+      // Split on the first ':' only so Windows drive letters and other
+      // colon-bearing paths (e.g., `agent1:C:\work\space`) survive intact.
+      const idx = pair.indexOf(':');
+      if (idx <= 0 || idx === pair.length - 1) continue;
+      const agentId = pair.slice(0, idx).trim();
+      const workspacePath = pair.slice(idx + 1).trim();
       if (agentId && workspacePath) {
-        result[agentId.trim()] = workspacePath.trim();
+        result[agentId] = workspacePath;
       }
     }
     return result;

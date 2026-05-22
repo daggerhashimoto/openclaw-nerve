@@ -110,7 +110,11 @@ app.use('*', async (c, next) => {
 app.get('*', async (c, next) => {
   if (c.req.path.startsWith('/api/')) return next();
 
-  const looksLikeStaticFile = c.req.path.startsWith('/assets/') || (c.req.path !== '/' && c.req.path.includes('.'));
+  // Match a real file extension at the end of the path (e.g., `.js`, `.css`, `.map`)
+  // rather than any dot anywhere in the path. The previous `.includes('.')`
+  // would 404 paths like `/.well-known/acme-challenge/<token>` or any future
+  // app route with a dot in a directory segment.
+  const looksLikeStaticFile = c.req.path.startsWith('/assets/') || /\.[a-zA-Z0-9]+$/.test(c.req.path);
   if (looksLikeStaticFile) {
     return c.notFound();
   }

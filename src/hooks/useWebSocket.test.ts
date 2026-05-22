@@ -130,6 +130,55 @@ describe('useWebSocket', () => {
       expect(result.current.connectionState).toBe('disconnected');
     });
 
+    it('rejects the initial connect promise if the socket closes mid-handshake after challenge', async () => {
+      // Covers the specific case the PR set out to fix: connect.challenge has
+      // arrived, the auth request is in flight, then the socket closes before
+      // the auth response. connectReqIdRef.current is non-null when onclose
+      // fires, so this exercises a different code path than the close-before-
+      // challenge test above.
+      const wsInstances: MockWebSocket[] = [];
+      const OriginalMockWS = MockWebSocket;
+      (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket = class extends OriginalMockWS {
+        constructor(url: string) {
+          super(url);
+          wsInstances.push(this);
+        }
+      };
+
+      const { result } = renderHook(() => useWebSocket());
+
+      let connectError: Error | null = null;
+      act(() => {
+        result.current.connect('ws://localhost:8080', 'test-token').catch((err: Error) => {
+          connectError = err;
+        });
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const ws = wsInstances[0];
+      act(() => {
+        ws.simulateMessage({ type: 'event', event: 'connect.challenge', payload: { nonce: 'mid-handshake' } });
+      });
+
+      // The hook should have sent the auth request now; verify so the test fails
+      // loudly if the precondition stops holding.
+      expect(getConnectRequest(ws)).toBeTruthy();
+
+      act(() => {
+        ws.close();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(connectError?.message).toBe('WebSocket disconnected before connect completed');
+      expect(result.current.connectionState).toBe('disconnected');
+    });
+
     it('times out the initial connect attempt instead of hanging forever', async () => {
       const { result } = renderHook(() => useWebSocket());
 

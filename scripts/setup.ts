@@ -730,8 +730,10 @@ async function collectInteractive(
 
   delete config.ALLOWED_ORIGINS;
   delete config.CSP_CONNECT_EXTRA;
-  delete config.WS_ALLOWED_HOSTS;
   delete config.SSL_PORT;
+  // WS_ALLOWED_HOSTS is intentionally NOT cleared here. applyAccessPlanToConfig
+  // merges plan-derived hosts, the user's existing entries, and the remote-gateway
+  // host from GATEWAY_URL, so clearing first would drop user-added allowlist values.
   Object.assign(config, applyAccessPlanToConfig(config, accessPlan));
   if (sslPort) config.SSL_PORT = sslPort;
 
@@ -1182,7 +1184,8 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
 
     delete config.ALLOWED_ORIGINS;
     delete config.CSP_CONNECT_EXTRA;
-    delete config.WS_ALLOWED_HOSTS;
+    // WS_ALLOWED_HOSTS preserved across setup runs. See merge logic in
+    // applyAccessPlanToConfig (plan + existing + remote-gateway host).
     Object.assign(config, applyAccessPlanToConfig(config, accessPlan));
 
     success(`Using access mode: ${accessPlan.profile}`);

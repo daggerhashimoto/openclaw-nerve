@@ -147,8 +147,16 @@ export function useWebSocket(): UseWebSocketReturn {
       }
       if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
       rejectPending(new Error('Disconnected'));
-      clearConnectTimeout();
-      connectReqIdRef.current = null;
+      // Settle any in-flight previous connect before installing new callbacks.
+      // Without this the previous promise leaks: the prior socket's onclose
+      // now hits the stale-generation guard below and returns early, so the
+      // pending resolve/reject would never be called.
+      if (connectRejectRef.current) {
+        settleConnectFailure(new Error('Superseded by a new connection attempt'));
+      } else {
+        clearConnectTimeout();
+        connectReqIdRef.current = null;
+      }
       connectResolveRef.current = resolve;
       connectRejectRef.current = reject;
 
@@ -185,11 +193,15 @@ export function useWebSocket(): UseWebSocketReturn {
         ws.close();
       }, CONNECT_TIMEOUT_MS);
 
+      // Same stale-generation guard as onclose: a late event from a
+      // superseded socket must not mutate the current attempt's state/refs.
       ws.onopen = () => {
+        if (gen !== connectionGenRef.current) return;
         setConnectionState(isReconnect ? 'reconnecting' : 'connecting');
       };
 
       ws.onmessage = (ev) => {
+        if (gen !== connectionGenRef.current) return;
         let msg: GatewayMessage;
         try { msg = JSON.parse(ev.data) as GatewayMessage; } catch { return; }
 
@@ -259,6 +271,7 @@ export function useWebSocket(): UseWebSocketReturn {
       };
 
       ws.onerror = () => {
+        if (gen !== connectionGenRef.current) return;
         // Don't set error message during reconnect attempts (too noisy)
         if (!isReconnect) {
           setConnectError('WebSocket error — check URL');

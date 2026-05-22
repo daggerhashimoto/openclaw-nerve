@@ -179,6 +179,49 @@ describe('useWebSocket', () => {
       expect(result.current.connectionState).toBe('disconnected');
     });
 
+    it('rejects the previous in-flight connect when a new connect() supersedes it', async () => {
+      // Regression: a second connect() used to overwrite connectResolveRef /
+      // connectRejectRef without settling the first attempt. Combined with the
+      // stale-generation guard in onclose, that left the first promise pending
+      // forever and re-introduced the hang the PR set out to fix.
+      const wsInstances: MockWebSocket[] = [];
+      const OriginalMockWS = MockWebSocket;
+      (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket = class extends OriginalMockWS {
+        constructor(url: string) {
+          super(url);
+          wsInstances.push(this);
+        }
+      };
+
+      const { result } = renderHook(() => useWebSocket());
+
+      let firstError: Error | null = null;
+      let secondError: Error | null = null;
+      act(() => {
+        result.current.connect('ws://localhost:8080', 'first-token').catch((err: Error) => {
+          firstError = err;
+        });
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      // Start a second connect before the first one settles.
+      act(() => {
+        result.current.connect('ws://localhost:8080', 'second-token').catch((err: Error) => {
+          secondError = err;
+        });
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(firstError?.message).toBe('Superseded by a new connection attempt');
+      expect(secondError).toBeNull();
+    });
+
     it('times out the initial connect attempt instead of hanging forever', async () => {
       const { result } = renderHook(() => useWebSocket());
 

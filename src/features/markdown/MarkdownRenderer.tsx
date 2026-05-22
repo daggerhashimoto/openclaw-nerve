@@ -1,12 +1,61 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
+import type { PluggableList } from 'unified';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { hljs } from '@/lib/highlight';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { escapeRegex } from '@/lib/constants';
 import { CodeBlockActions } from './CodeBlockActions';
 import { parseBeadLinkHref, type BeadLinkTarget } from '@/features/beads';
 import { renderInlinePathReferences } from './inlineReferences';
+
+// KaTeX options (D4): trust=false blocks \href and other vector commands;
+// strict='ignore' silences warnings on assistant-emitted unknown commands;
+// maxSize/maxExpand bound rendered-element size and macro expansion so untrusted
+// LaTeX cannot DoS the UI. We let KaTeX write its default inline errorColor
+// (#cc0000) on .katex-error spans; src/index.css overrides with !important so
+// the themed destructive token wins the cascade against KaTeX's inline style.
+// (rehype-katex hardcodes throwOnError internally, so we do not pass it.)
+const REHYPE_KATEX_OPTIONS = {
+  strict: 'ignore' as const,
+  trust: false,
+  maxSize: 100,
+  maxExpand: 1000,
+};
+
+// rehype-katex targets <code class="language-math|math-display|math-inline"> nodes.
+// That picks up both legit math (remark-math emits these classes alongside
+// math-inline/math-display on its own <code> nodes) AND fenced ```math code
+// blocks (markdown emits only language-math). We want the former typeset and
+// the latter preserved as a code block (R3). The heuristic: when a <code> has
+// language-math but NOT math-inline/math-display, rename language-math to
+// language-latex (LaTeX is a real hljs language, and math source IS LaTeX-shaped)
+// so rehype-katex does not match the node and the downstream code component still
+// routes through CodeBlock with proper highlighting.
+type HastNode = { type?: string; tagName?: string; properties?: { className?: unknown }; children?: HastNode[] };
+function rehypeRenameFencedMathToLatex() {
+  const walk = (node: HastNode | undefined) => {
+    if (!node) return;
+    if (node.type === 'element' && node.tagName === 'code' && node.properties) {
+      const raw = node.properties.className;
+      const list = Array.isArray(raw) ? (raw as string[]) : raw ? [raw as string] : [];
+      const isRemarkMath = list.includes('math-inline') || list.includes('math-display');
+      if (!isRemarkMath && list.includes('language-math')) {
+        node.properties.className = list.map((cls) => (cls === 'language-math' ? 'language-latex' : cls));
+      }
+    }
+    node.children?.forEach(walk);
+  };
+  return (tree: HastNode) => walk(tree);
+}
+
+const REMARK_PLUGINS: PluggableList = [remarkGfm, remarkMath, remarkStableHeadingIds];
+const REHYPE_PLUGINS: PluggableList = [
+  rehypeRenameFencedMathToLatex,
+  [rehypeKatex, REHYPE_KATEX_OPTIONS],
+];
 
 interface MarkdownRendererProps {
   content: string;
@@ -182,10 +231,19 @@ function processChildren(
       });
     }
 
-    if (React.isValidElement<{ children?: React.ReactNode; node?: { tagName?: string } }>(child)) {
+    if (React.isValidElement<{ children?: React.ReactNode; node?: { tagName?: string }; className?: string }>(child)) {
       const tagName = typeof child.type === 'string' ? child.type : '';
       const markdownTagName = child.props.node?.tagName ?? '';
       if (tagName === 'code' || tagName === 'pre' || tagName === 'a' || markdownTagName === 'code' || markdownTagName === 'pre' || markdownTagName === 'a') {
+        return child;
+      }
+
+      // Skip KaTeX subtrees: their inner spans are pure presentation (math
+      // glyphs) and walking them for path-linkification / search-highlighting
+      // is both pointless and a real cost on every render of a message that
+      // contains equations.
+      const className = child.props.className ?? '';
+      if (typeof className === 'string' && (className.includes('katex') || className === 'math')) {
         return child;
       }
 
@@ -539,7 +597,8 @@ export function MarkdownRenderer({
   return (
     <div ref={containerRef} className={`markdown-content ${className}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkStableHeadingIds]}
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={REHYPE_PLUGINS}
         urlTransform={(url) => transformMarkdownUrl(url, {
           currentDocumentPath,
           workspaceAgentId,

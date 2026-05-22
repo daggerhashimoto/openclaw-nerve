@@ -84,6 +84,54 @@ describe('config module', () => {
     });
   });
 
+  describe('fileBrowserMaxTreeEntries', () => {
+    it('defaults to 5000 when env var is unset', async () => {
+      vi.resetModules();
+      delete process.env.FILE_BROWSER_MAX_TREE_ENTRIES;
+
+      const { config } = await import('./config.js');
+      expect(config.fileBrowserMaxTreeEntries).toBe(5_000);
+    });
+
+    it('falls back to default when env var is non-numeric', async () => {
+      vi.resetModules();
+      process.env.FILE_BROWSER_MAX_TREE_ENTRIES = 'abc';
+
+      const { config } = await import('./config.js');
+      expect(config.fileBrowserMaxTreeEntries).toBe(5_000);
+    });
+
+    it('falls back to default when env var is a fractional number', async () => {
+      vi.resetModules();
+      process.env.FILE_BROWSER_MAX_TREE_ENTRIES = '2.5';
+
+      const { config } = await import('./config.js');
+      expect(config.fileBrowserMaxTreeEntries).toBe(5_000);
+    });
+
+    it('falls back to default when env var is zero or negative', async () => {
+      vi.resetModules();
+      process.env.FILE_BROWSER_MAX_TREE_ENTRIES = '0';
+
+      const { config } = await import('./config.js');
+      expect(config.fileBrowserMaxTreeEntries).toBe(5_000);
+
+      vi.resetModules();
+      process.env.FILE_BROWSER_MAX_TREE_ENTRIES = '-100';
+
+      const { config: config2 } = await import('./config.js');
+      expect(config2.fileBrowserMaxTreeEntries).toBe(5_000);
+    });
+
+    it('accepts a valid positive integer override', async () => {
+      vi.resetModules();
+      process.env.FILE_BROWSER_MAX_TREE_ENTRIES = '250';
+
+      const { config } = await import('./config.js');
+      expect(config.fileBrowserMaxTreeEntries).toBe(250);
+    });
+  });
+
   describe('SESSION_COOKIE_NAME', () => {
     it('includes the port number', async () => {
       const { SESSION_COOKIE_NAME, config } = await import('./config.js');

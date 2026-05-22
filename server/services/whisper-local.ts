@@ -307,13 +307,20 @@ const VULKAN_ICD_DIRS = [
  * Honors `VK_DRIVER_FILES` / `VK_ICD_FILENAMES` overrides as the loader does.
  */
 function hasVulkanIcdManifest(): boolean {
-  const explicit = (process.env.VK_DRIVER_FILES ?? process.env.VK_ICD_FILENAMES)?.trim();
-  if (explicit) {
-    return explicit.split(':').some(p => {
-      if (!p) return false;
-      try { accessSync(p); return true; } catch { return false; }
-    });
-  }
+  const checkPath = (p: string): boolean => {
+    if (!p) return false;
+    try { accessSync(p); return true; } catch { return false; }
+  };
+  const checkList = (raw: string | undefined): boolean =>
+    raw ? raw.split(':').some(checkPath) : false;
+
+  // VK_DRIVER_FILES / legacy VK_ICD_FILENAMES *replace* the loader's default search.
+  const replace = (process.env.VK_DRIVER_FILES ?? process.env.VK_ICD_FILENAMES)?.trim();
+  if (replace) return checkList(replace);
+
+  // VK_ADD_DRIVER_FILES is *additive* on top of the default search.
+  if (checkList(process.env.VK_ADD_DRIVER_FILES?.trim())) return true;
+
   return VULKAN_ICD_DIRS.some(dir => {
     try {
       return readdirSync(dir).some(f => f.endsWith('.json'));

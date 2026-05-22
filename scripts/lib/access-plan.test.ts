@@ -70,4 +70,80 @@ describe('applyAccessPlanToConfig', () => {
       WS_ALLOWED_HOSTS: EXAMPLE_TS_IPV4,
     });
   });
+
+  it('adds the remote GATEWAY_URL host to WS_ALLOWED_HOSTS for split-host deployments', () => {
+    const localPlan = buildAccessPlan({ profile: 'local', port: '3080' });
+    expect(applyAccessPlanToConfig({
+      PORT: '3080',
+      GATEWAY_URL: 'http://10.0.0.5:18789',
+    }, localPlan)).toMatchObject({ WS_ALLOWED_HOSTS: '10.0.0.5' });
+  });
+
+  it('does not add a loopback GATEWAY_URL host to WS_ALLOWED_HOSTS', () => {
+    const localPlan = buildAccessPlan({ profile: 'local', port: '3080' });
+    const next = applyAccessPlanToConfig({
+      PORT: '3080',
+      GATEWAY_URL: 'http://127.0.0.1:18789',
+    }, localPlan);
+    expect(next.WS_ALLOWED_HOSTS).toBeUndefined();
+  });
+
+  it.each([
+    ['http://127.0.1.1:18789', '127/8 alternative loopback'],
+    ['http://127.255.255.254:18789', '127/8 high end'],
+    ['http://localhost:18789', 'hostname literal'],
+    ['http://[::1]:18789', 'bracketed IPv6 loopback from URL.hostname'],
+    ['http://[0:0:0:0:0:0:0:1]:18789', 'expanded IPv6 loopback'],
+  ])('treats %s as loopback (%s)', gatewayUrl => {
+    const localPlan = buildAccessPlan({ profile: 'local', port: '3080' });
+    const next = applyAccessPlanToConfig({
+      PORT: '3080',
+      GATEWAY_URL: gatewayUrl,
+    }, localPlan);
+    expect(next.WS_ALLOWED_HOSTS).toBeUndefined();
+  });
+
+  it('preserves user-added WS_ALLOWED_HOSTS entries when merging plan + gateway host', () => {
+    const tsPlan = buildAccessPlan({
+      profile: 'tailscale-ip',
+      port: '3080',
+      tailscale: connectedTailscale,
+    });
+    const next = applyAccessPlanToConfig({
+      PORT: '3080',
+      GATEWAY_URL: 'http://10.0.0.5:18789',
+      WS_ALLOWED_HOSTS: 'manual-host.example, 192.168.1.42',
+    }, tsPlan);
+    const hosts = next.WS_ALLOWED_HOSTS!.split(',');
+    expect(hosts).toEqual(expect.arrayContaining([
+      EXAMPLE_TS_IPV4,
+      'manual-host.example',
+      '192.168.1.42',
+      '10.0.0.5',
+    ]));
+    expect(hosts).toHaveLength(4); // no duplicates
+  });
+
+  it('dedupes when GATEWAY_URL host already appears in the plan or existing config', () => {
+    const customPlan = buildAccessPlan({
+      profile: 'custom',
+      port: '3080',
+      remoteHost: '10.0.0.5',
+    });
+    const next = applyAccessPlanToConfig({
+      PORT: '3080',
+      GATEWAY_URL: 'http://10.0.0.5:18789',
+      WS_ALLOWED_HOSTS: '10.0.0.5',
+    }, customPlan);
+    expect(next.WS_ALLOWED_HOSTS).toBe('10.0.0.5');
+  });
+
+  it('ignores a malformed GATEWAY_URL instead of throwing', () => {
+    const localPlan = buildAccessPlan({ profile: 'local', port: '3080' });
+    const next = applyAccessPlanToConfig({
+      PORT: '3080',
+      GATEWAY_URL: 'not-a-url',
+    }, localPlan);
+    expect(next.WS_ALLOWED_HOSTS).toBeUndefined();
+  });
 });

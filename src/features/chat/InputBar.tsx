@@ -52,6 +52,132 @@ export interface InputBarHandle {
   addWorkspacePath: (path: string, kind: 'file' | 'directory', agentId?: string) => Promise<void>;
 }
 
+type SlashCommandCategory = 'session' | 'status' | 'model' | 'subagents' | 'config' | 'tools';
+
+interface SlashCommandOption {
+  command: string;
+  description: string;
+  keywords: string[];
+  category: SlashCommandCategory;
+  argumentHint?: string;
+}
+
+const CATEGORY_LABELS: Record<SlashCommandCategory, string> = {
+  session: 'Session',
+  status: 'Status & Info',
+  model: 'Model & Options',
+  subagents: 'Subagents',
+  config: 'Config',
+  tools: 'Tools & Actions',
+};
+
+const CATEGORY_ORDER: Record<SlashCommandCategory, number> = {
+  session: 0,
+  status: 1,
+  model: 2,
+  subagents: 3,
+  config: 4,
+  tools: 5,
+};
+
+const SLASH_COMMANDS: SlashCommandOption[] = [
+  // Session management
+  { command: '/new', description: 'Start a new session', keywords: ['new', 'session', 'create'], category: 'session' },
+  { command: '/reset', description: 'Reset the current session', keywords: ['reset', 'clear', 'fresh'], category: 'session' },
+  { command: '/compact', description: 'Compact the session context', keywords: ['compact', 'context', 'memory'], category: 'session' },
+  { command: '/session', description: 'Manage session-level settings', keywords: ['session', 'idle', 'max-age'], category: 'session', argumentHint: '[setting] [value]' },
+  { command: '/stop', description: 'Stop the current run', keywords: ['stop', 'cancel', 'abort'], category: 'session' },
+
+  // Status & info
+  { command: '/status', description: 'Show current status', keywords: ['status', 'info', 'state'], category: 'status' },
+  { command: '/help', description: 'Show available commands', keywords: ['help', 'docs', 'usage'], category: 'status' },
+  { command: '/commands', description: 'List all slash commands', keywords: ['commands', 'list', 'all'], category: 'status' },
+  { command: '/tools', description: 'List available runtime tools', keywords: ['tools', 'functions', 'capabilities'], category: 'status' },
+  { command: '/whoami', description: 'Show your sender id', keywords: ['whoami', 'id', 'identity'], category: 'status' },
+  { command: '/context', description: 'Explain how context is built', keywords: ['context', 'explain', 'prompt'], category: 'status' },
+  { command: '/usage', description: 'Usage footer or cost summary', keywords: ['usage', 'tokens', 'cost'], category: 'status' },
+  { command: '/tasks', description: 'List background tasks', keywords: ['tasks', 'background', 'jobs'], category: 'status' },
+
+  // Model & options
+  { command: '/model', description: 'Show or set the model', keywords: ['model', 'engine', 'llm'], category: 'model', argumentHint: '[model]' },
+  { command: '/models', description: 'List model providers or models', keywords: ['models', 'providers', 'available'], category: 'model' },
+  { command: '/think', description: 'Set thinking level', keywords: ['think', 'thinking', 'reasoning', 't'], category: 'model', argumentHint: '[level]' },
+  { command: '/verbose', description: 'Toggle verbose mode', keywords: ['verbose', 'v', 'detail'], category: 'model' },
+  { command: '/fast', description: 'Toggle fast mode', keywords: ['fast', 'speed', 'quick'], category: 'model' },
+  { command: '/reasoning', description: 'Toggle reasoning visibility', keywords: ['reasoning', 'reason', 'stream'], category: 'model' },
+  { command: '/elevated', description: 'Toggle elevated mode', keywords: ['elevated', 'elev', 'permissions'], category: 'model' },
+  { command: '/exec', description: 'Set exec defaults', keywords: ['exec', 'sandbox', 'gateway', 'node'], category: 'model', argumentHint: '[option] [value]' },
+
+  // Subagents & management
+  { command: '/subagents', description: 'List, kill, log, spawn subagents', keywords: ['subagents', 'spawn', 'kill', 'log'], category: 'subagents' },
+  { command: '/acp', description: 'Manage ACP sessions', keywords: ['acp', 'spawn', 'cancel', 'steer'], category: 'subagents', argumentHint: '[action] [id]' },
+  { command: '/agents', description: 'List thread-bound agents', keywords: ['agents', 'list', 'bound'], category: 'subagents' },
+  { command: '/kill', description: 'Kill a running subagent', keywords: ['kill', 'stop', 'terminate'], category: 'subagents', argumentHint: '[id]' },
+  { command: '/steer', description: 'Send guidance to a running subagent', keywords: ['steer', 'tell', 'guide'], category: 'subagents', argumentHint: '[id] [message]' },
+  { command: '/focus', description: 'Bind thread to a session target', keywords: ['focus', 'bind', 'target'], category: 'subagents', argumentHint: '[target]' },
+  { command: '/unfocus', description: 'Remove thread binding', keywords: ['unfocus', 'unbind', 'release'], category: 'subagents' },
+
+  // Config & management
+  { command: '/config', description: 'Show or set config values', keywords: ['config', 'settings', 'get', 'set'], category: 'config', argumentHint: '[key] [value]' },
+  { command: '/mcp', description: 'Show or set MCP servers', keywords: ['mcp', 'servers', 'tools'], category: 'config', argumentHint: '[server]' },
+  { command: '/plugins', description: 'List, enable, or disable plugins', keywords: ['plugins', 'plugin', 'enable', 'disable'], category: 'config', argumentHint: '[action] [plugin]' },
+  { command: '/debug', description: 'Set runtime debug overrides', keywords: ['debug', 'overrides', 'verbose'], category: 'config', argumentHint: '[key] [value]' },
+  { command: '/approve', description: 'Approve or deny exec requests', keywords: ['approve', 'deny', 'allow'], category: 'config', argumentHint: '[id]' },
+  { command: '/allowlist', description: 'List/add/remove allowlist entries', keywords: ['allowlist', 'whitelist', 'permissions'], category: 'config', argumentHint: '[action] [entry]' },
+  { command: '/activation', description: 'Set group activation mode', keywords: ['activation', 'mention', 'always'], category: 'config', argumentHint: '[mode]' },
+  { command: '/send', description: 'Set send policy', keywords: ['send', 'policy', 'inherit'], category: 'config', argumentHint: '[policy]' },
+  { command: '/queue', description: 'Adjust queue settings', keywords: ['queue', 'debounce', 'cap', 'drop'], category: 'config', argumentHint: '[setting] [value]' },
+
+  // Tools & actions
+  { command: '/skill', description: 'Run a skill by name', keywords: ['skill', 'run', 'execute'], category: 'tools', argumentHint: '[skill]' },
+  { command: '/btw', description: 'Ask side question without context change', keywords: ['btw', 'side', 'question'], category: 'tools', argumentHint: '[question]' },
+  { command: '/export', description: 'Export session to HTML file', keywords: ['export', 'session', 'html'], category: 'tools' },
+  { command: '/tts', description: 'Control text-to-speech', keywords: ['tts', 'voice', 'speech', 'audio'], category: 'tools', argumentHint: '[action]' },
+  { command: '/bash', description: 'Run host shell commands', keywords: ['bash', 'shell', 'command'], category: 'tools', argumentHint: '[command]' },
+  { command: '/restart', description: 'Restart OpenClaw', keywords: ['restart', 'reload', 'refresh'], category: 'tools' },
+];
+
+function getSlashCommandQuery(text: string, cursor: number): string | null {
+  if (!text.startsWith('/')) return null;
+  const commandEnd = text.search(/\s/);
+  const tokenEnd = commandEnd === -1 ? text.length : commandEnd;
+  if (cursor > tokenEnd) return null;
+  const query = text.slice(0, cursor).trim().toLowerCase();
+  return query.startsWith('/') ? query : null;
+}
+
+function filterSlashCommands(query: string | null): SlashCommandOption[] {
+  if (!query) return [];
+  return SLASH_COMMANDS.filter((option) => {
+    if (option.command.startsWith(query)) return true;
+    return option.keywords.some((keyword) => keyword.startsWith(query.slice(1)));
+  });
+}
+
+function groupSlashCommands(commands: SlashCommandOption[]): Map<SlashCommandCategory, SlashCommandOption[]> {
+  const grouped = new Map<SlashCommandCategory, SlashCommandOption[]>();
+  for (const cmd of commands) {
+    const existing = grouped.get(cmd.category) || [];
+    existing.push(cmd);
+    grouped.set(cmd.category, existing);
+  }
+  const sorted = new Map<SlashCommandCategory, SlashCommandOption[]>();
+  const categories = [...grouped.keys()].sort((a, b) => CATEGORY_ORDER[a] - CATEGORY_ORDER[b]);
+  for (const cat of categories) {
+    sorted.set(cat, grouped.get(cat)!);
+  }
+  return sorted;
+}
+
+function getFlatIndexFromGrouped(grouped: Map<SlashCommandCategory, SlashCommandOption[]>, groupIndex: number, itemIndex: number): number {
+  let flatIndex = 0;
+  const entries = [...grouped.entries()];
+  for (let i = 0; i < groupIndex; i++) {
+    flatIndex += entries[i][1].length;
+  }
+  return flatIndex + itemIndex;
+}
+
 interface StagedAttachment {
   id: string;
   file: File;
@@ -292,6 +418,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const [pathPickerCustomRoot, setPathPickerCustomRoot] = useState(() => persistedComposerSnapshot.pathPickerCustomRoot);
   const [sendPulse, setSendPulse] = useState(false);
   const [sendError, setSendError] = useState(false);
+  const [slashCommandQuery, setSlashCommandQuery] = useState<string | null>(null);
+  const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
+  const [dismissedSlashQuery, setDismissedSlashQuery] = useState<string | null>(null);
+  const slashMenuRef = useRef<HTMLDivElement | null>(null);
+  const slashOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const uploadsEnabled = isUploadsEnabled(uploadConfig);
   const attachByPathEnabled = uploadConfig.fileReferenceEnabled;
@@ -317,6 +448,39 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   }, [sessions, ctxAgentName]);
 
   const { handleKeyDown: handleTabKey, reset: resetTabCompletion } = useTabCompletion(getSessionLabels, inputRef);
+
+  const slashSuggestions = useMemo(
+    () => filterSlashCommands(slashCommandQuery),
+    [slashCommandQuery],
+  );
+
+  const groupedSlashSuggestions = useMemo(
+    () => groupSlashCommands(slashSuggestions),
+    [slashSuggestions],
+  );
+
+  const isSlashMenuOpen = slashSuggestions.length > 0 && slashCommandQuery !== dismissedSlashQuery;
+
+  useEffect(() => {
+    slashOptionRefs.current.length = slashSuggestions.length;
+  }, [slashSuggestions.length]);
+
+  useEffect(() => {
+    if (!isSlashMenuOpen) return;
+
+    const menu = slashMenuRef.current;
+    const option = slashOptionRefs.current[selectedSlashIndex];
+    if (!menu || !option) return;
+
+    const menuRect = menu.getBoundingClientRect();
+    const optionRect = option.getBoundingClientRect();
+
+    if (optionRect.top < menuRect.top) {
+      menu.scrollTop -= menuRect.top - optionRect.top;
+    } else if (optionRect.bottom > menuRect.bottom) {
+      menu.scrollTop += optionRect.bottom - menuRect.bottom;
+    }
+  }, [isSlashMenuOpen, selectedSlashIndex, slashSuggestions.length]);
 
   const resizeInput = useCallback(() => {
     const input = inputRef.current;
@@ -449,6 +613,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     }
   }, [uploadsEnabled, stagedAttachments]);
 
+  const syncSlashStateFromInput = useCallback((input: HTMLTextAreaElement) => {
+    const nextQuery = getSlashCommandQuery(input.value, input.selectionStart ?? input.value.length);
+    setSlashCommandQuery(nextQuery);
+    if (nextQuery === null) setDismissedSlashQuery(null);
+    setSelectedSlashIndex(0);
+  }, []);
+
   const injectComposerText = useCallback((text: string, mode: 'replace' | 'append' = 'append') => {
     const input = inputRef.current;
     if (!input) return;
@@ -457,12 +628,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       ? mergeAddToChatText(input.value, text)
       : text;
     setDraftText(input.value);
+    syncSlashStateFromInput(input);
     resizeInput();
     focusInput();
     scheduleDeferredResize();
     input.setSelectionRange(input.value.length, input.value.length);
     resetTabCompletion();
-  }, [focusInput, resetTabCompletion, resizeInput, scheduleDeferredResize]);
+  }, [focusInput, resetTabCompletion, resizeInput, scheduleDeferredResize, syncSlashStateFromInput]);
 
   // Fetch current language for voice phrase matching
   const [voiceLang, setVoiceLang] = useState('en');
@@ -512,6 +684,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       input.style.height = 'auto';
       input.style.fontStyle = '';
       input.style.opacity = '';
+      syncSlashStateFromInput(input);
     }
     setDraftText('');
     onSend('[voice] ' + text);
@@ -535,9 +708,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         inputRef.current.style.opacity = '0.5';
         inputRef.current.style.height = 'auto';
         inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + 'px';
+        syncSlashStateFromInput(inputRef.current);
       } else {
         inputRef.current.value = '';
         inputRef.current.style.height = 'auto';
+        syncSlashStateFromInput(inputRef.current);
       }
     } else {
       // Clear provisional styling when not recording
@@ -548,9 +723,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       if (voiceState === 'transcribing' || hadVoicePreviewStyling) {
         inputRef.current.value = '';
         inputRef.current.style.height = 'auto';
+        syncSlashStateFromInput(inputRef.current);
       }
     }
-  }, [interimTranscript, liveTranscriptionPreview, voiceState]);
+  }, [interimTranscript, liveTranscriptionPreview, voiceState, syncSlashStateFromInput]);
 
   const processFiles = useCallback(async (files: FileList | File[]) => {
     const selected = Array.from(files);
@@ -1049,6 +1225,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         input.style.height = 'auto';
       }
       setDraftText('');
+      setSlashCommandQuery(null);
+      setDismissedSlashQuery(null);
+      setSelectedSlashIndex(0);
 
       await onSend(text || '', inlineAttachments.length > 0 ? inlineAttachments : undefined, uploadPayload);
       clearStagedAttachments();
@@ -1075,11 +1254,51 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     clearVoiceError,
   ]);
 
+  const applySlashCommand = useCallback((option: SlashCommandOption) => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.value = `${option.command} `;
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    setDraftText(input.value);
+    setSlashCommandQuery(null);
+    setDismissedSlashQuery(null);
+    setSelectedSlashIndex(0);
+  }, []);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // IME composition guard: during active CJK composition the browser may
     // fire keydown for Enter/Escape/etc.  Let the IME handle them – acting
     // on these events causes ghost messages (issue #65).
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+
+    // Slash command menu keyboard handling
+    if (isSlashMenuOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedSlashIndex((index) => (index + 1) % slashSuggestions.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedSlashIndex((index) => (index - 1 + slashSuggestions.length) % slashSuggestions.length);
+        return;
+      }
+      // Only autocomplete on plain Enter/Tab (no modifiers) to preserve send shortcuts
+      if ((e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey) || (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.shiftKey)) {
+        e.preventDefault();
+        applySlashCommand(slashSuggestions[selectedSlashIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDismissedSlashQuery(slashCommandQuery);
+        setSelectedSlashIndex(0);
+        return;
+      }
+    }
 
     // Tab completion for session names (Tab cycles, Escape cancels)
     if (e.key === 'Tab' || e.key === 'Escape') {
@@ -1095,6 +1314,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       if (input) {
         input.value = '';
         input.style.height = 'auto';
+        syncSlashStateFromInput(input);
       }
       setDraftText('');
       return;
@@ -1137,6 +1357,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         e.preventDefault();
         input.value = entry;
         setDraftText(entry);
+        syncSlashStateFromInput(input);
         input.style.height = 'auto';
         input.style.height = Math.min(input.scrollHeight, 160) + 'px';
         input.setSelectionRange(input.value.length, input.value.length);
@@ -1158,6 +1379,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           input.value = '';
           setDraftText('');
         }
+        syncSlashStateFromInput(input);
         input.style.height = 'auto';
         input.style.height = Math.min(input.scrollHeight, 160) + 'px';
         input.setSelectionRange(input.value.length, input.value.length);
@@ -1167,7 +1389,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   const handleInput = () => {
     if (!inputRef.current) return;
-    setDraftText(inputRef.current.value);
+    const input = inputRef.current;
+    setDraftText(input.value);
+    syncSlashStateFromInput(input);
     resetTabCompletion();
     clearVoiceError();
     resizeInput();
@@ -1248,7 +1472,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       />
       {/* Input row */}
       <div
-        className={`flex items-start gap-0 border-t shrink-0 bg-card focus-within:border-t-primary/40 focus-within:shadow-[0_-1px_8px_rgba(232,168,56,0.1)] ${voiceState === 'recording' ? 'border-t-red-500 shadow-[0_-1px_12px_rgba(239,68,68,0.3)]' : 'border-border'}`}
+        className={`relative flex items-start gap-0 border-t shrink-0 bg-card focus-within:border-t-primary/40 focus-within:shadow-[0_-1px_8px_rgba(232,168,56,0.1)] ${voiceState === 'recording' ? 'border-t-red-500 shadow-[0_-1px_12px_rgba(239,68,68,0.3)]' : 'border-border'}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -1271,10 +1495,49 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             set input.value directly, which is safe without a `value` prop.
             Do NOT add a `value={state}` prop without also passing a
             setValue callback to useTabCompletion. */}
+        {isSlashMenuOpen && (
+          <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-2xl border border-border/70 bg-popover/95 shadow-[0_18px_40px_rgba(0,0,0,0.28)] backdrop-blur-sm">
+            <div ref={slashMenuRef} role="listbox" aria-label="Slash commands" className="max-h-64 overflow-y-auto p-2">
+              {[...groupedSlashSuggestions.entries()].map(([category, commands], groupIndex) => (
+                <div key={category} className="mb-1">
+                  <div className="px-3 py-1 text-[0.6875rem] font-semibold text-muted-foreground/80">
+                    {CATEGORY_LABELS[category]} <span className="text-muted-foreground/60">({commands.length})</span>
+                  </div>
+                  {commands.map((option, itemIndex) => {
+                    const flatIndex = getFlatIndexFromGrouped(groupedSlashSuggestions, groupIndex, itemIndex);
+                    const isSelected = flatIndex === selectedSlashIndex;
+                    return (
+                      <button
+                        key={option.command}
+                        ref={(node) => {
+                          slashOptionRefs.current[flatIndex] = node;
+                        }}
+                        type="button"
+                        role="option"
+                        aria-label={option.command}
+                        aria-selected={isSelected}
+                        className={`flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left transition-colors ${isSelected ? 'bg-accent text-accent-foreground' : 'text-popover-foreground hover:bg-accent/70'}`}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => applySlashCommand(option)}
+                      >
+                        <span className="min-w-[5.5rem] font-mono text-[0.8125rem] font-semibold">
+                          {option.command}
+                          {option.argumentHint && <span className="text-muted-foreground/70 ml-1">{option.argumentHint}</span>}
+                        </span>
+                        <span className="text-[0.75rem] text-muted-foreground">{option.description}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <textarea
           ref={inputRef}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
+          onSelect={e => syncSlashStateFromInput(e.currentTarget)}
           placeholder="Message..."
           aria-label="Message input"
           rows={1}

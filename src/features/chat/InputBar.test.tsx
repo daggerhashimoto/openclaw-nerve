@@ -266,6 +266,63 @@ describe('InputBar', () => {
     expect(screen.queryByText(/Ctrl\+F search/i)).not.toBeInTheDocument();
   });
 
+  it('keeps the selected slash command visible while navigating with arrow keys', async () => {
+    render(<InputBar onSend={vi.fn()} isGenerating={false} />);
+
+    const input = screen.getByLabelText('Message input') as HTMLTextAreaElement;
+    fireEvent.input(input, { target: { value: '/' } });
+
+    const menu = await screen.findByRole('listbox', { name: 'Slash commands' });
+    const options = screen.getAllByRole('option');
+
+    Object.defineProperty(menu, 'clientHeight', { configurable: true, value: 64 });
+    Object.defineProperty(menu, 'scrollTop', { configurable: true, writable: true, value: 0 });
+    menu.getBoundingClientRect = vi.fn(() => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      bottom: 64,
+      right: 240,
+      width: 240,
+      height: 64,
+      toJSON: () => {},
+    } as DOMRect));
+
+    options.forEach((option, index) => {
+      option.getBoundingClientRect = vi.fn(() => {
+        const top = index * 32 - menu.scrollTop;
+        return {
+          x: 0,
+          y: top,
+          top,
+          left: 0,
+          bottom: top + 32,
+          right: 240,
+          width: 240,
+          height: 32,
+          toJSON: () => {},
+        } as DOMRect;
+      });
+    });
+
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    await waitFor(() => expect(options[1]).toHaveAttribute('aria-selected', 'true'));
+    expect(menu.scrollTop).toBe(0);
+
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    await waitFor(() => expect(options[2]).toHaveAttribute('aria-selected', 'true'));
+    expect(menu.scrollTop).toBe(32);
+
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    await waitFor(() => expect(options[1]).toHaveAttribute('aria-selected', 'true'));
+    expect(menu.scrollTop).toBe(32);
+
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    await waitFor(() => expect(options[0]).toHaveAttribute('aria-selected', 'true'));
+    expect(menu.scrollTop).toBe(0);
+  });
+
   it('uses the paperclip as the single primary attachment affordance', async () => {
     render(<InputBar onSend={vi.fn()} isGenerating={false} />);
 

@@ -31,7 +31,39 @@ function dedupe(values: Array<string | null | undefined>): string[] {
 }
 
 function isLoopback(host: string | null | undefined): boolean {
-  return !host || host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  if (!host) return true;
+  // Node's URL.hostname returns bracketed IPv6 literals (e.g. "[::1]"); strip
+  // the brackets before comparing. Also accept any 127.0.0.0/8 IPv4 loopback
+  // and the expanded IPv6 form.
+  let normalized = host.trim().toLowerCase();
+  if (normalized.startsWith('[') && normalized.endsWith(']')) {
+    normalized = normalized.slice(1, -1);
+  }
+  return normalized === 'localhost'
+    || normalized === '::1'
+    || normalized === '0:0:0:0:0:0:0:1'
+    || /^127(?:\.\d{1,3}){3}$/.test(normalized);
+}
+
+/**
+ * Extract the gateway host from a configured GATEWAY_URL when it points at a
+ * non-loopback target. Returned host should be added to WS_ALLOWED_HOSTS so the
+ * WS proxy will forward to remote gateways (the default allowlist is just
+ * localhost / 127.0.0.1 / ::1).
+ */
+function extractRemoteGatewayHost(gatewayUrl: string | null | undefined): string | null {
+  if (!gatewayUrl) return null;
+  try {
+    const host = new URL(gatewayUrl).hostname;
+    return isLoopback(host) ? null : host;
+  } catch {
+    return null;
+  }
+}
+
+/** Parse a comma-separated env value, trimming and dropping empties. */
+function splitCsv(value: string | null | undefined): string[] {
+  return value?.split(',').map(s => s.trim()).filter(Boolean) ?? [];
 }
 
 function httpOrigin(host: string, port: string): string {
@@ -147,7 +179,16 @@ export function applyAccessPlanToConfig(config: EnvConfig, plan: AccessPlan): En
   if (plan.cspConnectExtra.length > 0) next.CSP_CONNECT_EXTRA = dedupe(plan.cspConnectExtra).join(' ');
   else delete next.CSP_CONNECT_EXTRA;
 
-  if (plan.wsAllowedHosts.length > 0) next.WS_ALLOWED_HOSTS = dedupe(plan.wsAllowedHosts).join(',');
+  // WS_ALLOWED_HOSTS = plan hosts ∪ user's existing entries ∪ remote-gateway host (if any).
+  // The plan only knows about Nerve UI accessibility; the gateway host has to be
+  // grafted in here so split-host deployments (remote GATEWAY_URL) don't get rejected
+  // by the WS proxy with "Target not allowed".
+  const wsHosts = dedupe([
+    ...plan.wsAllowedHosts,
+    ...splitCsv(config.WS_ALLOWED_HOSTS),
+    extractRemoteGatewayHost(config.GATEWAY_URL),
+  ]);
+  if (wsHosts.length > 0) next.WS_ALLOWED_HOSTS = wsHosts.join(',');
   else delete next.WS_ALLOWED_HOSTS;
 
   return next;

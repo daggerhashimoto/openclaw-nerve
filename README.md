@@ -108,6 +108,44 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
 - **[Hybrid](docs/DEPLOYMENT-B.md)** — Keep Nerve local, run Gateway in the cloud
 - **[Cloud](docs/DEPLOYMENT-C.md)** — Run Nerve and Gateway in the cloud
 
+<details><summary><strong>Try the next branch</strong></summary>
+
+`master` is the stable branch. Use `next` if you want the latest Nerve work before it lands in `master`.
+
+Fresh install from `next`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/master/install.sh | bash -s -- --branch next
+```
+
+Switch an existing install to `next`:
+
+```bash
+cd ~/nerve # installer default; manual clone: cd openclaw-nerve
+git fetch origin
+git switch next || git switch -c next --track origin/next
+git pull --ff-only
+npm install
+npm run build
+npm run prod
+```
+
+Keep `next` updated:
+
+```bash
+cd ~/nerve # installer default; manual clone: cd openclaw-nerve
+git fetch origin
+git switch next || git switch -c next --track origin/next
+git pull --ff-only
+npm install
+npm run build
+npm run prod
+```
+
+`next` can change quickly. Use it if you are comfortable testing early builds.
+
+</details>
+
 <details><summary><strong>Manual install</strong></summary>
 
 ```bash

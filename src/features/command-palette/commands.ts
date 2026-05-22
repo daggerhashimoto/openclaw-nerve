@@ -2,6 +2,9 @@ import type { Command } from './types';
 import { themes, type ThemeName } from '@/lib/themes';
 import { fonts, type FontName } from '@/lib/fonts';
 import type { TTSProvider } from '@/features/tts/useTTS';
+import type { Session } from '@/types';
+import { getSessionKey } from '@/types';
+import { getRootAgentId, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
 
 export type ViewMode = 'chat' | 'kanban';
 
@@ -220,13 +223,53 @@ export function createCommands(actions: CommandActions): Command[] {
 }
 
 const CATEGORY_ORDER: Record<string, number> = {
-  actions: 0,
-  navigation: 1,
-  kanban: 2,
-  settings: 3,
-  appearance: 4,
-  voice: 5,
+  sessions: 0,
+  actions: 1,
+  navigation: 2,
+  kanban: 3,
+  settings: 4,
+  appearance: 5,
+  voice: 6,
 };
+
+/** Build dynamic command-palette entries for jumping to a live session. */
+export function createSessionCommands(
+  sessions: Session[],
+  currentSessionKey: string,
+  agentName: string,
+  onSelectSession: (sessionKey: string) => void,
+): Command[] {
+  return sessions.map((session) => {
+    const sessionKey = getSessionKey(session);
+    const displayLabel = getSessionDisplayLabel(session, agentName);
+    const rootAgentId = getRootAgentId(sessionKey);
+
+    const rawKeywords = [
+      displayLabel,
+      session.label,
+      session.displayName,
+      session.identityName,
+      rootAgentId,
+      sessionKey,
+    ];
+    const keywords = Array.from(
+      new Set(
+        rawKeywords
+          .map((k) => (typeof k === 'string' ? k.trim() : ''))
+          .filter((k) => k.length > 0),
+      ),
+    );
+
+    return {
+      id: `session-${sessionKey}`,
+      label: displayLabel,
+      action: () => onSelectSession(sessionKey),
+      category: 'sessions' as const,
+      keywords,
+      isActive: sessionKey === currentSessionKey,
+    };
+  });
+}
 
 /** Filter commands by fuzzy-matching against a search query. */
 export function filterCommands(commands: Command[], query: string): Command[] {

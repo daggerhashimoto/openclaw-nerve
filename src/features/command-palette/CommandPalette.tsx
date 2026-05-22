@@ -11,6 +11,7 @@ interface CommandPaletteProps {
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
+  sessions: 'Sessions',
   actions: 'Actions',
   navigation: 'Navigation',
   settings: 'Settings',
@@ -169,10 +170,15 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
                           onClick={() => executeCommand(cmd)}
                           onMouseEnter={() => { if (!usingKeyboard) setSelectedIndex(idx); }}
                           data-active={isSelected}
+                          data-active-session={cmd.isActive ? 'true' : undefined}
+                          aria-current={cmd.isActive ? 'true' : undefined}
                           className="cockpit-command-item"
                         >
                           {cmd.icon || <CommandIcon size={15} className="text-muted-foreground" />}
                           <span className="flex-1 text-[0.933rem] font-medium text-foreground">{cmd.label}</span>
+                          {cmd.isActive && (
+                            <span className="cockpit-badge" data-tone="primary">current</span>
+                          )}
                           {cmd.shortcut && (
                             <kbd className="cockpit-kbd">
                               {cmd.shortcut}

@@ -16,6 +16,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = process.env.NERVE_PROJECT_ROOT || path.resolve(__dirname, '..', '..', '..');
 const ROLLING_WINDOW_MS = 24 * 60 * 60 * 1000;
 const STATE_SCHEMA_VERSION = 1;
+// Cap on the seenSessionHashes set so long-running instances do not accumulate
+// hashes forever. The first-seen flag falls back to "session looks new again"
+// after this many distinct sessions, which is the correct semantics for the
+// rolling-window aggregate.
+const MAX_SEEN_SESSION_HASHES = 500;
 
 interface Phase1State {
   schemaVersion: number;
@@ -255,10 +260,17 @@ export function createTelemetryStore(options: TelemetryStoreOptions = {}): Telem
 
   async function writeState(state: Phase1State): Promise<void> {
     await fs.mkdir(path.dirname(stateFile), { recursive: true, mode: 0o700 });
-    await fs.writeFile(stateFile, JSON.stringify(state, null, 2) + '\n', {
+    // Atomic write: serialise to a temp file, then rename into place. A crash
+    // during the write leaves the original file untouched. A bare fs.writeFile
+    // can leave the file partially written, which on next start triggers a
+    // sanitize fall-through to createDefaultState() and silently loses 24h
+    // of rolling counters plus the first-seen window.
+    const tmp = `${stateFile}.tmp-${process.pid}-${Date.now()}`;
+    await fs.writeFile(tmp, JSON.stringify(state, null, 2) + '\n', {
       encoding: 'utf8',
       mode: 0o600,
     });
+    await fs.rename(tmp, stateFile);
   }
 
   function enqueue<T>(work: () => Promise<T>): Promise<T> {
@@ -325,6 +337,14 @@ export function createTelemetryStore(options: TelemetryStoreOptions = {}): Telem
         await update((state) => {
           if (!state.seenSessionHashes.includes(hash)) {
             state.seenSessionHashes.push(hash);
+            // Cap the array so long-running instances do not accumulate hashes
+            // forever (the includes() check is O(n) and the array serializes
+            // to disk on every store write). The oldest entries fall off
+            // first - if a deleted session reappears later, it counts as new
+            // again, which is correct for the rolling-window aggregate.
+            while (state.seenSessionHashes.length > MAX_SEEN_SESSION_HASHES) {
+              state.seenSessionHashes.shift();
+            }
             firstSeen = true;
           }
         }, nowIso);

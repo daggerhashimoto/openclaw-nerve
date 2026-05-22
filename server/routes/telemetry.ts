@@ -54,7 +54,11 @@ async function recordUiTelemetryEvent(payload: z.infer<typeof uiTelemetryEventSc
       return;
     }
 
-    await telemetry.recordClientDetailedEvent(payload);
+    // Exhaustiveness check - if a new event variant is added to
+    // uiTelemetryEventSchema without a corresponding branch above, TypeScript
+    // flags it here. No runtime call needed; every reachable variant returned.
+    const _exhaustive: never = payload;
+    void _exhaustive;
   } catch {
     return;
   }
@@ -66,7 +70,7 @@ app.get('/api/telemetry/docs', rateLimitGeneral, async (c) => {
     c.header('Content-Type', 'text/markdown; charset=utf-8');
     return c.body(doc);
   } catch {
-    return c.text('Telemetry documentation unavailable', 503);
+    return c.json({ error: 'telemetry_docs_unavailable' }, 503);
   }
 });
 
@@ -76,15 +80,18 @@ app.post('/api/telemetry/events', rateLimitGeneral, async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.text('Invalid JSON body', 400);
+    return c.json({ error: 'invalid_json' }, 400);
   }
 
   const parsed = uiTelemetryEventSchema.safeParse(body);
   if (!parsed.success) {
-    return c.text('Invalid telemetry payload', 400);
+    return c.json({ error: 'invalid_telemetry_payload' }, 400);
   }
 
-  await recordUiTelemetryEvent(parsed.data);
+  // Best-effort, non-blocking: do not await the store write chain.
+  // The browser only needs the 200 acknowledgement; ws-proxy uses the same
+  // fire-and-forget pattern via runInBackground for all telemetry calls.
+  void recordUiTelemetryEvent(parsed.data).catch(() => { /* swallow */ });
   return c.json({ ok: true });
 });
 

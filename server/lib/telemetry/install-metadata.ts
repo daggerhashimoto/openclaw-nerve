@@ -50,21 +50,32 @@ function telemetryWriteErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function readJsonFile<T>(fileName: string): T | undefined {
+// Returns the parsed JSON as unknown so callers must validate the shape before
+// trusting any field. A previous `as T` cast made every caller's downstream
+// property access type-checked against a lie.
+function readJsonFile(fileName: string): unknown {
   try {
-    return JSON.parse(fs.readFileSync(telemetryPath(fileName), 'utf8')) as T;
+    return JSON.parse(fs.readFileSync(telemetryPath(fileName), 'utf8'));
   } catch {
     return undefined;
   }
 }
 
+// Atomic write: serialize to a temp file then rename into place so a crash or
+// disk-full mid-write leaves the original file untouched. Without this, a
+// half-written identity.json would parse as invalid JSON on next start,
+// triggering a fresh instanceId generation and silently rotating the anonymous
+// install identity.
 function writeJsonFile(fileName: string, value: unknown): void {
   try {
     ensureTelemetryDir();
-    fs.writeFileSync(telemetryPath(fileName), JSON.stringify(value, null, 2) + '\n', {
+    const target = telemetryPath(fileName);
+    const tmp = `${target}.tmp-${process.pid}-${Date.now()}`;
+    fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n', {
       encoding: 'utf8',
       mode: 0o600,
     });
+    fs.renameSync(tmp, target);
   } catch (error) {
     console.warn(`[telemetry] Failed to write ${fileName}:`, telemetryWriteErrorMessage(error));
   }
@@ -97,8 +108,14 @@ function hasExplicitTelemetryModeInput(value: string | null | undefined): boolea
   return typeof value === 'string' && value.length > 0;
 }
 
+function asRecord(value: unknown): Partial<Record<string, unknown>> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Partial<Record<string, unknown>>)
+    : undefined;
+}
+
 export function readIdentity(): IdentityRecord | undefined {
-  const identity = readJsonFile<Partial<IdentityRecord>>(IDENTITY_FILE);
+  const identity = asRecord(readJsonFile(IDENTITY_FILE));
   if (!identity || typeof identity.instanceId !== 'string' || !identity.instanceId) {
     return undefined;
   }
@@ -137,7 +154,7 @@ export function ensureInstanceId(createdAt = new Date().toISOString()): string {
 }
 
 export function readInstallMethod(): InstallMethodStamp | undefined {
-  const stamp = readJsonFile<Partial<InstallMethodStamp>>(INSTALL_METHOD_FILE);
+  const stamp = asRecord(readJsonFile(INSTALL_METHOD_FILE));
   if (!stamp || !isInstallMethod(stamp.installMethod) || !isMetadataSource(stamp.source) || typeof stamp.stampedAt !== 'string' || !stamp.stampedAt) {
     return undefined;
   }
@@ -164,7 +181,7 @@ export function readInstallMethodOrUnknown(stamp = readInstallMethod()): Install
 }
 
 export function readBootstrapMarker(): BootstrapMarker | undefined {
-  const marker = readJsonFile<Partial<BootstrapMarker>>(BOOTSTRAP_FILE);
+  const marker = asRecord(readJsonFile(BOOTSTRAP_FILE));
   if (!marker || !isBootstrapKind(marker.kind) || !isMetadataSource(marker.source) || typeof marker.stampedAt !== 'string' || !marker.stampedAt) {
     return undefined;
   }

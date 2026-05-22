@@ -677,6 +677,10 @@ export default function App({ onLogout }: AppProps) {
     const fromRootSessionKey = fromSessionKey ? getWorkspaceRootSessionKey(fromSessionKey) : null;
     const toRootSessionKey = toSessionKey ? getWorkspaceRootSessionKey(toSessionKey) : null;
     if (!toRootSessionKey) return;
+    // First session pick after a fresh start has null fromRootSessionKey;
+    // do not count that as a branch switch (would inflate the branches feature
+    // boolean and emit a spurious branch_switched Phase 2 event).
+    if (!fromRootSessionKey) return;
     if (fromRootSessionKey === toRootSessionKey) return;
     void emitBranchSwitched({ success: true });
   }, []);
@@ -689,6 +693,8 @@ export default function App({ onLogout }: AppProps) {
       if (didSwitch) {
         maybeEmitBranchSwitchTelemetry(previousSessionKey, key);
       }
+    }).catch(() => {
+      // Switch failed; user-facing handling lives inside requestWorkspaceTransition.
     });
   }, [currentSession, getWorkspaceSwitchLabel, maybeEmitBranchSwitchTelemetry, requestWorkspaceTransition, setCurrentSession]);
 

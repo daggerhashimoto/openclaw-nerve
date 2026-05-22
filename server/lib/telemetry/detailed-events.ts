@@ -183,7 +183,7 @@ export function bucketDurationMs(durationMs: number): ToolDurationBucket {
 
   if (normalized < 1_000) return 'lt_1s';
   if (normalized < 5_000) return '1_5s';
-  if (normalized <= 30_000) return '5_30s';
+  if (normalized < 30_000) return '5_30s';
   return 'gt_30s';
 }
 

@@ -978,7 +978,12 @@ describe('App telemetry workspace switching', () => {
     });
   });
 
-  it('emits branch_switched when the first top-level root is created from an empty workspace', async () => {
+  it('does not emit branch_switched when the first top-level root is created from an empty workspace', async () => {
+    // A first session pick after a fresh start has fromRootSessionKey=null,
+    // which is semantically not a branch switch but a workspace opening. The
+    // emit was previously fired here and inflated the branches feature
+    // boolean / Phase 2 branch_switched counts. The guard in
+    // maybeEmitBranchSwitchTelemetry now suppresses this case.
     sessionContext.currentSession = '';
 
     render(<App />);
@@ -993,8 +998,8 @@ describe('App telemetry workspace switching', () => {
         model: 'test-model',
         thinking: 'medium',
       });
-      expect(emitBranchSwitchedMock).toHaveBeenCalledWith({ success: true });
     });
+    expect(emitBranchSwitchedMock).not.toHaveBeenCalled();
   });
 
   it('does not emit branch_switched when switching between a root and its own subagent', async () => {

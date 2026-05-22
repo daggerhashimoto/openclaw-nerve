@@ -333,8 +333,15 @@ function createGatewayRelay(
     }));
   }
 
-  function getPendingToolKey(runId: string | undefined, toolCallId: string): string {
-    return `${runId ?? ''}\u0000${toolCallId}`;
+  function getPendingToolKey(
+    runId: string | undefined,
+    toolCallId: string,
+    sessionKey?: string,
+  ): string {
+    // When runId is absent (some gateways omit it), include sessionKey in the
+    // key so the same toolCallId across different sessions does not collide.
+    if (runId) return `${runId}\u0000${toolCallId}`;
+    return `\u0000${sessionKey ?? ''}\u0000${toolCallId}`;
   }
 
   function resolvePendingToolKey(options: {
@@ -343,7 +350,7 @@ function createGatewayRelay(
     toolCallId: string;
   }): string | undefined {
     if (options.runId) {
-      const directKey = getPendingToolKey(options.runId, options.toolCallId);
+      const directKey = getPendingToolKey(options.runId, options.toolCallId, options.sessionKey);
       if (pendingTools.has(directKey)) {
         return directKey;
       }
@@ -425,7 +432,7 @@ function createGatewayRelay(
       const sessionKey = typeof payload.sessionKey === 'string' ? payload.sessionKey : undefined;
       const data = isRecord(payload.data) ? payload.data : null;
       if (payload.stream === 'tool' && data?.phase === 'start' && typeof data.toolCallId === 'string' && typeof data.name === 'string') {
-        pendingTools.set(getPendingToolKey(runId, data.toolCallId), {
+        pendingTools.set(getPendingToolKey(runId, data.toolCallId, sessionKey), {
           runId,
           sessionKey,
           toolCallId: data.toolCallId,

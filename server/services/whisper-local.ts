@@ -8,7 +8,7 @@
 
 import { execFileSync, execSync } from 'node:child_process';
 import { writeFileSync, unlinkSync, accessSync, mkdirSync, createWriteStream, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, delimiter as pathDelimiter } from 'node:path';
 import { tmpdir, cpus, availableParallelism } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { initWhisper } from '@fugood/whisper.node';
@@ -312,7 +312,9 @@ function hasVulkanIcdManifest(): boolean {
     try { accessSync(p); return true; } catch { return false; }
   };
   const checkList = (raw: string | undefined): boolean =>
-    raw ? raw.split(':').some(checkPath) : false;
+    // Loader splits these env vars on the OS path-list delimiter (`:` POSIX, `;` Win).
+    // Hardcoding `:` would mangle Windows entries like `C:\drivers\nvidia.json`.
+    raw ? raw.split(pathDelimiter).some(checkPath) : false;
 
   // VK_DRIVER_FILES / legacy VK_ICD_FILENAMES *replace* the loader's default search.
   const replace = (process.env.VK_DRIVER_FILES ?? process.env.VK_ICD_FILENAMES)?.trim();

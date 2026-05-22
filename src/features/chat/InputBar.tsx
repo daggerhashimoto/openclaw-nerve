@@ -421,6 +421,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const [slashCommandQuery, setSlashCommandQuery] = useState<string | null>(null);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [dismissedSlashQuery, setDismissedSlashQuery] = useState<string | null>(null);
+  const slashMenuRef = useRef<HTMLDivElement | null>(null);
+  const slashOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const uploadsEnabled = isUploadsEnabled(uploadConfig);
   const attachByPathEnabled = uploadConfig.fileReferenceEnabled;
@@ -458,6 +460,27 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   );
 
   const isSlashMenuOpen = slashSuggestions.length > 0 && slashCommandQuery !== dismissedSlashQuery;
+
+  useEffect(() => {
+    slashOptionRefs.current.length = slashSuggestions.length;
+  }, [slashSuggestions.length]);
+
+  useEffect(() => {
+    if (!isSlashMenuOpen) return;
+
+    const menu = slashMenuRef.current;
+    const option = slashOptionRefs.current[selectedSlashIndex];
+    if (!menu || !option) return;
+
+    const menuRect = menu.getBoundingClientRect();
+    const optionRect = option.getBoundingClientRect();
+
+    if (optionRect.top < menuRect.top) {
+      menu.scrollTop -= menuRect.top - optionRect.top;
+    } else if (optionRect.bottom > menuRect.bottom) {
+      menu.scrollTop += optionRect.bottom - menuRect.bottom;
+    }
+  }, [isSlashMenuOpen, selectedSlashIndex, slashSuggestions.length]);
 
   const resizeInput = useCallback(() => {
     const input = inputRef.current;
@@ -1472,7 +1495,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             setValue callback to useTabCompletion. */}
         {isSlashMenuOpen && (
           <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-2xl border border-border/70 bg-popover/95 shadow-[0_18px_40px_rgba(0,0,0,0.28)] backdrop-blur-sm">
-            <div role="listbox" aria-label="Slash commands" className="max-h-64 overflow-y-auto p-2">
+            <div ref={slashMenuRef} role="listbox" aria-label="Slash commands" className="max-h-64 overflow-y-auto p-2">
               {[...groupedSlashSuggestions.entries()].map(([category, commands], groupIndex) => (
                 <div key={category} className="mb-1">
                   <div className="px-3 py-1 text-[0.6875rem] font-semibold text-muted-foreground/80">
@@ -1484,6 +1507,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                     return (
                       <button
                         key={option.command}
+                        ref={(node) => {
+                          slashOptionRefs.current[flatIndex] = node;
+                        }}
                         type="button"
                         role="option"
                         aria-label={option.command}

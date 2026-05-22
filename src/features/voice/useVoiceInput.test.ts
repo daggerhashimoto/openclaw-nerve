@@ -20,6 +20,7 @@ vi.mock('./wakeWordSupport', () => ({
 
 // Mock SpeechRecognition
 class MockSpeechRecognition {
+  static instances: MockSpeechRecognition[] = [];
   continuous = false;
   interimResults = false;
   lang = '';
@@ -27,6 +28,10 @@ class MockSpeechRecognition {
   onerror: ((event: { error: string }) => void) | null = null;
   onend: (() => void) | null = null;
   started = false;
+
+  constructor() {
+    MockSpeechRecognition.instances.push(this);
+  }
 
   start() {
     this.started = true;
@@ -99,6 +104,7 @@ describe('useVoiceInput', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    MockSpeechRecognition.instances = [];
     MockMediaRecorder.instances = [];
     mockRecognition = null;
 
@@ -117,6 +123,10 @@ describe('useVoiceInput', () => {
     // Mock getUserMedia
     (navigator as unknown as { mediaDevices: { getUserMedia: Mock } }).mediaDevices = {
       getUserMedia: vi.fn().mockResolvedValue(new MockMediaStream()),
+    };
+
+    (navigator as unknown as { permissions?: { query: Mock } }).permissions = {
+      query: vi.fn().mockResolvedValue({ state: 'granted' }),
     };
 
     // Mock fetch for voice phrases and transcription
@@ -157,6 +167,7 @@ describe('useVoiceInput', () => {
     globalThis.fetch = originalFetch;
     delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition;
     delete (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
+    delete (navigator as unknown as { permissions?: unknown }).permissions;
   });
 
   describe('Initial State', () => {
@@ -255,6 +266,64 @@ describe('useVoiceInput', () => {
       expect(result.current.voiceState).toBe('idle');
       expect(result.current.wakeWordEnabled).toBe(false);
       expect(audioFeedback.ensureAudioContext).not.toHaveBeenCalled();
+    });
+
+    it('auto-starts wake listening on load when persisted on and microphone is granted', async () => {
+      localStorage.setItem('nerve:wakeWordEnabled', 'true');
+      const onTranscription = vi.fn();
+
+      const { result } = renderHook(() => useVoiceInput(onTranscription));
+
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(300);
+      });
+
+      expect(navigator.permissions?.query).toHaveBeenCalledWith({ name: 'microphone' });
+      expect(result.current.wakeWordEnabled).toBe(true);
+      expect(result.current.voiceState).toBe('listening');
+      expect(mockRecognition?.started).toBe(true);
+    });
+
+    it('clears persisted wake state when microphone permission is not granted', async () => {
+      localStorage.setItem('nerve:wakeWordEnabled', 'true');
+      (navigator.permissions?.query as Mock).mockResolvedValue({ state: 'prompt' });
+      const onTranscription = vi.fn();
+
+      const { result } = renderHook(() => useVoiceInput(onTranscription));
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.wakeWordEnabled).toBe(false);
+      expect(result.current.voiceState).toBe('idle');
+      expect(localStorage.getItem('nerve:wakeWordEnabled')).toBe('false');
+      expect(MockSpeechRecognition.instances).toHaveLength(0);
+    });
+
+    it('does not create a stale wake listener after the persisted toggle is switched off during startup', async () => {
+      localStorage.setItem('nerve:wakeWordEnabled', 'true');
+      let resolvePermission!: (value: { state: PermissionState }) => void;
+      (navigator.permissions?.query as Mock).mockReturnValue(new Promise((resolve) => {
+        resolvePermission = resolve;
+      }));
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription));
+
+      act(() => {
+        result.current.stopWakeWordListener();
+      });
+      resolvePermission({ state: 'granted' });
+
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(300);
+      });
+
+      expect(result.current.wakeWordEnabled).toBe(false);
+      expect(result.current.voiceState).toBe('idle');
+      expect(MockSpeechRecognition.instances).toHaveLength(0);
     });
 
     it('still allows manual recording on mobile web', async () => {

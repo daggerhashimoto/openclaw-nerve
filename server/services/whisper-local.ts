@@ -93,6 +93,7 @@ async function getContext(): Promise<WhisperContext> {
         `[whisper-local] Vulkan init failed, retrying on CPU: ${(err as Error).message}`,
       );
       vulkanBackendAvailable = false; // poison the cache so future inits skip the probe
+      gpuDetected = null; // force detectGpu() to recompute so getSystemInfo() reports the post-fallback state
       return initWhisper({ filePath: modelPath(), useGpu: false });
     }
   };

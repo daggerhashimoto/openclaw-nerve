@@ -206,7 +206,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           playCompletionPing();
         }
       } else if (wasRuntimeGeneratingRef.current) {
-        playCompletionPing();
+        const latestFinalMessageWithTTS = [...messages]
+          .reverse()
+          .find((message) => isRuntimeFinalAssistantMessage(message) && Boolean(message.ttsText));
+        if (latestFinalMessageWithTTS) {
+          handleFinalTTS(chatMessageDataFromRuntimeMessage(latestFinalMessageWithTTS), true, {
+            completionPing: false,
+          });
+        } else {
+          playCompletionPing();
+        }
       }
     }
     wasRuntimeGeneratingRef.current = runtimeIsGenerating;
@@ -375,6 +384,10 @@ function finalMessageDataFromRuntimeMessages(
       ?? singleTimestampFallbackCandidate(candidates, activeRequest.sentAt);
   if (!finalMessage) return null;
 
+  return chatMessageDataFromRuntimeMessage(finalMessage);
+}
+
+function chatMessageDataFromRuntimeMessage(finalMessage: ChatMsg): FinalMessageData {
   const message: ChatMessage = {
     role: 'assistant',
     content: finalMessage.rawText,

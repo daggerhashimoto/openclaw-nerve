@@ -130,6 +130,34 @@ describe('ChatContext runtime TTS playback', () => {
     expect(speakMock).toHaveBeenCalledTimes(1);
   });
 
+  it('speaks a completed TTS marker when generation ends without a tracked active request', async () => {
+    const { ChatProvider, setRuntimeState, speakMock, playPingMock } = await setup({
+      soundEnabled: true,
+    });
+
+    const { rerender } = render(<ChatProvider><div /></ChatProvider>);
+
+    setRuntimeState({ isGenerating: true });
+    rerender(<ChatProvider><div /></ChatProvider>);
+
+    setRuntimeState({
+      isGenerating: false,
+      messages: [{
+        msgId: 'assistant:main:run-1:answer',
+        role: 'assistant',
+        html: '<p>Untracked reply.</p>',
+        rawText: 'Untracked reply.',
+        timestamp: new Date(Date.now() + 1000),
+        ttsText: 'Untracked spoken reply.',
+      }],
+    });
+    rerender(<ChatProvider><div /></ChatProvider>);
+
+    await waitFor(() => expect(speakMock).toHaveBeenCalledWith('Untracked spoken reply.'));
+    expect(speakMock).toHaveBeenCalledTimes(1);
+    expect(playPingMock).not.toHaveBeenCalled();
+  });
+
   it('retains pending TTS requests when generation stops before the final message projects', async () => {
     const { ChatProvider, useChat, setRuntimeState, speakMock } = await setup();
 

@@ -684,6 +684,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       input.style.height = 'auto';
       input.style.fontStyle = '';
       input.style.opacity = '';
+      syncSlashStateFromInput(input);
     }
     setDraftText('');
     onSend('[voice] ' + text);
@@ -1313,6 +1314,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       if (input) {
         input.value = '';
         input.style.height = 'auto';
+        syncSlashStateFromInput(input);
       }
       setDraftText('');
       return;
@@ -1535,6 +1537,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           ref={inputRef}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
+          onSelect={e => syncSlashStateFromInput(e.currentTarget)}
           placeholder="Message..."
           aria-label="Message input"
           rows={1}

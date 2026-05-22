@@ -173,9 +173,19 @@ describe('AudioSettings', () => {
   });
 
   describe('Xiaomi Mimo output settings', () => {
-    it('renders a Xiaomi Mimo provider button', async () => {
+    it('renders provider buttons including Off', async () => {
       render(<AudioSettings {...baseProps} section="output" ttsProvider="xiaomi" ttsModel="" />);
       expect(await screen.findByRole('button', { name: 'Xiaomi Mimo' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Off' })).toBeInTheDocument();
+    });
+
+    it('does not render provider-specific settings when TTS is off', async () => {
+      render(<AudioSettings {...baseProps} section="output" ttsProvider="off" ttsModel="" />);
+
+      expect(await screen.findByRole('button', { name: 'Off' })).toHaveAttribute('data-active', 'true');
+      expect(screen.queryByLabelText('TTS Model')).not.toBeInTheDocument();
+      expect(screen.queryByText(/OpenAI Voice/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Xiaomi Voice')).not.toBeInTheDocument();
     });
 
     it('shows the Xiaomi API key prompt when Xiaomi is selected and the key is missing', async () => {

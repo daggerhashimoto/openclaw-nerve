@@ -184,6 +184,13 @@ export function createCommands(actions: CommandActions): Command[] {
       keywords: ['tts', 'voice', 'speech', 'xiaomi', 'mimo'],
     },
     {
+      id: 'tts-off',
+      label: 'TTS: Off',
+      action: () => actions.onTtsProviderChange('off' as TTSProvider),
+      category: 'voice',
+      keywords: ['tts', 'voice', 'speech', 'off', 'disable'],
+    },
+    {
       id: 'toggle-wake-word',
       label: 'Toggle Wake Word',
       action: actions.onToggleWakeWord,

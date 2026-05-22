@@ -52,6 +52,12 @@ describe('extractTTSMarkers', () => {
     expect(result.ttsText).toBe('say "hello!"');
   });
 
+  it('should handle marker text containing closing brackets', () => {
+    const result = extractTTSMarkers('Visible. [tts: say [brackets] out loud.]');
+    expect(result.cleaned).toBe('Visible.');
+    expect(result.ttsText).toBe(' say [brackets] out loud.');
+  });
+
   it('should not match incomplete brackets', () => {
     const result = extractTTSMarkers('[tts:unclosed text');
     expect(result.cleaned).toBe('[tts:unclosed text');
@@ -84,6 +90,10 @@ describe('migrateTTSProvider', () => {
 
   it('should keep "xiaomi" as-is', () => {
     expect(migrateTTSProvider('xiaomi')).toBe('xiaomi');
+  });
+
+  it('should keep "off" as-is', () => {
+    expect(migrateTTSProvider('off')).toBe('off');
   });
 
   it('should default unknown values to "openai"', () => {

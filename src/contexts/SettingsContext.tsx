@@ -110,7 +110,7 @@ function resolveInitialFont(): FontName {
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [soundEnabled, setSoundEnabled] = useState(localStorage.getItem('oc-sound') === 'true');
+  const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('oc-sound') !== 'false');
   const [ttsProvider, setTtsProvider] = useState<TTSProvider>(() => migrateTTSProvider(localStorage.getItem('oc-tts-provider') || 'edge'));
   const [ttsModel, setTtsModelState] = useState(() => localStorage.getItem('oc-tts-model') || '');
   const [sttProvider, setSttProviderState] = useState<STTProvider>(() => {
@@ -164,7 +164,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const saved = localStorage.getItem(KANBAN_VISIBILITY_STORAGE_KEY);
     return saved !== 'false';
   });
-  const { speak } = useTTS(soundEnabled, ttsProvider, ttsModel || undefined);
+  const { speak } = useTTS(ttsProvider, ttsModel || undefined);
   const wakeWordToggleRef = useRef<(() => void) | null>(null);
 
   // Apply theme on mount and when it changes

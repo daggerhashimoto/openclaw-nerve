@@ -1,22 +1,47 @@
-// Audio feedback using pre-recorded MP3 files served from /sounds/
+// Audio feedback using pre-recorded MP3/OGG files served from /sounds/
 // Files are preloaded into AudioBuffers for instant, glitch-free playback.
 
 let audioCtx: AudioContext | null = null;
 const bufferCache = new Map<string, AudioBuffer>();
 const loadingCache = new Map<string, Promise<AudioBuffer | null>>();
 
+type AudioContextConstructor = new () => AudioContext;
+type WindowWithWebkitAudioContext = Window & {
+  webkitAudioContext?: AudioContextConstructor;
+};
+
+function getAudioContextConstructor(): AudioContextConstructor | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return window.AudioContext ?? (window as WindowWithWebkitAudioContext).webkitAudioContext;
+}
+
+function getAudioContext(): AudioContext | null {
+  if (audioCtx) return audioCtx;
+
+  const AudioContextCtor = getAudioContextConstructor();
+  if (!AudioContextCtor) return null;
+
+  audioCtx = new AudioContextCtor();
+  return audioCtx;
+}
+
 /** Preload an audio file into an AudioBuffer. */
 function preloadSound(path: string): Promise<AudioBuffer | null> {
+  const cached = bufferCache.get(path);
+  if (cached) return Promise.resolve(cached);
+
   const existing = loadingCache.get(path);
   if (existing) return existing;
 
   const promise = (async () => {
     try {
+      const ctx = getAudioContext();
+      if (!ctx) return null;
+
       const resp = await fetch(path);
       if (!resp.ok) return null;
       const arrayBuffer = await resp.arrayBuffer();
-      if (!audioCtx) audioCtx = new AudioContext();
-      const buffer = await audioCtx.decodeAudioData(arrayBuffer);
+      const buffer = await ctx.decodeAudioData(arrayBuffer);
       bufferCache.set(path, buffer);
       return buffer;
     } catch {
@@ -25,6 +50,9 @@ function preloadSound(path: string): Promise<AudioBuffer | null> {
   })();
 
   loadingCache.set(path, promise);
+  void promise.finally(() => {
+    loadingCache.delete(path);
+  });
   return promise;
 }
 
@@ -35,21 +63,25 @@ if (typeof window !== 'undefined') {
 }
 
 function playSound(path: string, playbackRate = 1): void {
+  void playSoundAsync(path, playbackRate);
+}
+
+async function playSoundAsync(path: string, playbackRate = 1): Promise<void> {
   try {
-    if (!audioCtx) audioCtx = new AudioContext();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const ctx = getAudioContext();
+    if (!ctx) return;
 
-    const buffer = bufferCache.get(path);
-    if (!buffer) {
-      // Not yet loaded — trigger preload for next time, skip this play
-      preloadSound(path);
-      return;
-    }
+    if (ctx.state === 'suspended') await ctx.resume();
 
-    const source = audioCtx.createBufferSource();
+    const buffer = bufferCache.get(path) ?? await preloadSound(path);
+    if (!buffer) return;
+
+    if (ctx.state === 'suspended') await ctx.resume();
+
+    const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.playbackRate.value = playbackRate;
-    source.connect(audioCtx.destination);
+    source.connect(ctx.destination);
     source.start(0);
   } catch {
     // AudioContext not available, silently skip
@@ -59,10 +91,12 @@ function playSound(path: string, playbackRate = 1): void {
 /** Initialize or resume the AudioContext (call on user interaction to unlock). */
 export function ensureAudioContext(): void {
   try {
-    if (!audioCtx) audioCtx = new AudioContext();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    if (ctx.state === 'suspended') void ctx.resume();
     // Re-trigger preloads if they failed before context existed
-    SOUND_PATHS.forEach(p => { if (!bufferCache.has(p)) preloadSound(p); });
+    SOUND_PATHS.forEach(p => { if (!bufferCache.has(p)) void preloadSound(p); });
   } catch {
     // AudioContext not available
   }

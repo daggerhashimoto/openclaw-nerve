@@ -413,7 +413,7 @@ function ApiKeyInput({
 }
 
 /** Available models per provider. */
-const PROVIDER_MODELS: Record<TTSProvider, { value: string; label: string }[]> = {
+const PROVIDER_MODELS: Record<Exclude<TTSProvider, 'off'>, { value: string; label: string }[]> = {
   openai: [
     { value: '', label: 'gpt-4o-mini-tts (default)' },
     { value: 'tts-1', label: 'tts-1' },
@@ -449,7 +449,7 @@ export function AudioSettings({
   agentName = 'Agent',
   section = 'all',
 }: AudioSettingsProps) {
-  const models = PROVIDER_MODELS[ttsProvider] || [];
+  const models = ttsProvider === 'off' ? [] : PROVIDER_MODELS[ttsProvider] || [];
   const showInput = section === 'all' || section === 'input';
   const showOutput = section === 'all' || section === 'output';
   const wakeWordSupport = useMemo(() => getWakeWordSupport(), []);
@@ -723,12 +723,12 @@ export function AudioSettings({
       {showOutput && (
         <div className="space-y-2">
           <span className="cockpit-field-label">TTS Provider</span>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => onTtsProviderChange('openai')}
               data-active={ttsProvider === 'openai'}
-              className="shell-chip min-h-11 flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
+              className="shell-chip min-h-11 min-w-[7.5rem] flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
             >
               OpenAI
             </button>
@@ -736,7 +736,7 @@ export function AudioSettings({
               type="button"
               onClick={() => onTtsProviderChange('replicate')}
               data-active={ttsProvider === 'replicate'}
-              className="shell-chip min-h-11 flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
+              className="shell-chip min-h-11 min-w-[7.5rem] flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
             >
               Replicate
             </button>
@@ -744,7 +744,7 @@ export function AudioSettings({
               type="button"
               onClick={() => onTtsProviderChange('edge')}
               data-active={ttsProvider === 'edge'}
-              className="shell-chip min-h-11 flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
+              className="shell-chip min-h-11 min-w-[7.5rem] flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
             >
               Edge (Free)
             </button>
@@ -752,9 +752,17 @@ export function AudioSettings({
               type="button"
               onClick={() => onTtsProviderChange('xiaomi')}
               data-active={ttsProvider === 'xiaomi'}
-              className="shell-chip min-h-11 flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
+              className="shell-chip min-h-11 min-w-[7.5rem] flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
             >
               Xiaomi Mimo
+            </button>
+            <button
+              type="button"
+              onClick={() => onTtsProviderChange('off')}
+              data-active={ttsProvider === 'off'}
+              className="shell-chip min-h-11 min-w-[7.5rem] flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
+            >
+              Off
             </button>
           </div>
           <p className="cockpit-field-hint px-1">Choose the voice engine first, then tune the model and speaking style below.</p>

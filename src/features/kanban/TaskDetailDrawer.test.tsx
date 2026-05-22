@@ -150,14 +150,14 @@ describe('TaskDetailDrawer', () => {
       renderDrawer(makeTask({ description: '## Hello\n\n- bullet' }));
 
       expect(screen.getByRole('textbox', { name: /description/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /toggle description preview/i })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: /toggle description edit mode/i })).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('renders markdown preview when the toggle is pressed off', async () => {
       const user = userEvent.setup();
       renderDrawer(makeTask({ description: '## Hello\n\n- bullet' }));
 
-      await user.click(screen.getByRole('button', { name: /toggle description preview/i }));
+      await user.click(screen.getByRole('button', { name: /toggle description edit mode/i }));
 
       expect(screen.queryByRole('textbox', { name: /description/i })).not.toBeInTheDocument();
       const md = await screen.findByTestId('md');
@@ -172,7 +172,7 @@ describe('TaskDetailDrawer', () => {
       await user.clear(textarea);
       await user.type(textarea, 'edited body before toggle');
 
-      await user.click(screen.getByRole('button', { name: /toggle description preview/i }));
+      await user.click(screen.getByRole('button', { name: /toggle description edit mode/i }));
 
       const md = await screen.findByTestId('md');
       expect(md.textContent).toBe('edited body before toggle');
@@ -187,7 +187,7 @@ describe('TaskDetailDrawer', () => {
       await user.clear(textarea);
       await user.type(textarea, 'edited copy');
 
-      const toggle = screen.getByRole('button', { name: /toggle description preview/i });
+      const toggle = screen.getByRole('button', { name: /toggle description edit mode/i });
       await user.click(toggle);
       await user.click(toggle);
 
@@ -205,8 +205,8 @@ describe('TaskDetailDrawer', () => {
         />,
       );
 
-      await user.click(screen.getByRole('button', { name: /toggle description preview/i }));
-      expect(screen.getByRole('button', { name: /toggle description preview/i })).toHaveAttribute('aria-pressed', 'false');
+      await user.click(screen.getByRole('button', { name: /toggle description edit mode/i }));
+      expect(screen.getByRole('button', { name: /toggle description edit mode/i })).toHaveAttribute('aria-pressed', 'false');
 
       rerender(
         <TaskDetailDrawer
@@ -217,7 +217,7 @@ describe('TaskDetailDrawer', () => {
         />,
       );
 
-      expect(screen.getByRole('button', { name: /toggle description preview/i })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: /toggle description edit mode/i })).toHaveAttribute('aria-pressed', 'true');
       expect(screen.getByRole('textbox', { name: /description/i })).toBeInTheDocument();
     });
 
@@ -237,8 +237,8 @@ describe('TaskDetailDrawer', () => {
         />,
       );
 
-      await user.click(screen.getByRole('button', { name: /toggle description preview/i }));
-      expect(screen.getByRole('button', { name: /toggle description preview/i })).toHaveAttribute('aria-pressed', 'false');
+      await user.click(screen.getByRole('button', { name: /toggle description edit mode/i }));
+      expect(screen.getByRole('button', { name: /toggle description edit mode/i })).toHaveAttribute('aria-pressed', 'false');
 
       rerender(
         <TaskDetailDrawer
@@ -249,14 +249,14 @@ describe('TaskDetailDrawer', () => {
         />,
       );
 
-      expect(screen.getByRole('button', { name: /toggle description preview/i })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: /toggle description edit mode/i })).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('supports keyboard activation of the toggle', async () => {
       const user = userEvent.setup();
       renderDrawer(makeTask({ description: '# kb' }));
 
-      const toggle = screen.getByRole('button', { name: /toggle description preview/i });
+      const toggle = screen.getByRole('button', { name: /toggle description edit mode/i });
       toggle.focus();
       await user.keyboard('{Enter}');
 

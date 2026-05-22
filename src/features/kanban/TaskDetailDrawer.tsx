@@ -310,7 +310,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
                     </label>
                     <button
                       type="button"
-                      aria-label="Toggle description preview"
+                      aria-label="Toggle description edit mode"
                       aria-pressed={descriptionEditing}
                       onClick={() => setDescriptionEditing(v => !v)}
                       className={

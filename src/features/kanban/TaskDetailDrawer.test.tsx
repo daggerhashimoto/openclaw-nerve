@@ -10,6 +10,12 @@ vi.mock('@/contexts/SessionContext', () => ({
   useSessionContext: () => mockUseSessionContext(),
 }));
 
+vi.mock('@/features/markdown/MarkdownRenderer', () => ({
+  MarkdownRenderer: ({ content }: { content: string }) => (
+    <div data-testid="md">{content}</div>
+  ),
+}));
+
 function makeTask(overrides: Partial<KanbanTask> = {}): KanbanTask {
   return {
     id: 'task-1',
@@ -107,6 +113,100 @@ describe('TaskDetailDrawer', () => {
 
     await waitFor(() => {
       expect(onUpdate).toHaveBeenCalledWith('task-1', expect.objectContaining({ assignee: 'agent:reviewer' }));
+    });
+  });
+
+  describe('result field markdown', () => {
+    it('renders task.result through MarkdownRenderer', async () => {
+      const result = '## Heading\n\n| col | col |\n|--|--|\n| a | b |';
+      renderDrawer(makeTask({ result }));
+
+      const md = await screen.findByTestId('md');
+      expect(md).toHaveTextContent('## Heading');
+      expect(md).toHaveTextContent('| col | col |');
+    });
+
+    it('does not render the result block when task.result is empty', () => {
+      renderDrawer(makeTask({ result: '' }));
+      expect(screen.queryByText('Result')).not.toBeInTheDocument();
+    });
+
+    it('does not render the result block when task.result is missing', () => {
+      renderDrawer(makeTask({ result: undefined }));
+      expect(screen.queryByText('Result')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('description edit toggle', () => {
+    it('defaults to editing mode with the textarea visible', async () => {
+      renderDrawer(makeTask({ description: '## Hello\n\n- bullet' }));
+
+      expect(screen.getByRole('textbox', { name: /description/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /toggle description preview/i })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('renders markdown preview when the toggle is pressed off', async () => {
+      const user = userEvent.setup();
+      renderDrawer(makeTask({ description: '## Hello\n\n- bullet' }));
+
+      await user.click(screen.getByRole('button', { name: /toggle description preview/i }));
+
+      expect(screen.queryByRole('textbox', { name: /description/i })).not.toBeInTheDocument();
+      const md = await screen.findByTestId('md');
+      expect(md).toHaveTextContent('## Hello');
+    });
+
+    it('preserves in-flight edits when toggling off and back on', async () => {
+      const user = userEvent.setup();
+      renderDrawer(makeTask({ description: 'original' }));
+
+      const textarea = screen.getByRole('textbox', { name: /description/i });
+      await user.clear(textarea);
+      await user.type(textarea, 'edited copy');
+
+      const toggle = screen.getByRole('button', { name: /toggle description preview/i });
+      await user.click(toggle);
+      await user.click(toggle);
+
+      expect(screen.getByRole('textbox', { name: /description/i })).toHaveValue('edited copy');
+    });
+
+    it('resets to editing mode when a different task is loaded', async () => {
+      const user = userEvent.setup();
+      const { rerender } = render(
+        <TaskDetailDrawer
+          task={makeTask({ id: 'task-A', description: '# A' })}
+          onClose={vi.fn()}
+          onUpdate={vi.fn(async () => makeTask())}
+          onDelete={vi.fn(async () => {})}
+        />,
+      );
+
+      await user.click(screen.getByRole('button', { name: /toggle description preview/i }));
+      expect(screen.getByRole('button', { name: /toggle description preview/i })).toHaveAttribute('aria-pressed', 'false');
+
+      rerender(
+        <TaskDetailDrawer
+          task={makeTask({ id: 'task-B', description: '# B' })}
+          onClose={vi.fn()}
+          onUpdate={vi.fn(async () => makeTask())}
+          onDelete={vi.fn(async () => {})}
+        />,
+      );
+
+      expect(screen.getByRole('button', { name: /toggle description preview/i })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('textbox', { name: /description/i })).toBeInTheDocument();
+    });
+
+    it('supports keyboard activation of the toggle', async () => {
+      const user = userEvent.setup();
+      renderDrawer(makeTask({ description: '# kb' }));
+
+      const toggle = screen.getByRole('button', { name: /toggle description preview/i });
+      toggle.focus();
+      await user.keyboard('{Enter}');
+
+      expect(toggle).toHaveAttribute('aria-pressed', 'false');
     });
   });
 });

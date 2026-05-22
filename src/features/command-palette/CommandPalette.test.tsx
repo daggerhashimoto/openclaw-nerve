@@ -101,7 +101,7 @@ describe('CommandPalette session entries', () => {
     expect(action).not.toHaveBeenCalled();
   });
 
-  it('ArrowDown/ArrowUp moves selection through a mixed list and Enter fires the highlighted item', () => {
+  it('ArrowDown moves selection forward one step and Enter fires that item', () => {
     const sessionAction = vi.fn();
     const staticAction = vi.fn();
     const commands = [
@@ -112,8 +112,26 @@ describe('CommandPalette session entries', () => {
       }),
     ];
     renderPalette(commands);
-    // No filter: sessions group sorts before navigation per CATEGORY_ORDER,
-    // so index 0 is Reviewer Bot.
+    // Sessions group sorts before actions per CATEGORY_ORDER, so index 0 is
+    // Reviewer Bot and ArrowDown advances to index 1, Toggle Log Panel.
+    fireEvent.keyDown(input(), { key: 'ArrowDown' });
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    act(() => { vi.advanceTimersByTime(100); });
+    expect(staticAction).toHaveBeenCalledTimes(1);
+    expect(sessionAction).not.toHaveBeenCalled();
+  });
+
+  it('ArrowDown then ArrowUp returns to the previous selection', () => {
+    const sessionAction = vi.fn();
+    const staticAction = vi.fn();
+    const commands = [
+      staticCommand('toggle-log', 'Toggle Log Panel', staticAction),
+      sessionCommand('agent:reviewer:main', 'Reviewer Bot', {
+        keywords: ['Reviewer'],
+        action: sessionAction,
+      }),
+    ];
+    renderPalette(commands);
     fireEvent.keyDown(input(), { key: 'ArrowDown' });
     fireEvent.keyDown(input(), { key: 'ArrowUp' });
     fireEvent.keyDown(input(), { key: 'Enter' });
@@ -122,7 +140,7 @@ describe('CommandPalette session entries', () => {
     expect(staticAction).not.toHaveBeenCalled();
   });
 
-  it('marks the active session with aria-current and data-active-session', () => {
+  it('marks the active session with aria-current and a "current" badge', () => {
     const commands = [
       sessionCommand('agent:main:main', 'Main', { isActive: true }),
       sessionCommand('agent:reviewer:main', 'Reviewer'),
@@ -131,9 +149,61 @@ describe('CommandPalette session entries', () => {
     const mainButton = screen.getByText('Main').closest('button')!;
     const reviewerButton = screen.getByText('Reviewer').closest('button')!;
     expect(mainButton).toHaveAttribute('aria-current', 'true');
-    expect(mainButton).toHaveAttribute('data-active-session', 'true');
     expect(reviewerButton).not.toHaveAttribute('aria-current');
-    expect(reviewerButton).not.toHaveAttribute('data-active-session');
+    const badges = screen.getAllByText('current');
+    expect(badges).toHaveLength(1);
+    expect(mainButton).toContainElement(badges[0]);
+  });
+
+  it('does not render the active affordance for a non-session command with isActive', () => {
+    const cmd: Command = {
+      id: 'rogue',
+      label: 'Rogue Command',
+      action: vi.fn(),
+      category: 'actions',
+      isActive: true,
+    };
+    renderPalette([cmd]);
+    const button = screen.getByText('Rogue Command').closest('button')!;
+    expect(button).not.toHaveAttribute('aria-current');
+    expect(screen.queryByText('current')).not.toBeInTheDocument();
+  });
+
+  it('clamps selectedIndex when typing narrows the filtered list below the cursor', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const commands = [
+      sessionCommand('agent:alpha:main', 'Alpha', { keywords: ['Alpha'], action: first }),
+      sessionCommand('agent:beta:main', 'Beta', { keywords: ['Beta'], action: second }),
+      sessionCommand('agent:gamma:main', 'Gamma', { keywords: ['Gamma'], action: vi.fn() }),
+    ];
+    renderPalette(commands);
+    // Move cursor to the third entry.
+    fireEvent.keyDown(input(), { key: 'ArrowDown' });
+    fireEvent.keyDown(input(), { key: 'ArrowDown' });
+    // Type a query that narrows results to one match (the first entry).
+    fireEvent.change(input(), { target: { value: 'Alpha' } });
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    act(() => { vi.advanceTimersByTime(100); });
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it('rapid double-Enter only fires the most-recent action once', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const commands = [
+      sessionCommand('agent:alpha:main', 'Alpha', { keywords: ['Alpha'], action: first }),
+      sessionCommand('agent:beta:main', 'Beta', { keywords: ['Beta'], action: second }),
+    ];
+    const { onClose } = renderPalette(commands);
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    fireEvent.keyDown(input(), { key: 'ArrowDown' });
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    act(() => { vi.advanceTimersByTime(100); });
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 
   it('a new command surfaced via parent re-render is searchable without remount', () => {

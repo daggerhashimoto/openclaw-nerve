@@ -280,9 +280,10 @@ export function filterCommands(commands: Command[], query: string): Command[] {
         if (cmd.keywords?.some(k => k.toLowerCase().includes(q))) return true;
         return false;
       })
-    : commands;
-  
-  // Always sort by category order so display order matches flat index
+    : [...commands];
+
+  // Always sort by category order so display order matches flat index.
+  // Copy first so we never mutate the caller's array on the empty-query path.
   return candidates.sort((a, b) => {
     const orderA = CATEGORY_ORDER[a.category || 'actions'] ?? 99;
     const orderB = CATEGORY_ORDER[b.category || 'actions'] ?? 99;

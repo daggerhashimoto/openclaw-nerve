@@ -162,6 +162,7 @@ export function useVoiceInput(
 
   // Single persistent recognition instance
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionStartTokenRef = useRef(0);
   const wakeWordSupport = useMemo(() => getWakeWordSupport(), []);
   const wakeWordSupported = wakeWordSupport.supported;
   const [storedWakeWordEnabled, setStoredWakeWordEnabled] = useState(() => {
@@ -251,6 +252,7 @@ export function useVoiceInput(
   // Start or restart the single recognition instance
   const ensureRecognition = useCallback((mode: 'wake' | 'stop') => {
     modeRef.current = mode;
+    const startToken = ++recognitionStartTokenRef.current;
 
     // If we already have a running instance, abort it first
     if (recognitionRef.current) {
@@ -275,6 +277,7 @@ export function useVoiceInput(
     // Small delay to let the previous instance fully release
     trackedTimeout(() => {
       // Re-check state — might have changed during the delay
+      if (startToken !== recognitionStartTokenRef.current) return;
       if (mode === 'wake' && !wakeWordEnabledRef.current) return;
       if (mode === 'stop' && stateRef.current !== 'recording') return;
 
@@ -383,6 +386,7 @@ export function useVoiceInput(
     // Initialize AudioContext on user interaction
     ensureAudioContext();
     // Stop recognition intentionally — we'll restart in stop mode after recording starts
+    recognitionStartTokenRef.current += 1;
     intentionalStopRef.current = true;
     try { recognitionRef.current?.abort(); } catch { /* already stopped */ }
     recognitionRef.current = null;
@@ -418,6 +422,7 @@ export function useVoiceInput(
     setInterimTranscript('');
     resetBrowserTranscript();
     wakeTriggeredRef.current = false;
+    recognitionStartTokenRef.current += 1;
     intentionalStopRef.current = true;
     try { recognitionRef.current?.abort(); } catch { /* already stopped */ }
     recognitionRef.current = null;
@@ -459,6 +464,7 @@ export function useVoiceInput(
     if (!mr || mr.state !== 'recording') return;
     setInterimTranscript('');
     wakeTriggeredRef.current = false;
+    recognitionStartTokenRef.current += 1;
     intentionalStopRef.current = true;
     try {
       recognitionRef.current?.stop();
@@ -547,6 +553,7 @@ export function useVoiceInput(
 
   const stopWakeWordListener = useCallback(() => {
     wakeWordEnabledRef.current = false;
+    recognitionStartTokenRef.current += 1;
     intentionalStopRef.current = true;
     try { recognitionRef.current?.abort(); } catch { /* already stopped */ }
     recognitionRef.current = null;
@@ -574,18 +581,41 @@ export function useVoiceInput(
   const startWakeWordRef = useRef(startWakeWordListener);
   startWakeWordRef.current = startWakeWordListener;
   useEffect(() => {
-    if (!wakeWordSupported || !wakeWordEnabled || wakeWordEnabledRef.current) return;
+    if (!wakeWordSupported || !wakeWordEnabled) return;
+
+    const clearPersistedWakeWord = () => {
+      wakeWordEnabledRef.current = false;
+      recognitionStartTokenRef.current += 1;
+      setStoredWakeWordEnabled(false);
+      if (stateRef.current === 'listening') {
+        setVoiceState('idle');
+      }
+      try { localStorage.removeItem(WAKE_WORD_KEY); } catch { /* noop */ }
+    };
+
+    const autoStartWakeWord = () => {
+      if (!wakeWordEnabledRef.current || stateRef.current !== 'idle') return;
+      startWakeWordRef.current();
+    };
+
     // Only auto-start if mic permission was previously granted (avoid surprise prompts)
-    navigator.permissions?.query({ name: 'microphone' as PermissionName }).then((result) => {
+    const permissionQuery = navigator.permissions?.query?.({ name: 'microphone' as PermissionName });
+    if (!permissionQuery) {
+      // Permissions API not available — try starting anyway (user interaction may be required)
+      autoStartWakeWord();
+      return;
+    }
+
+    permissionQuery.then((result) => {
       if (result.state === 'granted') {
-        startWakeWordRef.current();
+        autoStartWakeWord();
       } else {
         // Permission not granted — clear persisted state so toggle shows off on supported environments
-        try { localStorage.removeItem(WAKE_WORD_KEY); } catch { /* noop */ }
+        clearPersistedWakeWord();
       }
     }).catch(() => {
-      // Permissions API not available — try starting anyway (user interaction required)
-      startWakeWordRef.current();
+      // Permissions API failed — try starting anyway (user interaction may be required)
+      autoStartWakeWord();
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
   }, []);
@@ -647,6 +677,7 @@ export function useVoiceInput(
       for (const id of timers) clearTimeout(id);
       timers.clear();
       wakeWordEnabledRef.current = false;
+      recognitionStartTokenRef.current += 1;
       intentionalStopRef.current = true;
       try { recognitionRef.current?.abort(); } catch { /* already stopped */ }
       recognitionRef.current = null;

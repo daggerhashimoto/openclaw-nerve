@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import {
   X, Play, CheckCircle2, XCircle, Trash2, Save, Loader2,
-  Clock, User, Tag, AlertTriangle, MessageSquare, StopCircle,
+  Clock, User, Tag, AlertTriangle, MessageSquare, StopCircle, Pencil,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,10 @@ import type { UpdateTaskPayload, VersionConflictError } from './hooks/useKanban'
 import { AssigneeCombobox } from './components/AssigneeCombobox';
 import { buildAssigneeOptionsForEdit } from './lib/assigneeOptions';
 import { getTaskPriorityLabel, getTaskPriorityTone, getTaskRunTone, getTaskStatusTone, getTaskPriority, getTaskStatus } from './tone';
+
+const MarkdownRenderer = lazy(() =>
+  import('@/features/markdown/MarkdownRenderer').then(m => ({ default: m.MarkdownRenderer })),
+);
 
 /* ── Elapsed time helper ── */
 function formatElapsed(ms: number): string {
@@ -61,6 +65,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [descriptionEditing, setDescriptionEditing] = useState(true);
   const drawerRef = useRef<HTMLDivElement>(null);
 
   /* Populate fields when task changes */
@@ -75,6 +80,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
       setEditVersion(task.version);
       setError(null);
       setDirty(false);
+      setDescriptionEditing(true);
       setConfirmDelete(false);
     }
   }, [task]);
@@ -298,17 +304,40 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
                 </div>
 
                 <div>
-                  <label htmlFor="kb-description" className="cockpit-field-label mb-2 block">
-                    Description
-                  </label>
-                  <textarea
-                    id="kb-description"
-                    value={editDescription}
-                    onChange={e => { setEditDescription(e.target.value); markDirty(); }}
-                    placeholder="Markdown description…"
-                    rows={8}
-                    className="cockpit-textarea min-h-[180px]"
-                  />
+                  <div className="mb-2 flex items-center justify-between">
+                    <label htmlFor="kb-description" className="cockpit-field-label">
+                      Description
+                    </label>
+                    <button
+                      type="button"
+                      aria-label="Toggle description edit mode"
+                      aria-pressed={descriptionEditing}
+                      onClick={() => setDescriptionEditing(v => !v)}
+                      className={
+                        descriptionEditing
+                          ? 'rounded-md border border-border/60 bg-accent p-1 text-accent-foreground'
+                          : 'rounded-md border border-transparent p-1 text-muted-foreground hover:text-foreground'
+                      }
+                    >
+                      <Pencil size={12} />
+                    </button>
+                  </div>
+                  {descriptionEditing ? (
+                    <textarea
+                      id="kb-description"
+                      value={editDescription}
+                      onChange={e => { setEditDescription(e.target.value); markDirty(); }}
+                      placeholder="Markdown description…"
+                      rows={8}
+                      className="cockpit-textarea min-h-[180px]"
+                    />
+                  ) : (
+                    <div className="min-h-[180px] rounded-2xl border border-border/60 bg-background/45 p-3 text-sm text-foreground">
+                      <Suspense fallback={<div className="whitespace-pre-wrap">{editDescription}</div>}>
+                        <MarkdownRenderer content={editDescription} suppressImages />
+                      </Suspense>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -425,11 +454,13 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
                 </div>
               )}
 
-              {task.result && (
+              {task.result?.trim() && (
                 <div className="cockpit-note space-y-2">
                   <h4 className="cockpit-field-label">Result</h4>
-                  <div className="whitespace-pre-wrap rounded-2xl border border-border/60 bg-background/45 p-3 text-xs text-foreground">
-                    {task.result}
+                  <div className="rounded-2xl border border-border/60 bg-background/45 p-3 text-xs text-foreground">
+                    <Suspense fallback={<div className="whitespace-pre-wrap">{task.result}</div>}>
+                      <MarkdownRenderer content={task.result} suppressImages />
+                    </Suspense>
                   </div>
                 </div>
               )}

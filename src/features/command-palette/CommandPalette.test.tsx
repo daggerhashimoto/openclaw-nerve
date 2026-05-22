@@ -169,24 +169,48 @@ describe('CommandPalette session entries', () => {
     expect(screen.queryByText('current')).not.toBeInTheDocument();
   });
 
-  it('clamps selectedIndex when typing narrows the filtered list below the cursor', () => {
+  it('clamps selectedIndex when filtered commands shrink below the cursor', () => {
     const first = vi.fn();
     const second = vi.fn();
-    const commands = [
-      sessionCommand('agent:alpha:main', 'Alpha', { keywords: ['Alpha'], action: first }),
-      sessionCommand('agent:beta:main', 'Beta', { keywords: ['Beta'], action: second }),
-      sessionCommand('agent:gamma:main', 'Gamma', { keywords: ['Gamma'], action: vi.fn() }),
+    const onClose = vi.fn();
+    const commands: Command[] = [
+      sessionCommand('agent:alpha:main', 'Alpha', { action: first }),
+      sessionCommand('agent:beta:main', 'Beta', { action: second }),
+      sessionCommand('agent:gamma:main', 'Gamma', { action: vi.fn() }),
     ];
-    renderPalette(commands);
+    const { rerender } = render(<CommandPalette open commands={commands} onClose={onClose} />);
+    act(() => { vi.advanceTimersByTime(100); });
     // Move cursor to the third entry.
     fireEvent.keyDown(input(), { key: 'ArrowDown' });
     fireEvent.keyDown(input(), { key: 'ArrowDown' });
-    // Type a query that narrows results to one match (the first entry).
-    fireEvent.change(input(), { target: { value: 'Alpha' } });
+    // Shrink filtered list without typing so the clamp effect is the only
+    // path that can bring selectedIndex back into range.
+    rerender(<CommandPalette open commands={[commands[0]]} onClose={onClose} />);
     fireEvent.keyDown(input(), { key: 'Enter' });
     act(() => { vi.advanceTimersByTime(100); });
     expect(first).toHaveBeenCalledTimes(1);
     expect(second).not.toHaveBeenCalled();
+  });
+
+  it('ArrowDown on an empty filtered list does not produce a negative selectedIndex', () => {
+    const fallback = vi.fn();
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <CommandPalette open commands={[] as Command[]} onClose={onClose} />,
+    );
+    act(() => { vi.advanceTimersByTime(100); });
+    fireEvent.keyDown(input(), { key: 'ArrowDown' });
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    // Enter while filtered is empty must be a no-op (no action fires, palette
+    // stays open).
+    expect(onClose).not.toHaveBeenCalled();
+    // When commands arrive, the first item must be reachable on Enter without
+    // an extra ArrowDown (proving selectedIndex was clamped, not stuck at -1).
+    const next = [sessionCommand('agent:alpha:main', 'Alpha', { action: fallback })];
+    rerender(<CommandPalette open commands={next} onClose={onClose} />);
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    act(() => { vi.advanceTimersByTime(100); });
+    expect(fallback).toHaveBeenCalledTimes(1);
   });
 
   it('rapid double-Enter only fires the most-recent action once', () => {

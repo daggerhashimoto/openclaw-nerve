@@ -44,10 +44,11 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
 
   // Keep selectedIndex inside the bounds of the current filtered list.
   // Typing a narrower query can shrink filtered below selectedIndex, leaving
-  // Enter pointed at undefined.
+  // Enter pointed at undefined. The Math.max(0, ...) outer guard also catches
+  // the empty-list case (filtered.length === 0 -> min is -1 without it).
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- clamp converges (Math.min) and only runs when filtered.length changes
-    setSelectedIndex(i => Math.min(i, Math.max(0, filtered.length - 1)));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clamp converges and only runs when filtered.length changes
+    setSelectedIndex(i => Math.max(0, Math.min(i, filtered.length - 1)));
   }, [filtered.length]);
 
   // Cancel any scheduled action on unmount.
@@ -79,7 +80,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
       case 'ArrowDown':
         e.preventDefault();
         setUsingKeyboard(true);
-        setSelectedIndex(i => Math.min(i + 1, filtered.length - 1));
+        setSelectedIndex(i => Math.max(0, Math.min(i + 1, filtered.length - 1)));
         break;
       case 'ArrowUp':
         e.preventDefault();

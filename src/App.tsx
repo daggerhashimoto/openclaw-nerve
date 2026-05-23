@@ -40,6 +40,7 @@ import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { DEFAULT_CHAT_PATH_LINKS_CONFIG, parseChatPathLinksConfig } from '@/features/chat/chatPathLinks';
 import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
+import { useEdgeSwipeToOpen } from '@/features/file-browser/hooks/useEdgeSwipeToOpen';
 import { type BeadLinkTarget, type OpenBeadTab, buildBeadTabId } from '@/features/beads';
 import { isImageFile } from '@/features/file-browser/utils/fileTypes';
 import { buildAgentRootSessionKey, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
@@ -907,9 +908,28 @@ export default function App({ onLogout }: AppProps) {
   );
 
   const showCompactFileBrowser = isCompactLayout && viewMode !== 'kanban' && !fileBrowserCollapsed;
+  const handleOpenCompactFileBrowserFromSwipe = useCallback(() => {
+    setFileBrowserCollapsed(false);
+  }, [setFileBrowserCollapsed]);
+  const compactFileBrowserSwipeEnabled =
+    isCompactLayout &&
+    viewMode !== 'kanban' &&
+    fileBrowserCollapsed;
+  const compactFileBrowserSwipe = useEdgeSwipeToOpen({
+    enabled: compactFileBrowserSwipeEnabled,
+    onOpen: handleOpenCompactFileBrowserFromSwipe,
+  });
 
   return (
-    <div className="scan-lines relative h-screen flex flex-col overflow-hidden" data-booted={booted}>
+    <div
+      className="scan-lines relative h-screen flex flex-col overflow-hidden"
+      data-booted={booted}
+      data-testid="app-shell"
+      onPointerDownCapture={compactFileBrowserSwipe.bind.onPointerDown}
+      onPointerMoveCapture={compactFileBrowserSwipe.bind.onPointerMove}
+      onPointerUpCapture={compactFileBrowserSwipe.bind.onPointerUp}
+      onPointerCancelCapture={compactFileBrowserSwipe.bind.onPointerCancel}
+    >
       {/* Skip to main content link for keyboard navigation */}
       <a 
         href="#main-chat" 

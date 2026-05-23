@@ -899,6 +899,87 @@ describe('App kanban visibility gating', () => {
     expect(screen.getByTestId('command-palette-state')).toHaveTextContent('open');
   });
 
+  it('opens the compact file browser from a left-edge touch swipe', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === '(max-width: 900px)',
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    render(<App />);
+
+    expect(screen.queryByTestId('file-tree-panel')).not.toBeInTheDocument();
+
+    const swipeZone = screen.getByTestId('app-shell');
+    await act(async () => {
+      fireEvent.pointerDown(swipeZone, {
+        pointerType: 'touch',
+        pointerId: 11,
+        clientX: 8,
+        clientY: 120,
+      });
+      fireEvent.pointerMove(swipeZone, {
+        pointerType: 'touch',
+        pointerId: 11,
+        clientX: 92,
+        clientY: 126,
+      });
+    });
+
+    expect(await screen.findByTestId('file-tree-panel')).toBeInTheDocument();
+  });
+
+  it('does not open the compact file browser when a left-edge touch gesture turns into a vertical move', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === '(max-width: 900px)',
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    render(<App />);
+    await act(async () => {});
+
+    const swipeZone = screen.getByTestId('app-shell');
+    await act(async () => {
+      fireEvent.pointerDown(swipeZone, {
+        pointerType: 'touch',
+        pointerId: 12,
+        clientX: 10,
+        clientY: 100,
+      });
+      fireEvent.pointerMove(swipeZone, {
+        pointerType: 'touch',
+        pointerId: 12,
+        clientX: 24,
+        clientY: 154,
+      });
+      fireEvent.pointerUp(swipeZone, {
+        pointerType: 'touch',
+        pointerId: 12,
+        clientX: 24,
+        clientY: 154,
+      });
+    });
+
+    expect(screen.queryByTestId('file-tree-panel')).not.toBeInTheDocument();
+  });
+
   it('hides the chatbox command trigger when the appearance toggle is disabled', () => {
     settingsContext.commandPaletteButtonVisible = false;
 

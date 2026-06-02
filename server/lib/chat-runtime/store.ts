@@ -4,6 +4,7 @@ import type { RuntimeEvent, SessionTimeline, TimelineItem, TimelinePatch, Timeli
 
 interface ChatTimelineStoreOptions {
   maxPatchesPerSession: number;
+  epoch?: string;
 }
 
 type TimelineSubscriber = (patch: TimelinePatch) => void;

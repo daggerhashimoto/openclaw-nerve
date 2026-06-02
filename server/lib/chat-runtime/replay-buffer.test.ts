@@ -53,12 +53,12 @@ describe('ReplayBuffer', () => {
   });
 
   it('replays retained patches after cursor', () => {
-    const buffer = new ReplayBuffer({ maxPatchesPerSession: 3 });
+    const buffer = new ReplayBuffer({ maxPatchesPerSession: 3, epoch: 'e1' });
     const first = buffer.append('agent:main:main', [hydrationOp('cold')], 1000);
     const second = buffer.append('agent:main:main', [hydrationOp('hydrating')], 1001);
     const third = buffer.append('agent:main:main', [hydrationOp('ready')], 1002);
 
-    expect([first.cursor, second.cursor, third.cursor]).toEqual(['1', '2', '3']);
+    expect([first.cursor, second.cursor, third.cursor]).toEqual(['e1:1', 'e1:2', 'e1:3']);
     expect(expectPatchReplay(buffer.replayAfter('agent:main:main', first.cursor))).toEqual([second, third]);
   });
 
@@ -99,8 +99,8 @@ describe('ReplayBuffer', () => {
   });
 
   it('does not let append return values or input ops mutate stored patches', () => {
-    const buffer = new ReplayBuffer({ maxPatchesPerSession: 3 });
-    buffer.append('agent:main:main', [hydrationOp('cold')], 1000);
+    const buffer = new ReplayBuffer({ maxPatchesPerSession: 3, epoch: 'e1' });
+    const first = buffer.append('agent:main:main', [hydrationOp('cold')], 1000);
     const op = turnOp('run-2');
     const appended = buffer.append('agent:main:main', [op], 1001);
 
@@ -111,47 +111,66 @@ describe('ReplayBuffer', () => {
     if (!returnedTurnOp) throw new Error('expected turn op');
     returnedTurnOp.turn.runId = 'mutated-return';
 
-    const replayed = expectPatchReplay(buffer.replayAfter('agent:main:main', '1'));
+    const replayed = expectPatchReplay(buffer.replayAfter('agent:main:main', first.cursor));
     expect(replayed.map(turnRunIds)).toEqual([['run-2']]);
   });
 
   it('does not let replay consumers mutate stored patches', () => {
-    const buffer = new ReplayBuffer({ maxPatchesPerSession: 3 });
-    buffer.append('agent:main:main', [hydrationOp('cold')], 1000);
+    const buffer = new ReplayBuffer({ maxPatchesPerSession: 3, epoch: 'e1' });
+    const first = buffer.append('agent:main:main', [hydrationOp('cold')], 1000);
     buffer.append('agent:main:main', [turnOp('run-2')], 1001);
 
-    const firstReplay = expectPatchReplay(buffer.replayAfter('agent:main:main', '1'));
+    const firstReplay = expectPatchReplay(buffer.replayAfter('agent:main:main', first.cursor));
     const replayedTurnOp = firstReplay[0].ops.find((op): op is Extract<TimelinePatchOp, { op: 'upsert_turn' }> =>
       op.op === 'upsert_turn',
     );
     if (!replayedTurnOp) throw new Error('expected turn op');
     replayedTurnOp.turn.runId = 'mutated-replay';
 
-    const secondReplay = expectPatchReplay(buffer.replayAfter('agent:main:main', '1'));
+    const secondReplay = expectPatchReplay(buffer.replayAfter('agent:main:main', first.cursor));
     expect(secondReplay.map(turnRunIds)).toEqual([['run-2']]);
   });
 
   it('uses independent cursor counters per session and does not replay another session patches', () => {
-    const buffer = new ReplayBuffer({ maxPatchesPerSession: 5 });
+    const buffer = new ReplayBuffer({ maxPatchesPerSession: 5, epoch: 'e1' });
     const sessionAFirst = buffer.append('agent:a:main', [hydrationOp('cold')], 1000);
     const sessionBFirst = buffer.append('agent:b:main', [hydrationOp('hydrating')], 1001);
     const sessionASecond = buffer.append('agent:a:main', [hydrationOp('ready')], 1002);
 
-    expect([sessionAFirst.cursor, sessionBFirst.cursor, sessionASecond.cursor]).toEqual(['1', '1', '2']);
+    expect([sessionAFirst.cursor, sessionBFirst.cursor, sessionASecond.cursor]).toEqual(['e1:1', 'e1:1', 'e1:2']);
     expect(expectPatchReplay(buffer.replayAfter('agent:a:main', sessionAFirst.cursor))).toEqual([sessionASecond]);
     expect(expectPatchReplay(buffer.replayAfter('agent:b:main', sessionBFirst.cursor))).toEqual([]);
   });
 
   it('returns latest cursor for seen sessions and 0 for unseen sessions', () => {
-    const buffer = new ReplayBuffer({ maxPatchesPerSession: 2 });
+    const buffer = new ReplayBuffer({ maxPatchesPerSession: 2, epoch: 'e1' });
 
     expect(buffer.latestCursor('agent:missing:main')).toBe('0');
 
     buffer.append('agent:main:main', [hydrationOp('cold')], 1000);
-    expect(buffer.latestCursor('agent:main:main')).toBe('1');
+    expect(buffer.latestCursor('agent:main:main')).toBe('e1:1');
 
     buffer.append('agent:main:main', [hydrationOp('ready')], 1001);
-    expect(buffer.latestCursor('agent:main:main')).toBe('2');
+    expect(buffer.latestCursor('agent:main:main')).toBe('e1:2');
     expect(buffer.latestCursor('agent:missing:main')).toBe('0');
+  });
+
+  it('requires a snapshot when the resume cursor is from an earlier process generation', () => {
+    const gen1 = new ReplayBuffer({ maxPatchesPerSession: 5, epoch: 'g1' });
+    gen1.append('agent:main:main', [hydrationOp('cold')], 1000);
+    gen1.append('agent:main:main', [hydrationOp('hydrating')], 1001);
+    const staleCursor = gen1.append('agent:main:main', [hydrationOp('ready')], 1002).cursor;
+
+    // process restart: a fresh buffer (new epoch) rebuilds the same session to the same seq
+    const gen2 = new ReplayBuffer({ maxPatchesPerSession: 5, epoch: 'g2' });
+    gen2.append('agent:main:main', [hydrationOp('cold')], 2000);
+    gen2.append('agent:main:main', [hydrationOp('hydrating')], 2001);
+    gen2.append('agent:main:main', [hydrationOp('ready')], 2002);
+
+    expect(staleCursor).toBe('g1:3');
+    expect(gen2.replayAfter('agent:main:main', staleCursor)).toEqual({ kind: 'snapshot_required' });
+    const currentCursor = gen2.latestCursor('agent:main:main');
+    expect(currentCursor).toBe('g2:3');
+    expect(gen2.replayAfter('agent:main:main', currentCursor)).toEqual({ kind: 'patches', patches: [] });
   });
 });

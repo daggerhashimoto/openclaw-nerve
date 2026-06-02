@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { TimelinePatch, TimelinePatchOp } from './types.js';
 
 export type ReplayResult =
@@ -6,6 +7,7 @@ export type ReplayResult =
 
 interface ReplayBufferOptions {
   maxPatchesPerSession: number;
+  epoch?: string;
 }
 
 interface SessionReplayLog {
@@ -15,6 +17,7 @@ interface SessionReplayLog {
 
 export class ReplayBuffer {
   private readonly maxPatchesPerSession: number;
+  private readonly epoch: string;
   private readonly sessions = new Map<string, SessionReplayLog>();
 
   constructor(options: ReplayBufferOptions) {
@@ -23,11 +26,12 @@ export class ReplayBuffer {
     }
 
     this.maxPatchesPerSession = options.maxPatchesPerSession;
+    this.epoch = options.epoch ?? randomUUID();
   }
 
   append(sessionKey: string, ops: TimelinePatchOp[], createdAt = Date.now()): TimelinePatch {
     const log = this.getOrCreateLog(sessionKey);
-    const cursor = String(log.nextCursor);
+    const cursor = `${this.epoch}:${log.nextCursor}`;
     log.nextCursor += 1;
 
     const patch: TimelinePatch = {
@@ -48,6 +52,13 @@ export class ReplayBuffer {
   replayAfter(sessionKey: string, cursor?: string | null): ReplayResult {
     if (!cursor) return { kind: 'snapshot_required' };
 
+    if (cursor !== '0') {
+      const separator = cursor.indexOf(':');
+      if (separator === -1 || cursor.slice(0, separator) !== this.epoch) {
+        return { kind: 'snapshot_required' };
+      }
+    }
+
     const log = this.sessions.get(sessionKey);
     if (!log) {
       return cursor === '0'
@@ -57,7 +68,7 @@ export class ReplayBuffer {
 
     if (cursor === '0') {
       const firstRetainedCursor = log.patches[0]?.cursor;
-      if (!firstRetainedCursor || firstRetainedCursor === '1') {
+      if (!firstRetainedCursor || firstRetainedCursor === `${this.epoch}:1`) {
         return { kind: 'patches', patches: cloneTimelinePatches(log.patches) };
       }
 
@@ -76,7 +87,7 @@ export class ReplayBuffer {
   latestCursor(sessionKey: string): string {
     const log = this.sessions.get(sessionKey);
     if (!log) return '0';
-    return String(log.nextCursor - 1);
+    return `${this.epoch}:${log.nextCursor - 1}`;
   }
 
   private getOrCreateLog(sessionKey: string): SessionReplayLog {

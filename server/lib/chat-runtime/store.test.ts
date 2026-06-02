@@ -90,15 +90,15 @@ function liveAssistantFinalEvent(sessionKey: string, runId: string, text: string
 
 describe('ChatTimelineStore', () => {
   it('publishes cursors 1 and 2 for two events', () => {
-    const store = new ChatTimelineStore({ maxPatchesPerSession: 10 });
+    const store = new ChatTimelineStore({ maxPatchesPerSession: 10, epoch: 'e1' });
     const publishedCursors: string[] = [];
     store.subscribe('agent:main:main', (patch) => publishedCursors.push(patch.cursor));
 
     const first = store.applyEvent(turnStarted('agent:main:main', 'run-1', 1000));
     const second = store.applyEvent(assistantDelta('agent:main:main', 'run-1', 'hello', 1001));
 
-    expect([first.cursor, second.cursor]).toEqual(['1', '2']);
-    expect(publishedCursors).toEqual(['1', '2']);
+    expect([first.cursor, second.cursor]).toEqual(['e1:1', 'e1:2']);
+    expect(publishedCursors).toEqual(['e1:1', 'e1:2']);
   });
 
   it('uses the runtime event timestamp for returned and published patch metadata', () => {
@@ -161,7 +161,7 @@ describe('ChatTimelineStore', () => {
   });
 
   it('returns, publishes, and replays isolated patch clones', () => {
-    const store = new ChatTimelineStore({ maxPatchesPerSession: 10 });
+    const store = new ChatTimelineStore({ maxPatchesPerSession: 10, epoch: 'e1' });
     const secondSubscriberPatches: Array<{ cursor: string; runIds: string[] }> = [];
 
     store.subscribe('agent:main:main', (patch) => {
@@ -178,14 +178,14 @@ describe('ChatTimelineStore', () => {
 
     const replayedPatches = expectPatchReplay(store.replayAfter('agent:main:main', '0'));
 
-    expect(secondSubscriberPatches).toEqual([{ cursor: '1', runIds: ['run-1'] }]);
+    expect(secondSubscriberPatches).toEqual([{ cursor: 'e1:1', runIds: ['run-1'] }]);
     expect(replayedPatches.map((patch) => ({ cursor: patch.cursor, runIds: turnRunIds(patch) }))).toEqual([
-      { cursor: '1', runIds: ['run-1'] },
+      { cursor: 'e1:1', runIds: ['run-1'] },
     ]);
   });
 
   it('isolates subscriber failures and removes throwing subscribers', () => {
-    const store = new ChatTimelineStore({ maxPatchesPerSession: 10 });
+    const store = new ChatTimelineStore({ maxPatchesPerSession: 10, epoch: 'e1' });
     const normalSubscriberCursors: string[] = [];
     let throwingSubscriberCalls = 0;
 
@@ -199,7 +199,7 @@ describe('ChatTimelineStore', () => {
     expect(() => store.applyEvent(assistantDelta('agent:main:main', 'run-1', 'hello', 1001))).not.toThrow();
 
     expect(throwingSubscriberCalls).toBe(1);
-    expect(normalSubscriberCursors).toEqual(['1', '2']);
+    expect(normalSubscriberCursors).toEqual(['e1:1', 'e1:2']);
   });
 
   it('replays retained patches after cursor', () => {
@@ -245,7 +245,7 @@ describe('ChatTimelineStore', () => {
   });
 
   it('does not publish same-session patches after unsubscribe is called twice or notify other sessions', () => {
-    const store = new ChatTimelineStore({ maxPatchesPerSession: 10 });
+    const store = new ChatTimelineStore({ maxPatchesPerSession: 10, epoch: 'e1' });
     const sessionAPatches: TimelinePatch[] = [];
     const sessionBPatches: TimelinePatch[] = [];
 
@@ -258,13 +258,13 @@ describe('ChatTimelineStore', () => {
     store.applyEvent(assistantDelta('agent:a:main', 'run-a', 'hidden from subscriber', 1001));
     store.applyEvent(turnStarted('agent:b:main', 'run-b', 1002));
 
-    expect(sessionAPatches.map((patch) => patch.cursor)).toEqual(['1']);
+    expect(sessionAPatches.map((patch) => patch.cursor)).toEqual(['e1:1']);
     expect(sessionBPatches.map((patch) => patch.sessionKey)).toEqual(['agent:b:main']);
-    expect(sessionBPatches.map((patch) => patch.cursor)).toEqual(['1']);
+    expect(sessionBPatches.map((patch) => patch.cursor)).toEqual(['e1:1']);
   });
 
   it('advances snapshot cursor after applyEvent and keeps timelines session-specific', () => {
-    const store = new ChatTimelineStore({ maxPatchesPerSession: 10 });
+    const store = new ChatTimelineStore({ maxPatchesPerSession: 10, epoch: 'e1' });
 
     expect(store.snapshot('agent:a:main', 'initial')).toMatchObject({
       cursor: '0',
@@ -278,8 +278,8 @@ describe('ChatTimelineStore', () => {
     const sessionASnapshot = store.snapshot('agent:a:main', 'manual');
     const sessionBSnapshot = store.snapshot('agent:b:main', 'manual');
 
-    expect(sessionASnapshot.cursor).toBe('2');
-    expect(sessionBSnapshot.cursor).toBe('1');
+    expect(sessionASnapshot.cursor).toBe('e1:2');
+    expect(sessionBSnapshot.cursor).toBe('e1:1');
     expect(store.getTimeline('agent:a:main').turns.map((turn) => turn.runId)).toEqual(['run-a']);
     expect(store.getTimeline('agent:b:main').turns.map((turn) => turn.runId)).toEqual(['run-b']);
   });

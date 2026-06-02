@@ -20,7 +20,19 @@ schedule: "0 15 * * 1-5"
 
 Use this repository-specific value:
 
-- Slack channel: `<slack_channel_name>`
+- Slack channel: `#openclaw-nerve`
+
+## Duplicate-post detection
+
+Before posting the daily digest, inspect recent history in `#openclaw-nerve` and treat the digest as already posted for that UTC date when all conditions match:
+
+- message author is this daemon identity
+- message starts with `*GitHub daily digest (YYYY-MM-DD UTC)*`
+- message date matches the current scheduled run date in UTC
+
+When a matching message exists, no-op silently.
+
+If Slack history cannot be queried safely, no-op silently instead of risking duplicate posts.
 
 ## Scope
 

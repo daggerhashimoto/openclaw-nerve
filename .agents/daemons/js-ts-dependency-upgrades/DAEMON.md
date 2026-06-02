@@ -21,19 +21,23 @@ schedule: '0 8 * * 1'
 
 Use these repository-specific values:
 
-- Package manager: `<package-manager>`
-- Dependency manifests: `<manifest-globs>`
-- Lockfile: `<lockfile-path>`
-- Outdated scan: `<outdated-command>`
-- Runtime dependency update: `<runtime-update-command>`
-- Development dependency update: `<development-update-command>`
-- Install or lockfile refresh: `<install-command>`
+- Package manager: `npm`
+- Dependency manifests: `package.json`
+- Lockfile: `package-lock.json`
+- Outdated scan: `npm outdated`
+- Runtime dependency update: `npm update --save-prod --omit=dev`
+- Development dependency update: `npm update --save-dev --include=dev --omit=prod`
+- Install or lockfile refresh: `npm install`
 - Verification:
-  - `<verification-command>`
-- Runtime dependency branch: `daemon/deps-runtime-minor-patch`
-- Development dependency branch: `daemon/deps-dev-minor-patch`
-- Runtime dependency title: `deps: update runtime dependencies`
-- Development dependency title: `deps(dev): update development dependencies`
+  - `npm run lint`
+  - `npm run build`
+  - `npm run build:server`
+  - `npm test -- --run`
+- Runtime dependency branch: `chore/deps-runtime-minor-patch`
+- Development dependency branch: `chore/deps-dev-minor-patch`
+- Runtime dependency title: `chore(deps): update runtime dependencies (patch/minor)`
+- Development dependency title: `chore(deps-dev): update development dependencies (patch/minor)`
+- PR labels: `none` by default
 
 ## Update policy
 
@@ -56,6 +60,8 @@ Create or update at most two pull requests per run:
 2. development dependency patch/minor updates
 
 Use the configured branch and title for each dependency bucket.
+
+Do not add labels by default. This repository typically keeps pull requests unlabeled unless a human explicitly requests labels.
 
 Each PR body must include:
 

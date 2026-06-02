@@ -7,7 +7,7 @@ routines:
   - Add unambiguous missing labels or post one compact repair proposal when labels conflict.
 deny:
   - Do not apply deprecated labels.
-  - Do not remove or replace existing labels unless the taxonomy explicitly allows that exact repair.
+  - Do not remove or replace existing labels automatically; propose repairs instead.
   - Do not change issue status, priority, assignee, project, cycle, estimate, due date, or body.
   - Do not guess between two plausible labels in the same required label family.
   - Do not repeat the same repair proposal for an unchanged conflict.
@@ -21,6 +21,17 @@ schedule: '0 */4 * * *'
 Read `references/label-taxonomy.md` before deciding labels.
 
 If the taxonomy is missing, stale, contradictory, or does not mention a required label family, no-op and ask for taxonomy clarification.
+
+## Repository auto-add policy
+
+For this repository taxonomy, the daemon may auto-add labels only from these families when exactly one label is supported by issue evidence:
+
+- Type labels: `bug`, `enhancement`, `feature`, `documentation`, `question`
+- Area labels: `area:backend`, `area:ci`, `area:frontend`, `area:installer`, `area:security`, `area:setup`, `area:ux`, `area:voice`
+
+The daemon must never auto-add triage/resolution labels (`duplicate`, `invalid`, `wontfix`, `good first issue`, `help wanted`).
+
+When an existing label set appears wrong or conflicting, propose the repair in a comment instead of removing labels directly.
 
 ## Scope
 

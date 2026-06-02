@@ -50,6 +50,20 @@ Stop/no-op and comment with the blocking reason when the fix requires human judg
 | Dependency replacement or vulnerability/security choices                                                | Stop/no-op; comment if human action is needed.                                                     |
 | Production data migrations, backfills, or data-shape decisions                                          | Stop/no-op; comment if human action is needed.                                                     |
 
+## Repository check expectations
+
+Primary required pull request check in this repository is `CI / build`.
+
+Treat these check categories as aligned repair targets for this repo:
+
+- Install failures (`npm ci`): fix package manifest or lockfile drift introduced by the PR and push.
+- Lint failures (`npm run lint`): fix and push.
+- Build failures (`npm run build`): fix TypeScript/frontend regressions and push.
+- Server build failures (`npm run build:server`): fix server/build-config regressions and push.
+- Test failures (`npm test -- --run`): fix deterministic failures when expected behavior is clear; otherwise stop and request human direction.
+
+When the failure is an external GitHub Actions outage, missing secret, or other provider-side incident outside the repo, stop/no-op and comment with the blocker.
+
 ## Branch and concurrency safety
 
 - Re-fetch and verify the current remote PR head before starting edits.

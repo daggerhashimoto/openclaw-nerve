@@ -62,13 +62,14 @@ export class ChatTimelineStore {
       type: 'snapshot',
       sessionKey,
       cursor: this.replayBuffer.latestCursor(sessionKey),
+      epoch: this.replayBuffer.currentEpoch(),
       timeline: cloneSessionTimeline(this.getOrCreateTimeline(sessionKey)),
       reason,
     };
   }
 
-  replayAfter(sessionKey: string, cursor?: string | null): ReplayResult {
-    return this.replayBuffer.replayAfter(sessionKey, cursor);
+  replayAfter(sessionKey: string, cursor?: string | null, epoch?: string | null): ReplayResult {
+    return this.replayBuffer.replayAfter(sessionKey, cursor, epoch);
   }
 
   subscribe(sessionKey: string, subscriber: TimelineSubscriber): () => void {

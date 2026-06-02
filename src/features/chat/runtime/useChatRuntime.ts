@@ -60,6 +60,7 @@ export function useChatRuntime({
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const cursorRef = useRef('0');
+  const epochRef = useRef<string | undefined>(undefined);
   const connectionIdRef = useRef(0);
   const connectRef = useRef<() => void>(() => undefined);
 
@@ -103,6 +104,7 @@ export function useChatRuntime({
   ]);
 
   const applyPatch = useCallback((patch: TimelinePatch) => {
+    epochRef.current = patch.epoch;
     setTimelineState((previous) => {
       const next = applyTimelinePatch(previous, patch);
       cursorRef.current = next.cursor;
@@ -111,6 +113,7 @@ export function useChatRuntime({
   }, []);
 
   const applySnapshot = useCallback((snapshot: TimelineSnapshot) => {
+    epochRef.current = snapshot.epoch;
     setTimelineState((previous) => {
       const next = applyTimelineSnapshot(previous, snapshot);
       cursorRef.current = next.cursor;
@@ -127,7 +130,8 @@ export function useChatRuntime({
     }
 
     const connectionId = ++connectionIdRef.current;
-    const url = `/api/chat-runtime/stream?sessionKey=${encodeURIComponent(sessionKey)}&cursor=${encodeURIComponent(cursorRef.current)}`;
+    const epochParam = epochRef.current ? `&epoch=${encodeURIComponent(epochRef.current)}` : '';
+    const url = `/api/chat-runtime/stream?sessionKey=${encodeURIComponent(sessionKey)}&cursor=${encodeURIComponent(cursorRef.current)}${epochParam}`;
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
 
@@ -178,6 +182,7 @@ export function useChatRuntime({
     eventSource.addEventListener('snapshot_required', () => {
       if (!isCurrentConnection()) return;
       cursorRef.current = '0';
+      epochRef.current = undefined;
       setTimelineState(createEmptyRuntimeTimelineState(sessionKey));
       scheduleReconnect(0);
     });
@@ -203,6 +208,7 @@ export function useChatRuntime({
   /* eslint-disable react-hooks/set-state-in-effect -- Session switches must synchronously clear stale transcript and cursor state before opening the next replay stream. */
   useEffect(() => {
     cursorRef.current = '0';
+    epochRef.current = undefined;
     connectionIdRef.current += 1;
     closeEventSource();
     clearReconnectTimer();

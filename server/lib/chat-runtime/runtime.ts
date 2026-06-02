@@ -149,8 +149,8 @@ export class ChatRuntime {
     return this.store.snapshot(sessionKey, reason);
   }
 
-  replayAfter(sessionKey: string, cursor?: string | null): ReplayResult {
-    return this.store.replayAfter(sessionKey, cursor);
+  replayAfter(sessionKey: string, cursor?: string | null, epoch?: string | null): ReplayResult {
+    return this.store.replayAfter(sessionKey, cursor, epoch);
   }
 
   subscribe(sessionKey: string, subscriber: TimelineSubscriber): () => void {

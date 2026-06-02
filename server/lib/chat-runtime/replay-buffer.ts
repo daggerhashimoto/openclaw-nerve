@@ -29,14 +29,19 @@ export class ReplayBuffer {
     this.epoch = options.epoch ?? randomUUID();
   }
 
+  currentEpoch(): string {
+    return this.epoch;
+  }
+
   append(sessionKey: string, ops: TimelinePatchOp[], createdAt = Date.now()): TimelinePatch {
     const log = this.getOrCreateLog(sessionKey);
-    const cursor = `${this.epoch}:${log.nextCursor}`;
+    const cursor = String(log.nextCursor);
     log.nextCursor += 1;
 
     const patch: TimelinePatch = {
       sessionKey,
       cursor,
+      epoch: this.epoch,
       ops: cloneTimelinePatchOps(ops),
       createdAt,
     };
@@ -49,14 +54,18 @@ export class ReplayBuffer {
     return cloneTimelinePatch(patch);
   }
 
-  replayAfter(sessionKey: string, cursor?: string | null): ReplayResult {
+  replayAfter(sessionKey: string, cursor?: string | null, epoch?: string | null): ReplayResult {
     if (!cursor) return { kind: 'snapshot_required' };
 
-    if (cursor !== '0') {
-      const separator = cursor.indexOf(':');
-      if (separator === -1 || cursor.slice(0, separator) !== this.epoch) {
-        return { kind: 'snapshot_required' };
-      }
+    // Generation guard: the buffer is recreated empty on process restart and
+    // re-issues the same numeric cursors, so a stale cursor from a prior
+    // generation can collide with a fresh one. Each cursor is paired with the
+    // process epoch (see `TimelinePatch.epoch`); when the client supplies an
+    // epoch that does not match this process, force a fresh snapshot instead of
+    // matching the colliding cursor. Cursor '0' is the generation-agnostic
+    // cold-start sentinel, and a missing epoch stays lenient for back-compat.
+    if (cursor !== '0' && epoch != null && epoch !== this.epoch) {
+      return { kind: 'snapshot_required' };
     }
 
     const log = this.sessions.get(sessionKey);
@@ -68,7 +77,7 @@ export class ReplayBuffer {
 
     if (cursor === '0') {
       const firstRetainedCursor = log.patches[0]?.cursor;
-      if (!firstRetainedCursor || firstRetainedCursor === `${this.epoch}:1`) {
+      if (!firstRetainedCursor || firstRetainedCursor === '1') {
         return { kind: 'patches', patches: cloneTimelinePatches(log.patches) };
       }
 
@@ -87,7 +96,7 @@ export class ReplayBuffer {
   latestCursor(sessionKey: string): string {
     const log = this.sessions.get(sessionKey);
     if (!log) return '0';
-    return `${this.epoch}:${log.nextCursor - 1}`;
+    return String(log.nextCursor - 1);
   }
 
   private getOrCreateLog(sessionKey: string): SessionReplayLog {

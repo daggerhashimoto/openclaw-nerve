@@ -305,6 +305,27 @@ describe('ChatTimelineStore', () => {
     expect(snapshot.timeline.hydrationState).toBe('ready');
   });
 
+  it('keeps re-subscribed listeners when a subscriber resubscribes during delivery', () => {
+    const store = new ChatTimelineStore({ maxPatchesPerSession: 10 });
+    const sessionKey = 'agent:main:main';
+    const received: string[] = [];
+
+    let unsubscribe = store.subscribe(sessionKey, function first(patch) {
+      received.push(`first:${patch.cursor}`);
+      // react to the first patch by tearing down and re-subscribing (reconnect handler shape)
+      unsubscribe();
+      unsubscribe = store.subscribe(sessionKey, function second(patch2) {
+        received.push(`second:${patch2.cursor}`);
+      });
+    });
+
+    store.applyEvent(turnStarted(sessionKey, 'run-1', 1000));
+    store.applyEvent(assistantDelta(sessionKey, 'run-1', 'hello', 1001));
+
+    // the re-subscribed listener must receive the second patch
+    expect(received.some((entry) => entry.startsWith('second:'))).toBe(true);
+  });
+
   it('logs and removes a subscriber that throws', () => {
     const store = new ChatTimelineStore({ maxPatchesPerSession: 16 });
     const sessionKey = 'agent:main:main';

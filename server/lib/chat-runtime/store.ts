@@ -229,7 +229,10 @@ export class ChatTimelineStore {
       }
     }
 
-    if (sessionSubscribers.size === 0) this.subscribers.delete(sessionKey);
+    const liveSubscribers = this.subscribers.get(sessionKey);
+    if (liveSubscribers === sessionSubscribers && liveSubscribers.size === 0) {
+      this.subscribers.delete(sessionKey);
+    }
   }
 }
 

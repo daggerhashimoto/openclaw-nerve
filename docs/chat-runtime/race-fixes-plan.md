@@ -25,13 +25,14 @@
 - Task 1 (#9/#10): client `ws.onmessage` generation guard. PR-A.
 - Task 2 (#1): replay-buffer per-process epoch in the cursor. PR-B.
 - Task 3 (#2): store `publish()` identity-checked cleanup. PR-B.
-- Task 4 (SPA-404): known-extension allowlist for the SPA fallback. PR-C.
+- ~~Task 4 (SPA-404)~~ DROPPED during execution: already fixed on `next` (the SPA fallback uses the `STATIC_FILE_EXTENSION_PATTERN` allowlist regex, which already spares dotted routes). See Deferred.
 
 **Deferred (see end of doc) — not blind-patchable:**
 - #3, #7 (runtime active-history hydration): need a design pass; a naive #3 fix breaks the intended finalize-on-reconnect behavior that `runtime.test.ts:65` asserts.
 - #4, #8 (reducer terminal-turn handling): `next` added explicit post-finalize behavior + tests; verify before changing.
 - #5, #6 (user_message_failed): need an adoptability/type decision integrated with next's `user_message_run_bound` machinery.
 - #11: already fixed on next (verified) — dropped.
+- SPA-404: already fixed on next (verified during execution) — dropped; the fallback already uses an extension-allowlist regex (`STATIC_FILE_EXTENSION_PATTERN`), not the stale `.includes('.')` check.
 - Open-lead triage.
 
 ## File structure
@@ -396,7 +397,9 @@ git commit -m "fix(chat-runtime): identity-check publish cleanup against re-subs
 
 ---
 
-## Task 4: SPA fallback known-extension allowlist (SPA-404)
+## Task 4: SPA fallback known-extension allowlist (SPA-404) — DROPPED (already fixed on next)
+
+> Not executed. During implementation, origin/next's `app.ts` was found to already use an extension-allowlist regex (`STATIC_FILE_EXTENSION_PATTERN`, app.ts:56/119), so dotted client routes already serve the SPA shell. The steps below are retained for reference only.
 
 **Files:**
 - Create: `server/lib/static-route.ts`
@@ -516,6 +519,6 @@ These came out of re-verifying the report against `origin/next`. They are real c
 
 ## Self-review
 
-- Spec coverage: of the eleven report races, this plan implements the four confirmed-present, isolated ones (#1, #2, #9, #10) plus SPA-404; #11 is verified already-fixed; #3/#4/#5/#6/#7/#8 are explicitly carved out with the specific reason each needs design/verification. No silent gaps.
+- Spec coverage: of the eleven report races, three confirmed-present isolated ones shipped (#1, #2, #9/#10); #11 and SPA-404 are verified already-fixed on next; #3/#4/#5/#6/#7/#8 are explicitly carved out with the specific reason each needs design/verification. No silent gaps.
 - Placeholders: none — every step has concrete code and a run command with expected outcome.
 - Type/name consistency: `isStaticAssetPath`, `epoch` option on `ReplayBufferOptions` and `ChatTimelineStoreOptions`, and the `gen`/`connectionGenRef` names all match their source definitions.

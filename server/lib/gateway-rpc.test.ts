@@ -171,6 +171,18 @@ describe('gateway-rpc (persistent WebSocket)', () => {
       });
     });
 
+    it('requests gateway protocol v4 during connect handshake', async () => {
+      rpcHandler = () => ({ ok: true });
+
+      const { gatewayRpcCall } = await importFreshGatewayRpc();
+      await gatewayRpcCall('test.method', { foo: 'bar' });
+
+      expect(lastConnectParams).toMatchObject({
+        minProtocol: 4,
+        maxProtocol: 4,
+      });
+    });
+
     it('uses the configured public origin for the gateway websocket handshake', async () => {
       process.env.NERVE_PUBLIC_ORIGIN = 'https://192.168.192.252:3443';
       rpcHandler = () => ({ ok: true });

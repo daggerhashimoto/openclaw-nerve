@@ -261,6 +261,38 @@ describe('useWebSocket', () => {
       expect(client?.mode).toBe('webchat');
     });
 
+    it('requests gateway protocol v4 during connect handshake', async () => {
+      const wsInstances: MockWebSocket[] = [];
+      const OriginalMockWS = MockWebSocket;
+      (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket = class extends OriginalMockWS {
+        constructor(url: string) {
+          super(url);
+          wsInstances.push(this);
+        }
+      };
+
+      const { result } = renderHook(() => useWebSocket());
+
+      act(() => {
+        result.current.connect('ws://localhost:8080', 'test-token').catch(() => {});
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const ws = wsInstances[0];
+      act(() => {
+        ws.simulateMessage({ type: 'event', event: 'connect.challenge', payload: { nonce: 'n-protocol' } });
+      });
+
+      const connectReq = getConnectRequest(ws);
+      const params = connectReq?.params as { minProtocol?: number; maxProtocol?: number } | undefined;
+
+      expect(params?.minProtocol).toBe(4);
+      expect(params?.maxProtocol).toBe(4);
+    });
+
     it('should include a stable per-tab client.instanceId in connect params', async () => {
       const wsInstances: MockWebSocket[] = [];
       const OriginalMockWS = MockWebSocket;

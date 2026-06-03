@@ -190,6 +190,7 @@ export function useWebSocket(): UseWebSocketReturn {
       };
 
       ws.onmessage = (ev) => {
+        if (gen !== connectionGenRef.current) return;
         let msg: GatewayMessage;
         try { msg = JSON.parse(ev.data) as GatewayMessage; } catch { return; }
 

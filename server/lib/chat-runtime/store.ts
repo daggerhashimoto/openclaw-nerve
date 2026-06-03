@@ -4,6 +4,7 @@ import type { RuntimeEvent, SessionTimeline, TimelineItem, TimelinePatch, Timeli
 
 interface ChatTimelineStoreOptions {
   maxPatchesPerSession: number;
+  epoch?: string;
 }
 
 type TimelineSubscriber = (patch: TimelinePatch) => void;
@@ -61,13 +62,14 @@ export class ChatTimelineStore {
       type: 'snapshot',
       sessionKey,
       cursor: this.replayBuffer.latestCursor(sessionKey),
+      epoch: this.replayBuffer.currentEpoch(),
       timeline: cloneSessionTimeline(this.getOrCreateTimeline(sessionKey)),
       reason,
     };
   }
 
-  replayAfter(sessionKey: string, cursor?: string | null): ReplayResult {
-    return this.replayBuffer.replayAfter(sessionKey, cursor);
+  replayAfter(sessionKey: string, cursor?: string | null, epoch?: string | null): ReplayResult {
+    return this.replayBuffer.replayAfter(sessionKey, cursor, epoch);
   }
 
   subscribe(sessionKey: string, subscriber: TimelineSubscriber): () => void {
@@ -228,7 +230,10 @@ export class ChatTimelineStore {
       }
     }
 
-    if (sessionSubscribers.size === 0) this.subscribers.delete(sessionKey);
+    const liveSubscribers = this.subscribers.get(sessionKey);
+    if (liveSubscribers === sessionSubscribers && liveSubscribers.size === 0) {
+      this.subscribers.delete(sessionKey);
+    }
   }
 }
 

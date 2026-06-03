@@ -154,4 +154,25 @@ describe('ReplayBuffer', () => {
     expect(buffer.latestCursor('agent:main:main')).toBe('2');
     expect(buffer.latestCursor('agent:missing:main')).toBe('0');
   });
+
+  it('pairs each cursor with the process epoch and rejects stale-generation resumes', () => {
+    const gen1 = new ReplayBuffer({ maxPatchesPerSession: 5, epoch: 'g1' });
+    gen1.append('agent:main:main', [hydrationOp('cold')], 1000);
+    gen1.append('agent:main:main', [hydrationOp('hydrating')], 1001);
+    const stale = gen1.append('agent:main:main', [hydrationOp('ready')], 1002);
+    expect([stale.cursor, stale.epoch]).toEqual(['3', 'g1']);
+
+    // Process restart: a fresh buffer re-issues the same numeric cursors under a new epoch.
+    const gen2 = new ReplayBuffer({ maxPatchesPerSession: 5, epoch: 'g2' });
+    gen2.append('agent:main:main', [hydrationOp('cold')], 2000);
+    gen2.append('agent:main:main', [hydrationOp('hydrating')], 2001);
+    gen2.append('agent:main:main', [hydrationOp('ready')], 2002);
+
+    // Resuming with the stale generation's epoch forces a fresh snapshot.
+    expect(gen2.replayAfter('agent:main:main', stale.cursor, 'g1')).toEqual({ kind: 'snapshot_required' });
+    // The current generation's cursor replays normally.
+    expect(gen2.replayAfter('agent:main:main', '3', 'g2')).toEqual({ kind: 'patches', patches: [] });
+    // A resume without an epoch stays lenient for back-compat (matches numerically).
+    expect(gen2.replayAfter('agent:main:main', '3')).toEqual({ kind: 'patches', patches: [] });
+  });
 });

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { TimelinePatch, TimelinePatchOp } from './types.js';
 
 export type ReplayResult =
@@ -6,6 +7,7 @@ export type ReplayResult =
 
 interface ReplayBufferOptions {
   maxPatchesPerSession: number;
+  epoch?: string;
 }
 
 interface SessionReplayLog {
@@ -15,6 +17,7 @@ interface SessionReplayLog {
 
 export class ReplayBuffer {
   private readonly maxPatchesPerSession: number;
+  private readonly epoch: string;
   private readonly sessions = new Map<string, SessionReplayLog>();
 
   constructor(options: ReplayBufferOptions) {
@@ -23,6 +26,11 @@ export class ReplayBuffer {
     }
 
     this.maxPatchesPerSession = options.maxPatchesPerSession;
+    this.epoch = options.epoch ?? randomUUID();
+  }
+
+  currentEpoch(): string {
+    return this.epoch;
   }
 
   append(sessionKey: string, ops: TimelinePatchOp[], createdAt = Date.now()): TimelinePatch {
@@ -33,6 +41,7 @@ export class ReplayBuffer {
     const patch: TimelinePatch = {
       sessionKey,
       cursor,
+      epoch: this.epoch,
       ops: cloneTimelinePatchOps(ops),
       createdAt,
     };
@@ -45,8 +54,19 @@ export class ReplayBuffer {
     return cloneTimelinePatch(patch);
   }
 
-  replayAfter(sessionKey: string, cursor?: string | null): ReplayResult {
+  replayAfter(sessionKey: string, cursor?: string | null, epoch?: string | null): ReplayResult {
     if (!cursor) return { kind: 'snapshot_required' };
+
+    // Generation guard: the buffer is recreated empty on process restart and
+    // re-issues the same numeric cursors, so a stale cursor from a prior
+    // generation can collide with a fresh one. Each cursor is paired with the
+    // process epoch (see `TimelinePatch.epoch`); when the client supplies an
+    // epoch that does not match this process, force a fresh snapshot instead of
+    // matching the colliding cursor. Cursor '0' is the generation-agnostic
+    // cold-start sentinel, and a missing epoch stays lenient for back-compat.
+    if (cursor !== '0' && epoch != null && epoch !== this.epoch) {
+      return { kind: 'snapshot_required' };
+    }
 
     const log = this.sessions.get(sessionKey);
     if (!log) {

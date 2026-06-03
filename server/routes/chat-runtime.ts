@@ -111,6 +111,7 @@ app.get('/api/chat-runtime/stream', async (c) => {
   }
 
   const cursor = normalizeCursor(c.req.query('cursor'));
+  const epoch = c.req.query('epoch')?.trim() || undefined;
   const runtime = getChatRuntime();
 
   c.header('Content-Type', 'text/event-stream');
@@ -190,7 +191,7 @@ app.get('/api/chat-runtime/stream', async (c) => {
         queuedLivePatches.push(patch);
       });
 
-      const replay = runtime.replayAfter(sessionKey, cursor);
+      const replay = runtime.replayAfter(sessionKey, cursor, epoch);
       const catchupBaseline: CatchupBaseline = replay.kind === 'patches'
         ? {
           kind: 'patches',

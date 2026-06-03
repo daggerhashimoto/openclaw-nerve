@@ -65,7 +65,7 @@ describe('chat runtime routes', () => {
         },
       });
       expect(runtime.hydrateSession).toHaveBeenCalledWith('agent:main:main');
-      expect(runtime.replayAfter).toHaveBeenCalledWith('agent:main:main', null);
+      expect(runtime.replayAfter).toHaveBeenCalledWith('agent:main:main', null, undefined);
       expect(runtime.snapshot).not.toHaveBeenCalled();
     } finally {
       await reader.cancel();
@@ -106,7 +106,7 @@ describe('chat runtime routes', () => {
     try {
       const events = await readUntilEvent(reader, 'patch');
       expect(events).toContainEqual({ event: 'patch', data: replayedPatch });
-      expect(runtime.replayAfter).toHaveBeenCalledWith('session-1', '3');
+      expect(runtime.replayAfter).toHaveBeenCalledWith('session-1', '3', undefined);
       await waitFor(() => expect(runtime.subscribe).toHaveBeenCalledWith('session-1', expect.any(Function)));
 
       const hydrateOrder = runtime.hydrateSession.mock.invocationCallOrder[0];
@@ -114,6 +114,23 @@ describe('chat runtime routes', () => {
       const subscribeOrder = runtime.subscribe.mock.invocationCallOrder[0];
       expect(hydrateOrder).toBeLessThan(replayOrder);
       expect(subscribeOrder).toBeLessThan(replayOrder);
+    } finally {
+      await reader.cancel();
+    }
+  });
+
+  it('forwards the client epoch to replayAfter for generation-aware resume', async () => {
+    const replayedPatch = createPatch('session-epoch', '4');
+    const runtime = createFakeRuntime({
+      replayAfter: vi.fn((): ReplayResult => ({ kind: 'patches', patches: [replayedPatch] })),
+    });
+    const { app } = await buildRouteApp(runtime);
+    const res = await app.request('/api/chat-runtime/stream?sessionKey=session-epoch&cursor=3&epoch=g7');
+    const reader = res.body!.getReader();
+
+    try {
+      await readUntilEvent(reader, 'patch');
+      expect(runtime.replayAfter).toHaveBeenCalledWith('session-epoch', '3', 'g7');
     } finally {
       await reader.cancel();
     }
@@ -132,7 +149,7 @@ describe('chat runtime routes', () => {
     try {
       const events = await readUntilEvent(reader, 'snapshot');
       expect(events).toContainEqual({ event: 'snapshot', data: snapshot });
-      expect(runtime.replayAfter).toHaveBeenCalledWith('session-2', null);
+      expect(runtime.replayAfter).toHaveBeenCalledWith('session-2', null, undefined);
       expect(runtime.snapshot).toHaveBeenCalledWith('session-2', 'cursor_expired');
     } finally {
       await reader.cancel();

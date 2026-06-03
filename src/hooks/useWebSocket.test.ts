@@ -640,6 +640,68 @@ describe('useWebSocket', () => {
     });
   });
 
+  it('ignores frames from a socket superseded by a newer connection', async () => {
+    const wsInstances: MockWebSocket[] = [];
+    const OriginalMockWS = MockWebSocket;
+    (globalThis as unknown as { WebSocket: typeof MockWebSocket }).WebSocket = class extends OriginalMockWS {
+      constructor(url: string) {
+        super(url);
+        wsInstances.push(this);
+      }
+    };
+
+    const { result } = renderHook(() => useWebSocket());
+
+    // gen 1 connects and authenticates
+    act(() => {
+      result.current.connect('ws://localhost:8080', 'test-token').catch(() => {});
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    act(() => {
+      simulateAuthHandshake(wsInstances[0]);
+    });
+
+    // Start observing events only once gen 1 is established, so the assertions
+    // below have a clean baseline with no replayed handshake history.
+    const onEvent = vi.fn();
+    act(() => {
+      result.current.onEvent.current = onEvent;
+    });
+
+    // gen 2 supersedes gen 1
+    act(() => {
+      result.current.connect('ws://localhost:9090', 'test-token').catch(() => {});
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(wsInstances).toHaveLength(2);
+
+    // a buffered event and a stale challenge arrive on the superseded gen-1 socket
+    act(() => {
+      wsInstances[0].simulateMessage({ type: 'event', event: 'agent.delta', payload: { text: 'stale' } });
+      wsInstances[0].simulateMessage({ type: 'event', event: 'connect.challenge', payload: { nonce: 'stale-nonce' } });
+    });
+
+    // #9: the stale event is not fanned out to live subscribers
+    expect(onEvent).not.toHaveBeenCalled();
+
+    // #10: the stale challenge did not clobber the live handshake; gen-2 still completes
+    act(() => {
+      simulateAuthHandshake(wsInstances[1]);
+    });
+    expect(result.current.connectionState).toBe('connected');
+
+    // positive path: a genuine frame on the live gen-2 socket still reaches subscribers,
+    // proving the guard rejects only superseded generations, not all frames.
+    act(() => {
+      wsInstances[1].simulateMessage({ type: 'event', event: 'agent.delta', payload: { text: 'live' } });
+    });
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ event: 'agent.delta', payload: { text: 'live' } }));
+  });
+
   describe('Security - Connection Validation', () => {
     it('should support secure WebSocket URLs (wss://)', async () => {
       const { result } = renderHook(() => useWebSocket());

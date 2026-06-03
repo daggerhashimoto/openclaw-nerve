@@ -134,6 +134,7 @@ export type TimelinePatchOp =
 export interface TimelinePatch {
   sessionKey: string;
   cursor: string;
+  epoch: string;
   ops: TimelinePatchOp[];
   createdAt: number;
 }
@@ -142,6 +143,7 @@ export interface TimelineSnapshot {
   type: 'snapshot';
   sessionKey: string;
   cursor: string;
+  epoch: string;
   timeline: SessionTimeline;
   reason: 'initial' | 'cursor_expired' | 'hydration' | 'manual';
 }

@@ -1741,4 +1741,33 @@ describe('ChatRuntime', () => {
       runId: 'run-1',
     });
   });
+
+  it('keeps re-subscribed listeners when a subscriber resubscribes during delivery', () => {
+    const store = new ChatTimelineStore({ maxPatchesPerSession: 10 });
+    const sessionKey = 'agent:main:main';
+    const received: string[] = [];
+
+    let unsubscribe = store.subscribe(sessionKey, function first(patch) {
+      received.push(`first:${patch.cursor}`);
+      // React to the first patch by tearing down and re-subscribing (reconnect handler shape).
+      unsubscribe();
+      unsubscribe = store.subscribe(sessionKey, function second(patch2) {
+        received.push(`second:${patch2.cursor}`);
+      });
+    });
+
+    store.applyEvent(turnStarted(sessionKey, 'run-1', 1000));
+    store.applyEvent(assistantDelta(sessionKey, 'run-1', 'hello', 1001));
+
+    expect(received.some((entry) => entry.startsWith('second:'))).toBe(true);
+  });
+
+  it('stamps the process epoch on published patches and snapshots', () => {
+    const store = new ChatTimelineStore({ maxPatchesPerSession: 10, epoch: 'e9' });
+    const sessionKey = 'agent:main:main';
+
+    const patch = store.applyEvent(turnStarted(sessionKey, 'run-1', 1000));
+    expect(patch.epoch).toBe('e9');
+    expect(store.snapshot(sessionKey, 'manual').epoch).toBe('e9');
+  });
 });

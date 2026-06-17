@@ -6,6 +6,7 @@ export {
   splitToolCallMessage,
   groupToolMessages,
   tagIntermediateMessages,
+  countUserChatMsgs,
 } from './loadHistory';
 export { buildUserMessage, sendChatMessage, sendChatRuntimeMessage } from './sendMessage';
 export type { ChatRuntimeSendAck, ChatSendAck, ChatSendStatus } from './sendMessage';

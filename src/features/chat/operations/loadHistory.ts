@@ -228,6 +228,32 @@ const TTS_SYSTEM_HINT_RE = /\s*\[system: User sent a voice message\.[\s\S]*$/;
  */
 const WEBCHAT_ENVELOPE_RE = /Conversation info \(untrusted metadata\):[\s\S]*?"sender":\s*"[^"]*"\s*\}\s*\n?(?:```\s*\n?)?(?:\n?\[[\w, ]+ \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})? [^\]]*\]\s*)?/g;
 
+const WEBCHAT_ENVELOPE_PREFIX = 'Conversation info (untrusted metadata):';
+
+/**
+ * Returns the number of user-bubble ChatMsgs that {@link splitToolCallMessage}
+ * would emit for a user message body. Mirrors the in-function strip pipeline
+ * plus the system-event splitting behavior so chat-runtime's windowed
+ * projection can keep totalMessages in sync with rendered ChatMsgs without
+ * running the full split for every off-window item.
+ *
+ * Returns 0 when the body collapses to empty after TTS hint, webchat envelope,
+ * and [voice] prefix stripping. Returns 1 in the common non-empty case.
+ * Returns the segment count when the body contains a SYSTEM_EVENT_LINE that
+ * splitToolCallMessage will fan out into separate bubbles, in which case the
+ * full splitter is invoked so the count reflects the actual segment shape.
+ */
+export function countUserChatMsgs(text: string): number {
+  let stripped = text.replace(TTS_SYSTEM_HINT_RE, '');
+  if (stripped.includes(WEBCHAT_ENVELOPE_PREFIX)) {
+    stripped = stripped.replace(WEBCHAT_ENVELOPE_RE, '');
+  }
+  stripped = stripped.replace(/^\[voice\]\s*/, '');
+  if (!stripped.trim()) return 0;
+  if (!SYSTEM_EVENT_LINE.test(stripped)) return 1;
+  return splitToolCallMessage({ role: 'user', content: text }).length;
+}
+
 /** Strip ANSI escape sequences (e.g. \x1b[33m) from terminal output. */
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (s: string) => s.replace(/\x1b\[\d*(?:;\d+)*m/g, '');

@@ -1,5 +1,5 @@
 import type { ChatMessage } from '@/types';
-import { splitToolCallMessage } from '@/features/chat/operations';
+import { splitToolCallMessage, countUserChatMsgs } from '@/features/chat/operations';
 import type { ChatMsg, ToolGroupEntry } from '@/features/chat/types';
 import { extractTTSMarkers } from '@/features/tts/useTTS';
 import { describeToolUse, renderMarkdown, renderToolResults } from '@/utils/helpers';
@@ -117,7 +117,10 @@ function projectMessages(
       for (; nextIndex >= 0; nextIndex--) {
         const candidate = orderedItems[nextIndex];
         if (candidate.kind === 'tool_group') continue;
-        if (candidate.kind !== 'tool_call') break;
+        if (candidate.kind !== 'tool_call') {
+          if (projectItemCount(candidate) === 0) continue;
+          break;
+        }
         toolItems.unshift(candidate);
       }
 
@@ -130,7 +133,7 @@ function projectMessages(
       continue;
     }
 
-    const messageCount = countProjectedItemMessages(item);
+    const messageCount = projectItemCount(item);
     totalMessages += messageCount;
     if (messageCount > 0 && visibleMessages.length < visibleCount) {
       const remaining = visibleCount - visibleMessages.length;
@@ -356,14 +359,17 @@ function countProjectedMessages(orderedItems: TimelineItem[]): number {
       inToolRun = true;
       continue;
     }
-    inToolRun = false;
-    count += countProjectedItemMessages(item);
+    const itemCount = projectItemCount(item);
+    if (itemCount > 0) {
+      inToolRun = false;
+    }
+    count += itemCount;
   }
 
   return count;
 }
 
-function countProjectedItemMessages(item: TimelineItem): number {
+export function projectItemCount(item: TimelineItem): number {
   switch (item.kind) {
     case 'tool_group':
     case 'tool_call':
@@ -373,8 +379,12 @@ function countProjectedItemMessages(item: TimelineItem): number {
       return item.text.trim() || item.isStreaming ? 1 : 0;
     case 'thinking':
       return item.text.trim() ? 1 : 0;
-    case 'user_message':
-      return item.text.trim() || item.images?.length || item.uploadAttachments?.length ? 1 : 0;
+    case 'user_message': {
+      const textCount = countUserChatMsgs(item.text);
+      if (textCount > 0) return textCount;
+      if (item.images?.length || item.uploadAttachments?.length) return 1;
+      return 0;
+    }
     case 'tool_result':
     case 'system_event':
       return 1;

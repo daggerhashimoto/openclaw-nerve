@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { renderMarkdown } from '@/utils/helpers';
-import { projectTimeline } from './projection';
+import { projectItemCount, projectTimeline } from './projection';
 import type {
   AssistantTimelineItem,
   SessionTimeline,
+  SystemTimelineItem,
   ThinkingTimelineItem,
   TimelineItem,
   TimelineTurn,
   ToolCallTimelineItem,
   ToolGroupTimelineItem,
+  ToolResultTimelineItem,
   UserTimelineItem,
 } from './types';
 
@@ -364,6 +366,239 @@ describe('chat runtime projection', () => {
     expect(projection.messages[1].toolGroup).toHaveLength(2);
     expect(projection.processingStage).toBe('streaming');
   });
+
+  describe('totalMessages consistency (#344)', () => {
+    const ATTACH_NOTE: UserTimelineItem['uploadAttachments'] = [
+      {
+        id: 'att-1',
+        origin: 'upload',
+        mode: 'inline',
+        name: 'note.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 12,
+        policy: { forwardToSubagents: false },
+      },
+    ];
+    const IMG_PNG: UserTimelineItem['images'] = [
+      { mimeType: 'image/png', content: 'b64', name: 'snap.png' },
+    ];
+
+    it('excludes voice-only-no-media user items from totalMessages', () => {
+      const turn = makeTurn('session-1', 'run-1', 0, 'finalized');
+      const timeline = makeTimeline('session-1', [turn], {
+        'user-voice-empty': userItem(turn, 'user-voice-empty', '[voice] ', 0),
+        'assistant-1': assistantItem(turn, 'assistant-1', 'reply', 1, false),
+      });
+
+      const projection = projectTimeline(timeline, { visibleCount: 50 });
+
+      expect(projection.totalMessages).toBe(projection.messages.length);
+      expect(projection.totalMessages).toBe(1);
+      expect(projection.messages.map((message) => message.msgId)).toEqual(['assistant-1']);
+    });
+
+    it('excludes user items that collapse to empty after webchat envelope stripping', () => {
+      const envelopeOnly = [
+        'Conversation info (untrusted metadata):',
+        '```json',
+        '{"message_id":"abc","sender":"someone"}',
+        '```',
+        '[Wed 2026-05-22 10:30 UTC]',
+      ].join('\n');
+      const turn = makeTurn('session-1', 'run-1', 0, 'finalized');
+      const timeline = makeTimeline('session-1', [turn], {
+        'user-envelope-only': userItem(turn, 'user-envelope-only', envelopeOnly, 0),
+        'assistant-1': assistantItem(turn, 'assistant-1', 'ok', 1, false),
+      });
+
+      const projection = projectTimeline(timeline, { visibleCount: 50 });
+
+      expect(projection.totalMessages).toBe(projection.messages.length);
+      expect(projection.totalMessages).toBe(1);
+    });
+
+    it('excludes user items that collapse to empty after TTS hint stripping', () => {
+      const ttsHintOnly = '[system: User sent a voice message. Always include a [tts:...] marker.]';
+      const turn = makeTurn('session-1', 'run-1', 0, 'finalized');
+      const timeline = makeTimeline('session-1', [turn], {
+        'user-tts-only': userItem(turn, 'user-tts-only', ttsHintOnly, 0),
+        'assistant-1': assistantItem(turn, 'assistant-1', 'ok', 1, false),
+      });
+
+      const projection = projectTimeline(timeline, { visibleCount: 50 });
+
+      expect(projection.totalMessages).toBe(projection.messages.length);
+      expect(projection.totalMessages).toBe(1);
+    });
+
+    it('counts user messages that fan out into multiple system-event segments', () => {
+      const userWithEvent = [
+        'System: [2026-05-22 10:30 UTC] sub-agent task completed',
+        '',
+        'please review the output',
+      ].join('\n');
+      const turn = makeTurn('session-1', 'run-1', 0, 'finalized');
+      const timeline = makeTimeline('session-1', [turn], {
+        'user-with-event': userItem(turn, 'user-with-event', userWithEvent, 0),
+      });
+
+      const projection = projectTimeline(timeline, { visibleCount: 50 });
+
+      expect(projection.totalMessages).toBe(projection.messages.length);
+      expect(projection.totalMessages).toBeGreaterThan(1);
+    });
+
+    it('keeps totalMessages and messages.length in sync for voice-only with attachments', () => {
+      const turn = makeTurn('session-1', 'run-1', 0, 'finalized');
+      const userWithMedia: UserTimelineItem = {
+        ...userItem(turn, 'user-voice-media', '[voice] ', 0),
+        uploadAttachments: ATTACH_NOTE,
+      };
+      const timeline = makeTimeline('session-1', [turn], {
+        'user-voice-media': userWithMedia,
+        'assistant-1': assistantItem(turn, 'assistant-1', 'got it', 1, false),
+      });
+
+      const projection = projectTimeline(timeline, { visibleCount: 50 });
+
+      expect(projection.totalMessages).toBe(projection.messages.length);
+      expect(projection.totalMessages).toBe(2);
+    });
+
+    const finalizedTurn = (): TimelineTurn => makeTurn('session', 'run', 0, 'finalized');
+    const runningTurn = (): TimelineTurn => makeTurn('session', 'run', 0, 'running');
+
+    const assistantSegmentItem = (
+      turn: TimelineTurn,
+      id: string,
+      text: string,
+      block: number,
+      isStreaming: boolean,
+    ): AssistantTimelineItem => ({
+      ...assistantItem(turn, id, text, block, isStreaming),
+      kind: 'assistant_segment',
+    });
+
+    it.each<{ name: string; build: () => { item: TimelineItem; expected: number } }>([
+      {
+        name: 'finalized assistant_message with text',
+        build: () => ({ item: assistantItem(finalizedTurn(), 'a-text', 'hello', 0, false), expected: 1 }),
+      },
+      {
+        name: 'streaming assistant_message with empty text',
+        build: () => ({ item: assistantItem(runningTurn(), 'a-stream', '', 0, true), expected: 1 }),
+      },
+      {
+        name: 'finalized assistant_message with empty text',
+        build: () => ({ item: assistantItem(finalizedTurn(), 'a-empty', '', 0, false), expected: 0 }),
+      },
+      {
+        name: 'finalized assistant_segment with text',
+        build: () => ({ item: assistantSegmentItem(finalizedTurn(), 'seg-text', 'partial', 0, false), expected: 1 }),
+      },
+      {
+        name: 'finalized assistant_segment with empty text',
+        build: () => ({ item: assistantSegmentItem(finalizedTurn(), 'seg-empty', '', 0, false), expected: 0 }),
+      },
+      {
+        name: 'thinking with text',
+        build: () => ({ item: thinkingItem(finalizedTurn(), 'think', 'pondering', 0, 'complete'), expected: 1 }),
+      },
+      {
+        name: 'thinking with empty text',
+        build: () => ({ item: thinkingItem(finalizedTurn(), 'think-empty', '', 0, 'complete'), expected: 0 }),
+      },
+      {
+        name: 'user with plain text',
+        build: () => ({ item: userItem(finalizedTurn(), 'u-plain', 'hi there', 0), expected: 1 }),
+      },
+      {
+        name: 'user voice-only with no media',
+        build: () => ({ item: userItem(finalizedTurn(), 'u-voice-empty', '[voice] ', 0), expected: 0 }),
+      },
+      {
+        name: 'user voice-only with uploadAttachments',
+        build: () => ({
+          item: { ...userItem(finalizedTurn(), 'u-voice-att', '[voice] ', 0), uploadAttachments: ATTACH_NOTE },
+          expected: 1,
+        }),
+      },
+      {
+        name: 'user voice-only with images only',
+        build: () => ({
+          item: { ...userItem(finalizedTurn(), 'u-voice-img', '[voice] ', 0), images: IMG_PNG },
+          expected: 1,
+        }),
+      },
+      {
+        name: 'user with TTS hint only',
+        build: () => ({
+          item: userItem(
+            finalizedTurn(),
+            'u-tts-only',
+            '[system: User sent a voice message. Always include a [tts:...] marker.]',
+            0,
+          ),
+          expected: 0,
+        }),
+      },
+      {
+        name: 'system event',
+        build: () => ({ item: systemItem(finalizedTurn(), 'sys-1', 'system note', 0, 'info'), expected: 1 }),
+      },
+      {
+        name: 'tool_result',
+        build: () => ({ item: toolResultItem(finalizedTurn(), 'tr-1', 'ok', 0), expected: 1 }),
+      },
+    ])(
+      'projectItemCount matches projected output length for $name',
+      ({ build }) => {
+        const { item, expected } = build();
+        expect(projectItemCount(item)).toBe(expected);
+
+        const turn = makeTurn(item.sessionKey, item.runId, 0, 'finalized');
+        const timeline = makeTimeline(item.sessionKey, [turn], { [item.id]: item });
+        const projection = projectTimeline(timeline, { visibleCount: 50 });
+        expect(projection.messages.length).toBe(expected);
+        expect(projection.totalMessages).toBe(expected);
+      },
+    );
+
+    it('returns 0 from projectItemCount for tool_call and tool_group (handled by the tool-grouping branch)', () => {
+      const turn = makeTurn('session', 'run', 0, 'finalized');
+      const tool = toolItem(turn, 'tc-1', 'read', { path: '/tmp/a' }, 0, 'complete');
+      const group = toolGroupItem(turn, 'tg-1', ['tc-1'], 0);
+
+      expect(projectItemCount(tool)).toBe(0);
+      expect(projectItemCount(group)).toBe(0);
+    });
+
+    it('keeps tool-run grouping intact across zero-projection items in the windowed branch', () => {
+      const turn = makeTurn('session-1', 'run-1', 0, 'finalized');
+      const timeline = makeTimeline('session-1', [turn], {
+        'user-1': userItem(turn, 'user-1', 'do stuff', 0),
+        'tool-1': toolItem(turn, 'tool-1', 'read', { path: '/tmp/a' }, 10, 'complete'),
+        'thinking-empty': thinkingItem(turn, 'thinking-empty', '', 11, 'complete'),
+        'tool-2': toolItem(turn, 'tool-2', 'exec', { command: 'pwd' }, 12, 'complete'),
+        'assistant-empty': assistantItem(turn, 'assistant-empty', '', 13, false),
+        'tool-3': toolItem(turn, 'tool-3', 'read', { path: '/tmp/b' }, 14, 'complete'),
+        'assistant-final': assistantItem(turn, 'assistant-final', 'done', 100, false),
+      });
+
+      const windowed = projectTimeline(timeline, { visibleCount: 50 });
+      const linear = projectTimeline(timeline);
+      const zeroVisible = projectTimeline(timeline, { visibleCount: 0 });
+
+      expect(windowed.totalMessages).toBe(windowed.messages.length);
+      expect(windowed.totalMessages).toBe(linear.messages.length);
+      expect(windowed.messages.map((m) => m.role)).toEqual(linear.messages.map((m) => m.role));
+      expect(windowed.messages.map((m) => m.msgId)).toEqual(linear.messages.map((m) => m.msgId));
+      expect(zeroVisible.totalMessages).toBe(linear.messages.length);
+      const toolGroups = windowed.messages.filter((m) => m.toolGroup);
+      expect(toolGroups).toHaveLength(1);
+      expect(toolGroups[0].toolGroup).toHaveLength(3);
+    });
+  });
 });
 
 function makeTimeline(
@@ -508,6 +743,50 @@ function assistantItem(
     updatedAt: 1_775_000_000_000 + block,
     status: isStreaming ? 'running' : 'complete',
     source: isStreaming ? 'live' : 'history',
+  };
+}
+
+function systemItem(
+  turn: TimelineTurn,
+  id: string,
+  text: string,
+  block: number,
+  severity: SystemTimelineItem['severity'],
+): SystemTimelineItem {
+  return {
+    id,
+    sessionKey: turn.sessionKey,
+    turnId: turn.id,
+    runId: turn.runId,
+    kind: 'system_event',
+    text,
+    severity,
+    orderKey: { turn: turn.orderBase.turn, block, sub: 0 },
+    createdAt: 1_775_000_000_000 + block,
+    updatedAt: 1_775_000_000_000 + block,
+    status: 'complete',
+    source: 'system',
+  };
+}
+
+function toolResultItem(
+  turn: TimelineTurn,
+  id: string,
+  text: string,
+  block: number,
+): ToolResultTimelineItem {
+  return {
+    id,
+    sessionKey: turn.sessionKey,
+    turnId: turn.id,
+    runId: turn.runId,
+    kind: 'tool_result',
+    text,
+    orderKey: { turn: turn.orderBase.turn, block, sub: 0 },
+    createdAt: 1_775_000_000_000 + block,
+    updatedAt: 1_775_000_000_000 + block,
+    status: 'complete',
+    source: 'history',
   };
 }
 

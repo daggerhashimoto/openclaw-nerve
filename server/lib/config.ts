@@ -41,6 +41,15 @@ function normalizeLanguagePreference(language: string | undefined): string {
   return code;
 }
 
+function parsePositiveIntEnv(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
 export const config = {
   port: Number(process.env.PORT || DEFAULT_PORT),
   sslPort: Number(process.env.SSL_PORT || DEFAULT_SSL_PORT),
@@ -79,6 +88,10 @@ export const config = {
   dist: path.join(PROJECT_ROOT, 'dist'),
   agentLogPath: path.join(PROJECT_ROOT, 'agent-log.json'),
   fileBrowserRoot: process.env.FILE_BROWSER_ROOT || '',
+  // Invalid / non-integer / non-positive values fall back to the default so a
+  // typo like FILE_BROWSER_MAX_TREE_ENTRIES=abc cannot silently clamp every
+  // tree response to a tiny budget.
+  fileBrowserMaxTreeEntries: parsePositiveIntEnv(process.env.FILE_BROWSER_MAX_TREE_ENTRIES, 5_000),
   memoryPath: process.env.MEMORY_PATH || path.join(HOME, '.openclaw', 'workspace', 'MEMORY.md'),
   memoryDir: process.env.MEMORY_DIR || path.join(HOME, '.openclaw', 'workspace', 'memory'),
   sessionsDir: process.env.SESSIONS_DIR || path.join(HOME, '.openclaw', 'agents', 'main', 'sessions'),

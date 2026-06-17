@@ -52,6 +52,11 @@ interface TreeEntry {
   mtime?: number;       // epoch ms
   binary?: boolean;     // true for binary files
   children?: TreeEntry[] | null; // null = not loaded, [] = empty dir
+  // Directories whose own listing exceeded its page budget: set to true and
+  // include `childrenNextCursor` so the caller can resume at
+  // `?path=<this.path>&cursor=<childrenNextCursor>`.
+  childrenTruncated?: boolean;
+  childrenNextCursor?: string;
 }
 
 interface ScopedWorkspace {
@@ -77,8 +82,14 @@ interface ListingBudget {
 
 const DEFAULT_TREE_LIMIT = 1_000;
 const MAX_TREE_LIMIT = 5_000;
-const MAX_TREE_RESPONSE_ENTRIES = 5_000;
+const DEFAULT_MAX_TREE_RESPONSE_ENTRIES = 5_000;
 const STAT_CONCURRENCY = 16;
+
+function getMaxTreeResponseEntries(): number {
+  return config.fileBrowserMaxTreeEntries > 0
+    ? config.fileBrowserMaxTreeEntries
+    : DEFAULT_MAX_TREE_RESPONSE_ENTRIES;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -142,6 +153,12 @@ async function mapWithConcurrency<T, R>(
 }
 
 function shouldIncludeDirent(item: Dirent, basePath: string, showHidden: boolean): boolean {
+  // Only files and directories materialize as TreeEntry rows. Symlinks,
+  // sockets, FIFOs, and block/char devices are never emitted, so dropping
+  // them here keeps totalEntries + pageItems consumption + the dirs/files
+  // split in agreement (see listDirectoryPage's nextCursor invariant).
+  if (!item.isFile() && !item.isDirectory()) return false;
+
   if (isExcluded(item.name)) return false;
 
   const inTrash = basePath === '.trash' || basePath.startsWith('.trash/');
@@ -165,6 +182,10 @@ async function listDirectoryPage(
     cursor: number;
     limit: number;
     budget: ListingBudget;
+    // Per-child page size for recursive descents. Defaults to `limit`. The
+    // shared budget still caps total response size; this field is the future
+    // hook for differentiated per-child paging without changing call shape.
+    childLimit?: number;
   },
 ): Promise<DirectoryListing> {
   let items;
@@ -192,11 +213,18 @@ async function listDirectoryPage(
   const totalEntries = visibleItems.length;
   const start = Math.min(options.cursor, totalEntries);
   const pageItems = visibleItems.slice(start, start + options.limit);
-  const nextCursor = start + pageItems.length < totalEntries ? String(start + pageItems.length) : undefined;
   const entries: TreeEntry[] = [];
 
   const directories = pageItems.filter((item) => item.isDirectory());
   const files = pageItems.filter((item) => item.isFile());
+  const childLimit = options.childLimit ?? options.limit;
+
+  // Track items consumed from `pageItems` so nextCursor reflects what was
+  // actually included, not the slice length. If the shared budget exhausts
+  // mid-loop, the cursor must point at the first unconsumed item so a
+  // follow-up paginated request can reach it (issue #345).
+  let dirsConsumed = 0;
+  let filesConsumed = 0;
 
   for (const item of directories) {
     if (options.budget.remaining <= 0) {
@@ -210,8 +238,9 @@ async function listDirectoryPage(
     const childListing = depth > 1
       ? await listDirectoryPage(fullPath, relativePath, depth - 1, showHidden, {
           cursor: 0,
-          limit: options.limit,
+          limit: childLimit,
           budget: options.budget,
+          childLimit,
         })
       : null;
 
@@ -220,38 +249,50 @@ async function listDirectoryPage(
       path: relativePath,
       type: 'directory',
       children: childListing?.entries ?? null,
+      ...(childListing?.truncated ? { childrenTruncated: true } : {}),
+      ...(childListing?.nextCursor ? { childrenNextCursor: childListing.nextCursor } : {}),
     });
+    dirsConsumed += 1;
   }
 
-  const allowedFileCount = Math.min(files.length, Math.max(0, options.budget.remaining));
-  if (allowedFileCount < files.length) {
-    options.budget.truncated = true;
+  // Only process files at this level if every selected directory was fully
+  // consumed. If the dir loop broke on budget, skipping the files here keeps
+  // `nextCursor` pointing at the first dropped sibling rather than past it.
+  if (dirsConsumed === directories.length) {
+    const allowedFileCount = Math.min(files.length, Math.max(0, options.budget.remaining));
+    if (allowedFileCount < files.length) {
+      options.budget.truncated = true;
+    }
+    options.budget.remaining -= allowedFileCount;
+
+    const fileEntries = await mapWithConcurrency<Dirent, TreeEntry | null>(
+      files.slice(0, allowedFileCount),
+      STAT_CONCURRENCY,
+      async (item) => {
+        const relativePath = basePath ? path.join(basePath, item.name) : item.name;
+        const fullPath = path.join(dirPath, item.name);
+        try {
+          const stat = await fs.stat(fullPath);
+          return {
+            name: item.name,
+            path: relativePath,
+            type: 'file' as const,
+            size: stat.size,
+            mtime: Math.floor(stat.mtimeMs),
+            binary: isBinary(item.name) || undefined,
+          };
+        } catch {
+          return null;
+        }
+      },
+    );
+
+    entries.push(...fileEntries.filter((entry): entry is TreeEntry => Boolean(entry)));
+    filesConsumed = allowedFileCount;
   }
-  options.budget.remaining -= allowedFileCount;
 
-  const fileEntries = await mapWithConcurrency<Dirent, TreeEntry | null>(
-    files.slice(0, allowedFileCount),
-    STAT_CONCURRENCY,
-    async (item) => {
-      const relativePath = basePath ? path.join(basePath, item.name) : item.name;
-      const fullPath = path.join(dirPath, item.name);
-      try {
-        const stat = await fs.stat(fullPath);
-        return {
-          name: item.name,
-          path: relativePath,
-          type: 'file' as const,
-          size: stat.size,
-          mtime: Math.floor(stat.mtimeMs),
-          binary: isBinary(item.name) || undefined,
-        };
-      } catch {
-        return null;
-      }
-    },
-  );
-
-  entries.push(...fileEntries.filter((entry): entry is TreeEntry => Boolean(entry)));
+  const consumed = dirsConsumed + filesConsumed;
+  const nextCursor = start + consumed < totalEntries ? String(start + consumed) : undefined;
 
   return {
     entries,
@@ -276,7 +317,7 @@ async function listDirectory(
     cursor,
     limit,
     budget: {
-      remaining: MAX_TREE_RESPONSE_ENTRIES,
+      remaining: getMaxTreeResponseEntries(),
       truncated: false,
     },
   });

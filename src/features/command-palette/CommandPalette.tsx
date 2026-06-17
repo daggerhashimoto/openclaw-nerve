@@ -11,6 +11,7 @@ interface CommandPaletteProps {
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
+  sessions: 'Sessions',
   actions: 'Actions',
   navigation: 'Navigation',
   settings: 'Settings',
@@ -28,6 +29,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
   const lastMousePos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const filtered = useMemo(() => filterCommands(commands, query), [commands, query]);
+  const pendingAction = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reset state and focus when opened
   useEffect(() => {
@@ -40,6 +42,20 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
     }
   }, [open]);
 
+  // Keep selectedIndex inside the bounds of the current filtered list.
+  // Typing a narrower query can shrink filtered below selectedIndex, leaving
+  // Enter pointed at undefined. The Math.max(0, ...) outer guard also catches
+  // the empty-list case (filtered.length === 0 -> min is -1 without it).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clamp converges and only runs when filtered.length changes
+    setSelectedIndex(i => Math.max(0, Math.min(i, filtered.length - 1)));
+  }, [filtered.length]);
+
+  // Cancel any scheduled action on unmount.
+  useEffect(() => () => {
+    if (pendingAction.current !== null) clearTimeout(pendingAction.current);
+  }, []);
+
   // Scroll selected item into view
   useEffect(() => {
     const list = listRef.current;
@@ -50,9 +66,13 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
   }, [selectedIndex]);
 
   const executeCommand = useCallback((cmd: Command) => {
+    if (pendingAction.current !== null) clearTimeout(pendingAction.current);
     onClose();
     // Small delay to let dialog close animation start
-    setTimeout(() => cmd.action(), 50);
+    pendingAction.current = setTimeout(() => {
+      pendingAction.current = null;
+      cmd.action();
+    }, 50);
   }, [onClose]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -60,7 +80,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
       case 'ArrowDown':
         e.preventDefault();
         setUsingKeyboard(true);
-        setSelectedIndex(i => Math.min(i + 1, filtered.length - 1));
+        setSelectedIndex(i => Math.max(0, Math.min(i + 1, filtered.length - 1)));
         break;
       case 'ArrowUp':
         e.preventDefault();
@@ -162,6 +182,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
                     {cmds.map((cmd) => {
                       const idx = flatIndexMap.get(cmd.id) ?? -1;
                       const isSelected = idx === selectedIndex;
+                      const showActiveAffordance = cmd.category === 'sessions' && cmd.isActive === true;
                       return (
                         <button
                           key={cmd.id}
@@ -169,10 +190,14 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
                           onClick={() => executeCommand(cmd)}
                           onMouseEnter={() => { if (!usingKeyboard) setSelectedIndex(idx); }}
                           data-active={isSelected}
+                          aria-current={showActiveAffordance ? 'true' : undefined}
                           className="cockpit-command-item"
                         >
                           {cmd.icon || <CommandIcon size={15} className="text-muted-foreground" />}
                           <span className="flex-1 text-[0.933rem] font-medium text-foreground">{cmd.label}</span>
+                          {showActiveAffordance && (
+                            <span className="cockpit-badge" data-tone="primary">current</span>
+                          )}
                           {cmd.shortcut && (
                             <kbd className="cockpit-kbd">
                               {cmd.shortcut}

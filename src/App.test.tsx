@@ -233,6 +233,7 @@ vi.mock('@/hooks/useKeyboardShortcuts', () => ({
 
 vi.mock('@/features/command-palette/commands', () => ({
   createCommands: () => [],
+  createSessionCommands: () => [],
 }));
 
 vi.mock('@/features/file-browser', () => ({

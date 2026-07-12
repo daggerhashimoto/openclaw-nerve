@@ -132,6 +132,8 @@ describe('gateway-rpc (persistent WebSocket)', () => {
         nonce: 'test-nonce',
       });
       expect(lastConnectParams).toMatchObject({
+        minProtocol: 4,
+        maxProtocol: 4,
         client: {
           id: 'openclaw-control-ui',
           mode: 'webchat',

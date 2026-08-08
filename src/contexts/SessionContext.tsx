@@ -6,6 +6,7 @@ import { getSessionKey, type Session, type AgentLogEntry, type EventEntry, type 
 import { playPing } from '@/features/voice/audio-feedback';
 import { describeToolUse } from '@/utils/helpers';
 import { buildSessionTree } from '@/features/sessions/sessionTree';
+import { mergeAuthoritativeSessions } from '@/features/sessions/sessionReconciliation';
 import {
   buildAgentRootSessionKey,
   extractIdentityName,
@@ -324,21 +325,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
       // Keep active child sessions visible even when the full sessions.list
       // result lags behind the recent spawn/discovery flow.
-      const spawnedSessionLists = await Promise.all(
+      const spawnedResults = await Promise.all(
         [...spawnedByRoots].map(async (rootSessionKey) => {
           try {
             const spawnedRes = await rpc('sessions.list', { spawnedBy: rootSessionKey, limit: SESSIONS_SPAWNED_LIMIT }) as SessionsListResponse;
-            return spawnedRes?.sessions ?? [];
+            return { rootSessionKey, ok: true as const, sessions: spawnedRes?.sessions ?? [] };
           } catch (err) {
             console.debug('[SessionContext] Failed to fetch spawned sessions for root:', rootSessionKey, err);
-            return [];
+            return { rootSessionKey, ok: false as const, sessions: [] as Session[] };
           }
         }),
       );
 
-      return spawnedSessionLists.reduce(
-        (acc, spawnedSessions) => mergeSessionLists(acc, spawnedSessions),
+      return mergeAuthoritativeSessions(
         baseSessions,
+        spawnedResults.map((result) => result.sessions),
+        {
+          spawnedByAuthoritative: spawnedResults.some((result) => result.ok),
+          authoritativeSpawnedByRoots: new Set(spawnedResults
+            .filter((result) => result.ok)
+            .map((result) => result.rootSessionKey)),
+        },
       );
     } catch (err) {
       console.debug('[SessionContext] Failed to fetch authoritative session list:', err);

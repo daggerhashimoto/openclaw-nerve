@@ -76,12 +76,14 @@ export function buildUserMessage(params: {
   text: string;
   images?: ImageAttachment[];
   uploadPayload?: OutgoingUploadPayload;
+  idempotencyKey?: string;
 }): { msg: ChatMsg; tempId: string } {
-  const { text, images, uploadPayload } = params;
+  const { text, images, uploadPayload, idempotencyKey } = params;
   const tempId = crypto.randomUUID ? crypto.randomUUID() : 'temp-' + Date.now();
 
   const msg: ChatMsg = {
     msgId: generateMsgId(),
+    sourceId: idempotencyKey ? `message:idempotency:${idempotencyKey}` : undefined,
     role: 'user',
     html: renderToolResults(renderMarkdown(text)),
     rawText: text,

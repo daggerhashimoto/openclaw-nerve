@@ -380,6 +380,19 @@ describe('processChatMessages', () => {
       'https://example.com/other.png',
     ]);
   });
+
+  it('disambiguates repeated derived identities inside one processed batch', () => {
+    const result = processChatMessages([
+      { role: 'assistant', content: 'Done.', timestamp: '2026-08-08T01:00:00.000Z' },
+      { role: 'assistant', content: 'Done.', timestamp: '2026-08-08T01:00:00.000Z' },
+    ], { sessionKey: 'agent:main:main' });
+
+    expect(result).toHaveLength(2);
+    expect(result[0].sourceId).toBeTruthy();
+    expect(result[1].sourceId).toBe(`${result[0].sourceId}:occurrence:2`);
+    expect(result[1].alternateSourceIds).toContain(result[0].sourceId);
+    expect(result[0].msgId).not.toBe(result[1].msgId);
+  });
 });
 
 describe('loadChatHistory', () => {

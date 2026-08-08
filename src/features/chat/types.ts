@@ -104,9 +104,26 @@ export function generateMsgId(): string {
   return `m-${Date.now()}-${++_msgIdCounter}`;
 }
 
+function hashString(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) - hash + input.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0).toString(36);
+}
+
+/** Deterministic UI-safe id for messages whose durable gateway identity is known. */
+export function stableMsgId(identity: string): string {
+  return `msg:${hashString(identity)}:${identity.replace(/[^a-zA-Z0-9:_-]/g, '_').slice(0, 80)}`;
+}
+
 export interface ChatMsg {
   /** Stable unique ID for React keying — assigned once at creation, never changes. */
   msgId?: string;
+  /** Durable identity from OpenClaw/history/live events, used for reconciliation. */
+  sourceId?: string;
+  /** Additional durable aliases, such as send idempotency keys, that may confirm optimistic UI rows. */
+  alternateSourceIds?: string[];
   role: ChatMsgRole;
   html: string;
   rawText: string;

@@ -4,7 +4,7 @@
  * Extracted from ChatContext to keep the context a thin state-management wrapper.
  * All functions here are pure (no React hooks, setState, or refs).
  */
-import { generateMsgId } from '@/features/chat/types';
+import { generateMsgId, stableMsgId } from '@/features/chat/types';
 import type { ChatMsg, ChatMsgRole, ToolGroupEntry, UploadAttachmentDescriptor } from '@/features/chat/types';
 import type { ChatMessage, ContentBlock, ChatHistoryResponse } from '@/types';
 import { extractText, describeToolUse, renderMarkdown, renderToolResults } from '@/utils/helpers';
@@ -18,6 +18,96 @@ import type { MessageImage } from '@/features/chat/types';
 function toArray<T>(value: T | T[] | undefined): T[] {
   if (Array.isArray(value)) return value;
   return value ? [value] : [];
+}
+
+function stableHash(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) - hash + input.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function getMessageTimestampValue(message: ChatMessage): string {
+  const value = message.timestamp ?? message.createdAt ?? message.ts ?? message.__openclaw?.recordTimestampMs;
+  return value === undefined || value === null ? '' : String(value);
+}
+
+function getDurableMessageBase(message: ChatMessage, options: { sessionKey?: string; messageIndex?: number } = {}): string | null {
+  const openclaw = message.__openclaw;
+  if (openclaw?.mirrorIdentity) return `openclaw:mirror:${openclaw.mirrorIdentity}`;
+  if (openclaw?.id) return `openclaw:id:${openclaw.id}`;
+  if (message.id) return `message:id:${message.id}`;
+  if (message.messageId) return `message:id:${message.messageId}`;
+  if (message.message_id) return `message:id:${message.message_id}`;
+  if (message.idempotencyKey) return `message:idempotency:${message.idempotencyKey}`;
+  if (message.toolCallId) return `message:tool:${message.toolCallId}:${message.role}`;
+
+  const timestamp = getMessageTimestampValue(message);
+  if (timestamp) {
+    const session = options.sessionKey || 'unknown-session';
+    return `derived:${session}:${message.role}:${timestamp}:${stableHash(JSON.stringify(message.content))}`;
+  }
+
+  if (typeof options.messageIndex === 'number') {
+    const session = options.sessionKey || 'unknown-session';
+    return `derived:${session}:${message.role}:index:${options.messageIndex}:${stableHash(JSON.stringify(message.content))}`;
+  }
+
+  return null;
+}
+
+function getDurableMessageAliases(message: ChatMessage): string[] {
+  const aliases = [
+    message.idempotencyKey ? `message:idempotency:${message.idempotencyKey}` : null,
+    message.toolCallId ? `message:tool:${message.toolCallId}:${message.role}` : null,
+    message.id ? `message:id:${message.id}` : null,
+    message.messageId ? `message:id:${message.messageId}` : null,
+    message.message_id ? `message:id:${message.message_id}` : null,
+    message.__openclaw?.id ? `openclaw:id:${message.__openclaw.id}` : null,
+    message.__openclaw?.mirrorIdentity ? `openclaw:mirror:${message.__openclaw.mirrorIdentity}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return [...new Set(aliases)];
+}
+
+function withSourceIdentity(
+  msg: ChatMsg,
+  base: string | null,
+  aliases: string[],
+  part: string,
+): ChatMsg {
+  if (!base) return msg;
+  const sourceId = part ? `${base}:${part}` : base;
+  const alternateSourceIds = aliases
+    .filter((alias) => alias !== base)
+    .map((alias) => (part ? `${alias}:${part}` : alias));
+  return {
+    ...msg,
+    sourceId,
+    ...(alternateSourceIds.length > 0 ? { alternateSourceIds } : {}),
+    msgId: stableMsgId(sourceId),
+  };
+}
+
+function disambiguateRepeatedSourceIdentities(msgs: ChatMsg[]): ChatMsg[] {
+  const seen = new Map<string, number>();
+
+  return msgs.map((msg) => {
+    if (!msg.sourceId) return msg;
+
+    const occurrence = seen.get(msg.sourceId) || 0;
+    seen.set(msg.sourceId, occurrence + 1);
+    if (occurrence === 0) return msg;
+
+    const sourceId = `${msg.sourceId}:occurrence:${occurrence + 1}`;
+    return {
+      ...msg,
+      sourceId,
+      alternateSourceIds: [...new Set([...(msg.alternateSourceIds || []), msg.sourceId])],
+      msgId: stableMsgId(sourceId),
+    };
+  });
 }
 
 function getFilenameFromPathish(value: string, fallback: string): string {
@@ -292,11 +382,13 @@ function splitSystemEvents(text: string): Array<{ role: 'event' | 'user'; text: 
   return segments;
 }
 
-export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: string } = {}): ChatMsg[] {
+export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: string; messageIndex?: number } = {}): ChatMsg[] {
   const ts = m.timestamp || m.createdAt || m.ts || null;
   const parsedTimestamp = ts ? new Date(ts as string | number) : null;
   const hasPersistedTimestamp = Boolean(parsedTimestamp && Number.isFinite(parsedTimestamp.getTime()));
   const timestamp = hasPersistedTimestamp ? parsedTimestamp as Date : new Date();
+  const identityBase = getDurableMessageBase(m, options);
+  const identityAliases = getDurableMessageAliases(m);
 
   // Only interleave for assistant messages with array content containing tool_use
   if (m.role === 'assistant' && Array.isArray(m.content)) {
@@ -318,7 +410,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
         const { cleaned: chartCleaned, charts } = extractChartMarkers(ttsStripped);
         const { cleaned, images: extractedImages } = extractImages(chartCleaned);
         if (cleaned.trim() || extractedImages.length > 0) {
-          result.push({
+          result.push(withSourceIdentity({
             role: 'assistant',
             html: renderToolResults(renderMarkdown(cleaned)),
             rawText: cleaned,
@@ -326,7 +418,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
             streaming: false,
             ...(charts.length > 0 ? { charts } : {}),
             ...(extractedImages.length > 0 ? { extractedImages } : {}),
-          });
+          }, identityBase, identityAliases, `text:${result.length}`));
         }
         textBuffer = '';
       };
@@ -336,13 +428,13 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
           flushText();
           const thinkingContent = (block as unknown as { thinking?: string }).thinking || block.text || '';
           if (thinkingContent.trim()) {
-            result.push({
+            result.push(withSourceIdentity({
               role: 'assistant',
               html: renderMarkdown(thinkingContent),
               rawText: thinkingContent,
               timestamp,
               isThinking: true,
-            });
+            }, identityBase, identityAliases, `thinking:${result.length}`));
           }
         } else if (block.type === 'text' && block.text) {
           textBuffer += (textBuffer ? '\n' : '') + block.text;
@@ -353,13 +445,13 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
             ? (() => { try { return JSON.parse(rawArgs); } catch { return { value: rawArgs }; } })()
             : rawArgs;
           const desc = describeToolUse(block.name || 'unknown', args) || block.name || 'unknown';
-          result.push({
+          result.push(withSourceIdentity({
             role: 'tool',
             html: renderMarkdown(desc),
             rawText: `**tool:** \`${block.name}\`\n\`\`\`json\n${JSON.stringify(args, null, 2)}\n\`\`\``,
             timestamp,
             streaming: false,
-          });
+          }, identityBase, identityAliases, block.id || block.toolCallId || `tool:${result.length}`));
         }
       }
       flushText(); // Final text block
@@ -371,13 +463,13 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
         if (lastAssistant) {
           lastAssistant.images = [...(lastAssistant.images || []), ...contentImages];
         } else {
-          result.push({
+          result.push(withSourceIdentity({
             role: m.role as ChatMsgRole,
             html: '',
             rawText: '',
             timestamp,
             images: contentImages,
-          });
+          }, identityBase, identityAliases, 'images'));
         }
       }
 
@@ -412,10 +504,10 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
   if (m.role === 'user' && SYSTEM_EVENT_LINE.test(rawText)) {
     const segments = splitSystemEvents(rawText);
     if (segments.some(s => s.role === 'event')) {
-      return segments.map(seg => {
+      return segments.map((seg, index) => {
         const { cleaned: ttsStripped } = extractTTSMarkers(seg.text);
         const { cleaned: chartCleaned, charts } = extractChartMarkers(ttsStripped);
-        return {
+        return withSourceIdentity({
           role: seg.role as ChatMsgRole,
           html: renderToolResults(renderMarkdown(chartCleaned)),
           rawText: chartCleaned,
@@ -424,7 +516,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
           ...(charts.length > 0 ? { charts } : {}),
           ...(isVoice && seg.role === 'user' ? { isVoice: true } : {}),
           ...(uploadAttachments && seg.role === 'user' ? { uploadAttachments } : {}),
-        };
+        }, identityBase, identityAliases, `${seg.role}:${index}`);
       });
     }
   }
@@ -447,7 +539,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
   // Tag system notifications (subagent/cron completions) for collapsible strip rendering
   const sysNotif = m.role === 'user' ? detectSystemNotification(rawText) : { match: false, label: '' };
 
-  return [{
+  return [withSourceIdentity({
     role: m.role as ChatMsgRole,
     html: renderToolResults(renderMarkdown(text)),
     rawText: text,
@@ -459,7 +551,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
     ...(uploadAttachments ? { uploadAttachments } : {}),
     ...(isVoice ? { isVoice: true } : {}),
     ...(sysNotif.match ? { isSystemNotification: true, systemLabel: sysNotif.label } : {}),
-  }];
+  }, identityBase, identityAliases, '')];
 }
 
 // ─── Grouping ──────────────────────────────────────────────────────────────────
@@ -503,7 +595,10 @@ export function groupToolMessages(msgs: ChatMsg[]): ChatMsg[] {
         const plainPreview = decodeHtmlEntities(t.html.replace(/<[^>]*>/g, '').trim());
         return { html: t.html, rawText: t.rawText, preview: plainPreview || t.rawText.slice(0, 80) };
       });
+      const groupedSourceIds = filtered.map(t => t.sourceId).filter(Boolean);
+      const sourceId = groupedSourceIds.length > 0 ? `group:${groupedSourceIds.join('+')}` : undefined;
       grouped.push({
+        ...(sourceId ? { sourceId, msgId: stableMsgId(sourceId) } : {}),
         role: 'tool',
         html: `Used ${entries.length} tools`,
         rawText: entries.map(e => e.preview).join('\n'),
@@ -587,9 +682,9 @@ export function tagIntermediateMessages(msgs: ChatMsg[]): ChatMsg[] {
  * filter → split → group → tag
  */
 export function processChatMessages(messages: ChatMessage[], options: { sessionKey?: string } = {}): ChatMsg[] {
-  const chatMsgs: ChatMsg[] = messages
+  const chatMsgs: ChatMsg[] = disambiguateRepeatedSourceIdentities(messages
     .filter(filterMessage)
-    .flatMap((message) => splitToolCallMessage(message, options));
+    .flatMap((message, messageIndex) => splitToolCallMessage(message, { ...options, messageIndex })));
 
   const grouped = groupToolMessages(chatMsgs);
   const tagged = tagIntermediateMessages(grouped);

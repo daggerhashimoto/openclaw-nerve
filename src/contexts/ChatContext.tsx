@@ -593,7 +593,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const handleSend = useCallback(async (text: string, images?: ImageAttachment[], uploadPayload?: OutgoingUploadPayload) => {
     ttsHook.trackVoiceMessage(text);
 
-    const { msg: userMsg, tempId } = buildUserMessage({ text, images, uploadPayload });
+    const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : 'ik-' + Date.now();
+    const { msg: userMsg, tempId } = buildUserMessage({ text, images, uploadPayload, idempotencyKey });
 
     incrementGeneration();
 
@@ -604,7 +605,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     streamHook.setStream((prev: ChatStreamState) => ({ ...prev, html: '', runId: undefined }));
     setProcessingStage('thinking');
 
-    const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : 'ik-' + Date.now();
     try {
       const ack = await sendChatMessage({
         rpc,

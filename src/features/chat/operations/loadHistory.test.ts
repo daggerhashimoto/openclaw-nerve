@@ -23,6 +23,40 @@ describe('filterMessage', () => {
   it('hides exact internal assistant control replies', () => {
     expect(filterMessage({ role: 'assistant', content: 'NO_REPLY' })).toBe(false);
     expect(filterMessage({ role: 'assistant', content: '  HEARTBEAT_OK\n' })).toBe(false);
+    expect(filterMessage({ role: 'assistant', content: '{"action":"NO_REPLY"}' })).toBe(false);
+    expect(filterMessage({ role: 'assistant', content: '{"action":"NO_REPLY","reason":"idle"}' })).toBe(false);
+    expect(filterMessage({ role: 'assistant', content: 'NO_REPLY NO_REPLY' })).toBe(false);
+  });
+
+  it('hides internal compaction and memory-flush status rows', () => {
+    expect(filterMessage({ role: 'assistant', content: 'Compaction complete.' })).toBe(false);
+    expect(filterMessage({ role: 'assistant', content: 'Memory flush completed' })).toBe(false);
+    expect(filterMessage({ role: 'system', content: 'checkpoint saved' })).toBe(false);
+  });
+
+  it('hides messages marked internal by OpenClaw metadata', () => {
+    expect(filterMessage({
+      role: 'assistant',
+      content: 'The compacted context has been saved.',
+      __openclaw: { kind: 'session.compaction_complete' },
+    })).toBe(false);
+
+    expect(filterMessage({
+      role: 'assistant',
+      content: 'Memory state synchronized.',
+      kind: 'memory-flush',
+    } as ChatMessage)).toBe(false);
+  });
+
+  it('shows substantive assistant progress messages even when they mention compaction or memory', () => {
+    expect(filterMessage({
+      role: 'assistant',
+      content: 'I compacted the notes and pushed the branch. Next I am running the focused tests.',
+    })).toBe(true);
+    expect(filterMessage({
+      role: 'assistant',
+      content: 'Memory sync is still running, so I am waiting for the next event before refreshing history.',
+    })).toBe(true);
   });
 
   it('hides pure internal wake bundles', () => {
@@ -314,7 +348,7 @@ describe('processChatMessages', () => {
 
   it('drops internal wake bundles and silent control replies from rendered history', () => {
     const msgs: ChatMessage[] = [
-      { role: 'assistant', content: 'Already did it ⚡' },
+      { role: 'assistant', content: 'Already did it' },
       {
         role: 'user',
         content: 'System (untrusted): [2026-04-16 18:27:55 GMT+3] Exec completed (wild-orb, code 0) :: done\nSystem (untrusted): [2026-04-16 18:28:54 GMT+3] Exec completed (rapid-sa, code 0) :: https://github.com/daggerhashimoto/openclaw-nerve/pull/278\n\nAn async command you ran earlier has completed. The result is shown in the system messages above. Handle the result internally. Do not relay it to the user unless explicitly requested.\nCurrent time: Thursday, April 16th, 2026 - 6:29 PM (Europe/Istanbul) / 2026-04-16 15:29 UTC',
@@ -324,7 +358,43 @@ describe('processChatMessages', () => {
     const result = processChatMessages(msgs);
     expect(result).toHaveLength(1);
     expect(result[0].role).toBe('assistant');
-    expect(result[0].rawText).toBe('Already did it ⚡');
+    expect(result[0].rawText).toBe('Already did it');
+  });
+
+  it('drops internal compaction and memory rows from rendered history', () => {
+    const result = processChatMessages([
+      { role: 'user', content: 'Please continue with the Nerve fixes.' },
+      {
+        role: 'assistant',
+        content: 'Compaction complete.',
+        __openclaw: { kind: 'session.compaction_complete', id: 'compaction-1' },
+      },
+      { role: 'assistant', content: '{"action":"NO_REPLY"}' },
+      {
+        role: 'assistant',
+        content: 'I am updating the chat adapter now.',
+        __openclaw: { mirrorIdentity: 'run-1:assistant:final' },
+      },
+    ], { sessionKey: 'agent:main:main' });
+
+    expect(result.map((m) => m.rawText)).toEqual([
+      'Please continue with the Nerve fixes.',
+      'I am updating the chat adapter now.',
+    ]);
+  });
+
+  it('removes embedded runtime context while retaining assistant prose', () => {
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        content: 'I will keep working.\n<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\n{"token":"secret"}\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>\nVisible follow-up.',
+      },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].rawText).toBe('I will keep working.\n\nVisible follow-up.');
+    expect(result[0].rawText).not.toContain('BEGIN_OPENCLAW_INTERNAL_CONTEXT');
+    expect(result[0].html).not.toContain('BEGIN_OPENCLAW_INTERNAL_CONTEXT');
   });
 
   it('handles empty input', () => {

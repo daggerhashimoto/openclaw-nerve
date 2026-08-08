@@ -301,6 +301,111 @@ describe('processChatMessages', () => {
     expect(result.every(m => m.msgId)).toBe(true);
   });
 
+  it('preserves OpenClaw transcript identity as stable UI ids', () => {
+    const msgs: ChatMessage[] = [
+      {
+        role: 'assistant',
+        content: 'Durable reply',
+        timestamp: 1775131617235,
+        __openclaw: {
+          mirrorIdentity: 'run-1:assistant:final',
+          id: 'wrapper-id-1',
+          recordTimestampMs: 1775131617235,
+          seq: 10,
+        },
+      },
+    ];
+
+    const first = processChatMessages(msgs, { sessionKey: 'agent:main:main' });
+    const second = processChatMessages(msgs, { sessionKey: 'agent:main:main' });
+
+    expect(first[0].sourceId).toBe('openclaw:mirror:run-1:assistant:final');
+    expect(second[0].msgId).toBe(first[0].msgId);
+  });
+
+  it('derives deterministic ids when gateway history lacks wrapper ids', () => {
+    const msg: ChatMessage = {
+      role: 'assistant',
+      content: 'Fallback identity',
+      timestamp: 1775131617235,
+    };
+
+    const first = processChatMessages([msg], { sessionKey: 'agent:main:main' });
+    const second = processChatMessages([msg], { sessionKey: 'agent:main:main' });
+
+    expect(first[0].sourceId).toBe('derived:agent:main:main:assistant:index:0:1775131617235');
+    expect(second[0].msgId).toBe(first[0].msgId);
+  });
+
+  it('uses gateway sequence to distinguish repeated fallback rows', () => {
+    const msgs: ChatMessage[] = [
+      { role: 'assistant', content: 'Same answer', timestamp: 1775131617235, seq: 10 },
+      { role: 'assistant', content: 'Same answer', timestamp: 1775131617235, __openclaw: { seq: 11 } },
+    ];
+
+    const result = processChatMessages(msgs, { sessionKey: 'agent:main:main' });
+
+    expect(result).toHaveLength(2);
+    expect(result[0].sourceId).toBe('derived:agent:main:main:assistant:10:1775131617235');
+    expect(result[1].sourceId).toBe('derived:agent:main:main:assistant:11:1775131617235');
+    expect(result[0].msgId).not.toBe(result[1].msgId);
+  });
+
+  it('keeps fallback identity stable when only assistant content changes', () => {
+    const partial = processChatMessages([{
+      role: 'assistant',
+      content: 'Partial',
+      timestamp: 1775131617235,
+      seq: 10,
+    }], { sessionKey: 'agent:main:main' });
+    const final = processChatMessages([{
+      role: 'assistant',
+      content: 'Final answer',
+      timestamp: 1775131617235,
+      seq: 10,
+    }], { sessionKey: 'agent:main:main' });
+
+    expect(final[0].sourceId).toBe(partial[0].sourceId);
+    expect(final[0].msgId).toBe(partial[0].msgId);
+  });
+
+  it('uses OpenClaw record timestamps for rendered history rows', () => {
+    const result = processChatMessages([{
+      role: 'assistant',
+      content: 'Timestamped by wrapper',
+      __openclaw: { recordTimestampMs: 1775131617235 },
+    }], { sessionKey: 'agent:main:main' });
+
+    expect(result[0].timestamp.getTime()).toBe(1775131617235);
+  });
+
+  it('preserves original history index for fallback identities after filtering', () => {
+    const result = processChatMessages([
+      { role: 'assistant', content: 'NO_REPLY' },
+      { role: 'assistant', content: 'Visible', timestamp: 1775131617235 },
+    ], { sessionKey: 'agent:main:main' });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].sourceId).toBe('derived:agent:main:main:assistant:index:1:1775131617235');
+  });
+
+  it('preserves grouped tool aliases from component tool messages', () => {
+    const result = processChatMessages([{
+      role: 'assistant',
+      timestamp: 1775131617235,
+      content: [
+        { type: 'tool_use', id: 'tool-a', name: 'read', input: {} },
+        { type: 'tool_use', id: 'tool-b', name: 'write', input: {} },
+      ],
+      __openclaw: { id: 'wrapper-1', mirrorIdentity: 'run-1:assistant:tools' },
+    }], { sessionKey: 'agent:main:main' });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].sourceId).toBe('group:openclaw:mirror:run-1:assistant:tools:tool-a+openclaw:mirror:run-1:assistant:tools:tool-b');
+    expect(result[0].alternateSourceIds).toContain('group:openclaw:id:wrapper-1:tool-a+openclaw:mirror:run-1:assistant:tools:tool-b');
+    expect(result[0].alternateSourceIds).toContain('group:openclaw:mirror:run-1:assistant:tools:tool-a+openclaw:id:wrapper-1:tool-b');
+  });
+
   it('tags background task notifications as system notifications', () => {
     const msgs: ChatMessage[] = [
       { role: 'user', content: 'A background task "x" just completed.' },

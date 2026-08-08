@@ -12,6 +12,14 @@ function makeMsg(role: string, text: string, ts?: number): ChatMsg {
   };
 }
 
+function makeIdentifiedMsg(role: string, text: string, sourceId: string, ts?: number): ChatMsg {
+  return {
+    ...makeMsg(role, text, ts),
+    msgId: `ui-${sourceId}`,
+    sourceId,
+  };
+}
+
 describe('mergeRecoveredTail', () => {
   it('returns recovered when existing is empty', () => {
     const recovered = [makeMsg('user', 'Hello')];
@@ -90,5 +98,61 @@ describe('mergeRecoveredTail', () => {
     const recovered = [makeMsg('user', 'Only msg', ts), makeMsg('assistant', 'Reply', ts + 1000)];
     const result = mergeRecoveredTail(existing, recovered);
     expect(result).toHaveLength(2);
+  });
+
+  it('merges recovered messages by stable identity even when content changes', () => {
+    const existing = [
+      makeIdentifiedMsg('user', 'Question', 'u-1', 1000),
+      makeIdentifiedMsg('assistant', 'Streaming partial answer', 'a-1', 2000),
+    ];
+    const recovered = [
+      makeIdentifiedMsg('assistant', 'Final answer', 'a-1', 2000),
+      makeIdentifiedMsg('user', 'Next question', 'u-2', 3000),
+    ];
+
+    const result = mergeRecoveredTail(existing, recovered);
+
+    expect(result.map(m => m.rawText)).toEqual(['Question', 'Final answer', 'Next question']);
+    expect(result[1].msgId).toBe('ui-a-1');
+  });
+
+  it('preserves aliases and prior primary identity through recovered-tail merges', () => {
+    const existing = [{
+      ...makeIdentifiedMsg('assistant', 'Streaming partial answer', 'local-stream', 2000),
+      alternateSourceIds: ['message:idempotency:ik-1'],
+      collapsed: true,
+    }];
+    const recovered = [{
+      ...makeIdentifiedMsg('assistant', 'Final answer', 'openclaw:id:wrapper-1', 2000),
+      alternateSourceIds: ['message:idempotency:ik-1'],
+    }];
+
+    const result = mergeRecoveredTail(existing, recovered);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].sourceId).toBe('openclaw:id:wrapper-1');
+    expect(result[0].msgId).toBe('ui-local-stream');
+    expect(result[0].alternateSourceIds).toEqual(expect.arrayContaining([
+      'message:idempotency:ik-1',
+      'local-stream',
+    ]));
+    expect(result[0].collapsed).toBe(true);
+  });
+
+  it('does not let a stale recovered tail drop newer local state', () => {
+    const existing = [
+      makeIdentifiedMsg('user', 'Question', 'u-1', 1000),
+      makeIdentifiedMsg('assistant', 'Answer', 'a-1', 2000),
+      makeIdentifiedMsg('user', 'Optimistic next', 'u-2', 4000),
+    ];
+    existing[2].pending = true;
+    const recovered = [
+      makeIdentifiedMsg('assistant', 'Answer from stale tail', 'a-1', 2000),
+    ];
+
+    const result = mergeRecoveredTail(existing, recovered);
+
+    expect(result.map(m => m.rawText)).toEqual(['Question', 'Answer from stale tail', 'Optimistic next']);
+    expect(result[2].pending).toBe(true);
   });
 });

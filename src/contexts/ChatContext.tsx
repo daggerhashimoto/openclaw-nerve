@@ -48,7 +48,7 @@ import { generateMsgId } from '@/features/chat/types';
 import type { ImageAttachment, ChatMsg, OutgoingUploadPayload } from '@/features/chat/types';
 import type { RecoveryReason, RunState } from '@/features/chat/operations';
 
-import { useChatMessages, mergeFinalMessages, patchThinkingDuration } from '@/hooks/useChatMessages';
+import { useChatMessages, mergeFinalMessages, mergeHistoryMessages, patchThinkingDuration } from '@/hooks/useChatMessages';
 import { useChatStreaming } from '@/hooks/useChatStreaming';
 import { useChatRecovery } from '@/hooks/useChatRecovery';
 import { useChatTTS } from '@/hooks/useChatTTS';
@@ -246,13 +246,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const result = await loadChatHistory({ rpc, sessionKey: sk, limit: 500 });
         if (sk !== currentSessionRef.current) return;
         const prev = getAllMessages();
-        if (
-          result.length === prev.length &&
-          result.length > 0 &&
-          result[result.length - 1]?.rawText === prev[prev.length - 1]?.rawText &&
-          result[result.length - 1]?.role === prev[prev.length - 1]?.role
-        ) return;
-        applyMessageWindow(result, false);
+        applyMessageWindow(mergeHistoryMessages(prev, result), false);
       } catch { /* best-effort */ } finally {
         subagentPollInFlightRef.current = false;
       }
@@ -593,7 +587,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const handleSend = useCallback(async (text: string, images?: ImageAttachment[], uploadPayload?: OutgoingUploadPayload) => {
     ttsHook.trackVoiceMessage(text);
 
-    const { msg: userMsg, tempId } = buildUserMessage({ text, images, uploadPayload });
+    const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : 'ik-' + Date.now();
+    const { msg: userMsg, tempId } = buildUserMessage({ text, images, uploadPayload, idempotencyKey });
 
     incrementGeneration();
 
@@ -604,7 +599,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     streamHook.setStream((prev: ChatStreamState) => ({ ...prev, html: '', runId: undefined }));
     setProcessingStage('thinking');
 
-    const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : 'ik-' + Date.now();
     try {
       const ack = await sendChatMessage({
         rpc,

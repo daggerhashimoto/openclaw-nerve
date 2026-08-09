@@ -107,6 +107,7 @@ export const config = {
 
   // Authentication
   auth: (process.env.NERVE_AUTH || 'false').toLowerCase() === 'true',
+  serviceToken: process.env.NERVE_SERVICE_TOKEN || '',
   passwordHash: process.env.NERVE_PASSWORD_HASH || '',
   sessionSecret: process.env.NERVE_SESSION_SECRET || '',
   sessionTtlMs: Number(process.env.NERVE_SESSION_TTL || 30 * 24 * 60 * 60 * 1000), // 30 days

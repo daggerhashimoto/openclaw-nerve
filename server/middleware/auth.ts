@@ -9,6 +9,7 @@
 
 import { createMiddleware } from 'hono/factory';
 import { getCookie } from 'hono/cookie';
+import crypto from 'node:crypto';
 import { config, SESSION_COOKIE_NAME } from '../lib/config.js';
 import { verifySession } from '../lib/session.js';
 
@@ -21,6 +22,15 @@ const PUBLIC_ROUTES = [
   '/api/version',
   '/health',
 ];
+
+function hasValidServiceBearer(header: string | undefined): boolean {
+  const token = header?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  if (!token || !config.serviceToken) return false;
+
+  const provided = Buffer.from(token);
+  const expected = Buffer.from(config.serviceToken);
+  return provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
+}
 
 /**
  * Authentication middleware.
@@ -37,6 +47,10 @@ export const authMiddleware = createMiddleware(async (c, next) => {
 
   // Public API routes — always accessible
   if (PUBLIC_ROUTES.some(route => c.req.path === route)) return next();
+
+  // LPV may synthesize speech without borrowing a browser session.
+  if (c.req.method === 'POST' && c.req.path === '/api/tts'
+    && hasValidServiceBearer(c.req.header('Authorization'))) return next();
 
   // Check session cookie
   const token = getCookie(c, SESSION_COOKIE_NAME);

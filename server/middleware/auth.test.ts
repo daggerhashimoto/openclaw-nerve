@@ -8,6 +8,7 @@ vi.mock('../lib/config.js', () => {
     config: {
       auth: false,
       sessionSecret: 'test-secret-123',
+      serviceToken: '',
     },
     SESSION_COOKIE_NAME: 'nerve_session_3080',
   };
@@ -23,13 +24,14 @@ import { authMiddleware } from './auth.js';
 import { config } from '../lib/config.js';
 import { verifySession } from '../lib/session.js';
 
-const mockedConfig = config as { auth: boolean; sessionSecret: string };
+const mockedConfig = config as { auth: boolean; sessionSecret: string; serviceToken: string };
 const mockedVerifySession = verifySession as ReturnType<typeof vi.fn>;
 
 function createTestApp(): Hono {
   const app = new Hono();
   app.use('*', authMiddleware);
   app.get('/api/test', (c) => c.json({ ok: true }));
+  app.post('/api/tts', (c) => c.json({ ok: true }));
   app.get('/api/auth/login', (c) => c.json({ login: true }));
   app.get('/api/auth/logout', (c) => c.json({ logout: true }));
   app.get('/api/auth/status', (c) => c.json({ status: true }));
@@ -44,6 +46,7 @@ function createTestApp(): Hono {
 describe('authMiddleware', () => {
   beforeEach(() => {
     mockedConfig.auth = false;
+    mockedConfig.serviceToken = '';
     mockedVerifySession.mockReset();
   });
 
@@ -95,6 +98,46 @@ describe('authMiddleware', () => {
       });
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ok: true });
+    });
+
+    it('authenticates service-token TTS without a browser session', async () => {
+      mockedConfig.serviceToken = 'tok-123';
+      const app = createTestApp();
+      const res = await app.request('/api/tts', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer tok-123' },
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true });
+      expect(mockedVerifySession).not.toHaveBeenCalled();
+    });
+
+    it('rejects a wrong service token', async () => {
+      mockedConfig.serviceToken = 'tok-123';
+      const app = createTestApp();
+      const res = await app.request('/api/tts', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer wrong' },
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it('does not grant the TTS token access to other API routes', async () => {
+      mockedConfig.serviceToken = 'tok-123';
+      const app = createTestApp();
+      const res = await app.request('/api/test', {
+        headers: { Authorization: 'Bearer tok-123' },
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it('does not enable bearer auth when the service token is empty', async () => {
+      const app = createTestApp();
+      const res = await app.request('/api/tts', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer tok-123' },
+      });
+      expect(res.status).toBe(401);
     });
 
     describe('public routes bypass auth', () => {

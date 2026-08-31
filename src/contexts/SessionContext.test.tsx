@@ -5,20 +5,14 @@ import { getSessionKey, type GatewayEvent } from '@/types';
 import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
 
 const mockUseGateway = vi.fn();
-const mockUseSettings = vi.fn();
 const playPingMock = vi.fn();
 let rpcMock: ReturnType<typeof vi.fn>;
 let subscribeMock: ReturnType<typeof vi.fn>;
 let connectionStateValue: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' = 'connected';
 let subscribedHandler: ((msg: GatewayEvent) => void) | null = null;
-let soundEnabledValue = true;
 
 vi.mock('./GatewayContext', () => ({
   useGateway: () => mockUseGateway(),
-}));
-
-vi.mock('./SettingsContext', () => ({
-  useSettings: () => mockUseSettings(),
 }));
 
 vi.mock('@/features/voice/audio-feedback', () => ({
@@ -94,7 +88,6 @@ describe('SessionContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     subscribedHandler = null;
-    soundEnabledValue = true;
     connectionStateValue = 'connected';
 
     rpcMock = vi.fn(async (method: string, params?: Record<string, unknown>) => {
@@ -125,10 +118,6 @@ describe('SessionContext', () => {
       connectionState: connectionStateValue,
       rpc: rpcMock,
       subscribe: subscribeMock,
-    }));
-
-    mockUseSettings.mockImplementation(() => ({
-      soundEnabled: soundEnabledValue,
     }));
 
     globalThis.fetch = vi.fn((input: string | URL | Request) => {
@@ -822,7 +811,7 @@ describe('SessionContext', () => {
     expect(playPingMock).not.toHaveBeenCalled();
   });
 
-  it('keeps the DONE-to-IDLE timer alive when sound is toggled mid-response', async () => {
+  it('keeps the DONE-to-IDLE timer alive across provider rerenders', async () => {
     rpcMock.mockImplementation(async (method: string) => {
       if (method === 'sessions.list') {
         return {
@@ -862,7 +851,6 @@ describe('SessionContext', () => {
     expect(screen.getByTestId('reviewer-status').textContent).toBe('DONE');
 
     await act(async () => {
-      soundEnabledValue = false;
       view.rerender(
         <SessionProvider>
           <SessionStatusProbe />

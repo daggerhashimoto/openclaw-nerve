@@ -2,8 +2,31 @@
 // Files are preloaded into AudioBuffers for instant, glitch-free playback.
 
 let audioCtx: AudioContext | null = null;
+let outputGain: GainNode | null = null;
+let uiSoundVolume = 1;
 const bufferCache = new Map<string, AudioBuffer>();
 const loadingCache = new Map<string, Promise<AudioBuffer | null>>();
+
+export function normalizeUiSoundVolume(volume: number): number {
+  if (!Number.isFinite(volume)) return 1;
+  return Math.min(1, Math.max(0, volume));
+}
+
+/** Set the volume used by UI sound effects without affecting TTS playback. */
+export function setUiSoundVolume(volume: number): void {
+  uiSoundVolume = normalizeUiSoundVolume(volume);
+  if (outputGain) outputGain.gain.value = uiSoundVolume;
+}
+
+function getOutputGain(): GainNode {
+  if (!audioCtx) audioCtx = new AudioContext();
+  if (!outputGain) {
+    outputGain = audioCtx.createGain();
+    outputGain.gain.value = uiSoundVolume;
+    outputGain.connect(audioCtx.destination);
+  }
+  return outputGain;
+}
 
 /** Preload an audio file into an AudioBuffer. */
 function preloadSound(path: string): Promise<AudioBuffer | null> {
@@ -36,6 +59,7 @@ if (typeof window !== 'undefined') {
 
 function playSound(path: string, playbackRate = 1): void {
   try {
+    if (uiSoundVolume === 0) return;
     if (!audioCtx) audioCtx = new AudioContext();
     if (audioCtx.state === 'suspended') audioCtx.resume();
 
@@ -49,7 +73,7 @@ function playSound(path: string, playbackRate = 1): void {
     const source = audioCtx.createBufferSource();
     source.buffer = buffer;
     source.playbackRate.value = playbackRate;
-    source.connect(audioCtx.destination);
+    source.connect(getOutputGain());
     source.start(0);
   } catch {
     // AudioContext not available, silently skip

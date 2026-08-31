@@ -205,6 +205,8 @@ type AudioSettingsSection = 'all' | 'input' | 'output';
 interface AudioSettingsProps {
   soundEnabled: boolean;
   onToggleSound: () => void;
+  uiSoundVolume: number;
+  onUiSoundVolumeChange: (volume: number) => void;
   ttsProvider: TTSProvider;
   ttsModel: string;
   onTtsProviderChange: (provider: TTSProvider) => void;
@@ -432,6 +434,8 @@ const PROVIDER_MODELS: Record<TTSProvider, { value: string; label: string }[]> =
 export function AudioSettings({
   soundEnabled,
   onToggleSound,
+  uiSoundVolume,
+  onUiSoundVolumeChange,
   ttsProvider,
   ttsModel,
   onTtsProviderChange,
@@ -697,7 +701,7 @@ export function AudioSettings({
         </div>
       )}
 
-      {/* Sound Effects */}
+      {/* Spoken Replies */}
       {showOutput && (
         <div className="cockpit-row items-start justify-between">
           <div className="flex items-center gap-3">
@@ -707,15 +711,47 @@ export function AudioSettings({
               <VolumeX size={14} className="text-muted-foreground" aria-hidden="true" />
             )}
             <div className="flex flex-col">
-              <span className="text-sm font-medium text-foreground" id="sound-label">Sound effects</span>
-              <span className="text-xs text-muted-foreground">Keep subtle UI cues and audio confirmations enabled.</span>
+              <span className="text-sm font-medium text-foreground" id="sound-label">Spoken replies</span>
+              <span className="text-xs text-muted-foreground">Play assistant responses through the configured TTS provider.</span>
             </div>
           </div>
           <Switch
             checked={soundEnabled}
             onCheckedChange={onToggleSound}
-            aria-label="Toggle sound effects"
+            aria-label="Toggle spoken replies"
           />
+        </div>
+      )}
+
+      {/* UI Sound Volume */}
+      {showOutput && (
+        <div className="cockpit-row items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            {uiSoundVolume > 0 ? (
+              <Volume2 size={14} className="text-primary" aria-hidden="true" />
+            ) : (
+              <VolumeX size={14} className="text-muted-foreground" aria-hidden="true" />
+            )}
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-foreground" htmlFor="ui-sound-volume">UI sound volume</label>
+              <span className="text-xs text-muted-foreground">Adjust voice cues and notifications without changing TTS volume.</span>
+            </div>
+          </div>
+          <div className="flex min-w-32 items-center gap-2 pt-1">
+            <input
+              id="ui-sound-volume"
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={Math.round(uiSoundVolume * 100)}
+              onChange={(event) => onUiSoundVolumeChange(Number(event.target.value) / 100)}
+              className="h-2 w-24 cursor-pointer accent-primary"
+            />
+            <span className="w-9 text-right font-mono text-xs text-muted-foreground">
+              {Math.round(uiSoundVolume * 100)}%
+            </span>
+          </div>
         </div>
       )}
 

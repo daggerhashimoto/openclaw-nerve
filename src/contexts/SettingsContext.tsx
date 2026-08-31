@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components -- hook intentionally co-located with provider */
 import { createContext, useContext, useCallback, useRef, useState, useEffect, useMemo, type ReactNode } from 'react';
 import { useTTS, migrateTTSProvider, type TTSProvider } from '@/features/tts/useTTS';
+import { normalizeUiSoundVolume, setUiSoundVolume as applyUiSoundVolume } from '@/features/voice/audio-feedback';
 import { type ThemeName, applyTheme, themeNames } from '@/lib/themes';
 import { type FontName, applyFont, fontNames } from '@/lib/fonts';
 
@@ -10,6 +11,8 @@ export type STTInputMode = 'browser' | 'local' | 'hybrid';
 interface SettingsContextValue {
   soundEnabled: boolean;
   toggleSound: () => void;
+  uiSoundVolume: number;
+  setUiSoundVolume: (volume: number) => void;
   ttsProvider: TTSProvider;
   ttsModel: string;
   setTtsProvider: (provider: TTSProvider) => void;
@@ -58,6 +61,8 @@ const KANBAN_VISIBILITY_STORAGE_KEY = 'nerve:workspace:kanban-visible';
 const COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showChatboxCommandPaletteButton';
 const LEGACY_TOPBAR_COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showTopBarCommandPaletteButton';
 const LEGACY_COMPACT_COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showFloatingCommandPaletteButton';
+const UI_SOUND_VOLUME_STORAGE_KEY = 'nerve:uiSoundVolume';
+const SPOKEN_REPLIES_STORAGE_KEY = 'oc-sound';
 
 const ALLOWED_FONT_SIZES = new Set([10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24]);
 const ALLOWED_EDITOR_FONT_SIZES = new Set([10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24]);
@@ -68,6 +73,18 @@ function normalizeFontSize(size: number): number {
 
 function normalizeEditorFontSize(size: number): number {
   return Number.isFinite(size) && ALLOWED_EDITOR_FONT_SIZES.has(size) ? size : 13;
+}
+
+function resolveInitialUiSoundVolume(): number {
+  const saved = localStorage.getItem(UI_SOUND_VOLUME_STORAGE_KEY);
+  if (saved !== null && saved.trim() !== '') {
+    return normalizeUiSoundVolume(Number(saved));
+  }
+
+  const legacySoundPreference = localStorage.getItem(SPOKEN_REPLIES_STORAGE_KEY);
+  const volume = legacySoundPreference === null || legacySoundPreference === 'true' ? 1 : 0;
+  localStorage.setItem(UI_SOUND_VOLUME_STORAGE_KEY, String(volume));
+  return volume;
 }
 
 function resolveInitialCommandPaletteButtonVisible(): boolean {
@@ -110,7 +127,8 @@ function resolveInitialFont(): FontName {
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [soundEnabled, setSoundEnabled] = useState(localStorage.getItem('oc-sound') === 'true');
+  const [soundEnabled, setSoundEnabled] = useState(localStorage.getItem(SPOKEN_REPLIES_STORAGE_KEY) === 'true');
+  const [uiSoundVolume, setUiSoundVolumeState] = useState(resolveInitialUiSoundVolume);
   const [ttsProvider, setTtsProvider] = useState<TTSProvider>(() => migrateTTSProvider(localStorage.getItem('oc-tts-provider') || 'edge'));
   const [ttsModel, setTtsModelState] = useState(() => localStorage.getItem('oc-tts-model') || '');
   const [sttProvider, setSttProviderState] = useState<STTProvider>(() => {
@@ -177,6 +195,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     applyFont(font);
   }, [font]);
 
+  useEffect(() => {
+    applyUiSoundVolume(uiSoundVolume);
+  }, [uiSoundVolume]);
+
   // Apply font size on mount and when it changes
   useEffect(() => {
     document.documentElement.style.setProperty('--font-size-base', `${fontSize}px`);
@@ -190,9 +212,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const toggleSound = useCallback(() => {
     setSoundEnabled(prev => {
       const next = !prev;
-      localStorage.setItem('oc-sound', String(next));
+      localStorage.setItem(SPOKEN_REPLIES_STORAGE_KEY, String(next));
       return next;
     });
+  }, []);
+
+  const setUiSoundVolume = useCallback((volume: number) => {
+    const normalized = normalizeUiSoundVolume(volume);
+    setUiSoundVolumeState(normalized);
+    localStorage.setItem(UI_SOUND_VOLUME_STORAGE_KEY, String(normalized));
   }, []);
 
   const toggleLiveTranscriptionPreview = useCallback(() => {
@@ -368,6 +396,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SettingsContextValue>(() => ({
     soundEnabled,
     toggleSound,
+    uiSoundVolume,
+    setUiSoundVolume,
     ttsProvider,
     ttsModel,
     setTtsProvider: changeTtsProvider,
@@ -409,7 +439,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     kanbanVisible,
     toggleKanbanVisible,
   }), [
-    soundEnabled, toggleSound, ttsProvider, ttsModel, changeTtsProvider, changeTtsModel, toggleTtsProvider,
+    soundEnabled, toggleSound, uiSoundVolume, setUiSoundVolume,
+    ttsProvider, ttsModel, changeTtsProvider, changeTtsModel, toggleTtsProvider,
     sttProvider, changeSttProvider, sttInputMode, changeSttInputMode, sttModel, changeSttModel,
     wakeWordEnabled, handleToggleWakeWord, handleWakeWordState,
     liveTranscriptionPreview, toggleLiveTranscriptionPreview,

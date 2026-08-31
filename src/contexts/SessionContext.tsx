@@ -1,7 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- hook intentionally co-located with provider */
 import { createContext, useContext, useCallback, useRef, useEffect, useState, useMemo, type ReactNode } from 'react';
 import { useGateway } from './GatewayContext';
-import { useSettings } from './SettingsContext';
 import { getSessionKey, type Session, type AgentLogEntry, type EventEntry, type GatewayEvent, type EventPayload, type AgentEventPayload, type ChatEventPayload, type ContentBlock, type SessionsListResponse, type ChatHistoryResponse, type ChatMessage, type GranularAgentState } from '@/types';
 import { playPing } from '@/features/voice/audio-feedback';
 import { describeToolUse } from '@/utils/helpers';
@@ -64,7 +63,6 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const { connectionState, rpc, subscribe } = useGateway();
-  const { soundEnabled } = useSettings();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [currentSession, setCurrentSessionRaw] = useState('');
@@ -77,7 +75,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [rootIdentityMisses, setRootIdentityMisses] = useState<Record<string, true>>({});
   const [unreadSessionKeys, setUnreadSessionKeys] = useState<Set<string>>(new Set());
   const unreadSessionKeysRef = useRef(unreadSessionKeys);
-  const soundEnabledRef = useRef(soundEnabled);
   const logStateRef = useRef<Record<string, boolean>>({});
   const toolSeenRef = useRef<Map<string, number>>(new Map());
   const doneTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -104,10 +101,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     unreadSessionKeysRef.current = unreadSessionKeys;
   }, [unreadSessionKeys]);
-
-  useEffect(() => {
-    soundEnabledRef.current = soundEnabled;
-  }, [soundEnabled]);
 
   const markSessionRead = useCallback((key: string) => {
     if (!unreadSessionKeysRef.current.has(key)) return;
@@ -278,7 +271,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const pingSession = useCallback((sessionKey: string) => {
-    if (!sessionKey || currentSessionRef.current === sessionKey || !soundEnabledRef.current) return;
+    if (!sessionKey || currentSessionRef.current === sessionKey) return;
     playPing();
   }, []);
 

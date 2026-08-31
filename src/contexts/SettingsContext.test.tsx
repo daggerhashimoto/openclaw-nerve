@@ -42,6 +42,7 @@ describe('SettingsContext UI sound volume', () => {
   });
 
   it('restores and applies the saved UI sound volume', async () => {
+    localStorage.setItem('oc-sound', 'false');
     localStorage.setItem('nerve:uiSoundVolume', '0.35');
 
     render(
@@ -52,6 +53,32 @@ describe('SettingsContext UI sound volume', () => {
 
     expect(screen.getByRole('button')).toHaveTextContent('0.35');
     await waitFor(() => expect(applyUiSoundVolumeMock).toHaveBeenCalledWith(0.35));
+  });
+
+  it('migrates an explicitly disabled legacy sound preference to muted UI sounds', async () => {
+    localStorage.setItem('oc-sound', 'false');
+
+    render(
+      <SettingsProvider>
+        <VolumeProbe />
+      </SettingsProvider>,
+    );
+
+    expect(screen.getByRole('button')).toHaveTextContent('0');
+    expect(localStorage.getItem('nerve:uiSoundVolume')).toBe('0');
+    await waitFor(() => expect(applyUiSoundVolumeMock).toHaveBeenCalledWith(0));
+  });
+
+  it('defaults fresh installs to full UI sound volume', async () => {
+    render(
+      <SettingsProvider>
+        <VolumeProbe />
+      </SettingsProvider>,
+    );
+
+    expect(screen.getByRole('button')).toHaveTextContent('1');
+    expect(localStorage.getItem('nerve:uiSoundVolume')).toBe('1');
+    await waitFor(() => expect(applyUiSoundVolumeMock).toHaveBeenCalledWith(1));
   });
 
   it('persists UI sound volume changes independently', async () => {

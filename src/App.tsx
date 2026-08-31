@@ -115,7 +115,7 @@ export default function App({ onLogout }: AppProps) {
 
   // Settings state
   const {
-    soundEnabled, toggleSound,
+    soundEnabled, toggleSound, uiSoundVolume, setUiSoundVolume,
     ttsProvider, ttsModel, setTtsProvider, setTtsModel,
     sttProvider, setSttProvider, sttInputMode, setSttInputMode, sttModel, setSttModel,
     wakeWordEnabled, handleToggleWakeWord, handleWakeWordState,
@@ -1002,6 +1002,8 @@ export default function App({ onLogout }: AppProps) {
             connectionState={connectionState}
             soundEnabled={soundEnabled}
             onToggleSound={toggleSound}
+            uiSoundVolume={uiSoundVolume}
+            onUiSoundVolumeChange={setUiSoundVolume}
             ttsProvider={ttsProvider}
             ttsModel={ttsModel}
             onTtsProviderChange={handleTtsProviderChange}

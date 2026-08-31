@@ -102,7 +102,7 @@ const ChatContext = createContext<ChatContextValue | null>(null);
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { connectionState, rpc, subscribe } = useGateway();
   const { currentSession, sessions } = useSessionContext();
-  const { soundEnabled, speak } = useSettings();
+  const { soundEnabled: ttsEnabled, speak } = useSettings();
 
   // ─── Shared state ─────────────────────────────────────────────────────────
   const [isGenerating, setIsGenerating] = useState(false);
@@ -111,15 +111,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // ─── Refs for stable callback references ──────────────────────────────────
   const currentSessionRef = useRef(currentSession);
   const isGeneratingRef = useRef(isGenerating);
-  const soundEnabledRef = useRef(soundEnabled);
+  const ttsEnabledRef = useRef(ttsEnabled);
   const speakRef = useRef(speak);
 
   useEffect(() => {
     currentSessionRef.current = currentSession;
     isGeneratingRef.current = isGenerating;
-    soundEnabledRef.current = soundEnabled;
+    ttsEnabledRef.current = ttsEnabled;
     speakRef.current = speak;
-  }, [currentSession, isGenerating, soundEnabled, speak]);
+  }, [currentSession, isGenerating, ttsEnabled, speak]);
 
   // ─── Run state management ─────────────────────────────────────────────────
   const runsRef = useRef<Map<string, RunState>>(new Map());
@@ -131,7 +131,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // ─── Compose hooks ────────────────────────────────────────────────────────
   const msgHook = useChatMessages({ rpc, currentSessionRef });
   const streamHook = useChatStreaming();
-  const ttsHook = useChatTTS({ soundEnabled: soundEnabledRef, speak: speakRef });
+  const ttsHook = useChatTTS({ ttsEnabled: ttsEnabledRef, speak: speakRef });
 
   const recoveryHook = useChatRecovery({
     rpc,

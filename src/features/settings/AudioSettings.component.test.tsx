@@ -49,6 +49,8 @@ vi.mock('@/components/ui/InlineSelect', () => ({
 const baseProps = {
   soundEnabled: true,
   onToggleSound: vi.fn(),
+  uiSoundVolume: 1,
+  onUiSoundVolumeChange: vi.fn(),
   ttsProvider: 'edge' as const,
   ttsModel: 'tts-1',
   onTtsProviderChange: vi.fn(),
@@ -233,6 +235,29 @@ describe('AudioSettings', () => {
       expect(screen.getByRole('option', { name: /Nova —/ })).toBeInTheDocument();
       fireEvent.change(screen.getByLabelText('OpenAI Voice'), { target: { value: 'nova' } });
       expect(updateField).toHaveBeenCalledWith('openai', 'voice', 'nova');
+    });
+  });
+
+  describe('UI sound volume', () => {
+    it('changes UI sound volume independently from the spoken replies toggle', async () => {
+      const onUiSoundVolumeChange = vi.fn();
+      const onToggleSound = vi.fn();
+      render(
+        <AudioSettings
+          {...baseProps}
+          section="output"
+          uiSoundVolume={0.4}
+          onUiSoundVolumeChange={onUiSoundVolumeChange}
+          onToggleSound={onToggleSound}
+        />,
+      );
+
+      const slider = await screen.findByRole('slider', { name: /ui sound volume/i });
+      expect(slider).toHaveValue('40');
+
+      fireEvent.change(slider, { target: { value: '25' } });
+      expect(onUiSoundVolumeChange).toHaveBeenCalledWith(0.25);
+      expect(onToggleSound).not.toHaveBeenCalled();
     });
   });
 });

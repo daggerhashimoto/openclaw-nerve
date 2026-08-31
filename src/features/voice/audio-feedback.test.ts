@@ -3,6 +3,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // Mock AudioContext and related Web Audio API
 const mockStart = vi.fn();
 const mockConnect = vi.fn();
+const mockGainConnect = vi.fn();
+const mockGain = { gain: { value: 1 }, connect: mockGainConnect };
+const mockDestination = {};
 
 const mockCreateBufferSource = vi.fn(() => ({
   buffer: null,
@@ -19,8 +22,9 @@ const mockResume = vi.fn(() => Promise.resolve());
 
 class MockAudioContext {
   state = 'running';
-  destination = {};
+  destination = mockDestination;
   createBufferSource = mockCreateBufferSource;
+  createGain = vi.fn(() => mockGain);
   decodeAudioData = mockDecodeAudioData;
   resume = mockResume;
 }
@@ -42,10 +46,14 @@ describe('audio-feedback', () => {
   let playSubmitPing: () => void;
   let playCancelPing: () => void;
   let playPing: () => void;
+  let setUiSoundVolume: (volume: number) => void;
+  let normalizeUiSoundVolume: (volume: number) => number;
 
   beforeEach(async () => {
     mockStart.mockClear();
     mockConnect.mockClear();
+    mockGainConnect.mockClear();
+    mockGain.gain.value = 1;
     mockCreateBufferSource.mockClear();
     mockDecodeAudioData.mockClear();
     mockResume.mockClear();
@@ -58,6 +66,8 @@ describe('audio-feedback', () => {
     playSubmitPing = mod.playSubmitPing;
     playCancelPing = mod.playCancelPing;
     playPing = mod.playPing;
+    setUiSoundVolume = mod.setUiSoundVolume;
+    normalizeUiSoundVolume = mod.normalizeUiSoundVolume;
 
     // Wait for preloads to complete
     await new Promise(r => setTimeout(r, 10));
@@ -96,6 +106,29 @@ describe('audio-feedback', () => {
       playWakePing();
       const source = mockCreateBufferSource.mock.results[0].value;
       expect(source.playbackRate.value).toBe(1);
+    });
+
+    it('routes UI audio through its independent volume control', () => {
+      setUiSoundVolume(0.25);
+      playWakePing();
+
+      expect(mockGain.gain.value).toBe(0.25);
+      expect(mockConnect).toHaveBeenCalledWith(mockGain);
+      expect(mockGainConnect).toHaveBeenCalledWith(mockDestination);
+    });
+
+    it('does not start an audio source when UI sounds are muted', () => {
+      setUiSoundVolume(0);
+      playWakePing();
+
+      expect(mockCreateBufferSource).not.toHaveBeenCalled();
+      expect(mockStart).not.toHaveBeenCalled();
+    });
+
+    it('clamps UI sound volume to the supported range', () => {
+      expect(normalizeUiSoundVolume(-1)).toBe(0);
+      expect(normalizeUiSoundVolume(2)).toBe(1);
+      expect(normalizeUiSoundVolume(Number.NaN)).toBe(1);
     });
   });
 

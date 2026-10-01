@@ -101,6 +101,9 @@ export const config = {
   // Agent log
   agentLogMax: 200,
 
+  // MiniMax voice design
+  minimaxApiKey: process.env.MINIMAX_API_KEY || '',
+
   // TTS cache
   ttsCacheTtlMs: Number(process.env.TTS_CACHE_TTL_MS || 3_600_000), // 1 hour
   ttsCacheMax: Number(process.env.TTS_CACHE_MAX || 200),

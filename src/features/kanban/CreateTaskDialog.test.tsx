@@ -1,5 +1,5 @@
 import type React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CreateTaskDialog } from './CreateTaskDialog';
@@ -114,7 +114,9 @@ describe('CreateTaskDialog', () => {
     await user.type(screen.getByLabelText(/title/i), 'Closed set task');
     const assigneeInput = screen.getByRole('combobox', { name: 'Assignee' });
     await user.click(assigneeInput);
-    await user.type(assigneeInput, 'agent:ghost');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Assignee' }), {
+      target: { value: 'agent:ghost' },
+    });
     expect(await screen.findByText('No matching assignees')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /create task/i }));

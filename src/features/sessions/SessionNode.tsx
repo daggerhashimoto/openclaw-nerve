@@ -143,7 +143,7 @@ export const SessionNode = memo(function SessionNode({
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsRef = useRef<HTMLDivElement>(null);
 
-  const canRenameDelete = isRootAgent || isSubagent || isCron || isCronRun;
+  const canRenameDelete = isRootAgent || isSubagent || isCron || isCronRun || Boolean(onStartRename) || Boolean(onDelete);
   const hasAbortAction = Boolean(onAbort && running);
   const hasRenameAction = Boolean(canRenameDelete && onStartRename && !isRenaming);
   const hasDeleteAction = Boolean(canRenameDelete && onDelete);
@@ -359,29 +359,25 @@ export const SessionNode = memo(function SessionNode({
               ⏹
             </button>
           )}
-          {canRenameDelete && (
-            <>
-              {hasRenameAction && (
-                <button
-                  type="button"
-                  onClick={handleRenameClick}
-                  title="Rename session"
-                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
-                >
-                  <PenLine size={10} />
-                </button>
-              )}
-              {hasDeleteAction && (
-                <button
-                  type="button"
-                  onClick={handleDeleteClick}
-                  title="Delete session"
-                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
-                >
-                  ✕
-                </button>
-              )}
-            </>
+          {hasRenameAction && (
+            <button
+              type="button"
+              onClick={handleRenameClick}
+              title="Rename session"
+              className="bg-card/90 border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+            >
+              <PenLine size={10} />
+            </button>
+          )}
+          {hasDeleteAction && (
+            <button
+              type="button"
+              onClick={handleDeleteClick}
+              title="Delete session"
+              className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+            >
+              ✕
+            </button>
           )}
         </div>
       )}

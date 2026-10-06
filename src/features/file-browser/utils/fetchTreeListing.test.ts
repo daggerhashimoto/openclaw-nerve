@@ -65,23 +65,33 @@ describe('fetchTreeListing', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the pages already collected when a later page fails', async () => {
+  it('fails the whole listing when a later page fails, so no partial listing looks complete', async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(respond({ ok: true, entries: [{ path: 'a' }], nextCursor: '1' }))
       .mockResolvedValueOnce(respond({ ok: false, error: 'boom' }, 500));
 
-    const { payload } = await fetchTreeListing<Page>('/api/files/tree?depth=1');
+    const { response, payload } = await fetchTreeListing<Page>('/api/files/tree?depth=1');
 
-    expect(payload?.entries).toEqual([{ path: 'a' }]);
-    expect(payload?.nextCursor).toBe('1');
+    expect(response.status).toBe(500);
+    expect(payload?.ok).toBe(false);
+    expect(payload?.error).toBe('boom');
   });
 
-  it('stops after the page cap even if the server keeps returning a cursor', async () => {
+  it('propagates a rejected later request like a rejected first request', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(respond({ ok: true, entries: [{ path: 'a' }], nextCursor: '1' }))
+      .mockRejectedValueOnce(new TypeError('network down'));
+
+    await expect(fetchTreeListing<Page>('/api/files/tree?depth=1')).rejects.toThrow('network down');
+  });
+
+  it('fails instead of returning a truncated listing when the page cap is reached', async () => {
     vi.mocked(fetch).mockImplementation(async () => respond({ ok: true, entries: [{ path: 'x' }], nextCursor: 'more' }));
 
     const { payload } = await fetchTreeListing<Page>('/api/files/tree?depth=1');
 
     expect(fetch).toHaveBeenCalledTimes(MAX_TREE_LISTING_PAGES);
-    expect(payload?.entries).toHaveLength(MAX_TREE_LISTING_PAGES);
+    expect(payload?.ok).toBe(false);
+    expect(payload?.error).toMatch(/too many entries/i);
   });
 });

@@ -4,8 +4,10 @@
  *
  * `/api/files/tree` pages large directories (1,000 entries per page by
  * default). Callers that render a whole directory must collect every page,
- * otherwise entries past the first page silently disappear. A page cap guards
- * against a server that never stops returning a cursor.
+ * otherwise entries past the first page silently disappear. A listing is all or
+ * nothing: a failed later page, or reaching the page cap, fails the whole
+ * listing so callers never show a partial directory as complete. A rejected
+ * request propagates exactly like a rejected first request.
  */
 
 export const MAX_TREE_LISTING_PAGES = 50;
@@ -14,6 +16,7 @@ interface TreeListingPayload {
   ok?: boolean;
   entries?: unknown[];
   nextCursor?: string;
+  error?: string;
 }
 
 export async function fetchTreeListing<T extends TreeListingPayload>(
@@ -30,13 +33,21 @@ export async function fetchTreeListing<T extends TreeListingPayload>(
   for (let page = 1; cursor && page < MAX_TREE_LISTING_PAGES; page += 1) {
     const nextResponse = await fetch(withCursor(url, cursor));
     const next = await readPayload<T>(nextResponse);
-    // Keep the pages already collected; the remaining cursor stays on the payload.
-    if (!nextResponse.ok || !next?.ok || !Array.isArray(next.entries)) break;
+    if (!nextResponse.ok || !next?.ok || !Array.isArray(next.entries)) {
+      return { response: nextResponse, payload: next };
+    }
     entries = entries.concat(next.entries);
     cursor = next.nextCursor;
   }
 
-  return { response, payload: { ...payload, entries, nextCursor: cursor } };
+  if (cursor) {
+    return {
+      response,
+      payload: { ...payload, ok: false, entries: [], error: 'Directory has too many entries to list.' },
+    };
+  }
+
+  return { response, payload: { ...payload, entries, nextCursor: undefined } };
 }
 
 async function readPayload<T>(response: Response): Promise<T | null> {

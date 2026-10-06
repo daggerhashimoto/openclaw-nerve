@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { Mic, Paperclip, X, Loader2, ArrowUp, FileText, FolderOpen, Command } from 'lucide-react';
 import type { TreeEntry } from '@/features/file-browser';
+import { fetchTreeListing } from '@/features/file-browser/utils/fetchTreeListing';
 import { useVoiceInput } from '@/features/voice/useVoiceInput';
 import { useTabCompletion } from '@/hooks/useTabCompletion';
 import { useInputHistory } from '@/hooks/useInputHistory';
@@ -929,8 +930,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     setPathPickerError(null);
     try {
       const query = dirPath ? `?path=${encodeURIComponent(dirPath)}&depth=1` : '?depth=1';
-      const response = await fetch(`/api/files/tree${query}`);
-      const payload = await response.json().catch(() => null) as FileTreeResponse | null;
+      const { response, payload } = await fetchTreeListing<FileTreeResponse>(`/api/files/tree${query}`);
       if (!response.ok || !payload?.ok || !Array.isArray(payload.entries) || !payload.workspaceInfo?.rootPath) {
         throw new Error(payload?.error || 'Failed to load workspace files.');
       }

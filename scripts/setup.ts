@@ -405,7 +405,12 @@ async function collectInteractive(
       });
     }
   } else {
-    dim('Find your token in ~/.openclaw/openclaw.json or run: openclaw gateway status');
+    if (detected.tokenIsSecretRef) {
+      dim('gateway.auth.token is stored as a secret reference, so setup cannot read it.');
+      dim('Look for the plain value in ~/.openclaw/.env or wherever your gateway service sets it.');
+    } else {
+      dim('Find your token in ~/.openclaw/openclaw.json or run: openclaw gateway status');
+    }
     config.GATEWAY_TOKEN = await password({
     theme: promptTheme,
       message: 'Gateway Auth Token (required)',
@@ -1146,6 +1151,9 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
       success(`Auto-detected gateway token${tokenChoice.source === 'env' ? ' from environment' : ''}`);
     } else {
       fail('GATEWAY_TOKEN is required but could not be auto-detected');
+      if (detected.tokenIsSecretRef) {
+        console.log('  gateway.auth.token is stored as a secret reference that setup could not resolve.');
+      }
       console.log('  Set OPENCLAW_GATEWAY_TOKEN in your environment, or run setup interactively.');
       console.log('');
       process.exit(1);

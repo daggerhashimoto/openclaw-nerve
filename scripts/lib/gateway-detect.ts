@@ -11,9 +11,10 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import type { ExecSyncOptions } from 'node:child_process';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
+import dotenv from 'dotenv';
 
 const HOME = process.env.HOME || os.homedir();
 const DEFAULT_OPENCLAW_HOME = join(HOME, '.openclaw');
@@ -41,7 +42,8 @@ interface OpenClawConfig {
     bind?: string;
     auth?: {
       mode?: string;
-      token?: string;
+      /** Plain string, or a SecretRef object in current OpenClaw. */
+      token?: unknown;
     };
     controlUi?: {
       allowedOrigins?: string[];
@@ -50,12 +52,78 @@ interface OpenClawConfig {
       allow?: string[];
     };
   };
+  secrets?: {
+    providers?: Record<string, { source?: string; path?: string; mode?: string } | undefined>;
+  };
   [key: string]: unknown;
 }
 
 export interface DetectedGateway {
   token: string | null;
   url: string | null;
+  /** Set when gateway.auth.token is a SecretRef that setup could not resolve. */
+  tokenIsSecretRef?: boolean;
+}
+
+interface SecretRef {
+  source: string;
+  provider?: unknown;
+  id: string;
+}
+
+function isSecretRef(value: unknown): value is SecretRef {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const ref = value as Record<string, unknown>;
+  return typeof ref.source === 'string' && typeof ref.id === 'string';
+}
+
+/** Env SecretRef: process environment first, then the OpenClaw home .env file. */
+function readEnvSecret(id: string): string | null {
+  if (!/^[A-Z][A-Z0-9_]{0,127}$/.test(id)) return null;
+  const fromProcess = process.env[id]?.trim();
+  if (fromProcess) return fromProcess;
+
+  const dotenvPath = join(resolveOpenClawHome(), '.env');
+  if (!existsSync(dotenvPath)) return null;
+  return dotenv.parse(readFileSync(dotenvPath))[id]?.trim() || null;
+}
+
+/** File SecretRef: read through the registered `secrets.providers` file entry. */
+function readFileSecret(ref: SecretRef, config: OpenClawConfig): string | null {
+  const provider = typeof ref.provider === 'string' ? config.secrets?.providers?.[ref.provider] : undefined;
+  if (provider?.source !== 'file' || typeof provider.path !== 'string') return null;
+
+  const filePath = provider.path.startsWith('~/') ? join(HOME, provider.path.slice(2)) : provider.path;
+  if (!isAbsolute(filePath)) return null;
+  const raw = readFileSync(filePath, 'utf-8');
+
+  if (provider.mode === 'singleValue') {
+    return ref.id === 'value' ? raw.replace(/\r?\n$/, '').trim() || null : null;
+  }
+
+  if (!ref.id.startsWith('/')) return null;
+  let node: unknown = JSON.parse(raw);
+  for (const segment of ref.id.slice(1).split('/')) {
+    const key = segment.replace(/~1/g, '/').replace(/~0/g, '~');
+    if (!node || typeof node !== 'object' || !Object.hasOwn(node, key)) return null;
+    node = (node as Record<string, unknown>)[key];
+  }
+  return typeof node === 'string' ? node.trim() || null : null;
+}
+
+/**
+ * Resolve a SecretRef when it points at something setup can read locally
+ * (env and file sources). exec and store refs need the OpenClaw runtime, so
+ * they stay unresolved and the wizard falls back to manual entry.
+ */
+function resolveSecretRef(ref: SecretRef, config: OpenClawConfig): string | null {
+  try {
+    if (ref.source === 'env') return readEnvSecret(ref.id);
+    if (ref.source === 'file') return readFileSecret(ref, config);
+  } catch {
+    // Unreadable or malformed secret source: treat as unresolved
+  }
+  return null;
 }
 
 export type GatewayTokenSource = 'existing' | 'detected' | 'env' | 'none';
@@ -88,8 +156,14 @@ export function detectGatewayConfig(): DetectedGateway {
     const raw = readFileSync(openclawConfigPath, 'utf-8');
     const config = JSON.parse(raw) as OpenClawConfig;
 
-    if (!result.token && config.gateway?.auth?.token) {
-      result.token = config.gateway.auth.token;
+    const configToken = config.gateway?.auth?.token;
+    if (!result.token) {
+      if (typeof configToken === 'string' && configToken) {
+        result.token = configToken;
+      } else if (isSecretRef(configToken)) {
+        result.token = resolveSecretRef(configToken, config);
+        if (!result.token) result.tokenIsSecretRef = true;
+      }
     }
 
     // Derive URL from port — always use 127.0.0.1 since Nerve connects locally
@@ -130,18 +204,22 @@ export function getEnvGatewayToken(): string | null {
   return process.env.OPENCLAW_GATEWAY_TOKEN || null;
 }
 
+function trimToken(value: unknown): string | undefined {
+  return typeof value === 'string' ? value.trim() : undefined;
+}
+
 export function chooseSetupGatewayToken(opts: {
-  existingToken?: string | null;
-  detectedToken?: string | null;
-  envToken?: string | null;
+  existingToken?: unknown;
+  detectedToken?: unknown;
+  envToken?: unknown;
 }): GatewayTokenChoice {
-  const existingToken = opts.existingToken?.trim();
+  const existingToken = trimToken(opts.existingToken);
   if (existingToken) return { token: existingToken, source: 'existing' };
 
-  const detectedToken = opts.detectedToken?.trim();
+  const detectedToken = trimToken(opts.detectedToken);
   if (detectedToken) return { token: detectedToken, source: 'detected' };
 
-  const envToken = opts.envToken?.trim();
+  const envToken = trimToken(opts.envToken);
   if (envToken) return { token: envToken, source: 'env' };
 
   return { token: null, source: 'none' };

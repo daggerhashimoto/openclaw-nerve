@@ -7,6 +7,13 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { loadChatHistory } from '@/features/chat/operations';
 import { generateMsgId } from '@/features/chat/types';
+import {
+  isSameAssistantFinalDelivery,
+  isSameMessageIdentity,
+  hasOpenClawDurableIdentity,
+  mergeMessageState,
+  normalizeComparableText,
+} from '@/features/chat/operations/messageReconciliation';
 import type { ChatMsg } from '@/features/chat/types';
 
 // ─── Constants ──────────────────────────────────────────────────────────────────
@@ -16,11 +23,11 @@ const LOAD_MORE_BATCH = 30;
 
 // ─── Pure helpers (exported for testing / reuse) ────────────────────────────────
 
-export function normalizeComparableText(text: string): string {
-  return text.trim().replace(/\s+/g, ' ');
-}
-
 export function isLikelyDuplicateMessage(a: ChatMsg, b: ChatMsg): boolean {
+  if (a.sourceId && b.sourceId && a.sourceId === b.sourceId) return true;
+  if (isSameAssistantFinalDelivery(a, b)) return true;
+  if (hasOpenClawDurableIdentity(a) || hasOpenClawDurableIdentity(b)) return false;
+
   // Require timestamps within 60s to avoid suppressing legitimately repeated messages.
   const timeDiffMs = Math.abs(a.timestamp.getTime() - b.timestamp.getTime());
   if (timeDiffMs > 60_000) return false;
@@ -39,15 +46,42 @@ export function isLikelyDuplicateMessage(a: ChatMsg, b: ChatMsg): boolean {
   );
 }
 
+function latestUserIndex(messages: ChatMsg[]): number {
+  return messages.reduce((latest, msg, index) => (msg.role === 'user' ? index : latest), -1);
+}
+
+function findExactIdentityIndex(messages: ChatMsg[], msg: ChatMsg, claimed = new Set<number>()): number {
+  return msg.sourceId
+    ? messages.findIndex((candidate, index) => !claimed.has(index) && isSameMessageIdentity(candidate, msg))
+    : -1;
+}
+
+function findCurrentTurnAssistantFinalIndex(messages: ChatMsg[], msg: ChatMsg, latestUser: number, claimed = new Set<number>()): number {
+  if (msg.role !== 'assistant') return -1;
+  return messages.findIndex((candidate, index) =>
+    !claimed.has(index) && index > latestUser && isSameAssistantFinalDelivery(candidate, msg)
+  );
+}
+
 export function mergeFinalMessages(existing: ChatMsg[], incoming: ChatMsg[]): ChatMsg[] {
   if (incoming.length === 0) return existing;
   const merged = [...existing];
 
   for (const msg of incoming) {
+    const latestUser = latestUserIndex(merged);
+    const exactIdentityIdx = findExactIdentityIndex(merged, msg);
+    const identityIdx = exactIdentityIdx >= 0
+      ? exactIdentityIdx
+      : findCurrentTurnAssistantFinalIndex(merged, msg, latestUser);
+    if (identityIdx >= 0) {
+      merged[identityIdx] = mergeMessageState(merged[identityIdx], msg);
+      continue;
+    }
+
     const last = merged[merged.length - 1];
 
     if (last && isLikelyDuplicateMessage(last, msg)) {
-      merged[merged.length - 1] = msg;
+      merged[merged.length - 1] = mergeMessageState(last, msg);
       continue;
     }
 
@@ -67,6 +101,37 @@ export function mergeFinalMessages(existing: ChatMsg[], incoming: ChatMsg[]): Ch
     }
 
     merged.push(msg.msgId ? msg : { ...msg, msgId: generateMsgId() });
+  }
+
+  return merged;
+}
+
+export function mergeHistoryMessages(existing: ChatMsg[], history: ChatMsg[]): ChatMsg[] {
+  if (history.length === 0) {
+    const inFlight = existing.filter((msg) => msg.pending || msg.failed || msg.streaming);
+    return inFlight.length > 0 ? inFlight : history;
+  }
+  if (existing.length === 0) return history;
+
+  const latestExistingUser = latestUserIndex(existing);
+  const latestHistoryUser = latestUserIndex(history);
+  const claimedExisting = new Set<number>();
+
+  const merged = history.map((historyMsg, historyIndex) => {
+    const exactIdentityIdx = findExactIdentityIndex(existing, historyMsg, claimedExisting);
+    const assistantFinalIdx = historyIndex > latestHistoryUser
+      ? findCurrentTurnAssistantFinalIndex(existing, historyMsg, latestExistingUser, claimedExisting)
+      : -1;
+    const matchIdx = exactIdentityIdx >= 0 ? exactIdentityIdx : assistantFinalIdx;
+    if (matchIdx >= 0) claimedExisting.add(matchIdx);
+    const existingMatch = matchIdx >= 0 ? existing[matchIdx] : undefined;
+    return existingMatch ? mergeMessageState(existingMatch, historyMsg) : historyMsg;
+  });
+
+  for (const existingMsg of existing) {
+    if (!existingMsg.pending && !existingMsg.failed && !existingMsg.streaming) continue;
+    const alreadyRepresented = merged.some((candidate) => isSameMessageIdentity(candidate, existingMsg));
+    if (!alreadyRepresented) merged.push(existingMsg);
   }
 
   return merged;
@@ -129,7 +194,7 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
     const sk = session || currentSessionRef.current;
     try {
       const result = await loadChatHistory({ rpc, sessionKey: sk, limit: 500 });
-      applyMessageWindow(result, true);
+      applyMessageWindow(mergeHistoryMessages(allMessagesRef.current, result), true);
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
       allMessagesRef.current = [];

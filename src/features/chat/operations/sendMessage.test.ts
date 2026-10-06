@@ -194,6 +194,11 @@ describe('buildUserMessage', () => {
     const { msg } = buildUserMessage({ text: 'test' });
     expect(msg.msgId).toBeTruthy();
   });
+
+  it('attaches the idempotency source identity when provided', () => {
+    const { msg } = buildUserMessage({ text: 'test', idempotencyKey: 'key-1' });
+    expect(msg.sourceId).toBe('message:idempotency:key-1');
+  });
 });
 
 describe('sendChatMessage', () => {

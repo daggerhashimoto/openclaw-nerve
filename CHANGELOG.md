@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.4] - 2026-10-06
+
+### Highlights
+
+**Nerve connects to current OpenClaw again.** OpenClaw gateways now require connect protocol v4, so Nerve 1.5.3 failed with "Auth failed: protocol mismatch". The browser and server connections both negotiate v4 now (PR #367, fixes #361, #368, #380).
+
+**Replies stream live again on OpenClaw 2026.9.** Replies no longer freeze after the first few characters, interim replies show up in order while the agent is still working, and ordinary event traffic no longer triggers repeated history reloads mid-stream (#334).
+
+### Added
+- Slash command autocomplete in chat, with grouping and argument hints (PR #322)
+- Markdown rendering for Kanban task descriptions and results (PR #352)
+
+### Fixed
+- Gateway connections negotiate protocol v4, which current OpenClaw gateways require (PR #367)
+- Chat streaming follows the protocol v4 delta contract, so replies render live instead of jumping to the full text at the end (#334)
+- Interim replies sent mid-turn appear before the final answer instead of after it, and are no longer dropped during history reconciliation (#334)
+- The thinking state starts as soon as a run begins on gateways that no longer send a `started` chat event (#334)
+- Exec approval requests appear in the agent log again, matching the gateway's `exec.approval.requested` event
+- `npm run setup` no longer crashes when the gateway token is stored as a SecretRef, and resolves env and file references where it can (#379)
+- Setup respects `OPENCLAW_CONFIG_PATH` and adds a remote `GATEWAY_URL` host to `WS_ALLOWED_HOSTS` automatically (PR #316, PR #350)
+- Connections recover cleanly when a reload interrupts the handshake (PR #326)
+- Local Whisper uses the Vulkan GPU backend on Linux, with cgroup-aware thread counts and an ICD manifest fallback (PR #319, PR #348)
+- Invalid transcript costs no longer skew usage totals (PR #317)
+- Mobile dropdowns no longer click through to the element underneath (PR #310)
+- The file browser has a mobile fallback for PDFs (PR #315)
+
+### Known issues
+- On OpenClaw 2026.9 the Crons tab cannot load, because the gateway's HTTP tool endpoint denies the automations tool by default. A fix is planned for 1.6.0.
+
+### Documentation
+- Clarified the remote deployment topology and added `next` branch install instructions (PR #205, PR #332)
+
 ## [1.5.3] - 2026-04-21
 
 ### Highlights

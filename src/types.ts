@@ -204,6 +204,12 @@ export interface ChatEventPayload {
   message?: ChatMessage | string;
   messages?: ChatMessage[];
   content?: ContentBlock[];
+  /** Protocol v4: text appended by this delta (or the whole text when `replace` is set) */
+  deltaText?: string;
+  /** Protocol v4: `deltaText` replaces the current text instead of appending */
+  replace?: boolean;
+  /** Protocol v4: progress phase on `status` frames */
+  phase?: string;
   error?: string;
   errorMessage?: string;
   stopReason?: string;

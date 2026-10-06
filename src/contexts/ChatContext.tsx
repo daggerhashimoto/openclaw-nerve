@@ -125,8 +125,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const runsRef = useRef<Map<string, RunState>>(new Map());
   const activeRunIdRef = useRef<string | null>(null);
   const lastGatewaySeqRef = useRef<number | null>(null);
-  const lastChatSeqRef = useRef<number | null>(null);
-  const toolResultRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const historyRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─── Compose hooks ────────────────────────────────────────────────────────
   const msgHook = useChatMessages({ rpc, currentSessionRef });
@@ -188,10 +187,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     runsRef.current.clear();
     activeRunIdRef.current = null;
     lastGatewaySeqRef.current = null;
-    lastChatSeqRef.current = null;
-    if (toolResultRefreshRef.current) {
-      clearTimeout(toolResultRefreshRef.current);
-      toolResultRefreshRef.current = null;
+    if (historyRefreshRef.current) {
+      clearTimeout(historyRefreshRef.current);
+      historyRefreshRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSession]);
@@ -286,6 +284,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // ─── Subscribe to streaming events ────────────────────────────────────────
   useEffect(() => {
+    // Reconcile the transcript from history shortly after entries may have been
+    // committed (tool results, interim replies). Bursts collapse into one fetch.
+    const scheduleHistoryRefresh = () => {
+      if (historyRefreshRef.current) clearTimeout(historyRefreshRef.current);
+      const capturedSession = currentSessionRef.current;
+      const capturedGeneration = getGeneration();
+      historyRefreshRef.current = setTimeout(async () => {
+        historyRefreshRef.current = null;
+        try {
+          const recovered = await loadChatHistory({ rpc, sessionKey: capturedSession, limit: 100 });
+          if (capturedSession !== currentSessionRef.current) return;
+          if (capturedGeneration !== getGeneration()) return;
+          if (recovered.length > 0) {
+            const merged = mergeRecoveredTail(getAllMessages(), recovered);
+            applyMessageWindow(merged, false);
+          }
+        } catch { /* best-effort */ }
+      }, 300);
+    };
+
     return subscribe((msg: GatewayEvent) => {
       let recoveryTriggeredThisEvent = false;
       const triggerRecoveryOnce = (reason: RecoveryReason) => {
@@ -293,6 +311,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         recoveryTriggeredThisEvent = true;
         triggerRecovery(reason);
       };
+
+      // Track gateway frame sequence. The counter is per connection and covers
+      // every event frame, so it must advance before filtering by type or session.
+      if (typeof msg.seq === 'number') {
+        if (hasSeqGap(lastGatewaySeqRef.current, msg.seq) && (isGeneratingRef.current || Boolean(activeRunIdRef.current))) {
+          triggerRecoveryOnce('frame-gap');
+        }
+        lastGatewaySeqRef.current = updateHighestSeq(lastGatewaySeqRef.current, msg.seq);
+      }
 
       const classified = classifyStreamEvent(msg);
       if (!classified) return;
@@ -309,14 +336,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           triggerRecovery('subagent-complete');
         }
         return;
-      }
-
-      // Track gateway frame sequence
-      if (typeof msg.seq === 'number') {
-        if (hasSeqGap(lastGatewaySeqRef.current, msg.seq) && (isGeneratingRef.current || Boolean(activeRunIdRef.current))) {
-          triggerRecoveryOnce('frame-gap');
-        }
-        lastGatewaySeqRef.current = updateHighestSeq(lastGatewaySeqRef.current, msg.seq);
       }
 
       const { type } = classified;
@@ -372,22 +391,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (type === 'agent_tool_result') {
           const completedId = ap.data?.toolCallId;
           if (completedId) completeActivityEntry(completedId);
+          scheduleHistoryRefresh();
+          return;
+        }
 
-          if (toolResultRefreshRef.current) clearTimeout(toolResultRefreshRef.current);
-          const capturedSession = currentSessionRef.current;
-          const capturedGeneration = getGeneration();
-          toolResultRefreshRef.current = setTimeout(async () => {
-            toolResultRefreshRef.current = null;
-            try {
-              const recovered = await loadChatHistory({ rpc, sessionKey: capturedSession, limit: 100 });
-              if (capturedSession !== currentSessionRef.current) return;
-              if (capturedGeneration !== getGeneration()) return;
-              if (recovered.length > 0) {
-                const merged = mergeRecoveredTail(getAllMessages(), recovered);
-                applyMessageWindow(merged, false);
-              }
-            } catch { /* best-effort */ }
-          }, 300);
+        if (type === 'tool_item_end') {
+          scheduleHistoryRefresh();
           return;
         }
 
@@ -407,23 +416,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const run = getOrCreateRunState(runsRef.current, runId, currentSessionRef.current);
       run.lastFrameSeq = updateHighestSeq(run.lastFrameSeq, classified.frameSeq);
 
-      if (hasSeqGap(lastChatSeqRef.current, classified.chatSeq)) {
-        triggerRecoveryOnce('chat-gap');
-      }
-      lastChatSeqRef.current = updateHighestSeq(lastChatSeqRef.current, classified.chatSeq);
-
-      if (hasSeqGap(run.lastChatSeq, classified.chatSeq)) {
-        triggerRecoveryOnce('chat-gap');
-      }
+      // Chat seq is a run-level counter that protocol v4 shares with agent
+      // events, so jumps between chat frames are normal and not a gap signal.
+      // Dropped frames are caught by the connection-level frame seq check.
       const prevRunSeq = run.lastChatSeq;
       run.lastChatSeq = updateHighestSeq(run.lastChatSeq, classified.chatSeq);
 
       setLastEventTimestamp(Date.now());
 
-      if (type === 'chat_started') {
+      const beginTurn = () => {
         activeRunIdRef.current = runId;
         run.startedAt = Date.now();
         run.finalized = false;
+        run.turnStarted = true;
         run.status = 'started';
         run.stopReason = undefined;
         run.bufferRaw = '';
@@ -434,6 +439,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setProcessingStage('thinking');
         setActivityLog([]);
         startThinking(runId);
+      };
+
+      if (type === 'chat_started') {
+        beginTurn();
+        return;
+      }
+
+      if (type === 'chat_status') {
+        // A run emits several status frames; only one that arrives before any
+        // text starts the turn, so a late one cannot wipe a live buffer.
+        if (!run.finalized && !run.turnStarted) beginTurn();
         return;
       }
 
@@ -443,10 +459,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
         if (!isGeneratingRef.current) setIsGenerating(true);
         if (!activeRunIdRef.current) activeRunIdRef.current = runId;
+        run.turnStarted = true;
 
         captureThinkingDuration();
 
-        const delta = extractStreamDelta(cp);
+        const delta = extractStreamDelta(cp, run.bufferRaw);
         if (delta) {
           run.bufferRaw = delta.text;
           run.bufferText = delta.cleaned;
@@ -457,6 +474,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
 
       if (type === 'chat_final') {
+        if (run.finalized) {
+          // A second final for a settled run delivers an interim reply (for
+          // example from the message tool) after the answer is on screen.
+          // Appending it would misorder the transcript, so reconcile instead.
+          scheduleHistoryRefresh();
+          return;
+        }
+
         const isActiveRun = activeRunBefore !== null
           ? activeRunBefore === runId
           : isGeneratingRef.current;

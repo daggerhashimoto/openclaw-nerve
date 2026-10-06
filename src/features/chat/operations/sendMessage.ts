@@ -3,7 +3,7 @@
  *
  * Extracted from ChatContext.handleSend. No React hooks, setState, or refs.
  */
-import { generateMsgId } from '@/features/chat/types';
+import { stableMsgId } from '@/features/chat/types';
 import type { ChatMsg, ImageAttachment, OutgoingUploadPayload, UploadAttachmentDescriptor } from '@/features/chat/types';
 import { renderMarkdown, renderToolResults } from '@/utils/helpers';
 
@@ -76,12 +76,15 @@ export function buildUserMessage(params: {
   text: string;
   images?: ImageAttachment[];
   uploadPayload?: OutgoingUploadPayload;
+  idempotencyKey?: string;
 }): { msg: ChatMsg; tempId: string } {
-  const { text, images, uploadPayload } = params;
+  const { text, images, uploadPayload, idempotencyKey } = params;
   const tempId = crypto.randomUUID ? crypto.randomUUID() : 'temp-' + Date.now();
+  const sourceId = `message:idempotency:${idempotencyKey || tempId}`;
 
   const msg: ChatMsg = {
-    msgId: generateMsgId(),
+    msgId: stableMsgId(sourceId),
+    sourceId,
     role: 'user',
     html: renderToolResults(renderMarkdown(text)),
     rawText: text,

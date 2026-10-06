@@ -255,6 +255,29 @@ describe('useFileTree', () => {
       });
     });
 
+    it('loads every page of a directory larger than one server page', async () => {
+      const firstPage: TreeEntry[] = [{ name: 'a.txt', path: 'a.txt', type: 'file', children: null }];
+      const secondPage: TreeEntry[] = [{ name: 'b.txt', path: 'b.txt', type: 'file', children: null }];
+      const workspaceInfo = { isCustomWorkspace: false, rootPath: '/workspace' };
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const cursor = getRequestUrl(input as RequestInfo).searchParams.get('cursor');
+        return {
+          ok: true,
+          json: async () => (cursor === '1'
+            ? { ok: true, entries: secondPage, workspaceInfo }
+            : { ok: true, entries: firstPage, nextCursor: '1', workspaceInfo }),
+        } as Response;
+      });
+
+      const { result } = renderHook(() => useFileTree());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+        expect(result.current.entries.map((entry) => entry.path)).toEqual(['a.txt', 'b.txt']);
+      });
+    });
+
     it('handles fetch errors gracefully', async () => {
       const mockFetch = vi.mocked(fetch);
       mockFetch.mockRejectedValue(new Error('Network error'));

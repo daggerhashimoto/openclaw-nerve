@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getWorkspaceStorageKey } from '@/features/workspace/workspaceScope';
 import type { TreeEntry } from '../types';
+import { fetchTreeListing } from '../utils/fetchTreeListing';
 
 const DEFAULT_AGENT_ID = 'main';
 const MAX_RESTORED_EXPANDED_PATHS = 64;
@@ -207,7 +208,11 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
     requestAgentId = agentIdRef.current,
   ): Promise<TreeEntry[] | null> => {
     try {
-      const res = await fetch(buildTreeUrl(dirPath, requestAgentId, showHiddenEntries));
+      const { response: res, payload: data } = await fetchTreeListing<{
+        ok?: boolean;
+        entries?: TreeEntry[];
+        workspaceInfo?: { isCustomWorkspace: boolean; rootPath: string };
+      }>(buildTreeUrl(dirPath, requestAgentId, showHiddenEntries));
       if (!res.ok) {
         if (dirPath && (res.status === 400 || res.status === 404) && agentIdRef.current === requestAgentId) {
           setExpandedPaths((prev) => {
@@ -230,11 +235,10 @@ export function useFileTree(agentId = DEFAULT_AGENT_ID, showHiddenEntries = fals
         return null;
       }
 
-      const data = await res.json();
-      if (data.ok && data.workspaceInfo && mountedRef.current && agentIdRef.current === requestAgentId) {
+      if (data?.ok && data.workspaceInfo && mountedRef.current && agentIdRef.current === requestAgentId) {
         setWorkspaceInfo(data.workspaceInfo);
       }
-      return data.ok ? data.entries : null;
+      return data?.ok ? data.entries ?? null : null;
     } catch {
       return null;
     }

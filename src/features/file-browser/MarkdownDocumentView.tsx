@@ -1,8 +1,17 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { AlertTriangle, Eye, Loader2, PencilLine, RotateCw } from 'lucide-react';
-import { MarkdownRenderer } from '@/features/markdown/MarkdownRenderer';
 import type { OpenFile } from './types';
-import { FileEditor } from './FileEditor';
+
+const MarkdownRenderer = lazy(() =>
+  import('@/features/markdown/MarkdownRenderer').then((module) => ({
+    default: module.MarkdownRenderer,
+  })),
+);
+const FileEditor = lazy(() =>
+  import('./FileEditor').then((module) => ({
+    default: module.FileEditor,
+  })),
+);
 
 interface MarkdownDocumentViewProps {
   file: OpenFile;
@@ -13,6 +22,15 @@ interface MarkdownDocumentViewProps {
   onOpenBeadId?: (target: import('@/features/beads').BeadLinkTarget) => void | Promise<void>;
   pathLinkAliases?: Record<string, string>;
   workspaceAgentId?: string;
+}
+
+function PaneFallback({ label }: { label: string }) {
+  return (
+    <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+      <Loader2 className="animate-spin" size={14} />
+      {label}
+    </div>
+  );
 }
 
 export function MarkdownDocumentView({
@@ -92,25 +110,29 @@ export function MarkdownDocumentView({
               </button>
             </div>
           ) : (
-            <MarkdownRenderer
-              content={file.content}
-              className="markdown-document-content"
-              currentDocumentPath={file.path}
-              onOpenBeadId={onOpenBeadId}
-              onOpenWorkspacePath={(targetPath, basePath) => onOpenWorkspacePath?.(targetPath, basePath ?? file.path)}
-              pathLinkAliases={pathLinkAliases}
-              workspaceAgentId={workspaceAgentId}
-            />
+            <Suspense fallback={<PaneFallback label="Loading preview..." />}>
+              <MarkdownRenderer
+                content={file.content}
+                className="markdown-document-content"
+                currentDocumentPath={file.path}
+                onOpenBeadId={onOpenBeadId}
+                onOpenWorkspacePath={(targetPath, basePath) => onOpenWorkspacePath?.(targetPath, basePath ?? file.path)}
+                pathLinkAliases={pathLinkAliases}
+                workspaceAgentId={workspaceAgentId}
+              />
+            </Suspense>
           )}
         </div>
       ) : (
         <div className="flex-1 min-h-0">
-          <FileEditor
-            file={file}
-            onContentChange={onContentChange}
-            onSave={onSave}
-            onRetry={onRetry}
-          />
+          <Suspense fallback={<PaneFallback label="Loading editor..." />}>
+            <FileEditor
+              file={file}
+              onContentChange={onContentChange}
+              onSave={onSave}
+              onRetry={onRetry}
+            />
+          </Suspense>
         </div>
       )}
     </div>

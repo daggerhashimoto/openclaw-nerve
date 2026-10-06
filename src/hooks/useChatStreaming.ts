@@ -61,7 +61,7 @@ export function useChatStreaming() {
     const flush = streamFlushRef.current;
     clearScheduledStreamFlush();
 
-    const html = renderToolResults(renderMarkdown(flush.text, { highlight: false }));
+    const html = renderToolResults(renderMarkdown(flush.text));
     setStream(prev => ({
       ...prev,
       html,

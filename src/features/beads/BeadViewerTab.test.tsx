@@ -1,6 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BeadViewerTab } from './BeadViewerTab';
+
+// BeadViewerTab lazy-loads the markdown renderer. Warm the module once so the
+// first render does not race a cold dynamic import under full-suite load.
+beforeAll(async () => {
+  await import('@/features/markdown/MarkdownRenderer');
+});
 
 const beadDetailState = {
   bead: {

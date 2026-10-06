@@ -15,7 +15,14 @@ describe('TTS routes', () => {
     openaiKey?: string;
     replicateToken?: string;
     mimoKey?: string;
-    edgeResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number; contentType?: string };
+    edgeResult?: {
+      ok: boolean;
+      buf?: Buffer;
+      message?: string;
+      status?: number;
+      contentType?: string;
+      words?: Array<{ word: string; start: number; end: number }>;
+    };
     openaiResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number };
     replicateResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number };
     xiaomiResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number; contentType?: string };
@@ -130,6 +137,36 @@ describe('TTS routes', () => {
         body: JSON.stringify({ text: 'Hello', provider: 'edge' }),
       });
       expect(res.status).toBe(200);
+    });
+
+    it('returns Edge audio with provider word boundaries only when requested', async () => {
+      mockDeps({
+        edgeResult: {
+          ok: true,
+          buf: Buffer.from('timed-edge-audio'),
+          words: [{ word: 'Hello', start: 0.1, end: 0.4 }],
+        },
+      });
+      const app = await buildApp();
+      const { synthesizeEdge } = await import('../services/edge-tts.js');
+      const res = await app.request('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: 'Hello',
+          provider: 'edge',
+          voice: 'en-GB-RyanNeural',
+          include_word_timestamps: true,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toContain('application/json');
+      expect(await res.json()).toEqual({
+        audio_base64: Buffer.from('timed-edge-audio').toString('base64'),
+        words: [{ word: 'Hello', start: 0.1, end: 0.4 }],
+      });
+      expect(synthesizeEdge).toHaveBeenCalledWith('Hello', 'en-GB-RyanNeural', true);
     });
 
     it('uses explicit Xiaomi provider and returns WAV audio', async () => {

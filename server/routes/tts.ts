@@ -43,6 +43,7 @@ const ttsSchema = z.object({
   // Accept both old ("qwen") and new ("replicate") values
   provider: z.enum(['openai', 'replicate', 'qwen', 'edge', 'xiaomi']).optional(),
   model: z.string().optional(),
+  include_word_timestamps: z.boolean().optional(),
 });
 
 function audioResponse(buf: Buffer, contentType = 'audio/mpeg'): Response {
@@ -62,7 +63,13 @@ app.post(
   }),
   async (c) => {
     try {
-      const { text, voice: rawVoice, provider: rawProvider, model: rawModel } = c.req.valid('json');
+      const {
+        text,
+        voice: rawVoice,
+        provider: rawProvider,
+        model: rawModel,
+        include_word_timestamps: includeWordTimestamps = false,
+      } = c.req.valid('json');
 
       // Normalize "qwen" → "replicate" + model "qwen-tts" for backward compat
       const isLegacyQwen = rawProvider === 'qwen';
@@ -87,6 +94,9 @@ app.post(
           : useReplicate
             ? 'replicate'
             : 'openai';
+      if (includeWordTimestamps && effectiveProvider !== 'edge') {
+        return c.text('Word timestamps are available only for Edge TTS', 400);
+      }
       console.log(`[tts] provider=${effectiveProvider} voice=${voice} text="${text.slice(0, 50)}..."`);
 
       const xiaomiStyle = effectiveProvider === 'xiaomi' ? getTTSConfig().xiaomi.style : '';
@@ -97,7 +107,7 @@ app.post(
         .update(`${effectiveProvider}:${model || ''}:${voice || ''}:${xiaomiStyle}:${text}`)
         .digest('hex');
 
-      const cached = getTtsCache(hash);
+      const cached = includeWordTimestamps ? null : getTtsCache(hash);
       if (cached) {
         // Detect WAV (starts with "RIFF") vs MP3 for correct content type
         const cachedCt = cached.length > 4 && cached.toString('ascii', 0, 4) === 'RIFF' ? 'audio/wav' : 'audio/mpeg';
@@ -108,7 +118,7 @@ app.post(
       if (effectiveProvider === 'xiaomi') {
         result = await synthesizeXiaomi(text, { model, voice });
       } else if (effectiveProvider === 'edge') {
-        result = await synthesizeEdge(text, voice);
+        result = await synthesizeEdge(text, voice, includeWordTimestamps);
       } else if (effectiveProvider === 'replicate') {
         result = await synthesizeReplicate(text, { model, voice });
       } else {
@@ -120,6 +130,12 @@ app.post(
       }
 
       const ct = 'contentType' in result ? (result as { contentType: string }).contentType : 'audio/mpeg';
+      if (includeWordTimestamps) {
+        return c.json({
+          audio_base64: result.buf.toString('base64'),
+          words: 'words' in result ? result.words : [],
+        });
+      }
       setTtsCache(hash, result.buf);
       return audioResponse(result.buf, ct);
     } catch (err) {

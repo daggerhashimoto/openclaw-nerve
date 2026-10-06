@@ -81,6 +81,31 @@ describe('SSE events', () => {
 
       reader.cancel();
     });
+
+    it('does not throw from broadcast when a payload is not JSON-serializable', async () => {
+      const { app, broadcast } = await importEvents();
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const decoder = new TextDecoder();
+
+      const res1 = await app.request('/api/events');
+      const res2 = await app.request('/api/events');
+      const reader1 = res1.body!.getReader();
+      const reader2 = res2.body!.getReader();
+      await reader1.read();
+      await reader2.read();
+
+      expect(() => broadcast('status.changed', { value: 1n })).not.toThrow();
+
+      // Later events still reach every connected client.
+      broadcast('memory.changed', { source: 'test' });
+      for (const reader of [reader1, reader2]) {
+        const { value } = await reader.read();
+        expect(decoder.decode(value)).toContain('event: memory.changed');
+      }
+
+      reader1.cancel();
+      reader2.cancel();
+    });
   });
 
   describe('SSE client tracking (observability)', () => {

@@ -326,6 +326,57 @@ describe('useVoiceInput', () => {
       expect(MockSpeechRecognition.instances).toHaveLength(0);
     });
 
+    it('ignores a stale permission result after the wake toggle is switched off and back on', async () => {
+      localStorage.setItem('nerve:wakeWordEnabled', 'true');
+      let resolvePermission!: (value: { state: PermissionState }) => void;
+      (navigator.permissions?.query as Mock).mockReturnValue(new Promise((resolve) => {
+        resolvePermission = resolve;
+      }));
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription));
+
+      act(() => {
+        result.current.toggleWakeWord();
+      });
+      act(() => {
+        result.current.toggleWakeWord();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      const activeRecognition = mockRecognition;
+      expect(activeRecognition?.started).toBe(true);
+
+      resolvePermission({ state: 'prompt' });
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(300);
+      });
+
+      expect(result.current.wakeWordEnabled).toBe(true);
+      expect(result.current.voiceState).toBe('listening');
+      expect(activeRecognition?.started).toBe(true);
+      expect(localStorage.getItem('nerve:wakeWordEnabled')).toBe('true');
+    });
+
+    it('ignores a permission result that arrives after unmount', async () => {
+      localStorage.setItem('nerve:wakeWordEnabled', 'true');
+      let resolvePermission!: (value: { state: PermissionState }) => void;
+      (navigator.permissions?.query as Mock).mockReturnValue(new Promise((resolve) => {
+        resolvePermission = resolve;
+      }));
+      const onTranscription = vi.fn();
+      const { unmount } = renderHook(() => useVoiceInput(onTranscription));
+
+      unmount();
+      resolvePermission({ state: 'prompt' });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(localStorage.getItem('nerve:wakeWordEnabled')).toBe('true');
+    });
+
     it('still allows manual recording on mobile web', async () => {
       mockWakeWordSupport({ supported: false, reason: 'mobile-web' });
 

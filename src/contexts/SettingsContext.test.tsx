@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsProvider, useSettings } from './SettingsContext';
 
 vi.mock('@/features/tts/useTTS', () => ({
@@ -27,6 +27,10 @@ describe('SettingsContext performance mode', () => {
     localStorage.clear();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('defaults performance mode off', () => {
     const { result } = renderHook(() => useSettings(), { wrapper });
 
@@ -44,5 +48,17 @@ describe('SettingsContext performance mode', () => {
 
     expect(result.current.performanceMode).toBe(false);
     expect(localStorage.getItem('nerve:performanceMode')).toBe('false');
+  });
+
+  it('keeps performance mode unchanged when persisting it fails', () => {
+    const { result } = renderHook(() => useSettings(), { wrapper });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Quota exceeded', 'QuotaExceededError');
+    });
+
+    expect(() => act(() => result.current.togglePerformanceMode())).not.toThrow();
+
+    expect(result.current.performanceMode).toBe(false);
+    expect(localStorage.getItem('nerve:performanceMode')).toBeNull();
   });
 });

@@ -80,7 +80,13 @@ app.get('/api/events', async (c) => {
 
     const onMessage = (payload: SSEEvent) => {
       if (!connected) return;
-      writer?.enqueue({ event: payload.event, data: JSON.stringify(payload) });
+      // EventEmitter listeners run synchronously, so a throw here would escape
+      // broadcast() and skip the remaining clients. Drop the unserializable event instead.
+      try {
+        writer?.enqueue({ event: payload.event, data: JSON.stringify(payload) });
+      } catch (err) {
+        console.error(`${tag} Dropped '${payload.event}' event: ${err instanceof Error ? err.message : String(err)}`);
+      }
     };
 
     function disconnect(reason = 'client disconnect') {

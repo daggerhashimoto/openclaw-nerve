@@ -370,12 +370,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const togglePerformanceMode = useCallback(() => {
-    setPerformanceMode(prev => {
-      const next = !prev;
+    const next = !performanceMode;
+    try {
       localStorage.setItem(PERFORMANCE_MODE_STORAGE_KEY, String(next));
-      return next;
-    });
-  }, []);
+    } catch {
+      // GatewayContext reads this key directly, so keep state in sync with storage when the write fails.
+      return;
+    }
+    setPerformanceMode(next);
+  }, [performanceMode]);
 
   const value = useMemo<SettingsContextValue>(() => ({
     soundEnabled,

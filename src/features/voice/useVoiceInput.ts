@@ -576,12 +576,7 @@ export function useVoiceInput(
     if (!wakeWordSupported || !wakeWordEnabled) return;
 
     const clearPersistedWakeWord = () => {
-      wakeWordEnabledRef.current = false;
-      recognitionStartTokenRef.current += 1;
-      setStoredWakeWordEnabled(false);
-      if (stateRef.current === 'listening') {
-        setVoiceState('idle');
-      }
+      stopWakeWordListener();
       try { localStorage.removeItem(WAKE_WORD_KEY); } catch { /* noop */ }
     };
 
@@ -598,7 +593,13 @@ export function useVoiceInput(
       return;
     }
 
+    // Any start, stop, or unmount while the query is pending bumps the startup token;
+    // a result for a superseded token must not override the newer wake state.
+    const permissionStartToken = recognitionStartTokenRef.current;
+    const isSuperseded = () => permissionStartToken !== recognitionStartTokenRef.current;
+
     permissionQuery.then((result) => {
+      if (isSuperseded()) return;
       if (result.state === 'granted') {
         autoStartWakeWord();
       } else {
@@ -606,6 +607,7 @@ export function useVoiceInput(
         clearPersistedWakeWord();
       }
     }).catch(() => {
+      if (isSuperseded()) return;
       // Permissions API failed — try starting anyway (user interaction may be required)
       autoStartWakeWord();
     });

@@ -115,6 +115,7 @@ export const config = {
   agentLogMax: 200,
 
   // TTS cache
+  minimaxApiKey: process.env.MINIMAX_API_KEY || '',
   ttsCacheTtlMs: Number(process.env.TTS_CACHE_TTL_MS || 3_600_000), // 1 hour
   ttsCacheMax: Number(process.env.TTS_CACHE_MAX || 200),
 

@@ -15,6 +15,7 @@
  * Backward compat: provider "qwen" is treated as replicate + model "qwen-tts".
  */
 
+import { synthesizeMiniMax } from '../services/minimax-tts.js';
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
@@ -41,8 +42,9 @@ const ttsSchema = z.object({
     .refine((s) => s.trim().length > 0, 'Text cannot be empty or whitespace'),
   voice: z.string().optional(),
   // Accept both old ("qwen") and new ("replicate") values
-  provider: z.enum(['openai', 'replicate', 'qwen', 'edge', 'xiaomi']).optional(),
+  provider: z.enum(['openai', 'replicate', 'qwen', 'edge', 'xiaomi', 'minimax']).optional(),
   model: z.string().optional(),
+  region: z.enum(['global_en', 'cn_zh']).optional(),
 });
 
 function audioResponse(buf: Buffer, contentType = 'audio/mpeg'): Response {
@@ -62,7 +64,7 @@ app.post(
   }),
   async (c) => {
     try {
-      const { text, voice: rawVoice, provider: rawProvider, model: rawModel } = c.req.valid('json');
+      const { text, voice: rawVoice, provider: rawProvider, model: rawModel, region } = c.req.valid('json');
 
       // Normalize "qwen" → "replicate" + model "qwen-tts" for backward compat
       const isLegacyQwen = rawProvider === 'qwen';
@@ -80,7 +82,7 @@ app.post(
       const useEdge =
         provider === 'edge' ||
         (!provider && !config.openaiApiKey && !config.replicateApiToken);
-      const effectiveProvider = useXiaomi
+      const effectiveProvider = provider === 'minimax' ? 'minimax' : useXiaomi
         ? 'xiaomi'
         : useEdge
           ? 'edge'
@@ -94,7 +96,7 @@ app.post(
       // Cache key includes provider + model + voice and Xiaomi style for proper isolation
       const hash = crypto
         .createHash('md5')
-        .update(`${effectiveProvider}:${model || ''}:${voice || ''}:${xiaomiStyle}:${text}`)
+        .update(`${effectiveProvider}:${model || ''}:${voice || ''}:${xiaomiStyle}:${effectiveProvider === 'minimax' ? region || 'global_en' : ''}:${text}`)
         .digest('hex');
 
       const cached = getTtsCache(hash);
@@ -105,7 +107,9 @@ app.post(
       }
 
       let result;
-      if (effectiveProvider === 'xiaomi') {
+      if (effectiveProvider === 'minimax') {
+        result = await synthesizeMiniMax(text, { model, voice, region });
+      } else if (effectiveProvider === 'xiaomi') {
         result = await synthesizeXiaomi(text, { model, voice });
       } else if (effectiveProvider === 'edge') {
         result = await synthesizeEdge(text, voice);

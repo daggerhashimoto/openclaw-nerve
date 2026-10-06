@@ -542,7 +542,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       addAgentLogEntry('🔗', 'connected to gateway');
     } else if (evt.includes('error')) {
       addAgentLogEntry('❌', (typeof p.message === 'string' ? p.message : p.error) || 'something went wrong');
-    } else if (evt === 'exec.approval.request') {
+    } else if (evt === 'exec.approval.requested') {
       addAgentLogEntry('🔐', 'requesting exec approval');
     } else if (evt === 'exec.approval.resolved') {
       addAgentLogEntry('🔓', 'exec approved');

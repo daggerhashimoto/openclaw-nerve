@@ -302,8 +302,14 @@ describe('useWebSocket', () => {
       });
 
       const connectReq = getConnectRequest(ws);
-      const client = (connectReq?.params as { client?: { id?: string; mode?: string } } | undefined)?.client;
+      const params = connectReq?.params as {
+        minProtocol?: number;
+        maxProtocol?: number;
+        client?: { id?: string; mode?: string };
+      } | undefined;
+      const client = params?.client;
 
+      expect(params).toMatchObject({ minProtocol: 4, maxProtocol: 4 });
       expect(client?.id).toBe('openclaw-control-ui');
       expect(client?.mode).toBe('webchat');
     });

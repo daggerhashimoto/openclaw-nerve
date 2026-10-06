@@ -71,6 +71,31 @@ describe('mergeRecoveredTail', () => {
     expect(result.some(m => m.rawText === 'Old reply B')).toBe(false);
   });
 
+  it('inserts a recovered message that belongs before an already displayed reply', () => {
+    // An interim reply committed mid-turn (e.g. via the message tool) can reach
+    // the client after the run's final reply is already on screen.
+    const ts = 1700000000000;
+    const existing = [
+      makeMsg('user', 'Message A', ts),
+      makeMsg('assistant', 'Reply A', ts + 1000),
+      makeMsg('user', 'Write about clouds', ts + 2000),
+      makeMsg('assistant', 'Rain falls.', ts + 8000),
+    ];
+    const recovered = [
+      makeMsg('user', 'Write about clouds', ts + 2000),
+      makeMsg('assistant', 'Clouds form.', ts + 5000),
+      makeMsg('assistant', 'Rain falls.', ts + 8000),
+    ];
+    const result = mergeRecoveredTail(existing, recovered);
+    expect(result.map(m => m.rawText)).toEqual([
+      'Message A',
+      'Reply A',
+      'Write about clouds',
+      'Clouds form.',
+      'Rain falls.',
+    ]);
+  });
+
   it('falls back to recovered when no overlap or anchor found', () => {
     const existing = [
       makeMsg('user', 'Old message 1', 1000000),

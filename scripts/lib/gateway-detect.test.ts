@@ -339,6 +339,193 @@ describe('gateway detection and repair', () => {
     });
   });
 
+  describe('gateway.auth.token stored as a SecretRef or non-string value', () => {
+    const EXPECTED_URL = 'http://127.0.0.1:18789';
+
+    function writeGatewayConfig(token: unknown, extra: Record<string, unknown> = {}): void {
+      writeFileSync(path.join(tempHome, '.openclaw', 'openclaw.json'), JSON.stringify({
+        gateway: { port: 18789, auth: { token } },
+        ...extra,
+      }, null, 2));
+    }
+
+    it('keeps a plain string gateway token unchanged', async () => {
+      writeGatewayConfig('plain-token');
+
+      const { mod } = await importGatewayDetect();
+      const detected = mod.detectGatewayConfig();
+
+      expect(detected).toEqual({ token: 'plain-token', url: EXPECTED_URL });
+      expect(mod.chooseSetupGatewayToken({ detectedToken: detected.token })).toEqual({
+        token: 'plain-token',
+        source: 'detected',
+      });
+    });
+
+    it('resolves an env SecretRef from the process environment before the .env file', async () => {
+      process.env.NERVE_TEST_GATEWAY_TOKEN = '  env-ref-token\n';
+      writeFileSync(path.join(tempHome, '.openclaw', '.env'), 'NERVE_TEST_GATEWAY_TOKEN=stale-dotenv-token\n');
+      writeGatewayConfig({ source: 'env', provider: 'default', id: 'NERVE_TEST_GATEWAY_TOKEN' });
+
+      const { mod } = await importGatewayDetect();
+      const detected = mod.detectGatewayConfig();
+
+      expect(detected).toEqual({ token: 'env-ref-token', url: EXPECTED_URL });
+      expect(mod.chooseSetupGatewayToken({ detectedToken: detected.token })).toEqual({
+        token: 'env-ref-token',
+        source: 'detected',
+      });
+    });
+
+    it('resolves an env SecretRef from the OpenClaw home .env file', async () => {
+      delete process.env.NERVE_TEST_GATEWAY_TOKEN;
+      writeFileSync(
+        path.join(tempHome, '.openclaw', '.env'),
+        'OTHER_VALUE=1\nNERVE_TEST_GATEWAY_TOKEN="dotenv-ref-token"\n',
+      );
+      writeGatewayConfig({ source: 'env', provider: 'default', id: 'NERVE_TEST_GATEWAY_TOKEN' });
+
+      const { mod } = await importGatewayDetect();
+
+      expect(mod.detectGatewayConfig()).toEqual({ token: 'dotenv-ref-token', url: EXPECTED_URL });
+    });
+
+    it('resolves a file SecretRef in json mode through an escaped JSON pointer', async () => {
+      writeFileSync(
+        path.join(tempHome, '.openclaw', 'secrets.json'),
+        JSON.stringify({ gateway: { 'auth/token': 'file-json-token' } }),
+      );
+      writeGatewayConfig(
+        { source: 'file', provider: 'filemain', id: '/gateway/auth~1token' },
+        { secrets: { providers: { filemain: { source: 'file', path: '~/.openclaw/secrets.json', mode: 'json' } } } },
+      );
+
+      const { mod } = await importGatewayDetect();
+
+      expect(mod.detectGatewayConfig()).toEqual({ token: 'file-json-token', url: EXPECTED_URL });
+    });
+
+    it('resolves a file SecretRef in singleValue mode and strips the trailing newline', async () => {
+      const secretPath = path.join(tempHome, 'gateway-token.txt');
+      writeFileSync(secretPath, 'file-single-token\n');
+      writeGatewayConfig(
+        { source: 'file', provider: 'tokenfile', id: 'value' },
+        { secrets: { providers: { tokenfile: { source: 'file', path: secretPath, mode: 'singleValue' } } } },
+      );
+
+      const { mod } = await importGatewayDetect();
+
+      expect(mod.detectGatewayConfig()).toEqual({ token: 'file-single-token', url: EXPECTED_URL });
+    });
+
+    const jsonProvider = { secrets: { providers: { filemain: { source: 'file', path: '~/.openclaw/secrets.json' } } } };
+    it.each([
+      ['an exec source', { source: 'exec', provider: 'vault', id: 'gateway/token#value' }, {}],
+      ['a store source', { source: 'store', provider: 'default', id: 'OPENCLAW_GATEWAY_TOKEN' }, {}],
+      ['an env var that is not set', { source: 'env', provider: 'default', id: 'NERVE_TEST_UNSET_TOKEN' }, {}],
+      ['an env id outside the documented grammar', { source: 'env', provider: 'default', id: 'lower_case_id' }, {}],
+      ['a file ref without a registered provider', { source: 'file', provider: 'missing', id: '/token' }, {}],
+      [
+        'a file ref whose provider path is relative',
+        { source: 'file', provider: 'filemain', id: '/token' },
+        { secrets: { providers: { filemain: { source: 'file', path: 'secrets.json' } } } },
+      ],
+      [
+        'a file ref whose file does not exist',
+        { source: 'file', provider: 'filemain', id: '/token' },
+        { secrets: { providers: { filemain: { source: 'file', path: '/nonexistent/nerve-secrets.json' } } } },
+      ],
+      ['a file ref whose pointer misses', { source: 'file', provider: 'filemain', id: '/nope' }, jsonProvider],
+      ['a file ref resolving to a non-string', { source: 'file', provider: 'filemain', id: '/nested' }, jsonProvider],
+      ['a file ref resolving to an empty string', { source: 'file', provider: 'filemain', id: '/blank' }, jsonProvider],
+      ['a file ref with a non-absolute pointer', { source: 'file', provider: 'filemain', id: 'token' }, jsonProvider],
+    ])('falls back without throwing for %s', async (_label, ref, extra) => {
+      process.env.lower_case_id = 'must-not-be-read';
+      delete process.env.NERVE_TEST_UNSET_TOKEN;
+      writeFileSync(
+        path.join(tempHome, '.openclaw', 'secrets.json'),
+        JSON.stringify({ token: 'present-but-unreachable', nested: { a: 1 }, blank: '' }),
+      );
+      writeGatewayConfig(ref, extra);
+
+      const { mod } = await importGatewayDetect();
+      const detected = mod.detectGatewayConfig();
+
+      expect(detected).toEqual({ token: null, url: EXPECTED_URL, tokenIsSecretRef: true });
+      expect(mod.chooseSetupGatewayToken({ detectedToken: detected.token })).toEqual({
+        token: null,
+        source: 'none',
+      });
+    });
+
+    it('still lets a shell env token win when the config SecretRef cannot be resolved', async () => {
+      process.env.OPENCLAW_GATEWAY_TOKEN = 'shell-token';
+      writeGatewayConfig({ source: 'exec', provider: 'vault', id: 'gateway/token' });
+
+      const { mod } = await importGatewayDetect();
+      const detected = mod.detectGatewayConfig();
+
+      expect(mod.chooseSetupGatewayToken({
+        envToken: mod.getEnvGatewayToken(),
+        detectedToken: detected.token,
+      })).toEqual({ token: 'shell-token', source: 'env' });
+    });
+
+    it('does not flag a SecretRef when a systemd runtime token was already detected', async () => {
+      mkdirSync(path.join(tempHome, '.config', 'systemd', 'user'), { recursive: true });
+      writeFileSync(
+        path.join(tempHome, '.config', 'systemd', 'user', 'openclaw-gateway.service'),
+        '[Service]\nEnvironment=OPENCLAW_GATEWAY_TOKEN=real-systemd-token\n',
+      );
+      writeGatewayConfig({ source: 'exec', provider: 'vault', id: 'gateway/token' });
+
+      const { mod } = await importGatewayDetect();
+
+      expect(mod.detectGatewayConfig()).toEqual({ token: 'real-systemd-token', url: EXPECTED_URL });
+    });
+
+    it.each([
+      ['a number', 42],
+      ['null', null],
+      ['an array', ['a', 'b']],
+      ['a boolean', true],
+      ['an empty string', ''],
+      ['an object that is not a SecretRef', { foo: 'bar' }],
+      ['a SecretRef-like object with a non-string id', { source: 'env', provider: 'default', id: 5 }],
+    ])('treats %s as no detected token without throwing', async (_label, value) => {
+      writeGatewayConfig(value);
+
+      const { mod } = await importGatewayDetect();
+      const detected = mod.detectGatewayConfig();
+
+      expect(detected).toEqual({ token: null, url: EXPECTED_URL });
+      expect(mod.chooseSetupGatewayToken({ detectedToken: detected.token })).toEqual({
+        token: null,
+        source: 'none',
+      });
+    });
+
+    it('ignores non-string token inputs in chooseSetupGatewayToken instead of throwing', async () => {
+      const { mod } = await importGatewayDetect();
+      const junk: unknown[] = [
+        { source: 'env', provider: 'default', id: 'OPENCLAW_GATEWAY_TOKEN' },
+        42,
+        ['a'],
+        true,
+        null,
+        undefined,
+      ];
+
+      for (const value of junk) {
+        expect(mod.chooseSetupGatewayToken({
+          existingToken: value,
+          detectedToken: value,
+          envToken: 'env-token',
+        })).toEqual({ token: 'env-token', source: 'env' });
+      }
+    });
+  });
+
   it('approves only the pending request that matches Nerve and leaves unrelated requests untouched', async () => {
     const execSyncMock = vi.fn((command: string) => {
       if (command.includes('devices list --json')) {

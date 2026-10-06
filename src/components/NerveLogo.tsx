@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { isPerformanceModePreferenceEnabled } from '@/lib/performanceMode';
 
 const TAU = Math.PI * 2;
 function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
@@ -60,6 +61,102 @@ function glowLine(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: num
 interface NerveLogoProps {
   /** Logical size in CSS pixels (canvas is rendered at 2× for retina). @default 28 */
   size?: number;
+  /** Render the non-animated logo variant without a canvas animation loop. */
+  static?: boolean;
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  ));
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updatePreference = () => setPrefersReducedMotion(media.matches);
+    updatePreference();
+
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', updatePreference);
+      return () => media.removeEventListener('change', updatePreference);
+    }
+
+    media.addListener(updatePreference);
+    return () => media.removeListener(updatePreference);
+  }, []);
+
+  return prefersReducedMotion;
+}
+
+function StaticNerveLogo({ size }: { size: number }) {
+  const pad = 2;
+  const boxSize = size * pad;
+  const center = boxSize / 2;
+  const radius = size * 0.31;
+  const nodeRadius = Math.max(2.5, size * 0.13);
+  const outerRadius = Math.max(2, size * 0.09);
+  const negativeMargin = -size * (pad - 1) / 2;
+  const outer = Array.from({ length: 6 }, (_, index) => {
+    const angle = (index / 6) * TAU - Math.PI / 2;
+    return {
+      x: center + Math.cos(angle) * radius,
+      y: center + Math.sin(angle) * radius,
+    };
+  });
+
+  return (
+    <span
+      role="img"
+      aria-label="Nerve logo"
+      data-static-logo="true"
+      className="relative block"
+      style={{
+        width: boxSize,
+        height: boxSize,
+        margin: negativeMargin,
+      }}
+    >
+      {outer.map((node, index) => (
+        <span
+          key={`line-${index}`}
+          aria-hidden="true"
+          className="absolute block origin-left rounded-full bg-primary/35"
+          style={{
+            left: center,
+            top: center,
+            width: Math.hypot(node.x - center, node.y - center),
+            height: 1,
+            transform: `rotate(${Math.atan2(node.y - center, node.x - center)}rad)`,
+          }}
+        />
+      ))}
+      {outer.map((node, index) => (
+        <span
+          key={`node-${index}`}
+          aria-hidden="true"
+          className="absolute rounded-full border border-primary/45 bg-primary/25 shadow-[0_0_10px_rgba(255,140,50,0.25)]"
+          style={{
+            left: node.x - outerRadius,
+            top: node.y - outerRadius,
+            width: outerRadius * 2,
+            height: outerRadius * 2,
+          }}
+        />
+      ))}
+      <span
+        aria-hidden="true"
+        className="absolute rounded-full border border-primary/70 bg-primary/35 shadow-[0_0_14px_rgba(255,140,50,0.32)]"
+        style={{
+          left: center - nodeRadius,
+          top: center - nodeRadius,
+          width: nodeRadius * 2,
+          height: nodeRadius * 2,
+        }}
+      />
+    </span>
+  );
 }
 
 /**
@@ -69,8 +166,10 @@ interface NerveLogoProps {
  * center ignition → outward propagation → return fire → ring chain.
  * The animation loops on a ~4.2 s cycle and includes ambient breathing.
  */
-export default function NerveLogo({ size = 28 }: NerveLogoProps) {
+export default function NerveLogo({ size = 28, static: staticLogo = false }: NerveLogoProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const shouldRenderStatic = staticLogo || prefersReducedMotion || isPerformanceModePreferenceEnabled();
   const stateRef = useRef<{
     trails: Trail[];
     ripples: Ripple[];
@@ -80,6 +179,7 @@ export default function NerveLogo({ size = 28 }: NerveLogoProps) {
   } | null>(null);
 
   useEffect(() => {
+    if (shouldRenderStatic) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -100,8 +200,6 @@ export default function NerveLogo({ size = 28 }: NerveLogoProps) {
     const cx = W / 2;
     const cy = W / 2;
 
-    // Respect prefers-reduced-motion: render a single static frame
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const R = size * 0.31 * S;
     const CYCLE = 4.2;
 
@@ -240,18 +338,16 @@ export default function NerveLogo({ size = 28 }: NerveLogoProps) {
       if (stateRef.current) stateRef.current.rafId = requestAnimationFrame(animate);
     }
 
-    if (prefersReducedMotion) {
-      // Render a single static frame — structure with gentle ambient glow, no animation
-      animate(0);
-      return;
-    }
-
     stateRef.current.rafId = requestAnimationFrame(animate);
 
     return () => {
       if (stateRef.current) cancelAnimationFrame(stateRef.current.rafId);
     };
-  }, [size]);
+  }, [shouldRenderStatic, size]);
+
+  if (shouldRenderStatic) {
+    return <StaticNerveLogo size={size} />;
+  }
 
   return <canvas ref={canvasRef} role="img" aria-label="Nerve logo" style={{ display: 'block' }} />;
 }

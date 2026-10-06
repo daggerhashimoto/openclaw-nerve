@@ -82,6 +82,11 @@ export class BoundedWebSocketSender {
       bytes: frameBytes(outbound),
     };
 
+    // Progress guarantee: an idle peer always gets the next frame, even one larger
+    // than maxBufferedBytes (chat.history with images, attachments). That send lifts
+    // bufferedAmount past the cap, so later frames take the bounded queue and a slow
+    // peer holds at most maxBufferedBytes + one frame + maxQueueBytes. The per-frame
+    // ceiling is the receiving socket's ws maxPayload, which already buffered it.
     if (this.queue.length > 0 || this.socket.bufferedAmount > this.maxBufferedBytes) {
       return this.enqueue(frame);
     }

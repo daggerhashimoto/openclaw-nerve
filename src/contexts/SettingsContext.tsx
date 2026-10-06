@@ -191,6 +191,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     document.documentElement.style.setProperty('--editor-font-size', `${editorFontSize}px`);
   }, [editorFontSize]);
 
+  // Keep performance mode in sync with changes made by other tabs (key is null when storage is cleared)
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== PERFORMANCE_MODE_STORAGE_KEY) return;
+      setPerformanceMode(isPerformanceModePreferenceEnabled());
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
   const toggleSound = useCallback(() => {
     setSoundEnabled(prev => {
       const next = !prev;

@@ -61,4 +61,50 @@ describe('SettingsContext performance mode', () => {
     expect(result.current.performanceMode).toBe(false);
     expect(localStorage.getItem('nerve:performanceMode')).toBeNull();
   });
+
+  it('syncs performance mode when another tab changes the stored value', () => {
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    expect(result.current.performanceMode).toBe(false);
+
+    act(() => {
+      localStorage.setItem('nerve:performanceMode', 'true');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'nerve:performanceMode', newValue: 'true' }));
+    });
+
+    expect(result.current.performanceMode).toBe(true);
+
+    act(() => {
+      localStorage.setItem('nerve:performanceMode', 'false');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'nerve:performanceMode', newValue: 'false' }));
+    });
+
+    expect(result.current.performanceMode).toBe(false);
+  });
+
+  it('resets performance mode when another tab clears storage', () => {
+    localStorage.setItem('nerve:performanceMode', 'true');
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    expect(result.current.performanceMode).toBe(true);
+
+    act(() => {
+      localStorage.clear();
+      window.dispatchEvent(new StorageEvent('storage', { key: null }));
+    });
+
+    expect(result.current.performanceMode).toBe(false);
+  });
+
+  it('ignores storage events for unrelated keys', () => {
+    localStorage.setItem('nerve:performanceMode', 'true');
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    act(() => {
+      localStorage.setItem('nerve:performanceMode', 'false');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'nerve:other', newValue: 'x' }));
+    });
+
+    expect(result.current.performanceMode).toBe(true);
+  });
 });

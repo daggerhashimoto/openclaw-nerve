@@ -26,6 +26,7 @@ const GatewayContext = createContext<GatewayContextValue | null>(null);
 
 const SESSIONS_ACTIVE_MINUTES = 24 * 60;
 const SESSIONS_LIMIT = 200;
+const EMPTY_SPARKLINE = '▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁';
 
 /**
  * Normalize a model ref to a consistent string, but preserve the full
@@ -49,7 +50,7 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
   const { connectionState, connect: wsConnect, disconnect, rpc, onEvent, connectError, reconnectAttempt } = useWebSocket();
   const [model, setModel] = useState('--');
   const [thinking, setThinking] = useState('--');
-  const [sparkline, setSparkline] = useState('▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁');
+  const [sparkline, setSparkline] = useState(EMPTY_SPARKLINE);
   const activityBuckets = useRef<number[]>(new Array(30).fill(0));
   const currentBucketEvents = useRef(0);
   const isVisibleRef = useRef(true);
@@ -117,9 +118,12 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
       console.debug('[GatewayContext] Failed to poll status:', err);
     }
 
-    // Update activity sparkline (skip all tracking + math in performance mode)
+    // Update activity sparkline (skip all tracking + math in performance mode).
+    // Drop history while paused so resuming does not show pre-pause samples as recent.
     if (isPerformanceModePreferenceEnabled()) {
       currentBucketEvents.current = 0;
+      activityBuckets.current.fill(0);
+      setSparkline(EMPTY_SPARKLINE);
       return;
     }
     activityBuckets.current.push(currentBucketEvents.current);

@@ -82,7 +82,7 @@ describe('POST /api/upload-reference/resolve', () => {
     expect(json.items[0]).toEqual(expect.objectContaining({
       kind: 'direct_workspace_reference',
       canonicalPath: 'docs/note.md',
-      absolutePath: targetPath,
+      absolutePath: await fs.realpath(targetPath),
       mimeType: 'text/markdown',
       sizeBytes: 5,
       originalName: 'note.md',
@@ -122,7 +122,7 @@ describe('POST /api/upload-reference/resolve', () => {
       originalName: 'proof.txt',
     }));
     expect(json.items[0].canonicalPath).toMatch(/^\.temp\/nerve-uploads\/\d{4}\/\d{2}\/\d{2}\/proof-[a-f0-9]{8}\.txt$/);
-    expect(json.items[0].absolutePath).toBe(path.join(workspaceRoot, json.items[0].canonicalPath));
+    await expect(fs.realpath(path.join(workspaceRoot, json.items[0].canonicalPath))).resolves.toBe(json.items[0].absolutePath);
     await expect(fs.readFile(json.items[0].absolutePath, 'utf8')).resolves.toBe('hello upload');
   });
 
@@ -154,7 +154,7 @@ describe('POST /api/upload-reference/resolve', () => {
     expect(json.items).toHaveLength(1);
     expect(json.items[0]).toEqual(expect.objectContaining({
       canonicalPath: 'docs/note.md',
-      absolutePath: targetPath,
+      absolutePath: await fs.realpath(targetPath),
       originalName: 'note.md',
     }));
   });

@@ -8,6 +8,7 @@
  */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import 'katex/dist/katex.min.css'
 import './index.css'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { AuthGate } from '@/features/auth'

@@ -1284,6 +1284,25 @@
 .markdown-content h2 { @apply text-base; }
 .markdown-content h3 { @apply text-sm; }
 
+.markdown-content .katex,
+.markdown-content .katex-display {
+  color: inherit;
+}
+
+.markdown-content .katex-display {
+  margin: 0.5em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* KaTeX writes its default error color (#cc0000) as an inline style on
+ * .katex-error spans, which would otherwise beat any class-selector color
+ * rule by specificity. !important is the minimum needed to let the themed
+ * destructive token win the cascade against that inline attribute. */
+.markdown-content .katex-error {
+  color: color-mix(in srgb, var(--color-destructive) 80%, var(--color-foreground)) !important;
+}
+
 .markdown-document {
   backdrop-filter: blur(14px);
 }

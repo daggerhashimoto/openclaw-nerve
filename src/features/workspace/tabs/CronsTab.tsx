@@ -172,7 +172,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
       <div className="flex flex-col gap-2">
         <div className="flex items-start gap-2.5">
           <div className="min-w-0 flex-1 space-y-1.5">
-            <div className="flex items-start justify-between gap-2">
+            <div className="flex flex-col gap-2 @min-[17rem]:flex-row @min-[17rem]:items-start @min-[17rem]:justify-between">
               <div className="min-w-0 flex-1 space-y-0.5">
                 <div className="text-[0.833rem] font-semibold leading-tight text-foreground [overflow-wrap:anywhere]">{name}</div>
                 <div className="text-[0.7rem] leading-4.5 text-muted-foreground">{humanSchedule(job)}</div>

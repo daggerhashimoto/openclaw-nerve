@@ -94,8 +94,8 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-orange': '#FFA567',
       '--color-purple': '#B9A7FF',
       '--color-info': '#3D7EFF',
-      // The operator's plate: card warmed by 5% cantaloupe
-      '--color-message-user': '#17161B',
+      // The operator's plate: card warmed by 10% cantaloupe
+      '--color-message-user': '#231E1F',
       '--color-message-assistant': '#06080E',
       '--color-message-system': '#0B0F17',
       '--color-scrollbar': '#1D2433',
@@ -156,7 +156,7 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-purple': '#6B4FD8',
       '--color-info': '#1F5FE0',
       // The operator's plate: warm paper
-      '--color-message-user': '#FFF7EF',
+      '--color-message-user': '#FFF1E3',
       '--color-message-assistant': '#F3F5F9',
       '--color-message-system': '#EAEEF4',
       '--color-scrollbar': '#CBD3DF',

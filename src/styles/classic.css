@@ -222,8 +222,7 @@ html[data-style="classic"] .nerve-wordmark {
   text-transform: uppercase;
   color: var(--color-primary);
 }
-html[data-style="classic"] .nerve-brand-pane,
-html[data-style="classic"] .facade {
+html[data-style="classic"] .nerve-brand-pane {
   display: none;
 }
 html[data-style="classic"] .seg-track {

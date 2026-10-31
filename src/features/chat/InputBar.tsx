@@ -1419,7 +1419,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
       {/* Composer band: the foot of the column */}
       <div className="nerve-composer-band shrink-0 px-3 pb-3 pt-1.5 sm:px-6">
-        <div className="mx-auto flex w-full max-w-[46rem] flex-col gap-2">
+        <div className="flex w-full flex-col gap-2">
           {/* Staged attachments preview */}
           {stagedAttachments.length > 0 && (
             <div className="flex flex-wrap gap-2">

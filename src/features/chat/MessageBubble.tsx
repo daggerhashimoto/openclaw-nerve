@@ -290,9 +290,8 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
     </div>
   );
 
-  return (
-    <div className={`group msg msg-${msg.role} relative max-w-full break-words pb-1 pl-6 pt-2 ${isSystem ? 'text-muted-foreground' : ''} ${matchClass} ${pendingClass} ${failedClass}`}>
-      {/* Header line: click to collapse/expand */}
+  // Header line: pane in the gutter, who, when, then the quiet extras; click to collapse or expand
+  const header = (
       <div className={`${headerRowClass} ${isSystem ? 'text-[0.8rem]' : 'text-[0.867rem]'}`}>
         <div
           role="button"
@@ -340,49 +339,61 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
         )}
       </div>
 
-      {/* Collapsible memories section for user messages */}
-      {isUser && memories && (
-        <MemoriesSection
-          memories={memories}
-          isCollapsed={isMemoryCollapsed}
-          onToggle={() => onToggleMemory(memoryCollapsedKey)}
-        />
-      )}
+  );
 
-      {!isCollapsed && (
-        isUser ? (
-          <div className="msg-bubble plate-operator mt-1 w-fit max-w-[min(100%,var(--reading-measure))] rounded-[3px] bg-message-user px-3 py-2">
-            {images}
-            {body}
-            {attachments}
-          </div>
-        ) : (
-          <div className={`msg-content relative mt-0.5 ${isSystem ? 'text-[0.867rem]' : ''}`}>
-            {images}
-            {body}
-            {msg.charts && msg.charts.length > 0 && (
-              <div className="w-full">
-                <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading chart</div>}>
-                  {msg.charts.map((chart, ci) => (
-                    <InlineChart key={ci} chart={chart} />
+  return (
+    <div className={`group msg msg-${msg.role} relative max-w-full break-words pb-1 pl-6 pt-2 ${isSystem ? 'text-muted-foreground' : ''} ${matchClass} ${pendingClass} ${failedClass}`}>
+      {isUser ? (
+        /* The operator's turn is one warm plate: header, memories and body together */
+        <div className="msg-bubble plate-operator w-full max-w-[var(--reading-measure)] rounded-[3px] bg-message-user px-3 pb-2 pt-0.5">
+          {header}
+          {memories && (
+            <MemoriesSection
+              memories={memories}
+              isCollapsed={isMemoryCollapsed}
+              onToggle={() => onToggleMemory(memoryCollapsedKey)}
+            />
+          )}
+
+          {!isCollapsed && (
+            <>
+              {images}
+              {body}
+              {attachments}
+            </>
+          )}
+        </div>
+      ) : (
+        <>
+          {header}
+          {!isCollapsed && (
+            <div className={`msg-content relative mt-0.5 ${isSystem ? 'text-[0.867rem]' : ''}`}>
+              {images}
+              {body}
+              {msg.charts && msg.charts.length > 0 && (
+                <div className="w-full">
+                  <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading chart</div>}>
+                    {msg.charts.map((chart, ci) => (
+                      <InlineChart key={ci} chart={chart} />
+                    ))}
+                  </Suspense>
+                </div>
+              )}
+              {attachments}
+              {msg.extractedImages && msg.extractedImages.length > 0 && (
+                <div className="mt-2 flex flex-col gap-2">
+                  {msg.extractedImages.map((img, idx) => (
+                    <ImageLightbox
+                      key={idx}
+                      src={img.url}
+                      alt={img.alt || 'Agent image'}
+                    />
                   ))}
-                </Suspense>
-              </div>
-            )}
-            {attachments}
-            {msg.extractedImages && msg.extractedImages.length > 0 && (
-              <div className="mt-2 flex flex-col gap-2">
-                {msg.extractedImages.map((img, idx) => (
-                  <ImageLightbox
-                    key={idx}
-                    src={img.url}
-                    alt={img.alt || 'Agent image'}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

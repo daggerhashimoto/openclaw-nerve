@@ -101,8 +101,8 @@
 :root {
   /* One row unit shared by list rows, tool rows and panel headers (28px at 15px base). */
   --row-unit: 1.867rem;
-  /* Reading measure for agent prose: about 68 characters of Atkinson at body size (ch runs wide on its zero). */
-  --reading-measure: 34em;
+  /* Reading measure for agent prose: the whole column on most screens, capped at about 140 characters on very wide ones. */
+  --reading-measure: 72em;
   /* Light switch: state panes turn on and off, they never breathe. */
   --switch-duration: 120ms;
   --switch-ease: cubic-bezier(0.2, 0, 0, 1);
@@ -144,11 +144,6 @@
 .pane-sm {
   width: 0.533rem;
   height: 0.733rem;
-}
-.pane-lg {
-  width: 0.933rem;
-  height: 1.333rem;
-  border-radius: 1.5px;
 }
 .pane-strip {
   display: inline-flex;
@@ -694,47 +689,6 @@
   margin-top: 1px;
 }
 
-/* Facade: the agents column's building seen at night. One window per session,
-   in row order; click a window to go there. The open session's window has a sill. */
-.facade {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 5px;
-  flex-shrink: 0;
-  padding: 9px 12px 8px;
-  background: var(--color-card);
-  border-bottom: 1px solid var(--color-border);
-}
-.facade-window {
-  position: relative;
-  display: inline-flex;
-  flex: none;
-  padding: 0 0 3px;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-}
-.facade-window:hover .pane[data-state="off"] {
-  background-color: var(--color-pane-edge);
-}
-.facade-window:hover .pane-hued[data-state="off"] {
-  background-color: color-mix(in srgb, var(--pane-hue) 74%, var(--color-pane-off));
-}
-.facade-window:focus-visible {
-  outline: 2px solid var(--color-ring);
-  outline-offset: 1px;
-  border-radius: 2px;
-}
-.facade-window[data-current="true"]::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1px;
-  background: var(--color-foreground);
-}
-
 /* Agent colour swatches: the seven identity hues, picked from a root session row */
 .hue-swatch {
   width: 0.933rem;
@@ -782,12 +736,15 @@
   border-radius: 3px;
   box-shadow: var(--plate-shadow);
 }
-/* The operator's plate: warm ground with a warm edge light */
+/* The operator's plate: the whole turn (name, time, body) on warm ground with a warm
+   edge light and a faint warm frame, so operator turns read apart from agent prose at a glance */
 .plate-operator {
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-operator) 30%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--color-operator) 42%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--color-operator) 16%, transparent);
 }
 html[data-theme="light"] .plate-operator {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-operator) 45%, var(--border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-operator) 55%, var(--border));
 }
 
 /* Tool rows stack on one plate, separated by hairlines */
@@ -1495,7 +1452,7 @@ html[data-theme="light"] .plate-operator {
   --chart-3: #7FD1C7;
   --chart-4: #B9A7FF;
   --chart-5: #FF5A5A;
-  --message-user: #17161B;
+  --message-user: #231E1F;
   --message-assistant: #06080E;
   --message-system: #0B0F17;
   --scrollbar: #1D2433;

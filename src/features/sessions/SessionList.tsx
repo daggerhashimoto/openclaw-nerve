@@ -6,9 +6,7 @@ import { SessionSkeletonGroup } from '@/components/skeletons';
 import { buildAgentSidebarTree, buildSessionTree, flattenTree, getSessionType, type TreeNode } from './sessionTree';
 import { getSessionDisplayLabel, isTopLevelAgentSessionKey } from './sessionKeys';
 import { SessionNode } from './SessionNode';
-import { SessionFacade, type FacadeWindow } from './SessionFacade';
 import { getRootAgentId } from './sessionKeys';
-import { isSessionRunning, paneStateFor } from '@/lib/paneState';
 import { setAgentHue, shadeFor, useAgentHues } from '@/lib/agentColors';
 import type { GranularAgentState } from '@/types';
 import {
@@ -41,7 +39,7 @@ interface SessionListProps {
   compact?: boolean;
 }
 
-/** Every node in row order, ignoring collapse: the facade shows the whole building. */
+/** Every node in row order, ignoring collapse: used to find every agent family present. */
 function flattenAll(nodes: TreeNode[]): TreeNode[] {
   const out: TreeNode[] = [];
   const walk = (list: TreeNode[]) => {
@@ -182,20 +180,6 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
     });
   }, [tree]);
 
-  // The facade: one window per session in row order, lit the same way the rows are.
-  const facadeWindows = useMemo<FacadeWindow[]>(() => flattenAll(tree).map((node) => {
-    const key = node.key;
-    const isSubagent = getSessionType(key) === 'subagent';
-    const running = isSessionRunning(node.session, Boolean(busyState[key]))
-      || ((growingSessions[key] ?? false) && isSubagent);
-    return {
-      key,
-      state: paneStateFor({ running, unread: Boolean(unreadSessions?.[key]) }),
-      label: getSessionDisplayLabel(node.session, agentName),
-      hue: hueForNode(node),
-    };
-  }), [tree, busyState, growingSessions, unreadSessions, agentName, hueForNode]);
-
   return (
     <div className={compact ? 'flex flex-col max-h-[65vh]' : 'h-full flex flex-col min-h-0'}>
       <div className="panel-header">
@@ -226,7 +210,6 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
           </button>
         </div>
       </div>
-      <SessionFacade windows={facadeWindows} currentSession={currentSession} onSelect={onSelect} />
       <div className={compact ? 'overflow-y-auto' : 'flex-1 overflow-y-auto'}>
         {isLoading && flatNodes.length === 0 ? (
           <SessionSkeletonGroup count={4} />

@@ -66,15 +66,11 @@ describe('SessionList empty state', () => {
     expect(screen.getByRole('img', { name: 'Running' })).toHaveAttribute('data-state', 'live');
     expect(screen.getByText('waiting on you')).toBeInTheDocument();
     expect(screen.getByText('idle')).toBeInTheDocument();
-    // One operator pane in the rows, and the facade above them shows the same three sessions in row order (Main, Ops, Reviewer)
-    expect(container.querySelectorAll('.pane[data-state="operator"]:not(.pane-lg)')).toHaveLength(1);
-    expect(
-      Array.from(container.querySelectorAll('.facade .pane')).map((pane) => pane.getAttribute('data-state')),
-    ).toEqual(['live', 'off', 'operator']);
+    expect(container.querySelectorAll('.pane[data-state="operator"]')).toHaveLength(1);
     expect(container.querySelector('.animate-pulse')).toBeNull();
   });
 
-  it('tints rows and facade windows with the agent family hue, shaded for children, and lets the operator pick one', () => {
+  it('tints each row pane with the agent family hue, shaded for children, and lets the operator pick one', () => {
     resetAgentHues();
     const sessions: Session[] = [
       { sessionKey: 'agent:main:main', label: 'Main' },
@@ -85,10 +81,10 @@ describe('SessionList empty state', () => {
 
     const { container } = renderSessionList({ sessions });
 
-    const facadeHues = () => Array.from(container.querySelectorAll<HTMLElement>('.facade .pane'))
+    // Rows in tree order: Main, its subagent Scan (a lighter shade), then Ops
+    const rowHues = () => Array.from(container.querySelectorAll<HTMLElement>('.pane-hued'))
       .map((pane) => pane.style.getPropertyValue('--pane-hue'));
-    expect(facadeHues()).toEqual([cantaloupe, `color-mix(in srgb, ${cantaloupe} 62%, white)`, mint]);
-    expect(container.querySelectorAll('.pane-hued').length).toBeGreaterThanOrEqual(6);
+    expect(rowHues()).toEqual([cantaloupe, `color-mix(in srgb, ${cantaloupe} 62%, white)`, mint]);
 
     // Root rows offer a colour action; children do not
     const colourButtons = screen.getAllByRole('button', { name: 'Agent colour' });
@@ -99,7 +95,7 @@ describe('SessionList empty state', () => {
     expect(swatches).toHaveLength(AGENT_HUES.length);
     fireEvent.click(within(screen.getByRole('group', { name: 'Agent colour' })).getByRole('button', { name: 'Lilac' }));
 
-    expect(facadeHues()[2]).toBe(lilac);
+    expect(rowHues()[2]).toBe(lilac);
     expect(JSON.parse(localStorage.getItem('nerve:agent-colors') ?? '{}')).toMatchObject({ main: cantaloupe, ops: lilac });
   });
 

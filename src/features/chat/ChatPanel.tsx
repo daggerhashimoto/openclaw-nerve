@@ -382,8 +382,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         aria-label="Chat messages"
         className="flex-1 overflow-y-auto overflow-x-hidden bg-background px-3 sm:px-6"
       >
-        {/* Centred reading lane */}
-        <div className="mx-auto flex w-full max-w-[46rem] flex-col gap-1 py-4">
+        {/* The transcript takes the whole column; prose is capped only on very wide screens (--reading-measure) */}
+        <div className="flex w-full flex-col gap-1 py-4">
           {/* Infinite scroll sentinel + "load more" indicator */}
           {hasMore && (
             <div ref={sentinelRef} className="flex items-center gap-3 py-2 text-[0.8rem] text-muted-foreground select-none">

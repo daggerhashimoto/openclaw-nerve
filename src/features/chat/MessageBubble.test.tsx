@@ -45,7 +45,9 @@ describe('MessageBubble', () => {
     expect(getByText('You')).toBeTruthy();
     expect(bubble?.querySelector('.pane[data-state="operator"]')).toBeTruthy();
     expect(plate).toBeTruthy();
-    expect(plate?.className).toContain('w-fit');
+    expect(plate?.className).toContain('w-full');
+    // The operator's whole turn sits on the plate: the name line is inside it
+    expect(plate?.textContent).toContain('You');
     expect(body).toBeTruthy();
     expect(plate?.contains(body)).toBe(true);
     expect(body?.className).toContain('text-left');

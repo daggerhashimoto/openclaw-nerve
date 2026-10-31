@@ -585,7 +585,7 @@
       "name": "Pane",
       "kind": "custom",
       "refersTo": "pane",
-      "description": "The signature state marker: a flat lit rectangle in four states (off, live, operator, error) and three sizes (10x14, 8x11, 14x20). It switches in 120ms and never pulses.",
+      "description": "The signature state marker: a flat lit rectangle in four states (off, live, operator, error) and three sizes (10x14, 8x11, 14x20). It switches in 120ms and never pulses. With an identity hue the off state tints its glass (56% hue into Pane Off, 62% into the frame); lit states ignore the hue.",
       "html": "<div class=\"ds-pane-sheet\"><div class=\"ds-pane-row\"><span class=\"ds-pane\" data-state=\"off\" role=\"img\" aria-label=\"Idle\"></span><span class=\"ds-pane\" data-state=\"live\" role=\"img\" aria-label=\"Running\"></span><span class=\"ds-pane\" data-state=\"operator\" role=\"img\" aria-label=\"Waiting on you\"></span><span class=\"ds-pane\" data-state=\"error\" role=\"img\" aria-label=\"Failed\"></span><span class=\"ds-pane-caption\">Default 10x14</span></div><div class=\"ds-pane-row\"><span class=\"ds-pane ds-pane-sm\" data-state=\"off\"></span><span class=\"ds-pane ds-pane-sm\" data-state=\"live\"></span><span class=\"ds-pane ds-pane-sm\" data-state=\"operator\"></span><span class=\"ds-pane ds-pane-sm\" data-state=\"error\"></span><span class=\"ds-pane-caption\">Small 8x11</span></div><div class=\"ds-pane-row\"><span class=\"ds-pane ds-pane-lg\" data-state=\"off\"></span><span class=\"ds-pane ds-pane-lg\" data-state=\"live\"></span><span class=\"ds-pane ds-pane-lg\" data-state=\"operator\"></span><span class=\"ds-pane ds-pane-lg\" data-state=\"error\"></span><span class=\"ds-pane-caption\">Large 14x20</span></div></div>",
       "css": ".ds-pane-sheet{display:flex;flex-direction:column;gap:10px;padding:12px;background:var(--color-background,#06080E);font-family:'Atkinson Hyperlegible Next','Helvetica Neue',Arial,sans-serif;font-size:0.8rem;color:var(--color-muted-foreground,#8C94A6)}.ds-pane-row{display:inline-flex;align-items:center;gap:6px}.ds-pane-caption{margin-left:8px}.ds-pane{display:inline-block;flex:none;width:0.667rem;height:0.933rem;border-radius:1px;background-color:var(--color-pane-off,#161D2C);box-shadow:inset 0 0 0 1px var(--color-pane-edge,#263044);transition:background-color 120ms cubic-bezier(0.2,0,0,1),box-shadow 120ms cubic-bezier(0.2,0,0,1)}.ds-pane[data-state=live]{background-color:var(--color-live,#3D7EFF);box-shadow:none}.ds-pane[data-state=operator]{background-color:var(--color-operator,#FFA567);box-shadow:none}.ds-pane[data-state=error]{background-color:var(--color-red,#FF5A5A);box-shadow:none}.ds-pane-sm{width:0.533rem;height:0.733rem}.ds-pane-lg{width:0.933rem;height:1.333rem;border-radius:1.5px}"
     },
@@ -682,6 +682,11 @@
         "section": "colors"
       },
       {
+        "name": "The Identity Rule",
+        "body": "An agent family's hue shows only in the glass of a pane whose light is off: 56% of the hue mixed into Pane Off for the fill and 62% into Pane Edge for the frame. The moment a pane lights, it speaks the state colour and nothing else. Identity never appears as a rail, a tinted row or a coloured name.",
+        "section": "colors"
+      },
+      {
         "name": "The Names Rule",
         "body": "Bricolage Grotesque is used only for the wordmark and for agent or speaker names. Headings, labels and buttons stay in Atkinson.",
         "section": "typography"
@@ -708,6 +713,7 @@
       }
     ],
     "dos": [
+      "Do tint an off pane with its agent family's identity hue and leave lit panes to the state colours (The Identity Rule).",
       "**Do** show state only with a lit pane: Electric Blue for agent work, Cantaloupe for the operator and work waiting on the operator, Signal Red for failure, Pane Off when done (The Light Temperature Rule).",
       "**Do** switch panes and hover fills in 120ms with `cubic-bezier(0.2, 0, 0, 1)` and let reduced motion make them instant (The Switch Rule).",
       "**Do** build raised surfaces as plates: Panel fill plus the 1px edge light, no drawn border; in Daylight the token prints a hairline (The Edge Light Rule).",

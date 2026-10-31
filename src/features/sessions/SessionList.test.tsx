@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { Session } from '@/types';
 import { SessionList } from './SessionList';
+import { AGENT_HUES, resetAgentHues } from '@/lib/agentColors';
 
 vi.mock('@/components/skeletons', () => ({
   SessionSkeletonGroup: ({ count = 4 }: { count?: number }) => (
@@ -71,6 +72,35 @@ describe('SessionList empty state', () => {
       Array.from(container.querySelectorAll('.facade .pane')).map((pane) => pane.getAttribute('data-state')),
     ).toEqual(['live', 'off', 'operator']);
     expect(container.querySelector('.animate-pulse')).toBeNull();
+  });
+
+  it('tints rows and facade windows with the agent family hue, shaded for children, and lets the operator pick one', () => {
+    resetAgentHues();
+    const sessions: Session[] = [
+      { sessionKey: 'agent:main:main', label: 'Main' },
+      { sessionKey: 'agent:main:subagent:scan', label: 'Scan' },
+      { sessionKey: 'agent:ops:main', label: 'Ops' },
+    ];
+    const [cantaloupe, mint, lilac] = AGENT_HUES.map((hue) => hue.hex);
+
+    const { container } = renderSessionList({ sessions });
+
+    const facadeHues = () => Array.from(container.querySelectorAll<HTMLElement>('.facade .pane'))
+      .map((pane) => pane.style.getPropertyValue('--pane-hue'));
+    expect(facadeHues()).toEqual([cantaloupe, `color-mix(in srgb, ${cantaloupe} 62%, white)`, mint]);
+    expect(container.querySelectorAll('.pane-hued').length).toBeGreaterThanOrEqual(6);
+
+    // Root rows offer a colour action; children do not
+    const colourButtons = screen.getAllByRole('button', { name: 'Agent colour' });
+    expect(colourButtons).toHaveLength(2);
+
+    fireEvent.click(colourButtons[1]);
+    const swatches = within(screen.getByRole('group', { name: 'Agent colour' })).getAllByRole('button');
+    expect(swatches).toHaveLength(AGENT_HUES.length);
+    fireEvent.click(within(screen.getByRole('group', { name: 'Agent colour' })).getByRole('button', { name: 'Lilac' }));
+
+    expect(facadeHues()[2]).toBe(lilac);
+    expect(JSON.parse(localStorage.getItem('nerve:agent-colors') ?? '{}')).toMatchObject({ main: cantaloupe, ops: lilac });
   });
 
   it('shows the loading skeleton when loading and all sessions are filtered out', () => {

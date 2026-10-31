@@ -37,6 +37,8 @@ import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useLiveFavicon } from '@/hooks/useLiveFavicon';
 import { fleetActivity } from '@/lib/paneState';
+import { shadeFor, useAgentHues } from '@/lib/agentColors';
+import { getRootAgentId, isSubagentSessionKey } from '@/features/sessions/sessionKeys';
 import { createCommands, createSessionCommands } from '@/features/command-palette/commands';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
@@ -121,6 +123,14 @@ export default function App({ onLogout }: AppProps) {
     [sessions, busyState, unreadSessions, isGenerating],
   );
   useLiveFavicon(shellActivity);
+
+  // Identity hue of the open session's agent family, for the chat header and transcript panes.
+  const currentRootAgentId = useMemo(() => getRootAgentId(currentSession), [currentSession]);
+  const currentRootIds = useMemo(() => (currentRootAgentId ? [currentRootAgentId] : []), [currentRootAgentId]);
+  const { hueFor } = useAgentHues(currentRootIds);
+  const currentAgentHue = currentRootAgentId
+    ? shadeFor(hueFor(currentRootAgentId), isSubagentSessionKey(currentSession) ? 1 : 0)
+    : undefined;
 
   // Settings state
   const {
@@ -829,6 +839,7 @@ export default function App({ onLogout }: AppProps) {
             searchOpen={searchOpen}
             onSearchClose={closeSearch}
             agentName={currentSessionDisplayName}
+            agentHue={currentAgentHue}
             loadMore={loadMore}
             hasMore={hasMore}
             onToggleFileBrowser={isCompactLayout ? handleToggleFileBrowser : fileBrowserCollapsed ? handleToggleFileBrowser : undefined}

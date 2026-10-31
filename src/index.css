@@ -138,8 +138,8 @@
 /* Identity: an agent family's hue shows in the glass while its light is off.
    Lit colours keep their meaning (blue works, cantaloupe waits on you, red failed). */
 .pane-hued[data-state="off"] {
-  background-color: color-mix(in srgb, var(--pane-hue) 42%, var(--color-pane-off));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pane-hue) 45%, var(--color-pane-edge));
+  background-color: color-mix(in srgb, var(--pane-hue) 56%, var(--color-pane-off));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pane-hue) 62%, var(--color-pane-edge));
 }
 .pane-sm {
   width: 0.533rem;
@@ -718,7 +718,7 @@
   background-color: var(--color-pane-edge);
 }
 .facade-window:hover .pane-hued[data-state="off"] {
-  background-color: color-mix(in srgb, var(--pane-hue) 62%, var(--color-pane-off));
+  background-color: color-mix(in srgb, var(--pane-hue) 74%, var(--color-pane-off));
 }
 .facade-window:focus-visible {
   outline: 2px solid var(--color-ring);
@@ -733,6 +733,28 @@
   bottom: 0;
   height: 1px;
   background: var(--color-foreground);
+}
+
+/* Agent colour swatches: the seven identity hues, picked from a root session row */
+.hue-swatch {
+  width: 0.933rem;
+  height: 0.933rem;
+  border: 0;
+  border-radius: 2px;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  transition: filter var(--switch-duration) var(--switch-ease);
+}
+.hue-swatch:hover {
+  filter: brightness(1.12);
+}
+.hue-swatch-current {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25), 0 0 0 2px var(--color-foreground);
+}
+.hue-swatch:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
 }
 
 /* Segmented view switch: one sunk track, the active chip lifted onto it */

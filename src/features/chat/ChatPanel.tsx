@@ -30,6 +30,8 @@ interface ChatPanelProps {
   id?: string;
   /** Agent display name */
   agentName?: string;
+  /** Identity hue of the agent family; tints idle panes in the header and transcript. */
+  agentHue?: string;
   /** Load more (older) messages: returns true if still more available */
   loadMore?: () => boolean;
   /** Whether there are older messages to load */
@@ -67,7 +69,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   onSend, onAbort, isGenerating, stream,
   processingStage,
   lastEventTimestamp = 0, currentToolDescription = null, activityLog = [],
-  onWakeWordState, onReset, searchOpen, onSearchClose, id, agentName = 'Agent',
+  onWakeWordState, onReset, searchOpen, onSearchClose, id, agentName = 'Agent', agentHue,
   loadMore, hasMore = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
   onToggleMobileTopBar, isMobileTopBarHidden = false,
   onOpenWorkspacePath,
@@ -307,6 +309,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
           searchQuery={search.query}
           isCurrentMatch={isCurrentMatch}
           agentName={agentName}
+          agentHue={agentHue}
           onOpenWorkspacePath={onOpenWorkspacePath}
           pathLinkPrefixes={pathLinkPrefixes}
           pathLinkAliases={pathLinkAliases}
@@ -348,6 +351,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         onAbort={onAbort}
         isGenerating={isGenerating}
         agentName={agentName}
+        agentHue={agentHue}
         processingStage={processingStage}
         currentToolDescription={currentToolDescription}
         elapsedMs={processingTime}

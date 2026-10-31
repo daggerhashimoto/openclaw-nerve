@@ -43,6 +43,8 @@ interface MessageBubbleProps {
   searchQuery?: string;
   isCurrentMatch?: boolean;
   agentName?: string;
+  /** Identity hue of the agent family; tints the assistant's pane while it is off. */
+  agentHue?: string;
   onOpenWorkspacePath?: (path: string) => void | Promise<void>;
   pathLinkPrefixes?: string[];
   pathLinkAliases?: Record<string, string>;
@@ -67,7 +69,7 @@ const timeClass = 'shrink-0 font-mono text-[0.8rem] tabular text-muted-foregroun
 /** Matches a fenced code block marker in raw message text. */
 const CODE_FENCE = /`{3}/;
 
-function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, searchQuery, isCurrentMatch, agentName, onOpenWorkspacePath, pathLinkPrefixes, pathLinkAliases, onOpenBeadId }: MessageBubbleProps) {
+function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, searchQuery, isCurrentMatch, agentName, agentHue, onOpenWorkspacePath, pathLinkPrefixes, pathLinkAliases, onOpenBeadId }: MessageBubbleProps) {
   const isUser = msg.role === 'user';
   const isAssistant = msg.role === 'assistant';
   const isSystem = msg.role === 'system' || msg.role === 'event';
@@ -302,7 +304,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
         >
           {/* The pane sits in the gutter so every message's text shares one left edge */}
           {paneState && (
-            <Pane state={paneState} size="sm" className="absolute left-0 top-[1.1rem]" label={isAssistant ? ASSISTANT_PANE_LABEL[paneState] : undefined} />
+            <Pane state={paneState} size="sm" className="absolute left-0 top-[1.1rem]" hue={isAssistant ? agentHue : undefined} label={isAssistant ? ASSISTANT_PANE_LABEL[paneState] : undefined} />
           )}
           <span className={`msg-speaker ${speakerClass}`}>{speaker}</span>
           <span className={timeClass}>{timeStr}</span>
@@ -447,6 +449,7 @@ export const MessageBubble = memo(MessageBubbleInner, (prev, next) => {
   
   // Agent name (rare change but must re-render when it does)
   if (prev.agentName !== next.agentName) return false;
+  if (prev.agentHue !== next.agentHue) return false;
   if (prev.onOpenWorkspacePath !== next.onOpenWorkspacePath) return false;
   if (prev.pathLinkPrefixes !== next.pathLinkPrefixes) return false;
   if (prev.pathLinkAliases !== next.pathLinkAliases) return false;

@@ -7,7 +7,9 @@ import { buildAgentSidebarTree, buildSessionTree, flattenTree, getSessionType, t
 import { getSessionDisplayLabel, isTopLevelAgentSessionKey } from './sessionKeys';
 import { SessionNode } from './SessionNode';
 import { SessionFacade, type FacadeWindow } from './SessionFacade';
+import { getRootAgentId } from './sessionKeys';
 import { isSessionRunning, paneStateFor } from '@/lib/paneState';
+import { setAgentHue, shadeFor, useAgentHues } from '@/lib/agentColors';
 import type { GranularAgentState } from '@/types';
 import {
   Dialog,
@@ -150,6 +152,21 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
   // Build tree and flatten for rendering
   const tree = useMemo(() => buildAgentSidebarTree(sessions), [sessions]);
   const flatNodes = useMemo(() => flattenTree(tree, expandedState), [tree, expandedState]);
+
+  // One identity hue per agent family, assigned on first sight and remembered; children take lighter shades.
+  const rootAgentIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const node of flattenAll(tree)) {
+      const id = getRootAgentId(node.key);
+      if (id && !ids.includes(id)) ids.push(id);
+    }
+    return ids;
+  }, [tree]);
+  const { hueFor } = useAgentHues(rootAgentIds);
+  const hueForNode = useCallback((node: TreeNode): string | undefined => {
+    const id = getRootAgentId(node.key);
+    return id ? shadeFor(hueFor(id), node.depth) : undefined;
+  }, [hueFor]);
   const sessionCount = useMemo(
     () => tree.reduce((total, root) => total + 1 + countDescendants(root), 0),
     [tree],
@@ -175,8 +192,9 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
       key,
       state: paneStateFor({ running, unread: Boolean(unreadSessions?.[key]) }),
       label: getSessionDisplayLabel(node.session, agentName),
+      hue: hueForNode(node),
     };
-  }), [tree, busyState, growingSessions, unreadSessions, agentName]);
+  }), [tree, busyState, growingSessions, unreadSessions, agentName, hueForNode]);
 
   return (
     <div className={compact ? 'flex flex-col max-h-[65vh]' : 'h-full flex flex-col min-h-0'}>
@@ -250,6 +268,9 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
               renameValue={renameValue}
               renameInputRef={renameInputRef}
               granularStatus={agentStatus?.[sessionKey]}
+              hue={hueForNode(node)}
+              agentId={getRootAgentId(sessionKey)}
+              onPickColor={setAgentHue}
               onSelect={onSelect}
               onToggleExpand={handleToggleExpand}
               onDelete={onDelete ? handleSetDeleteTarget : undefined}

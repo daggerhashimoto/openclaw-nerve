@@ -7,8 +7,9 @@ import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { Pane } from '@/components/ui/Pane';
 import { paneStateFor, paneStateLabel } from '@/lib/paneState';
 import { getSessionPaneState, getStatusBadgeText } from './statusUtils';
-import { ChevronRight, ChevronDown, EllipsisVertical, PenLine, Square, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, EllipsisVertical, Palette, PenLine, Square, Trash2 } from 'lucide-react';
 import { SessionInfoPanel } from './SessionInfoPanel';
+import { AGENT_HUES } from '@/lib/agentColors';
 
 const GHOST_ACTION = 'inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-[3px] border-0 bg-transparent text-muted-foreground transition-colors duration-[120ms] hover:text-foreground';
 const GHOST_DANGER = 'inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-[3px] border-0 bg-transparent text-muted-foreground transition-colors duration-[120ms] hover:text-destructive';
@@ -31,6 +32,11 @@ interface SessionNodeProps {
   renameValue: string;
   renameInputRef: React.RefObject<HTMLInputElement | null>;
   granularStatus?: GranularAgentState;
+  /** Identity hue for this row's pane (already shaded for depth). */
+  hue?: string;
+  /** Root agent id this row belongs to; root rows can pick the family's hue. */
+  agentId?: string | null;
+  onPickColor?: (agentId: string, hex: string) => void;
   onSelect: (key: string) => void;
   onToggleExpand: (key: string) => void;
   onDelete?: (key: string, label: string) => void;
@@ -63,6 +69,8 @@ function arePropsEqual(prev: SessionNodeProps, next: SessionNodeProps): boolean 
     prev.isRenaming === next.isRenaming &&
     prev.renameValue === next.renameValue &&
     prev.granularStatus === next.granularStatus &&
+    prev.hue === next.hue &&
+    prev.agentId === next.agentId &&
     prev.compact === next.compact
   );
 }
@@ -85,6 +93,9 @@ export const SessionNode = memo(function SessionNode({
   renameValue,
   renameInputRef,
   granularStatus,
+  hue,
+  agentId,
+  onPickColor,
   onSelect,
   onToggleExpand,
   onDelete,
@@ -125,7 +136,74 @@ export const SessionNode = memo(function SessionNode({
   const hasAbortAction = Boolean(onAbort && running);
   const hasRenameAction = Boolean(canRenameDelete && onStartRename && !isRenaming);
   const hasDeleteAction = Boolean(canRenameDelete && onDelete);
-  const hasActions = hasAbortAction || hasRenameAction || hasDeleteAction;
+  const hasColorAction = Boolean(isRootAgent && agentId && onPickColor);
+  const hasActions = hasAbortAction || hasRenameAction || hasDeleteAction || hasColorAction;
+
+  // Agent colour: a strip of the seven identity hues, opened from a root row's actions
+  const [hueOpen, setHueOpen] = useState(false);
+  const hueRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hueOpen) return;
+    const handleOutside = (event: MouseEvent) => {
+      if (hueRef.current?.contains(event.target as Node)) return;
+      setHueOpen(false);
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setHueOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [hueOpen]);
+
+  const handleHueToggle = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setHueOpen(prev => !prev);
+  }, []);
+
+  const handlePickHue = useCallback((e: React.MouseEvent, hex: string) => {
+    e.stopPropagation();
+    if (agentId) onPickColor?.(agentId, hex);
+    setHueOpen(false);
+    setActionsOpen(false);
+  }, [agentId, onPickColor]);
+
+  const hueSwatches = (
+    <div ref={hueRef} role="group" aria-label="Agent colour" className="flex items-center gap-1 px-1">
+      {AGENT_HUES.map((option) => {
+        const current = hue === option.hex;
+        return (
+          <button
+            key={option.hex}
+            type="button"
+            title={option.name}
+            aria-label={current ? `${option.name}, current` : option.name}
+            aria-pressed={current}
+            className={cn('hue-swatch', current && 'hue-swatch-current')}
+            style={{ '--swatch': option.hex } as React.CSSProperties}
+            onClick={(e) => handlePickHue(e, option.hex)}
+          />
+        );
+      })}
+    </div>
+  );
+
+  const colorButton = hasColorAction && (
+    <button
+      type="button"
+      onClick={handleHueToggle}
+      title="Agent colour"
+      aria-label="Agent colour"
+      aria-expanded={hueOpen}
+      className={GHOST_ACTION}
+    >
+      <Palette size={14} aria-hidden="true" />
+    </button>
+  );
 
   useEffect(() => {
     if (!compact || !actionsOpen) return;
@@ -230,7 +308,7 @@ export const SessionNode = memo(function SessionNode({
           <span aria-hidden="true" className="-mr-0.5 w-3.5 shrink-0" />
         )}
 
-        <Pane state={paneState} label={isLive ? paneStateLabel(paneState) : undefined} />
+        <Pane state={paneState} hue={hue} label={isLive ? paneStateLabel(paneState) : undefined} />
 
         {/* Label (or rename input) */}
         {isRenaming ? (
@@ -296,7 +374,7 @@ export const SessionNode = memo(function SessionNode({
       {compact ? (
         hasActions && (
           <div ref={actionsRef} className="flex shrink-0 items-center gap-0.5 pr-1">
-            {actionsOpen && (
+            {actionsOpen && (hueOpen ? hueSwatches : (
               <>
                 {hasAbortAction && (
                   <button
@@ -308,6 +386,7 @@ export const SessionNode = memo(function SessionNode({
                     <Square size={14} aria-hidden="true" />
                   </button>
                 )}
+                {colorButton}
                 {hasRenameAction && (
                   <button
                     type="button"
@@ -329,7 +408,7 @@ export const SessionNode = memo(function SessionNode({
                   </button>
                 )}
               </>
-            )}
+            ))}
 
             <button
               type="button"
@@ -345,7 +424,11 @@ export const SessionNode = memo(function SessionNode({
         )
       ) : (
         /* Hover and focus actions; abort is available for all running sessions */
-        <div className="absolute top-1/2 right-1 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-[3px] bg-raised opacity-0 transition-opacity duration-[120ms] group-focus-within:opacity-100 group-hover:opacity-100">
+        <div className={cn(
+          'absolute top-1/2 right-1 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-[3px] bg-raised opacity-0 transition-opacity duration-[120ms] group-focus-within:opacity-100 group-hover:opacity-100',
+          hueOpen && 'opacity-100',
+        )}>
+          {hueOpen ? hueSwatches : (<>
           {hasAbortAction && (
             <button
               type="button"
@@ -356,6 +439,7 @@ export const SessionNode = memo(function SessionNode({
               <Square size={14} aria-hidden="true" />
             </button>
           )}
+          {colorButton}
           {canRenameDelete && (
             <>
               {hasRenameAction && (
@@ -380,6 +464,7 @@ export const SessionNode = memo(function SessionNode({
               )}
             </>
           )}
+          </>)}
         </div>
       )}
     </div>

@@ -16,6 +16,13 @@ colors:
   signal-red: "#FF5A5A"
   pane-off: "#161D2C"
   pane-edge: "#263044"
+  identity-cantaloupe: "#FFA567"
+  identity-mint: "#7CC99A"
+  identity-lilac: "#B9A7FF"
+  identity-aqua: "#7FD1C7"
+  identity-rose: "#FF7A9E"
+  identity-lemon: "#F2D46B"
+  identity-sky: "#6FC3F7"
   operator-plate: "#17161B"
   scrollbar: "#1D2433"
   success-green: "#7CC99A"
@@ -308,8 +315,13 @@ A deep blue-black night with two temperatures of light on it, a warm reading whi
 
 Daylight (`daylight-*`) keeps every role and swaps the values: paper ground, white panels, ink text, a darker blue and cantaloupe text tone so both pass on paper, and pane edges that print as a visible hairline.
 
+### Identity
+Seven hues name agent families, not states: Cantaloupe (#FFA567, reserved for the main agent), Mint (#7CC99A), Lilac (#B9A7FF), Aqua (#7FD1C7), Rose (#FF7A9E), Lemon (#F2D46B) and Sky (#6FC3F7). A family's hue is assigned on first sight, least-used first, remembered in the browser, and adjustable by the operator from a root row's actions. Subagents and cron children take lighter shades of the parent hue (62% and 44% of the hue mixed toward white). Electric Blue is deliberately absent from this list so an idle blue family can never be mistaken for work in progress.
+
 ### Named Rules
 **The Light Temperature Rule.** Blue is agent work, cantaloupe is the operator and anything waiting on the operator, red is error, and nothing else is coloured. A surface that is not reporting one of those three states is a neutral.
+
+**The Identity Rule.** An agent family's hue shows only in the glass of a pane whose light is off: 56% of the hue mixed into Pane Off for the fill and 62% into Pane Edge for the frame. The moment a pane lights, it speaks the state colour and nothing else. Identity never appears as a rail, a tinted row or a coloured name.
 
 ## Typography
 
@@ -374,7 +386,7 @@ Borders are hairlines in the rule colour or the input edge colour, 1px, used for
 Flat, exact, lit. Controls are quiet fills that step to Raised on hover; state is shown by the lit pane next to them, never by a coloured background on the control itself.
 
 ### Pane (signature component)
-The state marker and the whole brand in one element. An inline rectangle, 0.667rem by 0.933rem (10x14), radius 1px. Off: Pane Off fill with a 1px inset Pane Edge frame. Live: Electric Blue fill, frame removed. Operator: Cantaloupe fill. Error: Signal Red fill. Small (0.533rem by 0.733rem, 8x11) sits on text lines: tool rows, message headers, the chat header's run state, composer voice state. Large (0.933rem by 1.333rem, 14x20, radius 1.5px) is the facade window. The brand pane beside the wordmark is 0.533rem by 0.8rem. Transitions are background and box-shadow over 120ms; colour is never the only signal, so a pane with no adjacent text carries an accessible label (Running, Waiting on you, Failed, Idle). The browser tab icon is the same mark on a Midnight ground: Reading White at rest, blue while any agent works, cantaloupe when work waits, red on failure.
+The state marker and the whole brand in one element. An inline rectangle, 0.667rem by 0.933rem (10x14), radius 1px. Off: Pane Off fill with a 1px inset Pane Edge frame. Live: Electric Blue fill, frame removed. Operator: Cantaloupe fill. Error: Signal Red fill. Small (0.533rem by 0.733rem, 8x11) sits on text lines: tool rows, message headers, the chat header's run state, composer voice state. Large (0.933rem by 1.333rem, 14x20, radius 1.5px) is the facade window. The brand pane beside the wordmark is 0.533rem by 0.8rem. Transitions are background and box-shadow over 120ms; colour is never the only signal, so a pane with no adjacent text carries an accessible label (Running, Waiting on you, Failed, Idle). The browser tab icon is the same mark on a Midnight ground: Reading White at rest, blue while any agent works, cantaloupe when work waits, red on failure. A pane that belongs to an agent family carries its identity hue in the off state only (see The Identity Rule), so idle rows, facade windows, the chat header and the transcript still say whose room it is.
 
 ### Facade
 The agents column's opening band: a wrapping row of large panes, gap 4px by 5px, inset 9px 12px 8px, on Panel with a hairline below. Each window is a button with no border and 3px of bottom padding; hovering a dark window lifts it to Pane Edge; the current session's window carries a 1px Reading White sill along its bottom. The group names its counts for assistive tech and each window names its session and state.
@@ -423,6 +435,7 @@ One 28px line of mono text at 0.8rem: a small pane (live while running, off when
 
 ### Do:
 - **Do** show state only with a lit pane: Electric Blue for agent work, Cantaloupe for the operator and work waiting on the operator, Signal Red for failure, Pane Off when done (The Light Temperature Rule).
+- **Do** tint an off pane with its agent family's identity hue and leave lit panes to the state colours (The Identity Rule).
 - **Do** switch panes and hover fills in 120ms with `cubic-bezier(0.2, 0, 0, 1)` and let reduced motion make them instant (The Switch Rule).
 - **Do** build raised surfaces as plates: Panel fill plus the 1px edge light, no drawn border; in Daylight the token prints a hairline (The Edge Light Rule).
 - **Do** keep every list row, tool row, panel header and the status bar on the 1.867rem row unit (The One Row Rule).
@@ -434,7 +447,7 @@ One 28px line of mono text at 0.8rem: a small pane (live while running, off when
 - **Do** give every pane without adjacent text an accessible label (Running, Waiting on you, Failed, Idle).
 
 ### Don't:
-- **Don't** colour anything that is not reporting agent work, operator ownership or an error; no decorative accents, coloured side rails or tinted headers.
+- **Don't** colour anything that is not reporting agent work, operator ownership, an error, or an agent family's identity inside an off pane; no decorative accents, coloured side rails or tinted headers.
 - **Don't** pulse, breathe, glow or animate a shadow; the only blinking element is the streaming cursor pane, and it stops under reduced motion.
 - **Don't** add scanlines, HUD chrome, letterspaced uppercase labels, eyebrows or kickers above headings; labels are sentence case.
 - **Don't** use glass, blur, gradients or zero-offset shadows; depth is tonal value plus the edge light, and only floating surfaces cast an offset shadow.

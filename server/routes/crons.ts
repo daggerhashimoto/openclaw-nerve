@@ -8,6 +8,13 @@
  * POST   /api/crons/:id/toggle — Toggle enabled/disabled
  * POST   /api/crons/:id/run    — Run a cron job immediately
  * GET    /api/crons/:id/runs   — Get run history
+ *
+ * Cron management goes through the gateway's cron.* RPC methods over the
+ * persistent WebSocket. The `cron` tool behind POST /tools/invoke needs a
+ * trusted agent-run identity that plain HTTP callers cannot supply, so it
+ * fails with "trusted operational run instance required". Only
+ * sessions_spawn (manual runs of isolated agent-turn jobs) still uses the
+ * HTTP tool path.
  */
 
 import { Hono } from 'hono';
@@ -16,6 +23,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { config } from '../lib/config.js';
 import { invokeGatewayTool } from '../lib/gateway-client.js';
+import { gatewayRpcCall } from '../lib/gateway-rpc.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 
 const scheduleSchema = z.union([
@@ -101,7 +109,8 @@ function getCronJobsFromResult(result: unknown): Record<string, unknown>[] {
 }
 
 function getCronRunEntriesFromResult(result: unknown): Record<string, unknown>[] {
-  const r = result as { runs?: unknown; details?: { entries?: unknown; runs?: unknown } };
+  const r = result as { entries?: unknown; runs?: unknown; details?: { entries?: unknown; runs?: unknown } };
+  if (Array.isArray(r?.entries)) return r.entries as Record<string, unknown>[];
   if (Array.isArray(r?.runs)) return r.runs as Record<string, unknown>[];
   if (Array.isArray(r?.details?.entries)) return r.details.entries as Record<string, unknown>[];
   if (Array.isArray(r?.details?.runs)) return r.details.runs as Record<string, unknown>[];
@@ -211,11 +220,7 @@ function replaceCronJobsInResult(result: unknown, jobs: Record<string, unknown>[
 
 async function getGatewayCronRunEntries(jobId: string): Promise<Record<string, unknown>[]> {
   try {
-    const gatewayResult = await invokeGatewayTool('cron', {
-      action: 'runs',
-      jobId,
-      limit: 10,
-    });
+    const gatewayResult = await gatewayRpcCall('cron.runs', { id: jobId, limit: 10 });
     return getCronRunEntriesFromResult(gatewayResult);
   } catch (err) {
     console.warn('[crons] gateway runs unavailable, falling back to manual history only:', (err as Error).message);
@@ -253,10 +258,7 @@ function buildCronSpawnLabel(job: Record<string, unknown>): string {
 
 app.get('/api/crons', rateLimitGeneral, async (c) => {
   try {
-    const result = await invokeGatewayTool('cron', {
-      action: 'list',
-      includeDisabled: true,
-    });
+    const result = await gatewayRpcCall('cron.list', { includeDisabled: true });
     const jobs = getCronJobsFromResult(result);
     const mergedJobs = jobs.length > 0 ? await mergeManualRunStateIntoJobs(jobs) : jobs;
     return c.json({ ok: true, result: replaceCronJobsInResult(result, mergedJobs) });
@@ -273,10 +275,7 @@ app.post('/api/crons', rateLimitGeneral, async (c) => {
     if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
     const body = parsed.data;
     const normalizedJob = normalizeCronTarget(body.job);
-    const result = await invokeGatewayTool('cron', {
-      action: 'add',
-      job: normalizedJob,
-    });
+    const result = await gatewayRpcCall('cron.add', normalizedJob);
     return c.json({ ok: true, result });
   } catch (err) {
     console.error('[crons] add error:', (err as Error).message);
@@ -292,11 +291,7 @@ app.patch('/api/crons/:id', rateLimitGeneral, async (c) => {
     if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
     const body = parsed.data;
     const normalizedPatch = normalizeCronTarget(body.patch);
-    const result = await invokeGatewayTool('cron', {
-      action: 'update',
-      jobId: id,
-      patch: normalizedPatch,
-    });
+    const result = await gatewayRpcCall('cron.update', { id, patch: normalizedPatch });
     return c.json({ ok: true, result });
   } catch (err) {
     console.error('[crons] update error:', (err as Error).message);
@@ -307,10 +302,7 @@ app.patch('/api/crons/:id', rateLimitGeneral, async (c) => {
 app.delete('/api/crons/:id', rateLimitGeneral, async (c) => {
   const id = c.req.param('id');
   try {
-    const result = await invokeGatewayTool('cron', {
-      action: 'remove',
-      jobId: id,
-    });
+    const result = await gatewayRpcCall('cron.remove', { id });
     return c.json({ ok: true, result });
   } catch (err) {
     console.error('[crons] remove error:', (err as Error).message);
@@ -323,11 +315,7 @@ app.post('/api/crons/:id/toggle', rateLimitGeneral, async (c) => {
   // Get current state first, then flip
   try {
     const body = await c.req.json<{ enabled: boolean }>().catch(() => ({ enabled: true }));
-    const result = await invokeGatewayTool('cron', {
-      action: 'update',
-      jobId: id,
-      patch: { enabled: body.enabled },
-    });
+    const result = await gatewayRpcCall('cron.update', { id, patch: { enabled: body.enabled } });
     return c.json({ ok: true, result });
   } catch (err) {
     console.error('[crons] toggle error:', (err as Error).message);
@@ -338,10 +326,7 @@ app.post('/api/crons/:id/toggle', rateLimitGeneral, async (c) => {
 app.post('/api/crons/:id/run', rateLimitGeneral, async (c) => {
   const id = c.req.param('id');
   try {
-    const listResult = await invokeGatewayTool('cron', {
-      action: 'list',
-      includeDisabled: true,
-    }, GATEWAY_RUN_TIMEOUT_MS) as Record<string, unknown>;
+    const listResult = await gatewayRpcCall('cron.list', { includeDisabled: true }, GATEWAY_RUN_TIMEOUT_MS);
     const jobs = getCronJobsFromResult(listResult);
     const job = jobs.find((entry) => (entry.id || entry.jobId) === id);
 
@@ -386,10 +371,7 @@ app.post('/api/crons/:id/run', rateLimitGeneral, async (c) => {
       return c.json({ ok: true, result });
     }
 
-    const result = await invokeGatewayTool('cron', {
-      action: 'run',
-      jobId: id,
-    }, GATEWAY_RUN_TIMEOUT_MS);
+    const result = await gatewayRpcCall('cron.run', { id, mode: 'force' }, GATEWAY_RUN_TIMEOUT_MS);
     return c.json({ ok: true, result });
   } catch (err) {
     console.error('[crons] run error:', (err as Error).message);

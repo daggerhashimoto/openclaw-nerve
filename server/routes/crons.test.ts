@@ -15,10 +15,15 @@ describe('cron routes', () => {
 
   async function buildApp() {
     const invokeGatewayTool = vi.fn(async () => ({ ok: true }));
+    const gatewayRpcCall = vi.fn(async (): Promise<unknown> => ({ ok: true }));
     const tempHome = await fs.mkdtemp(join(os.tmpdir(), 'nerve-crons-test-'));
 
     vi.doMock('../lib/gateway-client.js', () => ({
       invokeGatewayTool,
+    }));
+
+    vi.doMock('../lib/gateway-rpc.js', () => ({
+      gatewayRpcCall,
     }));
 
     vi.doMock('../lib/config.js', async (importOriginal) => {
@@ -39,11 +44,11 @@ describe('cron routes', () => {
     const mod = await import('./crons.js');
     const app = new Hono();
     app.route('/', mod.default);
-    return { app, invokeGatewayTool, tempHome };
+    return { app, invokeGatewayTool, gatewayRpcCall, tempHome };
   }
 
   it('derives agentId from sessionKey when creating a cron', async () => {
-    const { app, invokeGatewayTool } = await buildApp();
+    const { app, gatewayRpcCall } = await buildApp();
 
     const res = await app.request('/api/crons', {
       method: 'POST',
@@ -58,19 +63,16 @@ describe('cron routes', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(invokeGatewayTool).toHaveBeenCalledWith('cron', {
-      action: 'add',
-      job: {
-        agentId: 'reviewer',
-        payload: { kind: 'agentTurn', message: 'summarize inbox' },
-        sessionKey: 'agent:reviewer:main',
-        sessionTarget: 'isolated',
-      },
+    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.add', {
+      agentId: 'reviewer',
+      payload: { kind: 'agentTurn', message: 'summarize inbox' },
+      sessionKey: 'agent:reviewer:main',
+      sessionTarget: 'isolated',
     });
   });
 
   it('derives agentId from sessionKey when updating a cron', async () => {
-    const { app, invokeGatewayTool } = await buildApp();
+    const { app, gatewayRpcCall } = await buildApp();
 
     const res = await app.request('/api/crons/job-123', {
       method: 'PATCH',
@@ -85,9 +87,8 @@ describe('cron routes', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(invokeGatewayTool).toHaveBeenCalledWith('cron', {
-      action: 'update',
-      jobId: 'job-123',
+    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.update', {
+      id: 'job-123',
       patch: {
         agentId: 'ops',
         payload: { kind: 'systemEvent', text: 'Reminder: deploy window opens in 10 minutes.' },
@@ -98,9 +99,9 @@ describe('cron routes', () => {
   });
 
   it('runs isolated agentTurn jobs through sessions_spawn', async () => {
-    const { app, invokeGatewayTool, tempHome } = await buildApp();
-    invokeGatewayTool.mockImplementation(async (tool: string, args: Record<string, unknown>) => {
-      if (tool === 'cron' && args.action === 'list') {
+    const { app, invokeGatewayTool, gatewayRpcCall, tempHome } = await buildApp();
+    gatewayRpcCall.mockImplementation(async (method: string) => {
+      if (method === 'cron.list') {
         return {
           jobs: [{
             id: 'job-123',
@@ -117,6 +118,9 @@ describe('cron routes', () => {
           }],
         };
       }
+      return { ok: true };
+    });
+    invokeGatewayTool.mockImplementation(async (tool: string) => {
       if (tool === 'sessions_spawn') {
         return {
           details: {
@@ -133,10 +137,7 @@ describe('cron routes', () => {
 
     expect(res.status).toBe(200);
     expect(data.ok).toBe(true);
-    expect(invokeGatewayTool).toHaveBeenCalledWith('cron', {
-      action: 'list',
-      includeDisabled: true,
-    }, 60000);
+    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.list', { includeDisabled: true }, 60000);
     expect(invokeGatewayTool).toHaveBeenCalledWith('sessions_spawn', {
       task: 'say hello',
       mode: 'run',
@@ -147,25 +148,22 @@ describe('cron routes', () => {
     }, 60000);
     const runLedger = await fs.readFile(join(tempHome, '.openclaw', 'cron', 'nerve-manual-runs', 'job-123.jsonl'), 'utf8');
     expect(runLedger).toContain('"summary":"Manual run started in a separate cron session."');
-    expect(invokeGatewayTool).not.toHaveBeenCalledWith('cron', {
-      action: 'run',
-      jobId: 'job-123',
-    }, 60000);
+    expect(gatewayRpcCall).not.toHaveBeenCalledWith('cron.run', expect.anything(), expect.anything());
+    expect(invokeGatewayTool).not.toHaveBeenCalledWith('cron', expect.anything(), expect.anything());
   });
 
   it('merges manual run history entries into cron runs', async () => {
-    const { app, invokeGatewayTool, tempHome } = await buildApp();
-    invokeGatewayTool.mockImplementation(async (tool: string, args: Record<string, unknown>) => {
-      if (tool === 'cron' && args.action === 'runs') {
+    const { app, gatewayRpcCall, tempHome } = await buildApp();
+    gatewayRpcCall.mockImplementation(async (method: string) => {
+      if (method === 'cron.runs') {
         return {
-          details: {
-            entries: [{
-              ts: 1000,
-              status: 'ok',
-              summary: 'Gateway entry',
-              durationMs: 500,
-            }],
-          },
+          entries: [{
+            ts: 1000,
+            status: 'ok',
+            summary: 'Gateway entry',
+            durationMs: 500,
+          }],
+          total: 1,
         };
       }
       return { ok: true };
@@ -188,42 +186,27 @@ describe('cron routes', () => {
     expect(data.result.entries).toHaveLength(2);
     expect(data.result.entries[0]?.summary).toBe('Manual run started in a separate cron session.');
     expect(data.result.entries[1]?.summary).toBe('Gateway entry');
+    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.runs', { id: 'job-123', limit: 10 });
   });
 
-  it('merges manual last-run timestamps into cron list state', async () => {
-    const { app, invokeGatewayTool, tempHome } = await buildApp();
-    invokeGatewayTool.mockImplementation(async (tool: string, args: Record<string, unknown>) => {
-      if (tool === 'cron' && args.action === 'list') {
+  it('lists jobs through cron.list and merges manual last-run timestamps into state', async () => {
+    const { app, gatewayRpcCall, tempHome } = await buildApp();
+    gatewayRpcCall.mockImplementation(async (method: string) => {
+      if (method === 'cron.list') {
         return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              jobs: [{
-                id: 'job-123',
-                agentId: 'main',
-                sessionKey: 'agent:main:main',
-                name: 'test cron',
-                enabled: true,
-                schedule: { kind: 'every', everyMs: 300000 },
-                sessionTarget: 'isolated',
-                payload: { kind: 'agentTurn', message: 'say hello' },
-                state: {},
-              }],
-            }, null, 2),
+          jobs: [{
+            id: 'job-123',
+            agentId: 'main',
+            sessionKey: 'agent:main:main',
+            name: 'test cron',
+            enabled: true,
+            schedule: { kind: 'every', everyMs: 300000 },
+            sessionTarget: 'isolated',
+            payload: { kind: 'agentTurn', message: 'say hello' },
+            state: {},
           }],
-          details: {
-            jobs: [{
-              id: 'job-123',
-              agentId: 'main',
-              sessionKey: 'agent:main:main',
-              name: 'test cron',
-              enabled: true,
-              schedule: { kind: 'every', everyMs: 300000 },
-              sessionTarget: 'isolated',
-              payload: { kind: 'agentTurn', message: 'say hello' },
-              state: {},
-            }],
-          },
+          total: 1,
+          hasMore: false,
         };
       }
       return { ok: true };
@@ -238,25 +221,68 @@ describe('cron routes', () => {
     const res = await app.request('/api/crons');
     const data = await res.json() as {
       ok: boolean;
-      result: {
-        details?: { jobs?: Array<{ state?: { lastRunAtMs?: number } }> };
-        content?: Array<{ type?: string; text?: string }>;
-      };
+      result: { jobs?: Array<{ state?: { lastRunAtMs?: number } }>; total?: number };
     };
 
     expect(res.status).toBe(200);
     expect(data.ok).toBe(true);
-    expect(data.result.details?.jobs?.[0]?.state?.lastRunAtMs).toBe(2000);
-    const contentText = data.result.content?.[0]?.text;
-    expect(contentText).toBeTruthy();
-    const parsedContent = JSON.parse(contentText as string) as { jobs?: Array<{ state?: { lastRunAtMs?: number } }> };
-    expect(parsedContent.jobs?.[0]?.state?.lastRunAtMs).toBe(2000);
+    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.list', { includeDisabled: true });
+    expect(data.result.jobs?.[0]?.state?.lastRunAtMs).toBe(2000);
+    expect(data.result.total).toBe(1);
+  });
+
+  it('toggles a cron through cron.update', async () => {
+    const { app, gatewayRpcCall } = await buildApp();
+
+    const res = await app.request('/api/crons/job-123/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.update', {
+      id: 'job-123',
+      patch: { enabled: false },
+    });
+  });
+
+  it('deletes a cron through cron.remove', async () => {
+    const { app, gatewayRpcCall } = await buildApp();
+
+    const res = await app.request('/api/crons/job-123', { method: 'DELETE' });
+
+    expect(res.status).toBe(200);
+    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.remove', { id: 'job-123' });
+  });
+
+  it('runs non-isolated jobs natively through cron.run', async () => {
+    const { app, invokeGatewayTool, gatewayRpcCall } = await buildApp();
+    gatewayRpcCall.mockImplementation(async (method: string) => {
+      if (method === 'cron.list') {
+        return {
+          jobs: [{
+            id: 'job-123',
+            name: 'main-session cron',
+            sessionTarget: 'main',
+            payload: { kind: 'systemEvent', text: 'ping' },
+          }],
+        };
+      }
+      return { ok: true, ran: true };
+    });
+
+    const res = await app.request('/api/crons/job-123/run', { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.run', { id: 'job-123', mode: 'force' }, 60000);
+    expect(invokeGatewayTool).not.toHaveBeenCalled();
   });
 
   it('still returns success when manual run history cannot be persisted', async () => {
-    const { app, invokeGatewayTool } = await buildApp();
-    invokeGatewayTool.mockImplementation(async (tool: string, args: Record<string, unknown>) => {
-      if (tool === 'cron' && args.action === 'list') {
+    const { app, invokeGatewayTool, gatewayRpcCall } = await buildApp();
+    gatewayRpcCall.mockImplementation(async (method: string) => {
+      if (method === 'cron.list') {
         return {
           jobs: [{
             id: 'job-123',
@@ -271,6 +297,9 @@ describe('cron routes', () => {
           }],
         };
       }
+      return { ok: true };
+    });
+    invokeGatewayTool.mockImplementation(async (tool: string) => {
       if (tool === 'sessions_spawn') {
         return {
           details: {
@@ -293,9 +322,9 @@ describe('cron routes', () => {
   });
 
   it('falls back to manual history when gateway runs lookup fails', async () => {
-    const { app, invokeGatewayTool, tempHome } = await buildApp();
-    invokeGatewayTool.mockImplementation(async (tool: string, args: Record<string, unknown>) => {
-      if (tool === 'cron' && args.action === 'runs') {
+    const { app, gatewayRpcCall, tempHome } = await buildApp();
+    gatewayRpcCall.mockImplementation(async (method: string) => {
+      if (method === 'cron.runs') {
         throw new Error('gateway unavailable');
       }
       return { ok: true };
@@ -317,5 +346,17 @@ describe('cron routes', () => {
     expect(data.ok).toBe(true);
     expect(data.result.entries).toHaveLength(1);
     expect(data.result.entries[0]?.summary).toBe('Manual run started in a separate cron session.');
+  });
+
+  it('surfaces gateway RPC failures as a 502 on list', async () => {
+    const { app, gatewayRpcCall } = await buildApp();
+    gatewayRpcCall.mockRejectedValueOnce(new Error('Gateway connection not ready'));
+
+    const res = await app.request('/api/crons');
+    const data = await res.json() as { ok: boolean; error: string };
+
+    expect(res.status).toBe(502);
+    expect(data.ok).toBe(false);
+    expect(data.error).toBe('Gateway connection not ready');
   });
 });

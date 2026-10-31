@@ -101,21 +101,19 @@ describe('cron routes', () => {
   it('runs isolated agentTurn jobs through sessions_spawn', async () => {
     const { app, invokeGatewayTool, gatewayRpcCall, tempHome } = await buildApp();
     gatewayRpcCall.mockImplementation(async (method: string) => {
-      if (method === 'cron.list') {
+      if (method === 'cron.get') {
         return {
-          jobs: [{
-            id: 'job-123',
-            agentId: 'main',
-            sessionKey: 'agent:main:main',
-            name: 'test cron',
-            sessionTarget: 'isolated',
-            payload: {
-              kind: 'agentTurn',
-              message: 'say hello',
-              model: 'anthropic/claude-opus-4-6',
-              thinking: 'medium',
-            },
-          }],
+          id: 'job-123',
+          agentId: 'main',
+          sessionKey: 'agent:main:main',
+          name: 'test cron',
+          sessionTarget: 'isolated',
+          payload: {
+            kind: 'agentTurn',
+            message: 'say hello',
+            model: 'anthropic/claude-opus-4-6',
+            thinking: 'medium',
+          },
         };
       }
       return { ok: true };
@@ -137,7 +135,8 @@ describe('cron routes', () => {
 
     expect(res.status).toBe(200);
     expect(data.ok).toBe(true);
-    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.list', { includeDisabled: true }, 60000);
+    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.get', { id: 'job-123' }, 60000);
+    expect(gatewayRpcCall).not.toHaveBeenCalledWith('cron.list', expect.anything(), expect.anything());
     expect(invokeGatewayTool).toHaveBeenCalledWith('sessions_spawn', {
       task: 'say hello',
       mode: 'run',
@@ -226,7 +225,7 @@ describe('cron routes', () => {
 
     expect(res.status).toBe(200);
     expect(data.ok).toBe(true);
-    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.list', { includeDisabled: true });
+    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.list', { includeDisabled: true }, undefined);
     expect(data.result.jobs?.[0]?.state?.lastRunAtMs).toBe(2000);
     expect(data.result.total).toBe(1);
   });
@@ -259,14 +258,12 @@ describe('cron routes', () => {
   it('runs non-isolated jobs natively through cron.run', async () => {
     const { app, invokeGatewayTool, gatewayRpcCall } = await buildApp();
     gatewayRpcCall.mockImplementation(async (method: string) => {
-      if (method === 'cron.list') {
+      if (method === 'cron.get') {
         return {
-          jobs: [{
-            id: 'job-123',
-            name: 'main-session cron',
-            sessionTarget: 'main',
-            payload: { kind: 'systemEvent', text: 'ping' },
-          }],
+          id: 'job-123',
+          name: 'main-session cron',
+          sessionTarget: 'main',
+          payload: { kind: 'systemEvent', text: 'ping' },
         };
       }
       return { ok: true, ran: true };
@@ -282,19 +279,17 @@ describe('cron routes', () => {
   it('still returns success when manual run history cannot be persisted', async () => {
     const { app, invokeGatewayTool, gatewayRpcCall } = await buildApp();
     gatewayRpcCall.mockImplementation(async (method: string) => {
-      if (method === 'cron.list') {
+      if (method === 'cron.get') {
         return {
-          jobs: [{
-            id: 'job-123',
-            agentId: 'main',
-            sessionKey: 'agent:main:main',
-            name: 'test cron',
-            sessionTarget: 'isolated',
-            payload: {
-              kind: 'agentTurn',
-              message: 'say hello',
-            },
-          }],
+          id: 'job-123',
+          agentId: 'main',
+          sessionKey: 'agent:main:main',
+          name: 'test cron',
+          sessionTarget: 'isolated',
+          payload: {
+            kind: 'agentTurn',
+            message: 'say hello',
+          },
         };
       }
       return { ok: true };
@@ -358,5 +353,88 @@ describe('cron routes', () => {
     expect(res.status).toBe(502);
     expect(data.ok).toBe(false);
     expect(data.error).toBe('Gateway connection not ready');
+  });
+
+  it('follows nextOffset when cron.list has more pages', async () => {
+    const { app, gatewayRpcCall } = await buildApp();
+    gatewayRpcCall.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+      if (method === 'cron.list' && params.offset === undefined) {
+        return { jobs: [{ id: 'job-1' }], total: 2, hasMore: true, nextOffset: 1 };
+      }
+      if (method === 'cron.list' && params.offset === 1) {
+        return { jobs: [{ id: 'job-2' }], total: 2, hasMore: false, nextOffset: null };
+      }
+      return { ok: true };
+    });
+
+    const res = await app.request('/api/crons');
+    const data = await res.json() as { ok: boolean; result: { jobs: Array<{ id: string }>; hasMore: boolean } };
+
+    expect(res.status).toBe(200);
+    expect(data.result.jobs.map((job) => job.id)).toEqual(['job-1', 'job-2']);
+    expect(data.result.hasMore).toBe(false);
+    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.list', { includeDisabled: true, limit: 200, offset: 1 }, undefined);
+  });
+
+  it('falls back to cron.list for manual runs when the gateway has no cron.get', async () => {
+    const { app, invokeGatewayTool, gatewayRpcCall } = await buildApp();
+    gatewayRpcCall.mockImplementation(async (method: string) => {
+      if (method === 'cron.get') throw new Error('unknown method: cron.get');
+      if (method === 'cron.list') {
+        return {
+          jobs: [{
+            id: 'job-123',
+            name: 'test cron',
+            sessionTarget: 'isolated',
+            payload: { kind: 'agentTurn', message: 'say hello' },
+          }],
+        };
+      }
+      return { ok: true };
+    });
+    invokeGatewayTool.mockResolvedValue({ details: { status: 'accepted' } });
+
+    const res = await app.request('/api/crons/job-123/run', { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    expect(gatewayRpcCall).toHaveBeenCalledWith('cron.list', { includeDisabled: true }, 60000);
+    expect(invokeGatewayTool).toHaveBeenCalledWith('sessions_spawn', expect.objectContaining({ task: 'say hello' }), 60000);
+  });
+
+  it('rejects legacy flat fields on create with a 400 instead of forwarding them', async () => {
+    const { app, gatewayRpcCall } = await buildApp();
+
+    const res = await app.request('/api/crons', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job: {
+          sessionTarget: 'isolated',
+          model: 'openai/gpt-6-sol',
+          payload: { kind: 'agentTurn', message: 'summarize inbox' },
+        },
+      }),
+    });
+    const data = await res.json() as { ok: boolean; error: string };
+
+    expect(res.status).toBe(400);
+    expect(data.error).toContain('model');
+    expect(gatewayRpcCall).not.toHaveBeenCalled();
+  });
+
+  it('rejects legacy flat fields on update with a 400 instead of forwarding them', async () => {
+    const { app, gatewayRpcCall } = await buildApp();
+
+    const res = await app.request('/api/crons/job-123', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patch: { prompt: 'new prompt', notify: true } }),
+    });
+    const data = await res.json() as { ok: boolean; error: string };
+
+    expect(res.status).toBe(400);
+    expect(data.error).toContain('prompt');
+    expect(data.error).toContain('notify');
+    expect(gatewayRpcCall).not.toHaveBeenCalled();
   });
 });

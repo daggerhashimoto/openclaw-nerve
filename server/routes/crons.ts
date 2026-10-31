@@ -56,12 +56,6 @@ const cronJobSchema = z.object({
     sessionKey: z.string().max(200).optional(),
     agentId: sessionAgentIdSchema,
     enabled: z.boolean().optional(),
-    notify: z.boolean().optional(),
-    // Legacy compat — Nerve may send these flat fields
-    prompt: z.string().max(10000).optional(),
-    model: z.string().max(200).optional(),
-    thinkingLevel: z.string().max(50).optional(),
-    channel: z.string().max(200).optional(),
   }),
 });
 
@@ -75,17 +69,27 @@ const cronPatchSchema = z.object({
     sessionKey: z.string().max(200).optional(),
     agentId: sessionAgentIdSchema,
     enabled: z.boolean().optional(),
-    notify: z.boolean().optional(),
-    prompt: z.string().max(10000).optional(),
-    model: z.string().max(200).optional(),
-    thinkingLevel: z.string().max(50).optional(),
-    channel: z.string().max(200).optional(),
   }),
 });
+
+/**
+ * Flat fields the old cron tool moved into payload/delivery. cron.add and
+ * cron.update validate a closed schema, so reject them up front with a 400
+ * instead of letting zod strip them silently or the gateway answer 502.
+ */
+const LEGACY_FLAT_FIELDS = ['prompt', 'model', 'thinkingLevel', 'channel', 'notify'];
+
+function legacyFlatFieldsError(fields: Record<string, unknown>): string | null {
+  const present = LEGACY_FLAT_FIELDS.filter((field) => field in fields);
+  if (present.length === 0) return null;
+  return `Unsupported field(s): ${present.join(', ')}. Use payload (message, model, thinking) and delivery instead.`;
+}
 
 const app = new Hono();
 
 const GATEWAY_RUN_TIMEOUT_MS = 60_000;
+const CRON_LIST_PAGE_LIMIT = 200;
+const CRON_LIST_MAX_PAGES = 50;
 const MANUAL_CRON_RUNS_DIR = join(config.home, '.openclaw', 'cron', 'nerve-manual-runs');
 
 interface ManualCronRunEntry {
@@ -228,6 +232,35 @@ async function getGatewayCronRunEntries(jobId: string): Promise<Record<string, u
   }
 }
 
+/**
+ * List every cron job. cron.list returns at most 200 jobs per page and reports
+ * hasMore/nextOffset beyond that, so follow the pages instead of dropping jobs.
+ */
+async function listAllCronJobs(timeoutMs?: number): Promise<{ result: unknown; jobs: Record<string, unknown>[] }> {
+  const params = { includeDisabled: true };
+  const first = await gatewayRpcCall('cron.list', params, timeoutMs);
+  const jobs = [...getCronJobsFromResult(first)];
+  let page = first as { hasMore?: unknown; nextOffset?: unknown } | null;
+  let pages = 1;
+  while (page?.hasMore === true && typeof page.nextOffset === 'number' && pages < CRON_LIST_MAX_PAGES) {
+    page = await gatewayRpcCall('cron.list', { ...params, limit: CRON_LIST_PAGE_LIMIT, offset: page.nextOffset }, timeoutMs) as typeof page;
+    jobs.push(...getCronJobsFromResult(page));
+    pages += 1;
+  }
+  return { result: pages > 1 ? { ...(first as object), hasMore: false, nextOffset: null } : first, jobs };
+}
+
+/** Look up one job. Gateways without cron.get fall back to the full list. */
+async function getCronJob(id: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    return await gatewayRpcCall('cron.get', { id }, GATEWAY_RUN_TIMEOUT_MS) as Record<string, unknown>;
+  } catch (err) {
+    if ((err as Error).message !== 'unknown method: cron.get') throw err;
+    const { jobs } = await listAllCronJobs(GATEWAY_RUN_TIMEOUT_MS);
+    return jobs.find((entry) => (entry.id || entry.jobId) === id);
+  }
+}
+
 function deriveAgentIdFromSessionKey(sessionKey?: string): string | undefined {
   if (!sessionKey) return undefined;
   const match = sessionKey.match(/^agent:([^:]+):/);
@@ -258,8 +291,7 @@ function buildCronSpawnLabel(job: Record<string, unknown>): string {
 
 app.get('/api/crons', rateLimitGeneral, async (c) => {
   try {
-    const result = await gatewayRpcCall('cron.list', { includeDisabled: true });
-    const jobs = getCronJobsFromResult(result);
+    const { result, jobs } = await listAllCronJobs();
     const mergedJobs = jobs.length > 0 ? await mergeManualRunStateIntoJobs(jobs) : jobs;
     return c.json({ ok: true, result: replaceCronJobsInResult(result, mergedJobs) });
   } catch (err) {
@@ -273,6 +305,8 @@ app.post('/api/crons', rateLimitGeneral, async (c) => {
     const raw = await c.req.json();
     const parsed = cronJobSchema.safeParse(raw);
     if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
+    const legacyError = legacyFlatFieldsError(raw.job);
+    if (legacyError) return c.json({ ok: false, error: legacyError }, 400);
     const body = parsed.data;
     const normalizedJob = normalizeCronTarget(body.job);
     const result = await gatewayRpcCall('cron.add', normalizedJob);
@@ -289,6 +323,8 @@ app.patch('/api/crons/:id', rateLimitGeneral, async (c) => {
     const raw = await c.req.json();
     const parsed = cronPatchSchema.safeParse(raw);
     if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
+    const legacyError = legacyFlatFieldsError(raw.patch);
+    if (legacyError) return c.json({ ok: false, error: legacyError }, 400);
     const body = parsed.data;
     const normalizedPatch = normalizeCronTarget(body.patch);
     const result = await gatewayRpcCall('cron.update', { id, patch: normalizedPatch });
@@ -326,9 +362,7 @@ app.post('/api/crons/:id/toggle', rateLimitGeneral, async (c) => {
 app.post('/api/crons/:id/run', rateLimitGeneral, async (c) => {
   const id = c.req.param('id');
   try {
-    const listResult = await gatewayRpcCall('cron.list', { includeDisabled: true }, GATEWAY_RUN_TIMEOUT_MS);
-    const jobs = getCronJobsFromResult(listResult);
-    const job = jobs.find((entry) => (entry.id || entry.jobId) === id);
+    const job = await getCronJob(id);
 
     if (job && isIsolatedAgentTurnCron(job)) {
       const payload = job.payload as Record<string, unknown>;

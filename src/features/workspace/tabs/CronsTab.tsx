@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { RefreshCw, Play, Plus, Trash2, Pencil, ChevronDown, ChevronRight, CheckCircle, XCircle, Circle, Loader2, Settings2, Clock3 } from 'lucide-react';
+import { RefreshCw, Play, Plus, Trash2, Pencil, History, CheckCircle, XCircle, Circle, Loader2, Settings2, Clock3 } from 'lucide-react';
 import { useCrons, type CronJob, type CronRun, CRON_GATEWAY_TOOL_ALLOWLIST } from '../hooks/useCrons';
 import { CronDialog } from './CronDialog';
 import { useSessionContext } from '@/contexts/SessionContext';
@@ -172,28 +172,12 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
       <div className="flex flex-col gap-2">
         <div className="flex items-start gap-2.5">
           <div className="min-w-0 flex-1 space-y-1.5">
-            <div className="flex items-start justify-between gap-2.5">
-              <div className="min-w-0 flex items-start gap-2">
-              <button
-                onClick={() => onToggle(job.id, !job.enabled)}
-                className="shell-chip min-h-8 shrink-0 rounded-lg px-2.5 text-[0.667rem]"
-                data-active={job.enabled ? 'true' : 'false'}
-                title={job.enabled ? 'Pause job' : 'Enable job'}
-                aria-label={`${job.enabled ? 'Pause' : 'Enable'} ${name}`}
-              >
-                <Circle
-                  size={8}
-                  fill={job.enabled ? 'currentColor' : 'none'}
-                  className={job.enabled ? 'text-green' : 'text-muted-foreground'}
-                />
-                <span>{job.enabled ? 'Live' : 'Off'}</span>
-              </button>
-                <div className="min-w-0 space-y-0.5">
-                  <div className="text-[0.833rem] font-semibold leading-tight text-foreground break-words">{name}</div>
-                  <div className="text-[0.7rem] leading-4.5 text-muted-foreground">{humanSchedule(job)}</div>
-                </div>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="text-[0.833rem] font-semibold leading-tight text-foreground [overflow-wrap:anywhere]">{name}</div>
+                <div className="text-[0.7rem] leading-4.5 text-muted-foreground">{humanSchedule(job)}</div>
               </div>
-              <div className="flex items-center gap-1 self-start">
+              <div className="flex shrink-0 items-center gap-1 self-start">
                 <button
                   onClick={handleRun}
                   disabled={running}
@@ -202,15 +186,17 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
                   title={running ? 'Running…' : 'Run now'}
                   aria-label={`Run ${name}`}
                 >
-                  {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                  {running ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
                 </button>
                 <button
                   onClick={handleExpand}
                   className="shell-icon-button size-9 px-0"
-                  title={expanded ? 'Hide history' : 'Show history'}
+                  data-active={expanded ? 'true' : 'false'}
+                  title={expanded ? 'Hide run history' : 'Show run history'}
                   aria-label={expanded ? 'Hide history' : 'Show history'}
+                  aria-expanded={expanded}
                 >
-                  {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  <History size={16} />
                 </button>
                 <div ref={actionsRef} className="relative">
                   <button
@@ -220,7 +206,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
                     aria-label={`Cron settings for ${name}`}
                     aria-expanded={actionsOpen}
                   >
-                    <Settings2 size={13} />
+                    <Settings2 size={16} />
                   </button>
                   {actionsOpen && (
                     <div className="shell-panel absolute right-0 top-full z-20 mt-1.5 min-w-[132px] rounded-xl p-1">
@@ -253,11 +239,25 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-2">
-              <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone={targetTone}>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+              <button
+                onClick={() => onToggle(job.id, !job.enabled)}
+                className="shell-chip min-h-7 shrink-0 rounded-lg px-2 text-[0.667rem]"
+                data-active={job.enabled ? 'true' : 'false'}
+                title={job.enabled ? 'Pause job' : 'Enable job'}
+                aria-label={`${job.enabled ? 'Pause' : 'Enable'} ${name}`}
+              >
+                <Circle
+                  size={8}
+                  fill={job.enabled ? 'currentColor' : 'none'}
+                  className={job.enabled ? 'text-green' : 'text-muted-foreground'}
+                />
+                <span>{job.enabled ? 'Live' : 'Off'}</span>
+              </button>
+              <span className="cockpit-badge min-h-6 whitespace-nowrap px-2 text-[0.667rem]" data-tone={targetTone}>
                 {executionLabel}
               </span>
-              <span className="min-w-0 truncate text-right text-[0.667rem] text-muted-foreground">
+              <span className="ml-auto whitespace-nowrap text-right text-[0.667rem] text-muted-foreground">
                 {job.lastRun ? `Last ${relativeTime(job.lastRun)}` : 'No runs yet'}
               </span>
             </div>
@@ -270,12 +270,12 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
                 </div>
               )}
               {job.lastError && !taskSucceeded && !running && (
-                <div className="text-[0.7rem] text-red/80 truncate" title={job.lastError}>
+                <div className="text-[0.7rem] leading-4.5 text-red/80 line-clamp-2 break-words" title={job.lastError}>
                   {job.lastError}
                 </div>
               )}
               {isDeliveryFailure && !running && (
-                <div className="text-[0.7rem] text-orange/80 truncate" title={job.lastError}>
+                <div className="text-[0.7rem] leading-4.5 text-orange/80 line-clamp-2 break-words" title={job.lastError}>
                   Delivery failed. Check cron settings.
                 </div>
               )}
@@ -383,11 +383,11 @@ export function CronsTab() {
   }, [fetchJobs, refreshSessions, runJob]);
 
   return (
-    <div className="h-full flex flex-col min-h-0">
+    <div className="@container h-full flex flex-col min-h-0">
       <div className="flex-1 overflow-y-auto">
         <div className="space-y-2 px-2.5 py-2.5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 flex items-center gap-1.5 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            <div className="min-w-0 flex flex-wrap items-center gap-1.5">
               {hasToolbarMeta ? (
                 <>
                   {toolbarSummary.failedCount > 0 && (
@@ -399,7 +399,7 @@ export function CronsTab() {
                     <div className="shell-panel flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1">
                       <span className="cockpit-kicker shrink-0 text-[0.5rem] tracking-[0.16em]">
                         <Clock3 size={10} className="text-primary" />
-                        Next run
+                        <span className="sr-only @xs:not-sr-only">Next run</span>
                       </span>
                       <span className="cockpit-badge min-h-5 shrink-0 px-1.5 text-[0.6rem]" data-tone="primary">
                         {toolbarSummary.nextRelative}
@@ -417,13 +417,13 @@ export function CronsTab() {
                 </>
               ) : null}
             </div>
-            <div className="shell-panel inline-flex items-center gap-1 rounded-xl px-1 py-1">
+            <div className="shell-panel ml-auto inline-flex shrink-0 items-center gap-1 rounded-xl px-1 py-1">
               <button
                 type="button"
                 onClick={handleAdd}
                 aria-label="Add cron job"
                 title="Add cron job"
-                className="shell-chip min-h-8 rounded-lg px-2.5 text-[0.7rem] font-medium"
+                className="shell-chip min-h-8 whitespace-nowrap rounded-lg px-2.5 text-[0.7rem] font-medium"
               >
                 <Plus size={13} />
                 <span>New cron</span>
@@ -434,9 +434,9 @@ export function CronsTab() {
                 disabled={isLoading}
                 aria-label="Refresh crons"
                 title="Refresh crons"
-                className="shell-icon-button size-8 px-0 disabled:opacity-60"
+                className="shell-icon-button size-9 px-0 disabled:opacity-60"
               >
-                <RefreshCw size={13} className={isLoading ? 'animate-spin' : undefined} />
+                <RefreshCw size={15} className={isLoading ? 'animate-spin' : undefined} />
               </button>
             </div>
           </div>

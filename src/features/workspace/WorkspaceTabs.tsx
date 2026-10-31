@@ -48,12 +48,12 @@ export function WorkspaceTabs({ activeTab, onTabChange, cronCount, kanbanCount, 
 
   return (
     <div
-      className="panel-header border-l-[3px] border-l-purple flex items-stretch gap-0 sm:items-center"
+      className="@container panel-header border-l-[3px] border-l-purple flex items-stretch gap-0 sm:items-center"
       role="tablist"
       aria-label="Workspace tabs"
       onKeyDown={handleKeyDown}
     >
-      <div className="flex flex-1 min-w-0 flex-wrap items-stretch gap-1.5 sm:flex-nowrap sm:items-center sm:gap-0">
+      <div className="flex flex-1 min-w-0 flex-wrap items-stretch gap-1.5 sm:flex-nowrap sm:items-center sm:gap-0 sm:@max-[15rem]:flex-wrap sm:@max-[15rem]:gap-y-1">
       {tabs.map((tab, i) => {
         const isActive = tab.id === activeTab;
         const badge = tab.id === 'crons' && cronCount ? cronCount
@@ -70,7 +70,7 @@ export function WorkspaceTabs({ activeTab, onTabChange, cronCount, kanbanCount, 
             tabIndex={isActive ? 0 : -1}
             onClick={() => onTabChange(tab.id)}
             className={`panel-label flex min-h-11 min-w-[calc(50%-0.375rem)] flex-1 items-center justify-center gap-1 rounded-md border border-border/60 bg-background/35 px-2.5 text-center transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 sm:min-h-0 sm:min-w-0 sm:flex-none sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 ${
-              i > 0 ? 'sm:ml-3' : ''
+              i > 0 ? 'sm:ml-2 sm:@min-[22rem]:ml-3' : ''
             } ${
               isActive
                 ? 'border-purple/45 bg-purple/8 text-purple'
@@ -78,7 +78,7 @@ export function WorkspaceTabs({ activeTab, onTabChange, cronCount, kanbanCount, 
             }`}
             data-active={isActive}
           >
-            <Icon size={11} />
+            <Icon size={11} className="sm:@max-[22rem]:hidden" />
             <span className="uppercase">{tab.label}</span>
             {badge !== undefined && (
               <span className="text-[0.6rem] opacity-70">({badge})</span>

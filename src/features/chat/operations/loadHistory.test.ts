@@ -327,6 +327,58 @@ describe('processChatMessages', () => {
     expect(result[0].rawText).toBe('Already did it ⚡');
   });
 
+  it('keeps a final reply when a heartbeat turn with a hidden prompt follows it', () => {
+    // chat.history strips the heartbeat poll prompt and marks the next visible message instead
+    const msgs: ChatMessage[] = [
+      { role: 'user', content: 'what would be the best soul.md' },
+      { role: 'assistant', content: [{ type: 'text', text: 'I will check the docs first.' }] },
+      { role: 'assistant', content: [{ type: 'toolCall', name: 'web_search', arguments: { query: 'soul.md' } }] },
+      { role: 'toolResult', content: [{ type: 'text', text: '{"status":"completed"}' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'Here is the SOUL.md I would use.' }] },
+      {
+        role: 'assistant',
+        content: [{ type: 'toolCall', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } }],
+        __openclaw: { turnBoundary: true },
+      },
+      { role: 'toolResult', content: [{ type: 'text', text: '{"status":"accepted"}' }] },
+    ];
+    const result = processChatMessages(msgs);
+    expect(result.find(m => m.rawText === 'I will check the docs first.')?.intermediate).toBe(true);
+    expect(result.find(m => m.rawText === 'Here is the SOUL.md I would use.')?.intermediate).toBeFalsy();
+  });
+
+  it('starts a new turn when the run changes behind a hidden prompt', () => {
+    const run = (runId: string) => ({ __openclaw: { runId } });
+    const msgs: ChatMessage[] = [
+      { role: 'user', content: 'summarize the report', ...run('run-a') },
+      { role: 'assistant', content: [{ type: 'text', text: 'Let me read the report.' }], ...run('run-a') },
+      { role: 'assistant', content: [{ type: 'toolCall', name: 'read', arguments: { path: 'report.md' } }], ...run('run-a') },
+      { role: 'toolResult', content: [{ type: 'text', text: 'report body' }], ...run('run-a') },
+      { role: 'assistant', content: [{ type: 'text', text: 'The report says revenue is up.' }], ...run('run-a') },
+      // A completion report woke the agent; the gateway hid that prompt without a marker
+      { role: 'assistant', content: [{ type: 'toolCall', name: 'sessions_history', arguments: {} }], ...run('run-b') },
+      { role: 'toolResult', content: [{ type: 'text', text: '[]' }], ...run('run-b') },
+    ];
+    const result = processChatMessages(msgs);
+    expect(result.find(m => m.rawText === 'Let me read the report.')?.intermediate).toBe(true);
+    expect(result.find(m => m.rawText === 'The report says revenue is up.')?.intermediate).toBeFalsy();
+  });
+
+  it('treats a prompt hidden by filterMessage as a turn boundary', () => {
+    const msgs: ChatMessage[] = [
+      { role: 'user', content: 'deploy it' },
+      { role: 'assistant', content: 'Deployed.' },
+      {
+        role: 'user',
+        content: 'System (untrusted): [2026-04-16 18:27:55 GMT+3] Exec completed (wild-orb, code 0) :: done\n\nHandle the result internally.',
+      },
+      { role: 'assistant', content: [{ type: 'toolCall', name: 'exec', arguments: { command: 'git status' } }] },
+      { role: 'toolResult', content: [{ type: 'text', text: 'clean' }] },
+    ];
+    const result = processChatMessages(msgs);
+    expect(result.find(m => m.rawText === 'Deployed.')?.intermediate).toBeFalsy();
+  });
+
   it('handles empty input', () => {
     expect(processChatMessages([])).toHaveLength(0);
   });

@@ -130,6 +130,13 @@ export interface ChatMessage {
   MediaTypes?: string[];
   MediaUrl?: string;
   MediaUrls?: string[];
+  /** Gateway transcript metadata (chat.history). */
+  __openclaw?: {
+    /** Agent run that produced the message; changes when a new turn starts. */
+    runId?: string;
+    /** Set on the first visible message after the gateway hid a turn's prompt (heartbeat polls). */
+    turnBoundary?: boolean;
+  };
 }
 
 /** A content block within a multi-part message (text, tool call, image, etc.). */

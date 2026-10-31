@@ -15,12 +15,11 @@ import {
   Radio,
   Users,
   Brain,
-  MessageSquare,
-  LayoutGrid,
 } from "lucide-react";
 import type { ViewMode } from "@/features/command-palette/commands";
 import type { AgentLogEntry, EventEntry, TokenData } from "@/types";
-import NerveLogo from "./NerveLogo";
+import { Pane } from "@/components/ui/Pane";
+import type { PaneState } from "@/lib/paneState";
 
 const AgentLog = lazy(() =>
   import("@/features/activity/AgentLog").then((m) => ({ default: m.AgentLog })),
@@ -110,14 +109,26 @@ interface TopBarProps {
   onViewModeChange?: (mode: ViewMode) => void;
   /** Whether the Tasks/Kanban view toggle should be shown. */
   showKanbanView?: boolean;
-  /** Freeze non-essential animated chrome for lower idle repaint cost. */
+  /**
+   * Freeze non-essential animated chrome for lower idle repaint cost.
+   * The bar no longer carries animated chrome, so this is accepted and ignored.
+   */
   performanceMode?: boolean;
+  /** The fleet in one pane beside the wordmark: live, waiting on you, or off. */
+  activity?: PaneState;
 }
+
+const BRAND_PANE_LABEL: Record<PaneState, string | undefined> = {
+  live: "Agents working",
+  operator: "Waiting on you",
+  error: "An agent failed",
+  off: undefined,
+};
 
 /**
  * Top navigation bar for the Nerve cockpit.
  *
- * Displays the Nerve logo/brand, and provides toggle buttons for the
+ * Displays the Nerve wordmark, and provides toggle buttons for the
  * Agent Log, Events, Token Usage, and (in compact mode) Sessions +
  * Workspace panels.
  */
@@ -135,7 +146,7 @@ export function TopBar({
   viewMode = "chat",
   onViewModeChange,
   showKanbanView = true,
-  performanceMode = false,
+  activity = "off",
 }: TopBarProps) {
   const [activePanel, setActivePanel] = useState<PanelId>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -218,7 +229,10 @@ export function TopBar({
   const totalCost = useMemo(() => {
     if (!tokenData) return null;
     const cost = tokenData.persistent?.totalCost ?? tokenData.totalCost ?? 0;
-    return "$" + cost.toFixed(2);
+    return "$" + cost.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   }, [tokenData]);
 
   const panelConfig = useMemo(() => {
@@ -232,56 +246,49 @@ export function TopBar({
     : "max-h-0 opacity-0 pointer-events-none";
   const panelContentClass = panelConfig.contentClass;
 
-  const buttonBase = "shell-icon-button h-11 min-w-11 px-3 max-[371px]:h-[38px] max-[371px]:min-w-[38px] max-[371px]:gap-0.5 max-[371px]:px-2 max-[371px]:[&_svg]:size-3 sm:h-10 sm:min-w-9 sm:px-3";
+  const buttonBase = "shell-icon-button px-2 max-[371px]:gap-0.5 max-[371px]:px-1.5";
+  const countClass = "hidden min-w-4 items-center justify-center rounded-[2px] bg-raised px-1 font-mono text-[0.733rem] leading-4 tabular text-muted-foreground md:inline-flex";
 
   return (
-    <div className="relative z-40 px-2 pt-2 sm:px-4 sm:pt-3">
-      <header className="topbar-mobile-compact shell-panel flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl px-3 py-2 shrink-0 max-[371px]:gap-x-1.5 max-[371px]:px-2 sm:flex-nowrap sm:px-4">
-        <div className="flex min-w-0 items-center gap-3 max-[371px]:gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/20 bg-background/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] max-[371px]:h-9 max-[371px]:w-9">
-            <NerveLogo size={24} static={performanceMode} />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-semibold uppercase tracking-[0.34em] text-primary max-[371px]:text-xs max-[371px]:tracking-[0.22em] sm:text-base">
-                Nerve
-              </span>
-            </div>
-            <div className="hidden xl:block text-[0.733rem] text-muted-foreground/80">
-              OpenClaw Cockpit{" "}
-            </div>
-          </div>
-        </div>
+    <div className="relative z-40 shrink-0">
+      <header className="topbar-mobile-compact flex min-h-[2.933rem] flex-wrap items-center gap-x-1.5 border-b border-border bg-card pl-4 pr-2 max-[371px]:pl-3 max-[371px]:pr-1 sm:h-[2.933rem] sm:flex-nowrap">
+        <span className="nerve-wordmark mr-2 shrink-0">
+          <span>Nerve</span>
+          {/* The fleet in one pane: blue while any agent works, cantaloupe when work waits on you */}
+          <Pane
+            state={activity}
+            className="nerve-brand-pane"
+            label={BRAND_PANE_LABEL[activity]}
+          />
+        </span>
         {/* View mode toggle */}
         {onViewModeChange && (
-          <div className="order-3 flex w-full items-center gap-2 max-[371px]:gap-1 sm:order-none sm:ml-2 sm:w-auto">
+          <div className="seg-track order-3 flex w-full items-center sm:order-none sm:w-auto">
             <button
               onClick={() => onViewModeChange("chat")}
-              title="Chat View"
+              title="Chat view"
               aria-label="Switch to chat view"
               aria-pressed={viewMode === "chat"}
               data-active={viewMode === "chat"}
-              className="shell-chip min-h-11 flex-1 justify-center text-[0.733rem] uppercase tracking-[0.14em] max-[371px]:min-h-[38px] max-[371px]:gap-1 max-[371px]:px-2 max-[371px]:text-[0.667rem] max-[371px]:tracking-[0.08em] max-[371px]:[&_svg]:size-3 sm:min-h-10 sm:flex-none"
+              className="shell-chip flex-1 sm:flex-none"
             >
-              <MessageSquare size={13} aria-hidden="true" />
-              <span>Chat</span>
+              Chat
             </button>
             {showKanbanView && (
               <button
                 onClick={() => onViewModeChange("kanban")}
-                title="Tasks View"
+                title="Tasks view"
                 aria-label="Switch to tasks view"
                 aria-pressed={viewMode === "kanban"}
                 data-active={viewMode === "kanban"}
-                className="shell-chip min-h-11 flex-1 justify-center text-[0.733rem] uppercase tracking-[0.14em] max-[371px]:min-h-[38px] max-[371px]:gap-1 max-[371px]:px-2 max-[371px]:text-[0.667rem] max-[371px]:tracking-[0.08em] max-[371px]:[&_svg]:size-3 sm:min-h-10 sm:flex-none"
+                className="shell-chip flex-1 sm:flex-none"
               >
-                <LayoutGrid size={13} aria-hidden="true" />
-                <span>Tasks</span>
+                Tasks
               </button>
             )}
           </div>
         )}
-        <div ref={buttonsRef} className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-1.5 overflow-x-auto pb-1 max-[371px]:gap-0.5 sm:max-w-none sm:gap-2 sm:overflow-visible sm:pb-0">
+        <div ref={buttonsRef} className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-1 overflow-x-auto max-[371px]:gap-0.5 sm:max-w-none sm:overflow-visible">
           {/* Compact layout launchers (chat-first mode) */}
           {mobilePanelButtonsVisible && sessionsPanel && (
             <button
@@ -319,7 +326,7 @@ export function TopBar({
           {logVisible && (
             <button
               onClick={() => togglePanel("agent-log")}
-              title="Agent Log"
+              title="Agent log"
               aria-label="Toggle agent log panel"
               aria-expanded={visiblePanel === "agent-log"}
               aria-haspopup="true"
@@ -327,14 +334,13 @@ export function TopBar({
               data-active={visiblePanel === "agent-log"}
               className={buttonBase}
             >
-              <Activity
-                size={14}
-                className={logGlow ? "text-green" : ""}
-                aria-hidden="true"
-              />
+              {logGlow ? (
+                <Pane state="live" size="sm" label="Agent active" />
+              ) : null}
+              <Activity size={14} aria-hidden="true" />
               <span className="hidden sm:inline">Log</span>
               {agentLogEntries.length > 0 && (
-                <span className="hidden min-w-5 items-center justify-center rounded-full bg-background/80 px-1.5 py-0.5 text-[0.6rem] tabular-nums text-foreground/80 md:inline-flex">
+                <span className={countClass}>
                   {agentLogEntries.length}
                 </span>
               )}
@@ -356,7 +362,7 @@ export function TopBar({
               <Radio size={14} aria-hidden="true" />
               <span className="hidden sm:inline">Events</span>
               {eventEntries.length > 0 && (
-                <span className="hidden min-w-5 items-center justify-center rounded-full bg-background/80 px-1.5 py-0.5 text-[0.6rem] tabular-nums text-foreground/80 md:inline-flex">
+                <span className={countClass}>
                   {eventEntries.length}
                 </span>
               )}
@@ -366,18 +372,18 @@ export function TopBar({
           {/* Usage button */}
           <button
             onClick={() => togglePanel("usage")}
-            title="Token Usage"
+            title="Token usage"
             aria-label="Toggle usage panel"
             aria-expanded={visiblePanel === "usage"}
             aria-haspopup="true"
             aria-controls="topbar-panel"
             data-active={visiblePanel === "usage"}
-            className={buttonBase}
+            className={`${buttonBase} gap-2 sm:px-2.5`}
           >
-            <BarChart3 size={14} aria-hidden="true" />
-            <span className="hidden sm:inline">Usage</span>
+            <BarChart3 size={14} aria-hidden="true" className="sm:hidden" />
+            <span className="hidden text-[0.867rem] font-normal text-muted-foreground sm:inline">Usage</span>
             {totalCost && (
-              <span className="hidden rounded-full bg-background/80 px-2 py-0.5 text-[0.6rem] tabular-nums text-foreground/80 lg:inline-flex">
+              <span className="hidden font-mono text-[0.867rem] font-normal tabular text-foreground lg:inline">
                 {totalCost}
               </span>
             )}
@@ -388,9 +394,9 @@ export function TopBar({
             onClick={onSettings}
             title="Settings"
             aria-label="Open settings"
-            className="shell-icon-button size-11 px-0 max-[371px]:size-[38px] max-[371px]:[&_svg]:size-3 sm:size-10"
+            className="shell-icon-button px-0"
           >
-            <Settings size={14} aria-hidden="true" />
+            <Settings size={16} aria-hidden="true" />
           </button>
         </div>
       </header>
@@ -402,13 +408,13 @@ export function TopBar({
         role="region"
         aria-label={visiblePanel ? `${visiblePanel} panel` : undefined}
         hidden={!visiblePanel}
-        className={`shell-panel absolute right-0 mt-2 overflow-hidden rounded-2xl transition-all duration-200 ease-out ${panelBoxClass} ${panelHeightClass}`}
+        className={`absolute right-2 mt-1 overflow-hidden rounded-[3px] border border-border bg-popover shadow-[0_12px_32px_rgba(0,0,0,0.32)] ${panelBoxClass} ${panelHeightClass}`}
         style={{ top: "100%" }}
       >
         <div className={panelContentClass}>
           <Suspense
             fallback={
-              <div className="p-4 text-muted-foreground text-xs">Loading…</div>
+              <div className="p-3 text-[0.8rem] text-muted-foreground">Loading…</div>
             }
           >
             {visiblePanel === "agent-log" && (

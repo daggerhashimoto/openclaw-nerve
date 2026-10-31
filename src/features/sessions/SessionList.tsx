@@ -3,9 +3,11 @@ import type { Session } from '@/types';
 import { getSessionKey } from '@/types';
 import type { SpawnSessionOpts } from '@/contexts/SessionContext';
 import { SessionSkeletonGroup } from '@/components/skeletons';
-import { buildAgentSidebarTree, buildSessionTree, flattenTree, getSessionType } from './sessionTree';
+import { buildAgentSidebarTree, buildSessionTree, flattenTree, getSessionType, type TreeNode } from './sessionTree';
 import { getSessionDisplayLabel, isTopLevelAgentSessionKey } from './sessionKeys';
 import { SessionNode } from './SessionNode';
+import { SessionFacade, type FacadeWindow } from './SessionFacade';
+import { isSessionRunning, paneStateFor } from '@/lib/paneState';
 import type { GranularAgentState } from '@/types';
 import {
   Dialog,
@@ -35,6 +37,19 @@ interface SessionListProps {
   agentName?: string;
   /** Render in compact dropdown mode (chat-first topbar panel). */
   compact?: boolean;
+}
+
+/** Every node in row order, ignoring collapse: the facade shows the whole building. */
+function flattenAll(nodes: TreeNode[]): TreeNode[] {
+  const out: TreeNode[] = [];
+  const walk = (list: TreeNode[]) => {
+    for (const node of list) {
+      out.push(node);
+      if (node.children.length > 0) walk(node.children);
+    }
+  };
+  walk(nodes);
+  return out;
 }
 
 function countDescendants(node: ReturnType<typeof buildSessionTree>[number]): number {
@@ -135,6 +150,10 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
   // Build tree and flatten for rendering
   const tree = useMemo(() => buildAgentSidebarTree(sessions), [sessions]);
   const flatNodes = useMemo(() => flattenTree(tree, expandedState), [tree, expandedState]);
+  const sessionCount = useMemo(
+    () => tree.reduce((total, root) => total + 1 + countDescendants(root), 0),
+    [tree],
+  );
 
   const handleSetDeleteTarget = useCallback((key: string, label: string) => {
     const targetNode = findNodeByKey(tree, key);
@@ -146,23 +165,36 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
     });
   }, [tree]);
 
+  // The facade: one window per session in row order, lit the same way the rows are.
+  const facadeWindows = useMemo<FacadeWindow[]>(() => flattenAll(tree).map((node) => {
+    const key = node.key;
+    const isSubagent = getSessionType(key) === 'subagent';
+    const running = isSessionRunning(node.session, Boolean(busyState[key]))
+      || ((growingSessions[key] ?? false) && isSubagent);
+    return {
+      key,
+      state: paneStateFor({ running, unread: Boolean(unreadSessions?.[key]) }),
+      label: getSessionDisplayLabel(node.session, agentName),
+    };
+  }), [tree, busyState, growingSessions, unreadSessions, agentName]);
+
   return (
     <div className={compact ? 'flex flex-col max-h-[65vh]' : 'h-full flex flex-col min-h-0'}>
-      <div className="panel-header border-l-[3px] border-l-info">
-        <span className="panel-label text-info">
-          <span className="panel-diamond">◆</span>
-          AGENTS
-        </span>
-        <div className="ml-auto flex items-center gap-2">
+      <div className="panel-header">
+        <span className="panel-label">Agents</span>
+        {sessionCount > 0 && (
+          <span className="font-mono text-[0.8rem] tabular text-muted-foreground">{sessionCount}</span>
+        )}
+        <div className="ml-auto flex items-center">
           {onSpawn && (
             <button
               type="button"
               onClick={() => setSpawnOpen(true)}
               aria-label="Create session"
               title="Create session"
-              className="shell-icon-button size-10 px-0"
+              className="shell-icon-button px-0"
             >
-              <Plus size={16} />
+              <Plus size={14} />
             </button>
           )}
           <button
@@ -170,17 +202,18 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
             onClick={onRefresh}
             aria-label="Refresh sessions"
             title="Refresh sessions"
-            className="shell-icon-button size-10 px-0"
+            className="shell-icon-button px-0"
           >
-            <RefreshCw size={16} aria-hidden="true" className={isLoading ? 'animate-spin' : undefined} />
+            <RefreshCw size={14} aria-hidden="true" className={isLoading ? 'animate-spin' : undefined} />
           </button>
         </div>
       </div>
+      <SessionFacade windows={facadeWindows} currentSession={currentSession} onSelect={onSelect} />
       <div className={compact ? 'overflow-y-auto' : 'flex-1 overflow-y-auto'}>
         {isLoading && flatNodes.length === 0 ? (
           <SessionSkeletonGroup count={4} />
         ) : flatNodes.length === 0 ? (
-          <div className="text-muted-foreground px-3 py-2 text-[0.733rem]">No active sessions</div>
+          <div className="flex min-h-[var(--row-unit)] items-center px-3 text-[0.8rem] text-muted-foreground">No active sessions</div>
         ) : flatNodes.map((node) => {
           const sessionKey = node.key;
           const sessionType = getSessionType(sessionKey);
@@ -233,13 +266,13 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
 
       {/* Delete confirmation dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}>
-        <DialogContent className="bg-card border-border max-w-md">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-red font-mono text-sm tracking-wider uppercase flex items-center gap-2">
-              <AlertTriangle size={16} />
-              {deleteTarget?.descendantCount ? 'Delete Session Tree' : 'Delete Session'}
+            <DialogTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <AlertTriangle size={16} className="text-destructive" aria-hidden="true" />
+              {deleteTarget?.descendantCount ? 'Delete session tree' : 'Delete session'}
             </DialogTitle>
-            <DialogDescription className="text-muted-foreground text-xs">
+            <DialogDescription className="text-[0.867rem] text-muted-foreground">
               {deleteTarget?.isRootAgent
                 ? 'This will permanently delete this root session and any nested child sessions attached to it.'
                 : deleteTarget?.descendantCount
@@ -247,12 +280,10 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
                 : 'This will permanently delete the session and archive its transcript.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <div className="bg-background border border-border/60 px-3 py-2">
-              <p className="text-[0.733rem] text-muted-foreground uppercase tracking-wider mb-1">Session:</p>
-              <p className="text-[0.8rem] text-foreground font-mono">{deleteTarget?.label}</p>
-              <p className="text-[0.667rem] text-muted-foreground font-mono mt-1 break-all">{deleteTarget?.key}</p>
-            </div>
+          <div className="rounded-[3px] border border-border bg-background px-3 py-2">
+            <p className="mb-0.5 text-[0.8rem] text-muted-foreground">Session</p>
+            <p className="text-[0.867rem] text-foreground">{deleteTarget?.label}</p>
+            <p className="mt-0.5 break-all font-mono text-[0.8rem] text-muted-foreground">{deleteTarget?.key}</p>
           </div>
           <DialogFooter className="gap-2">
             <Button
@@ -260,15 +291,14 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
               variant="outline"
               onClick={() => setDeleteTarget(null)}
               disabled={deleting}
-              className="font-mono text-xs"
             >
               Cancel
             </Button>
             <Button
               type="button"
+              variant="destructive"
               onClick={handleDelete}
               disabled={deleting}
-              className="font-mono text-xs bg-red text-foreground hover:bg-red/90"
             >
               {deleting ? 'Deleting...' : 'Delete'}
             </Button>

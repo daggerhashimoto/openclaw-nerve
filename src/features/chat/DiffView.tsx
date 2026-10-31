@@ -1,5 +1,5 @@
 /**
- * DiffView — Side-by-side diff display for file edits.
+ * DiffView: side-by-side diff display for file edits.
  * Detects Edit tool calls and renders old/new code side by side.
  */
 
@@ -125,16 +125,16 @@ export function DiffView({ oldText, newText, filePath, language }: DiffViewProps
       {filePath && (
         <div className="diff-header">
           <span className="diff-filepath">{filePath}</span>
-          <span className="diff-stats">
-            <span className="text-red-400">−{stats.removed}</span>
-            {' / '}
-            <span className="text-green-400">+{stats.added}</span>
+          <span className="diff-stats tabular">
+            <span className="text-green">+{stats.added}</span>
+            {' '}
+            <span className="text-red">-{stats.removed}</span>
           </span>
         </div>
       )}
       <div className="diff-panels">
         <div className="diff-panel diff-panel-old">
-          <div className="diff-panel-label">BEFORE</div>
+          <div className="diff-panel-label">Before</div>
           <pre className="diff-code hljs">
             {diffLines.map((line, i) => {
               const showOld = line.type === 'unchanged' || line.type === 'removed';
@@ -155,7 +155,7 @@ export function DiffView({ oldText, newText, filePath, language }: DiffViewProps
           </pre>
         </div>
         <div className="diff-panel diff-panel-new">
-          <div className="diff-panel-label">AFTER</div>
+          <div className="diff-panel-label">After</div>
           <pre className="diff-code hljs">
             {diffLines.map((line, i) => {
               const showNew = line.type === 'unchanged' || line.type === 'added';

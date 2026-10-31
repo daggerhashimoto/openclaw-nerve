@@ -1,5 +1,5 @@
 /**
- * ConfigTab — View and edit workspace config files (SOUL.md, TOOLS.md, etc.)
+ * ConfigTab: view and edit workspace config files (SOUL.md, TOOLS.md, etc.)
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -207,7 +207,7 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="flex items-center gap-2 border-b border-border/60 bg-gradient-to-r from-secondary/84 to-card/80 px-3 py-3">
+      <div className="flex shrink-0 items-center gap-1 border-b border-border py-1 pl-2 pr-1">
         <div className="min-w-0 flex-1">
           <InlineSelect
             inline
@@ -222,50 +222,52 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
             }}
             options={FILE_OPTIONS.map(file => ({ value: file.key, label: file.label }))}
             ariaLabel="Select config file"
-            triggerClassName="min-h-10 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
-            menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
+            triggerClassName="min-h-11 w-full justify-between rounded-[3px] border-input bg-background px-2 py-1 text-[0.867rem] text-foreground sm:min-h-[var(--row-unit)] sm:px-2 sm:py-0 sm:text-[0.867rem]"
+            menuClassName="rounded-[3px] border-border bg-popover py-1 shadow-[0_12px_32px_rgba(0,0,0,0.32)]"
           />
         </div>
         <button
           onClick={() => load(selectedKey)}
           disabled={isLoading}
-          className="shell-icon-button size-10 shrink-0 px-0 disabled:cursor-not-allowed disabled:opacity-50"
+          className="shell-icon-button shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
           title="Refresh"
           aria-label="Refresh file"
         >
-          <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+          <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
         </button>
       </div>
 
       {/* Feedback toast */}
       {feedback && (
-        <div className={`px-3 py-1.5 text-[0.667rem] flex items-center gap-1.5 border-b ${
+        <div className={`flex min-h-[var(--row-unit)] items-center gap-1.5 border-b border-border px-3 text-[0.8rem] ${
           feedback.type === 'success'
-            ? 'bg-green/10 text-green border-green/20'
-            : 'bg-red/10 text-red border-red/20'
+            ? 'text-foreground'
+            : 'bg-destructive/10 text-destructive'
         }`}>
-          {feedback.type === 'success' ? <CheckCircle size={10} /> : <AlertCircle size={10} />}
+          {feedback.type === 'success'
+            ? <CheckCircle size={14} className="shrink-0 text-muted-foreground" />
+            : <AlertCircle size={14} className="shrink-0" />}
           {feedback.message}
         </div>
       )}
 
       {cronWarning && (
-        <div className="px-3 py-2 text-[0.667rem] border-b border-orange/20 bg-orange/10 text-orange">
+        <div className="border-b border-border px-3 py-2 text-[0.8rem] leading-relaxed text-muted-foreground">
           {cronWarning}
         </div>
       )}
 
       {error && (
-        <div className="px-3 py-2 text-[0.667rem] text-red bg-red/10">{error}</div>
+        <div className="border-b border-border bg-destructive/10 px-3 py-2 text-[0.8rem] text-destructive">{error}</div>
       )}
 
       <div className="flex-1 overflow-y-auto">
         {!exists && !isLoading && !error && (
-          <div className="text-muted-foreground px-3 py-4 text-[0.733rem] text-center">
+          <div className="px-3 py-4 text-center text-[0.8rem] text-muted-foreground">
             <p>File does not exist yet</p>
             <button
               onClick={handleCreate}
-              className="mt-2 text-purple hover:underline bg-transparent border-0 cursor-pointer text-[0.733rem] focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
+              className="cockpit-toolbar-button mt-2 cursor-pointer"
             >
               Create {FILE_OPTIONS.find(file => file.key === selectedKey)?.label}
             </button>
@@ -277,14 +279,14 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
             <div className="absolute top-2 right-2 z-10">
               <button
                 onClick={handleEdit}
-                className="shell-icon-button size-9 px-0"
+                className="shell-icon-button"
                 title="Edit"
                 aria-label="Edit file"
               >
                 <Pencil size={14} />
               </button>
             </div>
-            <pre className="px-3 py-2 text-[0.733rem] text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono leading-relaxed">
+            <pre className="px-3 py-2 text-[0.8rem] text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono leading-relaxed">
               {content}
             </pre>
           </div>
@@ -296,26 +298,26 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
               ref={textareaRef}
               value={editContent}
               onChange={e => setEditContent(e.target.value)}
-              className="flex-1 w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] px-3 py-2 text-[0.733rem] font-mono bg-background text-foreground border-0 resize-none outline-none focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 focus-visible:ring-inset"
+              className="flex-1 w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] px-3 py-2 text-[0.8rem] font-mono leading-relaxed bg-background text-foreground border-0 resize-none outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 focus-visible:ring-inset"
               spellCheck={false}
               wrap="soft"
             />
-            <div className="flex items-center gap-2 border-t border-border/60 bg-secondary/28 px-3 py-2">
+            <div className="flex min-h-[var(--row-unit)] items-center gap-1.5 border-t border-border bg-card px-2 py-1">
               <Button
                 onClick={handleSave}
                 disabled={isLoading}
                 size="sm"
-                className="text-[0.733rem] uppercase tracking-[0.12em]"
+                className="text-[0.8rem] sm:h-6 sm:px-2"
               >
-                <Save size={12} /> Save
+                <Save size={14} /> Save
               </Button>
               <Button
                 onClick={handleCancel}
                 variant="outline"
                 size="sm"
-                className="text-[0.733rem] uppercase tracking-[0.12em]"
+                className="text-[0.8rem] sm:h-6 sm:px-2"
               >
-                <X size={12} /> Cancel
+                <X size={14} /> Cancel
               </Button>
             </div>
           </div>
@@ -324,7 +326,7 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
 
       <ConfirmDialog
         open={pendingSwitchKey !== null}
-        title="Unsaved Changes"
+        title="Unsaved changes"
         message="You have unsaved changes. Discard and switch files?"
         confirmLabel="Discard"
         cancelLabel="Cancel"

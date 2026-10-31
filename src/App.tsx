@@ -15,7 +15,6 @@ import {
   lazy,
   Suspense,
 } from 'react';
-import { AlertTriangle, CheckCircle2, RotateCw } from 'lucide-react';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
 import { useChat } from '@/contexts/ChatContext';
@@ -33,8 +32,11 @@ import { ChatPanel, type ChatPanelHandle } from '@/features/chat/ChatPanel';
 import type { TTSProvider } from '@/features/tts/useTTS';
 import type { ViewMode } from '@/features/command-palette/commands';
 import { ResizablePanels } from '@/components/ResizablePanels';
+import { Pane } from '@/components/ui/Pane';
 import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useLiveFavicon } from '@/hooks/useLiveFavicon';
+import { fleetActivity } from '@/lib/paneState';
 import { createCommands, createSessionCommands } from '@/features/command-palette/commands';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
@@ -93,7 +95,7 @@ function getInitialViewMode(canShowKanban: boolean): ViewMode {
 export default function App({ onLogout }: AppProps) {
   // Gateway state
   const {
-    connectionState, connectError, reconnectAttempt, model, sparkline,
+    connectionState, connectError, reconnectAttempt, model,
   } = useGateway();
 
   // Session state
@@ -113,6 +115,13 @@ export default function App({ onLogout }: AppProps) {
     showResetConfirm, confirmReset, cancelReset,
   } = useChat();
 
+  // The whole fleet in one pane: drives the brand pane in the top bar and the tab icon.
+  const shellActivity = useMemo(
+    () => fleetActivity({ sessions, busyState, unreadSessions, generating: isGenerating }),
+    [sessions, busyState, unreadSessions, isGenerating],
+  );
+  useLiveFavicon(shellActivity);
+
   // Settings state
   const {
     soundEnabled, toggleSound,
@@ -123,7 +132,7 @@ export default function App({ onLogout }: AppProps) {
     panelRatio, setPanelRatio,
     eventsVisible, logVisible,
     toggleEvents, toggleLog, toggleTelemetry,
-    setTheme, setFont,
+    setTheme, setThemeStyle, setFont,
     kanbanVisible,
     commandPaletteButtonVisible,
     performanceMode,
@@ -524,6 +533,7 @@ export default function App({ onLogout }: AppProps) {
     onSearch: openSearch,
     onAbort: handleAbort,
     onSetTheme: setTheme,
+    onSetThemeStyle: setThemeStyle,
     onSetFont: setFont,
     onTtsProviderChange: setTtsProvider,
     onToggleWakeWord: handleToggleWakeWord,
@@ -536,7 +546,7 @@ export default function App({ onLogout }: AppProps) {
     onSetViewMode: setViewMode,
     canShowKanban: kanbanVisible,
   }), [openSpawnDialog, handleReset, toggleSound, handleAbort, openSettings, openSearch,
-    setTheme, setFont, setTtsProvider, handleToggleWakeWord, toggleEvents, toggleLog, toggleTelemetry,
+    setTheme, setThemeStyle, setFont, setTtsProvider, handleToggleWakeWord, toggleEvents, toggleLog, toggleTelemetry,
     refreshSessions, refreshMemories, setViewMode, kanbanVisible]);
 
   // Keyboard shortcut handlers with useCallback
@@ -838,10 +848,10 @@ export default function App({ onLogout }: AppProps) {
   );
 
   const renderRightPanels = (onSelect: (key: string) => Promise<void> | void) => (
-    <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
-      {/* Sessions + Memory stacked vertically */}
-      <div className="flex-1 flex flex-col gap-3 min-h-0">
-        <div className="shell-panel flex-1 flex flex-col min-h-0 overflow-hidden rounded-[28px]">
+    <Suspense fallback={<div className="flex-1 flex items-center justify-center bg-card text-[0.8rem] text-muted-foreground">Loading…</div>}>
+      {/* Sessions + Memory stacked vertically, split by a 1px rule */}
+      <div className="nerve-right-stack flex-1 flex flex-col min-h-0 bg-card">
+        <div className="nerve-right-pane flex-1 flex flex-col min-h-0 overflow-hidden border-b border-border">
           <PanelErrorBoundary name="Sessions">
             <SessionList
               sessions={sessions}
@@ -860,7 +870,7 @@ export default function App({ onLogout }: AppProps) {
             />
           </PanelErrorBoundary>
         </div>
-        <div className="shell-panel flex-1 flex flex-col min-h-0 overflow-hidden rounded-[28px]">
+        <div className="nerve-right-pane flex-1 flex flex-col min-h-0 overflow-hidden">
           <PanelErrorBoundary name="Workspace">
             <WorkspacePanel
               workspaceAgentId={workspaceAgentId}
@@ -878,7 +888,7 @@ export default function App({ onLogout }: AppProps) {
   );
 
   const compactSessionsPanel = (
-    <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading sessions…</div>}>
+    <Suspense fallback={<div className="p-3 text-[0.8rem] text-muted-foreground">Loading sessions…</div>}>
       <PanelErrorBoundary name="Sessions">
         <SessionList
           sessions={sessions}
@@ -901,7 +911,7 @@ export default function App({ onLogout }: AppProps) {
   );
 
   const compactWorkspacePanel = (
-    <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading workspace…</div>}>
+    <Suspense fallback={<div className="p-3 text-[0.8rem] text-muted-foreground">Loading workspace…</div>}>
       <PanelErrorBoundary name="Workspace">
         <WorkspacePanel
           workspaceAgentId={workspaceAgentId}
@@ -920,11 +930,11 @@ export default function App({ onLogout }: AppProps) {
   const showCompactFileBrowser = isCompactLayout && viewMode !== 'kanban' && !fileBrowserCollapsed;
 
   return (
-    <div className="scan-lines relative h-screen flex flex-col overflow-hidden" data-booted={booted}>
+    <div className="nerve-shell relative h-screen flex flex-col overflow-hidden bg-background" data-booted={booted}>
       {/* Skip to main content link for keyboard navigation */}
       <a 
         href="#main-chat" 
-        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:font-bold focus:text-sm"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:rounded-[3px] focus:border focus:border-border focus:bg-popover focus:px-3 focus:py-1.5 focus:text-[0.867rem] focus:font-semibold focus:text-foreground"
       >
         Skip to chat
       </a>
@@ -940,25 +950,20 @@ export default function App({ onLogout }: AppProps) {
 
       {/*
        * Gateway state banners.
-       * Kept compact and centered so they read as transient shell notices instead of old alarm strips.
+       * Small flat notices under the top bar; the pane carries the state, the text names it.
        */}
       {connectionState === 'reconnecting' && !gatewayRestarting && (
-        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-destructive/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-          <span className="inline-flex size-7 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
-            <AlertTriangle size={14} aria-hidden="true" />
-          </span>
+        <div className="fixed left-1/2 top-14 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-center gap-2 rounded-[3px] border border-border bg-popover px-3 py-1.5 text-[0.867rem] text-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
+          <Pane state="error" />
           <span className="min-w-0 text-left leading-5">
             Signal lost. Reconnecting{reconnectAttempt > 1 ? `, attempt ${reconnectAttempt}` : ''}.
           </span>
-          <span className="size-2 rounded-full bg-destructive animate-pulse" aria-hidden="true" />
         </div>
       )}
 
       {gatewayRestarting && (
-        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-orange/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-          <span className="inline-flex size-7 items-center justify-center rounded-xl bg-orange/10 text-orange">
-            <RotateCw size={14} className="animate-spin" aria-hidden="true" />
-          </span>
+        <div className="fixed left-1/2 top-14 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-center gap-2 rounded-[3px] border border-border bg-popover px-3 py-1.5 text-[0.867rem] text-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
+          <Pane state="live" />
           <span className="min-w-0 text-left leading-5">Gateway restarting…</span>
         </div>
       )}
@@ -967,17 +972,9 @@ export default function App({ onLogout }: AppProps) {
         <button
           type="button"
           onClick={dismissNotice}
-          className={`fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 cursor-pointer items-start gap-2 rounded-2xl border px-4 py-2 text-xs font-medium shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-transform hover:-translate-x-1/2 hover:-translate-y-px ${
-            gatewayRestartNotice.ok
-              ? 'border-green/25 bg-card/94 text-foreground'
-              : 'border-destructive/25 bg-card/94 text-foreground'
-          }`}
+          className="fixed left-1/2 top-14 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 cursor-pointer items-center gap-2 rounded-[3px] border border-border bg-popover px-3 py-1.5 text-[0.867rem] text-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)] transition-colors duration-[120ms] hover:bg-raised"
         >
-          <span className={`inline-flex size-7 items-center justify-center rounded-xl ${
-            gatewayRestartNotice.ok ? 'bg-green/10 text-green' : 'bg-destructive/10 text-destructive'
-          }`}>
-            {gatewayRestartNotice.ok ? <CheckCircle2 size={14} aria-hidden="true" /> : <AlertTriangle size={14} aria-hidden="true" />}
-          </span>
+          <Pane state={gatewayRestartNotice.ok ? 'off' : 'error'} />
           <span className="min-w-0 text-left leading-5">{gatewayRestartNotice.message}</span>
         </button>
       )}
@@ -998,6 +995,7 @@ export default function App({ onLogout }: AppProps) {
           onViewModeChange={setViewMode}
           showKanbanView={kanbanVisible}
           performanceMode={performanceMode}
+          activity={shellActivity}
         />
       )}
 
@@ -1036,10 +1034,10 @@ export default function App({ onLogout }: AppProps) {
         </Suspense>
       </PanelErrorBoundary>
       
-      <div className="flex-1 flex gap-3 overflow-hidden min-h-0 px-2 pt-1.5 pb-2 sm:px-4 sm:pt-2 sm:pb-2">
-        {/* File tree — desktop inline, mobile drawer */}
+      <div className="nerve-shell-main flex-1 flex overflow-hidden min-h-0">
+        {/* File tree: desktop inline, mobile drawer */}
         {!isCompactLayout && (
-          <div className={viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0'}>
+          <div className={`nerve-col-left ${viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0 border-r border-border bg-card'}`}>
             <PanelErrorBoundary name="File Explorer">
               <FileTreePanel
                 workspaceAgentId={workspaceAgentId}
@@ -1053,6 +1051,7 @@ export default function App({ onLogout }: AppProps) {
                 isCompactLayout={false}
                 collapsed={fileBrowserCollapsed}
                 onCollapseChange={setFileBrowserCollapsed}
+                agentRunning={isGenerating}
               />
             </PanelErrorBoundary>
           </div>
@@ -1062,12 +1061,12 @@ export default function App({ onLogout }: AppProps) {
           <>
             <button
               type="button"
-              className="fixed inset-0 z-30 hidden bg-black/48 backdrop-blur-sm max-[900px]:block"
+              className="fixed inset-0 z-30 hidden bg-black/48 max-[900px]:block"
               onClick={() => setFileBrowserCollapsed(true)}
               aria-label="Close file explorer"
             />
-            <div className={`pointer-events-none fixed inset-0 z-40 hidden px-2 pb-[4.25rem] max-[900px]:flex ${isMobileTopBarHidden ? 'pt-2' : 'pt-[4.5rem]'}`}>
-              <div className="pointer-events-auto h-full w-[min(86vw,320px)] max-w-full animate-in slide-in-from-left-4 duration-200">
+            <div className={`nerve-mobile-drawer pointer-events-none fixed inset-0 z-40 hidden pb-[var(--row-unit)] max-[900px]:flex ${isMobileTopBarHidden ? 'pt-0' : 'pt-[2.933rem] max-[639px]:pt-[89px] max-[371px]:pt-[81px]'}`}>
+              <div className="pointer-events-auto h-full w-[min(86vw,320px)] max-w-full border-r border-border bg-card shadow-[0_12px_32px_rgba(0,0,0,0.32)] animate-in slide-in-from-left-4 duration-200">
                 <PanelErrorBoundary name="File Explorer">
                   <FileTreePanel
                     workspaceAgentId={workspaceAgentId}
@@ -1081,6 +1080,7 @@ export default function App({ onLogout }: AppProps) {
                     isCompactLayout={true}
                     collapsed={false}
                     onCollapseChange={setFileBrowserCollapsed}
+                agentRunning={isGenerating}
                   />
                 </PanelErrorBoundary>
               </div>
@@ -1095,14 +1095,14 @@ export default function App({ onLogout }: AppProps) {
          * See: https://github.com/.../issues/64
          */}
         {viewMode === 'kanban' && (
-          <div className="shell-panel boot-panel flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden rounded-[28px]">
-            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
+          <div className="nerve-col-center boot-panel flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-background">
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center bg-background text-[0.8rem] text-muted-foreground">Loading…</div>}>
               <KanbanPanel initialTaskId={pendingTaskId} onInitialTaskConsumed={() => setPendingTaskId(null)} />
             </Suspense>
           </div>
         )}
         {isCompactLayout ? (
-          <div className={`shell-panel flex-1 min-w-0 min-h-0 overflow-hidden rounded-[28px] boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
+          <div className={`nerve-col-center flex-1 min-w-0 min-h-0 overflow-hidden bg-background boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
             {chatContent}
           </div>
         ) : (
@@ -1114,8 +1114,8 @@ export default function App({ onLogout }: AppProps) {
               maxLeftPercent={85}
               rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
               onRightWidthChange={fileBrowserCollapsed ? undefined : setDesktopRightPanelWidth}
-              leftClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
-              rightClassName="boot-panel flex flex-col"
+              leftClassName="nerve-col-center boot-panel overflow-hidden bg-background"
+              rightClassName="nerve-col-right boot-panel flex flex-col bg-card"
               left={chatContent}
               right={renderRightPanels(handleSessionChange)}
             />
@@ -1124,11 +1124,13 @@ export default function App({ onLogout }: AppProps) {
       </div>
 
       {/* Status Bar */}
-      <div className="boot-panel" style={{ transitionDelay: '200ms' }}>
+      <div className="nerve-statusbar-slot boot-panel" style={{ transitionDelay: '200ms' }}>
         <StatusBar
           connectionState={connectionState}
           sessionCount={sessions.length}
-          sparkline={sparkline}
+          sessions={sessions}
+          busyState={busyState}
+          unreadSessions={unreadSessions}
           contextTokens={contextTokens}
           contextLimit={contextLimit}
           performanceMode={performanceMode}
@@ -1149,7 +1151,7 @@ export default function App({ onLogout }: AppProps) {
       {/* Reset Session Confirmation */}
       <ConfirmDialog
         open={showResetConfirm}
-        title="Reset Session"
+        title="Reset session"
         message="This will start fresh and clear all context."
         confirmLabel="Reset"
         cancelLabel="Cancel"
@@ -1161,7 +1163,7 @@ export default function App({ onLogout }: AppProps) {
       {/* Gateway Restart Confirmation */}
       <ConfirmDialog
         open={showGatewayRestartConfirm}
-        title="Restart OpenClaw Gateway"
+        title="Restart OpenClaw gateway"
         message="This will briefly interrupt gateway connectivity. Continue?"
         confirmLabel="Restart"
         cancelLabel="Cancel"

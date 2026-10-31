@@ -1,5 +1,5 @@
 /**
- * WorkspacePanel — Tabbed container replacing the standalone MemoryList.
+ * WorkspacePanel: tabbed container replacing the standalone MemoryList.
  * Tabs: Memory, Crons, Kanban, Config (with Files/Skills sub-views)
  * Active tab persisted in localStorage. Content lazy-loaded per tab.
  * Tab action buttons (add, refresh) render in the tab bar header.
@@ -23,6 +23,11 @@ const KanbanQuickView = lazy(() =>
 const CONFIG_VIEW_KEY = 'nerve-config-view';
 
 type ConfigView = 'files' | 'skills';
+
+const CONFIG_VIEW_LABELS: Record<ConfigView, string> = {
+  files: 'Files',
+  skills: 'Skills',
+};
 
 function getInitialConfigView(agentId: string): ConfigView {
   try {
@@ -71,18 +76,16 @@ function ConfigWithSkills({ agentId, cronWarning = null }: ConfigWithSkillsProps
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="flex items-center gap-0.5 px-2 py-1 border-b border-border/40">
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-border px-1">
         {(['files', 'skills'] as const).map(nextView => (
           <button
             key={nextView}
+            type="button"
             onClick={() => switchView(nextView)}
-            className={`text-[0.667rem] uppercase tracking-wider px-2 py-0.5 rounded-sm border-0 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 ${
-              view === nextView
-                ? 'bg-purple/15 text-purple font-semibold'
-                : 'bg-transparent text-muted-foreground hover:text-foreground'
-            }`}
+            className="shell-chip cursor-pointer"
+            data-active={view === nextView ? 'true' : 'false'}
           >
-            {nextView}
+            {CONFIG_VIEW_LABELS[nextView]}
           </button>
         ))}
       </div>
@@ -181,7 +184,7 @@ export function WorkspacePanel({
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className={activeTab === 'memory' ? 'h-full' : 'hidden'} hidden={activeTab !== 'memory'} role="tabpanel" id="workspace-tabpanel-memory" aria-labelledby="workspace-tab-memory">
           {visitedTabs.has('memory') && (
-            <Suspense fallback={<div className="flex items-center justify-center text-muted-foreground text-xs p-4">Loading…</div>}>
+            <Suspense fallback={<div className="flex items-center justify-center text-muted-foreground text-[0.8rem] p-4">Loading…</div>}>
               <MemoryList
                 key={workspaceAgentId}
                 agentId={workspaceAgentId}
@@ -206,7 +209,7 @@ export function WorkspacePanel({
         {kanbanVisible && (
           <div className={activeTab === 'kanban' ? 'h-full' : 'hidden'} hidden={activeTab !== 'kanban'} role="tabpanel" id="workspace-tabpanel-kanban" aria-labelledby="workspace-tab-kanban">
             {visitedTabs.has('kanban') && (
-              <Suspense fallback={<div className="flex items-center justify-center text-muted-foreground text-xs p-4">Loading...</div>}>
+              <Suspense fallback={<div className="flex items-center justify-center text-muted-foreground text-[0.8rem] p-4">Loading...</div>}>
                 <KanbanQuickView
                   onOpenBoard={onOpenBoard ?? (() => {})}
                   onOpenTask={(task) => onOpenTask ? onOpenTask(task.id) : onOpenBoard?.()}

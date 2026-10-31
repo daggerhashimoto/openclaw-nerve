@@ -1,4 +1,4 @@
-/** Tests for streamEventHandler — event classification, deltas, and activity log. */
+/** Tests for streamEventHandler: event classification, deltas, and activity log. */
 import { describe, it, expect } from 'vitest';
 import {
   isActiveAgentState,

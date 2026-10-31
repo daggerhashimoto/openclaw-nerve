@@ -1,5 +1,5 @@
 /**
- * TabbedContentArea — Container with tab bar that switches between
+ * TabbedContentArea: Container with tab bar that switches between
  * the chat panel and open file editors.
  *
  * Chat panel is always mounted (hidden via CSS, never unmounted)
@@ -16,14 +16,14 @@ import { isImageFile, isMarkdownFile, isPdfFile } from './utils/fileTypes';
 import type { OpenFile } from './types';
 import { BeadViewerTab, type BeadLinkTarget, type OpenBeadTab } from '@/features/beads';
 
-// Lazy-load CodeMirror editor — keeps it out of the initial bundle
+// Lazy-load CodeMirror editor: keeps it out of the initial bundle
 const FileEditor = lazy(() => import('./FileEditor'));
 
 function EditorFallback() {
   return (
-    <div className="flex items-center justify-center h-full text-muted-foreground text-xs gap-2">
-      <Loader2 className="animate-spin" size={14} />
-      Loading editor...
+    <div className="flex h-full items-center justify-center gap-2 text-[0.8rem] text-muted-foreground">
+      <Loader2 className="animate-spin" size={14} aria-hidden="true" />
+      Loading editor
     </div>
   );
 }
@@ -81,7 +81,7 @@ export function TabbedContentArea({
 
   return (
     <div className="h-full flex flex-col min-h-0 min-w-0">
-      {/* Tab bar — only shown when files are open */}
+      {/* Tab bar: only shown when files are open */}
       {hasOpenTabs && (
         <EditorTabBar
           activeTab={activeTab}
@@ -94,7 +94,7 @@ export function TabbedContentArea({
 
       {/* Content area */}
       <div className="flex-1 min-h-0 relative">
-        {/* Chat panel — always mounted, hidden when file tab is active */}
+        {/* Chat panel: always mounted, hidden when file tab is active */}
         <div
           className={activeTab === 'chat' || !hasOpenTabs ? 'h-full' : 'hidden'}
           role="tabpanel"
@@ -104,7 +104,7 @@ export function TabbedContentArea({
           {chatPanel}
         </div>
 
-        {/* File editors — one per open file, only active one visible */}
+        {/* File editors: one per open file, only active one visible */}
         {openFiles.map((file) => (
           <div
             key={file.path}
@@ -167,23 +167,28 @@ export function TabbedContentArea({
 
         {/* Save conflict toast */}
         {visibleSaveToast && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-destructive/10 border border-destructive/30 text-sm shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200">
-            <AlertTriangle size={14} className="text-destructive shrink-0" />
+          <div
+            role="status"
+            className="absolute bottom-4 left-1/2 z-20 flex min-h-9 -translate-x-1/2 items-center gap-2 rounded-[3px] border border-border bg-popover py-1 pl-3 pr-1 text-[0.867rem] shadow-[0_12px_32px_rgba(0,0,0,0.32)] animate-fade-in"
+          >
+            <AlertTriangle size={14} className="shrink-0 text-destructive" aria-hidden="true" />
             <span className="text-foreground">File changed externally.</span>
             {onReloadFile && (
               <button
-                className="text-primary text-xs font-medium hover:underline"
+                type="button"
+                className="inline-flex min-h-[var(--row-unit)] items-center rounded-[3px] border border-border px-2 text-[0.8rem] font-medium text-foreground transition-colors duration-[120ms] hover:bg-raised"
                 onClick={() => { onReloadFile(visibleSaveToast.path); onDismissToast?.(); }}
               >
                 Reload
               </button>
             )}
             <button
-              className="ml-1 p-0.5 text-muted-foreground hover:text-foreground"
+              type="button"
+              className="shell-icon-button shrink-0"
               onClick={onDismissToast}
               aria-label="Dismiss"
             >
-              <X size={12} />
+              <X size={14} />
             </button>
           </div>
         )}

@@ -1,31 +1,198 @@
 // Theme definitions for Nerve UI
+//
+// Nerve ships one identity in two lights. Colour carries meaning, never decoration:
+//   live      electric blue: agent work in progress (running, streaming, tool calls)
+//   operator  cantaloupe: the operator and anything waiting on the operator
+//   red       errors only
+// Everything finished or idle goes dark (pane-off).
+//
+// The previous look survives as the opt-in Classic style: its 14 community
+// themes, skinned over the same layout by src/styles/classic.css. Classic theme
+// names carry a prefix so values stored before the redesign never select them.
 
-export type ThemeName =
-  | 'midnight'
-  | 'light'
-  | 'phosphor'
-  | 'dracula'
-  | 'nord'
-  | 'solarized-dark'
-  | 'catppuccin-mocha'
-  | 'tokyo-night'
-  | 'gruvbox-dark'
-  | 'one-dark'
-  | 'monokai'
-  | 'ayu-dark'
-  | 'rose-pine'
-  | 'monochrome';
+import { loadClassicFonts } from './fonts';
+
+/** Visual style: the Nerve identity (default) or the opt-in Classic skin. */
+export type ThemeStyle = 'nerve' | 'classic';
+
+export type NerveThemeName = 'nerve-dark' | 'nerve-light';
+
+export type ClassicThemeName =
+  | 'classic-midnight'
+  | 'classic-light'
+  | 'classic-phosphor'
+  | 'classic-dracula'
+  | 'classic-nord'
+  | 'classic-solarized-dark'
+  | 'classic-catppuccin-mocha'
+  | 'classic-tokyo-night'
+  | 'classic-gruvbox-dark'
+  | 'classic-one-dark'
+  | 'classic-monokai'
+  | 'classic-ayu-dark'
+  | 'classic-rose-pine'
+  | 'classic-monochrome';
+
+export type ThemeName = NerveThemeName | ClassicThemeName;
 
 export interface Theme {
   name: ThemeName;
   label: string;
+  /** Value for the root color-scheme and data-theme attribute. */
+  scheme: 'dark' | 'light';
+  /** Value for the root data-style attribute; selects the CSS skin. */
+  style: ThemeStyle;
   colors: Record<string, string>;
 }
 
+export const DEFAULT_THEME: ThemeName = 'nerve-dark';
+
+/** Theme picked when the operator switches to a style the current theme does not belong to. */
+export const DEFAULT_THEME_BY_STYLE: Record<ThemeStyle, ThemeName> = {
+  nerve: 'nerve-dark',
+  classic: 'classic-ayu-dark',
+};
+
+/** Styles in display order. */
+export const themeStyles: ThemeStyle[] = ['nerve', 'classic'];
+
+export const themeStyleLabels: Record<ThemeStyle, string> = {
+  nerve: 'Nerve',
+  classic: 'Classic',
+};
+
 export const themes: Record<ThemeName, Theme> = {
-  'midnight': {
-    name: 'midnight',
+  'nerve-dark': {
+    name: 'nerve-dark',
+    label: 'Night',
+    scheme: 'dark',
+    style: 'nerve',
+    colors: {
+      // Deeper midnight: the centre column is the night, the wings are lifted a step,
+      // and rules sit low so plates read by value and edge light, not by drawn lines.
+      '--color-background': '#06080E',
+      '--color-foreground': '#ECE6DA',
+      '--color-card': '#0B0F17',
+      '--color-card-foreground': '#ECE6DA',
+      '--color-popover': '#121826',
+      '--color-popover-foreground': '#ECE6DA',
+      '--color-primary': '#FFA567',
+      '--color-primary-foreground': '#06080E',
+      '--color-secondary': '#131927',
+      '--color-secondary-foreground': '#ECE6DA',
+      '--color-muted': '#131927',
+      '--color-muted-foreground': '#8C94A6',
+      '--color-accent': '#182030',
+      '--color-accent-foreground': '#ECE6DA',
+      '--color-destructive': '#FF5A5A',
+      '--color-destructive-foreground': '#06080E',
+      '--color-border': '#171E2C',
+      '--color-input': '#1F2736',
+      '--color-ring': '#FFA567',
+      '--color-green': '#7CC99A',
+      '--color-red': '#FF5A5A',
+      '--color-orange': '#FFA567',
+      '--color-purple': '#B9A7FF',
+      '--color-info': '#3D7EFF',
+      // The operator's plate: card warmed by 5% cantaloupe
+      '--color-message-user': '#17161B',
+      '--color-message-assistant': '#06080E',
+      '--color-message-system': '#0B0F17',
+      '--color-scrollbar': '#1D2433',
+      '--color-scrollbar-hover': '#2B3449',
+      // World tokens
+      '--color-live': '#3D7EFF',
+      '--color-live-text': '#4F8BFF',
+      '--color-operator': '#FFA567',
+      '--color-operator-text': '#FFA567',
+      '--color-pane-off': '#161D2C',
+      '--color-pane-edge': '#263044',
+      '--color-raised': '#151C2A',
+      // Sidebar colors
+      '--color-sidebar': '#0B0F17',
+      '--color-sidebar-foreground': '#ECE6DA',
+      '--color-sidebar-primary': '#FFA567',
+      '--color-sidebar-primary-foreground': '#06080E',
+      '--color-sidebar-accent': '#182030',
+      '--color-sidebar-accent-foreground': '#ECE6DA',
+      '--color-sidebar-border': '#171E2C',
+      '--color-sidebar-ring': '#FFA567',
+      // Chart colors: data plates may use the full set
+      '--color-chart-1': '#3D7EFF',
+      '--color-chart-2': '#FFA567',
+      '--color-chart-3': '#7FD1C7',
+      '--color-chart-4': '#B9A7FF',
+      '--color-chart-5': '#FF5A5A',
+    },
+  },
+  'nerve-light': {
+    name: 'nerve-light',
+    label: 'Daylight',
+    scheme: 'light',
+    style: 'nerve',
+    colors: {
+      '--color-background': '#F3F5F9',
+      '--color-foreground': '#131722',
+      '--color-card': '#FFFFFF',
+      '--color-card-foreground': '#131722',
+      '--color-popover': '#FFFFFF',
+      '--color-popover-foreground': '#131722',
+      '--color-primary': '#FF9F55',
+      '--color-primary-foreground': '#131722',
+      '--color-secondary': '#EAEEF4',
+      '--color-secondary-foreground': '#131722',
+      '--color-muted': '#EAEEF4',
+      '--color-muted-foreground': '#566072',
+      '--color-accent': '#E4E9F1',
+      '--color-accent-foreground': '#131722',
+      '--color-destructive': '#C8322F',
+      '--color-destructive-foreground': '#FFFFFF',
+      '--color-border': '#D9DFE8',
+      '--color-input': '#CBD3DF',
+      '--color-ring': '#C4621A',
+      '--color-green': '#2F7D4F',
+      '--color-red': '#C8322F',
+      '--color-orange': '#B4520F',
+      '--color-purple': '#6B4FD8',
+      '--color-info': '#1F5FE0',
+      // The operator's plate: warm paper
+      '--color-message-user': '#FFF7EF',
+      '--color-message-assistant': '#F3F5F9',
+      '--color-message-system': '#EAEEF4',
+      '--color-scrollbar': '#CBD3DF',
+      '--color-scrollbar-hover': '#A9B3C3',
+      // World tokens: panes become printed ink swatches in daylight
+      '--color-live': '#1F5FE0',
+      '--color-live-text': '#1F5FE0',
+      '--color-operator': '#FF9F55',
+      '--color-operator-text': '#B4520F',
+      '--color-pane-off': '#E4E9F1',
+      '--color-pane-edge': '#B9C2D0',
+      '--color-raised': '#EAEEF4',
+      // Sidebar colors
+      '--color-sidebar': '#FFFFFF',
+      '--color-sidebar-foreground': '#131722',
+      '--color-sidebar-primary': '#FF9F55',
+      '--color-sidebar-primary-foreground': '#131722',
+      '--color-sidebar-accent': '#E4E9F1',
+      '--color-sidebar-accent-foreground': '#131722',
+      '--color-sidebar-border': '#D9DFE8',
+      '--color-sidebar-ring': '#C4621A',
+      // Chart colors
+      '--color-chart-1': '#1F5FE0',
+      '--color-chart-2': '#E07A2E',
+      '--color-chart-3': '#13857C',
+      '--color-chart-4': '#6B4FD8',
+      '--color-chart-5': '#C8322F',
+    },
+  },
+  // Classic style: the legacy community palettes, copied verbatim. World tokens
+  // (live, operator, panes, raised) are derived in resolveThemeColors().
+  'classic-midnight': {
+    name: 'classic-midnight',
     label: 'Midnight',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#0a0e14',
       '--color-foreground': '#B3B1AD',
@@ -73,9 +240,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#FF8F40',
     },
   },
-  'light': {
-    name: 'light',
+  'classic-light': {
+    name: 'classic-light',
     label: 'Light',
+    scheme: 'light',
+    style: 'classic',
     colors: {
       '--color-background': '#FAFAFA',
       '--color-foreground': '#1a1a1a',
@@ -123,9 +292,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#2563EB',
     },
   },
-  'phosphor': {
-    name: 'phosphor',
+  'classic-phosphor': {
+    name: 'classic-phosphor',
     label: 'Phosphor',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#080808',
       '--color-foreground': '#88CC88',
@@ -173,9 +344,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#CCAA33',
     },
   },
-  'dracula': {
-    name: 'dracula',
+  'classic-dracula': {
+    name: 'classic-dracula',
     label: 'Dracula',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#282A36',
       '--color-foreground': '#F8F8F2',
@@ -223,9 +396,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#8BE9FD',
     },
   },
-  'nord': {
-    name: 'nord',
+  'classic-nord': {
+    name: 'classic-nord',
     label: 'Nord',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#2E3440',
       '--color-foreground': '#D8DEE9',
@@ -273,9 +448,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#D08770',
     },
   },
-  'solarized-dark': {
-    name: 'solarized-dark',
+  'classic-solarized-dark': {
+    name: 'classic-solarized-dark',
     label: 'Solarized Dark',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#002B36',
       '--color-foreground': '#839496',
@@ -323,9 +500,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#2AA198',
     },
   },
-  'catppuccin-mocha': {
-    name: 'catppuccin-mocha',
+  'classic-catppuccin-mocha': {
+    name: 'classic-catppuccin-mocha',
     label: 'Catppuccin Mocha',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#1E1E2E',
       '--color-foreground': '#CDD6F4',
@@ -373,9 +552,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#89DCEB',
     },
   },
-  'tokyo-night': {
-    name: 'tokyo-night',
+  'classic-tokyo-night': {
+    name: 'classic-tokyo-night',
     label: 'Tokyo Night',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#1A1B26',
       '--color-foreground': '#A9B1D6',
@@ -423,9 +604,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#7DCFFF',
     },
   },
-  'gruvbox-dark': {
-    name: 'gruvbox-dark',
+  'classic-gruvbox-dark': {
+    name: 'classic-gruvbox-dark',
     label: 'Gruvbox Dark',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#282828',
       '--color-foreground': '#EBDBB2',
@@ -473,9 +656,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#83A598',
     },
   },
-  'one-dark': {
-    name: 'one-dark',
+  'classic-one-dark': {
+    name: 'classic-one-dark',
     label: 'One Dark',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#282C34',
       '--color-foreground': '#ABB2BF',
@@ -523,9 +708,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#56B6C2',
     },
   },
-  'monokai': {
-    name: 'monokai',
+  'classic-monokai': {
+    name: 'classic-monokai',
     label: 'Monokai',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#272822',
       '--color-foreground': '#F8F8F2',
@@ -573,9 +760,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#66D9EF',
     },
   },
-  'ayu-dark': {
-    name: 'ayu-dark',
+  'classic-ayu-dark': {
+    name: 'classic-ayu-dark',
     label: 'Ayu Dark',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#0C1016',
       '--color-foreground': '#D0C8BC',
@@ -623,9 +812,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#7EA6C8',
     },
   },
-  'rose-pine': {
-    name: 'rose-pine',
+  'classic-rose-pine': {
+    name: 'classic-rose-pine',
     label: 'Rosé Pine',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#191724',
       '--color-foreground': '#E0DEF4',
@@ -673,9 +864,11 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#9CCFD8',
     },
   },
-  'monochrome': {
-    name: 'monochrome',
+  'classic-monochrome': {
+    name: 'classic-monochrome',
     label: 'Monochrome',
+    scheme: 'dark',
+    style: 'classic',
     colors: {
       '--color-background': '#0A0A0A',
       '--color-foreground': '#C0C0C0',
@@ -728,34 +921,74 @@ export const themes: Record<ThemeName, Theme> = {
 /** All available theme names as a typed array. */
 export const themeNames = Object.keys(themes) as ThemeName[];
 
-// Highlight.js theme mapping
-const hljsThemes: Record<ThemeName, string> = {
-  'midnight': 'github-dark-dimmed',
-  'light': 'github',
-  'phosphor': 'github-dark-dimmed',
-  'dracula': 'github-dark-dimmed',
-  'nord': 'github-dark-dimmed',
-  'solarized-dark': 'github-dark-dimmed',
-  'catppuccin-mocha': 'github-dark-dimmed',
-  'tokyo-night': 'github-dark-dimmed',
-  'gruvbox-dark': 'github-dark-dimmed',
-  'one-dark': 'github-dark-dimmed',
-  'monokai': 'github-dark-dimmed',
-  'ayu-dark': 'github-dark-dimmed',
-  'rose-pine': 'github-dark-dimmed',
-  'monochrome': 'github-dark-dimmed',
-};
+/** The style a theme belongs to; unknown names count as Nerve. */
+export function getThemeStyle(themeName: ThemeName): ThemeStyle {
+  return themes[themeName]?.style ?? 'nerve';
+}
+
+/** Theme names of one style, in display order. */
+export function themeNamesForStyle(style: ThemeStyle): ThemeName[] {
+  return themeNames.filter((name) => themes[name].style === style);
+}
+
+/** Keep the current theme when it already belongs to `style`, otherwise use that style's default. */
+export function themeForStyle(current: ThemeName, style: ThemeStyle): ThemeName {
+  return getThemeStyle(current) === style ? current : DEFAULT_THEME_BY_STYLE[style];
+}
+
+/**
+ * Map any stored theme value to a current theme.
+ * Values stored before the redesign (the unprefixed community theme names)
+ * land on the Nerve identity: the old light theme maps to daylight and every
+ * dark theme maps to night. Classic themes are only ever chosen explicitly.
+ */
+export function resolveThemeName(saved: string | null | undefined): ThemeName {
+  if (saved && (themeNames as string[]).includes(saved)) return saved as ThemeName;
+  if (saved === 'light') return 'nerve-light';
+  return DEFAULT_THEME;
+}
+
+/**
+ * World tokens the Nerve components rely on. Classic palettes predate them,
+ * so each falls back to the legacy colour that played the same part.
+ */
+const WORLD_TOKEN_FALLBACKS: ReadonlyArray<readonly [token: string, source: string]> = [
+  ['--color-live', '--color-info'],
+  ['--color-live-text', '--color-info'],
+  ['--color-operator', '--color-primary'],
+  ['--color-operator-text', '--color-primary'],
+  ['--color-pane-off', '--color-border'],
+  ['--color-pane-edge', '--color-border'],
+  ['--color-raised', '--color-secondary'],
+];
+
+/** A theme's colours with any missing world tokens derived from its legacy palette. */
+export function resolveThemeColors(theme: Theme): Record<string, string> {
+  const colors = { ...theme.colors };
+  for (const [token, source] of WORLD_TOKEN_FALLBACKS) {
+    if (colors[token] === undefined && colors[source] !== undefined) {
+      colors[token] = colors[source];
+    }
+  }
+  return colors;
+}
+
+/** Highlight.js stylesheet (vendored locally in public/hljs) for a theme. */
+function hljsThemeFor(theme: Theme): string {
+  if (theme.style === 'nerve') return theme.name;
+  return theme.scheme === 'light' ? 'github' : 'github-dark-dimmed';
+}
 
 /** Apply a theme by setting CSS custom properties on the document root and loading the matching highlight.js stylesheet. */
 export function applyTheme(themeName: ThemeName): void {
   const theme = themes[themeName];
   if (!theme) return;
-  
+
   const root = document.documentElement;
-  Object.entries(theme.colors).forEach(([property, value]) => {
+  Object.entries(resolveThemeColors(theme)).forEach(([property, value]) => {
     // Set the --color-* property
     root.style.setProperty(property, value);
-    
+
     // Also set the base property (without --color- prefix) for :root vars
     // e.g., --color-background -> --background
     if (property.startsWith('--color-')) {
@@ -763,12 +996,20 @@ export function applyTheme(themeName: ThemeName): void {
       root.style.setProperty(baseProperty, value);
     }
   });
+  root.dataset.theme = theme.scheme;
+  root.dataset.style = theme.style;
+  root.style.colorScheme = theme.scheme;
+
+  // Classic's default faces (Instrument Sans, JetBrains Mono) load only when needed
+  if (theme.style === 'classic') {
+    loadClassicFonts();
+  }
 
   // Apply highlight.js theme (vendored locally to avoid CDN dependency)
-  const hljsTheme = hljsThemes[themeName];
+  const hljsTheme = hljsThemeFor(theme);
   const existingLink = document.getElementById('hljs-theme') as HTMLLinkElement | null;
   const hljsHref = `/hljs/${hljsTheme}.min.css`;
-  
+
   if (existingLink) {
     if (existingLink.getAttribute('href') !== hljsHref) {
       existingLink.href = hljsHref;

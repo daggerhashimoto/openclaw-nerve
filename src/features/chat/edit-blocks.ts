@@ -43,7 +43,7 @@ export function extractEditBlocks(rawText: string): EditBlock[] {
   return blocks;
 }
 
-/** Extract Write tool_use blocks — new file content */
+/** Extract Write tool_use blocks: new file content */
 export interface WriteBlock {
   filePath: string;
   content: string;

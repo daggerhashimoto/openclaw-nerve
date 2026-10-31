@@ -41,12 +41,6 @@ vi.mock('../../components/ConfirmDialog', () => ({
   },
 }));
 
-// Mock file icons
-vi.mock('./utils/fileIcons', () => ({
-  FileIcon: ({ name }: { name: string }) => <div data-testid={`file-icon-${name}`} />,
-  FolderIcon: ({ open }: { open: boolean }) => <div data-testid={`folder-icon-${open ? 'open' : 'closed'}`} />,
-}));
-
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error?: unknown) => void;
@@ -379,7 +373,7 @@ describe('FileTreePanel', () => {
       Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
         configurable: true,
         get() {
-          return this.classList.contains('shell-panel') ? 40 : 0;
+          return this.classList.contains('bg-popover') ? 40 : 0;
         },
       });
 
@@ -404,7 +398,7 @@ describe('FileTreePanel', () => {
         });
         fireEvent.pointerUp(row, { pointerType: 'touch', clientX: 210, clientY: 300, pointerId: 1 });
 
-        const menu = screen.getByText('Add to chat').closest('.shell-panel') as HTMLElement;
+        const menu = screen.getByText('Add to chat').closest('.bg-popover') as HTMLElement;
         expect(menu).toHaveStyle({ left: '210px', top: '260px' });
       } finally {
         if (originalOffsetHeight) {
@@ -628,7 +622,7 @@ describe('FileTreePanel', () => {
 
       expect(await screen.findByText('Add to chat')).toBeInTheDocument();
       expect(screen.getByText('Rename')).toBeInTheDocument();
-      expect(screen.getByText('Move to Trash')).toBeInTheDocument();
+      expect(screen.getByText('Move to trash')).toBeInTheDocument();
     });
 
     it('shows "Add to chat" for files when file references are enabled, and calls the callback with the workspace agent', async () => {
@@ -734,7 +728,7 @@ describe('FileTreePanel', () => {
   });
 
   describe('context menu for deletion', () => {
-    it('shows "Move to Trash" for default workspace', async () => {
+    it('shows "Move to trash" for default workspace', async () => {
       render(
         <FileTreePanel
           onOpenFile={mockOnOpenFile}
@@ -749,12 +743,12 @@ describe('FileTreePanel', () => {
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
 
       await waitFor(() => {
-        expect(screen.getByText('Move to Trash')).toBeInTheDocument();
-        expect(screen.queryByText('Permanently Delete')).not.toBeInTheDocument();
+        expect(screen.getByText('Move to trash')).toBeInTheDocument();
+        expect(screen.queryByText('Permanently delete')).not.toBeInTheDocument();
       });
     });
 
-    it('shows "Permanently Delete" for custom workspace', async () => {
+    it('shows "Permanently delete" for custom workspace', async () => {
       mockUseFileTree.mockReturnValue({
         ...defaultMockHook,
         workspaceInfo: {
@@ -777,12 +771,12 @@ describe('FileTreePanel', () => {
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
 
       await waitFor(() => {
-        expect(screen.getByText('Permanently Delete')).toBeInTheDocument();
-        expect(screen.queryByText('Move to Trash')).not.toBeInTheDocument();
+        expect(screen.getByText('Permanently delete')).toBeInTheDocument();
+        expect(screen.queryByText('Move to trash')).not.toBeInTheDocument();
       });
     });
 
-    it('shows confirmation modal when clicking "Permanently Delete"', async () => {
+    it('shows confirmation modal when clicking "Permanently delete"', async () => {
       mockUseFileTree.mockReturnValue({
         ...defaultMockHook,
         workspaceInfo: {
@@ -810,14 +804,14 @@ describe('FileTreePanel', () => {
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
 
-      // Click "Permanently Delete"
-      const deleteButton = await screen.findByText('Permanently Delete');
+      // Click "Permanently delete"
+      const deleteButton = await screen.findByText('Permanently delete');
       fireEvent.click(deleteButton);
 
       // Should show confirmation modal
       await waitFor(() => {
         expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
-        expect(screen.getByText('Permanently Delete')).toBeInTheDocument();
+        expect(screen.getByText('Permanently delete')).toBeInTheDocument();
         expect(screen.getByText(/Are you sure you want to permanently delete/)).toBeInTheDocument();
       });
     });
@@ -836,7 +830,7 @@ describe('FileTreePanel', () => {
 
       fireEvent.contextMenu(screen.getByText('package.json'), new MouseEvent('contextmenu', { bubbles: true }));
 
-      expect(await screen.findByText('Move to Trash')).toBeInTheDocument();
+      expect(await screen.findByText('Move to trash')).toBeInTheDocument();
 
       rerender(
         <FileTreePanel
@@ -849,11 +843,11 @@ describe('FileTreePanel', () => {
         />
       );
 
-      expect(screen.queryByText('Move to Trash')).not.toBeInTheDocument();
+      expect(screen.queryByText('Move to trash')).not.toBeInTheDocument();
       expect(screen.queryByText('Rename')).not.toBeInTheDocument();
     });
 
-    it('does not show confirmation modal for "Move to Trash"', async () => {
+    it('does not show confirmation modal for "Move to trash"', async () => {
       // Mock fetch for trash operation
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -873,8 +867,8 @@ describe('FileTreePanel', () => {
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
 
-      // Click "Move to Trash"
-      const trashButton = await screen.findByText('Move to Trash');
+      // Click "Move to trash"
+      const trashButton = await screen.findByText('Move to trash');
       await act(async () => {
         fireEvent.click(trashButton);
       });
@@ -903,11 +897,11 @@ describe('FileTreePanel', () => {
         />
       );
 
-      // Open context menu and click "Permanently Delete"
+      // Open context menu and click "Permanently delete"
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
 
-      const deleteButton = await screen.findByText('Permanently Delete');
+      const deleteButton = await screen.findByText('Permanently delete');
       fireEvent.click(deleteButton);
 
       // Modal should be open
@@ -946,7 +940,7 @@ describe('FileTreePanel', () => {
       );
 
       fireEvent.contextMenu(screen.getByText('src'), new MouseEvent('contextmenu', { bubbles: true }));
-      fireEvent.click(await screen.findByText('Permanently Delete'));
+      fireEvent.click(await screen.findByText('Permanently delete'));
 
       expect(await screen.findByTestId('confirm-dialog')).toBeInTheDocument();
 
@@ -990,11 +984,11 @@ describe('FileTreePanel', () => {
         />
       );
 
-      // Open context menu and click "Permanently Delete"
+      // Open context menu and click "Permanently delete"
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
 
-      const deleteButton = await screen.findByText('Permanently Delete');
+      const deleteButton = await screen.findByText('Permanently delete');
       fireEvent.click(deleteButton);
 
       // Click confirm
@@ -1037,7 +1031,7 @@ describe('FileTreePanel', () => {
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
 
-      const deleteButton = await screen.findByText('Permanently Delete');
+      const deleteButton = await screen.findByText('Permanently delete');
       fireEvent.click(deleteButton);
 
       const confirmButton = await screen.findByTestId('confirm-button');
@@ -1071,7 +1065,7 @@ describe('FileTreePanel', () => {
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
 
-      const deleteButton = await screen.findByText('Permanently Delete');
+      const deleteButton = await screen.findByText('Permanently delete');
       fireEvent.click(deleteButton);
 
       const confirmButton = await screen.findByTestId('confirm-button');
@@ -1109,7 +1103,7 @@ describe('FileTreePanel', () => {
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('package.json'), contextMenuEvent);
 
-      const trashButton = await screen.findByText('Move to Trash');
+      const trashButton = await screen.findByText('Move to trash');
       fireEvent.click(trashButton);
 
       rerender(
@@ -1160,8 +1154,8 @@ describe('FileTreePanel', () => {
       const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true });
       fireEvent.contextMenu(screen.getByText('src'), contextMenuEvent);
 
-      expect(screen.getByText('Permanently Delete')).toBeInTheDocument();
-      expect(screen.queryByText('Move to Trash')).not.toBeInTheDocument();
+      expect(screen.getByText('Permanently delete')).toBeInTheDocument();
+      expect(screen.queryByText('Move to trash')).not.toBeInTheDocument();
 
       // Close the context menu
       fireEvent.click(document.body);
@@ -1400,7 +1394,7 @@ describe('FileTreePanel', () => {
       fireEvent.dragOver(targetRow, { dataTransfer });
 
       expect(sourceRow.className).toContain('opacity-50');
-      expect(targetRow.className).toContain('bg-primary/15');
+      expect(targetRow.className).toContain('ring-muted-foreground');
 
       rerender(
         <FileTreePanel
@@ -1414,7 +1408,7 @@ describe('FileTreePanel', () => {
       );
 
       expect(screen.getByTitle('README.md').className).not.toContain('opacity-50');
-      expect(screen.getByTitle('src').className).not.toContain('bg-primary/15');
+      expect(screen.getByTitle('src').className).not.toContain('ring-muted-foreground');
     });
   });
 
@@ -1535,7 +1529,7 @@ describe('FileTreePanel', () => {
       );
 
       fireEvent.contextMenu(screen.getByText('package.json'), new MouseEvent('contextmenu', { bubbles: true }));
-      fireEvent.click(await screen.findByText('Move to Trash'));
+      fireEvent.click(await screen.findByText('Move to trash'));
 
       await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
 
@@ -1562,7 +1556,7 @@ describe('FileTreePanel', () => {
       });
 
       expect(screen.getByText('Rename')).toBeInTheDocument();
-      expect(screen.getByText('Move to Trash')).toBeInTheDocument();
+      expect(screen.getByText('Move to trash')).toBeInTheDocument();
     });
 
     it('keeps a newer workspace delete confirmation open when an older delete resolves', async () => {
@@ -1603,7 +1597,7 @@ describe('FileTreePanel', () => {
       );
 
       fireEvent.contextMenu(screen.getByText('package.json'), new MouseEvent('contextmenu', { bubbles: true }));
-      fireEvent.click(await screen.findByText('Permanently Delete'));
+      fireEvent.click(await screen.findByText('Permanently delete'));
       fireEvent.click(await screen.findByTestId('confirm-button'));
 
       await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
@@ -1620,7 +1614,7 @@ describe('FileTreePanel', () => {
       );
 
       fireEvent.contextMenu(screen.getByText('src'), new MouseEvent('contextmenu', { bubbles: true }));
-      fireEvent.click(await screen.findByText('Permanently Delete'));
+      fireEvent.click(await screen.findByText('Permanently delete'));
 
       expect(await screen.findByText(/permanently delete "src"/i)).toBeInTheDocument();
 

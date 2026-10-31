@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { Mic, Paperclip, X, Loader2, ArrowUp, FileText, FolderOpen, Command } from 'lucide-react';
+import { Pane } from '@/components/ui/Pane';
 import type { TreeEntry } from '@/features/file-browser';
 import { fetchTreeListing } from '@/features/file-browser/utils/fetchTreeListing';
 import { useVoiceInput } from '@/features/voice/useVoiceInput';
@@ -493,9 +494,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const focusInput = useCallback(() => {
     inputRef.current?.focus();
     // Add brief highlight animation
-    inputRef.current?.classList.add('ring-2', 'ring-primary', 'ring-offset-1');
+    inputRef.current?.classList.add('ring-1', 'ring-ring');
     setTimeout(() => {
-      inputRef.current?.classList.remove('ring-2', 'ring-primary', 'ring-offset-1');
+      inputRef.current?.classList.remove('ring-1', 'ring-ring');
     }, 500);
   }, []);
 
@@ -829,7 +830,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     if (e.dataTransfer.files.length > 0) processFiles(e.dataTransfer.files);
   }, [processFiles]);
 
-  // Paste images — use ref to avoid re-registering on every stagedAttachments change
+  // Paste images: use ref to avoid re-registering on every stagedAttachments change
   const processFilesRef = useRef(processFiles);
   useEffect(() => {
     processFilesRef.current = processFiles;
@@ -1364,7 +1365,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       }
       return;
     }
-    // Down arrow — navigate to newer history or back to draft
+    // Down arrow: navigate to newer history or back to draft
     if (e.key === 'ArrowDown' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
       if (inputHistory.isNavigating()) {
         const input = inputRef.current;
@@ -1409,185 +1410,209 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   return (
     <>
-      {/* Drag overlay — rendered by parent via dragHandlers */}
+      {/* Drag overlay: rendered by parent via dragHandlers */}
       {isDragging && (
-        <div className="absolute inset-0 z-50 bg-primary/10 border-2 border-dashed border-primary flex items-center justify-center pointer-events-none">
-          <span className="text-primary font-bold text-lg">Drop files here</span>
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center border border-dashed border-operator bg-background/85">
+          <span className="text-[0.867rem] font-semibold text-operator-text">Drop files here</span>
         </div>
       )}
 
-      {/* Staged attachments preview */}
-      {stagedAttachments.length > 0 && (
-        <div className="flex flex-col gap-2 px-4 py-2 bg-card border-t border-border">
-          <div className="flex gap-2 flex-wrap">
-            {stagedAttachments.map((item) => {
-              const relativePathBasename = item.relativePath?.split('/').filter(Boolean).pop();
-              const showRelativePath = item.origin === 'server_path'
-                && Boolean(item.relativePath)
-                && relativePathBasename !== item.file.name;
+      {/* Composer band: the foot of the column */}
+      <div className="nerve-composer-band shrink-0 px-3 pb-3 pt-1.5 sm:px-6">
+        <div className="mx-auto flex w-full max-w-[46rem] flex-col gap-2">
+          {/* Staged attachments preview */}
+          {stagedAttachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {stagedAttachments.map((item) => {
+                const relativePathBasename = item.relativePath?.split('/').filter(Boolean).pop();
+                const showRelativePath = item.origin === 'server_path'
+                  && Boolean(item.relativePath)
+                  && relativePathBasename !== item.file.name;
 
-              return (
-                <div key={item.id} className="relative group border border-border rounded px-2 py-1.5 bg-background min-w-[190px] max-w-[260px]">
-                  <button
-                    onClick={() => removeStagedAttachment(item.id)}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center text-[10px] opacity-80 hover:opacity-100 cursor-pointer"
-                  >
-                    <X size={10} />
-                  </button>
+                return (
+                  <div key={item.id} className="relative min-w-[190px] max-w-[260px] rounded-[3px] border border-border bg-background px-2 py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => removeStagedAttachment(item.id)}
+                      aria-label={`Remove ${item.file.name}`}
+                      title="Remove"
+                      className="absolute right-1 top-1 flex size-6 cursor-pointer items-center justify-center rounded-[3px] text-muted-foreground transition-colors duration-[120ms] hover:bg-raised hover:text-foreground"
+                    >
+                      <X size={14} aria-hidden="true" />
+                    </button>
 
-                  <div className="flex items-center gap-2 pr-3">
-                    {item.previewUrl ? (
-                      <img src={item.previewUrl} alt={item.file.name} className="w-10 h-10 object-cover rounded border border-border" />
-                    ) : (
-                      <div className="w-10 h-10 rounded border border-border flex items-center justify-center bg-muted">
-                        <FileText size={14} className="text-muted-foreground" />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[11px] truncate">{item.file.name}</div>
-                      <div className="text-[10px] text-muted-foreground">{formatFileSize(item.file.size)}</div>
-                      {showRelativePath && (
-                        <div className="text-[9px] mt-0.5 truncate text-muted-foreground">{item.relativePath}</div>
+                    <div className="flex items-center gap-2 pr-6">
+                      {item.previewUrl ? (
+                        <img src={item.previewUrl} alt={item.file.name} className="size-10 rounded-[3px] border border-border object-cover" />
+                      ) : (
+                        <div className="flex size-10 items-center justify-center rounded-[3px] border border-border bg-raised">
+                          <FileText size={14} className="text-muted-foreground" />
+                        </div>
                       )}
-                      <div className="text-[9px] mt-0.5 text-primary/90 uppercase">{item.origin === 'server_path' ? 'Local File' : 'Upload'}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[0.8rem] text-foreground">{item.file.name}</div>
+                        <div className="flex items-center gap-1.5 text-[0.733rem] text-muted-foreground">
+                          <span className="font-mono tabular">{formatFileSize(item.file.size)}</span>
+                          <span>{item.origin === 'server_path' ? 'Local file' : 'Upload'}</span>
+                        </div>
+                        {showRelativePath && (
+                          <div className="mt-0.5 truncate font-mono text-[0.733rem] text-muted-foreground">{item.relativePath}</div>
+                        )}
+                      </div>
                     </div>
                   </div>
-
+                );
+              })}
+            </div>
+          )}
+          {attachmentError && (
+            <div className="text-[0.8rem] text-destructive">{attachmentError}</div>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={fileAccept}
+            multiple
+            className="hidden"
+            onChange={e => { if (e.target.files) { processFiles(e.target.files); e.target.value = ''; } }}
+          />
+          {/* Input box */}
+          <div
+            className={`nerve-composer relative rounded-[4px] border transition-colors duration-[120ms] ${voiceState === 'recording' ? 'border-operator' : 'border-transparent focus-within:border-operator/60'}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            {/* Uncontrolled textarea: value is read/written via inputRef.
+                This is intentional: useTabCompletion and history navigation
+                set input.value directly, which is safe without a `value` prop.
+                Do NOT add a `value={state}` prop without also passing a
+                setValue callback to useTabCompletion. */}
+            {isSlashMenuOpen && (
+              <div className="absolute inset-x-0 bottom-full z-20 mb-1 overflow-hidden rounded-[3px] border border-border bg-popover shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
+                <div ref={slashMenuRef} role="listbox" aria-label="Slash commands" className="max-h-64 overflow-y-auto py-1">
+                  {[...groupedSlashSuggestions.entries()].map(([category, commands], groupIndex) => (
+                    <div key={category} className="mb-1 last:mb-0">
+                      <div className="px-3 py-1 text-[0.8rem] font-semibold text-muted-foreground">
+                        {CATEGORY_LABELS[category]} <span className="font-mono font-normal tabular">({commands.length})</span>
+                      </div>
+                      {commands.map((option, itemIndex) => {
+                        const flatIndex = getFlatIndexFromGrouped(groupedSlashSuggestions, groupIndex, itemIndex);
+                        const isSelected = flatIndex === selectedSlashIndex;
+                        return (
+                          <button
+                            key={option.command}
+                            ref={(node) => {
+                              slashOptionRefs.current[flatIndex] = node;
+                            }}
+                            type="button"
+                            role="option"
+                            aria-label={option.command}
+                            aria-selected={isSelected}
+                            className={`flex min-h-[var(--row-unit)] w-full items-center gap-3 px-3 py-1 text-left transition-colors duration-[120ms] ${isSelected ? 'bg-raised text-foreground' : 'text-popover-foreground hover:bg-raised'}`}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => applySlashCommand(option)}
+                          >
+                            <span className="min-w-[5.5rem] font-mono text-[0.8rem] font-medium">
+                              {option.command}
+                              {option.argumentHint && <span className="ml-1 text-muted-foreground">{option.argumentHint}</span>}
+                            </span>
+                            <span className="text-[0.8rem] text-muted-foreground">{option.description}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {attachmentError && (
-        <div className="px-4 pb-1.5 text-[10px] text-destructive bg-card">{attachmentError}</div>
-      )}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept={fileAccept}
-        multiple
-        className="hidden"
-        onChange={e => { if (e.target.files) { processFiles(e.target.files); e.target.value = ''; } }}
-      />
-      {/* Input row */}
-      <div
-        className={`relative flex items-start gap-0 border-t shrink-0 bg-card focus-within:border-t-primary/40 focus-within:shadow-[0_-1px_8px_rgba(232,168,56,0.1)] ${voiceState === 'recording' ? 'border-t-red-500 shadow-[0_-1px_12px_rgba(239,68,68,0.3)]' : 'border-border'}`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        {voiceState === 'recording' ? (
-          <span className="self-start pl-3.5 pt-3 shrink-0 flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <Mic size={14} className="text-red-500" />
-          </span>
-        ) : voiceState === 'transcribing' ? (
-          <span className="self-start pl-3.5 pt-3 shrink-0 flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <Mic size={14} className="text-primary" />
-          </span>
-        ) : (
-          <span className="self-start text-primary text-base leading-none font-bold pl-3.5 pt-3 shrink-0 animate-prompt-pulse">›</span>
-        )}
-        {/* Uncontrolled textarea — value is read/written via inputRef.
-            This is intentional: useTabCompletion and history navigation
-            set input.value directly, which is safe without a `value` prop.
-            Do NOT add a `value={state}` prop without also passing a
-            setValue callback to useTabCompletion. */}
-        {isSlashMenuOpen && (
-          <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-2xl border border-border/70 bg-popover/95 shadow-[0_18px_40px_rgba(0,0,0,0.28)] backdrop-blur-sm">
-            <div ref={slashMenuRef} role="listbox" aria-label="Slash commands" className="max-h-64 overflow-y-auto p-2">
-              {[...groupedSlashSuggestions.entries()].map(([category, commands], groupIndex) => (
-                <div key={category} className="mb-1">
-                  <div className="px-3 py-1 text-[0.6875rem] font-semibold text-muted-foreground/80">
-                    {CATEGORY_LABELS[category]} <span className="text-muted-foreground/60">({commands.length})</span>
-                  </div>
-                  {commands.map((option, itemIndex) => {
-                    const flatIndex = getFlatIndexFromGrouped(groupedSlashSuggestions, groupIndex, itemIndex);
-                    const isSelected = flatIndex === selectedSlashIndex;
-                    return (
-                      <button
-                        key={option.command}
-                        ref={(node) => {
-                          slashOptionRefs.current[flatIndex] = node;
-                        }}
-                        type="button"
-                        role="option"
-                        aria-label={option.command}
-                        aria-selected={isSelected}
-                        className={`flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left transition-colors ${isSelected ? 'bg-accent text-accent-foreground' : 'text-popover-foreground hover:bg-accent/70'}`}
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => applySlashCommand(option)}
-                      >
-                        <span className="min-w-[5.5rem] font-mono text-[0.8125rem] font-semibold">
-                          {option.command}
-                          {option.argumentHint && <span className="text-muted-foreground/70 ml-1">{option.argumentHint}</span>}
-                        </span>
-                        <span className="text-[0.75rem] text-muted-foreground">{option.description}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
+              </div>
+            )}
+            <textarea
+              ref={inputRef}
+              onKeyDown={handleKeyDown}
+              onInput={handleInput}
+              onSelect={e => syncSlashStateFromInput(e.currentTarget)}
+              placeholder={`Message ${agentName}`}
+              aria-label="Message input"
+              rows={1}
+              className="block max-h-[160px] min-h-[42px] w-full resize-none border-none bg-transparent px-3 pb-1 pt-2.5 text-[1rem] leading-normal text-foreground outline-none placeholder:text-muted-foreground"
+            />
+            {/* Toolbar: quiet tools on the left, hint and Send on the right */}
+            <div className="flex flex-wrap items-center gap-1 px-1 pb-1">
+              <button
+                type="button"
+                onClick={openUploadFilesPicker}
+                disabled={!uploadsEnabled}
+                className="shell-icon-button shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
+                title={uploadsEnabled ? 'Attach files' : 'Uploads disabled by configuration'}
+                aria-label={uploadsEnabled ? 'Attach files' : 'Uploads disabled by configuration'}
+              >
+                <Paperclip size={16} />
+              </button>
+              {showCommandPaletteButton && onOpenCommandPalette && (
+                <button
+                  type="button"
+                  onClick={onOpenCommandPalette}
+                  className="shell-icon-button shrink-0"
+                  title="Open command palette"
+                  aria-label="Open command palette"
+                >
+                  <Command size={16} aria-hidden="true" />
+                </button>
+              )}
+              {voiceState === 'recording' ? (
+                <span className="inline-flex shrink-0 items-center gap-1.5 px-1.5 text-operator-text">
+                  <Pane state="operator" size="sm" label="Recording" />
+                  <Mic size={14} aria-hidden="true" />
+                </span>
+              ) : voiceState === 'transcribing' ? (
+                <span className="inline-flex shrink-0 items-center gap-1.5 px-1.5 text-live-text">
+                  <Pane state="live" size="sm" label="Transcribing" />
+                  <Mic size={14} aria-hidden="true" />
+                </span>
+              ) : null}
+              <span className={`order-last basis-full px-2 pb-1 text-[0.8rem] text-muted-foreground sm:order-none sm:ml-auto sm:min-w-0 sm:flex-1 sm:basis-0 sm:truncate sm:pb-0 sm:text-right ${voiceState === 'recording' || voiceState === 'transcribing' ? '' : '[@media(pointer:coarse)]:hidden'}`}>
+                {voiceState === 'recording'
+                  ? 'Recording… Left Shift to send · Double Left Shift to discard'
+                  : voiceState === 'transcribing'
+                  ? 'Transcribing…'
+                  : (
+                    /* Shortcuts as keycaps: scannable, and the words stay short */
+                    <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                      <span className="inline-flex items-center gap-1" title="Enter or ⌘Enter sends">
+                        <kbd className="cockpit-kbd">Enter</kbd> send
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <kbd className="cockpit-kbd">⇧ Enter</kbd> new line
+                      </span>
+                      <span className="inline-flex items-center gap-1" title="Double-tap Left Shift to talk">
+                        <kbd className="cockpit-kbd">⇧ ⇧</kbd> voice
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <kbd className="cockpit-kbd">⌘K</kbd> command palette
+                      </span>
+                    </span>
+                  )}
+              </span>
+              <button
+                type="button"
+                onClick={() => { void handleSend(); }}
+                disabled={isGenerating || isPreparingInline}
+                aria-label={isGenerating ? 'Generating response...' : (isPreparingInline ? 'Preparing attachments...' : 'Send message')}
+                aria-busy={isGenerating || isPreparingInline}
+                className={`send-btn ml-auto inline-flex min-h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-[3px] border-none bg-primary px-3.5 text-[0.867rem] font-semibold text-primary-foreground transition-[filter] duration-[120ms] sm:ml-0 sm:min-h-8 ${isGenerating || isPreparingInline ? 'cursor-not-allowed opacity-50' : 'hover:brightness-110'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
+              >
+                Send
+                {isPreparingInline ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ArrowUp size={14} aria-hidden="true" />}
+              </button>
             </div>
           </div>
-        )}
-        <textarea
-          ref={inputRef}
-          onKeyDown={handleKeyDown}
-          onInput={handleInput}
-          onSelect={e => syncSlashStateFromInput(e.currentTarget)}
-          placeholder="Message..."
-          aria-label="Message input"
-          rows={1}
-          className="flex-1 font-mono text-[13px] bg-transparent text-foreground border-none px-2.5 py-3 resize-none outline-none min-h-[42px] max-h-[160px]"
-        />
-        {showCommandPaletteButton && onOpenCommandPalette && (
-          <button
-            type="button"
-            onClick={onOpenCommandPalette}
-            className="bg-transparent border-none text-muted-foreground hover:text-primary cursor-pointer px-2.5 self-stretch h-full flex items-center justify-center"
-            title="Open command palette"
-            aria-label="Open command palette"
-          >
-            <Command size={16} aria-hidden="true" />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={openUploadFilesPicker}
-          disabled={!uploadsEnabled}
-          className="bg-transparent border-none text-muted-foreground hover:text-primary cursor-pointer px-2 self-stretch h-full flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-          title={uploadsEnabled ? 'Attach files' : 'Uploads disabled by configuration'}
-          aria-label={uploadsEnabled ? 'Attach files' : 'Uploads disabled by configuration'}
-        >
-          <Paperclip size={16} />
-        </button>
-        <button
-          onClick={() => { void handleSend(); }}
-          disabled={isGenerating || isPreparingInline}
-          aria-label={isGenerating ? 'Generating response...' : (isPreparingInline ? 'Preparing attachments...' : 'Send message')}
-          aria-busy={isGenerating || isPreparingInline}
-          className={`send-btn font-mono bg-primary text-primary-foreground border-none px-4.5 text-sm cursor-pointer font-bold self-stretch flex items-center justify-center transition-transform ${isGenerating || isPreparingInline ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110 active:scale-95'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
-        >
-          {isGenerating || isPreparingInline ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ArrowUp size={16} aria-hidden="true" />}
-        </button>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground px-4 pb-1.5 pl-10 bg-card">
-        <span>
-          {voiceState === 'recording'
-            ? 'Recording… Left Shift to send · Double Left Shift to discard'
-            : voiceState === 'transcribing'
-            ? 'Transcribing…'
-            : 'Enter or ⌘Enter to send · Shift+Enter for newline · Double Left Shift for voice · ⌘K command palette'}
-        </span>
-      </div>
-      {voiceError && (
-        <div className="text-[10px] text-destructive px-4 pb-1.5 pl-10 bg-card" role="alert">
-          {voiceError}
+          {voiceError && (
+            <div className="text-[0.8rem] text-destructive" role="alert">
+              {voiceError}
+            </div>
+          )}
         </div>
-      )}
+      </div>
       <Dialog open={showAttachByPathDialog} onOpenChange={setShowAttachByPathDialog}>
         <DialogContent className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="shrink-0 px-6 pt-6">
@@ -1597,11 +1622,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 space-y-3 overflow-y-auto px-6 pb-4">
-            <div className="flex flex-wrap items-center gap-1 rounded border border-border/70 bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-1 rounded-[3px] border border-border bg-background px-2 py-1 font-mono text-[0.8rem] text-muted-foreground">
               <button
                 type="button"
                 onClick={() => setPathPickerCurrentDir('')}
-                className="rounded px-1.5 py-0.5 hover:bg-accent hover:text-accent-foreground"
+                className="rounded-sm px-1.5 py-0.5 transition-colors duration-[120ms] hover:bg-raised hover:text-foreground"
               >
                 {pathPickerCustomRoot ? 'Server root' : 'Workspace'}
               </button>
@@ -1613,7 +1638,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                     <button
                       type="button"
                       onClick={() => setPathPickerCurrentDir(nextPath)}
-                      className="rounded px-1.5 py-0.5 hover:bg-accent hover:text-accent-foreground"
+                      className="rounded-sm px-1.5 py-0.5 transition-colors duration-[120ms] hover:bg-raised hover:text-foreground"
                     >
                       {segment}
                     </button>
@@ -1622,19 +1647,19 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               })}
             </div>
 
-            <div className="rounded border border-border/70">
+            <div className="rounded-[3px] border border-border">
               <div className="max-h-[320px] overflow-y-auto">
                 {pathPickerLoading ? (
-                  <div className="flex items-center justify-center gap-2 px-3 py-8 text-[12px] text-muted-foreground">
+                  <div className="flex items-center justify-center gap-2 px-3 py-8 text-[0.8rem] text-muted-foreground">
                     <Loader2 size={14} className="animate-spin" />
                     Loading files…
                   </div>
                 ) : pathPickerError ? (
-                  <div className="px-3 py-8 text-center text-[12px] text-destructive">{pathPickerError}</div>
+                  <div className="px-3 py-8 text-center text-[0.8rem] text-destructive">{pathPickerError}</div>
                 ) : pathPickerEntries.length === 0 ? (
-                  <div className="px-3 py-8 text-center text-[12px] text-muted-foreground">No files in this directory.</div>
+                  <div className="px-3 py-8 text-center text-[0.8rem] text-muted-foreground">No files in this directory.</div>
                 ) : (
-                  <div className="divide-y divide-border/60">
+                  <div className="divide-y divide-border">
                     {pathPickerEntries.map((entry) => {
                       const isSelected = pathPickerSelected?.path === entry.path;
                       const isFile = entry.type === 'file';
@@ -1649,16 +1674,16 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                             }
                             setPathPickerSelected(entry);
                           }}
-                          className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[12px] hover:bg-accent/60 ${isSelected ? 'bg-accent/70 text-accent-foreground' : ''}`}
+                          className={`flex min-h-[var(--row-unit)] w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-[0.8rem] transition-colors duration-[120ms] hover:bg-raised ${isSelected ? 'bg-raised font-medium text-foreground' : ''}`}
                         >
                           <span className="flex min-w-0 items-center gap-2">
-                            {entry.type === 'directory' ? <FolderOpen size={14} className="shrink-0 text-primary" /> : <FileText size={14} className="shrink-0 text-muted-foreground" />}
+                            {entry.type === 'directory' ? <FolderOpen size={14} className="shrink-0 text-muted-foreground" /> : <FileText size={14} className="shrink-0 text-muted-foreground" />}
                             <span className="min-w-0">
                               <span className="block truncate font-medium">{entry.name}</span>
-                              <span className="block truncate text-[10px] text-muted-foreground">{entry.path}</span>
+                              <span className="block truncate font-mono text-[0.733rem] text-muted-foreground">{entry.path}</span>
                             </span>
                           </span>
-                          <span className="shrink-0 text-[10px] text-muted-foreground">{isFile ? formatFileSize(entry.size ?? 0) : 'Folder'}</span>
+                          <span className="shrink-0 text-[0.733rem] tabular text-muted-foreground">{isFile ? formatFileSize(entry.size ?? 0) : 'Folder'}</span>
                         </button>
                       );
                     })}
@@ -1667,13 +1692,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               </div>
             </div>
 
-            <div className="rounded border border-border/70 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+            <div className="rounded-[3px] border border-border bg-background px-3 py-2 text-[0.8rem] text-muted-foreground">
               {pathPickerSelected
-                ? <>Selected: <span className="font-medium text-foreground">{pathPickerSelected.path}</span></>
+                ? <>Selected: <span className="font-mono text-foreground">{pathPickerSelected.path}</span></>
                 : 'Select a file to attach it as a server path reference.'}
             </div>
           </div>
-          <DialogFooter showCloseButton className="shrink-0 border-t border-border/70 px-6 py-4">
+          <DialogFooter showCloseButton className="shrink-0 border-t border-border px-6 py-4">
             <button
               type="button"
               onClick={() => {
@@ -1683,7 +1708,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 setPathPickerCurrentDir(parent);
               }}
               disabled={!pathPickerCurrentDir || pathPickerLoading}
-              className="rounded border border-border px-3 py-1.5 text-[11px] text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-8 items-center rounded-[3px] border border-border px-3 text-[0.8rem] text-foreground transition-colors duration-[120ms] hover:bg-raised disabled:cursor-not-allowed disabled:opacity-50"
             >
               Up
             </button>
@@ -1691,7 +1716,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               type="button"
               onClick={() => { void loadPathPickerDirectory(pathPickerCurrentDir); }}
               disabled={pathPickerLoading}
-              className="rounded border border-border px-3 py-1.5 text-[11px] text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-8 items-center rounded-[3px] border border-border px-3 text-[0.8rem] text-foreground transition-colors duration-[120ms] hover:bg-raised disabled:cursor-not-allowed disabled:opacity-50"
             >
               Refresh
             </button>
@@ -1699,7 +1724,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               type="button"
               onClick={() => { void attachSelectedServerPath(); }}
               disabled={!pathPickerSelected || pathPickerLoading}
-              className="rounded bg-primary px-3 py-1.5 text-[11px] font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-8 items-center rounded-[3px] bg-primary px-3 text-[0.8rem] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               Attach selected path
             </button>

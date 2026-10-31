@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom';
-import { act, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ComponentProps } from 'react';
 import { StatusBar } from './StatusBar';
 
 vi.mock('@/contexts/GatewayContext', () => ({
@@ -11,79 +12,89 @@ vi.mock('./UpdateBadge', () => ({
   UpdateBadge: () => <span data-testid="update-badge" />,
 }));
 
-function renderStatusBar(performanceMode = false) {
+function renderStatusBar(props: Partial<ComponentProps<typeof StatusBar>> = {}) {
   return render(
     <StatusBar
       connectionState="connected"
       sessionCount={2}
-      sparkline="▁▂▃▄"
-      performanceMode={performanceMode}
+      {...props}
     />,
   );
 }
 
-function expectedServerTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-GB', { hour12: false });
-}
-
-async function flushServerInfo() {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-}
-
 describe('StatusBar', () => {
-  const originalFetch = globalThis.fetch;
-
   beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-05-13T12:00:00Z'));
     vi.stubGlobal('__APP_VERSION__', '1.5.3');
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({
-        serverTime: Date.now(),
-        gatewayStartedAt: Date.now() - 5_000,
-      }),
-    }) as typeof fetch;
   });
 
   afterEach(() => {
-    globalThis.fetch = originalFetch;
     vi.unstubAllGlobals();
-    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  it('hides sparkline telemetry in performance mode', async () => {
-    renderStatusBar(true);
+  it('shows the version and draws no decorative activity line', () => {
+    renderStatusBar({ performanceMode: true });
 
-    await flushServerInfo();
-    expect(screen.getByText(expectedServerTime('2026-05-13T12:00:00Z'))).toBeInTheDocument();
-    expect(screen.queryByText('▁▂▃▄')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'Gateway activity' })).not.toBeInTheDocument();
     expect(screen.getByText('v1.5.3')).toBeInTheDocument();
   });
 
-  it('updates clock and uptime only on a slow interval in performance mode', async () => {
-    renderStatusBar(true);
+  it('reports the connection state in words', () => {
+    const { rerender } = renderStatusBar();
+    expect(screen.getByRole('status')).toHaveTextContent('Connected');
+    expect(screen.getByRole('status').querySelector('.pane')).toBeNull();
 
-    await flushServerInfo();
-    expect(screen.getByText(expectedServerTime('2026-05-13T12:00:00Z'))).toBeInTheDocument();
-    expect(screen.getByText('00:00:05')).toBeInTheDocument();
+    rerender(<StatusBar connectionState="reconnecting" sessionCount={2} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Reconnecting');
+    expect(screen.getByRole('status').querySelector('.pane')).toHaveAttribute('data-state', 'operator');
 
-    act(() => {
-      vi.advanceTimersByTime(1_000);
+    rerender(<StatusBar connectionState="disconnected" sessionCount={2} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Disconnected');
+    expect(screen.getByRole('status').querySelector('.pane')).toHaveAttribute('data-state', 'error');
+  });
+
+  it('falls back to the bare session count without session details', () => {
+    const { container } = renderStatusBar();
+
+    expect(screen.getByTitle('2 sessions')).toBeInTheDocument();
+    expect(container.querySelector('.pane-strip')).toBeNull();
+  });
+
+  it('names what is running and waiting without drawing a strip of its own', () => {
+    const sessions = [
+      { sessionKey: 'agent:main:main' },
+      { sessionKey: 'agent:main:subagent:scan' },
+      { sessionKey: 'agent:patch:main' },
+      { sessionKey: 'agent:auto:cron:nightly' },
+      { key: 'agent:review:main', status: 'running' },
+    ];
+    const { container } = renderStatusBar({
+      sessionCount: sessions.length,
+      sessions,
+      busyState: { 'agent:main:main': true },
+      unreadSessions: { 'agent:patch:main': true },
     });
 
-    expect(screen.getByText(expectedServerTime('2026-05-13T12:00:00Z'))).toBeInTheDocument();
-    expect(screen.getByText('00:00:05')).toBeInTheDocument();
+    expect(container.querySelector('.pane-strip')).toBeNull();
+    expect(screen.getByTitle('5 sessions: 2 running, 1 waiting on you')).toBeInTheDocument();
+  });
 
-    act(() => {
-      vi.advanceTimersByTime(59_000);
+  it('omits zero clauses from the session summary', () => {
+    renderStatusBar({
+      sessionCount: 1,
+      sessions: [{ sessionKey: 'agent:main:main' }],
+      busyState: {},
+      unreadSessions: { 'agent:main:main': true },
     });
 
-    expect(screen.getByText(expectedServerTime('2026-05-13T12:01:00Z'))).toBeInTheDocument();
-    expect(screen.getByText('00:01:05')).toBeInTheDocument();
+    expect(screen.getByTitle('1 session: 1 waiting on you')).toBeInTheDocument();
+    expect(screen.queryByText(/running/)).not.toBeInTheDocument();
+  });
+
+  it('shows the context meter as a percentage of the window', () => {
+    renderStatusBar({ contextTokens: 122_000, contextLimit: 200_000 });
+
+    expect(screen.getByText('Context')).toBeInTheDocument();
+    expect(screen.getByText('61% of 200k')).toBeInTheDocument();
   });
 });

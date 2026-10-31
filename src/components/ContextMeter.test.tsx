@@ -47,6 +47,23 @@ describe('ContextMeter', () => {
     expect(title).toContain('50%');
   });
 
+  it('reads as a percentage of the window', () => {
+    render(<ContextMeter used={122000} limit={200000} />);
+    expect(screen.getByText('61% of 200k')).toBeInTheDocument();
+  });
+
+  it('switches the fill to the operator colour near the limit and destructive when nearly full', () => {
+    const { container, rerender } = render(<ContextMeter used={50000} limit={100000} />);
+    const fill = () => Array.from(container.querySelectorAll('div')).find(d => d.style.width);
+    expect(fill()).toHaveClass('bg-foreground');
+
+    rerender(<ContextMeter used={85000} limit={100000} />);
+    expect(fill()).toHaveClass('bg-operator');
+
+    rerender(<ContextMeter used={97000} limit={100000} />);
+    expect(fill()).toHaveClass('bg-destructive');
+  });
+
   it('progress bar width reflects usage', () => {
     const { container } = render(<ContextMeter used={50000} limit={100000} />);
     // The inner div with style.width should be ~50%

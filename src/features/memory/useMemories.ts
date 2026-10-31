@@ -1,5 +1,5 @@
 /**
- * useMemories — Custom hook for memory CRUD operations with optimistic updates.
+ * useMemories: custom hook for memory CRUD operations with optimistic updates.
  *
  * Features:
  * - Optimistic add: Shows new memory immediately, confirms on response
@@ -198,7 +198,7 @@ export function useMemories(initialMemories: Memory[] = [], agentId = 'main'): U
       }
       
       if (insertIndex === -1) {
-        // Section not found yet — append section header + item at end
+        // Section not found yet: append section header + item at end
         return [
           ...prev,
           { type: 'section' as const, text: section },
@@ -263,7 +263,7 @@ export function useMemories(initialMemories: Memory[] = [], agentId = 'main'): U
     const requestGeneration = generationRef.current;
     setError(null);
     
-    // Use functional setState to read current memories — avoids stale closure
+    // Use functional setState to read current memories; avoids stale closure
     let found = false;
     setMemories(prev => {
       const removedIndex = prev.findIndex(m => 

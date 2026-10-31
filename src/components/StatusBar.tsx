@@ -1,7 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useMemo } from 'react';
 import { ContextMeter } from './ContextMeter';
 import { UpdateBadge } from './UpdateBadge';
 import { useGateway } from '@/contexts/GatewayContext';
+import { Pane } from '@/components/ui/Pane';
+import { isSessionRunning, paneStateFor } from '@/lib/paneState';
+import { getSessionKey, type Session } from '@/types';
 
 /** Props for {@link StatusBar}. */
 interface StatusBarProps {
@@ -9,187 +12,119 @@ interface StatusBarProps {
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
   /** Number of active agent sessions. */
   sessionCount: number;
-  /** ASCII sparkline string rendered at the right edge of the bar. */
-  sparkline: string;
   /** Context tokens consumed in the active session (omit to hide the meter). */
   contextTokens?: number;
   /** Context window limit in tokens (omit to hide the meter). */
   contextLimit?: number;
   /** Freeze non-essential live telemetry for lower idle repaint cost. */
   performanceMode?: boolean;
+  /** Sessions to count as running or waiting (omit to show only the session count). */
+  sessions?: Session[];
+  /** Busy flags keyed by session key; a busy session counts as running. */
+  busyState?: Record<string, boolean>;
+  /** Unread flags keyed by session key; unread work counts as waiting on the operator. */
+  unreadSessions?: Record<string, boolean>;
 }
 
-function formatUptime(seconds: number): string {
-  if (seconds < 0) return '00:00:00';
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600).toString().padStart(2, '0');
-  const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
-  const s = Math.floor(seconds % 60).toString().padStart(2, '0');
-  return d > 0 ? `${d}d ${h}:${m}:${s}` : `${h}:${m}:${s}`;
-}
-
-function formatServerTime(date: Date): string {
-  return date.toLocaleTimeString('en-GB', { hour12: false });
-}
-
-/** Fetch server time and gateway uptime from /api/server-info */
-async function fetchServerInfo(): Promise<{ serverTime?: number; gatewayStartedAt?: number } | null> {
-  try {
-    const res = await fetch('/api/server-info');
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+function Separator() {
+  return <span className="h-3.5 w-px shrink-0 bg-border" aria-hidden="true" />;
 }
 
 /**
  * Bottom status bar for the Nerve cockpit.
  *
- * Shows connection state, server time, session count, gateway uptime,
- * an optional context-window meter, a sparkline, and the app version.
+ * One row unit tall: connection state, a plain-language count of what is
+ * running and what waits on the operator (the agents column's facade draws
+ * the windows themselves), the context meter, and the app version.
  */
-export function StatusBar({ connectionState, sessionCount, sparkline, contextTokens, contextLimit, performanceMode = false }: StatusBarProps) {
+export function StatusBar({
+  connectionState,
+  sessionCount,
+  contextTokens,
+  contextLimit,
+  sessions,
+  busyState,
+  unreadSessions,
+}: StatusBarProps) {
   useGateway(); // Keep gateway context connected
 
-  // Server time: offset between local clock and server clock
-  const [serverTimeOffset, setServerTimeOffset] = useState<number | null>(null);
-  // Gateway start time (epoch ms) — persists across page loads
-  const [gatewayStartedAt, setGatewayStartedAt] = useState<number | null>(null);
-  // Ticking display values
-  const [now, setNow] = useState(() => Date.now());
-  const [documentVisible, setDocumentVisible] = useState(() => (
-    typeof document === 'undefined' || document.visibilityState !== 'hidden'
-  ));
+  const sessionPanes = useMemo(() => {
+    if (!sessions) return null;
+    return sessions
+      .map((session) => {
+        const key = getSessionKey(session);
+        const running = isSessionRunning(session, Boolean(busyState?.[key]));
+        const unread = Boolean(unreadSessions?.[key]);
+        return { key, state: paneStateFor({ running, unread }) };
+      });
+  }, [sessions, busyState, unreadSessions]);
 
-  // Use connectionState as key to trigger CSS animation on change
-  const flashKey = connectionState;
+  const runningCount = sessionPanes?.filter((pane) => pane.state === 'live').length ?? 0;
+  const waitingCount = sessionPanes?.filter((pane) => pane.state === 'operator').length ?? 0;
+  const sessionNoun = sessionCount === 1 ? 'session' : 'sessions';
+  const sessionSummary = [
+    runningCount > 0 ? `${runningCount} running` : null,
+    waitingCount > 0 ? `${waitingCount} waiting on you` : null,
+  ].filter(Boolean).join(', ');
+  const sessionText = `${sessionCount} ${sessionNoun}${sessionSummary ? `: ${sessionSummary}` : ''}`;
 
-  // Sync server info helper
-  const syncServerInfo = useCallback(async (signal: { cancelled: boolean }) => {
-    const data = await fetchServerInfo();
-    if (signal.cancelled || !data) return;
-    const localNow = Date.now();
-    if (typeof data.serverTime === 'number') {
-      setServerTimeOffset(data.serverTime - localNow);
-    }
-    if (typeof data.gatewayStartedAt === 'number') {
-      setGatewayStartedAt(data.gatewayStartedAt);
-    }
-  }, []);
-
-  // Fetch server info on mount and reconnect
-  useEffect(() => {
-    // Skip if disconnected/connecting (except initial mount)
-    if (connectionState !== 'connected' && connectionState !== 'disconnected') return;
-    const signal = { cancelled: false };
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch with cancellation is valid
-    syncServerInfo(signal);
-    return () => { signal.cancelled = true; };
-  }, [connectionState, syncServerInfo]);
-
-  // Pause decorative ticking while hidden; performance mode uses a slow visible tick.
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const handleVisibility = () => {
-      const visible = document.visibilityState !== 'hidden';
-      setDocumentVisible(visible);
-      if (visible) setNow(Date.now());
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);
-
-  useEffect(() => {
-    if (!documentVisible) return;
-    const intervalMs = performanceMode ? 60_000 : 1000;
-    const iv = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(iv);
-  }, [documentVisible, performanceMode]);
-
-  const statusColor = connectionState === 'connected'
-    ? 'border-green/30 bg-green/10 text-green'
-    : connectionState === 'connecting' || connectionState === 'reconnecting'
-    ? 'border-orange/30 bg-orange/10 text-orange animate-pulse-dot'
-    : 'border-red/30 bg-red/10 text-red';
-
-  const statusLabel = connectionState === 'connected'
-    ? 'CONNECTED'
-    : connectionState === 'connecting'
-    ? 'CONNECTING'
+  const connection = connectionState === 'connected'
+    ? { pane: null, label: 'Connected' }
     : connectionState === 'reconnecting'
-    ? 'RECONNECTING'
-    : 'OFFLINE';
-
-  // Server time = local time + offset
-  const serverTime = serverTimeOffset !== null
-    ? new Date(now + serverTimeOffset)
-    : null;
-
-  // Gateway uptime = (server now) - gatewayStartedAt
-  const gatewayUptimeSecs = gatewayStartedAt && serverTimeOffset !== null
-    ? Math.floor((now + serverTimeOffset - gatewayStartedAt) / 1000)
-    : null;
+    ? { pane: 'operator' as const, label: 'Reconnecting' }
+    : connectionState === 'connecting'
+    ? { pane: 'operator' as const, label: 'Connecting' }
+    : { pane: 'error' as const, label: 'Disconnected' };
 
   return (
-    <div className="shell-panel mx-2 mb-2 flex min-h-10 flex-wrap items-center gap-y-1 overflow-hidden rounded-2xl px-3 py-2 text-[0.667rem] text-muted-foreground shrink-0 select-none max-[378px]:min-h-9 max-[378px]:gap-y-0.5 max-[378px]:px-2.5 max-[378px]:py-1.5 max-[378px]:text-[0.6rem] sm:mx-4 sm:mb-3 sm:flex-nowrap sm:gap-y-0 sm:overflow-x-auto sm:px-4 sm:text-[0.733rem]">
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1 overflow-visible whitespace-normal max-[378px]:gap-x-2 max-[378px]:gap-y-0.5 sm:flex-nowrap sm:gap-x-3 sm:gap-y-0 sm:whitespace-nowrap">
-        {/* Connection status */}
-        <span
-          key={flashKey}
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-          className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[0.6rem] font-semibold uppercase tracking-[0.08em] max-[378px]:gap-0.5 max-[378px]:px-1.5 max-[378px]:py-0.5 max-[378px]:text-[0.533rem] max-[378px]:tracking-[0.06em] sm:gap-1.5 sm:px-2.5 sm:tracking-[0.12em] ${statusColor} animate-status-flash`}
-        >
-          <span className="text-[0.533rem] max-[378px]:text-[0.4375rem]" aria-hidden="true">●</span>
-          <span>{statusLabel}</span>
-        </span>
+    <div className="flex h-[var(--row-unit)] shrink-0 select-none items-center gap-2.5 overflow-hidden whitespace-nowrap border-t border-border bg-card px-3 text-[0.8rem] text-muted-foreground max-[378px]:gap-2 max-[378px]:px-2">
+      {/* Connection status */}
+      <span
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="inline-flex shrink-0 items-center gap-1.5"
+      >
+        {connection.pane && <Pane state={connection.pane} />}
+        <span className={connection.pane ? 'text-foreground' : undefined}>{connection.label}</span>
+      </span>
 
-        {/* Server time (hidden on narrow screens) */}
-        <span className="hidden text-border md:inline">•</span>
-        {serverTime ? (
-          <span className="hidden font-mono tabular-nums text-foreground/72 md:inline">{formatServerTime(serverTime)}</span>
-        ) : (
-          <span className="hidden font-mono text-muted-foreground/40 md:inline">--:--:--</span>
-        )}
+      <Separator />
 
-        <span className="text-border max-[378px]:text-[0.533rem]">•</span>
-
-        {/* Session count */}
-        <span className="shrink-0 text-foreground/78 max-[378px]:text-[0.6rem]">
-          <span className="font-mono tabular-nums text-foreground">{sessionCount}</span>
-          <span className="ml-1 sm:hidden">sessions</span>
-          <span className="ml-1 hidden sm:inline">active sessions</span>
-        </span>
-
-        {/* Gateway uptime (hidden on narrow/medium screens) */}
-        <span className="hidden text-border lg:inline">•</span>
-        <span className="hidden text-foreground/72 lg:inline">
-          Uptime <span className="font-mono tabular-nums">{gatewayUptimeSecs !== null ? formatUptime(gatewayUptimeSecs) : '--:--:--'}</span>
-        </span>
-
-        {/* Context Meter (always visible when available) */}
-        {contextTokens != null && contextLimit != null && contextLimit > 0 && (
-          <>
-            <span className="text-border max-[378px]:text-[0.533rem]">•</span>
-            <span className="inline-flex shrink-0">
-              <ContextMeter used={contextTokens} limit={contextLimit} />
+      {/* Sessions: the counts in words */}
+      <span className="inline-flex min-w-0 items-center gap-2">
+        <span className="min-w-0 truncate" title={sessionText}>
+          <span className="tabular">{sessionCount}</span> {sessionNoun}
+          {sessionSummary && ': '}
+          {runningCount > 0 && (
+            <span className="text-live-text">
+              <span className="tabular">{runningCount}</span> running
             </span>
-          </>
-        )}
-      </div>
+          )}
+          {runningCount > 0 && waitingCount > 0 && ', '}
+          {waitingCount > 0 && (
+            <span className="text-operator-text">
+              <span className="tabular">{waitingCount}</span> waiting on you
+            </span>
+          )}
+        </span>
+      </span>
 
-      {/* Right side telemetry (hidden on smaller screens) */}
-      <div className="ml-3 hidden shrink-0 items-center gap-2 lg:flex">
-        {!performanceMode && (
-          <span className="rounded-full border border-border/70 bg-background/75 px-2.5 py-1 font-mono text-[0.667rem] tracking-[-0.08em] text-muted-foreground">
-            {sparkline}<span className="ml-1 text-primary animate-alive">_</span>
+      {/* Context meter (when available) */}
+      {contextTokens != null && contextLimit != null && contextLimit > 0 && (
+        <>
+          <Separator />
+          <span className="inline-flex shrink-0">
+            <ContextMeter used={contextTokens} limit={contextLimit} />
           </span>
-        )}
-        <span className="text-[0.6rem] font-medium uppercase tracking-[0.18em] text-muted-foreground/55">v{__APP_VERSION__}</span>
+        </>
+      )}
+
+      {/* Right side: version, update notice */}
+      <span className="ml-auto flex shrink-0 items-center gap-2.5">
+        <span className="hidden font-mono tabular text-muted-foreground sm:inline">v{__APP_VERSION__}</span>
         <UpdateBadge />
-      </div>
+      </span>
     </div>
   );
 }

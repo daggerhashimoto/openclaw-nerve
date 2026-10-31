@@ -3,7 +3,32 @@ import { createChart, ColorType, CrosshairMode, LineSeries, AreaSeries, Candlest
 import type { IChartApi } from 'lightweight-charts';
 import type { ChartData } from './extractCharts';
 
-const COLORS = ['#22c55e', '#3b82f6', '#f97316', '#8b5cf6', '#ef4444'];
+function getCSSVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/** Series colours come from the chart tokens; up/down candles from the green/red data tokens. */
+function getChartColors() {
+  return {
+    series: [
+      getCSSVar('--color-chart-1') || '#3D7EFF',
+      getCSSVar('--color-chart-2') || '#FFA567',
+      getCSSVar('--color-chart-3') || '#7FD1C7',
+      getCSSVar('--color-chart-4') || '#B9A7FF',
+      getCSSVar('--color-chart-5') || '#FF5A5A',
+    ],
+    up: getCSSVar('--color-green') || '#22c55e',
+    down: getCSSVar('--color-red') || '#ef4444',
+    text: getCSSVar('--color-muted-foreground') || '#888',
+    rule: getCSSVar('--color-border') || 'rgba(255,255,255,0.1)',
+    mono: getCSSVar('--font-mono') || 'monospace',
+  };
+}
+
+/** Flat translucent fill for area series: a hex colour plus an alpha byte. */
+function withAlpha(color: string, alpha: string): string {
+  return /^#[0-9a-f]{6}$/i.test(color) ? color + alpha : color;
+}
 
 export default function LightweightChart({ chart }: { chart: ChartData }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -23,24 +48,26 @@ export default function LightweightChart({ chart }: { chart: ChartData }) {
     if (!containerRef.current) return;
 
     const labels = data.labels;
+    const colors = getChartColors();
+    const COLORS = colors.series;
 
     const ch = createChart(containerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: '#888',
-        fontFamily: 'monospace',
-        fontSize: 10,
+        textColor: colors.text,
+        fontFamily: colors.mono,
+        fontSize: 11,
       },
       grid: {
-        vertLines: { color: 'rgba(255,255,255,0.06)' },
-        horzLines: { color: 'rgba(255,255,255,0.06)' },
+        vertLines: { color: withAlpha(colors.rule, '99') },
+        horzLines: { color: withAlpha(colors.rule, '99') },
       },
       crosshair: { mode: CrosshairMode.Magnet },
       rightPriceScale: {
-        borderColor: 'rgba(255,255,255,0.1)',
+        borderColor: colors.rule,
       },
       timeScale: {
-        borderColor: 'rgba(255,255,255,0.1)',
+        borderColor: colors.rule,
         tickMarkFormatter: (time: number) => labels[time as number] ?? '',
       },
       autoSize: true,
@@ -54,14 +81,14 @@ export default function LightweightChart({ chart }: { chart: ChartData }) {
     chartRef.current = ch;
 
     if (type === 'candle') {
-      // Candlestick chart — expects data.candles or falls back to OHLC from values
+      // Candlestick chart: expects data.candles or falls back to OHLC from values
       const s = ch.addSeries(CandlestickSeries, {
-        upColor: '#22c55e',
-        downColor: '#ef4444',
-        borderUpColor: '#22c55e',
-        borderDownColor: '#ef4444',
-        wickUpColor: '#22c55e',
-        wickDownColor: '#ef4444',
+        upColor: colors.up,
+        downColor: colors.down,
+        borderUpColor: colors.up,
+        borderDownColor: colors.down,
+        wickUpColor: colors.up,
+        wickDownColor: colors.down,
       });
       const candleData = labels.map((_, i) => {
         const candles = (data as Record<string, unknown>).candles as Array<{ open: number; high: number; low: number; close: number }> | undefined;
@@ -101,8 +128,8 @@ export default function LightweightChart({ chart }: { chart: ChartData }) {
           type === 'area'
             ? {
                 lineColor: COLORS[0],
-                topColor: 'rgba(34,197,94,0.4)',
-                bottomColor: 'rgba(34,197,94,0.0)',
+                topColor: withAlpha(COLORS[0], '33'),
+                bottomColor: withAlpha(COLORS[0], '33'),
                 lineWidth: 2 as const,
               }
             : { color: COLORS[0], lineWidth: 2 as const };
@@ -121,8 +148,8 @@ export default function LightweightChart({ chart }: { chart: ChartData }) {
             type === 'area'
               ? {
                   lineColor: color,
-                  topColor: color + '66',
-                  bottomColor: color + '00',
+                  topColor: withAlpha(color, '33'),
+                  bottomColor: withAlpha(color, '33'),
                   lineWidth: 2 as const,
                   title: series.name,
                 }
@@ -145,16 +172,10 @@ export default function LightweightChart({ chart }: { chart: ChartData }) {
   return (
     <div className="mt-3 w-full">
       {chart.title && (
-        <div className="text-xs font-mono text-muted-foreground mb-1">
+        <div className="mb-1 flex items-baseline gap-2 text-[0.8rem] font-medium text-muted-foreground">
           {chart.title}
           {values.length > 1 && (
-            <span
-              className="ml-2 inline-block rounded px-1.5 py-0.5 text-[0.667rem] font-semibold"
-              style={{
-                backgroundColor: isPositive ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
-                color: isPositive ? '#22c55e' : '#ef4444',
-              }}
-            >
+            <span className={`font-mono tabular ${isPositive ? 'text-green' : 'text-red'}`}>
               {isPositive ? '+' : ''}
               {pctChange.toFixed(1)}%
             </span>

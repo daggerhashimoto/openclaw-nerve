@@ -1,5 +1,5 @@
 /**
- * ConfirmDeleteDialog — Confirmation dialog for deleting a memory.
+ * ConfirmDeleteDialog: confirmation dialog for deleting a memory.
  *
  * Shows the memory text and requires explicit confirmation before deletion.
  * For sections/daily entries, fetches and displays the full markdown content.
@@ -102,24 +102,20 @@ export function ConfirmDeleteDialog({
     <Dialog open={open} onOpenChange={handleCancel}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <div className="cockpit-kicker text-destructive">
-            <AlertTriangle size={14} />
-            Destructive Action
-          </div>
-          <DialogTitle className="flex items-center gap-2 text-[1.3rem] font-semibold tracking-[-0.03em] text-foreground">
-            <AlertTriangle size={18} className="text-destructive" />
-            {isSection ? 'Delete Section' : isDaily ? 'Delete Daily Entry' : 'Delete Memory'}
+          <DialogTitle className="flex items-center gap-2 text-[1.067rem] font-semibold text-foreground">
+            <AlertTriangle size={16} className="text-destructive" aria-hidden="true" />
+            {isSection ? 'Delete section' : isDaily ? 'Delete daily entry' : 'Delete memory'}
           </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
+          <DialogDescription className="text-[0.867rem] text-muted-foreground">
             {isSection || isDaily
               ? 'This will delete the entire section and all content underneath it.'
               : 'This action cannot be undone. The memory will be permanently removed.'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-4 space-y-3">
+        <div className="space-y-3">
           <div className="cockpit-note" data-tone="danger">
-            <p className="mb-1 text-[0.733rem] font-semibold uppercase tracking-[0.16em] text-destructive/80">
+            <p className="mb-1 text-[0.8rem] font-medium text-muted-foreground">
               {isSection
                 ? 'Section to delete:'
                 : isDaily
@@ -128,38 +124,37 @@ export function ConfirmDeleteDialog({
                   : 'Daily entry to delete:'
                 : 'Memory to delete:'}
             </p>
-            <p className="text-sm text-foreground">
-              {isSection ? `§ ${displayText}` : isDaily ? `📅 ${displayText}` : displayText}
+            <p className="text-[0.867rem] text-foreground">
+              {displayText}
             </p>
           </div>
           
           {/* Show markdown content for sections/daily entries */}
           {(isSection || isDaily) && (
-            <div className="max-h-60 overflow-y-auto rounded-2xl border border-destructive/20 bg-destructive/6 px-3 py-3">
-              <p className="sticky top-0 mb-2 bg-destructive/6 pb-1 text-[0.667rem] font-semibold uppercase tracking-[0.18em] text-destructive/80">
+            <div className="max-h-60 overflow-y-auto rounded-[3px] border border-border bg-background px-3 pb-3">
+              <p className="sticky top-0 bg-background pb-1 pt-2 text-[0.8rem] font-medium text-muted-foreground">
                 Content to be deleted:
               </p>
               
               {contentLoading ? (
-                <div className="flex items-center gap-2 py-2 text-[0.733rem] text-muted-foreground">
-                  <Loader2 size={12} className="animate-spin" />
-                  Loading content...
+                <div className="flex items-center gap-2 py-2 text-[0.8rem] text-muted-foreground">
+                  <Loader2 size={14} className="animate-spin" />
+                  Loading content…
                 </div>
               ) : markdownContent ? (
-                <pre className="whitespace-pre-wrap break-words font-mono text-[0.733rem] text-muted-foreground">
+                <pre className="whitespace-pre-wrap break-words font-mono text-[0.8rem] text-muted-foreground">
                   {markdownContent}
                 </pre>
               ) : hasItems ? (
                 <ul className="space-y-1">
                   {itemsToDelete.map((item, i) => (
-                    <li key={i} className="flex items-start gap-1.5 font-mono text-[0.733rem] text-muted-foreground">
-                      <span className="shrink-0 text-destructive/60">›</span>
+                    <li key={i} className="font-mono text-[0.8rem] text-muted-foreground">
                       <span className="break-words">{item.length > 80 ? item.slice(0, 80) + '...' : item}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-[0.733rem] text-muted-foreground italic">
+                <p className="text-[0.8rem] text-muted-foreground">
                   No content found
                 </p>
               )}
@@ -173,7 +168,6 @@ export function ConfirmDeleteDialog({
             variant="outline"
             onClick={handleCancel}
             disabled={isLoading}
-            className="text-xs"
           >
             Cancel
           </Button>
@@ -182,9 +176,8 @@ export function ConfirmDeleteDialog({
             onClick={handleConfirm}
             disabled={isLoading}
             variant="destructive"
-            className="text-xs"
           >
-            {isLoading ? 'Deleting...' : (isSection ? 'Delete Section' : isDaily ? 'Delete Entry' : 'Delete')}
+            {isLoading ? 'Deleting…' : (isSection ? 'Delete section' : isDaily ? 'Delete entry' : 'Delete')}
           </Button>
         </DialogFooter>
       </DialogContent>

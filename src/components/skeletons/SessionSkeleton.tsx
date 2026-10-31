@@ -1,31 +1,26 @@
 /**
- * SessionSkeleton — Skeleton loader for session list items.
+ * SessionSkeleton: static placeholder for session list rows while they load.
  *
- * Matches the shape of actual session items with label, progress bar, token count, and status.
+ * One row unit tall, shaped like a real row: a dark pane, the label, and the token count.
  */
 
 export function SessionSkeleton() {
   return (
-    <div className="animate-pulse flex items-center gap-2 px-3 py-2 border-b border-border/40">
-      {/* Session label */}
-      <div className="h-3 w-20 bg-muted/40 rounded flex-1" />
+    <div className="flex h-7 items-center gap-2 px-3" aria-hidden="true">
+      {/* Pane placeholder */}
+      <div className="h-[0.933rem] w-[0.667rem] shrink-0 rounded-[1px] bg-raised" />
 
-      {/* Context bar */}
-      <div className="w-12 h-1.5 bg-background border border-border/40 overflow-hidden shrink-0">
-        <div className="h-full w-1/3 bg-muted/30" />
-      </div>
+      {/* Session label */}
+      <div className="h-2.5 w-20 flex-1 rounded-[2px] bg-raised" />
 
       {/* Token count */}
-      <div className="h-3 w-10 bg-muted/20 rounded shrink-0" />
-
-      {/* Status badge */}
-      <div className="h-4 w-14 bg-muted/25 rounded-sm shrink-0" />
+      <div className="h-2.5 w-10 shrink-0 rounded-[2px] bg-raised" />
     </div>
   );
 }
 
 /**
- * SessionSkeletonGroup — Multiple skeletons for loading state
+ * SessionSkeletonGroup: multiple skeletons for the loading state.
  */
 export function SessionSkeletonGroup({ count = 4 }: { count?: number }) {
   return (

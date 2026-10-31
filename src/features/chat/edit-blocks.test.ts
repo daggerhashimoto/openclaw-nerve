@@ -1,4 +1,4 @@
-/** Tests for edit-blocks — parsing edit and write tool blocks. */
+/** Tests for edit-blocks: parsing edit and write tool blocks. */
 import { describe, it, expect } from 'vitest';
 import { extractEditBlocks, extractWriteBlocks } from './edit-blocks';
 

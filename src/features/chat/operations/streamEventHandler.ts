@@ -1,5 +1,5 @@
 /**
- * streamEventHandler — Pure functions for classifying and processing streaming events.
+ * streamEventHandler: Pure functions for classifying and processing streaming events.
  *
  * Extracted from ChatContext's subscribe callback. No React hooks, setState, or refs.
  */

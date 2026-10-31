@@ -22,7 +22,7 @@ export function EditorTabBar({
 
   return (
     <div
-      className="flex items-center h-9 border-b border-border bg-background overflow-x-auto scrollbar-hide"
+      className="flex h-7 shrink-0 items-stretch overflow-x-auto bg-card shadow-[inset_0_-1px_0_var(--color-border)] scrollbar-hide max-sm:h-9"
       role="tablist"
       aria-label="Open files"
     >

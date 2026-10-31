@@ -1,5 +1,5 @@
 /**
- * MemoryEditor — Inline editor for memory section content.
+ * MemoryEditor: inline editor for memory section content.
  *
  * Displays a textarea with the section content and provides
  * save/cancel actions.
@@ -206,34 +206,34 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
   return (
     <div className="h-full flex flex-col min-h-0">
       {/* Header */}
-      <div className="panel-header border-l-[3px] border-l-purple">
+      <div className="panel-header">
         <button
           onClick={handleCancel}
-          className="text-muted-foreground hover:text-foreground transition-colors p-0.5 -ml-1"
+          className="shell-icon-button -ml-2"
           title="Back to list"
         >
           <ArrowLeft size={14} />
         </button>
-        <span className="panel-label text-purple truncate flex-1 ml-1">
-          <span className="panel-diamond">◆</span>
-          {date ? `${date} / ${title}` : title}
+        <span className="panel-label min-w-0 flex-1">
+          <span className="truncate">{date ? `${date} / ${title}` : title}</span>
         </span>
         {hasChanges && (
-          <span className="text-[0.6rem] text-yellow-500 uppercase tracking-wider">
-            modified
+          <span className="shrink-0 pr-2 text-[0.8rem] text-muted-foreground">
+            Modified
           </span>
         )}
       </div>
 
       {/* Error display */}
       {error && (
-        <div className="px-3 py-1.5 text-[0.667rem] flex items-center gap-1.5 bg-red/10 text-red border-b border-red/20">
-          {error}
+        <div className="flex min-h-[var(--row-unit)] items-center gap-1.5 border-b border-border bg-destructive/10 pl-3 pr-1 text-[0.8rem] text-destructive">
+          <span className="min-w-0 flex-1 truncate" title={error}>{error}</span>
           <button
             onClick={() => setError(null)}
-            className="ml-auto text-red/60 hover:text-red"
+            className="grid size-6 shrink-0 place-items-center rounded-[3px] text-destructive transition-colors duration-[120ms] hover:bg-raised"
+            aria-label="Dismiss error"
           >
-            ×
+            <X size={14} />
           </button>
         </div>
       )}
@@ -250,8 +250,8 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="flex-1 w-full bg-transparent text-[0.733rem] font-mono text-foreground px-3 py-2 resize-none focus:outline-none border-none placeholder:text-muted-foreground/50"
-            placeholder="Enter section content..."
+            className="flex-1 w-full bg-transparent text-[0.867rem] leading-relaxed font-mono text-foreground px-3 py-2 resize-none focus:outline-none border-none placeholder:text-muted-foreground"
+            placeholder="Enter section content"
             disabled={isSaving}
             spellCheck={false}
             aria-label={`Edit ${date ? `${date} / ${title}` : title}`}
@@ -260,9 +260,9 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
       </div>
 
       {/* Footer with actions */}
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-border/40 bg-card/30">
-        <span className="text-[0.6rem] text-muted-foreground">
-          {hasChanges ? 'Ctrl+S to save • Esc to cancel' : ''}
+      <div className="flex min-h-[var(--row-unit)] items-center justify-between gap-2 border-t border-border bg-card py-1 pl-3 pr-1.5">
+        <span className="text-[0.8rem] text-muted-foreground">
+          {hasChanges ? 'Ctrl+S to save, Esc to cancel' : ''}
         </span>
         <div className="flex items-center gap-1.5">
           <Button
@@ -270,21 +270,21 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
             size="sm"
             onClick={handleCancel}
             disabled={isSaving}
-            className="h-6 px-2 text-[0.667rem] font-mono"
+            className="text-[0.8rem] sm:h-6 sm:px-2"
           >
-            <X size={12} className="mr-1" />
+            <X size={14} />
             Cancel
           </Button>
           <Button
             size="sm"
             onClick={handleSave}
             disabled={!hasChanges || isSaving || isLoading}
-            className="h-6 px-2 text-[0.667rem] font-mono bg-purple hover:bg-purple/90 text-white"
+            className="text-[0.8rem] sm:h-6 sm:px-2"
           >
             {isSaving ? (
-              <Loader2 size={12} className="mr-1 animate-spin" />
+              <Loader2 size={14} className="animate-spin" />
             ) : (
-              <Save size={12} className="mr-1" />
+              <Save size={14} />
             )}
             Save
           </Button>

@@ -8,14 +8,17 @@ vi.mock('@/features/tts/useTTS', () => ({
   useTTS: () => ({ speak: vi.fn() }),
 }));
 
-vi.mock('@/lib/themes', () => ({
-  themeNames: ['ayu-dark'],
+// Real theme catalogue and resolution; only the DOM side effect is stubbed.
+vi.mock('@/lib/themes', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/themes')>()),
   applyTheme: vi.fn(),
 }));
 
 vi.mock('@/lib/fonts', () => ({
-  fontNames: ['instrument-sans'],
+  fontNames: ['atkinson-hyperlegible', 'instrument-sans'],
+  DEFAULT_FONT: 'atkinson-hyperlegible',
   applyFont: vi.fn(),
+  loadClassicFonts: vi.fn(),
 }));
 
 function wrapper({ children }: { children: React.ReactNode }) {
@@ -106,5 +109,62 @@ describe('SettingsContext performance mode', () => {
     });
 
     expect(result.current.performanceMode).toBe(true);
+  });
+});
+
+describe('SettingsContext theme and style', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it.each([
+    ['ayu-dark', 'nerve-dark'],
+    ['midnight', 'nerve-dark'],
+    ['monochrome', 'nerve-dark'],
+    ['light', 'nerve-light'],
+  ])('moves the stored legacy theme "%s" to the Nerve default "%s"', (saved, expected) => {
+    localStorage.setItem('oc-theme', saved);
+
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    expect(result.current.theme).toBe(expected);
+    expect(localStorage.getItem('oc-theme')).toBe(expected);
+  });
+
+  it('defaults fresh installs to Night', () => {
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    expect(result.current.theme).toBe('nerve-dark');
+  });
+
+  it('keeps an explicitly chosen Classic theme', () => {
+    localStorage.setItem('oc-theme', 'classic-dracula');
+
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    expect(result.current.theme).toBe('classic-dracula');
+  });
+
+  it('switches to the Classic default when the style changes, and persists it', () => {
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    act(() => result.current.setThemeStyle('classic'));
+
+    expect(result.current.theme).toBe('classic-ayu-dark');
+    expect(localStorage.getItem('oc-theme')).toBe('classic-ayu-dark');
+
+    act(() => result.current.setThemeStyle('nerve'));
+
+    expect(result.current.theme).toBe('nerve-dark');
+    expect(localStorage.getItem('oc-theme')).toBe('nerve-dark');
+  });
+
+  it('keeps the current theme when it already belongs to the chosen style', () => {
+    localStorage.setItem('oc-theme', 'classic-nord');
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    act(() => result.current.setThemeStyle('classic'));
+
+    expect(result.current.theme).toBe('classic-nord');
   });
 });

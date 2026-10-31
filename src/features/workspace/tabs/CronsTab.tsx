@@ -1,12 +1,14 @@
 /**
- * CronsTab — Visual cron job management.
+ * CronsTab: visual cron job management.
  */
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { RefreshCw, Play, Plus, Trash2, Pencil, ChevronDown, ChevronRight, CheckCircle, XCircle, Circle, Loader2, Settings2, Clock3 } from 'lucide-react';
+import { RefreshCw, Play, Plus, Trash2, Pencil, ChevronDown, ChevronRight, Loader2, Settings2 } from 'lucide-react';
 import { useCrons, type CronJob, type CronRun, CRON_GATEWAY_TOOL_ALLOWLIST } from '../hooks/useCrons';
 import { CronDialog } from './CronDialog';
 import { useSessionContext } from '@/contexts/SessionContext';
+import { Pane } from '@/components/ui/Pane';
+import { paneStateLabel, type PaneState } from '@/lib/paneState';
 
 type CronRowJob = CronJob;
 
@@ -165,161 +167,144 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   );
   const taskSucceeded = isSuccess || isDeliveryFailure;
   const executionLabel = job.payloadKind === 'agentTurn' ? 'Private session' : 'Main thread event';
-  const targetTone = job.payloadKind === 'agentTurn' ? 'primary' : 'warning';
+  const paneState: PaneState = running ? 'live' : 'off';
 
   return (
-    <div className="cockpit-surface p-2.5 sm:p-3">
-      <div className="flex flex-col gap-2">
-        <div className="flex items-start gap-2.5">
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <div className="flex items-start justify-between gap-2.5">
-              <div className="min-w-0 flex items-start gap-2">
+    <div className="border-b border-border">
+      <div className="flex min-h-[var(--row-unit)] items-center gap-2 pl-3 pr-1">
+        <Pane state={paneState} label={paneStateLabel(paneState)} />
+        <span className="min-w-0 flex-1 truncate text-[0.867rem] text-foreground" title={name}>{name}</span>
+        <button
+          onClick={() => onToggle(job.id, !job.enabled)}
+          className="shell-chip shrink-0"
+          data-active={job.enabled ? 'true' : 'false'}
+          title={job.enabled ? 'Pause job' : 'Enable job'}
+          aria-label={`${job.enabled ? 'Pause' : 'Enable'} ${name}`}
+        >
+          {job.enabled ? 'On' : 'Off'}
+        </button>
+        <button
+          onClick={handleRun}
+          disabled={running}
+          className="shell-icon-button shrink-0 disabled:cursor-wait disabled:opacity-60"
+          title={running ? 'Running…' : 'Run now'}
+          aria-label={`Run ${name}`}
+        >
+          {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+        </button>
+        <button
+          onClick={handleExpand}
+          className="shell-icon-button shrink-0"
+          data-active={expanded ? 'true' : 'false'}
+          title={expanded ? 'Hide history' : 'Show history'}
+          aria-label={expanded ? 'Hide history' : 'Show history'}
+          aria-expanded={expanded}
+        >
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+        <div ref={actionsRef} className="relative shrink-0">
+          <button
+            onClick={() => setActionsOpen((open) => !open)}
+            className="shell-icon-button"
+            data-active={actionsOpen ? 'true' : 'false'}
+            title="Cron settings"
+            aria-label={`Cron settings for ${name}`}
+            aria-expanded={actionsOpen}
+          >
+            <Settings2 size={14} />
+          </button>
+          {actionsOpen && (
+            <div className="absolute right-0 top-full z-20 mt-1 min-w-[140px] rounded-[3px] border border-border bg-popover py-1 shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
               <button
-                onClick={() => onToggle(job.id, !job.enabled)}
-                className="shell-chip min-h-8 shrink-0 rounded-lg px-2.5 text-[0.667rem]"
-                data-active={job.enabled ? 'true' : 'false'}
-                title={job.enabled ? 'Pause job' : 'Enable job'}
-                aria-label={`${job.enabled ? 'Pause' : 'Enable'} ${name}`}
+                onClick={() => {
+                  setActionsOpen(false);
+                  onEdit(job);
+                }}
+                className="flex min-h-[var(--row-unit)] w-full items-center gap-2 px-2.5 text-[0.867rem] text-foreground transition-colors duration-[120ms] hover:bg-raised max-sm:min-h-11"
+                aria-label={`Edit ${name}`}
               >
-                <Circle
-                  size={8}
-                  fill={job.enabled ? 'currentColor' : 'none'}
-                  className={job.enabled ? 'text-green' : 'text-muted-foreground'}
-                />
-                <span>{job.enabled ? 'Live' : 'Off'}</span>
+                <Pencil size={14} className="text-muted-foreground" />
+                <span>Edit</span>
               </button>
-                <div className="min-w-0 space-y-0.5">
-                  <div className="text-[0.833rem] font-semibold leading-tight text-foreground break-words">{name}</div>
-                  <div className="text-[0.7rem] leading-4.5 text-muted-foreground">{humanSchedule(job)}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-1 self-start">
-                <button
-                  onClick={handleRun}
-                  disabled={running}
-                  className="shell-icon-button size-9 px-0 disabled:cursor-wait disabled:opacity-60"
-                  data-active={running ? 'true' : 'false'}
-                  title={running ? 'Running…' : 'Run now'}
-                  aria-label={`Run ${name}`}
-                >
-                  {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-                </button>
-                <button
-                  onClick={handleExpand}
-                  className="shell-icon-button size-9 px-0"
-                  title={expanded ? 'Hide history' : 'Show history'}
-                  aria-label={expanded ? 'Hide history' : 'Show history'}
-                >
-                  {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                </button>
-                <div ref={actionsRef} className="relative">
-                  <button
-                    onClick={() => setActionsOpen((open) => !open)}
-                    className="shell-icon-button size-9 px-0"
-                    title="Cron settings"
-                    aria-label={`Cron settings for ${name}`}
-                    aria-expanded={actionsOpen}
-                  >
-                    <Settings2 size={13} />
-                  </button>
-                  {actionsOpen && (
-                    <div className="shell-panel absolute right-0 top-full z-20 mt-1.5 min-w-[132px] rounded-xl p-1">
-                      <button
-                        onClick={() => {
-                          setActionsOpen(false);
-                          onEdit(job);
-                        }}
-                        className="flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[0.7rem] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
-                        aria-label={`Edit ${name}`}
-                      >
-                        <Pencil size={12} />
-                        <span>Edit</span>
-                      </button>
-                      <button
-                        onClick={handleDeleteClick}
-                        className={`flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[0.7rem] font-medium transition-colors ${
-                          confirmingDelete
-                            ? 'text-red hover:bg-red/10 hover:text-red'
-                            : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-red'
-                        }`}
-                        aria-label={confirmingDelete ? `Confirm delete ${name}` : `Delete ${name}`}
-                      >
-                        <Trash2 size={12} />
-                        <span>{confirmingDelete ? 'Confirm delete' : 'Delete'}</span>
-                      </button>
-                    </div>
+              <button
+                onClick={handleDeleteClick}
+                className={`flex min-h-[var(--row-unit)] w-full items-center gap-2 px-2.5 text-[0.867rem] transition-colors duration-[120ms] hover:bg-raised max-sm:min-h-11 ${
+                  confirmingDelete ? 'text-destructive' : 'text-foreground hover:text-destructive'
+                }`}
+                aria-label={confirmingDelete ? `Confirm delete ${name}` : `Delete ${name}`}
+              >
+                <Trash2 size={14} className={confirmingDelete ? undefined : 'text-muted-foreground'} />
+                <span>{confirmingDelete ? 'Confirm delete' : 'Delete'}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-0.5 pb-2 pl-[1.917rem] pr-3 text-[0.8rem] leading-5 text-muted-foreground">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="min-w-0 truncate font-mono tabular" title={humanSchedule(job)}>{humanSchedule(job)}</span>
+          {job.enabled && job.nextRun && (
+            <span className="shrink-0 font-mono tabular">next {relativeUntil(job.nextRun)}</span>
+          )}
+        </div>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="min-w-0 truncate">{executionLabel}</span>
+          <span className="shrink-0 font-mono tabular">
+            {job.lastRun ? `Last ${relativeTime(job.lastRun)}` : 'No runs yet'}
+          </span>
+        </div>
+
+        <div aria-live="polite" aria-atomic="true">
+          {running && (
+            <div className="text-live-text">Running now.</div>
+          )}
+          {job.lastError && !taskSucceeded && !running && (
+            <div className="line-clamp-2 break-words text-destructive" title={job.lastError}>
+              {job.lastError}
+            </div>
+          )}
+          {isDeliveryFailure && !running && (
+            <div className="line-clamp-2 break-words text-destructive" title={job.lastError}>
+              Delivery failed. Check cron settings.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-border pb-1">
+          {!runs.length && (
+            <div className="flex min-h-[var(--row-unit)] items-center pl-[1.917rem] pr-3 text-[0.8rem] text-muted-foreground">
+              No run history yet.
+            </div>
+          )}
+          {runs.map((r, i) => {
+            const runOk = r.status === 'success' || r.status === 'ok' || r.status === 'finished';
+            const runPane: PaneState = runOk ? 'off' : 'error';
+            return (
+              <div key={i} className="pl-3 pr-3 text-[0.8rem]">
+                <div className="flex min-h-[var(--row-unit)] min-w-0 items-center gap-2 text-muted-foreground">
+                  <span className="grid w-[0.667rem] shrink-0 place-items-center">
+                    <Pane state={runPane} size="sm" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-mono tabular">{r.timestamp ? new Date(r.timestamp).toLocaleString() : 'Unknown time'}</span>
+                  <span className={runOk ? 'shrink-0' : 'shrink-0 text-destructive'}>{r.status}</span>
+                  {r.duration !== undefined && (
+                    <span className="shrink-0 font-mono tabular">{Math.round(r.duration / 1000)}s</span>
                   )}
                 </div>
+                {r.error && (
+                  <div className="pb-1 pl-[1.167rem] break-words text-destructive" title={r.error}>{r.error}</div>
+                )}
+                {r.summary && (
+                  <div className="line-clamp-2 pb-1 pl-[1.167rem] text-foreground/80">{r.summary.slice(0, 150)}{r.summary.length > 150 ? '…' : ''}</div>
+                )}
               </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-2">
-              <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone={targetTone}>
-                {executionLabel}
-              </span>
-              <span className="min-w-0 truncate text-right text-[0.667rem] text-muted-foreground">
-                {job.lastRun ? `Last ${relativeTime(job.lastRun)}` : 'No runs yet'}
-              </span>
-            </div>
-
-            <div aria-live="polite" aria-atomic="true" className="space-y-1">
-              {running && (
-                <div className="text-[0.7rem] text-primary flex items-center gap-1.5">
-                  <Loader2 size={10} className="animate-spin" />
-                  <span>Running now.</span>
-                </div>
-              )}
-              {job.lastError && !taskSucceeded && !running && (
-                <div className="text-[0.7rem] text-red/80 truncate" title={job.lastError}>
-                  {job.lastError}
-                </div>
-              )}
-              {isDeliveryFailure && !running && (
-                <div className="text-[0.7rem] text-orange/80 truncate" title={job.lastError}>
-                  Delivery failed. Check cron settings.
-                </div>
-              )}
-            </div>
-          </div>
+            );
+          })}
         </div>
-        {expanded && (
-          <div className="space-y-1.5">
-            <div className="cockpit-divider" />
-            <div className="space-y-1.5">
-              {!runs.length && (
-                <div className="text-[0.7rem] text-muted-foreground">
-                  No run history yet.
-                </div>
-              )}
-              {runs.map((r, i) => {
-                const runOk = r.status === 'success' || r.status === 'ok' || r.status === 'finished';
-                return (
-                  <div key={i} className="rounded-lg border border-border/60 bg-background/30 px-2.5 py-2">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-1.5 text-[0.667rem] text-muted-foreground">
-                        <span className="tabular-nums">{r.timestamp ? new Date(r.timestamp).toLocaleString() : '—'}</span>
-                        <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone={runOk ? 'success' : 'danger'}>
-                          {runOk ? <CheckCircle size={10} /> : <XCircle size={10} />}
-                          {r.status}
-                        </span>
-                        {r.duration !== undefined && (
-                          <span className="cockpit-badge min-h-6 px-2 text-[0.667rem] tabular-nums">{Math.round(r.duration / 1000)}s</span>
-                        )}
-                      </div>
-                      {r.error && (
-                        <div className="text-[0.7rem] text-red/80 break-words" title={r.error}>{r.error}</div>
-                      )}
-                      {r.summary && (
-                        <div className="text-[0.7rem] leading-4.5 text-foreground/70 line-clamp-2">{r.summary.slice(0, 150)}{r.summary.length > 150 ? '…' : ''}</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
@@ -385,147 +370,136 @@ export function CronsTab() {
   return (
     <div className="h-full flex flex-col min-h-0">
       <div className="flex-1 overflow-y-auto">
-        <div className="space-y-2 px-2.5 py-2.5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 flex items-center gap-1.5 overflow-hidden">
-              {hasToolbarMeta ? (
-                <>
-                  {toolbarSummary.failedCount > 0 && (
-                    <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone="danger">
-                      {toolbarSummary.failedCount} failed
+        <div className="flex min-h-[var(--row-unit)] items-center gap-2 border-b border-border pl-3 pr-1">
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-[0.8rem] text-muted-foreground">
+            {hasToolbarMeta ? (
+              <>
+                {toolbarSummary.failedCount > 0 && (
+                  <span className="shrink-0 text-destructive">
+                    {toolbarSummary.failedCount} failed
+                  </span>
+                )}
+                {toolbarSummary.nextRelative ? (
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="shrink-0">Next run</span>
+                    <span className="truncate font-mono tabular text-foreground">
+                      {toolbarSummary.nextRelative}
                     </span>
-                  )}
-                  {toolbarSummary.nextRelative ? (
-                    <div className="shell-panel flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1">
-                      <span className="cockpit-kicker shrink-0 text-[0.5rem] tracking-[0.16em]">
-                        <Clock3 size={10} className="text-primary" />
-                        Next run
-                      </span>
-                      <span className="cockpit-badge min-h-5 shrink-0 px-1.5 text-[0.6rem]" data-tone="primary">
-                        {toolbarSummary.nextRelative}
-                      </span>
-                    </div>
-                  ) : toolbarSummary.enabledCount > 0 ? (
-                    <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone="success">
-                      {toolbarSummary.enabledCount} live
-                    </span>
-                  ) : (
-                    <span className="text-[0.7rem] text-muted-foreground">
-                      No live crons
-                    </span>
-                  )}
-                </>
-              ) : null}
-            </div>
-            <div className="shell-panel inline-flex items-center gap-1 rounded-xl px-1 py-1">
-              <button
-                type="button"
-                onClick={handleAdd}
-                aria-label="Add cron job"
-                title="Add cron job"
-                className="shell-chip min-h-8 rounded-lg px-2.5 text-[0.7rem] font-medium"
-              >
-                <Plus size={13} />
-                <span>New cron</span>
-              </button>
-              <button
-                type="button"
-                onClick={fetchJobs}
-                disabled={isLoading}
-                aria-label="Refresh crons"
-                title="Refresh crons"
-                className="shell-icon-button size-8 px-0 disabled:opacity-60"
-              >
-                <RefreshCw size={13} className={isLoading ? 'animate-spin' : undefined} />
-              </button>
-            </div>
+                  </span>
+                ) : toolbarSummary.enabledCount > 0 ? (
+                  <span className="truncate">
+                    <span className="font-mono tabular">{toolbarSummary.enabledCount}</span> enabled
+                  </span>
+                ) : (
+                  <span className="truncate">
+                    No enabled crons
+                  </span>
+                )}
+              </>
+            ) : null}
           </div>
-
-          <div aria-live="polite" aria-atomic="true">
-            {error && !cronWarning && (
-              <div className="cockpit-note px-3 py-2 text-[0.733rem]" data-tone="danger">{error}</div>
-            )}
-          </div>
-
-          {cronWarning && (
-            <div className="cockpit-surface px-4 py-5 text-left">
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <div className="text-[0.833rem] font-medium text-foreground">Cron unavailable</div>
-                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
-                    {cronWarning}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-foreground/80">Recommended fix</div>
-                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
-                    Ask your agent to update your OpenClaw config (<code>openclaw.json</code>) so <code>gateway.tools.allow</code> includes:
-                  </p>
-                  <ul className="ml-5 list-disc space-y-1 text-[0.733rem] leading-4.5 text-muted-foreground">
-                    {CRON_GATEWAY_TOOL_ALLOWLIST.map((tool) => (
-                      <li key={`recommended-${tool}`}><code>{tool}</code></li>
-                    ))}
-                  </ul>
-                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">Then restart the gateway.</p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-foreground/80">Manual fix</div>
-                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
-                    Edit <code>openclaw.json</code> and add these entries to <code>gateway.tools.allow</code>:
-                  </p>
-                  <ul className="ml-5 list-disc space-y-1 text-[0.733rem] leading-4.5 text-muted-foreground">
-                    {CRON_GATEWAY_TOOL_ALLOWLIST.map((tool) => (
-                      <li key={`manual-${tool}`}><code>{tool}</code></li>
-                    ))}
-                  </ul>
-                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">Then restart the gateway.</p>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-foreground/80">Local install shortcut</div>
-                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
-                    If this is a local install, rerun <code>npm run setup</code> to restore the missing entries.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {isLoading && !jobs.length && !error && !cronWarning && (
-            <div className="space-y-2">
-              <div className="cockpit-surface h-20 animate-pulse" />
-              <div className="cockpit-surface h-20 animate-pulse" />
-              <div className="cockpit-surface h-20 animate-pulse" />
-            </div>
-          )}
-
-          {!isLoading && !jobs.length && !error && !cronWarning && (
-            <div className="cockpit-surface px-4 py-5 text-center">
-              <div className="space-y-1">
-                <div className="text-[0.833rem] font-medium text-foreground">No scheduled tasks yet</div>
-                <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
-                  Create one to schedule a private task or a main-thread reminder.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {jobs.map(job => {
-          return (
-            <CronRow
-              key={job.id}
-              job={job}
-              onToggle={toggleJob}
-              onRun={handleRun}
-              onDelete={deleteJob}
-              onEdit={handleEdit}
-              onFetchRuns={fetchRuns}
-            />
-          );
-          })}
+          <button
+            type="button"
+            onClick={handleAdd}
+            aria-label="Add cron job"
+            title="Add cron job"
+            className="shell-chip shrink-0"
+          >
+            <Plus size={14} />
+            <span>New cron</span>
+          </button>
+          <button
+            type="button"
+            onClick={fetchJobs}
+            disabled={isLoading}
+            aria-label="Refresh crons"
+            title="Refresh crons"
+            className="shell-icon-button shrink-0 disabled:opacity-60"
+          >
+            <RefreshCw size={14} className={isLoading ? 'animate-spin' : undefined} />
+          </button>
         </div>
+
+        <div aria-live="polite" aria-atomic="true">
+          {error && !cronWarning && (
+            <div className="px-3 py-2">
+              <div className="cockpit-note" data-tone="danger">{error}</div>
+            </div>
+          )}
+        </div>
+
+        {cronWarning && (
+          <div className="space-y-4 px-3 py-3 text-left text-[0.867rem] leading-relaxed">
+            <div className="space-y-1">
+              <div className="font-medium text-foreground">Cron unavailable</div>
+              <p className="text-muted-foreground">
+                {cronWarning}
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="font-medium text-foreground">Recommended fix</div>
+              <p className="text-muted-foreground">
+                Ask your agent to update your OpenClaw config (<code>openclaw.json</code>) so <code>gateway.tools.allow</code> includes:
+              </p>
+              <ul className="ml-5 list-disc space-y-1 text-muted-foreground">
+                {CRON_GATEWAY_TOOL_ALLOWLIST.map((tool) => (
+                  <li key={`recommended-${tool}`}><code>{tool}</code></li>
+                ))}
+              </ul>
+              <p className="text-muted-foreground">Then restart the gateway.</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="font-medium text-foreground">Manual fix</div>
+              <p className="text-muted-foreground">
+                Edit <code>openclaw.json</code> and add these entries to <code>gateway.tools.allow</code>:
+              </p>
+              <ul className="ml-5 list-disc space-y-1 text-muted-foreground">
+                {CRON_GATEWAY_TOOL_ALLOWLIST.map((tool) => (
+                  <li key={`manual-${tool}`}><code>{tool}</code></li>
+                ))}
+              </ul>
+              <p className="text-muted-foreground">Then restart the gateway.</p>
+            </div>
+
+            <div className="space-y-1">
+              <div className="font-medium text-foreground">Local install shortcut</div>
+              <p className="text-muted-foreground">
+                If this is a local install, rerun <code>npm run setup</code> to restore the missing entries.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {isLoading && !jobs.length && !error && !cronWarning && (
+          <div className="flex min-h-[var(--row-unit)] items-center px-3 text-[0.8rem] text-muted-foreground">
+            Loading crons…
+          </div>
+        )}
+
+        {!isLoading && !jobs.length && !error && !cronWarning && (
+          <div className="space-y-1 px-3 py-4 text-center">
+            <div className="text-[0.867rem] font-medium text-foreground">No scheduled tasks yet</div>
+            <p className="text-[0.8rem] leading-relaxed text-muted-foreground">
+              Create one to schedule a private task or a main-thread reminder.
+            </p>
+          </div>
+        )}
+
+        {jobs.map(job => {
+        return (
+          <CronRow
+            key={job.id}
+            job={job}
+            onToggle={toggleJob}
+            onRun={handleRun}
+            onDelete={deleteJob}
+            onEdit={handleEdit}
+            onFetchRuns={fetchRuns}
+          />
+        );
+        })}
       </div>
 
       <CronDialog

@@ -6,7 +6,7 @@
  */
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Plus, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, RefreshCw, AlertCircle, CheckCircle, X } from 'lucide-react';
 import { MemoryItem, AddMemoryDialog, ConfirmDeleteDialog, MemoryEditor, useMemories } from '@/features/memory';
 import { MemorySkeletonGroup } from '@/components/skeletons';
 import { clearPersistedDraft, readPersistedDraft, writePersistedDraft } from '@/features/workspace/persistedDrafts';
@@ -22,6 +22,25 @@ interface MemoryListProps {
   remoteWorkspace?: boolean;
   /** Compact mode for mobile/topbar dropdown; uses kebab actions for rows. */
   compact?: boolean;
+}
+
+/**
+ * An item has no editor of its own: editing it opens the section that holds it,
+ * which is the nearest section above it in the list. Items with no section
+ * (none in practice) get no edit action.
+ */
+function editParentSectionOf(
+  list: Memory[],
+  index: number,
+  openEditor: (text: string, type: Memory['type'], date?: string) => void,
+): (() => void) | undefined {
+  for (let j = index - 1; j >= 0; j--) {
+    if (list[j].type === 'section') {
+      const title = list[j].text;
+      return () => openEditor(title, 'section');
+    }
+  }
+  return undefined;
 }
 
 interface EditingMemoryState {
@@ -225,11 +244,8 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
     <div className="h-full flex flex-col min-h-0">
       {/* Header — only when used standalone (not in workspace tabs) */}
       {!hideHeader && (
-        <div className="panel-header border-l-[3px] border-l-purple">
-          <span className="panel-label text-purple">
-            <span className="panel-diamond">◆</span>
-            MEMORY
-          </span>
+        <div className="panel-header">
+          <span className="panel-label">Memory</span>
         </div>
       )}
 
@@ -237,16 +253,14 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
       <div aria-live="polite" aria-atomic="true">
         {feedback && (
           <div
-            className={`px-3 py-1.5 text-[0.667rem] flex items-center gap-1.5 border-b ${
-              feedback.type === 'success'
-                ? 'bg-green/10 text-green border-green/20'
-                : 'bg-red/10 text-red border-red/20'
+            className={`min-h-[var(--row-unit)] px-3 py-1 text-[0.8rem] flex items-center gap-2 border-b border-border ${
+              feedback.type === 'success' ? 'text-foreground' : 'text-destructive'
             }`}
           >
             {feedback.type === 'success' ? (
-              <CheckCircle size={10} />
+              <CheckCircle size={14} className="text-muted-foreground" aria-hidden="true" />
             ) : (
-              <AlertCircle size={10} />
+              <AlertCircle size={14} aria-hidden="true" />
             )}
             {feedback.message}
           </div>
@@ -255,15 +269,15 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
 
       {/* Error display */}
       {error && !feedback && (
-        <div className="px-3 py-1.5 text-[0.667rem] flex items-center gap-1.5 bg-red/10 text-red border-b border-red/20">
-          <AlertCircle size={10} />
+        <div className="min-h-[var(--row-unit)] px-3 py-1 text-[0.8rem] flex items-center gap-2 text-destructive border-b border-border">
+          <AlertCircle size={14} aria-hidden="true" />
           {error}
           <button
             onClick={clearError}
-            className="ml-auto text-red/60 hover:text-red focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
+            className="shell-icon-button ml-auto text-muted-foreground"
             aria-label="Dismiss error"
           >
-            ×
+            <X size={14} aria-hidden="true" />
           </button>
         </div>
       )}
@@ -271,8 +285,8 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
       {/* Remote workspace notice */}
       {remoteWorkspace ? (
         <div className="flex-1 flex items-center justify-center px-4">
-          <div className="text-muted-foreground text-[0.733rem] text-center max-w-[240px]">
-            <p className="font-medium text-foreground/70 mb-1">Sandboxed Workspace</p>
+          <div className="text-muted-foreground text-[0.8rem] text-center max-w-[260px]">
+            <p className="font-medium text-foreground mb-1">Sandboxed workspace</p>
             <p>Memory management is not available when the workspace lives inside an OpenClaw sandbox. View and edit memories directly on the gateway host.</p>
           </div>
         </div>
@@ -282,38 +296,34 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
         {initialLoading && !memories.length ? (
           <MemorySkeletonGroup count={6} />
         ) : !memories.length ? (
-          <div className="text-muted-foreground px-3 py-4 text-[0.733rem] text-center">
+          <div className="text-muted-foreground px-3 py-4 text-[0.8rem] text-center">
             <p>No memories yet</p>
             <button
               onClick={() => setAddDialogOpen(true)}
-              className="mt-2 text-purple hover:underline bg-transparent border-0 cursor-pointer focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
+              className="mt-2 text-foreground underline decoration-pane-edge underline-offset-4 hover:decoration-operator bg-transparent border-0 cursor-pointer rounded-[2px]"
             >
               Add your first memory
             </button>
           </div>
         ) : (
           <>
-          <div className="flex items-center border-b border-border/40">
+          <div className="flex items-center border-b border-border">
             <button
               onClick={openAddDialog}
-              className="group flex items-center gap-2 px-3 py-1.5 text-[0.733rem] hover:bg-foreground/[0.02] transition-colors cursor-pointer flex-1 bg-transparent border-0 text-left focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+              className="group flex items-center gap-2 min-h-[var(--row-unit)] px-3 text-[0.867rem] text-muted-foreground hover:bg-raised hover:text-foreground transition-colors duration-[120ms] cursor-pointer flex-1 bg-transparent border-0 text-left"
               aria-label="Add new memory"
             >
-              <span className="shrink-0 text-muted-foreground group-hover:text-purple transition-colors">
-                <Plus size={12} />
-              </span>
-              <span className="text-muted-foreground group-hover:text-purple transition-colors">
-                Add memory
-              </span>
+              <Plus size={14} className="shrink-0" aria-hidden="true" />
+              <span>Add memory</span>
             </button>
             <button
               onClick={() => { clearError(); onRefresh(); }}
               disabled={isLoading}
-              className="shrink-0 px-2 py-1.5 bg-transparent border-0 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
+              className="shell-icon-button shrink-0 disabled:opacity-50"
               title="Refresh memories"
               aria-label="Refresh memories"
             >
-              <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
+              <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} aria-hidden="true" />
             </button>
           </div>
           {visibleMemories.map((m, i) => (
@@ -321,7 +331,7 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
               key={m.tempId || `${m.type}-${m.text.slice(0, 20)}-${i}`}
               memory={m}
               onDelete={handleDeleteClick}
-              onEdit={handleEditClick}
+              onEdit={m.type === 'item' ? editParentSectionOf(visibleMemories, i, handleEditClick) : handleEditClick}
               {...(m.type === 'section' ? {
                 isExpanded: expandedSections.has(m.text),
                 onToggleExpand: () => toggleSection(m.text),

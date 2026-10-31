@@ -1,5 +1,5 @@
 /**
- * PdfViewer — Renders PDF files using the browser's built-in PDF viewer via iframe.
+ * PdfViewer: Renders PDF files using the browser's built-in PDF viewer via iframe.
  * Falls back to opening the raw file directly on mobile web, where inline PDF embeds
  * are unreliable in Chrome-based browsers.
  */
@@ -16,7 +16,7 @@ interface PdfViewerProps {
 export function PdfViewer({ file, agentId }: PdfViewerProps) {
   if (file.loading) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-xs gap-2">
+      <div className="flex items-center justify-center h-full text-muted-foreground text-[0.8rem] gap-2">
         <Loader2 className="animate-spin" size={14} />
         Loading {file.name}...
       </div>
@@ -25,10 +25,10 @@ export function PdfViewer({ file, agentId }: PdfViewerProps) {
 
   if (file.error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
-        <AlertTriangle size={24} className="text-destructive" />
-        <div className="text-sm">Failed to load PDF</div>
-        <div className="text-xs">{file.error}</div>
+      <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
+        <AlertTriangle size={16} className="text-destructive" />
+        <div className="text-[0.867rem]">Failed to load PDF</div>
+        <div className="text-[0.8rem]">{file.error}</div>
       </div>
     );
   }
@@ -45,13 +45,13 @@ export function PdfViewer({ file, agentId }: PdfViewerProps) {
 
   if (isMobileWeb) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 bg-[#0a0a0a] px-6 text-center text-muted-foreground">
-        <AlertTriangle size={24} className="text-amber-400" />
-        <div className="text-sm text-foreground">PDF preview isn't supported on mobile web.</div>
-        <div className="max-w-sm text-xs">
+      <div className="flex h-full flex-col items-center justify-center gap-2 bg-background px-6 text-center text-muted-foreground">
+        <AlertTriangle size={16} className="text-muted-foreground" />
+        <div className="text-[0.867rem] text-foreground">PDF preview isn't supported on mobile web.</div>
+        <div className="max-w-sm text-[0.8rem]">
           Open the file directly for your browser's native PDF handling.
         </div>
-        <Button asChild size="sm">
+        <Button asChild size="sm" variant="outline" className="mt-1">
           <a href={src} target="_blank" rel="noopener noreferrer">
             <ExternalLink size={14} />
             Open PDF
@@ -62,7 +62,7 @@ export function PdfViewer({ file, agentId }: PdfViewerProps) {
   }
 
   return (
-    <div className="h-full w-full bg-[#0a0a0a]">
+    <div className="h-full w-full bg-background">
       <iframe
         key={`pdf-${file.path}-v${file.viewerVersion ?? 0}`}
         src={src}

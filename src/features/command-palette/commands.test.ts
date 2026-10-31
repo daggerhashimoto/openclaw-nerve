@@ -15,6 +15,7 @@ function noopActions() {
     onSearch: vi.fn(),
     onAbort: vi.fn(),
     onSetTheme: vi.fn(),
+    onSetThemeStyle: vi.fn(),
     onSetFont: vi.fn(),
     onTtsProviderChange: vi.fn(),
     onToggleWakeWord: vi.fn(),
@@ -143,5 +144,38 @@ describe('filterCommands with merged static + session commands', () => {
     const all = buildAll();
     const results = filterCommands(all, 'planner');
     expect(results.some((c) => c.id === 'session-agent:planner:main')).toBe(true);
+  });
+});
+
+describe('createCommands appearance', () => {
+  it('offers one theme command per theme, naming Classic themes as such', () => {
+    const labels = createCommands(noopActions())
+      .filter((c) => c.id.startsWith('theme-'))
+      .map((c) => c.label);
+
+    expect(labels).toHaveLength(16);
+    expect(labels).toContain('Theme: Night');
+    expect(labels).toContain('Theme: Daylight');
+    expect(labels).toContain('Theme: Classic Ayu Dark');
+    expect(labels).toContain('Theme: Classic Light');
+  });
+
+  it('switches style through Style commands', () => {
+    const actions = noopActions();
+    const commands = createCommands(actions);
+    const classic = commands.find((c) => c.label === 'Style: Classic');
+    const nerve = commands.find((c) => c.label === 'Style: Nerve');
+
+    classic?.action();
+    nerve?.action();
+
+    expect(actions.onSetThemeStyle.mock.calls).toEqual([['classic'], ['nerve']]);
+    expect(actions.onSetTheme).not.toHaveBeenCalled();
+  });
+
+  it('names the default font after the style', () => {
+    const labels = createCommands(noopActions()).map((c) => c.label);
+
+    expect(labels).toContain('Font: Style default');
   });
 });

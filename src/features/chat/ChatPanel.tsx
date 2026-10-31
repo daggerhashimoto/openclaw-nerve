@@ -1,11 +1,11 @@
-import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle, type ReactNode } from 'react';
 import type { ProcessingStage, ActivityLogEntry, ChatStreamState } from '@/contexts/ChatContext';
 import { ToolCallBlock } from './ToolCallBlock';
 import { MessageBubble } from './MessageBubble';
 import { InputBar, type InputBarHandle } from './InputBar';
 import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './useMessageSearch';
-import { ActivityLog, ChatHeader, ProcessingIndicator, ScrollToBottomButton, StreamingMessage, ToolGroupBlock } from './components';
+import { ActivityLog, ChatHeader, ProcessingIndicator, ScrollToBottomButton, StreamingMessage, ToolGroupBlock, toolStackClass } from './components';
 import { isMessageCollapsible } from './types';
 import type { ChatMsg, ImageAttachment, OutgoingUploadPayload } from './types';
 import type { BeadLinkTarget } from '@/features/beads';
@@ -30,7 +30,7 @@ interface ChatPanelProps {
   id?: string;
   /** Agent display name */
   agentName?: string;
-  /** Load more (older) messages — returns true if still more available */
+  /** Load more (older) messages: returns true if still more available */
   loadMore?: () => boolean;
   /** Whether there are older messages to load */
   hasMore?: boolean;
@@ -95,7 +95,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   useEffect(() => { loadMoreRef.current = loadMore; }, [loadMore]);
   useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
 
-  // Infinite scroll — load older messages when sentinel enters viewport
+  // Infinite scroll: load older messages when sentinel enters viewport
   useEffect(() => {
     if (!loadMoreRef.current || !hasMoreRef.current) return;
     const sentinel = sentinelRef.current;
@@ -253,13 +253,104 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   // First message time for mission time calculation
   const firstMessageTime = messages.length > 0 ? messages[0].timestamp : null;
 
+  const isToolMessage = (msg: ChatMsg) => msg.role === 'tool' || msg.role === 'toolResult';
+
+  const renderMessage = (msg: ChatMsg, i: number) => {
+    const collapseKey = msg.msgId || msg.tempId || i;
+    const isCollapsed = collapsed[collapseKey] ?? (msg.isThinking || isMessageCollapsible(msg));
+    const memoryKey = `mem-${collapseKey}`;
+    const isMemoryCollapsed = collapsed[memoryKey] ?? true;
+    const isCurrentMatch = search.currentMatch?.messageIndex === i;
+    const stableKey = msg.msgId || msg.tempId || `${msg.role}-${msg.timestamp.getTime()}-${i}`;
+
+    if (isToolMessage(msg)) {
+      return (
+        <div
+          key={stableKey}
+          ref={(el) => { if (el) messageRefs.current.set(i, el); }}
+        >
+          {msg.toolGroup ? (
+            // Grouped tool bubble (multiple consecutive tool calls)
+            <ToolGroupBlock
+              msg={msg}
+              index={i}
+              isCollapsed={isCollapsed}
+              onToggleCollapse={toggleCollapse}
+            />
+          ) : (
+            // Single tool call
+            <ToolCallBlock
+              msg={msg}
+              index={i}
+              isCollapsed={isCollapsed}
+              onToggleCollapse={toggleCollapse}
+            />
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div
+        key={stableKey}
+        ref={(el) => { if (el) messageRefs.current.set(i, el); }}
+      >
+        <MessageBubble
+          msg={msg}
+          index={i}
+          isCollapsed={isCollapsed}
+          isMemoryCollapsed={isMemoryCollapsed}
+          memoryKey={memoryKey}
+          onToggleCollapse={toggleCollapse}
+          onToggleMemory={toggleMemory}
+          firstMessageTime={firstMessageTime}
+          searchQuery={search.query}
+          isCurrentMatch={isCurrentMatch}
+          agentName={agentName}
+          onOpenWorkspacePath={onOpenWorkspacePath}
+          pathLinkPrefixes={pathLinkPrefixes}
+          pathLinkAliases={pathLinkAliases}
+          onOpenBeadId={onOpenBeadId}
+        />
+      </div>
+    );
+  };
+
+  // Consecutive tool messages share one bordered stack, rows split by 1px rules.
+  const transcript: ReactNode[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (!isToolMessage(msg)) {
+      transcript.push(renderMessage(msg, i));
+      continue;
+    }
+    const runStart = i;
+    const run: ReactNode[] = [];
+    while (i < messages.length && isToolMessage(messages[i])) {
+      run.push(renderMessage(messages[i], i));
+      i++;
+    }
+    i--;
+    const first = messages[runStart];
+    const runKey = `tools-${first.msgId || first.tempId || `${first.timestamp.getTime()}-${runStart}`}`;
+    transcript.push(
+      <div key={runKey} className={`my-1.5 ml-6 ${toolStackClass}`}>
+        {run}
+      </div>,
+    );
+  }
+
   return (
-    <div id={id} className="h-full flex flex-col border-r border-border min-w-0 relative">
-      {/* COMMS Header */}
+    <div id={id} className="h-full flex flex-col border-r border-border bg-background min-w-0 relative">
+      {/* Session header */}
       <ChatHeader
         onReset={onReset}
         onAbort={onAbort}
         isGenerating={isGenerating}
+        agentName={agentName}
+        processingStage={processingStage}
+        currentToolDescription={currentToolDescription}
+        elapsedMs={processingTime}
         onToggleFileBrowser={onToggleFileBrowser}
         isFileBrowserCollapsed={isFileBrowserCollapsed}
         onToggleMobileTopBar={onToggleMobileTopBar}
@@ -285,106 +376,47 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         onScroll={handleScroll}
         role="log"
         aria-label="Chat messages"
-        className="flex-1 overflow-y-auto overflow-x-hidden py-3 flex flex-col gap-1"
+        className="flex-1 overflow-y-auto overflow-x-hidden bg-background px-3 sm:px-6"
       >
-        {/* Infinite scroll sentinel + "load more" indicator */}
-        {hasMore && (
-          <div ref={sentinelRef} className="flex items-center justify-center py-2 text-muted-foreground/60 text-[0.667rem] tracking-widest uppercase select-none">
-            ↑ older messages
-          </div>
-        )}
-        {messages.map((msg, i) => {
-          const isTool = msg.role === 'tool' || msg.role === 'toolResult';
-          const collapseKey = msg.msgId || msg.tempId || i;
-          const isCollapsed = collapsed[collapseKey] ?? (msg.isThinking || isMessageCollapsible(msg));
-          const memoryKey = `mem-${collapseKey}`;
-          const isMemoryCollapsed = collapsed[memoryKey] ?? true;
-          const isCurrentMatch = search.currentMatch?.messageIndex === i;
-          const stableKey = msg.msgId || msg.tempId || `${msg.role}-${msg.timestamp.getTime()}-${i}`;
-
-          if (isTool) {
-            // Grouped tool bubble (multiple consecutive tool calls)
-            if (msg.toolGroup) {
-              return (
-                <div
-                  key={stableKey}
-                  ref={(el) => { if (el) messageRefs.current.set(i, el); }}
-                >
-                  <ToolGroupBlock
-                    msg={msg}
-                    index={i}
-                    isCollapsed={isCollapsed}
-                    onToggleCollapse={toggleCollapse}
-                  />
-                </div>
-              );
-            }
-            // Single tool call
-            return (
-              <div
-                key={stableKey}
-                ref={(el) => { if (el) messageRefs.current.set(i, el); }}
-              >
-                <ToolCallBlock
-                  msg={msg}
-                  index={i}
-                  isCollapsed={isCollapsed}
-                  onToggleCollapse={toggleCollapse}
-                />
-              </div>
-            );
-          }
-
-          return (
-            <div
-              key={stableKey}
-              ref={(el) => { if (el) messageRefs.current.set(i, el); }}
-            >
-              <MessageBubble
-                msg={msg}
-                index={i}
-                isCollapsed={isCollapsed}
-                isMemoryCollapsed={isMemoryCollapsed}
-                memoryKey={memoryKey}
-                onToggleCollapse={toggleCollapse}
-                onToggleMemory={toggleMemory}
-                firstMessageTime={firstMessageTime}
-                searchQuery={search.query}
-                isCurrentMatch={isCurrentMatch}
-                agentName={agentName}
-                onOpenWorkspacePath={onOpenWorkspacePath}
-                pathLinkPrefixes={pathLinkPrefixes}
-                pathLinkAliases={pathLinkAliases}
-                onOpenBeadId={onOpenBeadId}
-              />
+        {/* Centred reading lane */}
+        <div className="mx-auto flex w-full max-w-[46rem] flex-col gap-1 py-4">
+          {/* Infinite scroll sentinel + "load more" indicator */}
+          {hasMore && (
+            <div ref={sentinelRef} className="flex items-center gap-3 py-2 text-[0.8rem] text-muted-foreground select-none">
+              <span className="h-px flex-1 bg-border" aria-hidden="true" />
+              Older messages
+              <span className="h-px flex-1 bg-border" aria-hidden="true" />
             </div>
-          );
-        })}
+          )}
 
-        {/* Processing indicator — visible while generating, persists during streaming */}
-        {isGenerating && !stream.html && (
-          <ProcessingIndicator
-            stage={processingStage}
-            elapsedMs={processingTime}
-            lastEventTimestamp={lastEventTimestamp}
-            currentToolDescription={currentToolDescription}
-            activityLog={activityLog}
-            isRecovering={Boolean(stream.isRecovering)}
-            recoveryReason={stream.recoveryReason}
-          />
-        )}
+          {transcript}
 
-        {/* Streaming message with condensed activity log */}
-        {isGenerating && stream.html && (
-          <>
-            <StreamingMessage html={stream.html} elapsedMs={processingTime} agentName={agentName} />
-            {activityLog.length > 0 && (
-              <div className="px-4 pb-2" style={{ paddingLeft: '2rem' }}>
-                <ActivityLog entries={activityLog} />
-              </div>
-            )}
-          </>
-        )}
+          {/* Processing indicator: visible while generating, persists during streaming */}
+          {isGenerating && !stream.html && (
+            <ProcessingIndicator
+              stage={processingStage}
+              elapsedMs={processingTime}
+              lastEventTimestamp={lastEventTimestamp}
+              currentToolDescription={currentToolDescription}
+              activityLog={activityLog}
+              isRecovering={Boolean(stream.isRecovering)}
+              recoveryReason={stream.recoveryReason}
+              agentName={agentName}
+            />
+          )}
+
+          {/* Streaming message with condensed activity log */}
+          {isGenerating && stream.html && (
+            <>
+              <StreamingMessage html={stream.html} elapsedMs={processingTime} agentName={agentName} />
+              {activityLog.length > 0 && (
+                <div className="pb-2 pt-1">
+                  <ActivityLog entries={activityLog} />
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Scroll-to-bottom button */}

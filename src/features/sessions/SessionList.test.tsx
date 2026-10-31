@@ -48,6 +48,31 @@ describe('SessionList empty state', () => {
     expect(screen.queryByText('No active sessions')).not.toBeInTheDocument();
   });
 
+  it('leads each row with a pane and names the state in plain text', () => {
+    const sessions: Session[] = [
+      { sessionKey: 'agent:main:main', label: 'Main' },
+      { sessionKey: 'agent:reviewer:main', label: 'Reviewer' },
+      { sessionKey: 'agent:ops:main', label: 'Ops' },
+    ];
+
+    const { container } = renderSessionList({
+      sessions,
+      busyState: { 'agent:main:main': true },
+      agentStatus: { 'agent:main:main': { status: 'THINKING', since: 0 } },
+      unreadSessions: { 'agent:reviewer:main': true },
+    });
+
+    expect(screen.getByRole('img', { name: 'Running' })).toHaveAttribute('data-state', 'live');
+    expect(screen.getByText('waiting on you')).toBeInTheDocument();
+    expect(screen.getByText('idle')).toBeInTheDocument();
+    // One operator pane in the rows, and the facade above them shows the same three sessions in row order (Main, Ops, Reviewer)
+    expect(container.querySelectorAll('.pane[data-state="operator"]:not(.pane-lg)')).toHaveLength(1);
+    expect(
+      Array.from(container.querySelectorAll('.facade .pane')).map((pane) => pane.getAttribute('data-state')),
+    ).toEqual(['live', 'off', 'operator']);
+    expect(container.querySelector('.animate-pulse')).toBeNull();
+  });
+
   it('shows the loading skeleton when loading and all sessions are filtered out', () => {
     const sessions: Session[] = [
       { sessionKey: 'discord:sean', label: 'Discord Root' },

@@ -1,0 +1,733 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-31T17:52:10Z",
+  "title": "Design System: Nerve",
+  "extensions": {
+    "colorMeta": {
+      "midnight": {
+        "role": "neutral",
+        "displayName": "Midnight",
+        "canonical": "oklch(13.5% 0.014 267)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 267)",
+          "oklch(26.4% 0.004 267)",
+          "oklch(37.9% 0.007 267)",
+          "oklch(49.3% 0.011 267)",
+          "oklch(60.7% 0.014 267)",
+          "oklch(72.1% 0.010 267)",
+          "oklch(83.6% 0.007 267)",
+          "oklch(95.0% 0.003 267)"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel",
+        "canonical": "oklch(16.8% 0.018 264)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 264)",
+          "oklch(26.4% 0.005 264)",
+          "oklch(37.9% 0.009 264)",
+          "oklch(49.3% 0.014 264)",
+          "oklch(60.7% 0.018 264)",
+          "oklch(72.1% 0.013 264)",
+          "oklch(83.6% 0.009 264)",
+          "oklch(95.0% 0.004 264)"
+        ]
+      },
+      "raised": {
+        "role": "neutral",
+        "displayName": "Raised",
+        "canonical": "oklch(22.7% 0.029 264)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 264)",
+          "oklch(26.4% 0.007 264)",
+          "oklch(37.9% 0.015 264)",
+          "oklch(49.3% 0.022 264)",
+          "oklch(60.7% 0.029 264)",
+          "oklch(72.1% 0.021 264)",
+          "oklch(83.6% 0.014 264)",
+          "oklch(95.0% 0.007 264)"
+        ]
+      },
+      "popover": {
+        "role": "neutral",
+        "displayName": "Popover",
+        "canonical": "oklch(21.0% 0.029 266)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 266)",
+          "oklch(26.4% 0.007 266)",
+          "oklch(37.9% 0.015 266)",
+          "oklch(49.3% 0.022 266)",
+          "oklch(60.7% 0.029 266)",
+          "oklch(72.1% 0.021 266)",
+          "oklch(83.6% 0.014 266)",
+          "oklch(95.0% 0.007 266)"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "oklch(23.5% 0.029 264)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 264)",
+          "oklch(26.4% 0.007 264)",
+          "oklch(37.9% 0.015 264)",
+          "oklch(49.3% 0.022 264)",
+          "oklch(60.7% 0.029 264)",
+          "oklch(72.1% 0.021 264)",
+          "oklch(83.6% 0.014 264)",
+          "oklch(95.0% 0.006 264)"
+        ]
+      },
+      "input-edge": {
+        "role": "neutral",
+        "displayName": "Input Edge",
+        "canonical": "oklch(27.2% 0.030 263)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 263)",
+          "oklch(26.4% 0.008 263)",
+          "oklch(37.9% 0.015 263)",
+          "oklch(49.3% 0.023 263)",
+          "oklch(60.7% 0.030 263)",
+          "oklch(72.1% 0.022 263)",
+          "oklch(83.6% 0.014 263)",
+          "oklch(95.0% 0.007 263)"
+        ]
+      },
+      "reading-white": {
+        "role": "neutral",
+        "displayName": "Reading White",
+        "canonical": "oklch(92.6% 0.017 85)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 85)",
+          "oklch(26.4% 0.004 85)",
+          "oklch(37.9% 0.009 85)",
+          "oklch(49.3% 0.013 85)",
+          "oklch(60.7% 0.017 85)",
+          "oklch(72.1% 0.013 85)",
+          "oklch(83.6% 0.008 85)",
+          "oklch(95.0% 0.004 85)"
+        ]
+      },
+      "slate": {
+        "role": "neutral",
+        "displayName": "Slate",
+        "canonical": "oklch(66.6% 0.028 266)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 266)",
+          "oklch(26.4% 0.007 266)",
+          "oklch(37.9% 0.014 266)",
+          "oklch(49.3% 0.022 266)",
+          "oklch(60.7% 0.028 266)",
+          "oklch(72.1% 0.021 266)",
+          "oklch(83.6% 0.013 266)",
+          "oklch(95.0% 0.006 266)"
+        ]
+      },
+      "electric-blue": {
+        "role": "secondary",
+        "displayName": "Electric Blue",
+        "canonical": "oklch(62.2% 0.204 262)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 262)",
+          "oklch(26.4% 0.052 262)",
+          "oklch(37.9% 0.103 262)",
+          "oklch(49.3% 0.155 262)",
+          "oklch(60.7% 0.200 262)",
+          "oklch(72.1% 0.149 262)",
+          "oklch(83.6% 0.097 262)",
+          "oklch(95.0% 0.045 262)"
+        ]
+      },
+      "electric-blue-text": {
+        "role": "secondary",
+        "displayName": "Electric Blue Text",
+        "canonical": "oklch(65.5% 0.184 262)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 262)",
+          "oklch(26.4% 0.047 262)",
+          "oklch(37.9% 0.093 262)",
+          "oklch(49.3% 0.140 262)",
+          "oklch(60.7% 0.181 262)",
+          "oklch(72.1% 0.134 262)",
+          "oklch(83.6% 0.087 262)",
+          "oklch(95.0% 0.041 262)"
+        ]
+      },
+      "cantaloupe": {
+        "role": "primary",
+        "displayName": "Cantaloupe",
+        "canonical": "oklch(79.9% 0.132 54)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 54)",
+          "oklch(26.4% 0.034 54)",
+          "oklch(37.9% 0.067 54)",
+          "oklch(49.3% 0.101 54)",
+          "oklch(60.7% 0.130 54)",
+          "oklch(72.1% 0.097 54)",
+          "oklch(83.6% 0.063 54)",
+          "oklch(95.0% 0.029 54)"
+        ]
+      },
+      "signal-red": {
+        "role": "tertiary",
+        "displayName": "Signal Red",
+        "canonical": "oklch(68.8% 0.201 24)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 24)",
+          "oklch(26.4% 0.051 24)",
+          "oklch(37.9% 0.102 24)",
+          "oklch(49.3% 0.153 24)",
+          "oklch(60.7% 0.198 24)",
+          "oklch(72.1% 0.147 24)",
+          "oklch(83.6% 0.096 24)",
+          "oklch(95.0% 0.045 24)"
+        ]
+      },
+      "pane-off": {
+        "role": "neutral",
+        "displayName": "Pane Off",
+        "canonical": "oklch(23.1% 0.031 265)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 265)",
+          "oklch(26.4% 0.008 265)",
+          "oklch(37.9% 0.016 265)",
+          "oklch(49.3% 0.024 265)",
+          "oklch(60.7% 0.031 265)",
+          "oklch(72.1% 0.023 265)",
+          "oklch(83.6% 0.015 265)",
+          "oklch(95.0% 0.007 265)"
+        ]
+      },
+      "pane-edge": {
+        "role": "neutral",
+        "displayName": "Pane Edge",
+        "canonical": "oklch(30.9% 0.039 264)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 264)",
+          "oklch(26.4% 0.010 264)",
+          "oklch(37.9% 0.020 264)",
+          "oklch(49.3% 0.030 264)",
+          "oklch(60.7% 0.038 264)",
+          "oklch(72.1% 0.028 264)",
+          "oklch(83.6% 0.018 264)",
+          "oklch(95.0% 0.009 264)"
+        ]
+      },
+      "operator-plate": {
+        "role": "neutral",
+        "displayName": "Operator Plate",
+        "canonical": "oklch(20.4% 0.010 295)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 295)",
+          "oklch(26.4% 0.003 295)",
+          "oklch(37.9% 0.005 295)",
+          "oklch(49.3% 0.008 295)",
+          "oklch(60.7% 0.010 295)",
+          "oklch(72.1% 0.007 295)",
+          "oklch(83.6% 0.005 295)",
+          "oklch(95.0% 0.002 295)"
+        ]
+      },
+      "scrollbar": {
+        "role": "neutral",
+        "displayName": "Scrollbar",
+        "canonical": "oklch(26.1% 0.030 265)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 265)",
+          "oklch(26.4% 0.008 265)",
+          "oklch(37.9% 0.015 265)",
+          "oklch(49.3% 0.023 265)",
+          "oklch(60.7% 0.030 265)",
+          "oklch(72.1% 0.022 265)",
+          "oklch(83.6% 0.014 265)",
+          "oklch(95.0% 0.007 265)"
+        ]
+      },
+      "success-green": {
+        "role": "tertiary",
+        "displayName": "Success Green",
+        "canonical": "oklch(77.3% 0.103 156)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 156)",
+          "oklch(26.4% 0.026 156)",
+          "oklch(37.9% 0.052 156)",
+          "oklch(49.3% 0.078 156)",
+          "oklch(60.7% 0.101 156)",
+          "oklch(72.1% 0.075 156)",
+          "oklch(83.6% 0.049 156)",
+          "oklch(95.0% 0.023 156)"
+        ]
+      },
+      "daylight-paper": {
+        "role": "neutral",
+        "displayName": "Daylight Paper",
+        "canonical": "oklch(97.0% 0.006 265)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 265)",
+          "oklch(26.4% 0.001 265)",
+          "oklch(37.9% 0.003 265)",
+          "oklch(49.3% 0.004 265)",
+          "oklch(60.7% 0.006 265)",
+          "oklch(72.1% 0.004 265)",
+          "oklch(83.6% 0.003 265)",
+          "oklch(95.0% 0.001 265)"
+        ]
+      },
+      "daylight-panel": {
+        "role": "neutral",
+        "displayName": "Daylight Panel",
+        "canonical": "oklch(100.0% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 90)",
+          "oklch(26.4% 0.000 90)",
+          "oklch(37.9% 0.000 90)",
+          "oklch(49.3% 0.000 90)",
+          "oklch(60.7% 0.000 90)",
+          "oklch(72.1% 0.000 90)",
+          "oklch(83.6% 0.000 90)",
+          "oklch(95.0% 0.000 90)"
+        ]
+      },
+      "daylight-raised": {
+        "role": "neutral",
+        "displayName": "Daylight Raised",
+        "canonical": "oklch(94.8% 0.009 258)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 258)",
+          "oklch(26.4% 0.002 258)",
+          "oklch(37.9% 0.005 258)",
+          "oklch(49.3% 0.007 258)",
+          "oklch(60.7% 0.009 258)",
+          "oklch(72.1% 0.007 258)",
+          "oklch(83.6% 0.004 258)",
+          "oklch(95.0% 0.002 258)"
+        ]
+      },
+      "daylight-rule": {
+        "role": "neutral",
+        "displayName": "Daylight Rule",
+        "canonical": "oklch(90.2% 0.014 258)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 258)",
+          "oklch(26.4% 0.004 258)",
+          "oklch(37.9% 0.007 258)",
+          "oklch(49.3% 0.011 258)",
+          "oklch(60.7% 0.014 258)",
+          "oklch(72.1% 0.010 258)",
+          "oklch(83.6% 0.007 258)",
+          "oklch(95.0% 0.003 258)"
+        ]
+      },
+      "daylight-ink": {
+        "role": "neutral",
+        "displayName": "Daylight Ink",
+        "canonical": "oklch(20.6% 0.023 269)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 269)",
+          "oklch(26.4% 0.006 269)",
+          "oklch(37.9% 0.012 269)",
+          "oklch(49.3% 0.017 269)",
+          "oklch(60.7% 0.023 269)",
+          "oklch(72.1% 0.017 269)",
+          "oklch(83.6% 0.011 269)",
+          "oklch(95.0% 0.005 269)"
+        ]
+      },
+      "daylight-slate": {
+        "role": "neutral",
+        "displayName": "Daylight Slate",
+        "canonical": "oklch(48.7% 0.032 262)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 262)",
+          "oklch(26.4% 0.008 262)",
+          "oklch(37.9% 0.016 262)",
+          "oklch(49.3% 0.024 262)",
+          "oklch(60.7% 0.031 262)",
+          "oklch(72.1% 0.023 262)",
+          "oklch(83.6% 0.015 262)",
+          "oklch(95.0% 0.007 262)"
+        ]
+      },
+      "daylight-blue": {
+        "role": "secondary",
+        "displayName": "Daylight Blue",
+        "canonical": "oklch(52.8% 0.207 262)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 262)",
+          "oklch(26.4% 0.053 262)",
+          "oklch(37.9% 0.105 262)",
+          "oklch(49.3% 0.158 262)",
+          "oklch(60.7% 0.204 262)",
+          "oklch(72.1% 0.151 262)",
+          "oklch(83.6% 0.099 262)",
+          "oklch(95.0% 0.046 262)"
+        ]
+      },
+      "daylight-cantaloupe": {
+        "role": "primary",
+        "displayName": "Daylight Cantaloupe",
+        "canonical": "oklch(78.7% 0.145 56)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 56)",
+          "oklch(26.4% 0.037 56)",
+          "oklch(37.9% 0.074 56)",
+          "oklch(49.3% 0.110 56)",
+          "oklch(60.7% 0.143 56)",
+          "oklch(72.1% 0.106 56)",
+          "oklch(83.6% 0.069 56)",
+          "oklch(95.0% 0.032 56)"
+        ]
+      },
+      "daylight-cantaloupe-text": {
+        "role": "primary",
+        "displayName": "Daylight Cantaloupe Text",
+        "canonical": "oklch(55.4% 0.145 48)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 48)",
+          "oklch(26.4% 0.037 48)",
+          "oklch(37.9% 0.074 48)",
+          "oklch(49.3% 0.111 48)",
+          "oklch(60.7% 0.143 48)",
+          "oklch(72.1% 0.106 48)",
+          "oklch(83.6% 0.069 48)",
+          "oklch(95.0% 0.032 48)"
+        ]
+      },
+      "daylight-red": {
+        "role": "tertiary",
+        "displayName": "Daylight Red",
+        "canonical": "oklch(55.1% 0.187 27)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 27)",
+          "oklch(26.4% 0.048 27)",
+          "oklch(37.9% 0.095 27)",
+          "oklch(49.3% 0.143 27)",
+          "oklch(60.7% 0.184 27)",
+          "oklch(72.1% 0.137 27)",
+          "oklch(83.6% 0.089 27)",
+          "oklch(95.0% 0.042 27)"
+        ]
+      },
+      "daylight-pane-off": {
+        "role": "neutral",
+        "displayName": "Daylight Pane Off",
+        "canonical": "oklch(93.3% 0.012 260)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 260)",
+          "oklch(26.4% 0.003 260)",
+          "oklch(37.9% 0.006 260)",
+          "oklch(49.3% 0.009 260)",
+          "oklch(60.7% 0.012 260)",
+          "oklch(72.1% 0.009 260)",
+          "oklch(83.6% 0.006 260)",
+          "oklch(95.0% 0.003 260)"
+        ]
+      },
+      "daylight-pane-edge": {
+        "role": "neutral",
+        "displayName": "Daylight Pane Edge",
+        "canonical": "oklch(81.1% 0.022 259)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 259)",
+          "oklch(26.4% 0.006 259)",
+          "oklch(37.9% 0.011 259)",
+          "oklch(49.3% 0.017 259)",
+          "oklch(60.7% 0.022 259)",
+          "oklch(72.1% 0.016 259)",
+          "oklch(83.6% 0.011 259)",
+          "oklch(95.0% 0.005 259)"
+        ]
+      },
+      "daylight-operator-plate": {
+        "role": "neutral",
+        "displayName": "Daylight Operator Plate",
+        "canonical": "oklch(98.0% 0.014 68)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 68)",
+          "oklch(26.4% 0.003 68)",
+          "oklch(37.9% 0.007 68)",
+          "oklch(49.3% 0.010 68)",
+          "oklch(60.7% 0.013 68)",
+          "oklch(72.1% 0.010 68)",
+          "oklch(83.6% 0.007 68)",
+          "oklch(95.0% 0.003 68)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The Nerve wordmark only: Bricolage Grotesque at its display optical size and 94% width, followed by the fleet pane."
+      },
+      "name": {
+        "displayName": "Name",
+        "purpose": "Agent and speaker names in the chat header, top-level session rows and message headers. The operator's name takes Cantaloupe text."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section titles on settings and dialog surfaces."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Panel header labels, field labels, Send, table heads. Sentence case."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Agent prose on the 34em reading measure (about 68 characters)."
+      },
+      "ui": {
+        "displayName": "UI",
+        "purpose": "Chips, list rows, inputs, toolbar buttons and tree entries."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Status bar, metadata, hints, badges and intermediate assistant messages."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Tool rows, timestamps, durations, model names and code; tabular numerals always on."
+      },
+      "keycap": {
+        "displayName": "Keycap",
+        "purpose": "Keyboard shortcut hints inside .cockpit-kbd."
+      }
+    },
+    "shadows": [
+      {
+        "name": "plate-shadow",
+        "value": "inset 0 1px 0 rgba(255, 255, 255, 0.055)",
+        "purpose": "Edge light on every plate, tool stack and the active segmented chip. Daylight: inset 0 0 0 1px var(--border)."
+      },
+      {
+        "name": "plate-shadow-operator",
+        "value": "inset 0 1px 0 color-mix(in srgb, var(--color-operator) 30%, transparent)",
+        "purpose": "Warm edge light on the operator's message plate. Daylight: inset 0 0 0 1px color-mix(in srgb, var(--color-operator) 45%, var(--border))."
+      },
+      {
+        "name": "float-shadow",
+        "value": "0 14px 36px rgba(0, 0, 0, 0.46), 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.07)",
+        "purpose": "The composer and the command palette shell: the only surfaces that float. Daylight: 0 14px 36px rgba(19, 23, 34, 0.14), 0 1px 2px rgba(19, 23, 34, 0.08), inset 0 0 0 1px var(--border)."
+      },
+      {
+        "name": "menu-shadow",
+        "value": "0 12px 32px rgba(0, 0, 0, 0.32)",
+        "purpose": "Inline select listboxes, slash menus and top bar panels."
+      },
+      {
+        "name": "pane-edge",
+        "value": "inset 0 0 0 1px var(--color-pane-edge)",
+        "purpose": "The window frame of a dark pane; removed when the pane lights."
+      }
+    ],
+    "motion": [
+      {
+        "name": "switch-duration",
+        "value": "120ms",
+        "purpose": "Every state switch: pane colour, hover fill, border colour, Send brightness. Never looped."
+      },
+      {
+        "name": "switch-ease",
+        "value": "cubic-bezier(0.2, 0, 0, 1)",
+        "purpose": "The one easing curve, used for switches and entrances alike."
+      },
+      {
+        "name": "enter-fast",
+        "value": "140ms",
+        "purpose": "Fade or slide-down entrance for search bars and menus."
+      },
+      {
+        "name": "enter-message",
+        "value": "160ms",
+        "purpose": "Opacity fade when a message enters the transcript."
+      },
+      {
+        "name": "enter-drawer",
+        "value": "220ms",
+        "purpose": "Settings drawer slide-in from the right."
+      },
+      {
+        "name": "send-pulse",
+        "value": "200ms brightness 1.18 to 1",
+        "purpose": "Send flashes brighter once when a message leaves."
+      },
+      {
+        "name": "streaming-cursor",
+        "value": "blink 1s step-end infinite",
+        "purpose": "The only looping animation: a small live pane at the end of streaming text. Stopped under prefers-reduced-motion."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation-duration 0.001s; transition-duration 0.001s",
+        "purpose": "prefers-reduced-motion makes every switch and entrance instant."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "topbar-compact",
+        "value": "371px",
+        "purpose": "Below this chips and icon buttons drop to a 40px minimum."
+      },
+      {
+        "name": "sm",
+        "value": "640px",
+        "purpose": "At or below: controls grow to a 44px touch minimum and inputs use 16px text."
+      },
+      {
+        "name": "compact-layout",
+        "value": "900px",
+        "purpose": "At or below: the three columns collapse to one with panel toggles in the top bar."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Pane",
+      "kind": "custom",
+      "refersTo": "pane",
+      "description": "The signature state marker: a flat lit rectangle in four states (off, live, operator, error) and three sizes (10x14, 8x11, 14x20). It switches in 120ms and never pulses.",
+      "html": "<div class=\"ds-pane-sheet\"><div class=\"ds-pane-row\"><span class=\"ds-pane\" data-state=\"off\" role=\"img\" aria-label=\"Idle\"></span><span class=\"ds-pane\" data-state=\"live\" role=\"img\" aria-label=\"Running\"></span><span class=\"ds-pane\" data-state=\"operator\" role=\"img\" aria-label=\"Waiting on you\"></span><span class=\"ds-pane\" data-state=\"error\" role=\"img\" aria-label=\"Failed\"></span><span class=\"ds-pane-caption\">Default 10x14</span></div><div class=\"ds-pane-row\"><span class=\"ds-pane ds-pane-sm\" data-state=\"off\"></span><span class=\"ds-pane ds-pane-sm\" data-state=\"live\"></span><span class=\"ds-pane ds-pane-sm\" data-state=\"operator\"></span><span class=\"ds-pane ds-pane-sm\" data-state=\"error\"></span><span class=\"ds-pane-caption\">Small 8x11</span></div><div class=\"ds-pane-row\"><span class=\"ds-pane ds-pane-lg\" data-state=\"off\"></span><span class=\"ds-pane ds-pane-lg\" data-state=\"live\"></span><span class=\"ds-pane ds-pane-lg\" data-state=\"operator\"></span><span class=\"ds-pane ds-pane-lg\" data-state=\"error\"></span><span class=\"ds-pane-caption\">Large 14x20</span></div></div>",
+      "css": ".ds-pane-sheet{display:flex;flex-direction:column;gap:10px;padding:12px;background:var(--color-background,#06080E);font-family:'Atkinson Hyperlegible Next','Helvetica Neue',Arial,sans-serif;font-size:0.8rem;color:var(--color-muted-foreground,#8C94A6)}.ds-pane-row{display:inline-flex;align-items:center;gap:6px}.ds-pane-caption{margin-left:8px}.ds-pane{display:inline-block;flex:none;width:0.667rem;height:0.933rem;border-radius:1px;background-color:var(--color-pane-off,#161D2C);box-shadow:inset 0 0 0 1px var(--color-pane-edge,#263044);transition:background-color 120ms cubic-bezier(0.2,0,0,1),box-shadow 120ms cubic-bezier(0.2,0,0,1)}.ds-pane[data-state=live]{background-color:var(--color-live,#3D7EFF);box-shadow:none}.ds-pane[data-state=operator]{background-color:var(--color-operator,#FFA567);box-shadow:none}.ds-pane[data-state=error]{background-color:var(--color-red,#FF5A5A);box-shadow:none}.ds-pane-sm{width:0.533rem;height:0.733rem}.ds-pane-lg{width:0.933rem;height:1.333rem;border-radius:1.5px}"
+    },
+    {
+      "name": "Facade",
+      "kind": "nav",
+      "refersTo": "pane-lg",
+      "description": "The agents column's opening band: one clickable 14x20 window per session, lit by that session's state; the open session's window has a 1px sill.",
+      "html": "<div class=\"ds-facade\" role=\"group\" aria-label=\"6 sessions, 2 running, 1 waiting on you\"><button type=\"button\" class=\"ds-facade-window\" data-current=\"true\" aria-current=\"true\" aria-label=\"Research: Running\"><span class=\"ds-pane ds-pane-lg\" data-state=\"live\"></span></button><button type=\"button\" class=\"ds-facade-window\" aria-label=\"Ops: Idle\"><span class=\"ds-pane ds-pane-lg\" data-state=\"off\"></span></button><button type=\"button\" class=\"ds-facade-window\" aria-label=\"Writer: Waiting on you\"><span class=\"ds-pane ds-pane-lg\" data-state=\"operator\"></span></button><button type=\"button\" class=\"ds-facade-window\" aria-label=\"Deploy: Running\"><span class=\"ds-pane ds-pane-lg\" data-state=\"live\"></span></button><button type=\"button\" class=\"ds-facade-window\" aria-label=\"Cron nightly: Idle\"><span class=\"ds-pane ds-pane-lg\" data-state=\"off\"></span></button><button type=\"button\" class=\"ds-facade-window\" aria-label=\"Review: Failed\"><span class=\"ds-pane ds-pane-lg\" data-state=\"error\"></span></button></div>",
+      "css": ".ds-facade{display:flex;flex-wrap:wrap;gap:4px 5px;padding:9px 12px 8px;background:var(--color-card,#0B0F17);border-bottom:1px solid var(--color-border,#171E2C)}.ds-facade-window{position:relative;display:inline-flex;flex:none;padding:0 0 3px;border:0;background:transparent;cursor:pointer}.ds-facade-window:hover .ds-pane[data-state=off]{background-color:var(--color-pane-edge,#263044)}.ds-facade-window:focus-visible{outline:2px solid var(--color-ring,#FFA567);outline-offset:1px;border-radius:2px}.ds-facade-window[data-current=true]::after{content:'';position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--color-foreground,#ECE6DA)}.ds-pane{display:inline-block;flex:none;width:0.667rem;height:0.933rem;border-radius:1px;background-color:var(--color-pane-off,#161D2C);box-shadow:inset 0 0 0 1px var(--color-pane-edge,#263044);transition:background-color 120ms cubic-bezier(0.2,0,0,1),box-shadow 120ms cubic-bezier(0.2,0,0,1)}.ds-pane[data-state=live]{background-color:var(--color-live,#3D7EFF);box-shadow:none}.ds-pane[data-state=operator]{background-color:var(--color-operator,#FFA567);box-shadow:none}.ds-pane[data-state=error]{background-color:var(--color-red,#FF5A5A);box-shadow:none}.ds-pane-sm{width:0.533rem;height:0.733rem}.ds-pane-lg{width:0.933rem;height:1.333rem;border-radius:1.5px}"
+    },
+    {
+      "name": "Primary Button (Send)",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one warm control on a screen: Cantaloupe fill, Midnight label, 3px radius, brightness lift on hover, 1px press on active.",
+      "html": "<button type=\"button\" class=\"ds-btn-primary\">Send <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 19V5\"/><path d=\"m5 12 7-7 7 7\"/></svg></button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:2rem;padding:0 0.875rem;border:0;border-radius:3px;background:var(--color-primary,#FFA567);color:var(--color-primary-foreground,#06080E);font-family:'Atkinson Hyperlegible Next','Helvetica Neue',Arial,sans-serif;font-size:0.867rem;font-weight:600;cursor:pointer;transition:filter 120ms cubic-bezier(0.2,0,0,1)}.ds-btn-primary:hover{filter:brightness(1.1)}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:focus-visible{outline:2px solid var(--color-ring,#FFA567);outline-offset:1px}.ds-btn-primary:disabled{opacity:0.5;cursor:not-allowed}"
+    },
+    {
+      "name": "Shell Chip and Segmented Track",
+      "kind": "nav",
+      "refersTo": "shell-chip",
+      "description": "Top bar view switch: a sunk Midnight track holding row-unit chips; the active chip is lifted onto it with Raised fill and the edge light.",
+      "html": "<div class=\"ds-seg-track\" role=\"tablist\"><button type=\"button\" role=\"tab\" class=\"ds-shell-chip\" data-active=\"true\" aria-selected=\"true\">Chat</button><button type=\"button\" role=\"tab\" class=\"ds-shell-chip\" aria-selected=\"false\">Tasks</button></div>",
+      "css": ".ds-seg-track{display:inline-flex;align-items:center;gap:2px;padding:2px;border-radius:4px;background:var(--color-background,#06080E)}.ds-shell-chip{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:calc(1.867rem - 6px);padding:0 10px;border-radius:3px;border:1px solid transparent;background:transparent;color:var(--color-muted-foreground,#8C94A6);font-family:'Atkinson Hyperlegible Next','Helvetica Neue',Arial,sans-serif;font-size:0.867rem;font-weight:500;cursor:pointer;transition:background-color 120ms cubic-bezier(0.2,0,0,1),color 120ms cubic-bezier(0.2,0,0,1)}.ds-shell-chip:hover{background:var(--color-raised,#151C2A);color:var(--color-foreground,#ECE6DA)}.ds-shell-chip[data-active=true]{background:var(--color-raised,#151C2A);color:var(--color-foreground,#ECE6DA);box-shadow:var(--plate-shadow,inset 0 1px 0 rgba(255,255,255,0.055))}.ds-shell-chip:focus-visible{outline:2px solid var(--color-ring,#FFA567);outline-offset:1px}"
+    },
+    {
+      "name": "Shell Icon Button",
+      "kind": "button",
+      "refersTo": "shell-icon-button",
+      "description": "A row-unit square for shell tools (attach, command palette, settings): Slate icon, Raised fill on hover and when active, never a stroke.",
+      "html": "<div class=\"ds-icon-row\"><button type=\"button\" class=\"ds-shell-icon-button\" aria-label=\"Attach files\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48\"/></svg></button><button type=\"button\" class=\"ds-shell-icon-button\" data-active=\"true\" aria-label=\"Settings\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg></button></div>",
+      "css": ".ds-icon-row{display:inline-flex;gap:4px;padding:8px;background:var(--color-card,#0B0F17)}.ds-shell-icon-button{display:inline-flex;align-items:center;justify-content:center;min-height:1.867rem;min-width:1.867rem;padding:0 6px;border-radius:3px;border:1px solid transparent;background:transparent;color:var(--color-muted-foreground,#8C94A6);cursor:pointer;transition:background-color 120ms cubic-bezier(0.2,0,0,1),color 120ms cubic-bezier(0.2,0,0,1)}.ds-shell-icon-button>svg{flex-shrink:0}.ds-shell-icon-button:hover,.ds-shell-icon-button[data-active=true]{background:var(--color-raised,#151C2A);color:var(--color-foreground,#ECE6DA)}.ds-shell-icon-button:focus-visible{outline:2px solid var(--color-ring,#FFA567);outline-offset:1px}"
+    },
+    {
+      "name": "Composer",
+      "kind": "input",
+      "refersTo": "composer",
+      "description": "The floating input plate: Panel fill on the float shadow, 4px radius, a border that is transparent at rest and lights Cantaloupe at 60% while the operator is inside; keycap hints and Send in the toolbar.",
+      "html": "<div class=\"ds-composer-band\"><div class=\"ds-composer\"><textarea class=\"ds-composer-text\" rows=\"1\" aria-label=\"Message input\" placeholder=\"Message Research\"></textarea><div class=\"ds-composer-tools\"><button type=\"button\" class=\"ds-shell-icon-button\" aria-label=\"Attach files\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48\"/></svg></button><span class=\"ds-composer-hints\"><span><kbd class=\"ds-kbd\">Enter</kbd> send</span><span><kbd class=\"ds-kbd\">Shift Enter</kbd> new line</span></span><button type=\"button\" class=\"ds-btn-primary\">Send <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 19V5\"/><path d=\"m5 12 7-7 7 7\"/></svg></button></div></div></div>",
+      "css": ".ds-composer-band{padding:6px 12px 12px;background:var(--color-background,#06080E);font-family:'Atkinson Hyperlegible Next','Helvetica Neue',Arial,sans-serif}.ds-composer{position:relative;max-width:46rem;margin:0 auto;border-radius:4px;border:1px solid transparent;background:var(--color-card,#0B0F17);box-shadow:var(--float-shadow,0 14px 36px rgba(0,0,0,0.46),0 1px 2px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.07));transition:border-color 120ms cubic-bezier(0.2,0,0,1)}.ds-composer:focus-within{border-color:color-mix(in srgb,var(--color-operator,#FFA567) 60%,transparent)}.ds-composer-text{display:block;width:100%;min-height:42px;max-height:160px;padding:10px 12px 4px;border:0;background:transparent;resize:none;outline:none;font:inherit;font-size:1rem;line-height:1.5;color:var(--color-foreground,#ECE6DA);caret-color:var(--color-operator,#FFA567)}.ds-composer-text::placeholder{color:var(--color-muted-foreground,#8C94A6)}.ds-composer-tools{display:flex;align-items:center;gap:4px;padding:0 4px 4px}.ds-composer-hints{display:inline-flex;flex:1;justify-content:flex-end;gap:10px;padding:0 8px;font-size:0.8rem;color:var(--color-muted-foreground,#8C94A6)}.ds-composer-hints>span{display:inline-flex;align-items:center;gap:4px}.ds-kbd{display:inline-flex;align-items:center;justify-content:center;min-height:1.333rem;padding:0 5px;border-radius:2px;border:1px solid var(--color-border,#171E2C);background:var(--color-background,#06080E);font-family:'Atkinson Hyperlegible Mono','JetBrains Mono','Fira Code',Consolas,monospace;font-size:0.733rem;color:var(--color-muted-foreground,#8C94A6)}.ds-shell-icon-button{display:inline-flex;align-items:center;justify-content:center;min-height:1.867rem;min-width:1.867rem;padding:0 6px;border-radius:3px;border:1px solid transparent;background:transparent;color:var(--color-muted-foreground,#8C94A6);cursor:pointer;transition:background-color 120ms cubic-bezier(0.2,0,0,1),color 120ms cubic-bezier(0.2,0,0,1)}.ds-shell-icon-button:hover{background:var(--color-raised,#151C2A);color:var(--color-foreground,#ECE6DA)}.ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:2rem;padding:0 0.875rem;border:0;border-radius:3px;background:var(--color-primary,#FFA567);color:var(--color-primary-foreground,#06080E);font-size:0.867rem;font-weight:600;cursor:pointer;transition:filter 120ms cubic-bezier(0.2,0,0,1)}.ds-btn-primary:hover{filter:brightness(1.1)}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:focus-visible,.ds-shell-icon-button:focus-visible{outline:2px solid var(--color-ring,#FFA567);outline-offset:1px}"
+    },
+    {
+      "name": "Operator Message Plate",
+      "kind": "card",
+      "refersTo": "plate-operator",
+      "description": "The operator's message: a small Cantaloupe pane in the 24px gutter, the speaker name in the display face, and a warm plate (Panel plus 5% cantaloupe) with a warm edge light and no border.",
+      "html": "<div class=\"ds-msg\"><span class=\"ds-pane ds-pane-sm\" data-state=\"operator\" role=\"img\" aria-label=\"Operator\"></span><div class=\"ds-msg-head\"><span class=\"ds-msg-name\">You</span><span class=\"ds-msg-time\">14:02</span></div><div class=\"ds-plate-operator\">Summarise the failing tests in the auth package and propose a fix.</div></div>",
+      "css": ".ds-msg{position:relative;padding:8px 12px 8px 24px;background:var(--color-background,#06080E);font-family:'Atkinson Hyperlegible Next','Helvetica Neue',Arial,sans-serif;color:var(--color-foreground,#ECE6DA)}.ds-msg .ds-pane{position:absolute;left:0;top:1.1rem}.ds-msg-head{display:flex;align-items:baseline;gap:8px;font-size:0.867rem}.ds-msg-name{font-family:'Bricolage Grotesque','Atkinson Hyperlegible Next',sans-serif;font-weight:600;color:var(--color-operator-text,#FFA567)}.ds-msg-time{font-family:'Atkinson Hyperlegible Mono','JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:0.8rem;color:var(--color-muted-foreground,#8C94A6)}.ds-plate-operator{width:fit-content;max-width:min(100%,34em);margin-top:4px;padding:8px 12px;border-radius:3px;background:var(--color-message-user,#17161B);box-shadow:inset 0 1px 0 color-mix(in srgb,var(--color-operator,#FFA567) 30%,transparent);font-size:1rem;line-height:1.6}.ds-pane{display:inline-block;flex:none;width:0.667rem;height:0.933rem;border-radius:1px;background-color:var(--color-pane-off,#161D2C);box-shadow:inset 0 0 0 1px var(--color-pane-edge,#263044);transition:background-color 120ms cubic-bezier(0.2,0,0,1),box-shadow 120ms cubic-bezier(0.2,0,0,1)}.ds-pane[data-state=live]{background-color:var(--color-live,#3D7EFF);box-shadow:none}.ds-pane[data-state=operator]{background-color:var(--color-operator,#FFA567);box-shadow:none}.ds-pane[data-state=error]{background-color:var(--color-red,#FF5A5A);box-shadow:none}.ds-pane-sm{width:0.533rem;height:0.733rem}.ds-pane-lg{width:0.933rem;height:1.333rem;border-radius:1.5px}"
+    },
+    {
+      "name": "Tool Row Stack",
+      "kind": "card",
+      "refersTo": "tool-row",
+      "description": "Consecutive tool calls on one plate with the edge light, divided by Rule hairlines; each row is one 28px line of mono text led by a small pane, live measure in Electric Blue Text.",
+      "html": "<div class=\"ds-tool-stack\"><button type=\"button\" class=\"ds-tool-row\"><span class=\"ds-pane ds-pane-sm\" data-state=\"live\" role=\"img\" aria-label=\"Running\"></span><span class=\"ds-tool-verb\">exec</span><span class=\"ds-tool-args\">npm test -- auth</span><span class=\"ds-tool-meta\" data-live=\"true\">00:12</span><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m9 18 6-6-6-6\"/></svg></button><button type=\"button\" class=\"ds-tool-row\"><span class=\"ds-pane ds-pane-sm\" data-state=\"off\"></span><span class=\"ds-tool-verb\">read</span><span class=\"ds-tool-args\">src/auth/session.ts</span><span class=\"ds-tool-meta\">0.4s</span><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m9 18 6-6-6-6\"/></svg></button><button type=\"button\" class=\"ds-tool-row\"><span class=\"ds-pane ds-pane-sm\" data-state=\"error\" role=\"img\" aria-label=\"Failed\"></span><span class=\"ds-tool-verb\">write</span><span class=\"ds-tool-args\">src/auth/session.test.ts</span><span class=\"ds-tool-meta\">1.1s</span><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m9 18 6-6-6-6\"/></svg></button></div>",
+      "css": ".ds-tool-stack{display:flex;flex-direction:column;background:var(--color-card,#0B0F17);border-radius:3px;box-shadow:var(--plate-shadow,inset 0 1px 0 rgba(255,255,255,0.055));overflow:hidden}.ds-tool-row{display:flex;align-items:center;gap:8px;width:100%;min-height:1.867rem;padding:0 10px;border:0;background:transparent;text-align:left;cursor:pointer;font-family:'Atkinson Hyperlegible Mono','JetBrains Mono','Fira Code',Consolas,monospace;font-size:0.8rem;line-height:1;color:var(--color-foreground,#ECE6DA);transition:background-color 120ms cubic-bezier(0.2,0,0,1)}.ds-tool-row+.ds-tool-row{border-top:1px solid var(--color-border,#171E2C)}.ds-tool-row:hover,.ds-tool-row:focus-visible{background:var(--color-raised,#151C2A);outline:none}.ds-tool-verb{flex-shrink:0;max-width:45%;padding:6px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ds-tool-args{flex:1;min-width:0;padding:6px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-muted-foreground,#8C94A6)}.ds-tool-meta{flex-shrink:0;font-variant-numeric:tabular-nums;color:var(--color-muted-foreground,#8C94A6)}.ds-tool-meta[data-live=true]{color:var(--color-live-text,#4F8BFF)}.ds-tool-row>svg{flex-shrink:0;color:var(--color-muted-foreground,#8C94A6)}.ds-pane{display:inline-block;flex:none;width:0.667rem;height:0.933rem;border-radius:1px;background-color:var(--color-pane-off,#161D2C);box-shadow:inset 0 0 0 1px var(--color-pane-edge,#263044);transition:background-color 120ms cubic-bezier(0.2,0,0,1),box-shadow 120ms cubic-bezier(0.2,0,0,1)}.ds-pane[data-state=live]{background-color:var(--color-live,#3D7EFF);box-shadow:none}.ds-pane[data-state=operator]{background-color:var(--color-operator,#FFA567);box-shadow:none}.ds-pane[data-state=error]{background-color:var(--color-red,#FF5A5A);box-shadow:none}.ds-pane-sm{width:0.533rem;height:0.733rem}.ds-pane-lg{width:0.933rem;height:1.333rem;border-radius:1.5px}"
+    },
+    {
+      "name": "Keycap",
+      "kind": "chip",
+      "refersTo": "keycap",
+      "description": "Keyboard shortcut hint (.cockpit-kbd): Midnight fill, Rule stroke, 2px radius, mono at 0.733rem in Slate.",
+      "html": "<span class=\"ds-kbd-row\"><kbd class=\"ds-kbd\">Enter</kbd> send <kbd class=\"ds-kbd\">Shift Enter</kbd> new line <kbd class=\"ds-kbd\">Cmd K</kbd> command palette</span>",
+      "css": ".ds-kbd-row{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;background:var(--color-card,#0B0F17);font-family:'Atkinson Hyperlegible Next','Helvetica Neue',Arial,sans-serif;font-size:0.8rem;color:var(--color-muted-foreground,#8C94A6)}.ds-kbd{display:inline-flex;align-items:center;justify-content:center;min-height:1.333rem;padding:0 5px;border-radius:2px;border:1px solid var(--color-border,#171E2C);background:var(--color-background,#06080E);font-family:'Atkinson Hyperlegible Mono','JetBrains Mono','Fira Code',Consolas,monospace;font-size:0.733rem;color:var(--color-muted-foreground,#8C94A6)}"
+    },
+    {
+      "name": "Inline Select Trigger",
+      "kind": "input",
+      "refersTo": "inline-select-trigger",
+      "description": "Compact model and effort select in the chat header: transparent with an Input Edge stroke, 3px radius, Raised on hover, Slate chevron.",
+      "html": "<div class=\"ds-select-row\"><button type=\"button\" class=\"ds-inline-select\" aria-haspopup=\"listbox\" aria-expanded=\"false\" aria-label=\"Model\"><span class=\"ds-inline-select-label\">claude-sonnet-4-5</span><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></button><button type=\"button\" class=\"ds-inline-select\" aria-haspopup=\"listbox\" aria-expanded=\"false\" aria-label=\"Effort\"><span class=\"ds-inline-select-label\">Medium</span><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></button></div>",
+      "css": ".ds-select-row{display:inline-flex;gap:8px;padding:8px 12px;background:var(--color-background,#06080E)}.ds-inline-select{display:inline-flex;align-items:center;gap:4px;min-height:1.75rem;padding:0 8px;border-radius:3px;border:1px solid var(--color-input,#1F2736);background:transparent;color:var(--color-foreground,#ECE6DA);font-family:'Atkinson Hyperlegible Next','Helvetica Neue',Arial,sans-serif;font-size:0.8rem;cursor:pointer;transition:background-color 120ms cubic-bezier(0.2,0,0,1)}.ds-inline-select:hover{background:var(--color-raised,#151C2A)}.ds-inline-select:focus-visible{outline:2px solid var(--color-ring,#FFA567);outline-offset:1px}.ds-inline-select:disabled{opacity:0.5;cursor:not-allowed}.ds-inline-select-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ds-inline-select>svg{flex-shrink:0;color:var(--color-muted-foreground,#8C94A6)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Night Light",
+    "overview": "An operator's console is a building seen at night. You do not read the facade by its architecture; you read it by which rooms are lit and how warm the light is. Nerve borrows that reading. Cold electric blue is an agent at work. Warm cantaloupe is the operator, and anything that has finished and now waits on the operator. When work is done the window goes dark. Colour never decorates, it reports, and because every lit surface means something, the shell can hold a whole fleet in a glance without asking for attention.\n\nThe mood is midnight, exact, calm, dense, lit. This is an Operate-mode surface that stays open for hours, so the brand lives in precise details rather than expression: a 28px row unit shared by every list row, tool row and panel header; plates that read by value and a 1px edge light instead of drawn borders; one display face reserved for the wordmark and the names of agents and speakers; prose held to a 68-character measure. Density is welcome because nothing pulses, glows or gradients. State changes are a light switch, 120ms, on or off.\n\nThe system refuses the hacker costume (scanlines, glowing HUD chrome, tracked uppercase labels), the grey dashboard with one decorative accent, glass and gradients, coloured side rails, and any pulsing or breathing motion. Daylight is the same building by day: cool paper, printed hairlines instead of edge light, panes printed as ink swatches, identical meanings. The previous appearance survives only as an opt-in Classic skin scoped under its own attribute and is not part of this system.",
+    "keyCharacteristics": [
+      "Light temperature is the state vocabulary: blue works, cantaloupe waits on you, red failed, dark is done.",
+      "Flat lit panes (10x14 default, 8x11 small, 14x20 facade) are the only state marker; no glows, dots, rails or glyph icons.",
+      "One 28px row unit across list rows, tool rows, panel headers and the status bar; the top bar is 44px.",
+      "Raised plates read by tonal value plus a 1px top edge light; only floating surfaces cast a real offset shadow.",
+      "Corners stay between 1px and 4px; larger radius steps clamp to 4px.",
+      "Atkinson Hyperlegible Next for reading and UI, Atkinson Hyperlegible Mono with tabular numerals for measures, Bricolage Grotesque for names only.",
+      "Sentence case everywhere; no eyebrows, kickers or tracked caps.",
+      "Motion is a 120ms switch with a near-linear ease-out; reduced motion makes it instant."
+    ],
+    "rules": [
+      {
+        "name": "The Light Temperature Rule",
+        "body": "Blue is agent work, cantaloupe is the operator and anything waiting on the operator, red is error, and nothing else is coloured. A surface that is not reporting one of those three states is a neutral.",
+        "section": "colors"
+      },
+      {
+        "name": "The Names Rule",
+        "body": "Bricolage Grotesque is used only for the wordmark and for agent or speaker names. Headings, labels and buttons stay in Atkinson.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "Every label, header, chip and button is sentence case. No eyebrows, no kickers above headings, no letterspaced capitals.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Row Rule",
+        "body": "Every list row, tool row, panel header and the status bar sits on the 1.867rem (28px) row unit; density comes from sharing one rhythm, not from shrinking it.",
+        "section": "layout"
+      },
+      {
+        "name": "The Edge Light Rule",
+        "body": "Plates read by value and a 1px top highlight, not by drawn borders; Daylight prints a hairline instead. Drawn borders are reserved for inputs, outline buttons and hairline dividers.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Switch Rule",
+        "body": "State changes switch in 120ms with `cubic-bezier(0.2, 0, 0, 1)`; nothing breathes or pulses, and reduced motion makes every transition and animation instant. Entrances (messages, menus, drawers) fade or slide once in 140ms to 220ms using the same ease.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** show state only with a lit pane: Electric Blue for agent work, Cantaloupe for the operator and work waiting on the operator, Signal Red for failure, Pane Off when done (The Light Temperature Rule).",
+      "**Do** switch panes and hover fills in 120ms with `cubic-bezier(0.2, 0, 0, 1)` and let reduced motion make them instant (The Switch Rule).",
+      "**Do** build raised surfaces as plates: Panel fill plus the 1px edge light, no drawn border; in Daylight the token prints a hairline (The Edge Light Rule).",
+      "**Do** keep every list row, tool row, panel header and the status bar on the 1.867rem row unit (The One Row Rule).",
+      "**Do** reserve Bricolage Grotesque for the wordmark and agent or speaker names (The Names Rule).",
+      "**Do** hold agent prose to the 34em reading measure and let code, tables and charts take the column.",
+      "**Do** set timestamps, counts, durations, models and code in Atkinson Hyperlegible Mono with tabular numerals.",
+      "**Do** keep corners between 1px and 4px; 6px is only for the floating command palette shell.",
+      "**Do** make Send the one warm control on a screen: Cantaloupe fill, Midnight label, 3px radius.",
+      "**Do** give every pane without adjacent text an accessible label (Running, Waiting on you, Failed, Idle)."
+    ],
+    "donts": [
+      "**Don't** colour anything that is not reporting agent work, operator ownership or an error; no decorative accents, coloured side rails or tinted headers.",
+      "**Don't** pulse, breathe, glow or animate a shadow; the only blinking element is the streaming cursor pane, and it stops under reduced motion.",
+      "**Don't** add scanlines, HUD chrome, letterspaced uppercase labels, eyebrows or kickers above headings; labels are sentence case.",
+      "**Don't** use glass, blur, gradients or zero-offset shadows; depth is tonal value plus the edge light, and only floating surfaces cast an offset shadow.",
+      "**Don't** draw a border around a plate; borders belong to inputs, outline buttons and hairline dividers.",
+      "**Don't** replace a pane with a dot, a circle, a badge or a glyph icon, and never make colour the only signal.",
+      "**Don't** use Bricolage Grotesque for headings, labels or buttons, or a system display face anywhere.",
+      "**Don't** round panels or shell surfaces beyond 4px, or reintroduce the Classic skin's rounded panels and amber accents into the Nerve style."
+    ]
+  }
+}

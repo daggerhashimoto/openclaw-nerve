@@ -1,9 +1,11 @@
 import { lazy, Suspense, useState, useMemo, memo } from 'react';
-import { ChevronRight, Wrench } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
-import { Card, CardContent } from '@/components/ui/card';
+import { Pane } from '@/components/ui/Pane';
+import { cn } from '@/lib/utils';
 import { extractEditBlocks, extractWriteBlocks } from '../edit-blocks';
 import type { ChatMsg, ToolGroupEntry } from '../types';
+import { ToolRowContent, toolRowButtonClass, toolRowClass } from './ToolRow';
 
 const DiffView = lazy(() => import('../DiffView').then((module) => ({ default: module.DiffView })));
 const FileContentView = lazy(() =>
@@ -17,6 +19,9 @@ interface ToolGroupBlockProps {
   onToggleCollapse: (idx: number) => void;
 }
 
+/** Entry rows sit one step in from the group row so the pane column reads as a tree. */
+const entryIndentClass = 'pl-6';
+
 /** A single expandable tool entry within the group */
 function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
   const [expanded, setExpanded] = useState(false);
@@ -27,32 +32,21 @@ function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
   // Only edit (diff view) and write (file view) entries are expandable
   if (!hasExpandableContent) {
     return (
-      <div className="flex items-center gap-2 rounded-xl px-2.5 py-2">
-        <span className="w-3" /> {/* spacer matching chevron width */}
-        <span className="text-green text-[0.667rem]">✓</span>
-        <span className="flex-1 truncate text-[0.8rem] text-muted-foreground">
-          {entry.preview}
-        </span>
+      <div className={cn(toolRowClass, entryIndentClass)}>
+        <ToolRowContent state="off" text={entry.preview} />
       </div>
     );
   }
 
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded}>
-      <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-primary/[0.04]">
-        <ChevronRight
-          size={12}
-          className={`text-muted-foreground shrink-0 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
-        />
-        <span className="text-green text-[0.667rem]">✓</span>
-        <span className="flex-1 truncate text-[0.8rem] text-muted-foreground">
-          {entry.preview}
-        </span>
+      <CollapsibleTrigger className={cn(toolRowClass, toolRowButtonClass, entryIndentClass)}>
+        <ToolRowContent state="off" text={entry.preview} expandable expanded={expanded} />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="ml-6 mr-2 mb-2 mt-1 border-l-2 border-border/40 pl-3">
+        <div className="border-t border-border px-2.5 py-2 font-mono text-[0.8rem]">
           {editBlocks.length > 0 ? (
-            <Suspense fallback={<div className="text-xs text-muted-foreground">Loading diff...</div>}>
+            <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading diff</div>}>
               <div className="space-y-2">
                 {editBlocks.map((block, i) => (
                   <DiffView key={i} oldText={block.oldText} newText={block.newText} filePath={block.filePath} />
@@ -60,7 +54,7 @@ function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
               </div>
             </Suspense>
           ) : (
-            <Suspense fallback={<div className="text-xs text-muted-foreground">Loading file preview...</div>}>
+            <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading file preview</div>}>
               <div className="space-y-2">
                 {writeBlocks.map((block, i) => (
                   <FileContentView key={i} content={block.content} filePath={block.filePath} />
@@ -78,31 +72,29 @@ function ToolGroupBlockInner({ msg, index, isCollapsed, onToggleCollapse }: Tool
   const timeStr = msg.timestamp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   const entries = msg.toolGroup || [];
   const count = entries.length;
+  const summary = entries.map((entry) => entry.preview).join(', ');
 
   return (
-    <div className="msg msg-tool relative max-w-full break-words mx-4 my-1.5">
+    <div className="msg msg-tool relative max-w-full break-words">
       <Collapsible open={!isCollapsed} onOpenChange={() => onToggleCollapse(index)}>
-        <Card className="overflow-hidden rounded-2xl border-border/50 bg-card/62 py-0 shadow-none">
-          <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2 px-3.5 py-3 text-left transition-colors hover:bg-primary/[0.04]">
-            <ChevronRight
-              size={14}
-              className={`text-muted-foreground shrink-0 transition-transform duration-200 ${!isCollapsed ? 'rotate-90' : ''}`}
-            />
-            <Wrench size={13} className="shrink-0 text-primary/75" />
-            <span className="cockpit-badge shrink-0">Tools</span>
-            <span className="flex-1 text-[0.8rem] text-muted-foreground">
-              Used {count} tool{count !== 1 ? 's' : ''}
-            </span>
-            <span className="shrink-0 font-mono text-[0.667rem] text-muted-foreground">{timeStr}</span>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <CardContent className="border-t border-border/40 bg-background/42 px-2 py-2">
-              {entries.map((entry, i) => (
-                <ToolEntryRow key={entry.preview + '-' + i} entry={entry} />
-              ))}
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
+        <CollapsibleTrigger className={cn(toolRowClass, toolRowButtonClass)}>
+          <Pane state="off" size="sm" />
+          <span className="shrink-0 py-1.5 font-sans text-[0.867rem] text-foreground">
+            Used {count} tool{count !== 1 ? 's' : ''}
+          </span>
+          <span className="min-w-0 flex-1 truncate py-1.5 text-muted-foreground">{isCollapsed ? summary : null}</span>
+          <span className="shrink-0 tabular text-muted-foreground">{timeStr}</span>
+          {isCollapsed
+            ? <ChevronRight size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+            : <ChevronDown size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />}
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="divide-y divide-border border-t border-border">
+            {entries.map((entry, i) => (
+              <ToolEntryRow key={entry.preview + '-' + i} entry={entry} />
+            ))}
+          </div>
+        </CollapsibleContent>
       </Collapsible>
     </div>
   );

@@ -1,29 +1,44 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-/* Note: highlight.js theme is applied dynamically via ThemeContext */
+/* Classic style: the previous look as an opt-in skin. Every rule in it is scoped
+   under html[data-style="classic"], so nothing there touches the Nerve style.
+   Imports must precede all other rules or the browser drops them. */
+@import "./styles/classic.css";
+/* Note: highlight.js theme is applied dynamically by applyTheme() in src/lib/themes.ts */
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Nerve: night light.
+ * Light temperature tells you who is acting. Electric blue (--color-live) is agent
+ * work in progress; cantaloupe (--color-operator) is the operator and anything
+ * waiting on the operator; finished work goes dark. Colour never decorates.
+ * State is shown by flat lit panes (.pane), never by glows or coloured side rails.
+ */
+
 /* Static (non-themeable) tokens */
 @theme {
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
-  --font-sans: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Atkinson Hyperlegible Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  --font-sans: 'Atkinson Hyperlegible Next', 'Helvetica Neue', Arial, sans-serif;
+  /* Display face: the wordmark and every agent or speaker name. Loaded by src/lib/fonts.ts. */
+  --font-display: 'Bricolage Grotesque', 'Atkinson Hyperlegible Next', 'Helvetica Neue', Arial, sans-serif;
   --font-size-base: 15px;
 }
 
 @layer base {
   html {
     background: var(--color-background);
-    color-scheme: dark light;
+    color-scheme: dark;
     scrollbar-gutter: stable both-edges;
     font-size: var(--font-size-base);
   }
+  html[data-theme="light"] {
+    color-scheme: light;
+  }
   * {
-    @apply border-border/60 outline-ring/50;
-    scrollbar-width: auto;
-    scrollbar-color:
-      color-mix(in srgb, var(--color-primary) 48%, var(--color-scrollbar-hover))
-      color-mix(in srgb, var(--color-secondary) 52%, var(--color-background));
+    @apply border-border;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar) transparent;
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
@@ -31,11 +46,7 @@
     font-size: var(--font-size-base);
     line-height: 1.55;
     font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
-    background-image:
-      radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--color-primary) 14%, transparent) 0%, transparent 30%),
-      radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--color-info) 7%, transparent) 0%, transparent 28%),
-      linear-gradient(180deg, color-mix(in srgb, var(--color-secondary) 20%, transparent), transparent 30%);
-    background-attachment: fixed;
+    caret-color: var(--color-operator);
   }
   body,
   button,
@@ -49,296 +60,244 @@
   kbd,
   samp {
     font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
   #root {
     min-height: 100vh;
     isolation: isolate;
   }
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 1px;
+  }
+  a {
+    text-underline-offset: 0.2em;
+  }
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--color-primary) 32%, transparent);
+  background: color-mix(in srgb, var(--color-operator) 30%, transparent);
   color: var(--color-foreground);
 }
 
-/* Scrollbar */
+/* Scrollbar: a quiet rule, never a feature */
 :where([class*="overflow-y-auto"], [class*="overflow-x-auto"], [class*="overflow-auto"]) {
   scrollbar-gutter: stable both-edges;
 }
 
-::-webkit-scrollbar { width: 12px; height: 12px; }
-::-webkit-scrollbar-track {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--color-secondary) 62%, transparent),
-      color-mix(in srgb, var(--color-background) 72%, transparent)
-    );
-  border-radius: 999px;
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--color-border) 70%, transparent),
-    inset 0 8px 18px rgba(0, 0, 0, 0.18);
-}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--color-primary) 34%, var(--color-scrollbar-hover)),
-      color-mix(in srgb, var(--color-primary) 18%, var(--color-scrollbar))
-    );
-  border-radius: 999px;
-  border: 2px solid color-mix(in srgb, var(--color-background) 82%, transparent);
+  background: var(--color-scrollbar);
+  border: 3px solid transparent;
+  border-radius: 2px;
   background-clip: padding-box;
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--color-border) 36%, transparent);
-  min-height: 38px;
+  min-height: 32px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--color-primary) 48%, var(--color-scrollbar-hover)),
-      color-mix(in srgb, var(--color-primary) 28%, var(--color-scrollbar-hover))
-    );
-}
+::-webkit-scrollbar-thumb:hover { background-color: var(--color-scrollbar-hover); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
-/* Animations */
+/* Shared measures */
+:root {
+  /* One row unit shared by list rows, tool rows and panel headers (28px at 15px base). */
+  --row-unit: 1.867rem;
+  /* Reading measure for agent prose: about 68 characters of Atkinson at body size (ch runs wide on its zero). */
+  --reading-measure: 34em;
+  /* Light switch: state panes turn on and off, they never breathe. */
+  --switch-duration: 120ms;
+  --switch-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* === Lit panes: the state marker === */
+/* Shared component classes live in the components layer so Tailwind utilities can still adjust them. */
+@layer components {
+.pane {
+  display: inline-block;
+  flex: none;
+  width: 0.667rem;
+  height: 0.933rem;
+  border-radius: 1px;
+  background-color: var(--color-pane-off);
+  box-shadow: inset 0 0 0 1px var(--color-pane-edge);
+  transition:
+    background-color var(--switch-duration) var(--switch-ease),
+    box-shadow var(--switch-duration) var(--switch-ease);
+}
+.pane[data-state="live"] {
+  background-color: var(--color-live);
+  box-shadow: none;
+}
+.pane[data-state="operator"] {
+  background-color: var(--color-operator);
+  box-shadow: none;
+}
+.pane[data-state="error"] {
+  background-color: var(--color-red);
+  box-shadow: none;
+}
+/* Identity: an agent family's hue shows in the glass while its light is off.
+   Lit colours keep their meaning (blue works, cantaloupe waits on you, red failed). */
+.pane-hued[data-state="off"] {
+  background-color: color-mix(in srgb, var(--pane-hue) 42%, var(--color-pane-off));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pane-hue) 45%, var(--color-pane-edge));
+}
+.pane-sm {
+  width: 0.533rem;
+  height: 0.733rem;
+}
+.pane-lg {
+  width: 0.933rem;
+  height: 1.333rem;
+  border-radius: 1.5px;
+}
+.pane-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+} /* end @layer components (panes) */
+
+/* Animations: state switches, nothing pulses */
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  50% { opacity: 0.45; }
 }
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
 @keyframes dot-fade {
-  0%, 80%, 100% { opacity: 0; }
+  0%, 80%, 100% { opacity: 0.25; }
   40% { opacity: 1; }
 }
 @keyframes status-flash {
-  0% { background-color: color-mix(in srgb, var(--color-primary) 30%, transparent); }
+  0% { background-color: var(--color-raised); }
   100% { background-color: transparent; }
 }
 @keyframes boot-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.animate-pulse-dot { animation: pulse-dot 1s infinite; }
-.animate-blink { animation: blink 0.7s step-end infinite; }
+.animate-pulse-dot { animation: pulse-dot 1.2s steps(2, jump-none) infinite; }
+.animate-blink { animation: blink 1s step-end infinite; }
 .animate-alive { animation: blink 1s step-end infinite; }
-.animate-status-flash { animation: status-flash 0.3s ease-out; }
+.animate-status-flash { animation: status-flash 0.3s var(--switch-ease); }
 
-/* === Realtime Chat Animations === */
+/* === Realtime chat === */
 
-/* New message slide-in animation */
 @keyframes message-enter {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .msg {
-  animation: message-enter 0.25s ease-out;
+  animation: message-enter 0.16s var(--switch-ease);
 }
 
-/* Streaming message pulse border */
+/* Streaming state is carried by the message's pane, not by its border */
 @keyframes streaming-pulse {
-  0%, 100% {
-    border-left-color: var(--color-green);
-  }
-  50% {
-    border-left-color: color-mix(in srgb, var(--color-green) 40%, transparent);
-  }
+  from { opacity: 1; }
+  to { opacity: 1; }
 }
-
-.msg.streaming {
-  animation: streaming-pulse 1.5s ease-in-out infinite;
-}
+.msg.streaming { animation: none; }
 
 /* Pending message styles (optimistic updates) */
 .msg-pending {
-  opacity: 0.7;
+  opacity: 0.72;
   position: relative;
 }
 
-.msg-pending::after {
+/* Failed message: an error pane, never a glyph */
+.msg-failed {
+  position: relative;
+}
+.msg-failed::before {
   content: '';
   position: absolute;
   right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.5;
-  animation: pulse-dot 1s infinite;
+  top: 10px;
+  width: 0.667rem;
+  height: 0.933rem;
+  border-radius: 1px;
+  background: var(--color-red);
 }
 
-/* Failed message styles */
-.msg-failed {
-  border-left-color: var(--color-red) !important;
-  opacity: 0.8;
-}
-
-.msg-failed::before {
-  content: '⚠';
-  position: absolute;
-  right: 12px;
-  top: 8px;
-  font-size: 0.733rem;
-  color: var(--color-red);
-}
-
-/* Send button pulse animation */
+/* Send: a brief switch when a message leaves */
 @keyframes send-pulse {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 50%, transparent);
-  }
-  70% {
-    box-shadow: 0 0 0 10px color-mix(in srgb, var(--color-primary) 0%, transparent);
-  }
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 0%, transparent);
-  }
+  0% { filter: brightness(1.18); }
+  100% { filter: brightness(1); }
 }
-
 .animate-send-pulse {
-  animation: send-pulse 0.4s ease-out;
+  animation: send-pulse 0.2s var(--switch-ease);
 }
 
 /* Send button shake animation (error) */
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
-  20%, 60% { transform: translateX(-3px); }
-  40%, 80% { transform: translateX(3px); }
+  25%, 75% { transform: translateX(-2px); }
+  50% { transform: translateX(2px); }
 }
-
 .animate-shake {
-  animation: shake 0.4s ease-out;
+  animation: shake 0.3s var(--switch-ease);
 }
 
-/* Send button active state */
 .send-btn:active:not(:disabled) {
-  transform: scale(0.95);
+  transform: translateY(1px);
 }
 
 /* Search bar slide-down */
 @keyframes slide-down {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-.animate-slide-down { animation: slide-down 0.15s ease-out; }
+.animate-slide-down { animation: slide-down 0.14s var(--switch-ease); }
 
 /* Settings drawer slide-in */
 @keyframes slide-in-right {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(0);
-  }
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
 }
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-.animate-slide-in-right { animation: slide-in-right 0.2s ease-out; }
-.animate-fade-in { animation: fade-in 0.15s ease-out; }
+.animate-slide-in-right { animation: slide-in-right 0.22s var(--switch-ease); }
+.animate-fade-in { animation: fade-in 0.14s var(--switch-ease); }
 
-/* Search highlight */
+/* Search highlight: the operator's own find */
 .search-highlight {
-  background: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  background: color-mix(in srgb, var(--color-operator) 32%, transparent);
   color: inherit;
-  padding: 0 2px;
-  border-radius: 2px;
+  padding: 0 1px;
+  border-radius: 1px;
 }
 
-/* Boot sequence */
+/* Boot: panels are simply there; the first paint fades in once */
 [data-booted="false"] .boot-panel {
   opacity: 0;
-  transform: translateY(8px);
 }
 .boot-panel {
-  transition:
-    opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.18s var(--switch-ease);
 }
 [data-booted="true"] .boot-panel {
   opacity: 1;
-  transform: translateY(0);
 }
 
-.scan-lines::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--color-border) 22%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--color-border) 18%, transparent) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent 80%);
-  pointer-events: none;
-  opacity: 0.18;
-  z-index: 0;
-}
+/* Retired chrome kept as no-ops so stale class names cannot reintroduce it */
+.scan-lines::before,
+.scan-lines::after { content: none; }
+.tab-glow { box-shadow: none; }
 
-/* Scan lines overlay */
-.scan-lines::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    color-mix(in srgb, var(--color-foreground) 3%, transparent) 2px,
-    color-mix(in srgb, var(--color-foreground) 3%, transparent) 3px
-  );
-  pointer-events: none;
-  opacity: 0.26;
-  z-index: 9999;
-}
-
-/* Tab glow effect */
-.tab-glow {
-  box-shadow: 0 0 18px color-mix(in srgb, var(--color-primary) 18%, transparent);
-  transition: box-shadow 0.5s ease-out;
-}
+/* === Shell === */
+@layer components {
 
 .shell-panel {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--color-card) 97%, transparent),
-      color-mix(in srgb, var(--color-secondary) 88%, transparent)
-    );
-  border: 1px solid color-mix(in srgb, var(--color-border) 84%, transparent);
-  border-radius: 10px !important;
-  box-shadow:
-    0 24px 58px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.035);
-  backdrop-filter: blur(18px);
+  background: var(--color-card);
+  border: 0;
+  border-radius: 0 !important;
 }
 
 .shell-chip {
@@ -346,39 +305,27 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 36px;
-  padding: 0 12px;
-  border-radius: 6px !important;
-  border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
-  background: color-mix(in srgb, var(--color-background) 42%, transparent);
+  min-height: var(--row-unit);
+  padding: 0 10px;
+  border-radius: 3px !important;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--color-muted-foreground);
+  font-size: 0.867rem;
+  font-weight: 500;
   transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease,
-    color 0.15s ease,
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
-  backdrop-filter: blur(12px);
+    background-color var(--switch-duration) var(--switch-ease),
+    color var(--switch-duration) var(--switch-ease);
 }
 
 .shell-chip:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 34%, var(--color-border));
+  background: var(--color-raised);
   color: var(--color-foreground);
-  transform: translateY(-1px);
 }
 
 .shell-chip[data-active="true"] {
   color: var(--color-foreground);
-  border-color: color-mix(in srgb, var(--color-primary) 44%, var(--color-border));
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--color-primary) 13%, transparent),
-      color-mix(in srgb, var(--color-card) 90%, transparent)
-    );
-  box-shadow:
-    0 12px 28px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 color-mix(in srgb, var(--color-primary) 14%, transparent);
+  background: var(--color-raised);
 }
 
 .shell-icon-button {
@@ -386,125 +333,94 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 36px;
-  padding: 0 12px;
-  border-radius: 6px !important;
-  border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
-  background: color-mix(in srgb, var(--color-background) 42%, transparent);
+  min-height: var(--row-unit);
+  min-width: var(--row-unit);
+  padding: 0 6px;
+  border-radius: 3px !important;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--color-muted-foreground);
-  font-size: 0.733rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 0.8rem;
+  font-weight: 500;
   transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease,
-    color 0.15s ease,
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
-  backdrop-filter: blur(12px);
+    background-color var(--switch-duration) var(--switch-ease),
+    color var(--switch-duration) var(--switch-ease);
+}
+
+.shell-icon-button > svg {
+  /* Never let the icon shrink to fit a narrow content box. */
+  flex-shrink: 0;
 }
 
 .shell-icon-button:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 34%, var(--color-border));
+  background: var(--color-raised);
   color: var(--color-foreground);
-  transform: translateY(-1px);
 }
 
 .shell-icon-button:focus-visible,
 .shell-chip:focus-visible {
-  outline: none;
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--color-primary) 16%, transparent),
-    0 12px 28px rgba(0, 0, 0, 0.2);
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
 }
 
 .shell-icon-button[data-active="true"] {
   color: var(--color-foreground);
-  border-color: color-mix(in srgb, var(--color-primary) 44%, var(--color-border));
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--color-primary) 13%, transparent),
-      color-mix(in srgb, var(--color-card) 90%, transparent)
-    );
-  box-shadow:
-    0 12px 28px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 color-mix(in srgb, var(--color-primary) 14%, transparent);
+  background: var(--color-raised);
 }
 
+/* Former eyebrow label: kept only as plain secondary text, never above a heading */
 .cockpit-kicker {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.667rem;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-primary) 74%, var(--color-muted-foreground));
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-muted-foreground);
 }
 
 .cockpit-title {
-  font-size: clamp(1.05rem, 0.95rem + 0.45vw, 1.35rem);
+  font-size: 1.2rem;
   font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   color: var(--color-foreground);
 }
 
 .cockpit-copy {
   font-size: 0.867rem;
   line-height: 1.55;
-  color: color-mix(in srgb, var(--color-foreground) 72%, var(--color-muted-foreground));
+  color: var(--color-muted-foreground);
 }
 
 .cockpit-divider {
   height: 1px;
   width: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in srgb, var(--color-border) 88%, transparent) 18%,
-    color-mix(in srgb, var(--color-border) 88%, transparent) 82%,
-    transparent
-  );
+  background: var(--color-border);
 }
 
 .cockpit-surface {
-  border: 1px solid color-mix(in srgb, var(--color-border) 86%, transparent);
-  border-radius: 20px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-card) 96%, transparent), color-mix(in srgb, var(--color-secondary) 86%, transparent));
-  box-shadow:
-    0 18px 40px rgba(0, 0, 0, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(18px);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-card);
 }
 
 .cockpit-row {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-background) 54%, transparent), color-mix(in srgb, var(--color-card) 86%, transparent));
-  transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease,
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  transition: background-color var(--switch-duration) var(--switch-ease);
 }
 
 .cockpit-row:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
-  transform: translateY(-1px);
+  background: var(--color-raised);
 }
 
 .cockpit-row[data-tone="danger"] {
-  border-color: color-mix(in srgb, var(--color-destructive) 28%, var(--color-border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-destructive) 7%, transparent), color-mix(in srgb, var(--color-card) 88%, transparent));
+  border-color: color-mix(in srgb, var(--color-destructive) 40%, var(--color-border));
 }
 
 @media (max-width: 640px) {
@@ -513,12 +429,15 @@
   .cockpit-toolbar-button {
     min-height: 44px;
   }
+  .shell-icon-button {
+    min-width: 44px;
+  }
 
   .cockpit-row {
     flex-direction: column;
     align-items: stretch;
-    gap: 12px;
-    padding: 13px 14px;
+    gap: 10px;
+    padding: 12px;
   }
 
   .cockpit-input,
@@ -528,35 +447,33 @@
   }
 
   .cockpit-note {
-    padding: 11px 12px;
+    padding: 10px 12px;
   }
 }
 
 @media (max-width: 371px) {
   .topbar-mobile-compact .shell-chip,
   .topbar-mobile-compact .shell-icon-button {
-    min-height: 38px;
+    min-height: 40px;
   }
 }
 
 .cockpit-field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .cockpit-field-label {
-  font-size: 0.733rem;
+  font-size: 0.867rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-muted-foreground);
+  color: var(--color-foreground);
 }
 
 .cockpit-field-hint {
   font-size: 0.8rem;
   line-height: 1.45;
-  color: color-mix(in srgb, var(--color-muted-foreground) 88%, transparent);
+  color: var(--color-muted-foreground);
 }
 
 .cockpit-input,
@@ -564,46 +481,40 @@
 .cockpit-textarea {
   width: 100%;
   min-width: 0;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
-  background: color-mix(in srgb, var(--color-background) 66%, transparent);
+  border-radius: 3px;
+  border: 1px solid var(--color-input);
+  background: var(--color-background);
   color: var(--color-foreground);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    background-color 0.15s ease,
-    transform 0.15s ease;
+  transition: border-color var(--switch-duration) var(--switch-ease);
   outline: none;
 }
 
 .cockpit-input,
 .cockpit-select {
-  min-height: 44px;
-  padding: 0 14px;
-  font-size: 0.933rem;
+  min-height: 2.133rem;
+  padding: 0 10px;
+  font-size: 0.867rem;
 }
 
 .cockpit-textarea {
   min-height: 120px;
-  padding: 12px 14px;
-  font-size: 0.933rem;
+  padding: 8px 10px;
+  font-size: 0.867rem;
   line-height: 1.55;
   resize: vertical;
 }
 
 .cockpit-input::placeholder,
 .cockpit-textarea::placeholder {
-  color: color-mix(in srgb, var(--color-muted-foreground) 84%, transparent);
+  color: var(--color-muted-foreground);
 }
 
 .cockpit-input:focus-visible,
 .cockpit-select:focus-visible,
 .cockpit-textarea:focus-visible {
-  border-color: color-mix(in srgb, var(--color-primary) 56%, var(--color-border));
-  box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--color-primary) 14%, transparent),
-    0 18px 36px rgba(0, 0, 0, 0.16);
+  border-color: var(--color-ring);
+  outline: 1px solid var(--color-ring);
+  outline-offset: 0;
 }
 
 .cockpit-input-mono,
@@ -614,76 +525,71 @@
 }
 
 .cockpit-note {
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
-  background: color-mix(in srgb, var(--color-background) 48%, transparent);
-  padding: 12px 14px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  padding: 10px 12px;
   font-size: 0.8rem;
   line-height: 1.55;
-  color: color-mix(in srgb, var(--color-foreground) 74%, var(--color-muted-foreground));
+  color: var(--color-muted-foreground);
 }
 
 .cockpit-note[data-tone="danger"] {
-  border-color: color-mix(in srgb, var(--color-destructive) 26%, var(--color-border));
-  background: color-mix(in srgb, var(--color-destructive) 8%, transparent);
-  color: color-mix(in srgb, var(--color-foreground) 82%, var(--color-destructive));
+  border-color: color-mix(in srgb, var(--color-destructive) 45%, var(--color-border));
+  color: var(--color-foreground);
 }
 
 .cockpit-note[data-tone="primary"] {
-  border-color: color-mix(in srgb, var(--color-primary) 24%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  border-color: color-mix(in srgb, var(--color-operator) 45%, var(--color-border));
+  color: var(--color-foreground);
 }
 
 .cockpit-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
-  background: color-mix(in srgb, var(--color-background) 48%, transparent);
-  font-size: 0.733rem;
-  font-weight: 600;
+  min-height: 1.333rem;
+  padding: 0 6px;
+  border-radius: 2px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 500;
   line-height: 1;
   color: var(--color-muted-foreground);
 }
 
-.cockpit-badge[data-tone="primary"] {
-  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  color: color-mix(in srgb, var(--color-primary) 82%, var(--color-foreground));
+.cockpit-badge[data-tone="primary"],
+.cockpit-badge[data-tone="warning"] {
+  border-color: color-mix(in srgb, var(--color-operator) 45%, var(--color-border));
+  color: var(--color-operator-text);
+}
+
+.cockpit-badge[data-tone="live"] {
+  border-color: color-mix(in srgb, var(--color-live) 45%, var(--color-border));
+  color: var(--color-live-text);
 }
 
 .cockpit-badge[data-tone="success"] {
-  border-color: color-mix(in srgb, var(--color-green) 32%, var(--color-border));
-  background: color-mix(in srgb, var(--color-green) 10%, transparent);
-  color: color-mix(in srgb, var(--color-green) 78%, var(--color-foreground));
-}
-
-.cockpit-badge[data-tone="warning"] {
-  border-color: color-mix(in srgb, var(--color-orange) 32%, var(--color-border));
-  background: color-mix(in srgb, var(--color-orange) 10%, transparent);
-  color: color-mix(in srgb, var(--color-orange) 78%, var(--color-foreground));
+  color: var(--color-foreground);
 }
 
 .cockpit-badge[data-tone="danger"] {
-  border-color: color-mix(in srgb, var(--color-destructive) 34%, var(--color-border));
-  background: color-mix(in srgb, var(--color-destructive) 10%, transparent);
-  color: color-mix(in srgb, var(--color-destructive) 76%, var(--color-foreground));
+  border-color: color-mix(in srgb, var(--color-destructive) 45%, var(--color-border));
+  color: var(--color-destructive);
 }
 
 .cockpit-kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: 9px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
-  background: color-mix(in srgb, var(--color-background) 70%, transparent);
+  min-height: 1.333rem;
+  padding: 0 5px;
+  border-radius: 2px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
   font-family: var(--font-mono);
-  font-size: 0.667rem;
+  font-size: 0.733rem;
   color: var(--color-muted-foreground);
 }
 
@@ -691,77 +597,56 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 12px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
-  background: color-mix(in srgb, var(--color-background) 42%, transparent);
-  color: var(--color-muted-foreground);
-  font-size: 0.8rem;
-  font-weight: 600;
+  gap: 6px;
+  min-height: var(--row-unit);
+  padding: 0 10px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-foreground);
+  font-size: 0.867rem;
+  font-weight: 500;
   transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease,
-    color 0.15s ease,
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
+    background-color var(--switch-duration) var(--switch-ease),
+    border-color var(--switch-duration) var(--switch-ease),
+    color var(--switch-duration) var(--switch-ease);
 }
 
 .cockpit-toolbar-button:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 32%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-foreground);
-  transform: translateY(-1px);
+  background: var(--color-raised);
 }
 
 .cockpit-toolbar-button:focus-visible {
-  outline: none;
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--color-primary) 16%, transparent),
-    0 12px 28px rgba(0, 0, 0, 0.2);
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
 }
 
 .cockpit-toolbar-button[data-active="true"] {
-  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--color-primary) 12%, transparent),
-      color-mix(in srgb, var(--color-card) 90%, transparent)
-    );
-  color: var(--color-foreground);
+  background: var(--color-raised);
+  border-color: var(--color-pane-edge);
 }
 
 .cockpit-toolbar-button[data-tone="danger"] {
-  border-color: color-mix(in srgb, var(--color-destructive) 24%, var(--color-border));
-  color: color-mix(in srgb, var(--color-destructive) 72%, var(--color-foreground));
+  color: var(--color-destructive);
 }
 
 .cockpit-toolbar-button[data-tone="danger"]:hover {
-  border-color: color-mix(in srgb, var(--color-destructive) 48%, var(--color-border));
-  background: color-mix(in srgb, var(--color-destructive) 10%, transparent);
-  color: color-mix(in srgb, var(--color-destructive) 84%, var(--color-foreground));
+  border-color: color-mix(in srgb, var(--color-destructive) 50%, var(--color-border));
+  background: color-mix(in srgb, var(--color-destructive) 8%, transparent);
 }
 
 .cockpit-command-shell {
-  border: 1px solid color-mix(in srgb, var(--color-border) 84%, transparent);
-  border-radius: 28px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-card) 97%, transparent), color-mix(in srgb, var(--color-secondary) 90%, transparent));
-  box-shadow:
-    0 34px 90px rgba(0, 0, 0, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(22px);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-popover);
+  box-shadow: var(--float-shadow);
   overflow: hidden;
 }
 
 .cockpit-command-section {
-  padding: 10px 18px 6px;
-  font-size: 0.667rem;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+  padding: 8px 12px 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
   color: var(--color-muted-foreground);
 }
 
@@ -769,59 +654,171 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 11px 18px;
+  gap: 10px;
+  min-height: 2.133rem;
+  padding: 4px 12px;
   text-align: left;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease,
-    transform 0.15s ease;
+  transition: background-color var(--switch-duration) var(--switch-ease);
 }
 
 .cockpit-command-item:hover,
 .cockpit-command-item[data-active="true"] {
-  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
+  background: var(--color-raised);
 }
 
 .cockpit-command-item[data-active="true"] {
   color: var(--color-foreground);
 }
 
-/* Panel header chrome */
+/* === Plates and the brand === */
+
+/* Wordmark: the shell's one display moment. The brand pane beside it is the
+   whole fleet in one window: blue while any agent works, cantaloupe when work
+   waits on the operator, dark when the house is quiet. */
+.nerve-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 1.267rem;
+  font-weight: 700;
+  font-stretch: 94%;
+  font-variation-settings: "opsz" 96;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--color-foreground);
+}
+.nerve-brand-pane {
+  width: 0.533rem;
+  height: 0.8rem;
+  margin-top: 1px;
+}
+
+/* Facade: the agents column's building seen at night. One window per session,
+   in row order; click a window to go there. The open session's window has a sill. */
+.facade {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 5px;
+  flex-shrink: 0;
+  padding: 9px 12px 8px;
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
+}
+.facade-window {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  padding: 0 0 3px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.facade-window:hover .pane[data-state="off"] {
+  background-color: var(--color-pane-edge);
+}
+.facade-window:hover .pane-hued[data-state="off"] {
+  background-color: color-mix(in srgb, var(--pane-hue) 62%, var(--color-pane-off));
+}
+.facade-window:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+.facade-window[data-current="true"]::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--color-foreground);
+}
+
+/* Segmented view switch: one sunk track, the active chip lifted onto it */
+.seg-track {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 4px;
+  background: var(--color-background);
+}
+.seg-track .shell-chip {
+  min-height: calc(var(--row-unit) - 6px);
+  padding: 0 10px;
+  border-radius: 3px !important;
+}
+.seg-track .shell-chip[data-active="true"] {
+  background: var(--color-raised);
+  box-shadow: var(--plate-shadow);
+}
+
+/* A plate is a raised surface read by value and edge light, never by a drawn border */
+.plate {
+  background: var(--color-card);
+  border-radius: 3px;
+  box-shadow: var(--plate-shadow);
+}
+/* The operator's plate: warm ground with a warm edge light */
+.plate-operator {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-operator) 30%, transparent);
+}
+html[data-theme="light"] .plate-operator {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-operator) 45%, var(--border));
+}
+
+/* Tool rows stack on one plate, separated by hairlines */
+.tool-stack {
+  background: var(--color-card);
+  border-radius: 3px;
+  box-shadow: var(--plate-shadow);
+  overflow: hidden;
+}
+
+/* Composer: floats on the ground; its border lights warm only while the operator is in it */
+.nerve-composer-band {
+  background: var(--color-background);
+}
+.nerve-composer {
+  background: var(--color-card);
+  box-shadow: var(--float-shadow);
+}
+
+/* Panel header chrome: one row unit, sentence case */
 .panel-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 48px;
-  padding: 10px 14px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-secondary) 92%, transparent), color-mix(in srgb, var(--color-card) 90%, transparent));
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 85%, transparent);
+  gap: 6px;
+  min-height: var(--row-unit);
+  padding: 0 4px 0 12px;
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 .panel-header .panel-label {
-  font-family: var(--font-mono);
-  font-size: 0.667rem;
-  font-weight: 700;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 0.867rem;
+  font-weight: 600;
+  color: var(--color-foreground);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 .panel-header .panel-diamond {
-  font-size: 0.733rem;
+  display: none;
 }
+} /* end @layer components (shell) */
 
 /* Intermediate assistant messages — reduced visual weight */
 .msg-body-intermediate { font-size: 0.8rem; line-height: 1.4; opacity: 0.7; }
 .msg-body-intermediate p { margin: 0; }
 .msg-body-intermediate code { font-size: 0.733rem; }
 
-/* Markdown rendering */
+/* Markdown rendering: prose holds a reading measure, plates (code, tables, charts) take the column */
 .msg-body {
-  font-size: 0.933rem;
-  line-height: 1.7;
+  font-size: 1rem;
+  line-height: 1.6;
   width: 100%;
   min-width: 0;
   max-width: 100%;
@@ -832,9 +829,15 @@
   min-width: 0;
   max-width: 100%;
 }
+.msg-body > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, hr, dl),
+.msg-body > .markdown-content > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, hr, dl) {
+  max-width: var(--reading-measure);
+}
+.msg-body .markdown-content {
+  font-size: inherit;
+}
 .msg-body p {
   margin: 0 0 0.8em;
-  max-width: 100%;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -843,17 +846,17 @@
 }
 .msg-body ul,
 .msg-body ol {
-  margin: 0.75em 0 0.95em;
+  margin: 0.6em 0 0.9em;
   padding-inline-start: 1.2rem;
 }
 .msg-body li + li {
-  margin-top: 0.35em;
+  margin-top: 0.3em;
 }
 .msg-body blockquote {
   margin: 0.9em 0;
-  padding: 0.2em 0 0.2em 1.067rem;
-  border-left: 2px solid color-mix(in srgb, var(--color-primary) 38%, transparent);
-  color: color-mix(in srgb, var(--color-foreground) 76%, var(--color-muted-foreground));
+  padding: 0.1em 0 0.1em 1rem;
+  border-left: 2px solid var(--color-pane-edge);
+  color: var(--color-muted-foreground);
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -861,57 +864,78 @@
 .msg-body h2,
 .msg-body h3 {
   font-family: var(--font-sans);
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 1.2em 0 0.45em;
+}
+.msg-body > :is(h1, h2, h3):first-child {
+  margin-top: 0;
 }
 .msg-body code {
-  background: color-mix(in srgb, var(--color-background) 70%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
-  padding: 2px 6px;
-  border-radius: 8px;
-  font-size: 0.8rem;
+  background: var(--color-raised);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 0.867em;
   white-space: break-spaces;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 .msg-body pre {
-  background: color-mix(in srgb, var(--color-background) 88%, transparent);
-  padding: 12px 14px;
+  background: var(--color-card);
+  padding: 10px 12px;
   margin: 10px 0;
   overflow-x: auto;
   max-width: 100%;
-  border: 1px solid color-mix(in srgb, var(--color-border) 85%, transparent);
-  border-radius: 14px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
 }
 .msg-body pre code {
   background: none;
   padding: 0;
   white-space: pre;
+  font-size: 0.867rem;
+}
+/* react-markdown wraps highlighted blocks in an outer pre; only the inner block is the plate */
+.msg-body pre:has(> .code-block-wrapper) {
+  background: transparent;
+  border: 0;
+  padding: 0;
 }
 .msg-body pre.hljs {
-  background: color-mix(in srgb, var(--color-card) 95%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-border) 85%, transparent);
-  border-radius: 14px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
   position: relative;
-  padding: 14px 16px;
+  padding: 2.133rem 12px 10px;
   margin: 10px 0;
 }
 .msg-body pre.hljs .code-lang {
   position: absolute;
-  top: 4px;
-  right: 8px;
-  font-size: 0.733rem;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--row-unit);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.8rem;
   color: var(--color-muted-foreground);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   font-family: var(--font-mono);
 }
 .msg-body a {
-  color: var(--color-primary);
+  color: inherit;
   text-decoration: underline;
+  text-decoration-color: var(--color-pane-edge);
   text-decoration-thickness: 1px;
-  text-underline-offset: 0.18em;
+  text-underline-offset: 0.2em;
+  transition: text-decoration-color var(--switch-duration) var(--switch-ease);
+}
+.msg-body a:hover {
+  text-decoration-color: var(--color-operator);
+}
+.msg-body table {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Code block wrapper & action bar */
@@ -920,15 +944,16 @@
 }
 .code-block-wrapper .code-block-actions {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 2px;
+  right: 4px;
   display: flex;
-  gap: 6px;
+  gap: 2px;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--switch-duration) var(--switch-ease);
   z-index: 10;
 }
-.code-block-wrapper:hover .code-block-actions {
+.code-block-wrapper:hover .code-block-actions,
+.code-block-wrapper:focus-within .code-block-actions {
   opacity: 1;
 }
 
@@ -938,32 +963,30 @@
   }
 
   .code-block-actions .code-action-btn {
-    min-height: 34px;
-    min-width: 34px;
+    min-height: 36px;
+    min-width: 36px;
   }
 }
 .code-block-actions .code-action-btn {
-  background: color-mix(in srgb, var(--color-card) 92%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-border) 84%, transparent);
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--color-muted-foreground);
   line-height: 1;
-  min-height: 30px;
-  min-width: 30px;
+  min-height: 1.6rem;
+  min-width: 1.6rem;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 3px;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s, background-color 0.15s, transform 0.15s;
+  transition:
+    color var(--switch-duration) var(--switch-ease),
+    background-color var(--switch-duration) var(--switch-ease);
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(12px);
 }
 .code-block-actions .code-action-btn:hover {
-  color: var(--color-primary);
-  border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-card));
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
-  transform: translateY(-1px);
+  color: var(--color-foreground);
+  background: var(--color-raised);
 }
 .code-block-actions .code-action-btn svg {
   width: 14px;
@@ -973,7 +996,7 @@
   color: var(--color-green);
 }
 .code-diff-view {
-  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-family: var(--font-mono);
   font-size: 0.8rem;
   line-height: 1.5;
   margin: 0;
@@ -1021,10 +1044,10 @@
   padding: 4px 10px;
   background: color-mix(in srgb, var(--color-foreground) 3%, transparent);
   border-bottom: 1px solid var(--color-border);
-  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-family: var(--font-mono);
 }
 .diff-filepath {
-  color: var(--color-primary);
+  color: var(--color-foreground);
   font-size: 0.733rem;
 }
 .diff-stats {
@@ -1043,11 +1066,10 @@
   border-right: 1px solid var(--color-border);
 }
 .diff-panel-label {
-  font-size: 0.733rem;
-  font-weight: 700;
-  letter-spacing: 1px;
+  font-size: 0.8rem;
+  font-weight: 600;
   padding: 3px 10px;
-  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-family: var(--font-sans);
 }
 .diff-panel-old .diff-panel-label {
   color: var(--color-red);
@@ -1109,19 +1131,18 @@
   padding: 4px 10px;
   background: color-mix(in srgb, var(--color-green) 4%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--color-green) 10%, transparent);
-  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-family: var(--font-mono);
 }
 .file-content-badge {
   font-size: 0.733rem;
   font-weight: 700;
-  letter-spacing: 1px;
   padding: 1px 5px;
   border-radius: 3px;
   background: color-mix(in srgb, var(--color-green) 15%, transparent);
   color: var(--color-green);
 }
 .file-content-filepath {
-  color: var(--color-primary);
+  color: var(--color-foreground);
   font-size: 0.733rem;
   flex: 1;
 }
@@ -1166,28 +1187,29 @@
   margin: 8px 0;
   background: var(--color-muted);
   border: 1px solid var(--color-border);
-  border-left: 3px solid var(--color-primary);
-  border-radius: 14px;
+  border-radius: 3px;
   padding: 0;
   overflow: hidden;
 }
 .tool-result-details summary {
   cursor: pointer;
   color: var(--color-muted-foreground);
-  font-size: 0.733rem;
+  font-size: 0.8rem;
   font-family: var(--font-mono);
-  letter-spacing: 0.3px;
   user-select: none;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 6px 10px;
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  transition: background 0.15s, color 0.15s;
+  min-height: var(--row-unit);
+  padding: 4px 10px;
+  background: transparent;
+  transition:
+    background-color var(--switch-duration) var(--switch-ease),
+    color var(--switch-duration) var(--switch-ease);
 }
 .tool-result-details summary:hover {
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  color: var(--color-foreground);
+  background: var(--color-raised);
 }
 .tool-result-details[open] summary {
   margin-bottom: 0;
@@ -1203,11 +1225,19 @@
   background: color-mix(in srgb, var(--color-background) 90%, transparent);
 }
 
-/* Streaming cursor */
-.streaming .msg-body::after {
-  content: '█';
-  animation: blink 0.7s step-end infinite;
-  color: var(--color-primary);
+/* Streaming cursor: a small live pane that switches on and off while the agent writes.
+   It ends the last block's text line; bare text bodies fall back to the body itself. */
+.streaming .msg-body > :last-child::after,
+.streaming .msg-body:not(:has(> *))::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 0.9em;
+  margin-left: 2px;
+  vertical-align: -0.1em;
+  border-radius: 1px;
+  background: var(--color-live);
+  animation: blink 1s step-end infinite;
 }
 
 /* Markdown tables */
@@ -1229,16 +1259,29 @@
   font-size: 0.8rem;
 }
 .markdown-content table.markdown-table th {
-  @apply bg-secondary text-left px-3 py-2 font-bold border-border text-primary;
+  @apply bg-secondary text-left px-3 py-1.5 font-semibold border-border text-foreground;
 }
 .markdown-content table.markdown-table td {
-  @apply px-3 py-2 border-border;
+  @apply px-3 py-1.5 border-border;
+}
+.markdown-content table.markdown-table tr + tr td,
+.markdown-content table.markdown-table tbody tr:first-child td {
+  border-top: 1px solid var(--color-border);
 }
 .markdown-content table.markdown-table tr:hover {
-  @apply bg-card;
+  @apply bg-secondary;
+}
+.markdown-content table.markdown-table {
+  font-variant-numeric: tabular-nums;
 }
 .markdown-content a.markdown-link {
-  @apply text-primary hover:underline;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--color-pane-edge);
+  text-underline-offset: 0.2em;
+}
+.markdown-content a.markdown-link:hover {
+  text-decoration-color: var(--color-operator);
 }
 .markdown-content p {
   @apply my-2;
@@ -1278,14 +1321,14 @@
   @apply italic;
 }
 .markdown-content h1, .markdown-content h2, .markdown-content h3 {
-  @apply font-bold text-primary mt-4 mb-2;
+  @apply font-semibold text-foreground mt-4 mb-2;
 }
 .markdown-content h1 { @apply text-lg; }
 .markdown-content h2 { @apply text-base; }
 .markdown-content h3 { @apply text-sm; }
 
 .markdown-document {
-  backdrop-filter: blur(14px);
+  background: var(--color-background);
 }
 
 .markdown-document-content {
@@ -1302,7 +1345,7 @@
 }
 
 .markdown-document-content blockquote {
-  @apply my-4 border-l-2 border-primary/45 pl-4 text-muted-foreground;
+  @apply my-4 border-l-2 border-[var(--color-pane-edge)] pl-4 text-muted-foreground;
 }
 
 .markdown-document-content hr {
@@ -1319,14 +1362,24 @@
  * Actual default values live in :root below; themes.ts overrides at runtime.
  */
 @theme inline {
+  /* Radius steps read the --r-* scale in :root below so a style can retune it
+     (the Classic skin restores its rounded scale in src/styles/classic.css). */
   --radius: var(--radius);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+  --radius-xs: var(--r-xs);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --radius-2xl: var(--r-2xl);
+  --radius-3xl: var(--r-3xl);
+  --radius-4xl: var(--r-4xl);
+  --color-live: var(--live);
+  --color-live-text: var(--live-text);
+  --color-operator: var(--operator);
+  --color-operator-text: var(--operator-text);
+  --color-pane-off: var(--pane-off);
+  --color-pane-edge: var(--pane-edge);
+  --color-raised: var(--raised);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -1371,88 +1424,105 @@
   --color-scrollbar-hover: var(--scrollbar-hover);
 }
 
-/* Default theme values (mission-control). Single source of truth for CSS defaults.
-   themes.ts applyTheme() overrides these at runtime via element.style.setProperty(). */
+/* Default theme values (night). Single source of truth for CSS defaults before
+   settings hydrate; src/lib/themes.ts applyTheme() overrides these at runtime. */
 :root {
-  --radius: 1.067rem;
-  --background: #0c1016;
-  --foreground: #d0c8bc;
-  --card: #10151d;
-  --card-foreground: #d0c8bc;
-  --popover: #10151d;
-  --popover-foreground: #d0c8bc;
-  --primary: #f0b35d;
-  --primary-foreground: #0c1016;
-  --secondary: #161c25;
-  --secondary-foreground: #d0c8bc;
-  --muted: #161c25;
-  --muted-foreground: #7e8794;
-  --accent: #161c25;
-  --accent-foreground: #d0c8bc;
-  --destructive: #e06c66;
-  --destructive-foreground: #d0c8bc;
-  --border: #27303c;
-  --input: #27303c;
-  --ring: #f0b35d;
-  --green: #7fc782;
-  --red: #e06c66;
-  --orange: #e79a59;
-  --purple: #b9acda;
-  --info: #7ea6c8;
-  --chart-1: #f0b35d;
-  --chart-2: #7fc782;
-  --chart-3: #b9acda;
-  --chart-4: #e06c66;
-  --chart-5: #7ea6c8;
-  --message-user: #141821;
-  --message-assistant: #121918;
-  --message-system: #131824;
-  --scrollbar: #27303c;
-  --scrollbar-hover: #36414f;
-  --sidebar: #10151d;
-  --sidebar-foreground: #d0c8bc;
-  --sidebar-primary: #f0b35d;
-  --sidebar-primary-foreground: #0c1016;
-  --sidebar-accent: #161c25;
-  --sidebar-accent-foreground: #d0c8bc;
-  --sidebar-border: #27303c;
-  --sidebar-ring: #f0b35d;
+  /* Corners stay between 2 and 4px; the larger steps clamp so legacy classes cannot round panels again. */
+  --radius: 4px;
+  --r-xs: 1px;
+  --r-sm: 2px;
+  --r-md: 3px;
+  --r-lg: var(--radius);
+  --r-xl: var(--radius);
+  --r-2xl: var(--radius);
+  --r-3xl: var(--radius);
+  --r-4xl: var(--radius);
+  --background: #06080E;
+  --foreground: #ECE6DA;
+  --card: #0B0F17;
+  --card-foreground: #ECE6DA;
+  --popover: #121826;
+  --popover-foreground: #ECE6DA;
+  --primary: #FFA567;
+  --primary-foreground: #06080E;
+  --secondary: #131927;
+  --secondary-foreground: #ECE6DA;
+  --muted: #131927;
+  --muted-foreground: #8C94A6;
+  --accent: #182030;
+  --accent-foreground: #ECE6DA;
+  --destructive: #FF5A5A;
+  --destructive-foreground: #06080E;
+  --border: #171E2C;
+  --input: #1F2736;
+  --ring: #FFA567;
+  --green: #7CC99A;
+  --red: #FF5A5A;
+  --orange: #FFA567;
+  --purple: #B9A7FF;
+  --info: #3D7EFF;
+  --live: #3D7EFF;
+  --live-text: #4F8BFF;
+  --operator: #FFA567;
+  --operator-text: #FFA567;
+  --pane-off: #161D2C;
+  --pane-edge: #263044;
+  --raised: #151C2A;
+  --chart-1: #3D7EFF;
+  --chart-2: #FFA567;
+  --chart-3: #7FD1C7;
+  --chart-4: #B9A7FF;
+  --chart-5: #FF5A5A;
+  --message-user: #17161B;
+  --message-assistant: #06080E;
+  --message-system: #0B0F17;
+  --scrollbar: #1D2433;
+  --scrollbar-hover: #2B3449;
+  --sidebar: #0B0F17;
+  --sidebar-foreground: #ECE6DA;
+  --sidebar-primary: #FFA567;
+  --sidebar-primary-foreground: #06080E;
+  --sidebar-accent: #182030;
+  --sidebar-accent-foreground: #ECE6DA;
+  --sidebar-border: #171E2C;
+  --sidebar-ring: #FFA567;
+
+  /* Edge light: a raised plate carries a 1px highlight along its top instead of a drawn border. */
+  --plate-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  /* Float: the composer and popovers lift off the ground with a real offset shadow plus the edge light. */
+  --float-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.46),
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
-/* Activity indicator animations */
+/* Daylight: paper has no edge light to catch, so plates take a printed hairline instead. */
+html[data-theme="light"] {
+  --plate-shadow: inset 0 0 0 1px var(--border);
+  --float-shadow:
+    0 14px 36px rgba(19, 23, 34, 0.14),
+    0 1px 2px rgba(19, 23, 34, 0.08),
+    inset 0 0 0 1px var(--border);
+}
+
+/* Activity indicators: a switch, not a heartbeat */
 @keyframes heartbeat-pulse {
-  0% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
-  70% { box-shadow: 0 0 0 6px transparent; opacity: 0.7; }
-  100% { box-shadow: 0 0 0 0 transparent; opacity: 0.4; }
+  from { opacity: 1; }
+  to { opacity: 0.55; }
 }
 
 @keyframes activity-fade-in {
-  from { opacity: 0; transform: translateX(-4px); }
-  to { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes stale-pulse {
-  0%, 100% { opacity: 0.5; }
+  0%, 100% { opacity: 0.55; }
   50% { opacity: 1; }
 }
 
 .heartbeat-pulse {
-  animation: heartbeat-pulse 2s ease-out forwards;
-}
-
-/* Unread session indicator */
-@keyframes unread-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--color-green); }
-  50% { opacity: 0.5; box-shadow: 0 0 8px var(--color-green); }
-}
-
-.unread-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-green);
-  animation: unread-pulse 2s ease-in-out infinite;
-  flex-shrink: 0;
+  animation: heartbeat-pulse 0.6s var(--switch-ease) forwards;
 }
 
 /* Respect user preference for reduced motion */
@@ -1473,3 +1543,4 @@
     transition-duration: 0.001s !important;
   }
 }
+

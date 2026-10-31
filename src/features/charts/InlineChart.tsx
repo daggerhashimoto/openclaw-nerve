@@ -13,19 +13,20 @@ function getCSSVar(name: string): string {
 }
 
 function getThemeColors() {
-  const primary = getCSSVar('--color-primary') || '#8b5cf6';
-  const green = getCSSVar('--color-green') || '#22c55e';
-  const orange = getCSSVar('--color-orange') || '#f97316';
-  const red = getCSSVar('--color-red') || '#ef4444';
-  const blue = getCSSVar('--color-blue') || primary;
+  const chart = [
+    getCSSVar('--color-chart-1') || '#3D7EFF',
+    getCSSVar('--color-chart-2') || '#FFA567',
+    getCSSVar('--color-chart-3') || '#7FD1C7',
+    getCSSVar('--color-chart-4') || '#B9A7FF',
+    getCSSVar('--color-chart-5') || '#FF5A5A',
+  ];
   const mutedFg = getCSSVar('--color-muted-foreground') || '#888';
   const border = getCSSVar('--color-border') || '#333';
   const fg = getCSSVar('--color-foreground') || '#fff';
-  const bg = getCSSVar('--color-background') || '#111';
-  return { primary, green, orange, red, blue, mutedFg, border, fg, bg };
+  const bg = getCSSVar('--color-popover') || getCSSVar('--color-background') || '#111';
+  const mono = getCSSVar('--font-mono') || 'monospace';
+  return { chart, mutedFg, border, fg, bg, mono };
 }
-
-const PALETTE_KEYS = ['primary', 'green', 'orange', 'red', 'blue'] as const;
 
 interface CustomTooltipProps {
   active?: boolean;
@@ -35,9 +36,9 @@ interface CustomTooltipProps {
 
 function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   if (!active || !payload?.length) return null;
-  const { bg, fg } = getThemeColors();
+  const { bg, fg, border, mono } = getThemeColors();
   return (
-    <div style={{ background: bg, color: fg, border: `1px solid ${getCSSVar('--color-border')}`, padding: '6px 10px', borderRadius: 4, fontFamily: 'monospace', fontSize: 11 }}>
+    <div style={{ background: bg, color: fg, border: `1px solid ${border}`, padding: '6px 10px', borderRadius: 3, fontFamily: mono, fontSize: 12, fontVariantNumeric: 'tabular-nums', boxShadow: '0 12px 32px rgba(0,0,0,0.32)' }}>
       {label && <div style={{ marginBottom: 2, opacity: 0.7 }}>{label}</div>}
       {payload.map((p, i) => (
         <div key={i} style={{ color: p.color || fg }}>
@@ -50,14 +51,14 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 
 export default function InlineChart({ chart }: { chart: ChartData }) {
   const colors = useMemo(getThemeColors, []);
-  const palette = PALETTE_KEYS.map(k => colors[k]);
+  const palette = colors.chart;
 
   try {
     const { type, title, data } = chart;
 
     if (type === 'tv') {
       return (
-        <Suspense fallback={<div className="text-muted-foreground text-xs">Loading TradingView chart…</div>}>
+        <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading TradingView chart</div>}>
           <TradingViewWidget chart={chart} />
         </Suspense>
       );
@@ -80,7 +81,7 @@ export default function InlineChart({ chart }: { chart: ChartData }) {
       }));
       return (
         <div className="mt-3 w-full">
-          {title && <div className="text-xs font-mono text-muted-foreground mb-1">{title}</div>}
+          {title && <div className="mb-1 text-[0.8rem] font-medium text-muted-foreground">{title}</div>}
           <ResponsiveContainer width="100%" height={250}>
             <PieChart>
               <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} strokeWidth={1} stroke={colors.border}>
@@ -107,7 +108,7 @@ export default function InlineChart({ chart }: { chart: ChartData }) {
     const seriesKeys = isSingleSeries ? ['value'] : (data.series?.map(s => s.name) || []);
 
     const axisProps = {
-      tick: { fill: colors.mutedFg, fontSize: 10, fontFamily: 'monospace' },
+      tick: { fill: colors.mutedFg, fontSize: 11, fontFamily: colors.mono },
       axisLine: { stroke: colors.border },
       tickLine: false,
     };
@@ -130,7 +131,7 @@ export default function InlineChart({ chart }: { chart: ChartData }) {
 
     return (
       <div className="mt-3 w-full">
-        {title && <div className="text-xs font-mono text-muted-foreground mb-1">{title}</div>}
+        {title && <div className="mb-1 text-[0.8rem] font-medium text-muted-foreground">{title}</div>}
         <ResponsiveContainer width="100%" height={250}>
           <ChartComponent data={rechartsData}>
             {chartContent}
@@ -139,6 +140,6 @@ export default function InlineChart({ chart }: { chart: ChartData }) {
       </div>
     );
   } catch {
-    return <div className="text-xs text-muted-foreground mt-2 italic">Chart failed to render</div>;
+    return <div className="mt-2 text-[0.8rem] text-muted-foreground">Chart failed to render</div>;
   }
 }

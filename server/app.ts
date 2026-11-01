@@ -24,6 +24,7 @@ import { resolveCorsOrigin } from './lib/origin-utils.js';
 import healthRoutes from './routes/health.js';
 import authRoutes from './routes/auth.js';
 import ttsRoutes from './routes/tts.js';
+import miniMaxVoiceDesignRoutes from './routes/minimax-voice-design.js';
 import transcribeRoutes from './routes/transcribe.js';
 import agentLogRoutes from './routes/agent-log.js';
 import tokensRoutes from './routes/tokens.js';
@@ -86,7 +87,7 @@ app.use('*', cacheHeaders);
 // ── API routes ───────────────────────────────────────────────────────
 
 const routes = [
-  healthRoutes, authRoutes, ttsRoutes, transcribeRoutes, agentLogRoutes,
+  healthRoutes, authRoutes, ttsRoutes, miniMaxVoiceDesignRoutes, transcribeRoutes, agentLogRoutes,
   tokensRoutes, memoriesRoutes, eventsRoutes, serverInfoRoutes,
   codexLimitsRoutes, claudeCodeLimitsRoutes, versionRoutes, versionCheckRoutes,
   gatewayRoutes, connectDefaultsRoutes,

@@ -109,3 +109,49 @@ describe('extractWriteBlocks', () => {
     expect(extractWriteBlocks(text2)[0].filePath).toBe('f');
   });
 });
+
+describe('apply_patch (Codex harness) support', () => {
+  const appServerCall = '**tool:** `apply_patch`\n```json\n' + JSON.stringify({
+    changes: [
+      {
+        path: '/home/ubuntu/nerve/src/a.tsx',
+        kind: { type: 'update', move_path: null },
+        stat: { added: 2, removed: 1 },
+        diff: '@@ -26,3 +26,4 @@\n export function FileIcon() {\n-  const ext = one;\n+  // note\n+  const ext = two;\n   return ext;\n',
+      },
+      {
+        path: '/home/ubuntu/nerve/NEW.md',
+        kind: { type: 'add' },
+        diff: '+# New file\n+hello\n',
+      },
+    ],
+  }) + '\n```';
+
+  it('turns an app-server apply_patch update into a before/after edit block', () => {
+    const blocks = extractEditBlocks(appServerCall);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].filePath).toBe('/home/ubuntu/nerve/src/a.tsx');
+    expect(blocks[0].oldText).toBe('export function FileIcon() {\n  const ext = one;\n  return ext;\n');
+    expect(blocks[0].newText).toBe('export function FileIcon() {\n  // note\n  const ext = two;\n  return ext;\n');
+  });
+
+  it('turns an app-server apply_patch add into a write block', () => {
+    const blocks = extractWriteBlocks(appServerCall);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].filePath).toBe('/home/ubuntu/nerve/NEW.md');
+    expect(blocks[0].content).toBe('# New file\nhello\n');
+  });
+
+  it('parses the CLI Begin Patch format', () => {
+    const patch = ['*** Begin Patch', '*** Update File: src/b.ts', '@@', ' const a = 1;', '-const b = 2;', '+const b = 3;', '*** Add File: src/c.ts', '+export const c = 1;', '*** End Patch'].join('\n');
+    const text = '**tool:** `apply_patch`\n```json\n' + JSON.stringify({ input: patch }) + '\n```';
+    const edits = extractEditBlocks(text);
+    expect(edits).toHaveLength(1);
+    expect(edits[0].filePath).toBe('src/b.ts');
+    expect(edits[0].oldText).toBe('const a = 1;\nconst b = 2;');
+    expect(edits[0].newText).toBe('const a = 1;\nconst b = 3;');
+    const writes = extractWriteBlocks(text);
+    expect(writes).toHaveLength(1);
+    expect(writes[0].content).toBe('export const c = 1;');
+  });
+});

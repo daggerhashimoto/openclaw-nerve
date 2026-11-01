@@ -344,7 +344,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   }
 
   return (
-    <div id={id} className="h-full flex flex-col border-r border-border bg-background min-w-0 relative">
+    <div id={id} className="nerve-room-plate h-full flex flex-col min-w-0 relative">
       {/* Session header */}
       <ChatHeader
         onReset={onReset}
@@ -380,7 +380,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         onScroll={handleScroll}
         role="log"
         aria-label="Chat messages"
-        className="flex-1 overflow-y-auto overflow-x-hidden bg-background px-3 sm:px-6"
+        className="nerve-room flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6"
       >
         {/* The transcript takes the whole column; prose is capped only on very wide screens (--reading-measure) */}
         <div className="flex w-full flex-col gap-1 py-4">
@@ -406,13 +406,14 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
               isRecovering={Boolean(stream.isRecovering)}
               recoveryReason={stream.recoveryReason}
               agentName={agentName}
+              agentHue={agentHue}
             />
           )}
 
           {/* Streaming message with condensed activity log */}
           {isGenerating && stream.html && (
             <>
-              <StreamingMessage html={stream.html} elapsedMs={processingTime} agentName={agentName} />
+              <StreamingMessage html={stream.html} elapsedMs={processingTime} agentName={agentName} agentHue={agentHue} />
               {activityLog.length > 0 && (
                 <div className="pb-2 pt-1">
                   <ActivityLog entries={activityLog} />

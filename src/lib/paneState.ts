@@ -58,6 +58,35 @@ export function fleetActivity({ sessions, busyState, unreadSessions, generating 
   return waiting ? 'operator' : 'off';
 }
 
+/** The fleet in numbers: how many sessions exist, how many are working, how many wait on the operator. */
+export interface FleetCounts {
+  total: number;
+  running: number;
+  waiting: number;
+}
+
+export function fleetCounts({ sessions, busyState, unreadSessions, generating }: FleetActivityInput): FleetCounts {
+  let running = 0;
+  let waiting = 0;
+  for (const session of sessions) {
+    const key = getSessionKey(session);
+    if (isSessionRunning(session, Boolean(busyState?.[key]))) running += 1;
+    else if (unreadSessions?.[key]) waiting += 1;
+  }
+  if (generating && running === 0) running = 1;
+  return { total: sessions.length, running, waiting };
+}
+
+/** The fleet in words for the top bar: quiet when nothing is happening. */
+export function fleetWords({ total, running, waiting }: FleetCounts): string {
+  if (total === 0) return 'No agents';
+  const parts: string[] = [];
+  if (running > 0) parts.push(`${running} working`);
+  if (waiting > 0) parts.push(`${waiting} waiting on you`);
+  if (parts.length === 0) return `${total} ${total === 1 ? 'agent' : 'agents'}, all quiet`;
+  return parts.join(', ');
+}
+
 /** Plain-language name for a pane state, for labels and tooltips. */
 export function paneStateLabel(state: PaneState): string {
   switch (state) {

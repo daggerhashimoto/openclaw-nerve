@@ -256,11 +256,13 @@ export const SessionNode = memo(function SessionNode({
     ? getStatusBadgeText(granularStatus)
     : kindLabel;
 
+  // A dark room does not announce itself: idle rows say nothing on the right, so a
+  // "waiting on you" or a live token count stands out the moment it appears.
   const stateText = paneState === 'operator'
     ? 'waiting on you'
     : paneState === 'error'
       ? 'error'
-      : 'idle';
+      : null;
 
   // Indentation: 16px per depth level. The chevron gutter is always reserved so the panes line up.
   const indent = depth * 16;
@@ -272,6 +274,8 @@ export const SessionNode = memo(function SessionNode({
         compact ? 'min-h-8' : 'min-h-[var(--row-unit)]',
         isActive && 'bg-raised',
       )}
+      /* The open room's row takes a tint of its family colour */
+      style={isActive && hue ? { backgroundColor: `color-mix(in srgb, ${hue} 14%, var(--color-raised))` } : undefined}
     >
       {/* Tree guide: a 1px rule dropping from the parent's chevron */}
       {depth > 0 && (
@@ -308,7 +312,7 @@ export const SessionNode = memo(function SessionNode({
           <span aria-hidden="true" className="-mr-0.5 w-3.5 shrink-0" />
         )}
 
-        <Pane state={paneState} hue={hue} label={isLive ? paneStateLabel(paneState) : undefined} />
+        <Pane state={paneState} hue={hue} label={isLive || paneState === 'off' ? paneStateLabel(paneState) : undefined} />
 
         {/* Label (or rename input) */}
         {isRenaming ? (
@@ -357,18 +361,17 @@ export const SessionNode = memo(function SessionNode({
             className="shrink-0 pl-1 text-right font-mono text-[0.8rem] tabular text-live-text"
             duration={700}
           />
-        ) : (
+        ) : stateText ? (
           <span
             className={cn(
               'shrink-0 whitespace-nowrap pl-1 text-right text-[0.8rem]',
               paneState === 'operator' && 'text-operator-text',
               paneState === 'error' && 'text-destructive',
-              paneState === 'off' && 'text-muted-foreground',
             )}
           >
             {stateText}
           </span>
-        )}
+        ) : null}
       </button>
 
       {compact ? (

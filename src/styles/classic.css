@@ -225,6 +225,11 @@ html[data-style="classic"] .nerve-wordmark {
 html[data-style="classic"] .nerve-brand-pane {
   display: none;
 }
+html[data-style="classic"] .nerve-nameplate {
+  font-size: 0.933rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
 html[data-style="classic"] .seg-track {
   padding: 0;
   background: transparent;
@@ -323,11 +328,24 @@ html[data-style="classic"] .nerve-composer-band {
   background: var(--color-card);
   padding-top: 10px;
 }
-html[data-style="classic"] .nerve-composer {
+html[data-style="classic"] .nerve-composer,
+html[data-style="classic"] .nerve-composer-band:is(:focus-within, :has(textarea:not(:placeholder-shown))) .nerve-composer {
   border-radius: var(--r-md);
   border-color: var(--color-input);
   background: color-mix(in srgb, var(--color-background) 66%, transparent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+html[data-style="classic"] .nerve-composer-pane {
+  display: none;
+}
+/* Classic has no night in it: no bloom on lit panes and no ambient room light */
+html[data-style="classic"] {
+  --bloom-live: none;
+  --bloom-operator: none;
+  --bloom-error: none;
+}
+html[data-style="classic"] .nerve-room {
+  background-image: none;
 }
 html[data-style="classic"] .tool-stack {
   border: 1px solid var(--color-border);
@@ -996,4 +1014,32 @@ html[data-style="classic"] .markdown-document-content blockquote {
   100% {
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 0%, transparent);
   }
+}
+
+/* Classic has no frame and room: flat columns, no reveal */
+html[data-style="classic"] {
+  --color-plate: var(--color-card);
+}
+html[data-style="classic"] .nerve-col-center {
+  padding: 0;
+}
+html[data-style="classic"] .nerve-room-plate {
+  background-color: var(--color-background);
+  border-radius: 0;
+  border-right: 1px solid var(--color-border);
+  box-shadow: none;
+}
+html[data-style="classic"] .nerve-col-left,
+html[data-style="classic"] .nerve-right-stack,
+html[data-style="classic"] .nerve-col-right {
+  background-color: var(--color-card);
+}
+html[data-style="classic"] .nerve-col-left {
+  border-right: 1px solid var(--color-border);
+}
+html[data-style="classic"] .panel-header {
+  background: var(--color-card);
+}
+html[data-style="classic"] .nerve-composer-band {
+  background: var(--color-card);
 }

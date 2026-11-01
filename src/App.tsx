@@ -36,7 +36,7 @@ import { Pane } from '@/components/ui/Pane';
 import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useLiveFavicon } from '@/hooks/useLiveFavicon';
-import { fleetActivity } from '@/lib/paneState';
+import { fleetActivity, fleetCounts } from '@/lib/paneState';
 import { shadeFor, useAgentHues } from '@/lib/agentColors';
 import { getRootAgentId, isSubagentSessionKey } from '@/features/sessions/sessionKeys';
 import { createCommands, createSessionCommands } from '@/features/command-palette/commands';
@@ -120,6 +120,10 @@ export default function App({ onLogout }: AppProps) {
   // The whole fleet in one pane: drives the brand pane in the top bar and the tab icon.
   const shellActivity = useMemo(
     () => fleetActivity({ sessions, busyState, unreadSessions, generating: isGenerating }),
+    [sessions, busyState, unreadSessions, isGenerating],
+  );
+  const shellFleet = useMemo(
+    () => fleetCounts({ sessions, busyState, unreadSessions, generating: isGenerating }),
     [sessions, busyState, unreadSessions, isGenerating],
   );
   useLiveFavicon(shellActivity);
@@ -861,7 +865,7 @@ export default function App({ onLogout }: AppProps) {
   const renderRightPanels = (onSelect: (key: string) => Promise<void> | void) => (
     <Suspense fallback={<div className="flex-1 flex items-center justify-center bg-card text-[0.8rem] text-muted-foreground">Loading…</div>}>
       {/* Sessions + Memory stacked vertically, split by a 1px rule */}
-      <div className="nerve-right-stack flex-1 flex flex-col min-h-0 bg-card">
+      <div className="nerve-right-stack flex-1 flex flex-col min-h-0 bg-background">
         <div className="nerve-right-pane flex-1 flex flex-col min-h-0 overflow-hidden border-b border-border">
           <PanelErrorBoundary name="Sessions">
             <SessionList
@@ -1007,6 +1011,7 @@ export default function App({ onLogout }: AppProps) {
           showKanbanView={kanbanVisible}
           performanceMode={performanceMode}
           activity={shellActivity}
+          fleet={shellFleet}
         />
       )}
 
@@ -1048,7 +1053,7 @@ export default function App({ onLogout }: AppProps) {
       <div className="nerve-shell-main flex-1 flex overflow-hidden min-h-0">
         {/* File tree: desktop inline, mobile drawer */}
         {!isCompactLayout && (
-          <div className={`nerve-col-left ${viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0 border-r border-border bg-card'}`}>
+          <div className={`nerve-col-left ${viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0 bg-background'}`}>
             <PanelErrorBoundary name="File Explorer">
               <FileTreePanel
                 workspaceAgentId={workspaceAgentId}
@@ -1126,7 +1131,7 @@ export default function App({ onLogout }: AppProps) {
               rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
               onRightWidthChange={fileBrowserCollapsed ? undefined : setDesktopRightPanelWidth}
               leftClassName="nerve-col-center boot-panel overflow-hidden bg-background"
-              rightClassName="nerve-col-right boot-panel flex flex-col bg-card"
+              rightClassName="nerve-col-right boot-panel flex flex-col bg-background"
               left={chatContent}
               right={renderRightPanels(handleSessionChange)}
             />

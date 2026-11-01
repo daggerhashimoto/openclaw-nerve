@@ -1419,7 +1419,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
       {/* Composer band: the foot of the column */}
       <div className="nerve-composer-band shrink-0 px-3 pb-3 pt-1.5 sm:px-6">
-        <div className="flex w-full flex-col gap-2">
+        {/* Same gutter as the transcript: the composer lines up with the plates above it */}
+        <div className="flex w-full flex-col gap-2 pl-6">
           {/* Staged attachments preview */}
           {stagedAttachments.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -1483,6 +1484,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
+            {/* The operator's pane in the gutter: dark until you are in the composer, then it lights (see .nerve-composer-pane) */}
+            <Pane state="off" size="sm" className="nerve-composer-pane" />
             {/* Uncontrolled textarea: value is read/written via inputRef.
                 This is intentional: useTabCompletion and history navigation
                 set input.value directly, which is safe without a `value` prop.

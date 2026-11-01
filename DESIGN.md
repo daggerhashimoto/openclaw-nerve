@@ -3,9 +3,10 @@ name: Nerve
 description: A night-lit operator console for an OpenClaw agent fleet, where light temperature tells you who is acting.
 colors:
   midnight: "#06080E"
-  panel: "#0B0F17"
-  raised: "#151C2A"
-  popover: "#121826"
+  panel: "#0D121C"
+  plate: "#121926"
+  raised: "#1A2232"
+  popover: "#1B2334"
   rule: "#171E2C"
   input-edge: "#1F2736"
   reading-white: "#ECE6DA"
@@ -23,11 +24,12 @@ colors:
   identity-rose: "#FF7A9E"
   identity-lemon: "#F2D46B"
   identity-sky: "#6FC3F7"
-  operator-plate: "#231E1F"
+  operator-plate: "#372A25"
   scrollbar: "#1D2433"
   success-green: "#7CC99A"
   daylight-paper: "#F3F5F9"
   daylight-panel: "#FFFFFF"
+  daylight-plate: "#F7F9FC"
   daylight-raised: "#EAEEF4"
   daylight-rule: "#D9DFE8"
   daylight-ink: "#131722"
@@ -38,17 +40,22 @@ colors:
   daylight-red: "#C8322F"
   daylight-pane-off: "#E4E9F1"
   daylight-pane-edge: "#B9C2D0"
-  daylight-operator-plate: "#FFF7EF"
+  daylight-operator-plate: "#FFEBD6"
 typography:
   display:
-    fontFamily: "Bricolage Grotesque, Atkinson Hyperlegible Next, Helvetica Neue, Arial, sans-serif"
-    fontSize: "1.267rem"
+    fontFamily: "Geist, Atkinson Hyperlegible Next, Helvetica Neue, Arial, sans-serif"
+    fontSize: "1.533rem"
     fontWeight: 700
     lineHeight: 1
     letterSpacing: "-0.03em"
-    fontVariation: "'opsz' 96, font-stretch 94%"
+  nameplate:
+    fontFamily: "Geist, Atkinson Hyperlegible Next, Helvetica Neue, Arial, sans-serif"
+    fontSize: "1.2rem"
+    fontWeight: 700
+    lineHeight: 1.1
+    letterSpacing: "-0.02em"
   name:
-    fontFamily: "Bricolage Grotesque, Atkinson Hyperlegible Next, Helvetica Neue, Arial, sans-serif"
+    fontFamily: "Geist, Atkinson Hyperlegible Next, Helvetica Neue, Arial, sans-serif"
     fontSize: "0.933rem"
     fontWeight: 700
     letterSpacing: "-0.01em"
@@ -264,21 +271,23 @@ components:
 
 **Creative North Star: "Night Light"**
 
-An operator's console is a building seen at night. You do not read the facade by its architecture; you read it by which rooms are lit and how warm the light is. Nerve borrows that reading. Cold electric blue is an agent at work. Warm cantaloupe is the operator, and anything that has finished and now waits on the operator. When work is done the window goes dark. Colour never decorates, it reports, and because every lit surface means something, the shell can hold a whole fleet in a glance without asking for attention.
+An operator's console is a building seen at night. You do not read the facade by its architecture; you read it by which rooms are lit and how warm the light is. Nerve borrows that reading. Cold electric blue is an agent at work. Warm cantaloupe is the operator, and anything that has finished and now waits on the operator. When work is done the window goes back to its family colour: every room keeps its own light on at idle, so the building reads as inhabited, and only a lit pane blooms, which is how work shows. Colour never decorates, it reports, and because every lit surface means something, the shell can hold a whole fleet in a glance without asking for attention.
 
-The mood is midnight, exact, calm, dense, lit. This is an Operate-mode surface that stays open for hours, so the brand lives in precise details rather than expression: a 28px row unit shared by every list row, tool row and panel header; plates that read by value and a 1px edge light instead of drawn borders; one display face reserved for the wordmark and the names of agents and speakers; prose held to a measure that spans the column. Density is welcome because nothing pulses, glows or gradients. State changes are a light switch, 120ms, on or off.
+The mood is midnight, exact, calm, dense, lit. This is an Operate-mode surface that stays open for hours, so the brand lives in precise details rather than expression: a 28px row unit shared by every list row, tool row and panel header; plates that read by value and a 1px edge light instead of drawn borders; one display face reserved for the wordmark and the names of agents and speakers; prose held to a measure that spans the column. Density is welcome because nothing pulses; the only light that spreads is a lit pane's bloom, and the only gradient is the room's ambient light from above. State changes are a light switch, 120ms, on or off.
 
-The system refuses the hacker costume (scanlines, glowing HUD chrome, tracked uppercase labels), the grey dashboard with one decorative accent, glass and gradients, coloured side rails, and any pulsing or breathing motion. Daylight is the same building by day: cool paper, printed hairlines instead of edge light, panes printed as ink swatches, identical meanings. The previous appearance survives only as an opt-in Classic skin scoped under its own attribute and is not part of this system.
+The system refuses the hacker costume (scanlines, glowing HUD chrome, tracked uppercase labels), the grey dashboard with one decorative accent, glass and decorative gradients, coloured side rails, and any pulsing or breathing motion. Daylight is the same building by day: cool paper, printed hairlines instead of edge light, panes printed as ink swatches, identical meanings. The previous appearance survives only as an opt-in Classic skin scoped under its own attribute and is not part of this system.
 
 **Key Characteristics:**
 - Light temperature is the state vocabulary: blue works, cantaloupe waits on you, red failed, dark is done.
-- Flat lit panes (10x14 default, 8x11 small) are the only state marker; no glows, dots, rails or glyph icons.
+- Panes are the state marker: an idle pane shows its family colour at 84% strength, a lit pane switches to the state colour and casts a short bloom; no dots, rails or glyph icons.
 - One 28px row unit across list rows, tool rows, panel headers and the status bar; the top bar is 44px.
+- The shell is a Midnight frame around one lifted Panel room with a 6px reveal; tool stacks, code and the composer step up once more to Plate.
 - Raised plates read by tonal value plus a 1px top edge light; only floating surfaces cast a real offset shadow.
 - Corners stay between 1px and 4px; larger radius steps clamp to 4px.
-- Atkinson Hyperlegible Next for reading and UI, Atkinson Hyperlegible Mono with tabular numerals for measures, Bricolage Grotesque for names only.
+- Atkinson Hyperlegible Next for reading and UI, Atkinson Hyperlegible Mono with tabular numerals for measures, Geist for names only.
 - Sentence case everywhere; no eyebrows, kickers or tracked caps.
-- Motion is a 120ms switch with a near-linear ease-out; reduced motion makes it instant.
+- Motion is a 120ms switch with a near-linear ease-out; a new turn lands with one 200ms rise; reduced motion makes both instant.
+- The composer is the operator's next window: a dark plate with a dark gutter pane at rest, warmed to the operator plate with a lit pane while the operator is in it.
 
 ## Colors
 
@@ -295,8 +304,9 @@ A deep blue-black night with two temperatures of light on it, a warm reading whi
 - **Success Green** (`success-green`): confined to diff additions, copy-confirmed feedback and the new-file view. Never a state pane.
 
 ### Neutral
-- **Midnight** (`midnight`): the ground. The centre column, inputs, the segmented track's sunk channel, keycaps and the composer band sit on it.
-- **Panel** (`panel`): one step up. Side columns, the top bar, status bar, panel headers, plates and tool stacks.
+- **Midnight** (`midnight`): the ground and the frame. The top bar, both side columns, the status bar, inputs and keycaps sit on it.
+- **Panel** (`panel`): one step up, the room. The centre column (chat header, transcript, composer band) is one lifted plate of Panel inside the Midnight frame; the segmented track in the top bar also sits on it.
+- **Plate** (`plate`): one more step, for surfaces inside the room: tool stacks, code blocks and the composer.
 - **Raised** (`raised`): the hover and selected fill for rows, chips, icon buttons and the active chip on the segmented track; also inline code background.
 - **Popover** (`popover`): floating menus, the command palette and inline select listboxes.
 - **Rule** (`rule`): hairline dividers, panel borders and the tool stack's row separators. It is kept low so plates read by value, not by lines.
@@ -313,21 +323,24 @@ Daylight (`daylight-*`) keeps every role and swaps the values: paper ground, whi
 Seven hues name agent families, not states: Cantaloupe (#FFA567, reserved for the main agent), Mint (#7CC99A), Lilac (#B9A7FF), Aqua (#7FD1C7), Rose (#FF7A9E), Lemon (#F2D46B) and Sky (#6FC3F7). A family's hue is assigned on first sight, least-used first, remembered in the browser, and adjustable by the operator from a root row's actions. Subagents and cron children take lighter shades of the parent hue (62% and 44% of the hue mixed toward white). Electric Blue is deliberately absent from this list so an idle blue family can never be mistaken for work in progress.
 
 ### Named Rules
-**The Light Temperature Rule.** Blue is agent work, cantaloupe is the operator and anything waiting on the operator, red is error, and nothing else is coloured. A surface that is not reporting one of those three states is a neutral.
+**The Light Temperature Rule.** Blue is agent work, cantaloupe is the operator and anything waiting on the operator, red is error, and nothing else is coloured. A surface that is not reporting one of those three states is a neutral. Family hues are identity, not state: they sit on idle panes, on names, on the header band and on the open row, and a pane that is lit always shows the state colour with its bloom.
 
-**The Identity Rule.** An agent family's hue shows only in the glass of a pane whose light is off: 56% of the hue mixed into Pane Off for the fill and 62% into Pane Edge for the frame. The moment a pane lights, it speaks the state colour and nothing else. Identity never appears as a rail, a tinted row or a coloured name.
+**The Identity Rule.** Every agent family owns one of seven hues (main is pinned to Cantaloupe; children take a lighter shade of their root's hue), assigned on first sight and operator-pickable from a root row. The hue stays on at idle: 84% of it fills the family's off panes (70% in the frame), the agent's name takes it in the display face (darkened 42% toward ink in Daylight), the chat header band takes a 9% tint (14% in Daylight) and the open room's row a 14% tint over Raised. Electric Blue is never an identity hue, and a lit pane always shows the state colour, so identity and state never trade places.
+
+**The Window Rule.** The composer is the operator's next window. At rest it is a dark plate with a dark pane in the gutter; while the operator is in it (focus, or text already typed) it warms to Operator Plate with the warm edge light and the pane lights Cantaloupe, so the turn being written looks like the turns already sent.
 
 ## Typography
 
-**Display Font:** Bricolage Grotesque (with Atkinson Hyperlegible Next, Helvetica Neue, Arial)
+**Display Font:** Geist (with Atkinson Hyperlegible Next, Helvetica Neue, Arial)
 **Body Font:** Atkinson Hyperlegible Next (with Helvetica Neue, Arial)
 **Label/Mono Font:** Atkinson Hyperlegible Mono (with JetBrains Mono, Fira Code, Cascadia Code, Consolas)
 
-**Character:** Atkinson carries the whole console at a 15px base with kerning, ligatures and contextual alternates on; it is built for legibility at small sizes and long sessions. Bricolage Grotesque appears only where a name is spoken: the wordmark at its display optical size and 94% width, and agent or speaker names. The mono face shares Atkinson's skeleton so code and measures feel like the same voice, with tabular numerals so counts and clocks do not shimmer.
+**Character:** Atkinson carries the whole console at a 15px base with kerning, ligatures and contextual alternates on; it is built for legibility at small sizes and long sessions. Geist appears only where a name is spoken: the wordmark, the nameplate of the open session in the chat header, and agent or speaker names, always at 700 weight with tight tracking. The mono face shares Atkinson's skeleton so code and measures feel like the same voice, with tabular numerals so counts and clocks do not shimmer.
 
 ### Hierarchy
-- **Display** (700, 1.267rem, line-height 1, -0.03em, opsz 96, width 94%): the Nerve wordmark only, followed by the 8x12 fleet pane.
-- **Name** (700 or 600, 0.933rem in the chat header, inherits size in rows and message headers, -0.01em): agent and speaker names in the session header, top-level session rows and message headers. The operator's name takes Cantaloupe text.
+- **Display** (700, 1.533rem, line-height 1, -0.03em): the Nerve wordmark only, followed by the 12x17 fleet pane.
+- **Nameplate** (700, 1.2rem, line-height 1.1, -0.02em): the open session's agent name in the chat header, in its family hue; the one place a name is set larger than the text around it.
+- **Name** (700 or 600, inherits size in rows and message headers, -0.01em): agent and speaker names in top-level session rows and message headers. An agent's name takes its family hue (darkened toward ink in Daylight); the operator's name stays in Reading White on its warm plate.
 - **Headline** (600, 1.2rem, 1.2, -0.01em): section titles on settings and dialog surfaces.
 - **Title** (600, 0.867rem): panel header labels, field labels, Send, table heads.
 - **Body** (400, 1rem, 1.6): agent prose, held to the 72em reading measure (about 140 characters, which is the whole column on most screens). Code blocks, tables and charts may take the full column.
@@ -336,7 +349,7 @@ Seven hues name agent families, not states: Cantaloupe (#FFA567, reserved for th
 - **Mono** (400, 0.8rem, tabular): tool rows, timestamps, durations, model names, inline select menus and code block language bars. Keycaps drop to 0.733rem.
 
 ### Named Rules
-**The Names Rule.** Bricolage Grotesque is used only for the wordmark and for agent or speaker names. Headings, labels and buttons stay in Atkinson.
+**The Names Rule.** Geist is used only for the wordmark and for agent or speaker names. Headings, labels and buttons stay in Atkinson.
 
 **The Sentence Case Rule.** Every label, header, chip and button is sentence case. No eyebrows, no kickers above headings, no letterspaced capitals.
 
@@ -353,7 +366,7 @@ In the transcript every message, tool stack and plate shares one left text edge.
 
 ## Elevation & Depth
 
-Nerve is a tonal system with one lighting trick. Depth comes from stepping value: Midnight ground, Panel one step up, Raised for hover and selection, Popover for anything floating. A raised plate does not draw a border; it carries a 1px highlight along its top edge (the edge light) so it reads as a lit surface against the ground. Only surfaces that truly float (the composer, popovers, menus, the command palette) cast a real offset shadow, and they keep the edge light too. There is never a zero-offset glow, and nothing animates its shadow.
+Nerve is a tonal system with one lighting trick. Depth comes from stepping value: Midnight for the frame, Panel for the room, Plate for surfaces inside the room, Raised for hover and selection, Popover for anything floating. A raised plate does not draw a border; it carries a 1px highlight along its top edge (the edge light) so it reads as a lit surface against the ground. Only surfaces that truly float (the composer, popovers, menus, the command palette) cast a real offset shadow, and they keep the edge light too. There is never a zero-offset glow, and nothing animates its shadow.
 
 In Daylight there is no edge to catch light, so the plate token becomes a printed hairline in the rule colour and the float shadow softens to an ink tint.
 
@@ -363,11 +376,17 @@ In Daylight there is no edge to catch light, so the plate token becomes a printe
 - **Float** (`box-shadow: 0 14px 36px rgba(0, 0, 0, 0.46), 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.07)`): the composer and the command palette shell. Daylight: `0 14px 36px rgba(19, 23, 34, 0.14), 0 1px 2px rgba(19, 23, 34, 0.08), inset 0 0 0 1px var(--border)`.
 - **Menu** (`box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32)`): inline select listboxes, slash menus and top bar panels.
 - **Pane edge** (`box-shadow: inset 0 0 0 1px var(--color-pane-edge)`): a dark pane's window frame; it drops to none when the pane lights.
+- **Bloom** (`box-shadow: 0 0 9px 0 color-mix(in srgb, <state colour> 58% to 62%, transparent)`): the light a lit pane throws on the ground, in the pane's own colour (`--bloom-live`, `--bloom-operator`, `--bloom-error`); Daylight sets all three to none.
+- **Room light** (`radial-gradient(120% 70% at 50% 0%, 8% Electric Blue in Midnight, Midnight 60%)`): the transcript ground's ambient light from above, so the composer floats in the darkest part of the room; Daylight has none.
 
 ### Named Rules
 **The Edge Light Rule.** Plates read by value and a 1px top highlight, not by drawn borders; Daylight prints a hairline instead. Drawn borders are reserved for inputs, outline buttons and hairline dividers.
 
-**The Switch Rule.** State changes switch in 120ms with `cubic-bezier(0.2, 0, 0, 1)`; nothing breathes or pulses, and reduced motion makes every transition and animation instant. Entrances (messages, menus, drawers) fade or slide once in 140ms to 220ms using the same ease.
+**The Frame Rule.** The shell is a dark frame around one lifted room. Top bar, side columns and status bar sit flat on Midnight with hairlines only; the centre column is a single plate of Panel with the edge light and 4px corners, and the frame shows for 6px around it. Surfaces inside the room step up once more to Plate. Nothing else in the shell is a plate.
+
+**The Switch Rule.** State changes switch in 120ms with `cubic-bezier(0.2, 0, 0, 1)`; nothing breathes or pulses, and reduced motion makes every transition and animation instant. Entrances (messages, menus, drawers) fade or slide once in 140ms to 220ms using the same ease; a new turn in the transcript lands with one 200ms rise of 6px and a fade, and that is the transcript's only entrance.
+
+**The Bloom Rule.** A lit pane casts a short bloom of its own colour, and that is the only light in the system that spreads: off panes, plates, buttons and text never glow. The bloom switches on and off with the pane in 120ms. Daylight prints panes flat.
 
 ## Shapes
 
@@ -380,44 +399,46 @@ Borders are hairlines in the rule colour or the input edge colour, 1px, used for
 Flat, exact, lit. Controls are quiet fills that step to Raised on hover; state is shown by the lit pane next to them, never by a coloured background on the control itself.
 
 ### Pane (signature component)
-The state marker and the whole brand in one element. An inline rectangle, 0.667rem by 0.933rem (10x14), radius 1px. Off: Pane Off fill with a 1px inset Pane Edge frame. Live: Electric Blue fill, frame removed. Operator: Cantaloupe fill. Error: Signal Red fill. Small (0.533rem by 0.733rem, 8x11) sits on text lines: tool rows, message headers, the chat header's run state, composer voice state. The brand pane beside the wordmark is 0.533rem by 0.8rem. Transitions are background and box-shadow over 120ms; colour is never the only signal, so a pane with no adjacent text carries an accessible label (Running, Waiting on you, Failed, Idle). The browser tab icon is the same mark on a Midnight ground: Reading White at rest, blue while any agent works, cantaloupe when work waits, red on failure. A pane that belongs to an agent family carries its identity hue in the off state only (see The Identity Rule), so idle rows, the chat header and the transcript still say whose room it is.
+The state marker and the whole brand in one element. An inline rectangle, 0.667rem by 0.933rem (10x14), radius 1px. Off: Pane Off fill with a 1px inset Pane Edge frame. Live: Electric Blue fill, frame removed. Operator: Cantaloupe fill. Error: Signal Red fill. Small (0.533rem by 0.733rem, 8x11) sits on text lines: tool rows, message headers, the composer's gutter, composer voice state. The chat header's run state uses the default size; the brand pane beside the wordmark is 0.8rem by 1.133rem (12x17). A system line carries a dark pane, or Signal Red when the line reports a failure (a turn that ended before a reply, a send or reset error, a history load error). Transitions are background and box-shadow over 120ms; colour is never the only signal, so a pane with no adjacent text carries an accessible label (Running, Waiting on you, Failed, Idle). The browser tab icon is the same mark on a Midnight ground: Reading White at rest, blue while any agent works, cantaloupe when work waits, red on failure. A pane that belongs to an agent family carries its identity hue at 84% while off (see The Identity Rule) and switches to the state colour with its bloom when lit, so idle rows, the chat header and the transcript say whose room it is and lit work still reads at a glance.
 
 ### Buttons
 - **Shape:** tight corners (3px), 1px transparent border reserved for outline and secondary variants, 120ms transition on background, border, colour and filter, 1px downward press on active.
 - **Primary (Send):** Cantaloupe fill with a Midnight label, 600 weight at 0.867rem, 0 by 0.875rem padding, 2rem tall (2.75rem on touch viewports). Hover raises brightness 10%; a sent message flashes it brighter for 200ms; a send error shakes it 2px. It is the one warm control on the screen.
 - **Hover / Focus:** every variant takes a 2px Cantaloupe outline offset 1px on focus-visible. Disabled drops to 50% opacity.
-- **Outline:** transparent fill, Input Edge stroke, Reading White text, Raised on hover. **Ghost:** no stroke, Slate text, Raised fill and Reading White text on hover. **Destructive:** Signal Red fill with a Midnight label. **Link:** Reading White text underlined in Pane Edge, underline turns Cantaloupe on hover.
+- **Outline:** transparent fill, Input Edge stroke, Reading White text, Raised on hover. **Ghost:** no stroke, Slate text, Raised fill and Reading White text on hover. **Destructive:** Signal Red fill with a Midnight label. **Link:** in prose, Electric Blue Text with an underline at 38% that fills on hover; in chrome, Reading White underlined in Pane Edge.
 - **Toolbar button:** row-unit tall, Rule stroke, Reading White text; active state takes Raised fill and a Pane Edge stroke.
 
 ### Chips
 - **Shell chip:** transparent, Slate text at 0.867rem 500, row-unit tall, 0 by 10px padding, 3px radius. Hover and active both switch to Raised fill with Reading White text. No stroke, no accent colour.
-- **Segmented track:** a Midnight channel with 2px padding and 4px radius holding chips 6px shorter than the row unit; the active chip is lifted onto the track with Raised fill and the edge light.
+- **Segmented track:** a Panel channel on the Midnight bar with 2px padding and 4px radius holding chips 6px shorter than the row unit; the active chip is lifted onto the track with Raised fill and the edge light.
 - **Badge:** 1.333rem tall, 2px radius, Rule stroke, Slate text at 0.8rem. Tones tint the stroke by mixing 45% of the state colour into Rule: live takes Electric Blue Text, primary and warning take Cantaloupe text, danger takes Signal Red.
 
 ### Cards / Containers
 - **Corner Style:** 3px for plates and tool stacks, 4px for the composer, 6px for the command palette.
-- **Background:** Panel; Popover for floating menus.
+- **Background:** Plate inside the room; Popover for floating menus.
 - **Shadow Strategy:** edge light on plates (The Edge Light Rule); float shadow on the composer and command palette; menu shadow on listboxes.
 - **Border:** none on plates. Panel headers have a hairline below in Rule. Code blocks and tool result details keep a Rule hairline because they sit inside prose.
 - **Internal Padding:** 12px horizontal on headers and plates, 8px 12px on message plates, 10px 12px on code blocks.
-- **Operator plate:** the operator's whole turn (name, time and body) sits on Operator Plate (Panel warmed by 10% cantaloupe), 3px radius, warm edge light, no border, width fit to content and capped at the reading measure. The small pane in the gutter is Cantaloupe and the speaker name is Cantaloupe text in the display face.
+- **Operator plate:** the operator's whole turn (name, time and body) sits on Operator Plate (Panel warmed by 18% cantaloupe), 3px radius, warm edge light, no border, width fit to content and capped at the reading measure. The small pane in the gutter is Cantaloupe with its bloom; the speaker name stays in Reading White in the display face, since the plate already says who is speaking.
 - **Tool stack:** consecutive tool rows share one plate with the edge light, clipped to 3px, divided by Rule hairlines.
+- **Code block:** Plate with a Rule hairline and a row-unit language bar; tokens take the palette: keywords, built-ins and types in Electric Blue Text, strings in Cantaloupe text, numbers and attributes in a blue-white mix, names in Reading White at 600, comments in Slate italic, diff additions green and deletions red.
 
 ### Inputs / Fields
 - **Style:** Midnight fill, 1px Input Edge stroke, 3px radius, 2.133rem tall (2.75rem on touch), 0 by 10px padding, UI size text, Slate placeholder.
 - **Focus:** stroke turns Cantaloupe and a 1px Cantaloupe outline sits flush on it; no glow.
 - **Error / Disabled:** aria-invalid turns the stroke Signal Red; disabled drops to 50% opacity and refuses the pointer.
-- **Composer:** a floating plate on Panel with the float shadow, 4px radius, a 1px border that is transparent at rest and Cantaloupe at 60% while the operator is typing (solid Cantaloupe while recording). The textarea is borderless at 1rem on a 42px minimum height; a toolbar row below holds shell icon buttons on the left, shortcut hints as keycaps on the right, and Send at the end. The composer spans the column together with the transcript.
+- **Composer:** the operator's next window. A floating plate of Plate with the float shadow, 4px radius, a small pane in the gutter to its left and a 1px border that is transparent at rest. While the operator is in it (focus, or text already typed) the plate warms to Operator Plate with the warm edge light, the border lights Cantaloupe at 60% (solid Cantaloupe while recording) and the gutter pane switches to Cantaloupe, so the turn being written matches the turns already sent (The Window Rule). The textarea is borderless at 1rem on a 42px minimum height; a toolbar row below holds shell icon buttons on the left, shortcut hints as keycaps on the right, and Send at the end. The composer shares the transcript's gutter and spans the column with it.
 - **Inline select trigger:** transparent, Input Edge stroke, 3px radius, 0.8rem text, 1.75rem tall on desktop (2.75rem on touch), Raised on hover, chevron in Slate. Its listbox is Popover with a Rule stroke, the menu shadow and 0.667rem mono options.
-- **Keycap:** inline flex, 1.333rem tall, 0 by 5px padding, 2px radius, Rule stroke, Midnight fill, mono at 0.733rem in Slate. Used for composer shortcut hints and nowhere decorative.
+- **Keycap:** inline flex, 1.333rem tall, 0 by 5px padding, 2px radius, Rule stroke, Midnight fill, mono at 0.733rem in Slate. Used for composer shortcut hints and nowhere decorative. A hairline sits beneath it and a thread of light on top, so it reads as a raised cap.
 
 ### Navigation
-- **Top bar:** 2.933rem (44px) tall on Panel with a Rule hairline below; wordmark then fleet pane at left, the Chat and Tasks segmented track, usage and settings as shell icon buttons at right. On viewports under 372px the chips drop to a 40px minimum.
+- **Top bar:** 2.933rem (44px) tall on Midnight with a Rule hairline below; wordmark then the 12x17 fleet pane at left, then the fleet in words (mono; Slate when all is quiet, Electric Blue Text while agents work, Cantaloupe text when work waits on you), the Chat and Tasks segmented track, usage and settings as shell icon buttons at right. On viewports under 372px the chips drop to a 40px minimum.
+- **Chat header:** row-unit tall at the top of the room plate with a Rule hairline below; the open session's agent name as a nameplate in the display face, then the model and effort selects, then the run state: a default-size pane in the family hue with "Idle", or the stage word and the live clock in Electric Blue Text while the agent works. The band and its hairline take a 9% tint of the open agent's family hue (14% in Daylight), and the nameplate is set in that hue.
 - **Shell icon button:** row-unit square, 3px radius, Slate icon, Raised fill and Reading White on hover and when active; icons never shrink.
-- **Panel header:** row-unit tall, Panel fill, Rule hairline below, 0 4px 0 12px padding, 600 label at 0.867rem in sentence case.
-- **List rows (sessions, tree):** row-unit tall, 0.867rem text, Raised on hover and when selected; a pane leads the row (default size in the agents column, small in the tree). Top-level session names use the display face; folders in the workspace tree carry 500 weight instead of type icons.
-- **Status bar:** row-unit tall, Panel with a Rule hairline above, 0.8rem Slate text; a connection pane, then counts in words with tabular numerals, version in mono at the right.
-- **Wordmark:** Bricolage Grotesque, 1.267rem, 700, 94% width, display optical size, -0.03em, Reading White, followed by the fleet pane.
+- **Panel header:** row-unit tall, transparent on the frame, Rule hairline below, 0 4px 0 12px padding, 600 label at 0.867rem in sentence case.
+- **List rows (sessions, tree):** row-unit tall, 0.867rem text, Raised on hover and when selected; a pane leads the row (default size in the agents column, small in the tree). Top-level session names use the display face; folders in the workspace tree carry 500 weight instead of type icons. An idle session row says nothing at its right end; text appears there only as a live token count, "waiting on you" in Cantaloupe text, or "error" in Signal Red, so the quiet rows stay quiet and the lit ones stand out. The open room's row takes a 14% tint of its family hue over Raised.
+- **Status bar:** row-unit tall, Midnight with a Rule hairline above, 0.8rem Slate text; a connection pane, then counts in words with tabular numerals, version in mono at the right. The context meter fills Electric Blue, Cantaloupe past the warning threshold and Signal Red when nearly full.
+- **Wordmark:** Geist, 1.533rem, 700, -0.03em, Reading White, followed by the 12x17 fleet pane.
 
 ### Tool row
 One 28px line of mono text at 0.8rem: a small pane (live while running, off when done, red when failed), the verb in Reading White capped at 45% width, the arguments in Slate, and a right-aligned tabular measure that turns Electric Blue Text while live. Expandable rows take Raised on hover and focus and end with a 14px chevron in Slate.
@@ -426,11 +447,13 @@ One 28px line of mono text at 0.8rem: a small pane (live while running, off when
 
 ### Do:
 - **Do** show state only with a lit pane: Electric Blue for agent work, Cantaloupe for the operator and work waiting on the operator, Signal Red for failure, Pane Off when done (The Light Temperature Rule).
-- **Do** tint an off pane with its agent family's identity hue and leave lit panes to the state colours (The Identity Rule).
+- **Do** keep an agent family's hue on at idle: its panes at 84%, its name, the header band and the open row; lit panes always show the state colour with its bloom (The Identity Rule).
 - **Do** switch panes and hover fills in 120ms with `cubic-bezier(0.2, 0, 0, 1)` and let reduced motion make them instant (The Switch Rule).
-- **Do** build raised surfaces as plates: Panel fill plus the 1px edge light, no drawn border; in Daylight the token prints a hairline (The Edge Light Rule).
+- **Do** warm the composer to Operator Plate and light its gutter pane while the operator is in it, on focus or with text typed, so the turn being written matches the turns already sent (The Window Rule).
+- **Do** let a new turn land with one 200ms rise and fade on the switch ease; the transcript has no other entrance.
+- **Do** build raised surfaces as plates: Panel for the room, Plate inside it, each with the 1px edge light and no drawn border; in Daylight the token prints a hairline (The Edge Light Rule, The Frame Rule).
 - **Do** keep every list row, tool row, panel header and the status bar on the 1.867rem row unit (The One Row Rule).
-- **Do** reserve Bricolage Grotesque for the wordmark and agent or speaker names (The Names Rule).
+- **Do** reserve Geist for the wordmark and agent or speaker names (The Names Rule).
 - **Do** hold agent prose to the 72em reading measure and let code, tables and charts take the column.
 - **Do** set timestamps, counts, durations, models and code in Atkinson Hyperlegible Mono with tabular numerals.
 - **Do** keep corners between 1px and 4px; 6px is only for the floating command palette shell.
@@ -438,11 +461,11 @@ One 28px line of mono text at 0.8rem: a small pane (live while running, off when
 - **Do** give every pane without adjacent text an accessible label (Running, Waiting on you, Failed, Idle).
 
 ### Don't:
-- **Don't** colour anything that is not reporting agent work, operator ownership, an error, or an agent family's identity inside an off pane; no decorative accents, coloured side rails or tinted headers.
-- **Don't** pulse, breathe, glow or animate a shadow; the only blinking element is the streaming cursor pane, and it stops under reduced motion.
+- **Don't** colour anything that is not reporting agent work, operator ownership, an error, a link, code syntax or an agent family's identity; no decorative accents or coloured side rails.
+- **Don't** pulse, breathe or animate a shadow; the only glow is a lit pane's bloom (The Bloom Rule) and the only blinking element is the streaming cursor pane, which stops under reduced motion.
 - **Don't** add scanlines, HUD chrome, letterspaced uppercase labels, eyebrows or kickers above headings; labels are sentence case.
-- **Don't** use glass, blur, gradients or zero-offset shadows; depth is tonal value plus the edge light, and only floating surfaces cast an offset shadow.
+- **Don't** use glass, blur or decorative gradients; depth is tonal value plus the edge light, the room's ambient light is the one gradient, the bloom is the one zero-offset shadow, and only floating surfaces cast an offset shadow.
 - **Don't** draw a border around a plate; borders belong to inputs, outline buttons and hairline dividers.
 - **Don't** replace a pane with a dot, a circle, a badge or a glyph icon, and never make colour the only signal.
-- **Don't** use Bricolage Grotesque for headings, labels or buttons, or a system display face anywhere.
+- **Don't** use Geist for headings, labels or buttons, or a system display face anywhere.
 - **Don't** round panels or shell surfaces beyond 4px, or reintroduce the Classic skin's rounded panels and amber accents into the Nerve style.

@@ -77,7 +77,7 @@ export function StatusBar({
     : { pane: 'error' as const, label: 'Disconnected' };
 
   return (
-    <div className="flex h-[var(--row-unit)] shrink-0 select-none items-center gap-2.5 overflow-hidden whitespace-nowrap border-t border-border bg-card px-3 text-[0.8rem] text-muted-foreground max-[378px]:gap-2 max-[378px]:px-2">
+    <div className="flex h-[var(--row-unit)] shrink-0 select-none items-center gap-2.5 overflow-hidden whitespace-nowrap border-t border-border bg-background px-3 text-[0.8rem] text-muted-foreground max-[378px]:gap-2 max-[378px]:px-2">
       {/* Connection status */}
       <span
         role="status"

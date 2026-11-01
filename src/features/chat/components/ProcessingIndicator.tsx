@@ -1,3 +1,4 @@
+import { nameHueStyle } from '@/lib/agentColors';
 import { useState, useEffect } from 'react';
 import type { ProcessingStage, ActivityLogEntry } from '@/contexts/ChatContext';
 import { Pane } from '@/components/ui/Pane';
@@ -15,6 +16,8 @@ interface ProcessingIndicatorProps {
   recoveryReason?: string | null;
   /** Agent display name for the header line. */
   agentName?: string;
+  /** Identity hue of the agent family; colours the name. */
+  agentHue?: string;
 }
 
 /**
@@ -36,6 +39,7 @@ export function ProcessingIndicator({
   isRecovering = false,
   recoveryReason = null,
   agentName = 'Agent',
+  agentHue,
 }: ProcessingIndicatorProps) {
   // Local timer for stale detection (1s resolution)
   // Lazy initializer avoids impure Date.now() call during render
@@ -58,7 +62,7 @@ export function ProcessingIndicator({
     <div className="relative flex flex-col gap-1.5 pb-1 pl-6 pt-2" aria-label={`${agentName} is working`} role="group">
       <div className="flex min-h-[var(--row-unit)] items-center gap-2 text-[0.867rem]">
         <Pane state="live" size="sm" className="absolute left-0 top-[1.1rem]" />
-        <span className="min-w-0 truncate font-display font-semibold text-foreground">{agentName}</span>
+        <span className={`min-w-0 truncate font-display font-semibold text-foreground ${agentHue ? 'name-hued' : ''}`} style={nameHueStyle(agentHue)}>{agentName}</span>
         <ThinkingDots stage={stage} />
         <span className="shrink-0 font-mono text-[0.8rem] tabular text-live-text">{formatClock(elapsedMs)}</span>
       </div>

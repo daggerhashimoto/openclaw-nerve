@@ -1,3 +1,4 @@
+import { nameHueStyle } from '@/lib/agentColors';
 import { useState, useCallback, lazy, Suspense, memo } from 'react';
 import { Check, ChevronDown, ChevronRight, Code, Copy, Mic } from 'lucide-react';
 import { Pane } from '@/components/ui/Pane';
@@ -56,6 +57,9 @@ const ASSISTANT_PANE_LABEL: Partial<Record<PaneState, string>> = {
   live: 'Writing',
   error: 'Failed',
 };
+
+/** System lines that report a failure (gateway turn errors, send and reset errors, history load errors). */
+const SYSTEM_FAILURE = /^[^\p{L}\p{N}]*(?:send error|reset failed|failed to load history|this turn ended before a reply|error\b|failed\b)/iu;
 
 /** Shared header line geometry: one row unit, name, time, then quiet extras. */
 const headerRowClass = 'flex min-h-[var(--row-unit)] min-w-0 items-center gap-2';
@@ -233,19 +237,24 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
     );
   }
 
-  // Header line: pane, who, when. The operator is warm; the agent is lit while it writes.
+  // Header line: pane, who, when. The operator is warm; the agent is lit while it writes;
+  // a system line is dark unless it reports a failure, then its pane is red.
+  const isNote = !isUser && !isAssistant;
+  const systemFailed = isNote && (Boolean(msg.failed) || SYSTEM_FAILURE.test((msg.rawText || msg.html || '').replace(/<[^>]*>/g, '')));
   const paneState: PaneState | null = isUser
     ? 'operator'
     : isAssistant
       ? (msg.failed ? 'error' : msg.streaming ? 'live' : 'off')
-      : null;
+      : (systemFailed ? 'error' : 'off');
   const speaker = isUser
     ? 'You'
     : isAssistant
       ? (agentName || 'Agent')
       : msg.role === 'event' ? 'Event' : 'System';
+  // The operator's plate already says who is speaking, so "You" stays in reading white and the
+  // agent's name carries its family colour (the same hue as its pane).
   const speakerClass = isUser
-    ? 'shrink-0 font-display font-semibold text-operator-text'
+    ? 'shrink-0 font-display font-semibold text-foreground'
     : isAssistant
       ? 'min-w-0 truncate font-display font-semibold text-foreground'
       : 'shrink-0 font-medium';
@@ -305,7 +314,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           {paneState && (
             <Pane state={paneState} size="sm" className="absolute left-0 top-[1.1rem]" hue={isAssistant ? agentHue : undefined} label={isAssistant ? ASSISTANT_PANE_LABEL[paneState] : undefined} />
           )}
-          <span className={`msg-speaker ${speakerClass}`}>{speaker}</span>
+          <span className={`msg-speaker ${speakerClass} ${isAssistant && agentHue ? 'name-hued' : ''}`} style={isAssistant ? nameHueStyle(agentHue) : undefined}>{speaker}</span>
           <span className={timeClass}>{timeStr}</span>
           {isVoiceMessage && (
             <span className="inline-flex shrink-0 items-center gap-1 text-[0.8rem] text-muted-foreground">

@@ -145,3 +145,11 @@ export function useAgentHues(agentIds: readonly string[]): { hueFor: (agentId: s
 
   return { hueFor, assignments: snapshot };
 }
+
+/**
+ * Style for a name set in its family hue. The colour goes through a custom property so the
+ * stylesheet can darken it on Daylight, where a raw identity hue would fail contrast on paper.
+ */
+export function nameHueStyle(hue?: string): React.CSSProperties | undefined {
+  return hue ? ({ '--name-hue': hue } as React.CSSProperties) : undefined;
+}

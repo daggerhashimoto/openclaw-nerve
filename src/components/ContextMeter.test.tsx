@@ -55,7 +55,7 @@ describe('ContextMeter', () => {
   it('switches the fill to the operator colour near the limit and destructive when nearly full', () => {
     const { container, rerender } = render(<ContextMeter used={50000} limit={100000} />);
     const fill = () => Array.from(container.querySelectorAll('div')).find(d => d.style.width);
-    expect(fill()).toHaveClass('bg-foreground');
+    expect(fill()).toHaveClass('bg-live');
 
     rerender(<ContextMeter used={85000} limit={100000} />);
     expect(fill()).toHaveClass('bg-operator');

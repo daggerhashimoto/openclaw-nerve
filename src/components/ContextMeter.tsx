@@ -24,7 +24,8 @@ export function ContextMeter({ used, limit }: ContextMeterProps) {
   const isWarning = percent >= CONTEXT_WARNING_THRESHOLD;
   const isCritical = percent >= CONTEXT_CRITICAL_THRESHOLD;
 
-  const fillClass = isCritical ? 'bg-destructive' : isWarning ? 'bg-operator' : 'bg-foreground';
+  // The context window is the agent's working room, so its fill is the agent's light
+  const fillClass = isCritical ? 'bg-destructive' : isWarning ? 'bg-operator' : 'bg-live';
   const readoutClass = isCritical
     ? 'text-destructive'
     : isWarning

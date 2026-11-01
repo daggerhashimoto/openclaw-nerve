@@ -55,13 +55,13 @@ export const monoFont = "'Atkinson Hyperlegible Mono', 'JetBrains Mono', 'Fira C
 const MONO_FONT_URL = 'https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500;600&display=swap';
 
 /**
- * Nerve's display face for the wordmark and agent names: Bricolage Grotesque,
- * a variable grotesque with a true display optical size. It is --font-display
+ * Nerve's display face for the wordmark and agent names: Geist,
+ * a clean variable grotesque that stays sleek at any size. It is --font-display
  * in index.css; the Classic style maps it back to its own sans.
  */
-export const displayFont = "'Bricolage Grotesque', 'Atkinson Hyperlegible Next', 'Helvetica Neue', Arial, sans-serif";
+export const displayFont = "'Geist', 'Atkinson Hyperlegible Next', 'Helvetica Neue', Arial, sans-serif";
 
-const DISPLAY_FONT_URL = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800&display=swap';
+const DISPLAY_FONT_URL = 'https://fonts.googleapis.com/css2?family=Geist:wght@400..800&display=swap';
 
 // Track which fonts have been loaded
 const loadedFonts = new Set<string>();

@@ -72,9 +72,10 @@ export const themes: Record<ThemeName, Theme> = {
       // and rules sit low so plates read by value and edge light, not by drawn lines.
       '--color-background': '#06080E',
       '--color-foreground': '#ECE6DA',
-      '--color-card': '#0B0F17',
+      '--color-card': '#0D121C',
+      '--color-plate': '#121926',
       '--color-card-foreground': '#ECE6DA',
-      '--color-popover': '#121826',
+      '--color-popover': '#1B2334',
       '--color-popover-foreground': '#ECE6DA',
       '--color-primary': '#FFA567',
       '--color-primary-foreground': '#06080E',
@@ -95,9 +96,9 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-purple': '#B9A7FF',
       '--color-info': '#3D7EFF',
       // The operator's plate: card warmed by 10% cantaloupe
-      '--color-message-user': '#231E1F',
+      '--color-message-user': '#372A25',
       '--color-message-assistant': '#06080E',
-      '--color-message-system': '#0B0F17',
+      '--color-message-system': '#0D121C',
       '--color-scrollbar': '#1D2433',
       '--color-scrollbar-hover': '#2B3449',
       // World tokens
@@ -107,9 +108,9 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-operator-text': '#FFA567',
       '--color-pane-off': '#161D2C',
       '--color-pane-edge': '#263044',
-      '--color-raised': '#151C2A',
+      '--color-raised': '#1A2232',
       // Sidebar colors
-      '--color-sidebar': '#0B0F17',
+      '--color-sidebar': '#0D121C',
       '--color-sidebar-foreground': '#ECE6DA',
       '--color-sidebar-primary': '#FFA567',
       '--color-sidebar-primary-foreground': '#06080E',
@@ -134,6 +135,7 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-background': '#F3F5F9',
       '--color-foreground': '#131722',
       '--color-card': '#FFFFFF',
+      '--color-plate': '#F7F9FC',
       '--color-card-foreground': '#131722',
       '--color-popover': '#FFFFFF',
       '--color-popover-foreground': '#131722',
@@ -156,7 +158,7 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-purple': '#6B4FD8',
       '--color-info': '#1F5FE0',
       // The operator's plate: warm paper
-      '--color-message-user': '#FFF1E3',
+      '--color-message-user': '#FFEBD6',
       '--color-message-assistant': '#F3F5F9',
       '--color-message-system': '#EAEEF4',
       '--color-scrollbar': '#CBD3DF',
@@ -953,6 +955,7 @@ export function resolveThemeName(saved: string | null | undefined): ThemeName {
  * so each falls back to the legacy colour that played the same part.
  */
 const WORLD_TOKEN_FALLBACKS: ReadonlyArray<readonly [token: string, source: string]> = [
+  ['--color-plate', '--color-card'],
   ['--color-live', '--color-info'],
   ['--color-live-text', '--color-info'],
   ['--color-operator', '--color-primary'],

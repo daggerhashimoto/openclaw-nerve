@@ -19,7 +19,7 @@ import {
 import type { ViewMode } from "@/features/command-palette/commands";
 import type { AgentLogEntry, EventEntry, TokenData } from "@/types";
 import { Pane } from "@/components/ui/Pane";
-import type { PaneState } from "@/lib/paneState";
+import { fleetWords, type FleetCounts, type PaneState } from "@/lib/paneState";
 
 const AgentLog = lazy(() =>
   import("@/features/activity/AgentLog").then((m) => ({ default: m.AgentLog })),
@@ -116,6 +116,8 @@ interface TopBarProps {
   performanceMode?: boolean;
   /** The fleet in one pane beside the wordmark: live, waiting on you, or off. */
   activity?: PaneState;
+  /** The fleet in numbers, printed in words beside the wordmark. */
+  fleet?: FleetCounts;
 }
 
 const BRAND_PANE_LABEL: Record<PaneState, string | undefined> = {
@@ -147,6 +149,7 @@ export function TopBar({
   onViewModeChange,
   showKanbanView = true,
   activity = "off",
+  fleet,
 }: TopBarProps) {
   const [activePanel, setActivePanel] = useState<PanelId>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -251,7 +254,7 @@ export function TopBar({
 
   return (
     <div className="relative z-40 shrink-0">
-      <header className="topbar-mobile-compact flex min-h-[2.933rem] flex-wrap items-center gap-x-1.5 border-b border-border bg-card pl-4 pr-2 max-[371px]:pl-3 max-[371px]:pr-1 sm:h-[2.933rem] sm:flex-nowrap">
+      <header className="topbar-mobile-compact flex min-h-[2.933rem] flex-wrap items-center gap-x-1.5 border-b border-border bg-background pl-4 pr-2 max-[371px]:pl-3 max-[371px]:pr-1 sm:h-[2.933rem] sm:flex-nowrap">
         <span className="nerve-wordmark mr-2 shrink-0">
           <span>Nerve</span>
           {/* The fleet in one pane: blue while any agent works, cantaloupe when work waits on you */}
@@ -261,6 +264,15 @@ export function TopBar({
             label={BRAND_PANE_LABEL[activity]}
           />
         </span>
+        {/* The fleet in words: quiet when all is idle, lit text when something works or waits */}
+        {fleet && fleet.total > 0 && (
+          <span
+            className={`nerve-fleet-words mr-3 hidden md:inline-flex ${fleet.running > 0 ? "text-live-text" : fleet.waiting > 0 ? "text-operator-text" : ""}`}
+            data-testid="fleet-words"
+          >
+            {fleetWords(fleet)}
+          </span>
+        )}
         {/* View mode toggle */}
         {onViewModeChange && (
           <div className="seg-track order-3 flex w-full items-center sm:order-none sm:w-auto">

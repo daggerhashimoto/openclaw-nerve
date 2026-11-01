@@ -1,3 +1,4 @@
+import { nameHueStyle } from '@/lib/agentColors';
 import { ChevronDown, ChevronUp, PanelLeftClose, PanelLeftOpen, RotateCcw, Square } from 'lucide-react';
 import type { ProcessingStage } from '@/contexts/ChatContext';
 import { InlineSelect } from '@/components/ui/InlineSelect';
@@ -79,7 +80,10 @@ export function ChatHeader({
   const showToolDescription = isGenerating && processingStage === 'tool_use' && Boolean(currentToolDescription);
 
   return (
-    <div className="nerve-chat-header flex min-h-[var(--row-unit)] shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap border-b border-border bg-background py-0 pl-2 pr-1 max-sm:py-1 sm:pl-3">
+    <div
+      className={`nerve-chat-header flex min-h-[var(--row-unit)] shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap border-b border-border py-0 pl-2 pr-1 max-sm:py-1 sm:pl-3 ${agentHue ? 'room-hued' : ''}`}
+      style={agentHue ? ({ '--room-hue': agentHue } as React.CSSProperties) : undefined}
+    >
       {/* Mobile chrome controls */}
       {onToggleMobileTopBar ? (
         <div className="flex size-11 shrink-0 flex-col overflow-hidden rounded-[3px] border border-border bg-card max-[371px]:size-[38px]">
@@ -115,7 +119,7 @@ export function ChatHeader({
         </button>
       )}
 
-      <span className="min-w-0 max-w-[7rem] shrink truncate font-display text-[0.933rem] font-bold tracking-[-0.01em] text-foreground sm:max-w-[14rem]" title={agentName}>
+      <span className={`nerve-nameplate min-w-0 max-w-[7rem] shrink truncate text-foreground sm:max-w-[16rem] ${agentHue ? 'name-hued' : ''}`} style={nameHueStyle(agentHue)} title={agentName}>
         {agentName}
       </span>
 
@@ -146,7 +150,7 @@ export function ChatHeader({
         data-testid="chat-run-state"
         data-state={isGenerating ? 'live' : 'off'}
       >
-        <Pane state={isGenerating ? 'live' : 'off'} size="sm" hue={agentHue} />
+        <Pane state={isGenerating ? 'live' : 'off'} hue={agentHue} />
         {isGenerating ? (
           <>
             <span className="shrink-0 text-live-text">

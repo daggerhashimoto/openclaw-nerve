@@ -65,7 +65,9 @@ describe('SessionList empty state', () => {
 
     expect(screen.getByRole('img', { name: 'Running' })).toHaveAttribute('data-state', 'live');
     expect(screen.getByText('waiting on you')).toBeInTheDocument();
-    expect(screen.getByText('idle')).toBeInTheDocument();
+    // Idle rows say nothing on the right; the dark pane carries the accessible name instead
+    expect(screen.queryByText('idle')).toBeNull();
+    expect(screen.getByRole('img', { name: 'Idle' })).toHaveAttribute('data-state', 'off');
     expect(container.querySelectorAll('.pane[data-state="operator"]')).toHaveLength(1);
     expect(container.querySelector('.animate-pulse')).toBeNull();
   });

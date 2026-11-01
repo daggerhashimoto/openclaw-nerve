@@ -21,7 +21,7 @@
   --font-mono: 'Atkinson Hyperlegible Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
   --font-sans: 'Atkinson Hyperlegible Next', 'Helvetica Neue', Arial, sans-serif;
   /* Display face: the wordmark and every agent or speaker name. Loaded by src/lib/fonts.ts. */
-  --font-display: 'Bricolage Grotesque', 'Atkinson Hyperlegible Next', 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Geist', 'Atkinson Hyperlegible Next', 'Helvetica Neue', Arial, sans-serif;
   --font-size-base: 15px;
 }
 
@@ -106,6 +106,15 @@
   /* Light switch: state panes turn on and off, they never breathe. */
   --switch-duration: 120ms;
   --switch-ease: cubic-bezier(0.2, 0, 0, 1);
+  /* Bloom: the light a lit pane throws on the ground around it. Daylight sets these to none. */
+  --bloom-live: 0 0 9px 0 color-mix(in srgb, var(--color-live) 62%, transparent);
+  --bloom-operator: 0 0 9px 0 color-mix(in srgb, var(--color-operator) 58%, transparent);
+  --bloom-error: 0 0 9px 0 color-mix(in srgb, var(--color-red) 58%, transparent);
+}
+html[data-theme="light"] {
+  --bloom-live: none;
+  --bloom-operator: none;
+  --bloom-error: none;
 }
 
 /* === Lit panes: the state marker === */
@@ -123,23 +132,28 @@
     background-color var(--switch-duration) var(--switch-ease),
     box-shadow var(--switch-duration) var(--switch-ease);
 }
+/* A lit pane casts a short bloom of its own colour: the one light in the system that spreads.
+   Daylight prints panes flat (see the light overrides below). */
 .pane[data-state="live"] {
   background-color: var(--color-live);
-  box-shadow: none;
+  box-shadow: var(--bloom-live);
 }
 .pane[data-state="operator"] {
   background-color: var(--color-operator);
-  box-shadow: none;
+  box-shadow: var(--bloom-operator);
 }
 .pane[data-state="error"] {
   background-color: var(--color-red);
+  box-shadow: var(--bloom-error);
   box-shadow: none;
 }
 /* Identity: an agent family's hue shows in the glass while its light is off.
    Lit colours keep their meaning (blue works, cantaloupe waits on you, red failed). */
+/* Lights on: an idle pane shows its family's colour at nearly full strength. Lit panes still
+   read apart because only a lit pane blooms. */
 .pane-hued[data-state="off"] {
-  background-color: color-mix(in srgb, var(--pane-hue) 56%, var(--color-pane-off));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pane-hue) 62%, var(--color-pane-edge));
+  background-color: color-mix(in srgb, var(--pane-hue) 84%, var(--color-pane-off));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pane-hue) 70%, var(--color-pane-edge));
 }
 .pane-sm {
   width: 0.533rem;
@@ -183,13 +197,14 @@
 
 /* === Realtime chat === */
 
+/* A turn lands: it settles up onto the ground as it appears, one short move with the switch ease */
 @keyframes message-enter {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
 
 .msg {
-  animation: message-enter 0.16s var(--switch-ease);
+  animation: message-enter 0.2s var(--switch-ease);
 }
 
 /* Streaming state is carried by the message's pane, not by its border */
@@ -218,6 +233,7 @@
   height: 0.933rem;
   border-radius: 1px;
   background: var(--color-red);
+  box-shadow: var(--bloom-error);
 }
 
 /* Send: a brief switch when a message leaves */
@@ -239,6 +255,10 @@
   animation: shake 0.3s var(--switch-ease);
 }
 
+/* Send: the one warm control, with a thread of light along its top so it reads as a lit key */
+.send-btn {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
 .send-btn:active:not(:disabled) {
   transform: translateY(1px);
 }
@@ -583,6 +603,8 @@
   border-radius: 2px;
   border: 1px solid var(--color-border);
   background: var(--color-background);
+  /* A keycap sits proud of the plate: a hairline beneath it and a thread of light on top */
+  box-shadow: 0 1px 0 var(--color-input), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   font-family: var(--font-mono);
   font-size: 0.733rem;
   color: var(--color-muted-foreground);
@@ -673,20 +695,42 @@
 .nerve-wordmark {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   font-family: var(--font-display);
-  font-size: 1.267rem;
+  font-size: 1.533rem;
   font-weight: 700;
-  font-stretch: 94%;
-  font-variation-settings: "opsz" 96;
   letter-spacing: -0.03em;
   line-height: 1;
   color: var(--color-foreground);
 }
 .nerve-brand-pane {
-  width: 0.533rem;
-  height: 0.8rem;
+  width: 0.8rem;
+  height: 1.133rem;
   margin-top: 1px;
+}
+/* The fleet in words beside the wordmark: counts stay quiet until something is working or waiting */
+.nerve-fleet-words {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 2px;
+  padding-left: 12px;
+  border-left: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
+}
+
+
+/* Nameplate: the open room's name in the chat header, set in the display face */
+.nerve-nameplate {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
 }
 
 /* Agent colour swatches: the seven identity hues, picked from a root session row */
@@ -718,7 +762,7 @@
   gap: 2px;
   padding: 2px;
   border-radius: 4px;
-  background: var(--color-background);
+  background: var(--color-card);
 }
 .seg-track .shell-chip {
   min-height: calc(var(--row-unit) - 6px);
@@ -732,7 +776,7 @@
 
 /* A plate is a raised surface read by value and edge light, never by a drawn border */
 .plate {
-  background: var(--color-card);
+  background: var(--color-plate);
   border-radius: 3px;
   box-shadow: var(--plate-shadow);
 }
@@ -749,19 +793,54 @@ html[data-theme="light"] .plate-operator {
 
 /* Tool rows stack on one plate, separated by hairlines */
 .tool-stack {
-  background: var(--color-card);
+  background: var(--color-plate);
   border-radius: 3px;
   box-shadow: var(--plate-shadow);
   overflow: hidden;
 }
 
-/* Composer: floats on the ground; its border lights warm only while the operator is in it */
+/* Composer: the operator's next window. It floats dark on the ground; while the operator is in it
+   (focus, or text already typed) it warms to the operator plate and the pane in the gutter lights,
+   so the turn being written looks like the turns already sent. */
 .nerve-composer-band {
-  background: var(--color-background);
+  background: transparent;
 }
 .nerve-composer {
-  background: var(--color-card);
+  background: var(--color-plate);
   box-shadow: var(--float-shadow);
+  transition:
+    background-color var(--switch-duration) var(--switch-ease),
+    border-color var(--switch-duration) var(--switch-ease),
+    box-shadow var(--switch-duration) var(--switch-ease);
+}
+.nerve-composer-pane {
+  position: absolute;
+  left: calc(-1.5rem - 1px);
+  top: 0.9rem;
+}
+.nerve-composer-band:is(:focus-within, :has(textarea:not(:placeholder-shown))) .nerve-composer {
+  background: var(--color-message-user);
+  box-shadow:
+    var(--float-shadow),
+    inset 0 1px 0 color-mix(in srgb, var(--color-operator) 42%, transparent);
+}
+.nerve-composer-band:is(:focus-within, :has(textarea:not(:placeholder-shown))) .nerve-composer-pane {
+  background-color: var(--color-operator);
+  box-shadow: var(--bloom-operator);
+}
+
+/* The room: the transcript's ground carries one ambient light from above, a cool lift that
+   fades into Midnight by mid-height so the composer floats in the darkest part of the room. */
+.nerve-room {
+  background-color: var(--color-card);
+  background-image: radial-gradient(
+    120% 70% at 50% 0%,
+    color-mix(in srgb, var(--color-live) 8%, var(--color-card)) 0%,
+    var(--color-card) 60%
+  );
+}
+html[data-theme="light"] .nerve-room {
+  background-image: none;
 }
 
 /* Panel header chrome: one row unit, sentence case */
@@ -771,7 +850,7 @@ html[data-theme="light"] .plate-operator {
   gap: 6px;
   min-height: var(--row-unit);
   padding: 0 4px 0 12px;
-  background: var(--color-card);
+  background: transparent;
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
@@ -881,7 +960,7 @@ html[data-theme="light"] .plate-operator {
   padding: 0;
 }
 .msg-body pre.hljs {
-  background: var(--color-card);
+  background: var(--color-plate);
   border: 1px solid var(--color-border);
   border-radius: 3px;
   position: relative;
@@ -902,17 +981,77 @@ html[data-theme="light"] .plate-operator {
   color: var(--color-muted-foreground);
   font-family: var(--font-mono);
 }
+/* Links are the one live thing in prose: Electric Blue text with a quiet underline that fills on hover */
 .msg-body a {
-  color: inherit;
+  color: var(--color-live-text);
   text-decoration: underline;
-  text-decoration-color: var(--color-pane-edge);
+  text-decoration-color: color-mix(in srgb, var(--color-live-text) 38%, transparent);
   text-decoration-thickness: 1px;
   text-underline-offset: 0.2em;
   transition: text-decoration-color var(--switch-duration) var(--switch-ease);
 }
 .msg-body a:hover {
-  text-decoration-color: var(--color-operator);
+  text-decoration-color: var(--color-live-text);
 }
+
+/* Code in the palette: keywords cold, strings warm, comments slate, names in reading white.
+   Two hues and a neutral, so a block reads as Nerve and not as a borrowed editor theme. */
+.hljs-keyword,
+.hljs-built_in,
+.hljs-literal,
+.hljs-selector-tag,
+.hljs-meta .hljs-keyword,
+.hljs-doctag,
+.hljs-type {
+  color: var(--color-live-text);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-template-variable,
+.hljs-selector-attr,
+.hljs-selector-pseudo,
+.hljs-link,
+.hljs-quote {
+  color: var(--color-operator-text);
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-variable,
+.hljs-selector-class,
+.hljs-selector-id,
+.hljs-params {
+  color: color-mix(in srgb, var(--color-live-text) 55%, var(--color-foreground));
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-title.class_,
+.hljs-name,
+.hljs-section,
+.hljs-tag {
+  color: var(--color-foreground);
+  font-weight: 600;
+}
+.hljs-comment,
+.hljs-meta,
+.hljs-punctuation,
+.hljs-operator {
+  color: var(--color-muted-foreground);
+}
+.hljs-comment {
+  font-style: italic;
+}
+.hljs-addition {
+  color: var(--color-success);
+}
+.hljs-deletion {
+  color: var(--color-red);
+}
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
 .msg-body table {
   font-variant-numeric: tabular-nums;
 }
@@ -1216,6 +1355,7 @@ html[data-theme="light"] .plate-operator {
   vertical-align: -0.1em;
   border-radius: 1px;
   background: var(--color-live);
+  box-shadow: var(--bloom-live);
   animation: blink 1s step-end infinite;
 }
 
@@ -1362,6 +1502,7 @@ html[data-theme="light"] .plate-operator {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
+  --color-plate: var(--plate);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
@@ -1418,9 +1559,11 @@ html[data-theme="light"] .plate-operator {
   --r-4xl: var(--radius);
   --background: #06080E;
   --foreground: #ECE6DA;
-  --card: #0B0F17;
+  --card: #0D121C;
+  /* Plate: one step above the room for tool stacks, code blocks and the composer */
+  --plate: #121926;
   --card-foreground: #ECE6DA;
-  --popover: #121826;
+  --popover: #1B2334;
   --popover-foreground: #ECE6DA;
   --primary: #FFA567;
   --primary-foreground: #06080E;
@@ -1446,18 +1589,18 @@ html[data-theme="light"] .plate-operator {
   --operator-text: #FFA567;
   --pane-off: #161D2C;
   --pane-edge: #263044;
-  --raised: #151C2A;
+  --raised: #1A2232;
   --chart-1: #3D7EFF;
   --chart-2: #FFA567;
   --chart-3: #7FD1C7;
   --chart-4: #B9A7FF;
   --chart-5: #FF5A5A;
-  --message-user: #231E1F;
+  --message-user: #372A25;
   --message-assistant: #06080E;
-  --message-system: #0B0F17;
+  --message-system: #0D121C;
   --scrollbar: #1D2433;
   --scrollbar-hover: #2B3449;
-  --sidebar: #0B0F17;
+  --sidebar: #0D121C;
   --sidebar-foreground: #ECE6DA;
   --sidebar-primary: #FFA567;
   --sidebar-primary-foreground: #06080E;
@@ -1523,3 +1666,32 @@ html[data-theme="light"] {
   }
 }
 
+/* Room hue: the chat header band and the selected session row take a tint of the open agent's family
+   colour. Unlayered on purpose so the tint wins over the bg utilities on those elements. */
+.nerve-chat-header.room-hued {
+  background-color: color-mix(in srgb, var(--room-hue) 9%, var(--color-background));
+  border-bottom-color: color-mix(in srgb, var(--room-hue) 28%, var(--color-border));
+}
+html[data-theme="light"] .nerve-chat-header.room-hued {
+  background-color: color-mix(in srgb, var(--room-hue) 14%, var(--color-background));
+}
+
+/* Names in their family hue. Daylight darkens the hue toward ink so names pass contrast on paper. */
+.name-hued {
+  color: var(--name-hue);
+}
+html[data-theme="light"] .name-hued {
+  color: color-mix(in srgb, var(--name-hue) 58%, var(--color-foreground));
+}
+
+/* The frame and the room. The shell is a dark frame (top bar, side columns, status bar on Midnight)
+   around one lifted room: the centre column sits on Panel with the edge light and 4px corners, and
+   the frame shows for 6px around it. In-room plates step up once more to Plate. */
+.nerve-col-center {
+  padding: 6px;
+}
+.nerve-room-plate {
+  background-color: var(--color-card);
+  border-radius: 4px;
+  box-shadow: var(--plate-shadow);
+}

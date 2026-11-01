@@ -24,9 +24,10 @@ const entryIndentClass = 'pl-6';
 
 /** A single expandable tool entry within the group */
 function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
-  const [expanded, setExpanded] = useState(false);
   const editBlocks = useMemo(() => extractEditBlocks(entry.rawText), [entry.rawText]);
   const writeBlocks = useMemo(() => extractWriteBlocks(entry.rawText), [entry.rawText]);
+  // A diff is the point of opening the group, so an edit entry starts open; file previews stay folded
+  const [expanded, setExpanded] = useState(() => editBlocks.length > 0);
   const hasExpandableContent = editBlocks.length > 0 || writeBlocks.length > 0;
 
   // Only edit (diff view) and write (file view) entries are expandable

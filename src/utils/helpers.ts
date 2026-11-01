@@ -148,13 +148,14 @@ export function describeToolUse(toolName: string, input: Record<string, unknown>
   const p = input || {};
   const tn = toolName.toLowerCase();
   switch (tn) {
+    case 'bash':
     case 'exec': {
       let cmd = String(p.command || '').trim();
       if (!cmd) return 'running command';
       
       // Redact secrets before processing
       cmd = redactSecrets(cmd);
-      const project = extractProjectName(p.workdir as string);
+      const project = extractProjectName((p.workdir || p.cwd) as string);
       
       if (cmd.includes('npm install') || cmd.includes('pip install') || cmd.includes('apt install') || cmd.includes('apt-get install'))
         return withProject('installing: ' + cmd.replace(/.*install\s+(-\w+\s+)*/, '').split(/\s/)[0], project);
@@ -189,6 +190,19 @@ export function describeToolUse(toolName: string, input: Record<string, unknown>
     case 'read': return 'reading ' + sanitizePath(String(p.path || p.file_path || 'file'));
     case 'write': return 'writing ' + sanitizePath(String(p.path || p.file_path || 'file'));
     case 'edit': return 'editing ' + sanitizePath(String(p.path || p.file_path || 'file'));
+    case 'apply_patch': {
+      // Codex harness edits: one call may touch several files; name them with their line counts
+      const changes = Array.isArray(p.changes) ? (p.changes as Array<Record<string, unknown>>) : [];
+      if (changes.length === 0) return 'editing files';
+      const parts = changes.slice(0, 3).map((change) => {
+        const name = sanitizePath(String(change.path || 'file')).split('/').pop() || 'file';
+        const stat = change.stat as { added?: number; removed?: number } | undefined;
+        const counts = stat && (stat.added || stat.removed) ? ` +${stat.added ?? 0} -${stat.removed ?? 0}` : '';
+        return name + counts;
+      });
+      const more = changes.length > 3 ? ` and ${changes.length - 3} more` : '';
+      return 'editing ' + parts.join(', ') + more;
+    }
     case 'web_search': return 'searching: ' + String(p.query || '');
     case 'web_fetch': return 'fetching: ' + String(p.url || '').replace(/https?:\/\/(www\.)?/, '').split('/')[0];
     case 'sessions_spawn': return 'spawning sub-agent: ' + String(p.label || (typeof p.task === 'string' ? p.task : '') || 'task');

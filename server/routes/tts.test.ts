@@ -76,6 +76,19 @@ describe('TTS routes', () => {
   }
 
   describe('POST /api/tts', () => {
+    it('dispatches explicit MiniMax requests with model, voice and region', async () => {
+      mockDeps();
+      const synthesizeMiniMax = vi.fn(async () => ({ ok: true, buf: Buffer.from('ID3'), contentType: 'audio/mpeg' }));
+      vi.doMock('../services/minimax-tts.js', () => ({ synthesizeMiniMax }));
+      const app = await buildApp();
+      const res = await app.request('/api/tts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'Hello', provider: 'minimax', voice: 'test-voice', region: 'cn_zh' }),
+      });
+      expect(res.status).toBe(200);
+      expect(synthesizeMiniMax).toHaveBeenCalledWith('Hello', { model: undefined, voice: 'test-voice', region: 'cn_zh' });
+    });
+
     it('returns 400 when text is missing', async () => {
       mockDeps();
       const app = await buildApp();

@@ -1049,3 +1049,13 @@ html[data-style="classic"] .nerve-right-stack,
 html[data-style="classic"] .nerve-room {
   --light-delay: 0ms;
 }
+
+/* Classic editors stay flat: no warm window, no pane */
+html[data-style="classic"] .nerve-window,
+html[data-style="classic"] .nerve-window-frame:focus-within .nerve-window {
+  background-color: var(--color-card);
+  box-shadow: none;
+}
+html[data-style="classic"] .nerve-window-pane {
+  display: none;
+}

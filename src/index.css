@@ -1742,3 +1742,21 @@ html[data-theme="light"] .name-hued {
   animation: none;
   mix-blend-mode: normal;
 }
+
+/* Side-column editors are operator windows too. The memory editor and the config editor sit on
+   Plate; while the operator is typing in one it warms toward the operator plate and the pane in
+   its status line comes on in cantaloupe. The Window Rule at column scale: no ring, no drawn border. */
+.nerve-window {
+  background-color: var(--color-plate);
+  transition:
+    background-color var(--switch-duration) var(--switch-ease),
+    box-shadow var(--switch-duration) var(--switch-ease);
+}
+.nerve-window-frame:focus-within .nerve-window {
+  background-color: var(--color-message-user);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-operator) 42%, transparent);
+}
+.nerve-window-frame:focus-within .nerve-window-pane {
+  background-color: var(--color-operator);
+  box-shadow: var(--bloom-operator);
+}

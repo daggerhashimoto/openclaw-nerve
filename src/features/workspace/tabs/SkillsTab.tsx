@@ -2,7 +2,7 @@
  * SkillsTab: browse installed skills and their status.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, type ReactNode } from 'react';
 import { RefreshCw, ExternalLink, ChevronDown, ChevronRight, Puzzle } from 'lucide-react';
 import { useSkills, type Skill, type SkillMissing } from '../hooks/useSkills';
 
@@ -86,10 +86,12 @@ function SkillRow({ skill }: { skill: Skill }) {
 
 interface SkillsTabProps {
   agentId: string;
+  /** The Config picker, when this view is mounted under it; takes the header row with the refresh action. */
+  picker?: ReactNode;
 }
 
 /** Workspace tab listing installed skills and flagging missing dependencies. */
-export function SkillsTab({ agentId }: SkillsTabProps) {
+export function SkillsTab({ agentId, picker }: SkillsTabProps) {
   const { skills, isLoading, error, refresh } = useSkills(agentId);
   const [showUnavailable, setShowUnavailable] = useState(false);
 
@@ -98,29 +100,38 @@ export function SkillsTab({ agentId }: SkillsTabProps) {
   const eligibleCount = eligibleSkills.length;
   const totalCount = skills.length;
 
+  const refreshButton = (
+    <button
+      onClick={refresh}
+      disabled={isLoading}
+      className="shell-icon-button shrink-0 cursor-pointer disabled:opacity-50"
+      title="Refresh skills"
+      aria-label="Refresh skills"
+    >
+      <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+    </button>
+  );
+
   return (
     <div className="h-full flex flex-col min-h-0">
+      {picker && (
+        <div className="flex shrink-0 items-center gap-1 border-b border-border py-1 pl-2 pr-1">
+          <div className="min-w-0 flex-1">{picker}</div>
+          {refreshButton}
+        </div>
+      )}
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {/* Skills count + Refresh row */}
+        {/* Skills count row */}
         {!isLoading && skills.length > 0 && (
           <div className="flex min-h-[var(--row-unit)] items-center gap-2 border-b border-border pl-3 pr-1">
-            <Puzzle size={14} aria-hidden="true" className="shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate text-[0.8rem] text-muted-foreground">
               <span className="font-mono tabular">{eligibleCount}</span> active
               {unavailableSkills.length > 0 && (
                 <> of <span className="font-mono tabular">{totalCount}</span> total</>
               )}
             </span>
-            <button
-              onClick={refresh}
-              disabled={isLoading}
-              className="shell-icon-button shrink-0 cursor-pointer disabled:opacity-50"
-              title="Refresh skills"
-              aria-label="Refresh skills"
-            >
-              <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-            </button>
+            {!picker && refreshButton}
           </div>
         )}
 

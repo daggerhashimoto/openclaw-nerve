@@ -9,37 +9,19 @@ import { Button } from '@/components/ui/button';
 import { useWorkspaceFile } from '../hooks/useWorkspaceFile';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { createChatPathLinksTemplate, type ChatPathLinksSeedContext } from '@/features/chat/chatPathLinks';
-import { getWorkspaceStorageKey } from '../workspaceScope';
+import { Pane } from '@/components/ui/Pane';
+import type { InlineSelectOption } from '@/components/ui/InlineSelect';
 import { clearPersistedDraft, readPersistedDraft, writePersistedDraft } from '../persistedDrafts';
+import {
+  CONFIG_FILE_OPTIONS as FILE_OPTIONS,
+  CONFIG_SELECT_MENU_CLASS,
+  CONFIG_SELECT_TRIGGER_CLASS,
+  configFileOptions,
+  getInitialSelectedKey,
+  rememberSelectedConfigFile,
+} from './configFiles';
 
-const FILE_OPTIONS = [
-  { key: 'soul', label: 'SOUL.md' },
-  { key: 'tools', label: 'TOOLS.md' },
-  { key: 'identity', label: 'IDENTITY.md' },
-  { key: 'user', label: 'USER.md' },
-  { key: 'agents', label: 'AGENTS.md' },
-  { key: 'heartbeat', label: 'HEARTBEAT.md' },
-  { key: 'chatPathLinks', label: 'CHAT_PATH_LINKS.json' },
-];
-
-const DEFAULT_CONFIG_KEY = 'soul';
-
-function getSelectedConfigStorageKey(agentId: string): string {
-  return getWorkspaceStorageKey('config:selected-file', agentId);
-}
-
-function getInitialSelectedKey(agentId: string): string {
-  try {
-    const stored = localStorage.getItem(getSelectedConfigStorageKey(agentId));
-    if (stored && FILE_OPTIONS.some(file => file.key === stored)) {
-      return stored;
-    }
-  } catch {
-    // ignore storage errors
-  }
-
-  return DEFAULT_CONFIG_KEY;
-}
+const NO_VIEW_OPTIONS: InlineSelectOption[] = [];
 
 function getConfigDraftKind(fileKey: string): string {
   return `config-editor:${fileKey}`;
@@ -82,10 +64,14 @@ async function createSeededChatPathLinksTemplate(agentId: string): Promise<strin
 interface ConfigTabProps {
   agentId: string;
   cronWarning?: string | null;
+  /** Extra entries at the end of the file picker that switch the panel to another view. */
+  viewOptions?: InlineSelectOption[];
+  /** Called with the chosen view option's value; unsaved edits are guarded first. */
+  onViewChange?: (value: string) => void;
 }
 
 /** Workspace tab displaying an editable agent config file (YAML/TOML). */
-export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
+export function ConfigTab({ agentId, cronWarning = null, viewOptions = NO_VIEW_OPTIONS, onViewChange }: ConfigTabProps) {
   const [selectedKey, setSelectedKey] = useState(() => getInitialSelectedKey(agentId));
   const { content, isLoading, error, exists, load, save } = useWorkspaceFile(agentId);
   const initialDraft = readPersistedDraft<string>(getConfigDraftKind(getInitialSelectedKey(agentId)), agentId);
@@ -109,11 +95,7 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
   }, [agentId]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(getSelectedConfigStorageKey(agentId), selectedKey);
-    } catch {
-      // ignore storage errors
-    }
+    rememberSelectedConfigFile(agentId, selectedKey);
   }, [agentId, selectedKey]);
 
   useEffect(() => {
@@ -184,6 +166,26 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
     setEditing(false);
   }, [clearDraft]);
 
+  // The picker holds the workspace files and, when the panel offers it, the Skills view
+  const applySelection = useCallback((value: string) => {
+    if (viewOptions.some(option => option.value === value)) {
+      onViewChange?.(value);
+      return;
+    }
+    setSelectedKey(value);
+    setEditing(false);
+  }, [onViewChange, viewOptions]);
+
+  const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      e.preventDefault();
+      void handleSave();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancel();
+    }
+  }, [handleCancel, handleSave]);
+
   const handleCreate = useCallback(async () => {
     const label = FILE_OPTIONS.find(f => f.key === selectedKey)?.label || selectedKey;
     const template = selectedKey === 'chatPathLinks'
@@ -205,6 +207,9 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
     return () => window.removeEventListener('beforeunload', handler);
   }, [editing]);
 
+  const selectedLabel = FILE_OPTIONS.find(file => file.key === selectedKey)?.label || selectedKey;
+  const dirty = editing && editContent !== (content ?? '');
+
   return (
     <div className="h-full flex flex-col min-h-0">
       <div className="flex shrink-0 items-center gap-1 border-b border-border py-1 pl-2 pr-1">
@@ -213,19 +218,29 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
             inline
             value={selectedKey}
             onChange={(value) => {
+              if (value === selectedKey) return;
               if (editing) {
                 setPendingSwitchKey(value);
                 return;
               }
-              setSelectedKey(value);
-              setEditing(false);
+              applySelection(value);
             }}
-            options={FILE_OPTIONS.map(file => ({ value: file.key, label: file.label }))}
+            options={[...configFileOptions(), ...viewOptions]}
             ariaLabel="Select config file"
-            triggerClassName="min-h-11 w-full justify-between rounded-[3px] border-input bg-background px-2 py-1 text-[0.867rem] text-foreground sm:min-h-[var(--row-unit)] sm:px-2 sm:py-0 sm:text-[0.867rem]"
-            menuClassName="rounded-[3px] border-border bg-popover py-1 shadow-[0_12px_32px_rgba(0,0,0,0.32)]"
+            triggerClassName={CONFIG_SELECT_TRIGGER_CLASS}
+            menuClassName={CONFIG_SELECT_MENU_CLASS}
           />
         </div>
+        {exists && !editing && content !== null && (
+          <button
+            onClick={handleEdit}
+            className="shell-icon-button shrink-0"
+            title="Edit"
+            aria-label="Edit file"
+          >
+            <Pencil size={14} />
+          </button>
+        )}
         <button
           onClick={() => load(selectedKey)}
           disabled={isLoading}
@@ -275,50 +290,52 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
         )}
 
         {exists && !editing && content !== null && (
-          <div className="relative">
-            <div className="absolute top-2 right-2 z-10">
-              <button
-                onClick={handleEdit}
-                className="shell-icon-button"
-                title="Edit"
-                aria-label="Edit file"
-              >
-                <Pencil size={14} />
-              </button>
-            </div>
-            <pre className="px-3 py-2 text-[0.8rem] text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono leading-relaxed">
-              {content}
-            </pre>
-          </div>
+          <pre className="px-3 py-2 text-[0.867rem] text-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono leading-relaxed">
+            {content}
+          </pre>
         )}
 
         {editing && (
-          <div className="flex flex-col h-full">
-            <textarea
-              ref={textareaRef}
-              value={editContent}
-              onChange={e => setEditContent(e.target.value)}
-              className="flex-1 w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] px-3 py-2 text-[0.8rem] font-mono leading-relaxed bg-background text-foreground border-0 resize-none outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 focus-visible:ring-inset"
-              spellCheck={false}
-              wrap="soft"
-            />
-            <div className="flex min-h-[var(--row-unit)] items-center gap-1.5 border-t border-border bg-card px-2 py-1">
-              <Button
-                onClick={handleSave}
-                disabled={isLoading}
-                size="sm"
-                className="text-[0.8rem] sm:h-6 sm:px-2"
-              >
-                <Save size={14} /> Save
-              </Button>
-              <Button
-                onClick={handleCancel}
-                variant="outline"
-                size="sm"
-                className="text-[0.8rem] sm:h-6 sm:px-2"
-              >
-                <X size={14} /> Cancel
-              </Button>
+          /* The editor is an operator window: Plate ground that warms while the operator types,
+             a pane in its status line, and the same footer as the memory editor */
+          <div className="nerve-window-frame flex h-full flex-col">
+            <div className="nerve-window flex min-h-0 flex-1 flex-col">
+              <textarea
+                ref={textareaRef}
+                value={editContent}
+                onChange={e => setEditContent(e.target.value)}
+                onKeyDown={handleEditorKeyDown}
+                className="w-full flex-1 resize-none whitespace-pre-wrap break-words border-0 bg-transparent px-3 py-2 font-mono text-[0.867rem] leading-relaxed text-foreground outline-none [overflow-wrap:anywhere]"
+                spellCheck={false}
+                wrap="soft"
+                aria-label={`Edit ${selectedLabel}`}
+              />
+            </div>
+            <div className="flex min-h-[var(--row-unit)] shrink-0 items-center justify-between gap-2 border-t border-border py-1 pl-3 pr-1.5">
+              <span className="flex min-w-0 items-center gap-2 text-[0.8rem] text-muted-foreground">
+                <Pane state="off" size="sm" className="nerve-window-pane" />
+                <span className="truncate">{dirty ? 'Unsaved changes' : `Editing ${selectedLabel}`}</span>
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  onClick={handleCancel}
+                  variant="outline"
+                  size="sm"
+                  title="Esc"
+                  className="text-[0.8rem] sm:h-6 sm:px-2"
+                >
+                  <X size={14} /> Cancel
+                </Button>
+                <Button
+                  onClick={handleSave}
+                  disabled={isLoading}
+                  size="sm"
+                  title="Ctrl+S"
+                  className="text-[0.8rem] sm:h-6 sm:px-2"
+                >
+                  <Save size={14} /> Save
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -333,8 +350,7 @@ export function ConfigTab({ agentId, cronWarning = null }: ConfigTabProps) {
         onConfirm={() => {
           clearDraft();
           if (pendingSwitchKey) {
-            setSelectedKey(pendingSwitchKey);
-            setEditing(false);
+            applySelection(pendingSwitchKey);
           }
           setPendingSwitchKey(null);
         }}

@@ -6,7 +6,7 @@
  */
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Plus, RefreshCw, AlertCircle, CheckCircle, X } from 'lucide-react';
+import { Plus, RefreshCw, AlertCircle, CheckCircle, ChevronRight, X } from 'lucide-react';
 import { MemoryItem, AddMemoryDialog, ConfirmDeleteDialog, MemoryEditor, useMemories } from '@/features/memory';
 import { MemorySkeletonGroup } from '@/components/skeletons';
 import { clearPersistedDraft, readPersistedDraft, writePersistedDraft } from '@/features/workspace/persistedDrafts';
@@ -65,8 +65,9 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
     readPersistedDraft<EditingMemoryState>(MEMORY_EDITOR_STATE_KIND, agentId)
   ));
   
-  // Collapse state — sections are collapsed by default
+  // Collapse state — sections are collapsed by default; the dated notes group starts open
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [dailyExpanded, setDailyExpanded] = useState(true);
 
   const toggleSection = useCallback((sectionText: string) => {
     setExpandedSections(prev => {
@@ -109,6 +110,10 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
     }
     return result;
   }, [memories, expandedSections]);
+
+  // MEMORY.md sections and items first, then the dated notes under one collapsible group
+  const listMemories = useMemo(() => visibleMemories.filter((m) => m.type !== 'daily'), [visibleMemories]);
+  const dailyMemories = useMemo(() => visibleMemories.filter((m) => m.type === 'daily'), [visibleMemories]);
 
   // Feedback states
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -326,12 +331,12 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
               <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} aria-hidden="true" />
             </button>
           </div>
-          {visibleMemories.map((m, i) => (
+          {listMemories.map((m, i) => (
             <MemoryItem
               key={m.tempId || `${m.type}-${m.text.slice(0, 20)}-${i}`}
               memory={m}
               onDelete={handleDeleteClick}
-              onEdit={m.type === 'item' ? editParentSectionOf(visibleMemories, i, handleEditClick) : handleEditClick}
+              onEdit={m.type === 'item' ? editParentSectionOf(listMemories, i, handleEditClick) : handleEditClick}
               {...(m.type === 'section' ? {
                 isExpanded: expandedSections.has(m.text),
                 onToggleExpand: () => toggleSection(m.text),
@@ -340,6 +345,33 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
               compact={compact}
             />
           ))}
+          {dailyMemories.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setDailyExpanded((open) => !open)}
+                aria-expanded={dailyExpanded}
+                className="flex min-h-[var(--row-unit)] w-full cursor-pointer items-center gap-2 border-0 bg-transparent pl-3 pr-[4.667rem] text-left text-[0.867rem] transition-colors duration-[120ms] hover:bg-raised"
+              >
+                <ChevronRight
+                  size={14}
+                  aria-hidden="true"
+                  className={`shrink-0 text-muted-foreground ${dailyExpanded ? 'rotate-90' : ''}`}
+                />
+                <span className="min-w-0 flex-1 truncate font-medium text-foreground">Daily notes</span>
+                <span className="shrink-0 font-mono text-[0.8rem] text-muted-foreground tabular">{dailyMemories.length}</span>
+              </button>
+              {dailyExpanded && dailyMemories.map((m, i) => (
+                <MemoryItem
+                  key={m.tempId || `daily-${m.date ?? ''}-${m.text.slice(0, 20)}-${i}`}
+                  memory={m}
+                  onDelete={handleDeleteClick}
+                  onEdit={handleEditClick}
+                  compact={compact}
+                />
+              ))}
+            </>
+          )}
           </>
         )}
       </div>

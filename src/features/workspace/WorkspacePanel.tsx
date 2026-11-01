@@ -8,6 +8,14 @@
 import { useState, useCallback, lazy, Suspense, useEffect } from 'react';
 import { WorkspaceTabs, type TabId } from './WorkspaceTabs';
 import { CronsTab, ConfigTab, SkillsTab } from './tabs';
+import {
+  CONFIG_SELECT_MENU_CLASS,
+  CONFIG_SELECT_TRIGGER_CLASS,
+  SKILLS_VIEW_OPTION,
+  configFileOptions,
+  rememberSelectedConfigFile,
+} from './tabs/configFiles';
+import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useCrons } from './hooks/useCrons';
 import { getWorkspaceStorageKey } from './workspaceScope';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -24,10 +32,7 @@ const CONFIG_VIEW_KEY = 'nerve-config-view';
 
 type ConfigView = 'files' | 'skills';
 
-const CONFIG_VIEW_LABELS: Record<ConfigView, string> = {
-  files: 'Files',
-  skills: 'Skills',
-};
+const CONFIG_PICKER_OPTIONS = [...configFileOptions(), SKILLS_VIEW_OPTION];
 
 function getInitialConfigView(agentId: string): ConfigView {
   try {
@@ -65,7 +70,11 @@ interface ConfigWithSkillsProps {
   cronWarning?: string | null;
 }
 
-/** Combined Config tab with Files/Skills sub-view toggle. */
+/**
+ * Combined Config tab. One picker on the header row names what the panel shows: one of the
+ * workspace files, or the installed skills. ConfigTab owns the picker while a file is open
+ * (it guards unsaved edits); the Skills view carries the same picker so the control never moves.
+ */
 function ConfigWithSkills({ agentId, cronWarning = null }: ConfigWithSkillsProps) {
   const [view, setView] = useState<ConfigView>(() => getInitialConfigView(agentId));
 
@@ -74,25 +83,44 @@ function ConfigWithSkills({ agentId, cronWarning = null }: ConfigWithSkillsProps
     persistConfigView(nextView, agentId);
   }, [agentId]);
 
+  const handleFileViewChange = useCallback((value: string) => {
+    if (value === SKILLS_VIEW_OPTION.value) switchView('skills');
+  }, [switchView]);
+
+  const handleSkillsPickerChange = useCallback((value: string) => {
+    if (value === SKILLS_VIEW_OPTION.value) return;
+    rememberSelectedConfigFile(agentId, value);
+    switchView('files');
+  }, [agentId, switchView]);
+
+  if (view === 'files') {
+    return (
+      <ConfigTab
+        key={agentId}
+        agentId={agentId}
+        cronWarning={cronWarning}
+        viewOptions={[SKILLS_VIEW_OPTION]}
+        onViewChange={handleFileViewChange}
+      />
+    );
+  }
+
   return (
-    <div className="h-full flex flex-col min-h-0">
-      <div className="flex shrink-0 items-center gap-0.5 border-b border-border px-1">
-        {(['files', 'skills'] as const).map(nextView => (
-          <button
-            key={nextView}
-            type="button"
-            onClick={() => switchView(nextView)}
-            className="shell-chip cursor-pointer"
-            data-active={view === nextView ? 'true' : 'false'}
-          >
-            {CONFIG_VIEW_LABELS[nextView]}
-          </button>
-        ))}
-      </div>
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {view === 'files' ? <ConfigTab key={agentId} agentId={agentId} cronWarning={cronWarning} /> : <SkillsTab key={agentId} agentId={agentId} />}
-      </div>
-    </div>
+    <SkillsTab
+      key={agentId}
+      agentId={agentId}
+      picker={(
+        <InlineSelect
+          inline
+          value={SKILLS_VIEW_OPTION.value}
+          onChange={handleSkillsPickerChange}
+          options={CONFIG_PICKER_OPTIONS}
+          ariaLabel="Select config file"
+          triggerClassName={CONFIG_SELECT_TRIGGER_CLASS}
+          menuClassName={CONFIG_SELECT_MENU_CLASS}
+        />
+      )}
+    />
   );
 }
 

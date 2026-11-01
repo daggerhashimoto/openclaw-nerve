@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-01T22:40:00Z",
+  "generatedAt": "2026-11-01T23:40:00Z",
   "title": "Design System: Nerve",
   "extensions": {
     "colorMeta": {
@@ -705,7 +705,7 @@
     "rules": [
       {
         "name": "The Light Temperature Rule",
-        "body": "Blue is agent work, cantaloupe is the operator and anything waiting on the operator, red is error, and nothing else is coloured. A surface that is not reporting one of those three states is a neutral. Family hues are identity, not state: they sit on idle panes, on names, on the header band and on the open row, and a pane that is lit always shows the state colour with its bloom.",
+        "body": "Blue is agent work, cantaloupe is the operator and anything waiting on the operator, red is error, and nothing else is coloured. A surface that is not reporting one of those three states is a neutral. Family hues are identity, not state: they sit on idle panes, on names, on the header band and on the open row, and a pane that is lit always shows the state colour with its bloom. A cron row's pane carries the job's light: Electric Blue while a run is in flight, Signal Red while an enabled job's last run stands broken, off otherwise; a skipped run is quiet, not broken.",
         "section": "colors"
       },
       {
@@ -715,7 +715,7 @@
       },
       {
         "name": "The Window Rule",
-        "body": "The composer is the operator's next window. At rest it is a dark plate with a dark pane in the gutter; while the operator is in it (focus, or text already typed) it warms to Operator Plate with the warm edge light and the pane lights Cantaloupe, so the turn being written looks like the turns already sent.",
+        "body": "The composer is the operator's next window. At rest it is a dark plate with a dark pane in the gutter; while the operator is in it (focus, or text already typed) it warms to Operator Plate with the warm edge light and the pane lights Cantaloupe, so the turn being written looks like the turns already sent. The side-column editors (memory section, config file) are windows too: Plate at rest, Operator Plate with the warm edge light and a lit Cantaloupe pane in their status line while the operator types; no focus ring, no drawn border.",
         "section": "colors"
       },
       {
@@ -769,7 +769,9 @@
       "**Do** make Send the one warm control on a screen: Cantaloupe fill, Midnight label, 3px radius.",
       "**Do** give every pane without adjacent text an accessible label (Running, Waiting on you, Failed, Idle).",
       "**Do** let light travel: stagger a state's arrival by region (fleet pane, chat header, agents column, transcript gutter, 70ms apart) and never by element; lights go out together.",
-      "**Do** move chrome on the arrive ease (`cubic-bezier(0.16, 1, 0.3, 1)`, 180ms to 260ms) and switch views with a view transition; no bounce, no elastic curves."
+      "**Do** move chrome on the arrive ease (`cubic-bezier(0.16, 1, 0.3, 1)`, 180ms to 260ms) and switch views with a view transition; no bounce, no elastic curves.",
+      "**Do** treat the side-column editors as operator windows: Plate at rest, Operator Plate with a lit status-line pane while the operator types, never a focus ring (The Window Rule).",
+      "**Do** let a cron row's pane carry the job's light: blue in flight, red while an enabled job stands broken, off otherwise; a skipped run stays quiet."
     ],
     "donts": [
       "**Don't** colour anything that is not reporting agent work, operator ownership, an error, a link, code syntax or an agent family's identity; no decorative accents or coloured side rails.",

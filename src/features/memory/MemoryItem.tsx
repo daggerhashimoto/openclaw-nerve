@@ -12,7 +12,7 @@
  */
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Calendar, Trash2, Pencil, Loader2, AlertCircle, ChevronRight, EllipsisVertical } from 'lucide-react';
+import { Trash2, Pencil, Loader2, AlertCircle, ChevronRight, EllipsisVertical } from 'lucide-react';
 import type { Memory } from '@/types';
 
 interface MemoryItemProps {
@@ -127,7 +127,7 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
             aria-hidden="true"
             className={`shrink-0 text-muted-foreground ${isExpanded ? 'rotate-90' : ''}`}
           />
-          <span className="min-w-0 flex-1 truncate text-foreground">
+          <span className="min-w-0 flex-1 truncate font-medium text-foreground">
             {memory.text}
           </span>
           {typeof itemCount === 'number' && itemCount > 0 && (
@@ -138,13 +138,15 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
         </>
       ) : memory.type === 'daily' ? (
         <>
-          <Calendar size={14} aria-hidden="true" className="shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate text-muted-foreground">
-            <span className="font-mono text-[0.8rem] tabular">{memory.date}</span> {memory.text}
+          {/* A dated note: the date is a column, the title reads in foreground */}
+          <span className="shrink-0 pl-[22px] font-mono text-[0.8rem] text-muted-foreground tabular">{memory.date}</span>
+          <span className="min-w-0 flex-1 truncate text-foreground">
+            {memory.text}
           </span>
         </>
       ) : (
-        <span className="min-w-0 flex-1 truncate pl-[22px] text-muted-foreground">
+        /* The item is the content: it reads in foreground and wraps to two lines before clipping */
+        <span className="line-clamp-2 min-w-0 flex-1 py-1 pl-[22px] leading-5 text-foreground">
           {memory.text}
         </span>
       )}

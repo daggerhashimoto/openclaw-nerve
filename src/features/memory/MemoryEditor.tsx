@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Save, X, Loader2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Pane } from '@/components/ui/Pane';
 import { clearPersistedDraft, encodeDraftPart, readPersistedDraft, writePersistedDraft } from '@/features/workspace/persistedDrafts';
 
 interface MemoryEditorProps {
@@ -204,7 +205,7 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
   };
 
   return (
-    <div className="h-full flex flex-col min-h-0">
+    <div className="nerve-window-frame h-full flex flex-col min-h-0">
       {/* Header */}
       <div className="panel-header">
         <button
@@ -217,11 +218,6 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
         <span className="panel-label min-w-0 flex-1">
           <span className="truncate">{date ? `${date} / ${title}` : title}</span>
         </span>
-        {hasChanges && (
-          <span className="shrink-0 pr-2 text-[0.8rem] text-muted-foreground">
-            Modified
-          </span>
-        )}
       </div>
 
       {/* Error display */}
@@ -238,8 +234,8 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
         </div>
       )}
 
-      {/* Editor content */}
-      <div className="flex-1 min-h-0 flex flex-col">
+      {/* Editor content: the window warms while the operator types in it */}
+      <div className="nerve-window flex-1 min-h-0 flex flex-col">
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center">
             <Loader2 size={16} className="animate-spin text-muted-foreground" />
@@ -260,9 +256,10 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
       </div>
 
       {/* Footer with actions */}
-      <div className="flex min-h-[var(--row-unit)] items-center justify-between gap-2 border-t border-border bg-card py-1 pl-3 pr-1.5">
-        <span className="text-[0.8rem] text-muted-foreground">
-          {hasChanges ? 'Ctrl+S to save, Esc to cancel' : ''}
+      <div className="flex min-h-[var(--row-unit)] items-center justify-between gap-2 border-t border-border py-1 pl-3 pr-1.5">
+        <span className="flex min-w-0 items-center gap-2 text-[0.8rem] text-muted-foreground">
+          <Pane state="off" size="sm" className="nerve-window-pane" />
+          <span className="truncate">{hasChanges ? 'Unsaved changes' : 'Editing'}</span>
         </span>
         <div className="flex items-center gap-1.5">
           <Button
@@ -270,6 +267,7 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
             size="sm"
             onClick={handleCancel}
             disabled={isSaving}
+            title="Esc"
             className="text-[0.8rem] sm:h-6 sm:px-2"
           >
             <X size={14} />
@@ -279,6 +277,7 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
             size="sm"
             onClick={handleSave}
             disabled={!hasChanges || isSaving || isLoading}
+            title="Ctrl+S"
             className="text-[0.8rem] sm:h-6 sm:px-2"
           >
             {isSaving ? (

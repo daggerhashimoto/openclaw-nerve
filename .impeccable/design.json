@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-01T21:30:00Z",
+  "generatedAt": "2026-11-01T22:40:00Z",
   "title": "Design System: Nerve",
   "extensions": {
     "colorMeta": {
@@ -573,6 +573,26 @@
         "name": "reduced-motion",
         "value": "animation-duration 0.001s; transition-duration 0.001s",
         "purpose": "prefers-reduced-motion makes every switch and entrance instant."
+      },
+      {
+        "name": "arrive-ease",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Arrivals: drawers, menus, the lifted chip crossing its track. A confident deceleration, never a bounce."
+      },
+      {
+        "name": "light-delay",
+        "value": "0ms / 70ms / 140ms / 210ms",
+        "purpose": "Light travels: a state arrives at the fleet pane first, then the chat header, the agents column and the transcript gutter, one region per 70ms. Lights go out together."
+      },
+      {
+        "name": "view-switch",
+        "value": "160ms root cross-fade, 220ms chip slide",
+        "purpose": "Chat and Tasks switch as a view transition with the lifted chip as the shared element."
+      },
+      {
+        "name": "composer-handoff",
+        "value": "220ms",
+        "purpose": "On send the composer lifts 3px and settles as the turn leaves it and lands in the transcript."
       }
     ],
     "breakpoints": [
@@ -725,7 +745,7 @@
       },
       {
         "name": "The Switch Rule",
-        "body": "State changes switch in 120ms with `cubic-bezier(0.2, 0, 0, 1)`; nothing breathes or pulses, and reduced motion makes every transition and animation instant. Entrances (messages, menus, drawers) fade or slide once in 140ms to 220ms using the same ease. A new turn in the transcript lands with one 200ms rise of 6px and a fade, and that is the transcript's only entrance.",
+        "body": "State changes switch in 120ms with `cubic-bezier(0.2, 0, 0, 1)`; nothing breathes or pulses, and reduced motion makes every transition and animation instant. Entrances (messages, menus, drawers) fade or slide once in 140ms to 220ms using the same ease. A new turn in the transcript lands with one 200ms rise of 6px and a fade, and that is the transcript's only entrance. Light travels: when a run starts, the fleet pane comes on first, the chat header 70ms later, the agents column at 140ms and the transcript gutter at 210ms; lights go out together. Arrivals use the arrive ease cubic-bezier(0.16, 1, 0.3, 1) at 180ms to 260ms, never a bounce. The Chat and Tasks switch is a view transition (chip slides across its track in 220ms, room cross-fades in 160ms); on send the composer lifts 3px and settles in 220ms.",
         "section": "elevation"
       },
       {
@@ -747,7 +767,9 @@
       "**Do** set timestamps, counts, durations, models and code in Atkinson Hyperlegible Mono with tabular numerals.",
       "**Do** keep corners between 1px and 4px; 6px is only for the floating command palette shell.",
       "**Do** make Send the one warm control on a screen: Cantaloupe fill, Midnight label, 3px radius.",
-      "**Do** give every pane without adjacent text an accessible label (Running, Waiting on you, Failed, Idle)."
+      "**Do** give every pane without adjacent text an accessible label (Running, Waiting on you, Failed, Idle).",
+      "**Do** let light travel: stagger a state's arrival by region (fleet pane, chat header, agents column, transcript gutter, 70ms apart) and never by element; lights go out together.",
+      "**Do** move chrome on the arrive ease (`cubic-bezier(0.16, 1, 0.3, 1)`, 180ms to 260ms) and switch views with a view transition; no bounce, no elastic curves."
     ],
     "donts": [
       "**Don't** colour anything that is not reporting agent work, operator ownership, an error, a link, code syntax or an agent family's identity; no decorative accents or coloured side rails.",

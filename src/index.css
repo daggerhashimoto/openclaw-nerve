@@ -106,6 +106,10 @@
   /* Light switch: state panes turn on and off, they never breathe. */
   --switch-duration: 120ms;
   --switch-ease: cubic-bezier(0.2, 0, 0, 1);
+  /* Arrivals (drawers, menus, the chip on its track): a confident deceleration, never a bounce */
+  --arrive-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Light travels: regions set how long after the fleet pane their panes come on */
+  --light-delay: 0ms;
   /* Bloom: the light a lit pane throws on the ground around it. Daylight sets these to none. */
   --bloom-live: 0 0 9px 0 color-mix(in srgb, var(--color-live) 62%, transparent);
   --bloom-operator: 0 0 9px 0 color-mix(in srgb, var(--color-operator) 58%, transparent);
@@ -137,10 +141,12 @@ html[data-theme="light"] {
 .pane[data-state="live"] {
   background-color: var(--color-live);
   box-shadow: var(--bloom-live);
+  transition-delay: var(--light-delay);
 }
 .pane[data-state="operator"] {
   background-color: var(--color-operator);
   box-shadow: var(--bloom-operator);
+  transition-delay: var(--light-delay);
 }
 .pane[data-state="error"] {
   background-color: var(--color-red);
@@ -268,7 +274,7 @@ html[data-theme="light"] {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-slide-down { animation: slide-down 0.14s var(--switch-ease); }
+.animate-slide-down { animation: slide-down 0.18s var(--arrive-ease); }
 
 /* Settings drawer slide-in */
 @keyframes slide-in-right {
@@ -279,8 +285,8 @@ html[data-theme="light"] {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-.animate-slide-in-right { animation: slide-in-right 0.22s var(--switch-ease); }
-.animate-fade-in { animation: fade-in 0.14s var(--switch-ease); }
+.animate-slide-in-right { animation: slide-in-right 0.26s var(--arrive-ease); }
+.animate-fade-in { animation: fade-in 0.16s var(--switch-ease); }
 
 /* Search highlight: the operator's own find */
 .search-highlight {
@@ -1663,6 +1669,13 @@ html[data-theme="light"] {
     animation-duration: 0.001s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001s !important;
+    transition-delay: 0s !important;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }
 
@@ -1694,4 +1707,38 @@ html[data-theme="light"] .name-hued {
   background-color: var(--color-card);
   border-radius: 4px;
   box-shadow: var(--plate-shadow);
+}
+
+/* Light travels. When a run starts the fleet pane comes on first, then the chat header, then the
+   agents column, then the transcript gutter: one switch per region, 70ms apart, so the state
+   arrives as a sweep down the spine instead of a blink everywhere at once. Lights go out together. */
+.nerve-chat-header { --light-delay: 70ms; }
+.nerve-col-right, .nerve-right-stack { --light-delay: 140ms; }
+.nerve-room { --light-delay: 210ms; }
+
+/* The composer hands its turn upward: a short lift as the message leaves, then the plate goes dark */
+@keyframes composer-handoff {
+  0% { transform: translateY(0); }
+  35% { transform: translateY(-3px); }
+  100% { transform: translateY(0); }
+}
+.nerve-composer.is-sending {
+  animation: composer-handoff 220ms var(--arrive-ease);
+}
+
+/* Chat and Tasks switch as a view transition: the lifted chip slides across its track and the
+   room cross-fades underneath. Reduced motion turns both off (see the media block above). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 160ms;
+  animation-timing-function: var(--switch-ease);
+}
+::view-transition-group(seg-active) {
+  animation-duration: 220ms;
+  animation-timing-function: var(--arrive-ease);
+}
+::view-transition-old(seg-active),
+::view-transition-new(seg-active) {
+  animation: none;
+  mix-blend-mode: normal;
 }

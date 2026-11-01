@@ -5,6 +5,7 @@
  * Connection management is handled by useConnectionManager.
  * Dashboard data fetching is handled by useDashboardData.
  */
+import { flushSync } from 'react-dom';
 import {
   useState,
   useEffect,
@@ -350,7 +351,15 @@ export default function App({ onLogout }: AppProps) {
   const [openBeads, setOpenBeads] = useState<OpenBeadTab[]>([]);
   const setViewMode = useCallback((mode: ViewMode) => {
     const nextMode = mode === 'kanban' && !kanbanVisible ? 'chat' : mode;
-    setViewModeRaw(nextMode);
+    // The view switch is a view transition (the lifted chip slides across its track, the room
+    // cross-fades) where the browser supports it and the operator has not asked for reduced motion
+    const doc = document as Document & { startViewTransition?: (update: () => void) => unknown };
+    const reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (typeof doc.startViewTransition === 'function' && !reduceMotion) {
+      doc.startViewTransition(() => { flushSync(() => setViewModeRaw(nextMode)); });
+    } else {
+      setViewModeRaw(nextMode);
+    }
 
     if (nextMode === 'kanban' && isCompactLayout) {
       setFileBrowserCollapsed(true);

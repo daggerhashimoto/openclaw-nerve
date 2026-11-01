@@ -1043,3 +1043,9 @@ html[data-style="classic"] .panel-header {
 html[data-style="classic"] .nerve-composer-band {
   background: var(--color-card);
 }
+html[data-style="classic"] .nerve-chat-header,
+html[data-style="classic"] .nerve-col-right,
+html[data-style="classic"] .nerve-right-stack,
+html[data-style="classic"] .nerve-room {
+  --light-delay: 0ms;
+}

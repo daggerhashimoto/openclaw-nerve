@@ -1479,7 +1479,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           />
           {/* Input box */}
           <div
-            className={`nerve-composer relative rounded-[4px] border transition-colors duration-[120ms] ${voiceState === 'recording' ? 'border-operator' : 'border-transparent focus-within:border-operator/60'}`}
+            className={`nerve-composer relative rounded-[4px] border transition-colors duration-[120ms] ${voiceState === 'recording' ? 'border-operator' : 'border-transparent focus-within:border-operator/60'} ${sendPulse ? 'is-sending' : ''}`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}

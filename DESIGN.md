@@ -286,7 +286,7 @@ The system refuses the hacker costume (scanlines, glowing HUD chrome, tracked up
 - Corners stay between 1px and 4px; larger radius steps clamp to 4px.
 - Atkinson Hyperlegible Next for reading and UI, Atkinson Hyperlegible Mono with tabular numerals for measures, Geist for names only.
 - Sentence case everywhere; no eyebrows, kickers or tracked caps.
-- Motion is a 120ms switch with a near-linear ease-out; a new turn lands with one 200ms rise; reduced motion makes both instant.
+- Motion is a 120ms switch with a near-linear ease-out; light travels down the spine 70ms per region when a run starts; a new turn lands with one 200ms rise; arrivals decelerate on the arrive ease; reduced motion makes all of it instant.
 - The composer is the operator's next window: a dark plate with a dark gutter pane at rest, warmed to the operator plate with a lit pane while the operator is in it.
 
 ## Colors
@@ -384,7 +384,7 @@ In Daylight there is no edge to catch light, so the plate token becomes a printe
 
 **The Frame Rule.** The shell is a dark frame around one lifted room. Top bar, side columns and status bar sit flat on Midnight with hairlines only; the centre column is a single plate of Panel with the edge light and 4px corners, and the frame shows for 6px around it. Surfaces inside the room step up once more to Plate. Nothing else in the shell is a plate.
 
-**The Switch Rule.** State changes switch in 120ms with `cubic-bezier(0.2, 0, 0, 1)`; nothing breathes or pulses, and reduced motion makes every transition and animation instant. Entrances (messages, menus, drawers) fade or slide once in 140ms to 220ms using the same ease; a new turn in the transcript lands with one 200ms rise of 6px and a fade, and that is the transcript's only entrance.
+**The Switch Rule.** State changes switch in 120ms with `cubic-bezier(0.2, 0, 0, 1)`; nothing breathes or pulses, and reduced motion makes every transition and animation instant. Light travels: when a run starts, the fleet pane beside the wordmark comes on first, the chat header 70ms later, the agents column at 140ms and the transcript gutter at 210ms, so state arrives as one sweep down the spine; lights go out together. Arrivals (drawers, menus, the lifted chip crossing its track) use the arrive ease `cubic-bezier(0.16, 1, 0.3, 1)` at 180ms to 260ms, never a bounce. The Chat and Tasks switch is a view transition: the lifted chip slides across the segmented track in 220ms while the room cross-fades in 160ms. On send the composer lifts 3px and settles in 220ms as the turn leaves it and lands in the transcript. Entrances (messages, menus, drawers) fade or slide once in 140ms to 220ms using the same ease; a new turn in the transcript lands with one 200ms rise of 6px and a fade, and that is the transcript's only entrance.
 
 **The Bloom Rule.** A lit pane casts a short bloom of its own colour, and that is the only light in the system that spreads: off panes, plates, buttons and text never glow. The bloom switches on and off with the pane in 120ms. Daylight prints panes flat.
 
@@ -451,6 +451,8 @@ One 28px line of mono text at 0.8rem: a small pane (live while running, off when
 - **Do** switch panes and hover fills in 120ms with `cubic-bezier(0.2, 0, 0, 1)` and let reduced motion make them instant (The Switch Rule).
 - **Do** warm the composer to Operator Plate and light its gutter pane while the operator is in it, on focus or with text typed, so the turn being written matches the turns already sent (The Window Rule).
 - **Do** let a new turn land with one 200ms rise and fade on the switch ease; the transcript has no other entrance.
+- **Do** let light travel: stagger a state's arrival by region (fleet pane, chat header, agents column, transcript gutter, 70ms apart) and never by element; lights go out together.
+- **Do** move chrome on the arrive ease (`cubic-bezier(0.16, 1, 0.3, 1)`, 180ms to 260ms) and switch views with a view transition; no bounce, no elastic curves.
 - **Do** build raised surfaces as plates: Panel for the room, Plate inside it, each with the 1px edge light and no drawn border; in Daylight the token prints a hairline (The Edge Light Rule, The Frame Rule).
 - **Do** keep every list row, tool row, panel header and the status bar on the 1.867rem row unit (The One Row Rule).
 - **Do** reserve Geist for the wordmark and agent or speaker names (The Names Rule).

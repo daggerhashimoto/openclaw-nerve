@@ -282,6 +282,7 @@ export function TopBar({
               aria-label="Switch to chat view"
               aria-pressed={viewMode === "chat"}
               data-active={viewMode === "chat"}
+              style={viewMode === "chat" ? { viewTransitionName: "seg-active" } : undefined}
               className="shell-chip flex-1 sm:flex-none"
             >
               Chat
@@ -293,6 +294,7 @@ export function TopBar({
                 aria-label="Switch to tasks view"
                 aria-pressed={viewMode === "kanban"}
                 data-active={viewMode === "kanban"}
+                style={viewMode === "kanban" ? { viewTransitionName: "seg-active" } : undefined}
                 className="shell-chip flex-1 sm:flex-none"
               >
                 Tasks

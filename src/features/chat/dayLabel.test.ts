@@ -10,9 +10,11 @@ describe('dayLabel', () => {
   });
 
   it('spells older days without the year inside the same year', () => {
-    const label = dayLabel(new Date(2026, 4, 20, 9, 0), now);
+    const day = new Date(2026, 4, 20, 9, 0);
+    const label = dayLabel(day, now);
+    const month = day.toLocaleDateString(undefined, { month: 'short' });
     expect(label).toMatch(/20/);
-    expect(label).toMatch(/May/);
+    expect(label).toContain(month);
     expect(label).not.toMatch(/2026/);
   });
 

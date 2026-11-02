@@ -353,7 +353,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     }
     const runStart = i;
     const run: ReactNode[] = [];
-    while (i < messages.length && isToolMessage(messages[i])) {
+    // A stack never crosses a day boundary: the next day's tools start a new stack after its divider.
+    while (i < messages.length && isToolMessage(messages[i]) && (i === runStart || dayKeys[i] === dayKeys[i - 1])) {
       run.push(renderMessage(messages[i], i));
       i++;
     }

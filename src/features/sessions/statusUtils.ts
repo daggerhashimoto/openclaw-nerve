@@ -1,10 +1,7 @@
 import type { GranularAgentState } from '@/types';
-import { paneStateFor, type PaneState } from '@/lib/paneState';
+import { isGranularLive, paneStateFor, type PaneState } from '@/lib/paneState';
 
-/** True when the granular state describes agent work in progress (thinking, streaming or a tool call). */
-export function isGranularLive(state: GranularAgentState): boolean {
-  return Boolean(state.toolName) || state.status === 'THINKING' || state.status === 'STREAMING';
-}
+export { isGranularLive };
 
 /** Pane state for a granular agent state: live work lights the pane, errors go red, done and idle go dark. */
 export function getStatusPaneState(state: GranularAgentState): PaneState {

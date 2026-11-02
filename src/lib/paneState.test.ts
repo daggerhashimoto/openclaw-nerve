@@ -82,6 +82,14 @@ describe('fleetCounts', () => {
 });
 
 describe('sessionPaneState', () => {
+  it('goes dark on a terminal granular status even while the session snapshot still says running', () => {
+    const s = session({ key: 'agent:a', state: 'running' } as Partial<Session>);
+    expect(sessionPaneState(s, { agentStatus: { 'agent:a': { status: 'DONE', since: 0 } } })).toBe('off');
+    expect(sessionPaneState(s, { busyState: { 'agent:a': true }, agentStatus: { 'agent:a': { status: 'IDLE', since: 0 } } })).toBe('off');
+    expect(sessionPaneState(s, { agentStatus: { 'agent:a': { status: 'THINKING', since: 0 } } })).toBe('live');
+    expect(sessionPaneState(s, {})).toBe('live');
+  });
+
   it('reads error over the busy flag, then running, then unread', () => {
     const s = session({ key: 'agent:a' });
     expect(sessionPaneState(s, { busyState: { 'agent:a': true }, agentStatus: { 'agent:a': { status: 'ERROR', since: 0 } } })).toBe('error');

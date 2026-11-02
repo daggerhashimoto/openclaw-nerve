@@ -105,6 +105,8 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
   // Full history buffer + visible window for infinite scroll
   const allMessagesRef = useRef<ChatMsg[]>([]);
   const visibleCountRef = useRef(DEFAULT_VISIBLE_COUNT);
+  // Identity of the latest history request; a reset or a newer load makes earlier completions stale
+  const historyRequestRef = useRef(0);
 
   /** Apply the windowed view of messages to React state. */
   const applyMessageWindow = useCallback((all: ChatMsg[], resetVisibleWindow = false) => {
@@ -129,10 +131,14 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
   /** Load chat history from the gateway. */
   const loadHistory = useCallback(async (session?: string) => {
     const sk = session || currentSessionRef.current;
+    const requestId = ++historyRequestRef.current;
+    const isCurrent = () => historyRequestRef.current === requestId;
     try {
       const result = await loadChatHistory({ rpc, sessionKey: sk, limit: 500 });
+      if (!isCurrent()) return;
       applyMessageWindow(result, true);
     } catch (e) {
+      if (!isCurrent()) return;
       const errMsg = e instanceof Error ? e.message : String(e);
       allMessagesRef.current = [];
       setHasMore(false);
@@ -140,7 +146,7 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
         msgId: generateMsgId(), role: 'system' as const, html: 'Failed to load history: ' + errMsg, rawText: '', timestamp: new Date(),
       }]);
     } finally {
-      setHistoryLoaded(true);
+      if (isCurrent()) setHistoryLoaded(true);
     }
   }, [applyMessageWindow, currentSessionRef, rpc]);
 
@@ -177,6 +183,7 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
     visibleCountRef.current = DEFAULT_VISIBLE_COUNT;
     setHasMore(false);
     setHistoryLoaded(false);
+    historyRequestRef.current += 1;
     allMessagesRef.current = [];
   }, []);
 

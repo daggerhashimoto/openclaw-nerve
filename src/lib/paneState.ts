@@ -24,6 +24,11 @@ export function paneStateFor({ running, unread, error }: PaneStateInput): PaneSt
   return 'off';
 }
 
+/** True when a granular state describes agent work in progress (thinking, streaming or a tool call). */
+export function isGranularLive(state: GranularAgentState): boolean {
+  return Boolean(state.toolName) || state.status === 'THINKING' || state.status === 'STREAMING';
+}
+
 /** Running test shared by the agents column, the status strip and the brand pane. */
 export function isSessionRunning(session: Session, busy = false): boolean {
   return busy
@@ -48,15 +53,19 @@ interface FleetActivityInput {
 type SessionFlags = Pick<FleetActivityInput, 'busyState' | 'unreadSessions' | 'agentStatus'>;
 
 /**
- * One session's pane as the fleet sees it. A failed run is red and is not
- * counted as running, whatever the busy flag says; otherwise the running flags
- * decide, then unread work.
+ * One session's pane as the fleet sees it. When the gateway has reported a
+ * granular status for the session it is authoritative, as on the session rows:
+ * ERROR is red, DONE and IDLE are not running even while the session snapshot
+ * still says so, and only live work lights the pane. Without one, the session's
+ * own running flags decide. Unread work waits on the operator.
  */
 export function sessionPaneState(session: Session, { busyState, unreadSessions, agentStatus }: SessionFlags): PaneState {
   const key = getSessionKey(session);
-  const failed = agentStatus?.[key]?.status === 'ERROR';
+  const granular = agentStatus?.[key];
+  const failed = granular?.status === 'ERROR';
+  const running = granular ? isGranularLive(granular) : isSessionRunning(session, Boolean(busyState?.[key]));
   return paneStateFor({
-    running: !failed && isSessionRunning(session, Boolean(busyState?.[key])),
+    running: !failed && running,
     unread: Boolean(unreadSessions?.[key]),
     error: failed,
   });

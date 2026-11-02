@@ -1808,6 +1808,26 @@ html[data-theme="light"] .name-hued {
   border-bottom: 0;
 }
 
+/* A transcript divider: one hairline across the column with a word on it (a day, or the way to
+   older messages), set in the mono voice of the shell's measures. The transcript's only rule. */
+.nerve-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-muted-foreground);
+  user-select: none;
+}
+.nerve-divider::before,
+.nerve-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
 /* The board: lanes on the room plate separated by hairlines; a lane under a dragged card lifts
    to Raised. Cards are rows on Plate with the edge light, Raised on hover, and only the card in
    the operator's hand casts the float shadow. */

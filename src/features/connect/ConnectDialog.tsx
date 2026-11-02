@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import NerveLogo from '@/components/NerveLogo';
+import { Pane } from '@/components/ui/Pane';
 import { areGatewayUrlsEquivalent } from '@/lib/gatewayUrls';
 
 interface ConnectDialogProps {
@@ -64,14 +64,14 @@ export function ConnectDialog({
       >
         <div className="shrink-0 border-b border-border px-4 py-4 sm:px-5">
           <DialogHeader className="gap-2 text-left">
-            <div className="flex items-center gap-3">
-              <span className="flex size-7 shrink-0 items-center justify-center">
-                <NerveLogo size={18} static />
-              </span>
-              <DialogTitle className="text-[1.133rem] font-semibold leading-snug text-foreground sm:text-[1.2rem]">
-                Connect Nerve to your OpenClaw gateway
-              </DialogTitle>
-            </div>
+            {/* The sign with its pane lit cantaloupe: Nerve is waiting on you */}
+            <span className="nerve-wordmark">
+              <span>Nerve</span>
+              <Pane state="operator" className="nerve-brand-pane" label="Waiting on you" />
+            </span>
+            <DialogTitle className="text-[1.067rem] font-semibold leading-snug text-foreground">
+              Connect to your OpenClaw gateway
+            </DialogTitle>
             <DialogDescription className="max-w-[52ch] text-[0.867rem] leading-6 text-muted-foreground">
               Point Nerve at the gateway endpoint, provide your token when needed, and bring the cockpit online.
             </DialogDescription>
@@ -104,7 +104,7 @@ export function ConnectDialog({
                 onChange={e => setUrl(e.target.value)}
                 spellCheck={false}
                 placeholder="ws://127.0.0.1:18789"
-                className="font-mono text-base sm:text-[0.867rem]"
+                className="cockpit-input cockpit-input-mono h-11 sm:h-[2.133rem]"
               />
             </label>
             {(!serverSideAuth || !officialUrl || !areGatewayUrlsEquivalent(url, officialUrl)) && (
@@ -119,7 +119,7 @@ export function ConnectDialog({
                   onKeyDown={e => e.key === 'Enter' && handleConnect()}
                   spellCheck={false}
                   placeholder="Paste the token from your gateway config"
-                  className="font-mono text-base sm:text-[0.867rem]"
+                  className="cockpit-input cockpit-input-mono h-11 sm:h-[2.133rem]"
                 />
               </label>
             )}
@@ -135,12 +135,12 @@ export function ConnectDialog({
               size="lg"
               className="w-full text-[0.867rem] font-semibold sm:h-9 sm:w-auto sm:min-w-[180px]"
             >
-              {connecting ? 'Connecting…' : 'Connect to gateway'}
+              {connecting ? 'Connecting' : 'Connect to gateway'}
             </Button>
           </div>
 
           {error && (
-            <div className="rounded-[3px] border border-destructive/40 px-3 py-2 text-[0.867rem] text-destructive">
+            <div className="cockpit-note" data-tone="danger">
               {error}
             </div>
           )}

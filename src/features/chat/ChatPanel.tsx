@@ -2,6 +2,16 @@ import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHand
 import type { ProcessingStage, ActivityLogEntry, ChatStreamState } from '@/contexts/ChatContext';
 import { ToolCallBlock } from './ToolCallBlock';
 import { MessageBubble } from './MessageBubble';
+import { dayKey, dayLabel } from './utils';
+
+/** A hairline across the transcript with a word on it: a day, or the way to older messages */
+function TranscriptDivider({ label }: { label: string }) {
+  return (
+    <div className="nerve-divider" role="separator" aria-label={label}>
+      <span>{label}</span>
+    </div>
+  );
+}
 import { InputBar, type InputBarHandle } from './InputBar';
 import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './useMessageSearch';
@@ -36,6 +46,8 @@ interface ChatPanelProps {
   loadMore?: () => boolean;
   /** Whether there are older messages to load */
   hasMore?: boolean;
+  /** True once this room's history has been fetched; an empty room says so only then */
+  historyLoaded?: boolean;
   /** Mobile file browser toggle handler */
   onToggleFileBrowser?: () => void;
   /** Whether the mobile file browser is currently collapsed. */
@@ -70,7 +82,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   processingStage,
   lastEventTimestamp = 0, currentToolDescription = null, activityLog = [],
   onWakeWordState, onReset, searchOpen, onSearchClose, id, agentName = 'Agent', agentHue,
-  loadMore, hasMore = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
+  loadMore, hasMore = false, historyLoaded = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
   onToggleMobileTopBar, isMobileTopBarHidden = false,
   onOpenWorkspacePath,
   pathLinkPrefixes,
@@ -319,10 +331,22 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     );
   };
 
+  // Day dividers: only when the visible transcript spans more than one day, so a single
+  // day's room carries no label at all. The first group gets its label too.
+  const dayKeys = messages.map((m) => dayKey(m.timestamp));
+  const spansDays = new Set(dayKeys).size > 1;
+  const dividerBefore = (i: number): ReactNode | null => {
+    if (!spansDays) return null;
+    if (i > 0 && dayKeys[i] === dayKeys[i - 1]) return null;
+    return <TranscriptDivider key={`day-${dayKeys[i]}-${i}`} label={dayLabel(messages[i].timestamp)} />;
+  };
+
   // Consecutive tool messages share one bordered stack, rows split by 1px rules.
   const transcript: ReactNode[] = [];
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
+    const divider = dividerBefore(i);
+    if (divider) transcript.push(divider);
     if (!isToolMessage(msg)) {
       transcript.push(renderMessage(msg, i));
       continue;
@@ -386,10 +410,18 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         <div className="flex w-full flex-col gap-1 py-4">
           {/* Infinite scroll sentinel + "load more" indicator */}
           {hasMore && (
-            <div ref={sentinelRef} className="flex items-center gap-3 py-2 text-[0.8rem] text-muted-foreground select-none">
-              <span className="h-px flex-1 bg-border" aria-hidden="true" />
-              Older messages
-              <span className="h-px flex-1 bg-border" aria-hidden="true" />
+            <div ref={sentinelRef}>
+              <TranscriptDivider label="Older messages" />
+            </div>
+          )}
+
+          {/* The empty room: said only once history has been fetched, never while it loads */}
+          {historyLoaded && messages.length === 0 && !isGenerating && (
+            <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 py-16 text-center select-none">
+              <p className="text-[0.933rem] text-foreground">Nothing said here yet.</p>
+              <p className="text-[0.867rem] text-muted-foreground">
+                Your first message to {agentName || 'this agent'} opens the room.
+              </p>
             </div>
           )}
 

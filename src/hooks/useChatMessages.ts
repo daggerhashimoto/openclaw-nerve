@@ -99,6 +99,8 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [, setVisibleCount] = useState(DEFAULT_VISIBLE_COUNT);
   const [hasMore, setHasMore] = useState(false);
+  // True once the current room's history has been fetched (or failed), so an empty room can say so
+  const [historyLoaded, setHistoryLoaded] = useState(false);
 
   // Full history buffer + visible window for infinite scroll
   const allMessagesRef = useRef<ChatMsg[]>([]);
@@ -137,6 +139,8 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
       setMessages(prev => [...prev, {
         msgId: generateMsgId(), role: 'system' as const, html: 'Failed to load history: ' + errMsg, rawText: '', timestamp: new Date(),
       }]);
+    } finally {
+      setHistoryLoaded(true);
     }
   }, [applyMessageWindow, currentSessionRef, rpc]);
 
@@ -172,6 +176,7 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
     setVisibleCount(DEFAULT_VISIBLE_COUNT);
     visibleCountRef.current = DEFAULT_VISIBLE_COUNT;
     setHasMore(false);
+    setHistoryLoaded(false);
     allMessagesRef.current = [];
   }, []);
 
@@ -179,6 +184,7 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
     messages,
     setMessages,
     hasMore,
+    historyLoaded,
     applyMessageWindow,
     loadHistory,
     loadMore,
@@ -188,6 +194,7 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
   }), [
     messages,
     hasMore,
+    historyLoaded,
     setMessages,
     applyMessageWindow,
     loadHistory,

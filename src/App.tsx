@@ -114,7 +114,7 @@ export default function App({ onLogout }: AppProps) {
     messages, isGenerating, stream, processingStage,
     lastEventTimestamp, activityLog, currentToolDescription,
     handleSend, handleAbort, handleReset,
-    loadMore, hasMore,
+    loadMore, hasMore, historyLoaded,
     showResetConfirm, confirmReset, cancelReset,
   } = useChat();
 
@@ -855,6 +855,7 @@ export default function App({ onLogout }: AppProps) {
             agentHue={currentAgentHue}
             loadMore={loadMore}
             hasMore={hasMore}
+            historyLoaded={historyLoaded}
             onToggleFileBrowser={isCompactLayout ? handleToggleFileBrowser : fileBrowserCollapsed ? handleToggleFileBrowser : undefined}
             isFileBrowserCollapsed={fileBrowserCollapsed}
             onToggleMobileTopBar={isCompactLayout ? toggleMobileTopBar : undefined}

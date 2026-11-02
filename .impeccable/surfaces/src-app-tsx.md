@@ -49,4 +49,6 @@ AMENDMENT 9 (2026-11-02, the Tasks board): the board is the fleet's work as room
 
 AMENDMENT 10 (2026-11-02, dialogs): Create cron, Add memory and Create task share one dialog idiom: flat fields, sections separated by hairlines (no nested cards), the operator's text field as an operator window, Cancel then the warm primary at the right in sentence case.
 
+AMENDMENT 11 (2026-11-02, transcript loose ends and the last two dialogs): the transcript gets one divider primitive (a hairline with a mono word: a day, or "Older messages"), day labels only when the visible transcript spans more than one day, and an empty-room note that waits for the history flag so it never flashes. The Voice phrases modal drops its boxed, colour-coded sections for hairline sections with plain labels; the Connect dialog carries the sign with its pane lit cantaloupe instead of the old logo mark.
+
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

@@ -3,6 +3,31 @@ import type { ProcessingStage } from '@/contexts/ChatContext';
 /**
  * Format elapsed time as MM:SS.T (minutes, seconds, tenths)
  */
+/** Local calendar day of a timestamp, as a sortable key. */
+export function dayKey(date: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * The day in words for a transcript divider: Today, Yesterday, then "Mon 20 May",
+ * with the year only once the day is in another year.
+ */
+export function dayLabel(date: Date, now: Date = new Date()): string {
+  const key = dayKey(date);
+  if (key === dayKey(now)) return 'Today';
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (key === dayKey(yesterday)) return 'Yesterday';
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+}
+
 export function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const min = Math.floor(totalSec / 60).toString().padStart(2, '0');

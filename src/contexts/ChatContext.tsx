@@ -91,6 +91,8 @@ interface ChatContextValue {
   loadMore: () => boolean;
   /** Whether there are older messages available to load */
   hasMore: boolean;
+  /** True once the current room's history has been fetched, so an empty room can say so */
+  historyLoaded: boolean;
   /** Reset confirmation dialog state — rendered by the consumer, not the provider */
   showResetConfirm: boolean;
   confirmReset: () => Promise<void>;
@@ -731,6 +733,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     loadHistory: loadHistory,
     loadMore: msgHook.loadMore,
     hasMore: msgHook.hasMore,
+    historyLoaded: msgHook.historyLoaded,
     showResetConfirm,
     confirmReset,
     cancelReset,
@@ -748,6 +751,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     loadHistory,
     msgHook.loadMore,
     msgHook.hasMore,
+    msgHook.historyLoaded,
     showResetConfirm,
     confirmReset,
     cancelReset,

@@ -1051,6 +1051,15 @@ html[data-style="classic"] .nerve-room {
 }
 
 /* Classic editors stay flat: no warm window, no pane */
+html[data-style="classic"] .cron-section {
+  border: 1px solid color-mix(in srgb, var(--color-border) 86%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-card) 96%, transparent);
+  padding: 14px;
+}
+html[data-style="classic"] .cron-section:first-child {
+  padding-top: 14px;
+}
 html[data-style="classic"] .nerve-window,
 html[data-style="classic"] .nerve-window-frame:focus-within .nerve-window {
   background-color: var(--color-card);

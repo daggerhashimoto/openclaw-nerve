@@ -90,7 +90,7 @@ function SectionShell({
 }) {
   // A flat section: heading, one line of copy, then the fields. Sections stack with hairlines, never boxes.
   return (
-    <section className={`border-t border-border pt-3 first:border-t-0 first:pt-0 ${className}`}>
+    <section className={`cron-section border-t border-border pt-3 first:border-t-0 first:pt-0 ${className}`}>
       <div className="space-y-0.5">
         <h3 className="settings-heading">{title}</h3>
         <p className="text-[0.8rem] leading-relaxed text-muted-foreground">{description}</p>

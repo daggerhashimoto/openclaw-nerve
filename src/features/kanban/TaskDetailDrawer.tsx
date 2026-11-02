@@ -296,7 +296,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
             <div className="flex min-h-[2.933rem] shrink-0 items-center gap-2 border-b border-border pl-4 pr-2">
               <Pane state={paneState} hue={hue} label={paneStateLabel(paneState)} />
               <span className="min-w-0 flex-1 truncate text-[0.867rem] text-foreground">
-                {columnTitle(task.status, COLUMN_LABELS[task.status] ?? 'Task')}
+                {columnTitle(task.status)}
                 <span className="text-muted-foreground"> · {getTaskPriorityLabel(editPriority)} priority</span>
               </span>
               <button

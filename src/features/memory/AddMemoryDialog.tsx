@@ -157,15 +157,21 @@ export function AddMemoryDialog({ open, onOpenChange, onAdd, sections = [], isLo
             <label className="cockpit-field-label">
               Memory text
             </label>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Enter the memory to store"
-              className="cockpit-textarea min-h-[132px]"
-              rows={3}
-              autoFocus
-              disabled={submitting}
-            />
+            {/* The memory is the operator's words: an operator window that warms while you type */}
+            <div className="nerve-window-frame">
+              <div className="nerve-window rounded-[3px]">
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Enter the memory to store"
+                  aria-label="Memory text"
+                  className="block min-h-[132px] w-full resize-y border-0 bg-transparent px-3 py-2 text-[0.867rem] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
+                  rows={3}
+                  autoFocus
+                  disabled={submitting}
+                />
+              </div>
+            </div>
             <p className="cockpit-field-hint">Write the durable fact or preference you want the agent to recall later.</p>
           </div>
 

@@ -47,4 +47,6 @@ AMENDMENT 8 (2026-11-02, login and settings): the login page is the operator's f
 
 AMENDMENT 9 (2026-11-02, the Tasks board): the board is the fleet's work as rooms on the lifted room plate. Nameplate header with the board in words; lanes separated by hairlines with sentence-case titles and mono counts; tasks as rows on Plate with the edge light whose pane carries The Light Temperature Rule (blue while the agent runs, red when the run broke, cantaloupe while the task waits in Review) and The Identity Rule (the assignee's hue in the glass and on the name). Priority and run state are words, never pills or dots. Proposals carry a pane that lights cantaloupe while any wait on the operator. The task drawer and the Create task dialog follow the Settings drawer and The Window Rule (description as an operator window). The quick view uses the workspace column's row idiom.
 
+AMENDMENT 10 (2026-11-02, dialogs): Create cron, Add memory and Create task share one dialog idiom: flat fields, sections separated by hairlines (no nested cards), the operator's text field as an operator window, Cancel then the warm primary at the right in sentence case.
+
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

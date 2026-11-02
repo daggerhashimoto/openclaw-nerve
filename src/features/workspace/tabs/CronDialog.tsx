@@ -4,6 +4,7 @@
 
 import { useState, useCallback, useRef, useEffect, type SelectHTMLAttributes } from 'react';
 import { ChevronDown, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { CronJob } from '../hooks/useCrons';
 import { useSessionContext } from '@/contexts/SessionContext';
 
@@ -87,13 +88,14 @@ function SectionShell({
   children: React.ReactNode;
   className?: string;
 }) {
+  // A flat section: heading, one line of copy, then the fields. Sections stack with hairlines, never boxes.
   return (
-    <section className={`cockpit-surface p-3 ${className}`}>
+    <section className={`border-t border-border pt-3 first:border-t-0 first:pt-0 ${className}`}>
       <div className="space-y-0.5">
-        <h3 className="text-[0.933rem] font-semibold text-foreground">{title}</h3>
+        <h3 className="settings-heading">{title}</h3>
         <p className="text-[0.8rem] leading-relaxed text-muted-foreground">{description}</p>
       </div>
-      <div className="mt-3 space-y-2.5">{children}</div>
+      <div className="mt-3 space-y-3">{children}</div>
     </section>
   );
 }
@@ -423,14 +425,19 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
                 <label htmlFor="cron-message" className="cockpit-field-label">
                   {payloadKind === 'agentTurn' ? 'Prompt' : 'Event text'}
                 </label>
-                <textarea
-                  id="cron-message"
-                  value={message}
-                  onChange={e => setMessage(e.target.value)}
-                  rows={3}
-                  placeholder={payloadKind === 'agentTurn' ? 'Check my inbox, summarize the important items, and flag anything that needs a reply.' : 'Reminder: standup in 10 minutes.'}
-                  className="cockpit-textarea min-h-[118px]"
-                />
+                {/* The brief is the operator's words: an operator window that warms while you type */}
+                <div className="nerve-window-frame">
+                  <div className="nerve-window rounded-[3px]">
+                    <textarea
+                      id="cron-message"
+                      value={message}
+                      onChange={e => setMessage(e.target.value)}
+                      rows={3}
+                      placeholder={payloadKind === 'agentTurn' ? 'Check my inbox, summarize the important items, and flag anything that needs a reply.' : 'Reminder: standup in 10 minutes.'}
+                      className="block min-h-[118px] w-full resize-y border-0 bg-transparent px-3 py-2 text-[0.867rem] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
+                    />
+                  </div>
+                </div>
               </div>
 
               {payloadKind === 'agentTurn' && models.length > 0 && (
@@ -525,13 +532,14 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
                   ? 'Save when the timing and delivery look right.'
                   : 'Create the job when the timing and delivery look right.'}
               </p>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="inline-flex h-11 items-center justify-center rounded-[3px] bg-primary px-4 text-[0.867rem] font-semibold text-primary-foreground transition-[filter] duration-[120ms] hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50 sm:h-9 sm:shrink-0"
-              >
-                {submitting ? (isEdit ? 'Saving…' : 'Creating…') : (isEdit ? 'Save changes' : 'Create cron')}
-              </button>
+              <div className="flex items-center justify-end gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={submitting} className="sm:shrink-0">
+                  {submitting ? (isEdit ? 'Saving' : 'Creating') : (isEdit ? 'Save changes' : 'Create cron')}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

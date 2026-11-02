@@ -1,66 +1,34 @@
 import { memo, useState, useEffect } from 'react';
-import { Clock, Play, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { Pane } from '@/components/ui/Pane';
+import { paneStateLabel } from '@/lib/paneState';
+import { nameHueStyle } from '@/lib/agentColors';
 import type { KanbanTask } from './types';
-import { getTaskPriorityLabel, getTaskPriorityTone, getTaskRunStatus, getTaskRunTone } from './tone';
-
-/* ── Run status indicators ── */
-function RunBadge({ status }: { status: string }) {
-  const safeStatus = getTaskRunStatus(status);
-  const tone = getTaskRunTone(safeStatus);
-
-  switch (safeStatus) {
-    case 'running':
-      return (
-        <span className={`inline-flex items-center gap-1 text-[0.667rem] font-semibold ${tone.textClass}`}>
-          <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
-          Live
-        </span>
-      );
-    case 'done':
-      return (
-        <span className={`inline-flex items-center gap-1 text-[0.667rem] font-semibold ${tone.textClass}`}>
-          <CheckCircle2 size={10} /> Done
-        </span>
-      );
-    case 'error':
-      return (
-        <span className={`inline-flex items-center gap-1 text-[0.667rem] font-semibold ${tone.textClass}`}>
-          <AlertCircle size={10} /> Error
-        </span>
-      );
-    case 'aborted':
-      return (
-        <span className={`inline-flex items-center gap-1 text-[0.667rem] font-semibold ${tone.textClass}`}>
-          <XCircle size={10} /> Aborted
-        </span>
-      );
-    default:
-      return null;
-  }
-}
+import { RUN_WORD, RUN_WORD_CLASS, assigneeAgentId, assigneeName, getTaskRunStatus, priorityWord, taskPaneState } from './tone';
 
 interface KanbanCardProps {
   task: KanbanTask;
   onClick: (task: KanbanTask) => void;
-  /** True when rendered inside DragOverlay — skips sortable hook */
+  /** True when rendered inside DragOverlay: skips the sortable hook */
   isOverlay?: boolean;
   /** Alias for isOverlay (compat with KanbanBoard) */
   isDragOverlay?: boolean;
+  /** Family hue of the assignee; shows in the glass of the off pane and colours the name */
+  hue?: string;
 }
 
-export const KanbanCard = memo(function KanbanCard({ task, onClick, isOverlay, isDragOverlay }: KanbanCardProps) {
+export const KanbanCard = memo(function KanbanCard({ task, onClick, isOverlay, isDragOverlay, hue }: KanbanCardProps) {
   const overlay = isOverlay || isDragOverlay;
   return overlay ? (
-    <CardContent task={task} onClick={onClick} isDragging isOverlay />
+    <CardContent task={task} onClick={onClick} hue={hue} isDragging isOverlay />
   ) : (
-    <SortableCard task={task} onClick={onClick} />
+    <SortableCard task={task} onClick={onClick} hue={hue} />
   );
 });
 
-/* ── Sortable wrapper (only used for in-place cards, not overlay) ── */
-function SortableCard({ task, onClick }: { task: KanbanTask; onClick: (task: KanbanTask) => void }) {
+/* Sortable wrapper (only used for in-place cards, not overlay) */
+function SortableCard({ task, onClick, hue }: { task: KanbanTask; onClick: (task: KanbanTask) => void; hue?: string }) {
   const {
     attributes,
     listeners,
@@ -77,106 +45,97 @@ function SortableCard({ task, onClick }: { task: KanbanTask; onClick: (task: Kan
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <CardContent task={task} onClick={onClick} isDragging={isDragging} />
+      <CardContent task={task} onClick={onClick} hue={hue} isDragging={isDragging} />
     </div>
   );
 }
 
-/* ── Visual card content (shared between sortable + overlay) ── */
+/**
+ * A task as a row on Plate: its pane leads (blue while the agent runs, red when the run broke,
+ * cantaloupe while it waits on you, the assignee's hue in the glass otherwise), the title in
+ * Reading White, one line of description, the labels in words, then who holds it and how the
+ * run went. No pills, no dots; the pane is the only coloured element besides a lit word.
+ */
 function CardContent({
   task,
   onClick,
+  hue,
   isDragging,
   isOverlay,
 }: {
   task: KanbanTask;
   onClick: (task: KanbanTask) => void;
+  hue?: string;
   isDragging?: boolean;
   isOverlay?: boolean;
 }) {
-  const priorityTone = getTaskPriorityTone(task.priority);
-  const priorityLabel = getTaskPriorityLabel(task.priority);
+  const paneState = taskPaneState(task);
+  const name = assigneeName(task.assignee);
+  const agentId = assigneeAgentId(task.assignee);
+  const priority = priorityWord(task.priority);
+  const runStatus = task.run ? getTaskRunStatus(task.run.status) : null;
+  const extraLabels = task.labels.length - 3;
 
   return (
     <button
       type="button"
       onClick={() => { if (!isDragging) onClick(task); }}
-      className={`group w-full cursor-pointer rounded-[18px] border border-border/70 bg-background/58 px-3 py-3 text-left shadow-[0_10px_26px_rgba(0,0,0,0.14)] transition-[transform,box-shadow,border-color,background-color,opacity] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-        isOverlay
-          ? 'scale-[1.02] rotate-[1deg] border-primary/40 bg-card/92 shadow-[0_18px_40px_rgba(0,0,0,0.28)]'
-          : isDragging
-            ? 'opacity-30'
-            : 'hover:-translate-y-px hover:border-primary/24 hover:bg-card/80 hover:shadow-[0_16px_34px_rgba(0,0,0,0.2)]'
+      className={`nerve-task-card group flex w-full cursor-pointer items-start gap-2 rounded-[4px] px-3 py-2.5 text-left transition-[background-color,box-shadow,opacity] duration-[120ms] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring ${
+        isOverlay ? 'is-lifted' : isDragging ? 'opacity-30' : ''
       }`}
+      data-state={paneState}
     >
-      {/* Row 1: priority dot + title */}
-      <div className="flex items-start gap-2">
-        <span
-          className={`mt-1 h-2 w-2 shrink-0 rounded-full ${priorityTone.dotClass}`}
-          title={priorityLabel}
-          aria-label={`Priority: ${priorityLabel}`}
-          role="img"
-        />
-        <span className="text-[0.867rem] font-semibold leading-[18px] text-foreground line-clamp-2 min-w-0">
+      <Pane state={paneState} size="sm" hue={hue} label={paneStateLabel(paneState)} className="mt-[4px]" />
+      <span className="min-w-0 flex-1">
+        <span className="line-clamp-2 block text-[0.867rem] font-medium leading-5 text-foreground">
           {task.title}
         </span>
-      </div>
 
-      {/* Row 2: description preview */}
-      {task.description && (
-        <p className="mt-1 ml-4 text-[0.733rem] leading-[15px] text-muted-foreground line-clamp-1">
-          {task.description}
-        </p>
-      )}
-
-      {/* Row 3: labels */}
-      {task.labels.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-1.5 ml-4">
-          {task.labels.slice(0, 3).map((label, idx) => (
-            <span
-              key={`${label}-${idx}`}
-              className="rounded-full border border-border/55 bg-background/50 px-2 py-0.5 text-[0.667rem] font-medium leading-none text-muted-foreground"
-            >
-              {label}
-            </span>
-          ))}
-          {task.labels.length > 3 && (
-            <span className="text-[0.667rem] text-muted-foreground">
-              +{task.labels.length - 3}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Row 3: meta line (assignee, run status, time) */}
-      <div className="flex items-center gap-2 mt-1.5 ml-4 text-[0.733rem] text-muted-foreground">
-        {task.assignee && (
-          <span className="truncate max-w-[100px]">
-            {task.assignee === 'operator' ? 'Operator' : task.assignee.replace('agent:', '@')}
+        {task.description && (
+          <span className="mt-0.5 block truncate text-[0.8rem] leading-5 text-muted-foreground">
+            {task.description}
           </span>
         )}
 
-        {task.run && <RunBadge status={task.run.status} />}
-
-        {task.run?.status === 'running' && task.run.startedAt && (
-          <span className="inline-flex items-center gap-0.5 text-[0.667rem] text-info/80">
-            <Clock size={9} />
-            <ElapsedTime since={task.run.startedAt} />
+        {task.labels.length > 0 && (
+          <span className="mt-0.5 flex flex-wrap gap-x-2 text-[0.8rem] leading-5 text-muted-foreground">
+            {task.labels.slice(0, 3).map((label, idx) => (
+              <span key={`${label}-${idx}`}>{label}</span>
+            ))}
+            {extraLabels > 0 && <span>+{extraLabels}</span>}
           </span>
         )}
 
-        {task.dueAt && (
-          <span className="inline-flex items-center gap-0.5 ml-auto">
-            <Play size={9} className="rotate-90" />
-            {new Date(task.dueAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+        {(name || priority || runStatus || task.dueAt) && (
+          <span className="mt-0.5 flex items-center gap-2 text-[0.8rem] leading-5 text-muted-foreground">
+            {name && (
+              <span
+                className={`max-w-[9rem] truncate ${agentId && hue ? 'name-hued' : ''}`}
+                style={agentId ? nameHueStyle(hue) : undefined}
+              >
+                {name}
+              </span>
+            )}
+            {priority && <span className={priority.className}>{priority.word}</span>}
+            {runStatus && <span className={RUN_WORD_CLASS[runStatus]}>{RUN_WORD[runStatus]}</span>}
+            {runStatus === 'running' && task.run?.startedAt && (
+              <span className="font-mono text-live-text tabular">
+                <ElapsedTime since={task.run.startedAt} />
+              </span>
+            )}
+            {task.dueAt && (
+              <span className="ml-auto font-mono tabular" title="Due">
+                {new Date(task.dueAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              </span>
+            )}
           </span>
         )}
-      </div>
+      </span>
     </button>
   );
 }
 
-/* ── Tiny elapsed-time component (ticks every second) ── */
+/* Elapsed time (ticks every second) */
 function ElapsedTime({ since }: { since: number }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

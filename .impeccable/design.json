@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-02T12:40:00Z",
+  "generatedAt": "2026-11-02T13:10:00Z",
   "title": "Design System: Nerve",
   "extensions": {
     "colorMeta": {
@@ -705,12 +705,12 @@
     "rules": [
       {
         "name": "The Light Temperature Rule",
-        "body": "Blue is agent work, cantaloupe is the operator and anything waiting on the operator, red is error, and nothing else is coloured. A surface that is not reporting one of those three states is a neutral. Family hues are identity, not state: they sit on idle panes, on names, on the header band and on the open row, and a pane that is lit always shows the state colour with its bloom. A cron row's pane carries the job's light: Electric Blue while a run is in flight, Signal Red while an enabled job's last run stands broken, off otherwise; a skipped run is quiet, not broken.",
+        "body": "Blue is agent work, cantaloupe is the operator and anything waiting on the operator, red is error, and nothing else is coloured. A surface that is not reporting one of those three states is a neutral. Family hues are identity, not state: they sit on idle panes, on names, on the header band and on the open row, and a pane that is lit always shows the state colour with its bloom. A cron row's pane carries the job's light: Electric Blue while a run is in flight, Signal Red while an enabled job's last run stands broken, off otherwise; a skipped run is quiet, not broken. A task's pane on the board follows the same rule: Electric Blue while its agent runs, Signal Red when the run broke, Cantaloupe while it waits in Review for the operator, off otherwise.",
         "section": "colors"
       },
       {
         "name": "The Identity Rule",
-        "body": "Every agent family owns one of seven hues (main is pinned to Cantaloupe; children take a lighter shade of their root's hue), assigned on first sight and operator-pickable from a root row. The hue stays on at idle: 84% of it fills the family's off panes (70% in the frame), the agent's name takes it in the display face (darkened 42% toward ink in Daylight), the chat header band takes a 9% tint (14% in Daylight) and the open room's row a 14% tint over Raised. Electric Blue is never an identity hue, and a lit pane always shows the state colour, so identity and state never trade places.",
+        "body": "Every agent family owns one of seven hues (main is pinned to Cantaloupe; children take a lighter shade of their root's hue), assigned on first sight and operator-pickable from a root row. The hue stays on at idle: 84% of it fills the family's off panes (70% in the frame), the agent's name takes it in the display face (darkened 42% toward ink in Daylight), the chat header band takes a 9% tint (14% in Daylight) and the open room's row a 14% tint over Raised. Electric Blue is never an identity hue, and a lit pane always shows the state colour, so identity and state never trade places. On the Tasks board the assignee's family hue sits in the glass of the task's off pane and colours the assignee's name.",
         "section": "colors"
       },
       {
@@ -772,7 +772,8 @@
       "**Do** move chrome on the arrive ease (`cubic-bezier(0.16, 1, 0.3, 1)`, 180ms to 260ms) and switch views with a view transition; no bounce, no elastic curves.",
       "**Do** treat the side-column editors as operator windows: Plate at rest, Operator Plate with a lit status-line pane while the operator types, never a focus ring (The Window Rule).",
       "**Do** let a cron row's pane carry the job's light: blue in flight, red while an enabled job stands broken, off otherwise; a skipped run stays quiet.",
-      "**Do** keep the Settings drawer a flat Panel plate with the edge light and no blur; rows separate by hairlines, selects sit flat on Raised, and the switch thumb is a pane that lights Cantaloupe when on."
+      "**Do** keep the Settings drawer a flat Panel plate with the edge light and no blur; rows separate by hairlines, selects sit flat on Raised, and the switch thumb is a pane that lights Cantaloupe when on.",
+      "**Do** keep the Tasks board flat: lanes separated by hairlines, tasks as rows on Plate with the edge light, priority and run state as words; the pane is the only coloured element besides a lit word."
     ],
     "donts": [
       "**Don't** colour anything that is not reporting agent work, operator ownership, an error, a link, code syntax or an agent family's identity; no decorative accents or coloured side rails.",
@@ -782,7 +783,8 @@
       "**Don't** draw a border around a plate; borders belong to inputs, outline buttons and hairline dividers.",
       "**Don't** replace a pane with a dot, a circle, a badge or a glyph icon, and never make colour the only signal.",
       "**Don't** use Geist for headings, labels or buttons, or a system display face anywhere.",
-      "**Don't** round panels or shell surfaces beyond 4px, or reintroduce the Classic skin's rounded panels and amber accents into the Nerve style."
+      "**Don't** round panels or shell surfaces beyond 4px, or reintroduce the Classic skin's rounded panels and amber accents into the Nerve style.",
+      "**Don't** put pills, dots or badges on a task card for priority, status or run state; the pane and a word carry it."
     ]
   }
 }

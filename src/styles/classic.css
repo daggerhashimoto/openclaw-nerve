@@ -1074,3 +1074,10 @@ html[data-style="classic"] .nerve-drawer {
 html[data-style="classic"] .nerve-login .nerve-brand-pane {
   display: none;
 }
+
+/* Classic board: bordered cards, no edge light */
+html[data-style="classic"] .nerve-task-card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  box-shadow: none;
+}

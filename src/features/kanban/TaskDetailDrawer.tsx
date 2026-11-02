@@ -1,22 +1,29 @@
 import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import {
-  X, Play, CheckCircle2, XCircle, Trash2, Save, Loader2,
-  Clock, User, Tag, AlertTriangle, MessageSquare, StopCircle, Pencil,
+  X, Play, CheckCircle2, XCircle, Trash2, Save, Loader2, StopCircle, Pencil,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Pane } from '@/components/ui/Pane';
+import { paneStateLabel } from '@/lib/paneState';
+import { useAgentHues } from '@/lib/agentColors';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { COLUMN_LABELS, type KanbanTask, type TaskStatus, type TaskPriority } from './types';
 import type { UpdateTaskPayload, VersionConflictError } from './hooks/useKanban';
 import { AssigneeCombobox } from './components/AssigneeCombobox';
 import { buildAssigneeOptionsForEdit } from './lib/assigneeOptions';
-import { getTaskPriorityLabel, getTaskPriorityTone, getTaskRunTone, getTaskStatusTone, getTaskPriority, getTaskStatus } from './tone';
+import {
+  RUN_WORD, RUN_WORD_CLASS, assigneeAgentId, columnTitle, getTaskPriorityLabel, getTaskPriority, getTaskRunStatus,
+  getTaskStatus, runPaneState, taskPaneState,
+} from './tone';
 
 const MarkdownRenderer = lazy(() =>
   import('@/features/markdown/MarkdownRenderer').then(m => ({ default: m.MarkdownRenderer })),
 );
 
-/* ── Elapsed time helper ── */
+const NO_IDS: readonly string[] = [];
+
+/* Elapsed time helper */
 function formatElapsed(ms: number): string {
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
@@ -35,9 +42,18 @@ function RunElapsed({ startedAt }: { startedAt: number }) {
     return () => clearInterval(id);
   }, []);
   return (
-    <span className="text-[0.667rem] text-muted-foreground tabular-nums">
+    <span className="font-mono text-[0.8rem] text-live-text tabular">
       {formatElapsed(now - startedAt)}
     </span>
+  );
+}
+
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <span className="text-muted-foreground">{label}</span>
+      <span className="min-w-0 break-words text-foreground">{children}</span>
+    </>
   );
 }
 
@@ -52,6 +68,12 @@ interface TaskDetailDrawerProps {
   onAbort?: (id: string, note?: string) => Promise<KanbanTask>;
 }
 
+/**
+ * The task's room: a floating Panel drawer on the right with the edge light along its inner
+ * edge. The header carries the task's pane (its light temperature, the assignee's hue in the
+ * glass), the body is a flat form with the description as an operator window, then the
+ * details, the run and the result in sections; the footer holds the workflow actions.
+ */
 export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute, onApprove, onReject, onAbort }: TaskDetailDrawerProps) {
   const { sessions, agentName } = useSessionContext();
   const [editTitle, setEditTitle] = useState('');
@@ -85,7 +107,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
     }
   }, [task]);
 
-  /* Safe close — warn on unsaved changes */
+  /* Safe close: warn on unsaved changes */
   const safeClose = useCallback(() => {
     if (dirty && !window.confirm('You have unsaved changes. Discard?')) return;
     onClose();
@@ -161,7 +183,7 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
     }
   }, [task, deleting, onDelete, onClose]);
 
-  /* ── Workflow action state ── */
+  /* Workflow action state */
   const [workflowLoading, setWorkflowLoading] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
@@ -238,15 +260,22 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
     [agentName, sessions, task?.assignee],
   );
 
-  const selectClass = 'cockpit-select h-11 text-sm';
-  const priorityTone = task ? getTaskPriorityTone(editPriority) : null;
+  /* Identity: the assignee's family hue sits in the glass of the header pane */
+  const assigneeId = assigneeAgentId(task?.assignee);
+  const hueIds = useMemo(() => (assigneeId ? [assigneeId] : NO_IDS), [assigneeId]);
+  const { hueFor } = useAgentHues(hueIds);
+  const hue = assigneeId ? hueFor(assigneeId) : undefined;
+
+  const paneState = task ? taskPaneState(task) : 'off';
+  const runStatus = task?.run ? getTaskRunStatus(task.run.status) : null;
+  const selectClass = 'cockpit-select h-11 sm:h-[2.133rem]';
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop: the room dims, nothing blurs */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 transition-opacity duration-200"
+          className="fixed inset-0 z-40 bg-background/60 transition-opacity duration-200"
           onClick={safeClose}
         />
       )}
@@ -257,82 +286,78 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
         role="dialog"
         aria-modal="true"
         aria-label="Task details"
-        className={`shell-panel fixed top-0 right-0 z-50 flex h-full w-[min(92vw,520px)] max-w-full flex-col overflow-hidden rounded-l-[32px] border-l border-border/70 shadow-[0_28px_72px_rgba(0,0,0,0.36)] transition-transform duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        className={`nerve-drawer fixed right-0 top-0 z-50 flex h-full w-[min(92vw,520px)] max-w-full flex-col overflow-hidden transition-transform duration-[220ms] ease-[var(--arrive-ease)] ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
         {task && (
           <>
-            <div className="panel-header min-h-[56px] justify-between gap-3 px-4">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.667rem] font-semibold ${getTaskStatusTone(task.status).badgeClass}`}>
-                  {COLUMN_LABELS[task.status as keyof typeof COLUMN_LABELS] ?? 'Task'}
-                </span>
-                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.667rem] font-semibold ${priorityTone?.badgeClass ?? ''}`}>
-                  {getTaskPriorityLabel(editPriority)}
-                </span>
-              </div>
+            {/* Header: the task's pane, where it stands, and its priority */}
+            <div className="flex min-h-[2.933rem] shrink-0 items-center gap-2 border-b border-border pl-4 pr-2">
+              <Pane state={paneState} hue={hue} label={paneStateLabel(paneState)} />
+              <span className="min-w-0 flex-1 truncate text-[0.867rem] text-foreground">
+                {columnTitle(task.status, COLUMN_LABELS[task.status] ?? 'Task')}
+                <span className="text-muted-foreground"> · {getTaskPriorityLabel(editPriority)} priority</span>
+              </span>
               <button
                 onClick={safeClose}
-                className="shell-icon-button size-9 px-0"
+                className="shell-icon-button"
                 aria-label="Close drawer"
               >
                 <X size={16} />
               </button>
             </div>
 
-            <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+            <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
               {error && (
-                <div className="cockpit-note flex items-center gap-2 text-sm" data-tone="danger">
-                  <AlertTriangle size={12} />
+                <div className="cockpit-note" data-tone="danger">
                   {error}
                 </div>
               )}
 
-              <div className="cockpit-surface p-4 space-y-4">
-                <div>
-                  <label htmlFor="kb-title" className="cockpit-field-label mb-2 block">
-                    Title
-                  </label>
+              <div className="space-y-4">
+                <div className="cockpit-field">
+                  <label htmlFor="kb-title" className="cockpit-field-label">Title</label>
                   <Input
                     id="kb-title"
                     value={editTitle}
                     onChange={e => { setEditTitle(e.target.value); markDirty(); }}
                     maxLength={500}
-                    className="cockpit-input h-11 text-sm font-semibold"
+                    className="cockpit-input h-11 font-medium sm:h-[2.133rem]"
                   />
                 </div>
 
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <label htmlFor="kb-description" className="cockpit-field-label">
-                      Description
-                    </label>
+                <div className="cockpit-field">
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="kb-description" className="cockpit-field-label">Description</label>
                     <button
                       type="button"
                       aria-label="Toggle description edit mode"
                       aria-pressed={descriptionEditing}
                       onClick={() => setDescriptionEditing(v => !v)}
-                      className={
-                        descriptionEditing
-                          ? 'rounded-md border border-border/60 bg-accent p-1 text-accent-foreground'
-                          : 'rounded-md border border-transparent p-1 text-muted-foreground hover:text-foreground'
-                      }
+                      className="shell-icon-button"
+                      data-active={descriptionEditing ? 'true' : 'false'}
+                      title={descriptionEditing ? 'Preview' : 'Edit'}
                     >
-                      <Pencil size={12} />
+                      <Pencil size={14} />
                     </button>
                   </div>
                   {descriptionEditing ? (
-                    <textarea
-                      id="kb-description"
-                      value={editDescription}
-                      onChange={e => { setEditDescription(e.target.value); markDirty(); }}
-                      placeholder="Markdown description…"
-                      rows={8}
-                      className="cockpit-textarea min-h-[180px]"
-                    />
+                    /* The description is an operator window: Plate at rest, warm while you type */
+                    <div className="nerve-window-frame">
+                      <div className="nerve-window rounded-[3px]">
+                        <textarea
+                          id="kb-description"
+                          value={editDescription}
+                          onChange={e => { setEditDescription(e.target.value); markDirty(); }}
+                          placeholder="Markdown description"
+                          rows={8}
+                          className="block min-h-[180px] w-full resize-y border-0 bg-transparent px-3 py-2 text-[0.867rem] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
+                        />
+                      </div>
+                    </div>
                   ) : (
-                    <div className="min-h-[180px] rounded-2xl border border-border/60 bg-background/45 p-3 text-sm text-foreground">
+                    <div className="min-h-[180px] rounded-[3px] bg-plate p-3 text-[0.867rem] text-foreground">
                       <Suspense fallback={<div className="whitespace-pre-wrap">{editDescription}</div>}>
                         <MarkdownRenderer content={editDescription} suppressImages />
                       </Suspense>
@@ -341,10 +366,8 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label htmlFor="kb-status" className="cockpit-field-label mb-2 block">
-                      Status
-                    </label>
+                  <div className="cockpit-field">
+                    <label htmlFor="kb-status" className="cockpit-field-label">Status</label>
                     <select
                       id="kb-status"
                       value={editStatus}
@@ -352,14 +375,12 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
                       className={selectClass}
                     >
                       {Object.entries(COLUMN_LABELS).map(([val, label]) => (
-                        <option key={val} value={val}>{label}</option>
+                        <option key={val} value={val}>{columnTitle(val, label)}</option>
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label htmlFor="kb-priority" className="cockpit-field-label mb-2 block">
-                      Priority
-                    </label>
+                  <div className="cockpit-field">
+                    <label htmlFor="kb-priority" className="cockpit-field-label">Priority</label>
                     <select
                       id="kb-priority"
                       value={editPriority}
@@ -374,24 +395,18 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label htmlFor="kb-labels" className="cockpit-field-label mb-2 block">
-                      <Tag size={10} className="mr-1 inline" />
-                      Labels
-                    </label>
+                  <div className="cockpit-field">
+                    <label htmlFor="kb-labels" className="cockpit-field-label">Labels</label>
                     <Input
                       id="kb-labels"
                       value={editLabels}
                       onChange={e => { setEditLabels(e.target.value); markDirty(); }}
                       placeholder="bug, urgent"
-                      className="cockpit-input h-11"
+                      className="cockpit-input h-11 sm:h-[2.133rem]"
                     />
                   </div>
-                  <div>
-                    <label htmlFor="kb-assignee" className="cockpit-field-label mb-2 block">
-                      <User size={10} className="mr-1 inline" />
-                      Assignee
-                    </label>
+                  <div className="cockpit-field">
+                    <label htmlFor="kb-assignee" className="cockpit-field-label">Assignee</label>
                     <AssigneeCombobox
                       id="kb-assignee"
                       value={editAssignee}
@@ -406,58 +421,46 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
                 </div>
               </div>
 
-              <div className="cockpit-note space-y-2">
-                <h4 className="cockpit-field-label">Metadata</h4>
-                <div className="space-y-1 text-[0.733rem] text-muted-foreground">
-                  <div className="flex items-center gap-1.5">
-                    <Clock size={10} />
-                    Created: {new Date(task.createdAt).toLocaleString()}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Clock size={10} />
-                    Updated: {new Date(task.updatedAt).toLocaleString()}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <User size={10} />
-                    By: {task.createdBy === 'operator' ? 'Operator' : task.createdBy}
-                  </div>
+              <div className="space-y-2">
+                <h3 className="settings-heading">Details</h3>
+                <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-[0.8rem]">
+                  <DetailRow label="Created">{new Date(task.createdAt).toLocaleString()}</DetailRow>
+                  <DetailRow label="Updated">{new Date(task.updatedAt).toLocaleString()}</DetailRow>
+                  <DetailRow label="By">{task.createdBy === 'operator' ? 'You' : task.createdBy}</DetailRow>
                 </div>
               </div>
 
-              {task.run && (
-                <div className="cockpit-note space-y-2">
-                  <h4 className="cockpit-field-label">Agent Run</h4>
-                  <div className="space-y-1.5 text-[0.733rem] text-muted-foreground">
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[0.667rem] font-semibold ${getTaskRunTone(task.run.status).badgeClass}`}>
-                        {task.run.status === 'running' && <Loader2 size={9} className="animate-spin" />}
-                        {task.run.status.charAt(0).toUpperCase() + task.run.status.slice(1)}
-                      </span>
-                      {task.run.status === 'running' && task.run.startedAt && (
-                        <RunElapsed startedAt={task.run.startedAt} />
-                      )}
-                    </div>
-                    <div>
-                      Session:{' '}
-                      <code className="cockpit-kbd select-all cursor-pointer">{task.run.sessionKey}</code>
-                    </div>
-                    {task.run.startedAt && (
-                      <div>Started: {new Date(task.run.startedAt).toLocaleString()}</div>
-                    )}
-                    {task.run.endedAt && (
-                      <div>Ended: {new Date(task.run.endedAt).toLocaleString()}</div>
-                    )}
-                    {task.run.error && (
-                      <div className="break-words text-destructive">Error: {task.run.error}</div>
+              {task.run && runStatus && (
+                <div className="space-y-2">
+                  <h3 className="settings-heading">Agent run</h3>
+                  <div className="flex items-center gap-2 text-[0.867rem]">
+                    <Pane state={runPaneState(task.run.status)} size="sm" />
+                    <span className={RUN_WORD_CLASS[runStatus]}>{RUN_WORD[runStatus]}</span>
+                    {runStatus === 'running' && task.run.startedAt && (
+                      <RunElapsed startedAt={task.run.startedAt} />
                     )}
                   </div>
+                  <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-[0.8rem]">
+                    <DetailRow label="Session">
+                      <code className="cockpit-kbd cursor-pointer select-all">{task.run.sessionKey}</code>
+                    </DetailRow>
+                    {task.run.startedAt && (
+                      <DetailRow label="Started">{new Date(task.run.startedAt).toLocaleString()}</DetailRow>
+                    )}
+                    {task.run.endedAt && (
+                      <DetailRow label="Ended">{new Date(task.run.endedAt).toLocaleString()}</DetailRow>
+                    )}
+                  </div>
+                  {task.run.error && (
+                    <div className="break-words text-[0.8rem] text-destructive">{task.run.error}</div>
+                  )}
                 </div>
               )}
 
               {task.result?.trim() && (
-                <div className="cockpit-note space-y-2">
-                  <h4 className="cockpit-field-label">Result</h4>
-                  <div className="rounded-2xl border border-border/60 bg-background/45 p-3 text-xs text-foreground">
+                <div className="space-y-2">
+                  <h3 className="settings-heading">Result</h3>
+                  <div className="rounded-[3px] bg-plate p-3 text-[0.867rem] text-foreground">
                     <Suspense fallback={<div className="whitespace-pre-wrap">{task.result}</div>}>
                       <MarkdownRenderer content={task.result} suppressImages />
                     </Suspense>
@@ -466,17 +469,14 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
               )}
 
               {task.feedback.length > 0 && (
-                <div className="cockpit-note space-y-3">
-                  <h4 className="cockpit-field-label">
-                    <MessageSquare size={10} className="mr-1 inline" />
-                    Feedback
-                  </h4>
-                  <div className="space-y-2">
+                <div className="space-y-2">
+                  <h3 className="settings-heading">Feedback</h3>
+                  <div className="space-y-1.5">
                     {task.feedback.map((fb, i) => (
-                      <div key={i} className="rounded-2xl border border-border/60 bg-background/45 p-3 text-xs">
-                        <div className="mb-1 flex items-center justify-between text-[0.667rem] text-muted-foreground">
-                          <span>{fb.by === 'operator' ? 'Operator' : fb.by}</span>
-                          <span>{new Date(fb.at).toLocaleString()}</span>
+                      <div key={i} className="rounded-[3px] bg-plate p-3 text-[0.867rem]">
+                        <div className="mb-1 flex items-center justify-between gap-2 text-[0.8rem] text-muted-foreground">
+                          <span>{fb.by === 'operator' ? 'You' : fb.by}</span>
+                          <span className="font-mono tabular">{new Date(fb.at).toLocaleString()}</span>
                         </div>
                         <p className="text-foreground">{fb.note}</p>
                       </div>
@@ -486,96 +486,96 @@ export function TaskDetailDrawer({ task, onClose, onUpdate, onDelete, onExecute,
               )}
             </div>
 
-            <div className="shrink-0 border-t border-border/60 bg-background/88 px-4 py-3 backdrop-blur-sm">
-              {/* Reject note input */}
+            {/* Footer: the workflow at the left, Delete and Save at the right */}
+            <div className="shrink-0 border-t border-border px-3 py-2">
               {showRejectInput && (
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-2 flex items-center gap-2">
                   <Input
                     value={rejectNote}
                     onChange={e => setRejectNote(e.target.value)}
-                    placeholder="Rejection reason (required)…"
-                    className="cockpit-input h-10 flex-1 text-sm"
+                    placeholder="Why it is rejected (required)"
+                    className="cockpit-input h-11 flex-1 sm:h-[2.133rem]"
                     onKeyDown={e => { if (e.key === 'Enter') handleReject(); if (e.key === 'Escape') { setShowRejectInput(false); setRejectNote(''); } }}
                     autoFocus
                   />
-                  <Button size="xs" variant="outline" onClick={() => { setShowRejectInput(false); setRejectNote(''); }}>
+                  <Button size="sm" variant="outline" onClick={() => { setShowRejectInput(false); setRejectNote(''); }}>
                     Cancel
                   </Button>
                 </div>
               )}
 
-              <div className="flex items-center gap-2">
-              {/* Workflow actions */}
-              {(task.status === 'backlog' || task.status === 'todo') && onExecute && (
-                <Button size="xs" onClick={handleExecute} disabled={workflowLoading !== null}>
-                  {workflowLoading === 'execute' ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-                  Execute
-                </Button>
-              )}
-              {task.status === 'in-progress' && task.run?.status === 'running' && onAbort && (
-                <Button size="xs" variant="outline" onClick={handleAbort} disabled={workflowLoading !== null} className="border-orange/30 bg-orange/8 text-orange hover:bg-orange/12">
-                  {workflowLoading === 'abort' ? <Loader2 size={12} className="animate-spin" /> : <StopCircle size={12} />}
-                  Abort
-                </Button>
-              )}
-              {task.status === 'review' && (
-                <>
-                  {onApprove && (
-                    <Button size="xs" variant="outline" onClick={handleApprove} disabled={workflowLoading !== null} className="border-green/30 bg-green/8 text-green hover:bg-green/12">
-                      {workflowLoading === 'approve' ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
-                      Approve
-                    </Button>
-                  )}
-                  {onReject && (
-                    <Button size="xs" variant="outline" onClick={handleReject} disabled={workflowLoading !== null || (showRejectInput && !rejectNote.trim())} className="border-destructive/30 bg-destructive/8 text-destructive hover:bg-destructive/12">
-                      {workflowLoading === 'reject' ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
-                      Reject
-                    </Button>
-                  )}
-                </>
-              )}
-
-              <div className="flex-1" />
-
-              {confirmDelete ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="text-[0.733rem] text-destructive font-medium">Delete?</span>
-                  <Button
-                    size="xs"
-                    variant="destructive"
-                    onClick={handleDelete}
-                    disabled={deleting}
-                  >
-                    {deleting ? <Loader2 size={12} className="animate-spin" /> : 'Yes'}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(task.status === 'backlog' || task.status === 'todo') && onExecute && (
+                  <Button size="sm" onClick={handleExecute} disabled={workflowLoading !== null}>
+                    {workflowLoading === 'execute' ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                    Execute
                   </Button>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={() => setConfirmDelete(false)}
-                    disabled={deleting}
-                  >
-                    No
+                )}
+                {task.status === 'in-progress' && task.run?.status === 'running' && onAbort && (
+                  <Button size="sm" variant="outline" onClick={handleAbort} disabled={workflowLoading !== null}>
+                    {workflowLoading === 'abort' ? <Loader2 size={14} className="animate-spin" /> : <StopCircle size={14} />}
+                    Abort
                   </Button>
-                </span>
-              ) : (
+                )}
+                {task.status === 'review' && (
+                  <>
+                    {onApprove && (
+                      <Button size="sm" onClick={handleApprove} disabled={workflowLoading !== null}>
+                        {workflowLoading === 'approve' ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                        Approve
+                      </Button>
+                    )}
+                    {onReject && (
+                      <Button size="sm" variant="outline" onClick={handleReject} disabled={workflowLoading !== null || (showRejectInput && !rejectNote.trim())}>
+                        {workflowLoading === 'reject' ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+                        Reject
+                      </Button>
+                    )}
+                  </>
+                )}
+
+                <div className="flex-1" />
+
+                {confirmDelete ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="text-[0.8rem] text-destructive">Delete this task?</span>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={handleDelete}
+                      disabled={deleting}
+                    >
+                      {deleting ? <Loader2 size={14} className="animate-spin" /> : 'Yes'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={deleting}
+                    >
+                      No
+                    </Button>
+                  </span>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setConfirmDelete(true)}
+                    className="hover:text-destructive"
+                  >
+                    <Trash2 size={14} />
+                    Delete
+                  </Button>
+                )}
+
                 <Button
-                  size="xs"
-                  variant="destructive"
-                  onClick={() => setConfirmDelete(true)}
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={!dirty || saving}
                 >
-                  <Trash2 size={12} />
-                  Delete
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Save
                 </Button>
-              )}
-
-              <Button
-                size="xs"
-                onClick={handleSave}
-                disabled={!dirty || saving}
-              >
-                {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                Save
-              </Button>
               </div>
             </div>
           </>

@@ -95,8 +95,8 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-background">
-      {/* Header with search, filters, stats, + New Task */}
+    <div className="nerve-room-plate flex-1 flex flex-col min-h-0 overflow-hidden">
+      {/* Header with search, filters, the board in words, and New task */}
       <KanbanHeader
         filters={filters}
         onFiltersChange={setFilters}
@@ -109,7 +109,7 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
       />
 
       {/* Board body */}
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden px-4 pb-4">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <KanbanBoard
           tasksByStatus={tasksByStatus}
           onCardClick={handleCardClick}

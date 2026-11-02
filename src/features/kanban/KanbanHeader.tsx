@@ -1,51 +1,19 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
-import { Filter, Plus, X, Inbox } from 'lucide-react';
+import { Filter, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Pane } from '@/components/ui/Pane';
 import type { TaskStatus, TaskPriority } from './types';
 import type { KanbanFilters } from './hooks/useKanban';
 import { ProposalInbox } from './ProposalInbox';
 import type { KanbanProposal } from './hooks/useProposals';
-import { TASK_PRIORITY_TONE, TASK_STATUS_TONE } from './tone';
+import { boardWords } from './tone';
 
-/* ── Stats chip ── */
-function StatChip({ label, count, status }: { label: string; count: number; status: TaskStatus }) {
-  const tone = TASK_STATUS_TONE[status];
-  return (
-    <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[0.733rem] font-medium ${tone.statClass}`}>
-      <span>{label}</span>
-      <span className="rounded-full bg-background/55 px-1.5 py-0.5 font-mono text-[0.667rem] tabular-nums text-current">
-        {count}
-      </span>
-    </span>
-  );
-}
-
-/* ── Priority filter pill ── */
-function FilterPill({
-  priority,
-  label,
-  active,
-  onClick,
-}: {
-  priority: TaskPriority;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const tone = TASK_PRIORITY_TONE[priority];
-  return (
-    <button
-      onClick={onClick}
-      className={`h-8 rounded-full border px-3 text-[0.733rem] font-medium transition-colors cursor-pointer ${
-        active
-          ? tone.badgeClass
-          : 'border-border/70 bg-background/40 text-muted-foreground hover:border-primary/24 hover:text-foreground'
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
+const PRIORITY_FILTERS: { value: TaskPriority; label: string }[] = [
+  { value: 'critical', label: 'Critical' },
+  { value: 'high', label: 'High' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'low', label: 'Low' },
+];
 
 interface KanbanHeaderProps {
   filters: KanbanFilters;
@@ -58,6 +26,11 @@ interface KanbanHeaderProps {
   onRejectProposal?: (id: string) => void;
 }
 
+/**
+ * The board's header row: the Tasks nameplate with the board in words, then search, the
+ * priority filter, agent proposals (a pane that lights cantaloupe while any wait on you)
+ * and New task. The priority filter opens as a second hairline row.
+ */
 export const KanbanHeader = memo(function KanbanHeader({
   filters,
   onFiltersChange,
@@ -90,7 +63,7 @@ export const KanbanHeader = memo(function KanbanHeader({
     return () => document.removeEventListener('mousedown', handler);
   }, [showInbox]);
 
-  /* Debounced search — reads filtersRef to avoid overwriting concurrent filter changes */
+  /* Debounced search: reads filtersRef to avoid overwriting concurrent filter changes */
   const handleSearchChange = useCallback((value: string) => {
     setSearchValue(value);
     clearTimeout(debounceRef.current);
@@ -117,89 +90,80 @@ export const KanbanHeader = memo(function KanbanHeader({
   }, [onFiltersChange]);
 
   const hasActiveFilters = filters.q || filters.priority.length > 0 || filters.assignee || filters.labels.length > 0;
+  const words = boardWords(statusCounts);
+  const proposalsWaiting = pendingProposalCount > 0;
 
   return (
-    <div className="shrink-0 space-y-3 border-b border-border/50 px-4 py-4">
-      {/* Row 1: title + stats + actions */}
-      <div className="flex items-center gap-3 flex-wrap">
-        {/* Left: title + stats */}
-        <div className="min-w-0 space-y-2">
-          <div className="cockpit-kicker">
-            <span className="text-primary">◆</span>
-            Task board
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Tasks</h1>
-            <div className="hidden sm:flex items-center gap-1.5">
-              <StatChip label="To Do" count={statusCounts.todo} status="todo" />
-              <StatChip label="In Progress" count={statusCounts['in-progress']} status="in-progress" />
-              <StatChip label="Review" count={statusCounts.review} status="review" />
-              <StatChip label="Done" count={statusCounts.done} status="done" />
-            </div>
-          </div>
+    <div className="shrink-0 border-b border-border">
+      {/* Row 1: nameplate, words, actions */}
+      <div className="flex min-h-[2.933rem] flex-wrap items-center gap-x-3 gap-y-2 py-1.5 pl-4 pr-2">
+        <div className="flex min-w-0 items-center">
+          <h1 className="nerve-nameplate text-foreground">Tasks</h1>
+          {words && (
+            <span className="nerve-fleet-words hidden sm:inline-flex" data-testid="board-words">{words}</span>
+          )}
         </div>
 
         <div className="flex-1" />
 
-        {/* Right: search + filter toggle + create */}
-        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
+        <div className="flex w-full flex-wrap items-center justify-end gap-1.5 sm:w-auto sm:flex-nowrap">
           {/* Search */}
           <div className="relative min-w-0 flex-1 sm:flex-none">
             <input
-              type="text"
+              type="search"
               value={searchValue}
               onChange={e => handleSearchChange(e.target.value)}
-              placeholder="Search tasks…"
-              className="cockpit-input h-10 w-full min-w-0 px-4 pr-12 text-sm sm:w-[280px]"
+              placeholder="Search tasks"
+              aria-label="Search tasks"
+              className="cockpit-input h-11 w-full min-w-0 pr-8 sm:h-[var(--row-unit)] sm:w-[220px]"
             />
             {searchValue && (
               <button
+                type="button"
                 onClick={() => handleSearchChange('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground"
+                className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-[3px] text-muted-foreground hover:bg-raised hover:text-foreground"
+                aria-label="Clear search"
               >
-                <X size={12} />
+                <X size={14} />
               </button>
             )}
           </div>
 
-          {/* Filter toggle */}
-          <Button
-            variant={showFilters ? 'secondary' : 'outline'}
-            size="icon-sm"
+          {/* Priority filter */}
+          <button
+            type="button"
             onClick={() => setShowFilters(!showFilters)}
-            title="Toggle filters"
-            className={showFilters ? 'border-primary/30 bg-primary/12 text-primary' : ''}
+            className="shell-icon-button shrink-0"
+            data-active={showFilters || filters.priority.length > 0 ? 'true' : 'false'}
+            title="Filter by priority"
+            aria-label="Filter by priority"
+            aria-pressed={showFilters}
           >
             <Filter size={14} />
-          </Button>
+          </button>
 
-          {/* Proposal inbox */}
-          <div className="relative" ref={inboxRef}>
-            <Button
-              variant={showInbox ? 'secondary' : 'outline'}
-              size="icon-sm"
+          {/* Agent proposals: the pane lights cantaloupe while any wait on you */}
+          <div className="relative shrink-0" ref={inboxRef}>
+            <button
+              type="button"
               onClick={() => setShowInbox(!showInbox)}
+              className="shell-chip"
+              data-active={showInbox ? 'true' : 'false'}
               title="Agent proposals"
-              className={showInbox ? 'border-primary/30 bg-primary/12 text-primary' : ''}
+              aria-label={proposalsWaiting ? `Agent proposals, ${pendingProposalCount} waiting on you` : 'Agent proposals'}
+              aria-expanded={showInbox}
             >
-              <Inbox size={14} />
-              {pendingProposalCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[0.667rem] font-bold bg-primary text-primary-foreground rounded-full flex items-center justify-center">
-                  {pendingProposalCount}
-                </span>
-              )}
-            </Button>
+              <Pane state={proposalsWaiting ? 'operator' : 'off'} size="sm" />
+              {proposalsWaiting && <span className="font-mono text-[0.8rem] tabular">{pendingProposalCount}</span>}
+              <span className="hidden sm:inline">Proposals</span>
+            </button>
 
-            {/* Inbox popover */}
             {showInbox && (
-              <div className="shell-panel absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-1.067rem))] max-w-[calc(100vw-1.067rem)] overflow-hidden rounded-3xl">
-                <div className="border-b border-border/50 bg-secondary/38 px-4 py-3">
-                  <span className="cockpit-kicker text-[0.6rem]">
-                    <span className="text-primary">◆</span>
-                    Agent proposals
-                  </span>
-                  {pendingProposalCount > 0 && (
-                    <span className="ml-2 text-[0.733rem] text-muted-foreground">{pendingProposalCount} pending</span>
+              <div className="absolute right-0 top-full z-50 mt-1 w-[min(380px,calc(100vw-1.067rem))] overflow-hidden rounded-[3px] border border-border bg-popover shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
+                <div className="flex min-h-[var(--row-unit)] items-center gap-2 border-b border-border px-3 text-[0.867rem] font-medium text-foreground">
+                  <span>Agent proposals</span>
+                  {proposalsWaiting && (
+                    <span className="font-mono text-[0.8rem] font-normal text-muted-foreground tabular">{pendingProposalCount} waiting</span>
                   )}
                 </div>
                 <ProposalInbox
@@ -212,33 +176,32 @@ export const KanbanHeader = memo(function KanbanHeader({
           </div>
 
           {/* Create */}
-          <Button size="sm" onClick={onCreateTask}>
+          <Button size="sm" onClick={onCreateTask} className="shrink-0">
             <Plus size={14} />
-            <span className="hidden sm:inline">New Task</span>
+            <span className="hidden sm:inline">New task</span>
           </Button>
         </div>
       </div>
 
-      {/* Row 2: Filter controls (collapsible) */}
+      {/* Row 2: priority filter */}
       {showFilters && (
-        <div className="cockpit-note flex flex-wrap items-center gap-2" data-tone="primary">
-          <span className="text-[0.733rem] font-medium text-foreground">Priority</span>
-          {(['critical', 'high', 'normal', 'low'] as TaskPriority[]).map(p => (
-            <FilterPill
-              key={p}
-              priority={p}
-              label={p.charAt(0).toUpperCase() + p.slice(1)}
-              active={filters.priority.includes(p)}
-              onClick={() => togglePriority(p)}
-            />
-          ))}
-
-          {hasActiveFilters && (
+        <div className="flex flex-wrap items-center gap-1 border-t border-border px-3 py-1">
+          <span className="mr-1 text-[0.8rem] text-muted-foreground">Priority</span>
+          {PRIORITY_FILTERS.map(p => (
             <button
-              onClick={clearFilters}
-              className="ml-2 text-[0.733rem] text-muted-foreground underline hover:text-foreground"
+              key={p.value}
+              type="button"
+              onClick={() => togglePriority(p.value)}
+              className="shell-chip"
+              data-active={filters.priority.includes(p.value) ? 'true' : 'false'}
+              aria-pressed={filters.priority.includes(p.value)}
             >
-              Clear all
+              {p.label}
+            </button>
+          ))}
+          {hasActiveFilters && (
+            <button type="button" onClick={clearFilters} className="shell-chip ml-1">
+              Clear
             </button>
           )}
         </div>

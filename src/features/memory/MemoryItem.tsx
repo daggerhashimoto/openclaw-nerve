@@ -236,5 +236,7 @@ export const MemoryItem = memo(MemoryItemInner, (prev, next) =>
   prev.memory.deleting === next.memory.deleting &&
   prev.isExpanded === next.isExpanded &&
   prev.itemCount === next.itemCount &&
-  prev.compact === next.compact
+  prev.compact === next.compact &&
+  prev.onEdit === next.onEdit &&
+  prev.onDelete === next.onDelete
 );

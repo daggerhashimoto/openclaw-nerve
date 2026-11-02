@@ -383,7 +383,6 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
                     type="datetime-local"
                     value={atTime}
                     onChange={e => setAtTime(e.target.value)}
-                    style={{ colorScheme: 'dark' }}
                     className="cockpit-input cockpit-input-mono [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100"
                   />
                   <span className="cockpit-field-hint">Use this for a single future run.</span>

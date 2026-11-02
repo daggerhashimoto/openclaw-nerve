@@ -37,7 +37,7 @@ import { Pane } from '@/components/ui/Pane';
 import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useLiveFavicon } from '@/hooks/useLiveFavicon';
-import { fleetActivity, fleetCounts } from '@/lib/paneState';
+import { fleetActivity, fleetCounts, sessionPaneState } from '@/lib/paneState';
 import { shadeFor, useAgentHues } from '@/lib/agentColors';
 import { getRootAgentId, isSubagentSessionKey } from '@/features/sessions/sessionKeys';
 import { createCommands, createSessionCommands } from '@/features/command-palette/commands';
@@ -120,12 +120,12 @@ export default function App({ onLogout }: AppProps) {
 
   // The whole fleet in one pane: drives the brand pane in the top bar and the tab icon.
   const shellActivity = useMemo(
-    () => fleetActivity({ sessions, busyState, unreadSessions, generating: isGenerating }),
-    [sessions, busyState, unreadSessions, isGenerating],
+    () => fleetActivity({ sessions, busyState, unreadSessions, agentStatus, generating: isGenerating }),
+    [sessions, busyState, unreadSessions, agentStatus, isGenerating],
   );
   const shellFleet = useMemo(
-    () => fleetCounts({ sessions, busyState, unreadSessions, generating: isGenerating }),
-    [sessions, busyState, unreadSessions, isGenerating],
+    () => fleetCounts({ sessions, busyState, unreadSessions, agentStatus, generating: isGenerating }),
+    [sessions, busyState, unreadSessions, agentStatus, isGenerating],
   );
   useLiveFavicon(shellActivity);
 
@@ -224,6 +224,14 @@ export default function App({ onLogout }: AppProps) {
   }, [setFileBrowserCollapsed]);
 
   const workspaceAgentId = useMemo(() => getWorkspaceAgentId(currentSession), [currentSession]);
+  // Any room of the workspace's agent family at work lights the file it touches, not only the open chat.
+  const workspaceAgentRunning = useMemo(
+    () => isGenerating || sessions.some((session) => (
+      getRootAgentId(getSessionKey(session)) === workspaceAgentId
+      && sessionPaneState(session, { busyState, agentStatus }) === 'live'
+    )),
+    [isGenerating, sessions, workspaceAgentId, busyState, agentStatus],
+  );
 
   // File browser state
   const {
@@ -1077,7 +1085,7 @@ export default function App({ onLogout }: AppProps) {
                 isCompactLayout={false}
                 collapsed={fileBrowserCollapsed}
                 onCollapseChange={setFileBrowserCollapsed}
-                agentRunning={isGenerating}
+                agentRunning={workspaceAgentRunning}
               />
             </PanelErrorBoundary>
           </div>
@@ -1106,7 +1114,7 @@ export default function App({ onLogout }: AppProps) {
                     isCompactLayout={true}
                     collapsed={false}
                     onCollapseChange={setFileBrowserCollapsed}
-                agentRunning={isGenerating}
+                agentRunning={workspaceAgentRunning}
                   />
                 </PanelErrorBoundary>
               </div>
@@ -1157,6 +1165,8 @@ export default function App({ onLogout }: AppProps) {
           sessions={sessions}
           busyState={busyState}
           unreadSessions={unreadSessions}
+          agentStatus={agentStatus}
+          generating={isGenerating}
           contextTokens={contextTokens}
           contextLimit={contextLimit}
           performanceMode={performanceMode}

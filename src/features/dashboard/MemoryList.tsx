@@ -218,6 +218,13 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
     }
   }, []);
 
+  // One stable edit callback per list row, pointing at the row's parent section. Built with the
+  // list so an item whose section changed gets a new callback and re-renders (MemoryItem compares it).
+  const itemEditHandlers = useMemo(
+    () => listMemories.map((m, i) => (m.type === 'item' ? editParentSectionOf(listMemories, i, handleEditClick) : undefined)),
+    [listMemories, handleEditClick],
+  );
+
   // Handle editor save - close editor and refresh
   const handleEditorSave = useCallback(() => {
     setEditingMemory(null);
@@ -336,7 +343,7 @@ export function MemoryList({ agentId, memories: initialMemories, onRefresh, isLo
               key={m.tempId || `${m.type}-${m.text.slice(0, 20)}-${i}`}
               memory={m}
               onDelete={handleDeleteClick}
-              onEdit={m.type === 'item' ? editParentSectionOf(listMemories, i, handleEditClick) : handleEditClick}
+              onEdit={m.type === 'item' ? itemEditHandlers[i] : handleEditClick}
               {...(m.type === 'section' ? {
                 isExpanded: expandedSections.has(m.text),
                 onToggleExpand: () => toggleSection(m.text),

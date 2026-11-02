@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fleetActivity, isSessionRunning, paneStateFor } from './paneState';
+import { fleetActivity, fleetCounts, fleetWords, isSessionRunning, paneStateFor, sessionPaneState } from './paneState';
 import type { Session } from '@/types';
 
 function session(overrides: Partial<Session> = {}): Session {
@@ -46,5 +46,47 @@ describe('fleetActivity', () => {
 
   it('lights cantaloupe when finished work waits on the operator', () => {
     expect(fleetActivity({ sessions: [quiet, other], unreadSessions: { 'agent:a': true } })).toBe('operator');
+  });
+
+  it('lights red when a run failed, even while the stale busy flag says it is still working', () => {
+    expect(fleetActivity({
+      sessions: [quiet, other],
+      busyState: { 'agent:a': true, 'agent:b': true },
+      agentStatus: { 'agent:a': { status: 'ERROR', since: 0 } },
+    })).toBe('error');
+  });
+});
+
+describe('fleetCounts', () => {
+  const a = session({ key: 'agent:a' });
+  const b = session({ key: 'agent:b' });
+  const c = session({ key: 'agent:c' });
+
+  it('counts a failed run as failed, not running, and keeps the others', () => {
+    expect(fleetCounts({
+      sessions: [a, b, c],
+      busyState: { 'agent:a': true, 'agent:b': true },
+      unreadSessions: { 'agent:a': true, 'agent:c': true },
+      agentStatus: { 'agent:a': { status: 'ERROR', since: 0 }, 'agent:b': { status: 'THINKING', since: 0 } },
+    })).toEqual({ total: 3, running: 1, waiting: 1, failed: 1 });
+  });
+
+  it('counts the open session as working while it generates before the gateway says so', () => {
+    expect(fleetCounts({ sessions: [a], generating: true })).toEqual({ total: 1, running: 1, waiting: 0, failed: 0 });
+  });
+
+  it('says it in words, failures last', () => {
+    expect(fleetWords({ total: 3, running: 1, waiting: 1, failed: 1 })).toBe('1 working, 1 waiting on you, 1 failed');
+    expect(fleetWords({ total: 2, running: 0, waiting: 0, failed: 0 })).toBe('2 agents, all quiet');
+  });
+});
+
+describe('sessionPaneState', () => {
+  it('reads error over the busy flag, then running, then unread', () => {
+    const s = session({ key: 'agent:a' });
+    expect(sessionPaneState(s, { busyState: { 'agent:a': true }, agentStatus: { 'agent:a': { status: 'ERROR', since: 0 } } })).toBe('error');
+    expect(sessionPaneState(s, { busyState: { 'agent:a': true }, unreadSessions: { 'agent:a': true } })).toBe('live');
+    expect(sessionPaneState(s, { unreadSessions: { 'agent:a': true } })).toBe('operator');
+    expect(sessionPaneState(s, {})).toBe('off');
   });
 });

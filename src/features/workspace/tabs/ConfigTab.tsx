@@ -177,14 +177,15 @@ export function ConfigTab({ agentId, cronWarning = null, viewOptions = NO_VIEW_O
   }, [onViewChange, viewOptions]);
 
   const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
-      void handleSave();
+      if (!isLoading) void handleSave();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      handleCancel();
+      // Escape closes a clean editor; with unsaved edits it leaves them in place for Cancel or Save.
+      if (editContent === (content ?? '')) handleCancel();
     }
-  }, [handleCancel, handleSave]);
+  }, [content, editContent, handleCancel, handleSave, isLoading]);
 
   const handleCreate = useCallback(async () => {
     const label = FILE_OPTIONS.find(f => f.key === selectedKey)?.label || selectedKey;

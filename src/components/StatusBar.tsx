@@ -3,8 +3,8 @@ import { ContextMeter } from './ContextMeter';
 import { UpdateBadge } from './UpdateBadge';
 import { useGateway } from '@/contexts/GatewayContext';
 import { Pane } from '@/components/ui/Pane';
-import { isSessionRunning, paneStateFor } from '@/lib/paneState';
-import { getSessionKey, type Session } from '@/types';
+import { fleetCounts } from '@/lib/paneState';
+import type { GranularAgentState, Session } from '@/types';
 
 /** Props for {@link StatusBar}. */
 interface StatusBarProps {
@@ -24,6 +24,10 @@ interface StatusBarProps {
   busyState?: Record<string, boolean>;
   /** Unread flags keyed by session key; unread work counts as waiting on the operator. */
   unreadSessions?: Record<string, boolean>;
+  /** Granular status keyed by session key; a failed run counts as failed, not running. */
+  agentStatus?: Record<string, GranularAgentState>;
+  /** The open session is generating, even before the gateway reports it busy. */
+  generating?: boolean;
 }
 
 function Separator() {
@@ -45,26 +49,25 @@ export function StatusBar({
   sessions,
   busyState,
   unreadSessions,
+  agentStatus,
+  generating = false,
 }: StatusBarProps) {
   useGateway(); // Keep gateway context connected
 
-  const sessionPanes = useMemo(() => {
-    if (!sessions) return null;
-    return sessions
-      .map((session) => {
-        const key = getSessionKey(session);
-        const running = isSessionRunning(session, Boolean(busyState?.[key]));
-        const unread = Boolean(unreadSessions?.[key]);
-        return { key, state: paneStateFor({ running, unread }) };
-      });
-  }, [sessions, busyState, unreadSessions]);
+  // The same reading the top bar uses, so the two never disagree about who is working.
+  const fleet = useMemo(
+    () => (sessions ? fleetCounts({ sessions, busyState, unreadSessions, agentStatus, generating }) : null),
+    [sessions, busyState, unreadSessions, agentStatus, generating],
+  );
 
-  const runningCount = sessionPanes?.filter((pane) => pane.state === 'live').length ?? 0;
-  const waitingCount = sessionPanes?.filter((pane) => pane.state === 'operator').length ?? 0;
+  const runningCount = fleet?.running ?? 0;
+  const waitingCount = fleet?.waiting ?? 0;
+  const failedCount = fleet?.failed ?? 0;
   const sessionNoun = sessionCount === 1 ? 'session' : 'sessions';
   const sessionSummary = [
     runningCount > 0 ? `${runningCount} running` : null,
     waitingCount > 0 ? `${waitingCount} waiting on you` : null,
+    failedCount > 0 ? `${failedCount} failed` : null,
   ].filter(Boolean).join(', ');
   const sessionText = `${sessionCount} ${sessionNoun}${sessionSummary ? `: ${sessionSummary}` : ''}`;
 
@@ -105,6 +108,12 @@ export function StatusBar({
           {waitingCount > 0 && (
             <span className="text-operator-text">
               <span className="tabular">{waitingCount}</span> waiting on you
+            </span>
+          )}
+          {(runningCount > 0 || waitingCount > 0) && failedCount > 0 && ', '}
+          {failedCount > 0 && (
+            <span className="text-destructive">
+              <span className="tabular">{failedCount}</span> failed
             </span>
           )}
         </span>

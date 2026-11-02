@@ -193,7 +193,7 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
   // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Cmd/Ctrl + S to save
-    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
       handleSave();
     }

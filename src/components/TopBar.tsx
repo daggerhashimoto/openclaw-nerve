@@ -267,7 +267,7 @@ export function TopBar({
         {/* The fleet in words: quiet when all is idle, lit text when something works or waits */}
         {fleet && fleet.total > 0 && (
           <span
-            className={`nerve-fleet-words mr-3 hidden md:inline-flex ${fleet.running > 0 ? "text-live-text" : fleet.waiting > 0 ? "text-operator-text" : ""}`}
+            className={`nerve-fleet-words mr-3 hidden md:inline-flex ${fleet.failed > 0 ? "text-destructive" : fleet.running > 0 ? "text-live-text" : fleet.waiting > 0 ? "text-operator-text" : ""}`}
             data-testid="fleet-words"
           >
             {fleetWords(fleet)}

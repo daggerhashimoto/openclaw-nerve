@@ -146,11 +146,15 @@ export function FileTreePanel({
     if (agentRunning) setLivePath(lastChangedEvent.path);
   }, [agentRunning, handleFileChange, lastChangedEvent, workspaceAgentId]);
 
-  // The pane goes dark when the run ends or the workspace changes.
+  // The pane goes dark when the run ends or the workspace changes. Mounting the panel
+  // (the compact drawer opens) is not a workspace change, so a live file stays lit.
   useEffect(() => {
     if (!agentRunning) setLivePath(null);
   }, [agentRunning]);
+  const previousWorkspaceRef = useRef(workspaceAgentId);
   useEffect(() => {
+    if (previousWorkspaceRef.current === workspaceAgentId) return;
+    previousWorkspaceRef.current = workspaceAgentId;
     setLivePath(null);
   }, [workspaceAgentId]);
 

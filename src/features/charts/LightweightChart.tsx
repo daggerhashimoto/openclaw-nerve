@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType, CrosshairMode, LineSeries, AreaSeries, CandlestickSeries } from 'lightweight-charts';
 import type { IChartApi } from 'lightweight-charts';
 import type { ChartData } from './extractCharts';
@@ -25,6 +25,21 @@ function getChartColors() {
   };
 }
 
+/**
+ * Counts theme changes. applyTheme writes the tokens onto the root element, so a
+ * mounted chart rebuilds with the new colours instead of keeping the old palette.
+ */
+function useThemeVersion(): number {
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    if (typeof MutationObserver === 'undefined') return;
+    const observer = new MutationObserver(() => setVersion((v) => v + 1));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-style', 'style'] });
+    return () => observer.disconnect();
+  }, []);
+  return version;
+}
+
 /** Flat translucent fill for area series: a hex colour plus an alpha byte. */
 function withAlpha(color: string, alpha: string): string {
   return /^#[0-9a-f]{6}$/i.test(color) ? color + alpha : color;
@@ -36,6 +51,7 @@ export default function LightweightChart({ chart }: { chart: ChartData }) {
 
   const { type, data } = chart;
   const isSingleSeries = !!data.values;
+  const themeVersion = useThemeVersion();
 
   // Compute percentage change for single series
   const values = isSingleSeries ? data.values! : data.series?.[0]?.values ?? [];
@@ -167,7 +183,7 @@ export default function LightweightChart({ chart }: { chart: ChartData }) {
       ch.remove();
       chartRef.current = null;
     };
-  }, [data, type, isSingleSeries]);
+  }, [data, type, isSingleSeries, themeVersion]);
 
   return (
     <div className="mt-3 w-full">

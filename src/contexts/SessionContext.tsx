@@ -85,11 +85,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const doneTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const delayedRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Derive busyState from agentStatus for backward compatibility
+  // Derive busyState from agentStatus for backward compatibility. A failed run is over, not busy.
   const busyState = useMemo(() => {
     const result: Record<string, boolean> = {};
     for (const [key, state] of Object.entries(agentStatus)) {
-      result[key] = state.status !== 'IDLE' && state.status !== 'DONE';
+      result[key] = state.status !== 'IDLE' && state.status !== 'DONE' && state.status !== 'ERROR';
     }
     return result;
   }, [agentStatus]);

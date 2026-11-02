@@ -132,11 +132,13 @@ export function useAgentHues(agentIds: readonly string[]): { hueFor: (agentId: s
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const planned = useMemo(() => planAssignments(snapshot, agentIds), [snapshot, agentIds]);
 
+  // Plan against the live map when the effect runs, not the render's snapshot: two hooks
+  // rendering from the same empty store would otherwise each commit a full map and the
+  // second would drop the first's agents. `snapshot` stays a dependency so a reset refills.
   useEffect(() => {
-    if (planned !== snapshot && Object.keys(planned).length !== Object.keys(snapshot).length) {
-      commit(planned);
-    }
-  }, [planned, snapshot]);
+    const next = planAssignments(assignments, agentIds);
+    if (Object.keys(next).length !== Object.keys(assignments).length) commit(next);
+  }, [agentIds, snapshot]);
 
   const hueFor = useMemo(
     () => (agentId: string) => planned[agentId] ?? planAssignments(planned, [agentId])[agentId],

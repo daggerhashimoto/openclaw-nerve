@@ -6,7 +6,7 @@
  *   error     the run failed
  *   off       done or idle: the pane goes dark
  */
-import { getSessionKey, type Session } from '@/types';
+import { getSessionKey, type GranularAgentState, type Session } from '@/types';
 
 export type PaneState = 'live' | 'operator' | 'error' | 'off';
 
@@ -39,50 +39,69 @@ interface FleetActivityInput {
   sessions: readonly Session[];
   busyState?: Record<string, boolean>;
   unreadSessions?: Record<string, boolean>;
+  /** Granular status per session key; ERROR here makes the session a failure, never a runner. */
+  agentStatus?: Record<string, GranularAgentState>;
   /** The open session is generating right now, even before the gateway reports it busy. */
   generating?: boolean;
 }
 
+type SessionFlags = Pick<FleetActivityInput, 'busyState' | 'unreadSessions' | 'agentStatus'>;
+
 /**
- * The whole fleet in one pane: live while any agent works, operator while any
- * finished work waits on the operator, otherwise off.
+ * One session's pane as the fleet sees it. A failed run is red and is not
+ * counted as running, whatever the busy flag says; otherwise the running flags
+ * decide, then unread work.
  */
-export function fleetActivity({ sessions, busyState, unreadSessions, generating }: FleetActivityInput): PaneState {
-  if (generating) return 'live';
-  let waiting = false;
-  for (const session of sessions) {
-    const key = getSessionKey(session);
-    if (isSessionRunning(session, Boolean(busyState?.[key]))) return 'live';
-    if (unreadSessions?.[key]) waiting = true;
-  }
-  return waiting ? 'operator' : 'off';
+export function sessionPaneState(session: Session, { busyState, unreadSessions, agentStatus }: SessionFlags): PaneState {
+  const key = getSessionKey(session);
+  const failed = agentStatus?.[key]?.status === 'ERROR';
+  return paneStateFor({
+    running: !failed && isSessionRunning(session, Boolean(busyState?.[key])),
+    unread: Boolean(unreadSessions?.[key]),
+    error: failed,
+  });
 }
 
-/** The fleet in numbers: how many sessions exist, how many are working, how many wait on the operator. */
+/**
+ * The whole fleet in one pane: red while any run stands failed, live while any
+ * agent works, operator while any finished work waits on the operator, otherwise off.
+ */
+export function fleetActivity(input: FleetActivityInput): PaneState {
+  const { failed, running, waiting } = fleetCounts(input);
+  if (failed > 0) return 'error';
+  if (running > 0) return 'live';
+  return waiting > 0 ? 'operator' : 'off';
+}
+
+/** The fleet in numbers: how many sessions exist, how many work, wait on the operator, or stand failed. */
 export interface FleetCounts {
   total: number;
   running: number;
   waiting: number;
+  failed: number;
 }
 
-export function fleetCounts({ sessions, busyState, unreadSessions, generating }: FleetActivityInput): FleetCounts {
+export function fleetCounts({ sessions, busyState, unreadSessions, agentStatus, generating }: FleetActivityInput): FleetCounts {
   let running = 0;
   let waiting = 0;
+  let failed = 0;
   for (const session of sessions) {
-    const key = getSessionKey(session);
-    if (isSessionRunning(session, Boolean(busyState?.[key]))) running += 1;
-    else if (unreadSessions?.[key]) waiting += 1;
+    const state = sessionPaneState(session, { busyState, unreadSessions, agentStatus });
+    if (state === 'error') failed += 1;
+    else if (state === 'live') running += 1;
+    else if (state === 'operator') waiting += 1;
   }
   if (generating && running === 0) running = 1;
-  return { total: sessions.length, running, waiting };
+  return { total: sessions.length, running, waiting, failed };
 }
 
 /** The fleet in words for the top bar: quiet when nothing is happening. */
-export function fleetWords({ total, running, waiting }: FleetCounts): string {
+export function fleetWords({ total, running, waiting, failed }: FleetCounts): string {
   if (total === 0) return 'No agents';
   const parts: string[] = [];
   if (running > 0) parts.push(`${running} working`);
   if (waiting > 0) parts.push(`${waiting} waiting on you`);
+  if (failed > 0) parts.push(`${failed} failed`);
   if (parts.length === 0) return `${total} ${total === 1 ? 'agent' : 'agents'}, all quiet`;
   return parts.join(', ');
 }

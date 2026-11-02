@@ -151,7 +151,6 @@ html[data-theme="light"] {
 .pane[data-state="error"] {
   background-color: var(--color-red);
   box-shadow: var(--bloom-error);
-  box-shadow: none;
 }
 /* Identity: an agent family's hue shows in the glass while its light is off.
    Lit colours keep their meaning (blue works, cantaloupe waits on you, red failed). */
@@ -1051,7 +1050,7 @@ html[data-theme="light"] .nerve-room {
   font-style: italic;
 }
 .hljs-addition {
-  color: var(--color-success);
+  color: var(--color-green);
 }
 .hljs-deletion {
   color: var(--color-red);

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-01T23:40:00Z",
+  "generatedAt": "2026-11-02T12:40:00Z",
   "title": "Design System: Nerve",
   "extensions": {
     "colorMeta": {
@@ -715,7 +715,7 @@
       },
       {
         "name": "The Window Rule",
-        "body": "The composer is the operator's next window. At rest it is a dark plate with a dark pane in the gutter; while the operator is in it (focus, or text already typed) it warms to Operator Plate with the warm edge light and the pane lights Cantaloupe, so the turn being written looks like the turns already sent. The side-column editors (memory section, config file) are windows too: Plate at rest, Operator Plate with the warm edge light and a lit Cantaloupe pane in their status line while the operator types; no focus ring, no drawn border.",
+        "body": "The composer is the operator's next window. At rest it is a dark plate with a dark pane in the gutter; while the operator is in it (focus, or text already typed) it warms to Operator Plate with the warm edge light and the pane lights Cantaloupe, so the turn being written looks like the turns already sent. The side-column editors (memory section, config file) are windows too: Plate at rest, Operator Plate with the warm edge light and a lit Cantaloupe pane in their status line while the operator types; no focus ring, no drawn border. The login page is the first window: the brand pane lit Cantaloupe over the sign, and one floating password window that warms while the operator is in it.",
         "section": "colors"
       },
       {
@@ -771,7 +771,8 @@
       "**Do** let light travel: stagger a state's arrival by region (fleet pane, chat header, agents column, transcript gutter, 70ms apart) and never by element; lights go out together.",
       "**Do** move chrome on the arrive ease (`cubic-bezier(0.16, 1, 0.3, 1)`, 180ms to 260ms) and switch views with a view transition; no bounce, no elastic curves.",
       "**Do** treat the side-column editors as operator windows: Plate at rest, Operator Plate with a lit status-line pane while the operator types, never a focus ring (The Window Rule).",
-      "**Do** let a cron row's pane carry the job's light: blue in flight, red while an enabled job stands broken, off otherwise; a skipped run stays quiet."
+      "**Do** let a cron row's pane carry the job's light: blue in flight, red while an enabled job stands broken, off otherwise; a skipped run stays quiet.",
+      "**Do** keep the Settings drawer a flat Panel plate with the edge light and no blur; rows separate by hairlines, selects sit flat on Raised, and the switch thumb is a pane that lights Cantaloupe when on."
     ],
     "donts": [
       "**Don't** colour anything that is not reporting agent work, operator ownership, an error, a link, code syntax or an agent family's identity; no decorative accents or coloured side rails.",

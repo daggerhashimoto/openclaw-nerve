@@ -34,7 +34,7 @@ function useThemeVersion(): number {
   useEffect(() => {
     if (typeof MutationObserver === 'undefined') return;
     const observer = new MutationObserver(() => setVersion((v) => v + 1));
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-style', 'style'] });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'style'] });
     return () => observer.disconnect();
   }, []);
   return version;

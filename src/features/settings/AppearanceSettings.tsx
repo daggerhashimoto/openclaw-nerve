@@ -1,16 +1,8 @@
-import { Monitor, Eye, Type, Activity, ALargeSmall, Code2, Columns3, Command, Gauge, Palette } from 'lucide-react';
+import { Monitor, Eye, Type, Activity, ALargeSmall, Code2, Columns3, Command, Gauge } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useSettings } from '@/contexts/SettingsContext';
-import {
-  themes,
-  themeStyles,
-  themeStyleLabels,
-  getThemeStyle,
-  themeNamesForStyle,
-  type ThemeName,
-  type ThemeStyle,
-} from '@/lib/themes';
+import { themes, themeNames, type ThemeName } from '@/lib/themes';
 import { fonts, fontNames, type FontName } from '@/lib/fonts';
 
 const INLINE_SELECT_TRIGGER_CLASS =
@@ -65,7 +57,6 @@ export function AppearanceSettings() {
     togglePerformanceMode,
     theme,
     setTheme,
-    setThemeStyle,
     font,
     setFont,
     fontSize,
@@ -73,13 +64,6 @@ export function AppearanceSettings() {
     editorFontSize,
     setEditorFontSize,
   } = useSettings();
-
-  // Style is derived from the theme: each theme belongs to exactly one style.
-  const themeStyle = getThemeStyle(theme);
-
-  const handleStyleChange = (next: string) => {
-    setThemeStyle(next as ThemeStyle);
-  };
 
   const handleThemeChange = (next: string) => {
     setTheme(next as ThemeName);
@@ -107,41 +91,20 @@ export function AppearanceSettings() {
         />
       </div>
 
-      {/* Style selector */}
-      <div className="settings-row items-start justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <Palette size={14} className="text-muted-foreground" />
-          <div className="flex flex-col">
-            <span className="text-[0.867rem] font-medium text-foreground">Style</span>
-            <span className="text-[0.8rem] text-muted-foreground">Nerve is the default. Classic brings back the previous look and its themes.</span>
-          </div>
-        </div>
-        <div className="relative w-full sm:w-auto">
-          <InlineSelect
-            value={themeStyle}
-            onChange={handleStyleChange}
-            options={themeStyles.map((style) => ({ value: style, label: themeStyleLabels[style] }))}
-            ariaLabel="Select style"
-            triggerClassName={INLINE_SELECT_TRIGGER_CLASS}
-            menuClassName={INLINE_SELECT_MENU_CLASS}
-          />
-        </div>
-      </div>
-
-      {/* Theme selector: lists the selected style's themes */}
+      {/* Theme selector: Night or Daylight */}
       <div className="settings-row items-start justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <Monitor size={14} className="text-muted-foreground" />
           <div className="flex flex-col">
             <span className="text-[0.867rem] font-medium text-foreground">Theme</span>
-            <span className="text-[0.8rem] text-muted-foreground">Swap the full cockpit palette in one move.</span>
+            <span className="text-[0.8rem] text-muted-foreground">Night or Daylight. Same meanings, different light.</span>
           </div>
         </div>
         <div className="relative w-full sm:w-auto">
           <InlineSelect
             value={theme}
             onChange={handleThemeChange}
-            options={themeNamesForStyle(themeStyle).map((name) => ({ value: name, label: themes[name].label }))}
+            options={themeNames.map((name) => ({ value: name, label: themes[name].label }))}
             ariaLabel="Select theme"
             triggerClassName={INLINE_SELECT_TRIGGER_CLASS}
             menuClassName={INLINE_SELECT_MENU_CLASS}

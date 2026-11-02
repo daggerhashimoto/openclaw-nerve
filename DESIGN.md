@@ -275,7 +275,7 @@ An operator's console is a building seen at night. You do not read the facade by
 
 The mood is midnight, exact, calm, dense, lit. This is an Operate-mode surface that stays open for hours, so the brand lives in precise details rather than expression: a 28px row unit shared by every list row, tool row and panel header; plates that read by value and a 1px edge light instead of drawn borders; one display face reserved for the wordmark and the names of agents and speakers; prose held to a measure that spans the column. Density is welcome because nothing pulses; the only light that spreads is a lit pane's bloom, and the only gradient is the room's ambient light from above. State changes are a light switch, 120ms, on or off.
 
-The system refuses the hacker costume (scanlines, glowing HUD chrome, tracked uppercase labels), the grey dashboard with one decorative accent, glass and decorative gradients, coloured side rails, and any pulsing or breathing motion. Daylight is the same building by day: cool paper, printed hairlines instead of edge light, panes printed as ink swatches, identical meanings. The previous appearance survives only as an opt-in Classic skin scoped under its own attribute and is not part of this system.
+The system refuses the hacker costume (scanlines, glowing HUD chrome, tracked uppercase labels), the grey dashboard with one decorative accent, glass and decorative gradients, coloured side rails, and any pulsing or breathing motion. Daylight is the same building by day: cool paper, printed hairlines instead of edge light, panes printed as ink swatches, identical meanings. The previous appearance and its community themes are retired; Night and Daylight are the only two themes.
 
 **Key Characteristics:**
 - Light temperature is the state vocabulary: blue works, cantaloupe waits on you, red failed, dark is done.
@@ -478,4 +478,4 @@ One 28px line of mono text at 0.8rem: a small pane (live while running, off when
 - **Don't** draw a border around a plate; borders belong to inputs, outline buttons and hairline dividers.
 - **Don't** replace a pane with a dot, a circle, a badge or a glyph icon, and never make colour the only signal.
 - **Don't** use Geist for headings, labels or buttons, or a system display face anywhere.
-- **Don't** round panels or shell surfaces beyond 4px, or reintroduce the Classic skin's rounded panels and amber accents into the Nerve style.
+- **Don't** round panels or shell surfaces beyond 4px, or bring back the retired look's rounded panels and amber accents.

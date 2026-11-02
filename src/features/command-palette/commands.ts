@@ -1,5 +1,5 @@
 import type { Command } from './types';
-import { themes, themeNames, themeStyles, themeStyleLabels, type ThemeName, type ThemeStyle } from '@/lib/themes';
+import { themes, themeNames, type ThemeName } from '@/lib/themes';
 import { fonts, type FontName } from '@/lib/fonts';
 import type { TTSProvider } from '@/features/tts/useTTS';
 import type { Session } from '@/types';
@@ -16,8 +16,6 @@ export interface CommandActions {
   onSearch: () => void;
   onAbort: () => void;
   onSetTheme: (theme: ThemeName) => void;
-  /** Switch style, keeping the current theme when it already belongs to that style. */
-  onSetThemeStyle: (style: ThemeStyle) => void;
   onSetFont: (font: FontName) => void;
   onTtsProviderChange: (provider: TTSProvider) => void;
   onToggleWakeWord: () => void;
@@ -31,14 +29,8 @@ export interface CommandActions {
   canShowKanban?: boolean;
 }
 
-/** Palette label for a theme: Classic themes carry their style so they read apart from Nerve's. */
-function themeCommandLabel(key: ThemeName): string {
-  const theme = themes[key];
-  return theme.style === 'classic' ? `Classic ${theme.label}` : theme.label;
-}
-
 const FONT_LABELS: Record<FontName, string> = {
-  'atkinson-hyperlegible': 'Style default',
+  'atkinson-hyperlegible': 'Nerve default',
   'instrument-sans': 'Instrument Sans',
   'space-grotesk': 'Space Grotesk',
   'jetbrains-mono': 'JetBrains Mono',
@@ -48,18 +40,10 @@ const FONT_LABELS: Record<FontName, string> = {
 export function createCommands(actions: CommandActions): Command[] {
   const themeCommands: Command[] = themeNames.map((key) => ({
     id: `theme-${key}`,
-    label: `Theme: ${themeCommandLabel(key)}`,
+    label: `Theme: ${themes[key].label}`,
     action: () => actions.onSetTheme(key),
     category: 'appearance' as const,
     keywords: ['theme', 'color', 'dark', 'light', key.replace(/-/g, ' '), themes[key].label],
-  }));
-
-  const styleCommands: Command[] = themeStyles.map((style) => ({
-    id: `style-${style}`,
-    label: `Style: ${themeStyleLabels[style]}`,
-    action: () => actions.onSetThemeStyle(style),
-    category: 'appearance' as const,
-    keywords: ['style', 'look', 'skin', 'appearance', style, ...(style === 'classic' ? ['legacy', 'previous'] : [])],
   }));
 
   const fontCommands: Command[] = (Object.keys(fonts) as FontName[]).map((key) => ({
@@ -217,7 +201,6 @@ export function createCommands(actions: CommandActions): Command[] {
         keywords: ['kanban', 'task', 'create', 'new', 'add'],
       },
     ] : []),
-    ...styleCommands,
     ...themeCommands,
     ...fontCommands,
   ];

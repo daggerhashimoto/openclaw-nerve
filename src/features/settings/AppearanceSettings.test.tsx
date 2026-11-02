@@ -5,7 +5,6 @@ import { AppearanceSettings } from './AppearanceSettings';
 
 const mockTogglePerformanceMode = vi.fn();
 const mockSetTheme = vi.fn();
-const mockSetThemeStyle = vi.fn();
 let performanceMode = false;
 let theme = 'nerve-dark';
 
@@ -25,7 +24,6 @@ vi.mock('@/contexts/SettingsContext', () => ({
     togglePerformanceMode: mockTogglePerformanceMode,
     theme,
     setTheme: mockSetTheme,
-    setThemeStyle: mockSetThemeStyle,
     font: 'atkinson-hyperlegible',
     setFont: vi.fn(),
     fontSize: 15,
@@ -54,7 +52,6 @@ describe('AppearanceSettings', () => {
     theme = 'nerve-dark';
     mockTogglePerformanceMode.mockClear();
     mockSetTheme.mockClear();
-    mockSetThemeStyle.mockClear();
   });
 
   function openOptions(name: string): string[] {
@@ -82,38 +79,25 @@ describe('AppearanceSettings', () => {
     expect(screen.getByRole('switch', { name: /performance mode/i })).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('lists only the Nerve themes while the Nerve style is active', () => {
+  it('offers Night and Daylight and no style control', () => {
     render(<AppearanceSettings />);
 
-    expect(screen.getByRole('button', { name: 'Select style' })).toHaveTextContent('Nerve');
+    expect(screen.queryByRole('button', { name: 'Select style' })).toBeNull();
     expect(openOptions('Select theme')).toEqual(['Night', 'Daylight']);
   });
 
-  it('lists the 14 Classic themes while a Classic theme is active', () => {
-    theme = 'classic-nord';
-
+  it('switches the theme through the Theme control', () => {
     render(<AppearanceSettings />);
 
-    expect(screen.getByRole('button', { name: 'Select style' })).toHaveTextContent('Classic');
-    const options = openOptions('Select theme');
-    expect(options).toHaveLength(14);
-    expect(options).toEqual(expect.arrayContaining(['Ayu Dark', 'Nord', 'Light', 'Monochrome']));
-    expect(options).not.toContain('Night');
+    openOptions('Select theme');
+    fireEvent.pointerDown(screen.getByRole('option', { name: 'Daylight' }));
+
+    expect(mockSetTheme).toHaveBeenCalledExactlyOnceWith('nerve-light');
   });
 
-  it('switches theme family through the Style control', () => {
+  it('offers the Nerve default as the first UI font', () => {
     render(<AppearanceSettings />);
 
-    expect(openOptions('Select style')).toEqual(['Nerve', 'Classic']);
-    fireEvent.pointerDown(screen.getByRole('option', { name: 'Classic' }));
-
-    expect(mockSetThemeStyle).toHaveBeenCalledExactlyOnceWith('classic');
-    expect(mockSetTheme).not.toHaveBeenCalled();
-  });
-
-  it('offers the style default as the first UI font', () => {
-    render(<AppearanceSettings />);
-
-    expect(screen.getByRole('button', { name: 'Select font' })).toHaveTextContent('Style default');
+    expect(screen.getByRole('button', { name: 'Select font' })).toHaveTextContent('Nerve default');
   });
 });

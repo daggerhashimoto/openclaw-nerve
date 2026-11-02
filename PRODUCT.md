@@ -42,7 +42,7 @@ Capabilities (shipped, preserve through the overhaul):
 Decided for the overhaul (2026-10-31):
 
 - Theming: Nerve ships one branded identity in a dark and a light version, and every install defaults to it.
-- Legacy look: the previous appearance stays selectable as an opt-in Classic style (its 14 community themes, Instrument Sans, rounded panels, amber accents), applied as a skin over the same layout and components.
+- Legacy look: retired. The previous appearance, its 14 community themes and the opt-in Classic skin that briefly carried them were dropped on 2026-11-02, once the components had been rewritten and the skin no longer resembled the original. Stored theme values from either era map onto Night or Daylight by scheme.
 
 Technical constraints:
 

@@ -51,4 +51,6 @@ AMENDMENT 10 (2026-11-02, dialogs): Create cron, Add memory and Create task shar
 
 AMENDMENT 11 (2026-11-02, transcript loose ends and the last two dialogs): the transcript gets one divider primitive (a hairline with a mono word: a day, or "Older messages"), day labels only when the visible transcript spans more than one day, and an empty-room note that waits for the history flag so it never flashes. The Voice phrases modal drops its boxed, colour-coded sections for hairline sections with plain labels; the Connect dialog carries the sign with its pane lit cantaloupe instead of the old logo mark.
 
+AMENDMENT 12 (2026-11-02, the user dropped the Classic skin): the day-one constraint that the old look stays available as an opt-in skin is withdrawn. After the components were rewritten the skin was the new layout in old colours, not the old look, and every new primitive needed a Classic override or silently degraded. The Classic stylesheet, its 14 theme definitions, the token fallbacks, the Classic font loader, the Style control and the Style palette commands are removed; Night and Daylight are the only themes, and any stored Classic or legacy theme value resolves to one of them by scheme.
+
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

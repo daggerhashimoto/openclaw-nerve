@@ -18,7 +18,6 @@ vi.mock('@/lib/fonts', () => ({
   fontNames: ['atkinson-hyperlegible', 'instrument-sans'],
   DEFAULT_FONT: 'atkinson-hyperlegible',
   applyFont: vi.fn(),
-  loadClassicFonts: vi.fn(),
 }));
 
 function wrapper({ children }: { children: React.ReactNode }) {
@@ -112,7 +111,7 @@ describe('SettingsContext performance mode', () => {
   });
 });
 
-describe('SettingsContext theme and style', () => {
+describe('SettingsContext theme', () => {
   beforeEach(() => {
     localStorage.clear();
   });
@@ -137,34 +136,25 @@ describe('SettingsContext theme and style', () => {
     expect(result.current.theme).toBe('nerve-dark');
   });
 
-  it('keeps an explicitly chosen Classic theme', () => {
-    localStorage.setItem('oc-theme', 'classic-dracula');
+  it.each([
+    ['classic-dracula', 'nerve-dark'],
+    ['classic-ayu-dark', 'nerve-dark'],
+    ['classic-light', 'nerve-light'],
+  ])('moves the retired Classic theme "%s" to "%s" and persists it', (saved, expected) => {
+    localStorage.setItem('oc-theme', saved);
 
     const { result } = renderHook(() => useSettings(), { wrapper });
 
-    expect(result.current.theme).toBe('classic-dracula');
+    expect(result.current.theme).toBe(expected);
+    expect(localStorage.getItem('oc-theme')).toBe(expected);
   });
 
-  it('switches to the Classic default when the style changes, and persists it', () => {
+  it('switches between Night and Daylight and persists the choice', () => {
     const { result } = renderHook(() => useSettings(), { wrapper });
 
-    act(() => result.current.setThemeStyle('classic'));
+    act(() => result.current.setTheme('nerve-light'));
 
-    expect(result.current.theme).toBe('classic-ayu-dark');
-    expect(localStorage.getItem('oc-theme')).toBe('classic-ayu-dark');
-
-    act(() => result.current.setThemeStyle('nerve'));
-
-    expect(result.current.theme).toBe('nerve-dark');
-    expect(localStorage.getItem('oc-theme')).toBe('nerve-dark');
-  });
-
-  it('keeps the current theme when it already belongs to the chosen style', () => {
-    localStorage.setItem('oc-theme', 'classic-nord');
-    const { result } = renderHook(() => useSettings(), { wrapper });
-
-    act(() => result.current.setThemeStyle('classic'));
-
-    expect(result.current.theme).toBe('classic-nord');
+    expect(result.current.theme).toBe('nerve-light');
+    expect(localStorage.getItem('oc-theme')).toBe('nerve-light');
   });
 });

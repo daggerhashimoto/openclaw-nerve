@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components -- hook intentionally co-located with provider */
 import { createContext, useContext, useCallback, useRef, useState, useEffect, useMemo, type ReactNode } from 'react';
 import { useTTS, migrateTTSProvider, type TTSProvider } from '@/features/tts/useTTS';
-import { type ThemeName, type ThemeStyle, applyTheme, resolveThemeName, themeForStyle } from '@/lib/themes';
+import { type ThemeName, applyTheme, resolveThemeName } from '@/lib/themes';
 import { type FontName, applyFont, fontNames, DEFAULT_FONT } from '@/lib/fonts';
 import { PERFORMANCE_MODE_STORAGE_KEY, isPerformanceModePreferenceEnabled } from '@/lib/performanceMode';
 
@@ -43,8 +43,6 @@ interface SettingsContextValue {
   toggleCommandPaletteButtonVisible: () => void;
   theme: ThemeName;
   setTheme: (theme: ThemeName) => void;
-  /** Switch style (Nerve or Classic); keeps the theme when it already belongs to that style. */
-  setThemeStyle: (style: ThemeStyle) => void;
   font: FontName;
   setFont: (font: FontName) => void;
   fontSize: number;
@@ -360,14 +358,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('oc-theme', newTheme);
   }, []);
 
-  const setThemeStyle = useCallback((style: ThemeStyle) => {
-    setThemeState(prev => {
-      const next = themeForStyle(prev, style);
-      localStorage.setItem('oc-theme', next);
-      return next;
-    });
-  }, []);
-
   const setFont = useCallback((newFont: FontName) => {
     setFontState(newFont);
     localStorage.setItem('oc-font', newFont);
@@ -439,7 +429,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     toggleCommandPaletteButtonVisible,
     theme,
     setTheme,
-    setThemeStyle,
     font,
     setFont,
     fontSize,
@@ -458,7 +447,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     speak, panelRatio, setPanelRatio, telemetryVisible, toggleTelemetry,
     eventsVisible, toggleEvents, logVisible, toggleLog, showHiddenWorkspaceEntries, toggleShowHiddenWorkspaceEntries,
     commandPaletteButtonVisible, toggleCommandPaletteButtonVisible,
-    theme, setTheme, setThemeStyle, font, setFont,
+    theme, setTheme, font, setFont,
     fontSize, setFontSize, editorFontSize, setEditorFontSize, kanbanVisible, toggleKanbanVisible,
     performanceMode, togglePerformanceMode,
   ]);

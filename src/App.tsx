@@ -147,7 +147,7 @@ export default function App({ onLogout }: AppProps) {
     panelRatio, setPanelRatio,
     eventsVisible, logVisible,
     toggleEvents, toggleLog, toggleTelemetry,
-    setTheme, setThemeStyle, setFont,
+    setTheme, setFont,
     kanbanVisible,
     commandPaletteButtonVisible,
     performanceMode,
@@ -564,7 +564,6 @@ export default function App({ onLogout }: AppProps) {
     onSearch: openSearch,
     onAbort: handleAbort,
     onSetTheme: setTheme,
-    onSetThemeStyle: setThemeStyle,
     onSetFont: setFont,
     onTtsProviderChange: setTtsProvider,
     onToggleWakeWord: handleToggleWakeWord,
@@ -577,7 +576,7 @@ export default function App({ onLogout }: AppProps) {
     onSetViewMode: setViewMode,
     canShowKanban: kanbanVisible,
   }), [openSpawnDialog, handleReset, toggleSound, handleAbort, openSettings, openSearch,
-    setTheme, setThemeStyle, setFont, setTtsProvider, handleToggleWakeWord, toggleEvents, toggleLog, toggleTelemetry,
+    setTheme, setFont, setTtsProvider, handleToggleWakeWord, toggleEvents, toggleLog, toggleTelemetry,
     refreshSessions, refreshMemories, setViewMode, kanbanVisible]);
 
   // Keyboard shortcut handlers with useCallback

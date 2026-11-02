@@ -1,9 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-/* Classic style: the previous look as an opt-in skin. Every rule in it is scoped
-   under html[data-style="classic"], so nothing there touches the Nerve style.
-   Imports must precede all other rules or the browser drops them. */
-@import "./styles/classic.css";
 /* Note: highlight.js theme is applied dynamically by applyTheme() in src/lib/themes.ts */
 
 @custom-variant dark (&:is(.dark *));
@@ -1491,8 +1487,7 @@ html[data-theme="light"] .nerve-room {
  * Actual default values live in :root below; themes.ts overrides at runtime.
  */
 @theme inline {
-  /* Radius steps read the --r-* scale in :root below so a style can retune it
-     (the Classic skin restores its rounded scale in src/styles/classic.css). */
+  /* Radius steps read the --r-* scale in :root below. */
   --radius: var(--radius);
   --radius-xs: var(--r-xs);
   --radius-sm: var(--r-sm);

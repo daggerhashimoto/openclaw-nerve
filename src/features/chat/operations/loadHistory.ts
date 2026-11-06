@@ -43,6 +43,30 @@ function dedupeExtractedImages(images: Array<{ url: string; alt?: string }>): Ar
   });
 }
 
+/** Gateway path prefix of media an agent delivered as a reply attachment (generated images). */
+const GATEWAY_CHAT_MEDIA_PREFIX = '/api/chat/media/outgoing/';
+
+/**
+ * An image block that points at gateway-hosted media, as a displayable image. The gateway path
+ * needs the gateway token, so the browser loads it through Nerve's /api/chat-media proxy.
+ */
+function gatewayMediaImage(block: ContentBlock): { url: string; alt?: string } | null {
+  const ref = [block.url, block.openUrl].find(
+    (value): value is string => typeof value === 'string' && value.startsWith(GATEWAY_CHAT_MEDIA_PREFIX),
+  );
+  if (!ref) return null;
+  return { url: `/api/chat-media?path=${encodeURIComponent(ref)}`, alt: block.alt || 'Agent image' };
+}
+
+/** Every gateway-hosted image in a message's content blocks. */
+function extractGatewayMediaImages(content: ContentBlock[]): Array<{ url: string; alt?: string }> {
+  return content.flatMap((block) => {
+    if (block.type !== 'image') return [];
+    const image = gatewayMediaImage(block);
+    return image ? [image] : [];
+  });
+}
+
 function extractLegacyMessageImages(
   message: ChatMessage,
   options: { sessionKey?: string; messageTimestampMs?: number },
@@ -67,12 +91,18 @@ function extractLegacyMessageImages(
     });
   }
 
-  if (options.sessionKey && Number.isFinite(options.messageTimestampMs) && Array.isArray(message.content)) {
+  if (Array.isArray(message.content)) {
+    // Omitted images are looked up in the transcript, which needs the session and timestamp;
+    // gateway-hosted images carry their own path and render without either (live finals too).
+    const hasTimestamp = Number.isFinite(options.messageTimestampMs);
     const timestampMs = options.messageTimestampMs as number;
     let imageIndex = 0;
     for (const block of message.content) {
       if (block.type !== 'image') continue;
-      if (block.omitted) {
+      const gatewayImage = gatewayMediaImage(block);
+      if (gatewayImage) {
+        extracted.push(gatewayImage);
+      } else if (block.omitted && hasTimestamp && options.sessionKey) {
         const extension = imageExtensionFromMimeType(block.mimeType || block.source?.media_type);
         extracted.push({
           url: `/api/sessions/media?sessionKey=${encodeURIComponent(options.sessionKey)}&timestamp=${timestampMs}&imageIndex=${imageIndex}`,
@@ -364,19 +394,25 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
       }
       flushText(); // Final text block
 
-      // Attach any image content blocks to the result
-      if (contentImages.length > 0) {
+      // Attach any image content blocks to the result: inline data as images, gateway-hosted
+      // attachments (generated images) as extracted images loaded through the media proxy.
+      const gatewayImages = extractGatewayMediaImages(m.content as ContentBlock[]);
+      if (contentImages.length > 0 || gatewayImages.length > 0) {
         // Find last assistant message to attach images to, or create one
         const lastAssistant = [...result].reverse().find(r => r.role === 'assistant' || r.role === m.role as ChatMsgRole);
         if (lastAssistant) {
-          lastAssistant.images = [...(lastAssistant.images || []), ...contentImages];
+          if (contentImages.length > 0) lastAssistant.images = [...(lastAssistant.images || []), ...contentImages];
+          if (gatewayImages.length > 0) {
+            lastAssistant.extractedImages = dedupeExtractedImages([...(lastAssistant.extractedImages || []), ...gatewayImages]);
+          }
         } else {
           result.push({
             role: m.role as ChatMsgRole,
             html: '',
             rawText: '',
             timestamp,
-            images: contentImages,
+            ...(contentImages.length > 0 ? { images: contentImages } : {}),
+            ...(gatewayImages.length > 0 ? { extractedImages: gatewayImages } : {}),
           });
         }
       }

@@ -20,6 +20,9 @@ function messageSignature(msg: ChatMsg): string {
     msg.intermediate ? 'intermediate' : '',
     msg.toolGroup ? `toolGroup:${msg.toolGroup.length}` : '',
     msg.images?.length ? `images:${msg.images.length}` : '',
+    // A reply whose attachment (a generated image) only arrives with history must not match its
+    // image-less live copy, or the recovered version is dropped as a duplicate.
+    msg.extractedImages?.length ? `extracted:${msg.extractedImages.length}` : '',
   ].filter(Boolean).join(',');
 
   return `${msg.role}|${textHash}|${tsBucket}|${flags}`;

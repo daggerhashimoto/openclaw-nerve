@@ -515,6 +515,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             ? patchThinkingDuration(merged, thinkingDuration)
             : merged;
           applyMessageWindow(withDuration, false);
+          // The final event carries the reply text only; attachments the agent delivered with it
+          // (generated images) are written to the transcript, so reconcile with history once.
+          scheduleHistoryRefresh();
         } else {
           triggerRecovery('unrenderable-final');
         }

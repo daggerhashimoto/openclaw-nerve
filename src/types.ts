@@ -156,6 +156,11 @@ export interface ContentBlock {
   bytes?: number;
   /** Anthropic-style image source */
   source?: { type?: string; media_type?: string; data?: string };
+  /** Gateway-hosted image (an agent's delivered attachment): a gateway path such as
+   *  `/api/chat/media/outgoing/<sessionKey>/<id>/full`, loaded through Nerve's /api/chat-media. */
+  url?: string;
+  openUrl?: string;
+  alt?: string;
 }
 
 /** Gateway message types */

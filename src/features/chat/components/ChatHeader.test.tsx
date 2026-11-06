@@ -270,6 +270,30 @@ describe('ChatHeader', () => {
     expect(screen.getByRole('button', { name: /stop generating/i })).toBeInTheDocument();
   });
 
+  it('keeps Stop with the run state so a narrow header can move them to their own row together', () => {
+    vi.mocked(useModelEffort).mockReturnValue(defaultMockHook);
+
+    render(
+      <ChatHeader
+        onReset={mockOnReset}
+        onAbort={mockOnAbort}
+        isGenerating={true}
+        processingStage="tool_use"
+        currentToolDescription="exec: npm test"
+      />
+    );
+
+    const runState = screen.getByTestId('chat-run-state');
+    const stop = screen.getByRole('button', { name: /stop generating/i });
+    expect(runState).toContainElement(stop);
+    expect(stop).toHaveTextContent('Stop');
+    // Reset stays with the session controls, outside the run.
+    expect(runState).not.toContainElement(screen.getByRole('button', { name: /reset session/i }));
+
+    fireEvent.click(stop);
+    expect(mockOnAbort).toHaveBeenCalledTimes(1);
+  });
+
   it('shows reset button when not generating', () => {
     const mockUseModelEffort = vi.mocked(useModelEffort);
     mockUseModelEffort.mockReturnValue(defaultMockHook);

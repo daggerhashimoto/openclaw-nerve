@@ -1,5 +1,5 @@
 /**
- * useCrons — Fetch, toggle, run, add, update, and delete cron jobs.
+ * useCrons: fetch, toggle, run, add, update, and delete cron jobs.
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';

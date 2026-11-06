@@ -30,12 +30,15 @@ export const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
         aria-labelledby={ariaLabelledBy}
         disabled={disabled}
         onClick={() => onCheckedChange(!checked)}
-        className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer items-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${
-          checked ? "bg-green/30" : "bg-border"
+        className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer items-center rounded-[2px] transition-colors duration-[120ms] outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 ${
+          checked ? "bg-operator/30" : "bg-raised"
         } ${className}`}
       >
+        {/* The thumb is a pane: lit cantaloupe when the operator has switched it on */}
         <span
-          className={`pointer-events-none block h-4 w-4 bg-foreground shadow-sm transition-transform ${
+          className={`pointer-events-none block h-4 w-4 rounded-[1px] transition-[transform,background-color] duration-[120ms] ${
+            checked ? "bg-operator" : "bg-muted-foreground"
+          } ${
             checked ? "translate-x-[22px]" : "translate-x-0.5"
           }`}
         />

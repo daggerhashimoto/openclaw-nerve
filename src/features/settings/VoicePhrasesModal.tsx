@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Globe, Plus, Trash2, Mic, Send, XCircle, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -73,7 +73,7 @@ function PhraseList({
             type="text"
             value={phrase.value}
             onChange={e => onChange(i, e.target.value)}
-            className="cockpit-input h-10 flex-1 rounded-xl px-3 text-sm"
+            className="cockpit-input h-11 flex-1 sm:h-[2.133rem]"
             placeholder={`${placeholder} ${i + 1}...`}
             dir="auto"
           />
@@ -84,7 +84,7 @@ function PhraseList({
               aria-label={`Remove ${placeholder.toLowerCase()} ${i + 1}`}
               variant="ghost"
               size="icon-xs"
-              className="size-8 rounded-lg text-muted-foreground hover:text-destructive"
+              className="size-8 text-muted-foreground hover:text-destructive"
             >
               <Trash2 size={12} />
             </Button>
@@ -98,7 +98,7 @@ function PhraseList({
         size="xs"
         className="w-fit"
       >
-        <Plus size={10} /> Add
+        <Plus size={14} /> Add
       </Button>
     </div>
   );
@@ -202,25 +202,21 @@ export function VoicePhrasesModal({
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <Globe size={16} className="text-primary" />
-            Voice Phrases — {languageName}
+          <DialogTitle className="text-[1.067rem] font-semibold text-foreground">
+            Voice phrases: {languageName}
           </DialogTitle>
-          <DialogDescription className="text-[0.8rem] text-muted-foreground">
+          <DialogDescription className="text-[0.867rem] text-muted-foreground">
             Set the phrases you'll say in {languageNativeName} to control voice input.
-            {languageCode !== 'en' && ' English phrases always work as fallback for send & cancel.'}
+            {languageCode !== 'en' && ' English phrases always work as a fallback for send and cancel.'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 max-h-[58vh] overflow-y-auto pr-1">
+        <div className="max-h-[58vh] space-y-4 overflow-y-auto pr-1">
             {/* Wake Phrase */}
-            <section className="cockpit-surface p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Mic size={14} className="text-primary" />
-                <label className="cockpit-field-label text-primary">
-                  Wake Phrase
-                </label>
-              </div>
+            <section className="space-y-2">
+              <label className="cockpit-field-label block">
+                Wake phrase
+              </label>
               <span className="cockpit-field-hint block">
                 One wake phrase per language. Leave empty to use the default phrase for this language.
               </span>
@@ -228,20 +224,17 @@ export function VoicePhrasesModal({
                 type="text"
                 value={wakePhrase}
                 onChange={(e) => setWakePhrase(e.target.value)}
-                className="cockpit-input h-11 rounded-xl px-3 text-sm"
+                className="cockpit-input h-11 sm:h-[2.133rem]"
                 placeholder="Wake phrase"
                 dir="auto"
               />
             </section>
 
             {/* Stop (Send) Phrases */}
-            <section className="cockpit-surface p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Send size={12} className="text-green" />
-                <label className="cockpit-field-label text-green">
-                  Send Phrases
-                </label>
-              </div>
+            <section className="space-y-2 border-t border-border pt-4">
+              <label className="cockpit-field-label block">
+                Send phrases
+              </label>
               <span className="cockpit-field-hint block">
                 Say any of these to send your message.
               </span>
@@ -255,13 +248,10 @@ export function VoicePhrasesModal({
             </section>
 
             {/* Cancel Phrases */}
-            <section className="cockpit-surface p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <XCircle size={12} className="text-orange" />
-                <label className="cockpit-field-label text-orange">
-                  Cancel Phrases
-                </label>
-              </div>
+            <section className="space-y-2 border-t border-border pt-4">
+              <label className="cockpit-field-label block">
+                Cancel phrases
+              </label>
               <span className="cockpit-field-hint block">
                 Say any of these to discard your message.
               </span>
@@ -277,7 +267,7 @@ export function VoicePhrasesModal({
 
         <DialogFooter className="mt-1 items-center gap-2">
           {saveError && (
-            <span className="text-[0.733rem] text-destructive sm:mr-auto">{saveError}</span>
+            <span className="text-[0.8rem] text-destructive sm:mr-auto">{saveError}</span>
           )}
           <Button
             type="button"
@@ -296,7 +286,7 @@ export function VoicePhrasesModal({
             className="min-w-[132px]"
           >
             {saving && <Loader2 size={14} className="animate-spin" />}
-            {saving ? 'Saving...' : 'Save Phrases'}
+            {saving ? 'Saving' : 'Save phrases'}
           </Button>
         </DialogFooter>
       </DialogContent>

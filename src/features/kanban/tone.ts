@@ -1,4 +1,83 @@
-import type { TaskPriority, TaskRunLink, TaskStatus } from './types';
+import type { KanbanTask, TaskPriority, TaskRunLink, TaskStatus } from './types';
+import type { PaneState } from '@/lib/paneState';
+import { COLUMN_LABELS } from './types';
+
+/* ── Night light: a task's pane carries its light temperature ── */
+
+/**
+ * Blue while the task's agent is running, red when its run broke, cantaloupe while the task
+ * waits on the operator (review), otherwise off. The off pane shows the assignee's family hue.
+ */
+export function taskPaneState(task: Pick<KanbanTask, 'status' | 'run'>): PaneState {
+  if (task.run?.status === 'running') return 'live';
+  if (task.run?.status === 'error') return 'error';
+  if (task.status === 'review') return 'operator';
+  return 'off';
+}
+
+/** A run's own pane: blue in flight, red when it broke, off once it ended or was aborted. */
+export function runPaneState(status: string | null | undefined): PaneState {
+  if (status === 'running') return 'live';
+  if (status === 'error') return 'error';
+  return 'off';
+}
+
+export const RUN_WORD: Record<TaskRunLink['status'], string> = {
+  running: 'Running',
+  done: 'Done',
+  error: 'Failed',
+  aborted: 'Aborted',
+};
+
+/** Text colour for the run word: only the lit states take colour. */
+export const RUN_WORD_CLASS: Record<TaskRunLink['status'], string> = {
+  running: 'text-live-text',
+  done: 'text-muted-foreground',
+  error: 'text-destructive',
+  aborted: 'text-muted-foreground',
+};
+
+/** Priority as a word; normal says nothing. Critical reads in Signal Red, high in Reading White. */
+export function priorityWord(priority: string | null | undefined): { word: string; className: string } | null {
+  const p = getTaskPriority(priority);
+  if (p === 'critical') return { word: 'Critical', className: 'text-destructive' };
+  if (p === 'high') return { word: 'High', className: 'text-foreground' };
+  if (p === 'low') return { word: 'Low', className: 'text-muted-foreground' };
+  return null;
+}
+
+/** The agent id behind an `agent:<id>` assignee, or null for the operator and unassigned. */
+export function assigneeAgentId(assignee: string | null | undefined): string | null {
+  if (!assignee || !assignee.startsWith('agent:')) return null;
+  const id = assignee.slice('agent:'.length);
+  return id || null;
+}
+
+/** How an assignee is named in the board: the operator is "You", an agent is its id. */
+export function assigneeName(assignee: string | null | undefined): string | null {
+  if (!assignee) return null;
+  if (assignee === 'operator') return 'You';
+  return assigneeAgentId(assignee) ?? assignee;
+}
+
+/** Sentence-case column title: "In Progress" reads "In progress"; acronyms keep their case. */
+export function columnTitle(status: TaskStatus, label?: string): string {
+  const raw = label ?? COLUMN_LABELS[status] ?? status.replace(/-/g, ' ');
+  return raw
+    .split(' ')
+    .map((word, i) => (i === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word === word.toUpperCase() && word.length > 1 ? word : word.toLowerCase()))
+    .join(' ');
+}
+
+/** The board in words for the header: "12 tasks, 1 in progress, 2 waiting on you". */
+export function boardWords(counts: Record<string, number>): string {
+  const total = Object.values(counts).reduce((sum, n) => sum + (n || 0), 0);
+  if (total === 0) return '';
+  const parts = [`${total} ${total === 1 ? 'task' : 'tasks'}`];
+  if (counts['in-progress']) parts.push(`${counts['in-progress']} in progress`);
+  if (counts.review) parts.push(`${counts.review} waiting on you`);
+  return parts.join(', ');
+}
 
 const FALLBACK_STATUS: TaskStatus = 'backlog';
 const FALLBACK_PRIORITY: TaskPriority = 'normal';

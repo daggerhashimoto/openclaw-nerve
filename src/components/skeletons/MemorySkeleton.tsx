@@ -1,36 +1,36 @@
 /**
- * MemorySkeleton — Skeleton loader for memory list items.
+ * MemorySkeleton: static placeholder for memory list rows while they load.
  *
- * Matches the shape of actual memory items with icon and text.
+ * One row unit tall, shaped like a real row: a chevron slot and the text.
  */
 
 export function MemorySkeleton() {
   return (
-    <div className="animate-pulse flex items-center gap-2 px-3 py-1.5 border-b border-border/40">
-      {/* Icon placeholder */}
-      <div className="w-3 h-3 bg-primary/20 rounded-sm shrink-0" />
+    <div className="flex h-7 items-center gap-2 px-3" aria-hidden="true">
+      {/* Chevron placeholder */}
+      <div className="size-2.5 shrink-0 rounded-[2px] bg-raised" />
 
       {/* Text content */}
-      <div className="flex-1 flex gap-2">
-        <div className="h-3 flex-1 bg-muted/30 rounded" />
-        <div className="h-3 w-1/4 bg-muted/20 rounded" />
+      <div className="flex flex-1 gap-2">
+        <div className="h-2.5 flex-1 rounded-[2px] bg-raised" />
+        <div className="h-2.5 w-1/4 rounded-[2px] bg-raised" />
       </div>
     </div>
   );
 }
 
 /**
- * MemorySkeletonGroup — Multiple skeletons for loading state
+ * MemorySkeletonGroup: multiple skeletons for the loading state.
  */
 export function MemorySkeletonGroup({ count = 6 }: { count?: number }) {
-  // Mix up the skeleton widths for a more natural look
+  // Vary the widths so the placeholder reads like a real list
   const patterns = [
-    { icon: true, width: 'w-3/4' },
-    { icon: false, width: 'w-full' },
-    { icon: true, width: 'w-2/3' },
-    { icon: false, width: 'w-4/5' },
-    { icon: true, width: 'w-1/2' },
-    { icon: false, width: 'w-3/4' },
+    { section: true, width: 'w-3/4' },
+    { section: false, width: 'w-full' },
+    { section: true, width: 'w-2/3' },
+    { section: false, width: 'w-4/5' },
+    { section: true, width: 'w-1/2' },
+    { section: false, width: 'w-3/4' },
   ];
 
   return (
@@ -40,17 +40,14 @@ export function MemorySkeletonGroup({ count = 6 }: { count?: number }) {
         return (
           <div
             key={i}
-            className="animate-pulse flex items-center gap-2 px-3 py-1.5 border-b border-border/40"
+            className={`flex h-7 items-center gap-2 ${pattern.section ? 'px-3' : 'pl-8 pr-3'}`}
+            aria-hidden="true"
           >
-            {/* Section icon for some items */}
-            {pattern.icon ? (
-              <div className="w-2.5 h-2.5 bg-primary/25 rounded-sm shrink-0" />
-            ) : (
-              <div className="w-2.5 h-2.5 bg-muted/20 rounded-full shrink-0" />
-            )}
+            {/* Chevron slot for section rows */}
+            {pattern.section && <div className="size-2.5 shrink-0 rounded-[2px] bg-raised" />}
 
             {/* Text content with varying widths */}
-            <div className={`h-3 ${pattern.width} bg-muted/25 rounded`} />
+            <div className={`h-2.5 ${pattern.width} rounded-[2px] bg-raised`} />
           </div>
         );
       })}

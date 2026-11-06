@@ -1,11 +1,9 @@
 import { memo, useMemo } from 'react';
-import { Inbox } from 'lucide-react';
 import { useDroppable, useDndContext } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { KanbanTask, TaskStatus } from './types';
-import { COLUMN_LABELS } from './types';
 import { KanbanCard } from './KanbanCard';
-import { TASK_STATUS_TONE } from './tone';
+import { columnTitle } from './tone';
 
 interface KanbanColumnProps {
   status: TaskStatus;
@@ -13,16 +11,17 @@ interface KanbanColumnProps {
   onCardClick: (task: KanbanTask) => void;
   /** Display label for the column. Falls back to COLUMN_LABELS or a title-cased version of the key. */
   label?: string;
+  /** Family hue for a task's assignee, shown in the glass of its off pane. */
+  hueFor?: (task: KanbanTask) => string | undefined;
 }
 
-/** Derive a human-readable label from a status key as last resort (e.g. "in-progress" → "In Progress"). */
-function labelFromKey(key: string): string {
-  return key.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
-
-export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardClick, label }: KanbanColumnProps) {
-  const accent = TASK_STATUS_TONE[status] ?? TASK_STATUS_TONE['todo'];
-  const displayLabel = label ?? COLUMN_LABELS[status] ?? labelFromKey(status);
+/**
+ * A lane on the room plate: a row-unit header (title and count), a hairline on its left
+ * edge, and the cards as rows beneath. A lane under a dragged card lifts to Raised.
+ */
+export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardClick, label, hueFor }: KanbanColumnProps) {
+  const displayLabel = columnTitle(status, label);
+  const quiet = status === 'done' || status === 'cancelled';
 
   // Make the column itself a drop target (for dropping into empty columns)
   const { setNodeRef, isOver: isDirectlyOver } = useDroppable({ id: status });
@@ -38,35 +37,31 @@ export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardCl
 
   return (
     <div
-      className={`shell-panel flex h-full min-w-[280px] w-[320px] max-w-[360px] shrink-0 flex-col overflow-hidden rounded-[24px] transition-[border-color,background-color,box-shadow] duration-150 ${
-        isOverColumn ? 'border-primary/45 bg-primary/[0.06] shadow-[0_18px_38px_rgba(0,0,0,0.22)]' : ''
+      className={`nerve-board-column flex h-full min-w-[16rem] max-w-[26rem] flex-1 basis-[18rem] flex-col transition-colors duration-[120ms] ${
+        isOverColumn ? 'is-over' : ''
       }`}
+      data-status={status}
     >
-      <div className="sticky top-0 z-10 flex h-11 items-center justify-between border-b border-border/55 bg-card/78 px-3 backdrop-blur-lg">
-        <div className="flex items-center gap-2">
-          <span className={`text-[0.733rem] font-semibold uppercase tracking-[0.18em] ${accent.textClass}`}>
+      <div className="flex min-h-[var(--row-unit)] shrink-0 items-center gap-2 border-b border-border px-3">
+        <span className={`min-w-0 flex-1 truncate text-[0.867rem] font-semibold ${quiet ? 'text-muted-foreground' : 'text-foreground'}`}>
           {displayLabel}
-          </span>
-        </div>
-        <span className={`inline-flex min-w-[28px] items-center justify-center rounded-full border px-2 py-0.5 text-[0.667rem] font-semibold tabular-nums ${accent.badgeClass}`}>
-          {tasks.length}
         </span>
+        <span className="shrink-0 font-mono text-[0.8rem] text-muted-foreground tabular">{tasks.length}</span>
       </div>
 
-      {/* Scrollable card list — droppable + sortable context */}
+      {/* Scrollable card list: droppable and sortable context */}
       <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
         <div
           ref={setNodeRef}
-          className="flex min-h-[120px] flex-1 flex-col gap-2 overflow-y-auto p-2.5"
+          className="flex min-h-[120px] flex-1 flex-col gap-1.5 overflow-y-auto p-2"
         >
           {tasks.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center py-8 text-muted-foreground/60 select-none">
-              <Inbox size={18} className="mb-2" />
-              <span className="cockpit-badge">No tasks</span>
+            <div className="flex flex-1 select-none items-center justify-center py-8 text-[0.8rem] text-muted-foreground">
+              No tasks
             </div>
           ) : (
             tasks.map(task => (
-              <KanbanCard key={task.id} task={task} onClick={onCardClick} />
+              <KanbanCard key={task.id} task={task} onClick={onCardClick} hue={hueFor?.(task)} />
             ))
           )}
         </div>

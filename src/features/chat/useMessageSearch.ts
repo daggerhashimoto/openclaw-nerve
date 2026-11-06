@@ -1,5 +1,5 @@
 /**
- * useMessageSearch — Filter and navigate through chat messages
+ * useMessageSearch: Filter and navigate through chat messages
  * 
  * Usage:
  *   const search = useMessageSearch(messages);
@@ -64,7 +64,7 @@ export function useMessageSearch(messages: ChatMsg[]): UseMessageSearchReturn {
 
   const matchCount = matches.length;
 
-  // Derive a safe index without useEffect — avoids setState-in-effect for bounds checking.
+  // Derive a safe index without useEffect: avoids setState-in-effect for bounds checking.
   // The raw state may temporarily exceed matchCount after matches shrink,
   // but safeMatchIndex always stays within bounds for display and navigation.
   const safeMatchIndex = matchCount > 0 ? Math.min(currentMatchIndex, matchCount - 1) : 0;

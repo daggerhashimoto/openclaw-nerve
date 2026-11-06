@@ -1,9 +1,10 @@
+import { nameHueStyle } from '@/lib/agentColors';
 import { useState, useEffect } from 'react';
 import type { ProcessingStage, ActivityLogEntry } from '@/contexts/ChatContext';
-import { HeartbeatPulse } from './HeartbeatPulse';
+import { Pane } from '@/components/ui/Pane';
 import { ThinkingDots } from './ThinkingDots';
 import { ActivityLog } from './ActivityLog';
-import { formatElapsed } from '../utils';
+import { formatClock } from '../utils';
 
 interface ProcessingIndicatorProps {
   stage?: ProcessingStage;
@@ -13,17 +14,21 @@ interface ProcessingIndicatorProps {
   activityLog: ActivityLogEntry[];
   isRecovering?: boolean;
   recoveryReason?: string | null;
+  /** Agent display name for the header line. */
+  agentName?: string;
+  /** Identity hue of the agent family; colours the name. */
+  agentHue?: string;
 }
 
 /**
- * Processing status indicator shown during generation.
+ * Processing status shown in the transcript while the agent works and before
+ * any prose streams in. It reads like the head of the agent's next message:
  *
- * Layout:
- * - Row 1: [HeartbeatPulse] [◆] [STAGE LABEL] [──] [ELAPSED] [ThinkingDots]
- * - Row 2: currentToolDescription or "Reasoning..." (indented, smaller, muted)
- * - Separator: thin dotted line (only if activityLog has entries)
- * - Activity log: scrolling feed of recent tool actions
- * - Stale warning: "Still working…" when no event for >30s
+ * - Header line: live pane, agent name, run state ("Thinking", "Running",
+ *   "Writing") and the elapsed clock
+ * - The current tool description when no running tool row already shows it
+ * - Recent tool calls as a stack of tool rows
+ * - Recovery and stale notes as plain muted text
  */
 export function ProcessingIndicator({
   stage,
@@ -33,6 +38,8 @@ export function ProcessingIndicator({
   activityLog,
   isRecovering = false,
   recoveryReason = null,
+  agentName = 'Agent',
+  agentHue,
 }: ProcessingIndicatorProps) {
   // Local timer for stale detection (1s resolution)
   // Lazy initializer avoids impure Date.now() call during render
@@ -47,85 +54,36 @@ export function ProcessingIndicator({
     : null;
   const isStale = secondsSinceEvent !== null && secondsSinceEvent > 30;
 
-  // Description line: tool description during tool_use, "Reasoning..." during thinking
-  const descriptionText =
-    currentToolDescription ??
-    (stage === 'thinking' ? 'Reasoning...' : null);
+  // The running tool row already names the tool; only repeat it when no row does.
+  const hasRunningRow = activityLog.some((entry) => entry.phase === 'running');
+  const descriptionText = !hasRunningRow ? currentToolDescription : null;
 
   return (
-    <div className="flex flex-col gap-2 px-4 py-3">
-      {/* Row 1: heartbeat + stage label + elapsed + dots */}
-      <div className="flex items-center gap-3">
-        <span className="flex items-center gap-2 text-[0.8rem] font-semibold text-foreground">
-          <HeartbeatPulse lastEventTimestamp={lastEventTimestamp} stage={stage} />
-          <span className={`text-[0.667rem] ${stage === 'tool_use' ? 'text-green' : 'text-primary'}`}>◆</span>
-          {stage === 'thinking' && (
-            <span className="cockpit-badge animate-pulse" data-tone="primary">Thinking</span>
-          )}
-          {stage === 'tool_use' && (
-            <span className="cockpit-badge" data-tone="success">Using tools</span>
-          )}
-          {(!stage || stage === 'streaming') && (
-            <span className="cockpit-badge" data-tone="primary">Processing</span>
-          )}
-          <span className="mx-1 text-muted-foreground">──</span>
-          <span className="font-mono tabular-nums text-muted-foreground">{formatElapsed(elapsedMs)}</span>
-        </span>
+    <div className="relative flex flex-col gap-1.5 pb-1 pl-6 pt-2" aria-label={`${agentName} is working`} role="group">
+      <div className="flex min-h-[var(--row-unit)] items-center gap-2 text-[0.867rem]">
+        <Pane state="live" size="sm" className="absolute left-0 top-[1.1rem]" />
+        <span className={`min-w-0 truncate font-display font-semibold text-foreground ${agentHue ? 'name-hued' : ''}`} style={nameHueStyle(agentHue)}>{agentName}</span>
         <ThinkingDots stage={stage} />
+        <span className="shrink-0 font-mono text-[0.8rem] tabular text-live-text">{formatClock(elapsedMs)}</span>
       </div>
 
-      {/* Row 2: description line (indented to align past diamond) */}
       {descriptionText && (
-        <div
-          className="break-all text-[0.733rem] text-muted-foreground"
-          style={{ paddingLeft: '2rem' }}
-        >
+        <div className="break-all font-mono text-[0.8rem] text-muted-foreground">
           {descriptionText}
         </div>
       )}
 
-      {/* Separator: thin dotted line, only if activity log has entries */}
-      {activityLog.length > 0 && (
-        <div
-          className="border-border"
-          style={{
-            borderTop: '1px dotted var(--color-border)',
-            marginTop: '2px',
-            marginBottom: '2px',
-            marginLeft: '2rem',
-          }}
-        />
-      )}
+      {activityLog.length > 0 && <ActivityLog entries={activityLog} />}
 
-      {/* Activity log */}
-      {activityLog.length > 0 && (
-        <div style={{ paddingLeft: '2rem' }}>
-          <ActivityLog entries={activityLog} />
-        </div>
-      )}
-
-      {/* Recovery status */}
       {isRecovering && (
-        <div
-          className="text-primary text-[0.733rem]"
-          style={{
-            paddingLeft: '2rem',
-          }}
-        >
-          Resyncing transcript…{recoveryReason ? ` ${recoveryReason}` : ''}
+        <div className="text-[0.8rem] text-muted-foreground">
+          Resyncing transcript{recoveryReason ? `: ${recoveryReason}` : ''}
         </div>
       )}
 
-      {/* Stale warning */}
       {isStale && (
-        <div
-          className="text-orange text-[0.733rem]"
-          style={{
-            paddingLeft: '2rem',
-            animation: 'stale-pulse 2s ease-in-out infinite',
-          }}
-        >
-          Still working… last update {secondsSinceEvent}s ago
+        <div className="text-[0.8rem] text-muted-foreground">
+          Still working, last update <span className="font-mono tabular">{secondsSinceEvent}s</span> ago
         </div>
       )}
     </div>

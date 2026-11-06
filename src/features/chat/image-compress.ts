@@ -1,5 +1,5 @@
 /**
- * image-compress.ts — Client-side adaptive image compression for chat attachments.
+ * image-compress.ts: Client-side adaptive image compression for chat attachments.
  *
  * Iteratively rescales and recompresses images so inline uploads stay within the
  * configured model-context-safe byte budget before falling back to file references.

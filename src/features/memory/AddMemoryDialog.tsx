@@ -1,5 +1,5 @@
 /**
- * AddMemoryDialog — Modal for adding a new memory.
+ * AddMemoryDialog: modal for adding a new memory.
  *
  * Allows entering memory text and selecting a section in MEMORY.md.
  * The section selector is a combo box: pick an existing section or type a new one.
@@ -77,15 +77,11 @@ export function AddMemoryDialog({ open, onOpenChange, onAdd, sections = [], isLo
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-lg overflow-visible">
         <DialogHeader>
-          <div className="cockpit-kicker">
-            <span className="text-primary">◆</span>
-            Memory Capture
-          </div>
-          <DialogTitle className="text-[1.35rem] font-semibold tracking-[-0.03em] text-foreground">
+          <DialogTitle className="text-[1.067rem] font-semibold text-foreground">
             Add memory
           </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            Store a durable note in `MEMORY.md`, either inside an existing section or under a new heading.
+          <DialogDescription className="text-[0.867rem] text-muted-foreground">
+            Store a durable note in <code className="font-mono text-[0.8rem]">MEMORY.md</code>, either inside an existing section or under a new heading.
           </DialogDescription>
         </DialogHeader>
 
@@ -120,16 +116,16 @@ export function AddMemoryDialog({ open, onOpenChange, onAdd, sections = [], isLo
                     setSectionDropdownOpen(!sectionDropdownOpen);
                     inputRef.current?.focus();
                   }}
-                  className="cockpit-toolbar-button absolute right-2 top-1/2 min-h-8 -translate-y-1/2 px-2.5"
+                  className="absolute inset-y-0 right-0 grid w-9 place-items-center rounded-r-[3px] text-muted-foreground transition-colors duration-[120ms] hover:bg-raised hover:text-foreground"
                   tabIndex={-1}
                 >
-                  <ChevronDown size={14} className={`transition-transform ${sectionDropdownOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown size={14} className={sectionDropdownOpen ? 'rotate-180' : ''} />
                 </button>
               </div>
 
               {/* Dropdown list */}
               {sectionDropdownOpen && filteredSections.length > 0 && (
-                <div className="absolute z-50 mt-2 max-h-48 w-full overflow-y-auto rounded-2xl border border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+                <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-[3px] border border-border bg-popover py-1 shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
                   {filteredSections.map((s) => (
                     <button
                       key={s}
@@ -138,38 +134,44 @@ export function AddMemoryDialog({ open, onOpenChange, onAdd, sections = [], isLo
                         setSection(s);
                         setSectionDropdownOpen(false);
                       }}
-                      className={`w-full rounded-xl px-3 py-2 text-left text-sm transition-colors ${
-                        section === s ? 'bg-primary/12 text-primary' : 'text-foreground hover:bg-primary/8'
+                      className={`flex min-h-[var(--row-unit)] w-full items-center px-3 text-left text-[0.867rem] text-foreground transition-colors duration-[120ms] hover:bg-raised ${
+                        section === s ? 'bg-raised font-medium' : ''
                       }`}
                     >
                       {s}
                     </button>
                   ))}
                   {section.trim() && !sections.some((s) => s.toLowerCase() === section.trim().toLowerCase()) && (
-                    <div className="mt-1 rounded-xl border border-border/70 bg-background/60 px-3 py-2 text-[0.733rem] text-muted-foreground">
-                      New section: <span className="font-medium text-primary">{section.trim()}</span>
+                    <div className="mt-1 flex min-h-[var(--row-unit)] items-center border-t border-border px-3 text-[0.8rem] text-muted-foreground">
+                      New section:&nbsp;<span className="font-medium text-foreground">{section.trim()}</span>
                     </div>
                   )}
                 </div>
               )}
             </div>
-            <p className="cockpit-field-hint">Leave this as `General` or type a new section name to branch memory more cleanly.</p>
+            <p className="cockpit-field-hint">Leave this as General or type a new section name to branch memory more cleanly.</p>
           </div>
 
           {/* Text input */}
           <div className="space-y-2">
             <label className="cockpit-field-label">
-              Memory Text
+              Memory text
             </label>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Enter the memory to store..."
-              className="cockpit-textarea min-h-[132px]"
-              rows={3}
-              autoFocus
-              disabled={submitting}
-            />
+            {/* The memory is the operator's words: an operator window that warms while you type */}
+            <div className="nerve-window-frame">
+              <div className="nerve-window rounded-[3px]">
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Enter the memory to store"
+                  aria-label="Memory text"
+                  className="block min-h-[132px] w-full resize-y border-0 bg-transparent px-3 py-2 text-[0.867rem] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
+                  rows={3}
+                  autoFocus
+                  disabled={submitting}
+                />
+              </div>
+            </div>
             <p className="cockpit-field-hint">Write the durable fact or preference you want the agent to recall later.</p>
           </div>
 
@@ -179,16 +181,15 @@ export function AddMemoryDialog({ open, onOpenChange, onAdd, sections = [], isLo
               variant="outline"
               onClick={handleClose}
               disabled={submitting}
-              className="text-xs"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={!text.trim() || submitting || isLoading}
-              className="min-w-[124px] text-xs"
+              className="min-w-[124px]"
             >
-              {submitting ? 'Storing...' : 'Store Memory'}
+              {submitting ? 'Storing…' : 'Store memory'}
             </Button>
           </DialogFooter>
         </form>

@@ -1,4 +1,4 @@
-/** Tests for loadHistory — filtering, splitting, grouping, and tagging. */
+/** Tests for loadHistory: filtering, splitting, grouping, and tagging. */
 import { describe, it, expect, vi } from 'vitest';
 import {
   filterMessage,
@@ -414,6 +414,62 @@ describe('processChatMessages', () => {
     ], { sessionKey: 'agent:main:main' });
 
     expect(result).toHaveLength(1);
+    expect(result[0].extractedImages).toBeUndefined();
+  });
+
+  // Shape the gateway puts in a webchat final when the agent delivers a generated image.
+  const gatewayImageBlock = {
+    type: 'image' as const,
+    artifactId: 'artifact_managed_image_784f0288',
+    url: '/api/chat/media/outgoing/agent%3Amain%3Amain/784f0288-9a9a-4a96-8c9a-c3b846b7a796/full',
+    openUrl: '/api/chat/media/outgoing/agent%3Amain%3Amain/784f0288-9a9a-4a96-8c9a-c3b846b7a796/full',
+    alt: 'codex-image-generation-2.png',
+    mimeType: 'image/png',
+    width: 1254,
+    height: 1254,
+  };
+  const proxiedGatewayImageUrl =
+    '/api/chat-media?path=%2Fapi%2Fchat%2Fmedia%2Foutgoing%2Fagent%253Amain%253Amain%2F784f0288-9a9a-4a96-8c9a-c3b846b7a796%2Ffull';
+
+  it('shows a gateway-hosted image attachment through the chat media proxy, without a session key', () => {
+    // Live finals are processed without a session key or persisted timestamp.
+    const result = processChatMessages([
+      { role: 'assistant', content: [{ type: 'text', text: 'Here it is.' }, gatewayImageBlock] } as ChatMessage,
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].rawText).toBe('Here it is.');
+    expect(result[0].extractedImages).toEqual([{ url: proxiedGatewayImageUrl, alt: 'codex-image-generation-2.png' }]);
+    expect(result[0].images).toBeUndefined();
+  });
+
+  it('attaches a gateway-hosted image to the last assistant text when the message also has tool calls', () => {
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'toolCall', name: 'exec', arguments: { input: 'tools.image_gen__imagegen(...)' } },
+          { type: 'text', text: 'Here it is.' },
+          gatewayImageBlock,
+        ],
+      } as ChatMessage,
+    ]);
+
+    const withImage = result.filter((msg) => msg.extractedImages?.length);
+    expect(withImage).toHaveLength(1);
+    expect(withImage[0].role).toBe('assistant');
+    expect(withImage[0].rawText).toBe('Here it is.');
+    expect(withImage[0].extractedImages).toEqual([{ url: proxiedGatewayImageUrl, alt: 'codex-image-generation-2.png' }]);
+  });
+
+  it('does not proxy image blocks whose url is not a gateway chat media path', () => {
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'x' }, { type: 'image', url: 'https://evil.example/a.png' }],
+      } as ChatMessage,
+    ]);
+
     expect(result[0].extractedImages).toBeUndefined();
   });
 

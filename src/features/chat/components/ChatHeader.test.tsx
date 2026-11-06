@@ -37,7 +37,25 @@ describe('ChatHeader', () => {
     vi.clearAllMocks();
   });
 
-  it('renders COMMS header with model selectors', () => {
+  it('renders the session header with the agent name and model selectors', () => {
+    const mockUseModelEffort = vi.mocked(useModelEffort);
+    mockUseModelEffort.mockReturnValue(defaultMockHook);
+
+    render(
+      <ChatHeader
+        onReset={mockOnReset}
+        onAbort={mockOnAbort}
+        isGenerating={false}
+        agentName="Jen (main)"
+      />
+    );
+
+    expect(screen.getByText('Jen (main)')).toBeInTheDocument();
+    expect(screen.getByText('GPT-4')).toBeInTheDocument();
+    expect(screen.getByText('Balanced')).toBeInTheDocument();
+  });
+
+  it('reads idle with a dark pane when the agent is not generating', () => {
     const mockUseModelEffort = vi.mocked(useModelEffort);
     mockUseModelEffort.mockReturnValue(defaultMockHook);
 
@@ -49,9 +67,50 @@ describe('ChatHeader', () => {
       />
     );
 
-    expect(screen.getByText('Comms')).toBeInTheDocument();
-    expect(screen.getByText('GPT-4')).toBeInTheDocument();
-    expect(screen.getByText('Balanced')).toBeInTheDocument();
+    const runState = screen.getByTestId('chat-run-state');
+    expect(runState).toHaveTextContent('Idle');
+    expect(runState.querySelector('.pane')).toHaveAttribute('data-state', 'off');
+  });
+
+  it('reads the running tool and elapsed clock with a live pane while generating', () => {
+    const mockUseModelEffort = vi.mocked(useModelEffort);
+    mockUseModelEffort.mockReturnValue(defaultMockHook);
+
+    render(
+      <ChatHeader
+        onReset={mockOnReset}
+        onAbort={mockOnAbort}
+        isGenerating={true}
+        processingStage="tool_use"
+        currentToolDescription="exec: openclaw cron run nightly-backup"
+        elapsedMs={14_000}
+      />
+    );
+
+    const runState = screen.getByTestId('chat-run-state');
+    expect(runState).toHaveTextContent('Running:');
+    expect(runState).toHaveTextContent('exec: openclaw cron run nightly-backup');
+    expect(runState).toHaveTextContent('00:14');
+    expect(runState.querySelector('.pane')).toHaveAttribute('data-state', 'live');
+  });
+
+  it('reads thinking while the agent reasons', () => {
+    const mockUseModelEffort = vi.mocked(useModelEffort);
+    mockUseModelEffort.mockReturnValue(defaultMockHook);
+
+    render(
+      <ChatHeader
+        onReset={mockOnReset}
+        onAbort={mockOnAbort}
+        isGenerating={true}
+        processingStage="thinking"
+        elapsedMs={3_000}
+      />
+    );
+
+    const runState = screen.getByTestId('chat-run-state');
+    expect(runState).toHaveTextContent('Thinking');
+    expect(runState).not.toHaveTextContent('Running:');
   });
 
   it('shows the file browser expand button when provided', () => {
@@ -209,6 +268,30 @@ describe('ChatHeader', () => {
     );
 
     expect(screen.getByRole('button', { name: /stop generating/i })).toBeInTheDocument();
+  });
+
+  it('keeps Stop with the run state so a narrow header can move them to their own row together', () => {
+    vi.mocked(useModelEffort).mockReturnValue(defaultMockHook);
+
+    render(
+      <ChatHeader
+        onReset={mockOnReset}
+        onAbort={mockOnAbort}
+        isGenerating={true}
+        processingStage="tool_use"
+        currentToolDescription="exec: npm test"
+      />
+    );
+
+    const runState = screen.getByTestId('chat-run-state');
+    const stop = screen.getByRole('button', { name: /stop generating/i });
+    expect(runState).toContainElement(stop);
+    expect(stop).toHaveTextContent('Stop');
+    // Reset stays with the session controls, outside the run.
+    expect(runState).not.toContainElement(screen.getByRole('button', { name: /reset session/i }));
+
+    fireEvent.click(stop);
+    expect(mockOnAbort).toHaveBeenCalledTimes(1);
   });
 
   it('shows reset button when not generating', () => {

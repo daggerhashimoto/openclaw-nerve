@@ -1,5 +1,5 @@
 /**
- * MemoryTab — Wraps existing MemoryList component.
+ * MemoryTab: wraps the existing MemoryList component.
  * Zero changes to the underlying memory feature.
  */
 
@@ -20,7 +20,7 @@ interface MemoryTabProps {
 /** Workspace tab displaying agent memories with add/refresh actions. */
 export function MemoryTab({ agentId, memories, onRefresh, isLoading, compact = false }: MemoryTabProps) {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center text-muted-foreground text-xs p-4">Loading…</div>}>
+    <Suspense fallback={<div className="flex items-center justify-center text-muted-foreground text-[0.8rem] p-4">Loading…</div>}>
       <MemoryList agentId={agentId} memories={memories} onRefresh={onRefresh} isLoading={isLoading} hideHeader compact={compact} />
     </Suspense>
   );

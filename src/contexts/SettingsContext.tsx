@@ -1,8 +1,8 @@
 /* eslint-disable react-refresh/only-export-components -- hook intentionally co-located with provider */
 import { createContext, useContext, useCallback, useRef, useState, useEffect, useMemo, type ReactNode } from 'react';
 import { useTTS, migrateTTSProvider, type TTSProvider } from '@/features/tts/useTTS';
-import { type ThemeName, applyTheme, themeNames } from '@/lib/themes';
-import { type FontName, applyFont, fontNames } from '@/lib/fonts';
+import { type ThemeName, applyTheme, resolveThemeName } from '@/lib/themes';
+import { type FontName, applyFont, fontNames, DEFAULT_FONT } from '@/lib/fonts';
 import { PERFORMANCE_MODE_STORAGE_KEY, isPerformanceModePreferenceEnabled } from '@/lib/performanceMode';
 
 export type STTProvider = 'local' | 'openai';
@@ -56,7 +56,7 @@ interface SettingsContextValue {
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
-const FONT_REFRESH_STORAGE_KEY = 'nerve:font-refresh-20260312';
+const FONT_REFRESH_STORAGE_KEY = 'nerve:font-refresh-20261031';
 const KANBAN_VISIBILITY_STORAGE_KEY = 'nerve:workspace:kanban-visible';
 const COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showChatboxCommandPaletteButton';
 const LEGACY_TOPBAR_COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showTopBarCommandPaletteButton';
@@ -91,25 +91,32 @@ function resolveInitialFont(): FontName {
   const hasRefreshedFont = localStorage.getItem(FONT_REFRESH_STORAGE_KEY) === 'true';
 
   if (!hasRefreshedFont) {
-    const shouldAdoptInstrumentSans =
+    // One-time move to the redesign's face. Previous defaults (and the legacy
+    // values they replaced) adopt it; explicit picks of other faces are kept.
+    const shouldAdoptDefault =
       saved === null ||
       saved === 'inter' ||
       saved === 'system' ||
-      saved === 'jetbrains-mono';
+      saved === 'instrument-sans';
 
     localStorage.setItem(FONT_REFRESH_STORAGE_KEY, 'true');
 
-    if (shouldAdoptInstrumentSans) {
-      localStorage.setItem('oc-font', 'instrument-sans');
-      return 'instrument-sans';
-    }
-
-    if (saved && fontNames.includes(saved as FontName)) {
-      return saved as FontName;
+    if (shouldAdoptDefault) {
+      localStorage.setItem('oc-font', DEFAULT_FONT);
+      return DEFAULT_FONT;
     }
   }
 
-  return saved && fontNames.includes(saved as FontName) ? saved as FontName : 'instrument-sans';
+  return saved && fontNames.includes(saved as FontName) ? saved as FontName : DEFAULT_FONT;
+}
+
+function resolveInitialTheme(): ThemeName {
+  const saved = localStorage.getItem('oc-theme');
+  const resolved = resolveThemeName(saved);
+  if (saved !== resolved) {
+    localStorage.setItem('oc-theme', resolved);
+  }
+  return resolved;
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
@@ -148,10 +155,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     return localStorage.getItem('nerve:showHiddenWorkspaceEntries') === 'true';
   });
   const [commandPaletteButtonVisible, setCommandPaletteButtonVisible] = useState(resolveInitialCommandPaletteButtonVisible);
-  const [theme, setThemeState] = useState<ThemeName>(() => {
-    const saved = localStorage.getItem('oc-theme') as ThemeName | null;
-    return saved && themeNames.includes(saved) ? saved : 'ayu-dark';
-  });
+  const [theme, setThemeState] = useState<ThemeName>(resolveInitialTheme);
   const [font, setFontState] = useState<FontName>(resolveInitialFont);
   const [fontSize, setFontSizeState] = useState<number>(() => {
     const saved = localStorage.getItem('nerve:font-size');

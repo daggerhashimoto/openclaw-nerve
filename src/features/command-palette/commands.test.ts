@@ -145,3 +145,25 @@ describe('filterCommands with merged static + session commands', () => {
     expect(results.some((c) => c.id === 'session-agent:planner:main')).toBe(true);
   });
 });
+
+describe('createCommands appearance', () => {
+  it('offers Night and Daylight and no other themes', () => {
+    const labels = createCommands(noopActions())
+      .filter((c) => c.id.startsWith('theme-'))
+      .map((c) => c.label);
+
+    expect(labels).toEqual(['Theme: Night', 'Theme: Daylight']);
+  });
+
+  it('offers no style commands', () => {
+    const ids = createCommands(noopActions()).map((c) => c.id);
+
+    expect(ids.some((id) => id.startsWith('style-'))).toBe(false);
+  });
+
+  it('names the default font after Nerve', () => {
+    const labels = createCommands(noopActions()).map((c) => c.label);
+
+    expect(labels).toContain('Font: Nerve default');
+  });
+});

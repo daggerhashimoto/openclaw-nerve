@@ -1,9 +1,10 @@
 /**
- * CronDialog — Modal for creating or editing cron jobs.
+ * CronDialog: modal for creating or editing cron jobs.
  */
 
 import { useState, useCallback, useRef, useEffect, type SelectHTMLAttributes } from 'react';
 import { ChevronDown, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { CronJob } from '../hooks/useCrons';
 import { useSessionContext } from '@/contexts/SessionContext';
 
@@ -77,29 +78,24 @@ function isoToLocal(iso: string): string {
 }
 
 function SectionShell({
-  eyebrow,
   title,
   description,
   children,
   className = '',
 }: {
-  eyebrow: string;
   title: string;
   description: string;
   children: React.ReactNode;
   className?: string;
 }) {
+  // A flat section: heading, one line of copy, then the fields. Sections stack with hairlines, never boxes.
   return (
-    <section className={`cockpit-surface p-3.5 ${className}`}>
+    <section className={`cron-section border-t border-border pt-3 first:border-t-0 first:pt-0 ${className}`}>
       <div className="space-y-0.5">
-        <div className="cockpit-kicker text-[0.6rem]">
-          <span className="text-primary">◆</span>
-          {eyebrow}
-        </div>
-        <div className="text-base font-semibold tracking-[-0.03em] text-foreground">{title}</div>
-        <p className="text-[0.833rem] leading-5 text-muted-foreground">{description}</p>
+        <h3 className="settings-heading">{title}</h3>
+        <p className="text-[0.8rem] leading-relaxed text-muted-foreground">{description}</p>
       </div>
-      <div className="mt-3 space-y-2.5">{children}</div>
+      <div className="mt-3 space-y-3">{children}</div>
     </section>
   );
 }
@@ -111,14 +107,14 @@ function CronSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
     <div className="relative">
       <select
         {...rest}
-        className={`cockpit-select h-11 appearance-none pr-12 text-sm ${className}`.trim()}
+        className={`cockpit-select appearance-none pr-9 max-sm:h-11 ${className}`.trim()}
       >
         {children}
       </select>
       <ChevronDown
-        size={15}
+        size={14}
         aria-hidden="true"
-        className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+        className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
       />
     </div>
   );
@@ -242,7 +238,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
       payload = { kind: 'systemEvent', text: message.trim() };
     }
 
-    // Build delivery — use "none" when we've baked send instructions into the prompt
+    // Build delivery: use "none" when we've baked send instructions into the prompt
     const hasInlineDelivery = payloadKind === 'agentTurn' && deliveryMode === 'announce' && deliveryChannel && deliveryTo.trim();
     const delivery: Record<string, unknown> = { mode: hasInlineDelivery ? 'none' : deliveryMode };
     if (deliveryMode === 'announce' && !hasInlineDelivery) {
@@ -280,26 +276,20 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
       onCancel={handleClose}
       onClick={handleDialogClick}
       aria-labelledby="cron-dialog-title"
-      className="fixed inset-0 z-50 m-auto max-h-[calc(100dvh-1.067rem)] w-[min(1040px,calc(100vw-1.067rem))] overflow-y-auto rounded-[24px] border border-border/80 bg-card/96 p-0 shadow-[0_36px_90px_rgba(0,0,0,0.38)] backdrop:bg-black/52 backdrop:backdrop-blur-sm sm:max-h-[calc(100dvh-2rem)] sm:rounded-[30px]"
+      className="fixed inset-0 z-50 m-auto max-h-[calc(100dvh-1.067rem)] w-[min(1040px,calc(100vw-1.067rem))] overflow-y-auto rounded-md border border-border bg-popover p-0 text-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)] backdrop:bg-background/80 sm:max-h-[calc(100dvh-2rem)]"
       style={{ overscrollBehavior: 'contain' }}
     >
       <form onSubmit={handleSubmit} onClick={e => e.stopPropagation()} className="flex flex-col">
         {/* Header */}
-        <div className="border-b border-border/70 bg-secondary/42 px-4 py-3 sm:px-5 sm:py-3.5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1">
-              <div className="cockpit-kicker">
-                <span className="text-primary">◆</span>
-                Scheduler
-              </div>
-              <h2 id="cron-dialog-title" className="cockpit-title text-[1.15rem]">
-                {isEdit ? 'Edit cron job' : 'Create cron job'}
-              </h2>
-            </div>
+        <div className="border-b border-border py-1.5 pl-4 pr-1.5 sm:pl-5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="cron-dialog-title" className="text-[1.067rem] font-semibold text-foreground">
+              {isEdit ? 'Edit cron job' : 'Create cron job'}
+            </h2>
             <button
               type="button"
               onClick={handleClose}
-              className="shell-icon-button min-h-9 px-3"
+              className="shell-icon-button"
               aria-label="Close"
             >
               <X size={14} />
@@ -310,7 +300,6 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
         <div className="grid gap-3 px-3 py-3 sm:gap-4 sm:px-4 sm:py-4 lg:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">
           <div className="space-y-4">
             <SectionShell
-              eyebrow="Identity"
               title="Name and timing"
               description="Name the job and choose the cadence it should follow."
             >
@@ -394,8 +383,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
                     type="datetime-local"
                     value={atTime}
                     onChange={e => setAtTime(e.target.value)}
-                    style={{ colorScheme: 'dark' }}
-                    className="cockpit-input cockpit-input-mono [&::-webkit-calendar-picker-indicator]:brightness-[2.8] [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100"
+                    className="cockpit-input cockpit-input-mono [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100"
                   />
                   <span className="cockpit-field-hint">Use this for a single future run.</span>
                 </div>
@@ -403,7 +391,6 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
             </SectionShell>
 
             <SectionShell
-              eyebrow="Execution"
               title="How it runs"
               description={`Cron jobs currently run under ${agentName}'s main agent. Choose whether the work happens in a private cron session or posts into the main thread.`}
             >
@@ -418,7 +405,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
                   <option value="systemEvent">System event (post into root)</option>
                 </CronSelect>
               </div>
-              <div className="cockpit-note" data-tone="primary">
+              <div className="cockpit-note">
                 {payloadKind === 'agentTurn'
                   ? `Agent tasks run in their own private cron session beneath ${agentName}'s main agent and keep the main thread clean.`
                   : `System events post directly into ${agentName}'s main thread and suit reminders or lightweight alerts.`}
@@ -428,7 +415,6 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
 
           <div className="space-y-4">
             <SectionShell
-              eyebrow="Payload"
               title={payloadKind === 'agentTurn' ? 'What the agent should do' : 'What the event should say'}
               description={payloadKind === 'agentTurn'
                 ? 'Write the task the same way you would brief a teammate.'
@@ -438,14 +424,19 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
                 <label htmlFor="cron-message" className="cockpit-field-label">
                   {payloadKind === 'agentTurn' ? 'Prompt' : 'Event text'}
                 </label>
-                <textarea
-                  id="cron-message"
-                  value={message}
-                  onChange={e => setMessage(e.target.value)}
-                  rows={3}
-                  placeholder={payloadKind === 'agentTurn' ? 'Check my inbox, summarize the important items, and flag anything that needs a reply.' : 'Reminder: standup in 10 minutes.'}
-                  className="cockpit-textarea min-h-[118px]"
-                />
+                {/* The brief is the operator's words: an operator window that warms while you type */}
+                <div className="nerve-window-frame">
+                  <div className="nerve-window rounded-[3px]">
+                    <textarea
+                      id="cron-message"
+                      value={message}
+                      onChange={e => setMessage(e.target.value)}
+                      rows={3}
+                      placeholder={payloadKind === 'agentTurn' ? 'Check my inbox, summarize the important items, and flag anything that needs a reply.' : 'Reminder: standup in 10 minutes.'}
+                      className="block min-h-[118px] w-full resize-y border-0 bg-transparent px-3 py-2 text-[0.867rem] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
+                    />
+                  </div>
+                </div>
               </div>
 
               {payloadKind === 'agentTurn' && models.length > 0 && (
@@ -467,7 +458,6 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
 
             {payloadKind === 'agentTurn' && (
               <SectionShell
-                eyebrow="Delivery"
                 title="What happens after it finishes"
                 description="Choose whether the result stays in Nerve or gets sent out."
               >
@@ -492,7 +482,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
                 {deliveryMode === 'announce' && (
                   <div className="space-y-2.5">
                     {availableChannels.length === 0 ? (
-                      <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-[0.733rem] text-orange/85">
+                      <div className="cockpit-note">
                         No messaging channels are configured yet. Set one up in OpenClaw first, or keep the job inside Nerve.
                       </div>
                     ) : (
@@ -523,7 +513,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
                         </div>
                       </div>
                     )}
-                    <div className="cockpit-note" data-tone="primary">
+                    <div className="cockpit-note">
                       Nerve appends the delivery instruction so the agent can send the result directly when it finishes.
                     </div>
                   </div>
@@ -535,19 +525,20 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
               <div className="cockpit-note" data-tone="danger">{error}</div>
             )}
 
-            <div className="flex flex-col items-stretch gap-3 rounded-[24px] border border-border/70 bg-secondary/28 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <p className="text-sm leading-5 text-muted-foreground">
+            <div className="flex flex-col items-stretch gap-3 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <p className="text-[0.8rem] leading-relaxed text-muted-foreground">
                 {isEdit
                   ? 'Save when the timing and delivery look right.'
                   : 'Create the job when the timing and delivery look right.'}
               </p>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="inline-flex min-h-10 items-center justify-center rounded-2xl bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_16px_34px_rgba(0,0,0,0.24)] transition-transform hover:-translate-y-px hover:bg-primary/95 disabled:cursor-not-allowed disabled:opacity-50 sm:shrink-0"
-              >
-                {submitting ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save Changes' : 'Create Cron')}
-              </button>
+              <div className="flex items-center justify-end gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={submitting} className="sm:shrink-0">
+                  {submitting ? (isEdit ? 'Saving' : 'Creating') : (isEdit ? 'Save changes' : 'Create cron')}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 /**
- * FileContentView — Syntax-highlighted display of new file content (Write operations).
+ * FileContentView: syntax-highlighted display of new file content (Write operations).
  */
 
 import { useMemo } from 'react';
@@ -25,9 +25,9 @@ export function FileContentView({ content, filePath }: FileContentViewProps) {
   return (
     <div className="file-content-container">
       <div className="file-content-header">
-        <span className="file-content-badge">NEW</span>
+        <span className="file-content-badge">New</span>
         <span className="file-content-filepath">{filePath}</span>
-        <span className="file-content-stats">{lines.length} lines</span>
+        <span className="file-content-stats tabular">{lines.length} lines</span>
       </div>
       <pre className="file-content-code hljs">
         {htmlLines.map((html, i) => (

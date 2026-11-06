@@ -54,6 +54,7 @@ function findNodeByKey(nodes: ReturnType<typeof buildSessionTree>, key: string):
 /** Sidebar list of agent sessions with tree structure and context menus. */
 export function SessionList({ sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string; descendantCount: number; isRootAgent: boolean } | null>(null);
+  const [deleteBlockedTarget, setDeleteBlockedTarget] = useState<{ key: string; label: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
@@ -137,12 +138,17 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
   const flatNodes = useMemo(() => flattenTree(tree, expandedState), [tree, expandedState]);
 
   const handleSetDeleteTarget = useCallback((key: string, label: string) => {
+    if (isTopLevelAgentSessionKey(key)) {
+      setDeleteBlockedTarget({ key, label });
+      return;
+    }
+
     const targetNode = findNodeByKey(tree, key);
     setDeleteTarget({
       key,
       label,
       descendantCount: targetNode ? countDescendants(targetNode) : 0,
-      isRootAgent: isTopLevelAgentSessionKey(key),
+      isRootAgent: false,
     });
   }, [tree]);
 
@@ -231,6 +237,39 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
         })}
       </div>
 
+      {/* Main agent delete blocked dialog */}
+      <Dialog open={!!deleteBlockedTarget} onOpenChange={(open) => !open && setDeleteBlockedTarget(null)}>
+        <DialogContent className="bg-card border-border max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red font-mono text-sm tracking-wider uppercase flex items-center gap-2">
+              <AlertTriangle size={16} />
+              Cannot Delete Main Agent Session
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-xs leading-6">
+              Main agent sessions are not deletable. Use the <span className="text-foreground font-semibold">Reset</span> button to clear context.
+              <br />
+              To delete an agent, see the docs: <a className="text-info underline underline-offset-2" href="https://docs.openclaw.ai/cli/agents" target="_blank" rel="noreferrer">docs.openclaw.ai/cli/agents</a>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="bg-background border border-border/60 px-3 py-2">
+              <p className="text-[0.733rem] text-muted-foreground uppercase tracking-wider mb-1">Session:</p>
+              <p className="text-[0.8rem] text-foreground font-mono">{deleteBlockedTarget?.label}</p>
+              <p className="text-[0.667rem] text-muted-foreground font-mono mt-1 break-all">{deleteBlockedTarget?.key}</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => setDeleteBlockedTarget(null)}
+              className="font-mono text-xs"
+            >
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete confirmation dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}>
         <DialogContent className="bg-card border-border max-w-md">
@@ -240,9 +279,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
               {deleteTarget?.descendantCount ? 'Delete Session Tree' : 'Delete Session'}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground text-xs">
-              {deleteTarget?.isRootAgent
-                ? 'This will permanently delete this root session and any nested child sessions attached to it.'
-                : deleteTarget?.descendantCount
+              {deleteTarget?.descendantCount
                 ? `This will permanently delete this session and ${deleteTarget.descendantCount} nested child session${deleteTarget.descendantCount === 1 ? '' : 's'}.`
                 : 'This will permanently delete the session and archive its transcript.'}
             </DialogDescription>

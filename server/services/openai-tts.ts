@@ -1,7 +1,7 @@
 /**
  * OpenAI TTS provider.
  *
- * Supports multiple models: gpt-4o-mini-tts (default), tts-1, tts-1-hd.
+ * Supports Realtime TTS and legacy Speech API models.
  * Voice and model settings are read from `tts-config.json` via {@link getTTSConfig}.
  * @module
  */
@@ -9,10 +9,12 @@
 import { config } from '../lib/config.js';
 import { getTTSConfig } from '../lib/tts-config.js';
 import { OPENAI_TTS_URL } from '../lib/constants.js';
+import { OPENAI_REALTIME_TTS_MODEL, synthesizeOpenAIRealtime } from './openai-realtime-tts.js';
 
 export interface OpenAITTSResult {
   ok: true;
   buf: Buffer;
+  contentType?: string;
 }
 
 export interface OpenAITTSError {
@@ -36,6 +38,14 @@ export async function synthesizeOpenAI(
 
   const ttsConfig = getTTSConfig().openai;
   const effectiveModel = model || ttsConfig.model;
+  if (effectiveModel === OPENAI_REALTIME_TTS_MODEL) {
+    return synthesizeOpenAIRealtime(
+      text,
+      voice || ttsConfig.realtimeVoice || 'marin',
+      ttsConfig.instructions,
+      config.openaiApiKey,
+    );
+  }
   const effectiveVoice = voice || ttsConfig.voice;
 
   const resp = await fetch(OPENAI_TTS_URL, {

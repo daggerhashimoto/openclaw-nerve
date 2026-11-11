@@ -15,7 +15,7 @@ vi.mock('@/features/tts/useTTSConfig', () => ({
   useTTSConfig: () => ({
     config: {
       edge: { voice: 'en-US-AriaNeural' },
-      openai: { model: 'tts-1', voice: 'alloy', instructions: '' },
+      openai: { model: 'tts-1', voice: 'alloy', realtimeVoice: 'marin', instructions: '' },
       qwen: { mode: 'voice_design', language: 'English', speaker: 'Serena', voiceDescription: '', styleInstruction: '' },
       xiaomi: { model: 'mimo-v2-tts', voice: 'mimo_default', style: '' },
     },
@@ -210,6 +210,29 @@ describe('AudioSettings', () => {
       fireEvent.change(screen.getByPlaceholderText('Happy, whisper, calm, dramatic...'), { target: { value: 'Happy' } });
 
       expect(updateField).toHaveBeenCalledWith('xiaomi', 'style', 'Happy');
+    });
+  });
+
+  describe('OpenAI output settings', () => {
+    it('keeps legacy models selectable and uses a separate Realtime voice', async () => {
+      render(<AudioSettings {...baseProps} section="output" ttsProvider="openai" ttsModel="gpt-realtime-2.1-mini" />);
+
+      expect(await screen.findByRole('option', { name: /GPT-Realtime-2.1 mini — recommended/ })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: /GPT-4o mini TTS — legacy/ })).toBeInTheDocument();
+      expect(screen.getByLabelText('OpenAI Voice')).toHaveValue('marin');
+      expect(screen.queryByRole('option', { name: /Nova —/ })).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText('OpenAI Voice'), { target: { value: 'cedar' } });
+      expect(updateField).toHaveBeenCalledWith('openai', 'realtimeVoice', 'cedar');
+    });
+
+    it('preserves the legacy voice selection when the legacy model is chosen', async () => {
+      render(<AudioSettings {...baseProps} section="output" ttsProvider="openai" ttsModel="gpt-4o-mini-tts" />);
+
+      expect(await screen.findByLabelText('OpenAI Voice')).toHaveValue('alloy');
+      expect(screen.getByRole('option', { name: /Nova —/ })).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText('OpenAI Voice'), { target: { value: 'nova' } });
+      expect(updateField).toHaveBeenCalledWith('openai', 'voice', 'nova');
     });
   });
 });

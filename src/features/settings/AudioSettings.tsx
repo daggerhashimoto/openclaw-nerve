@@ -415,9 +415,11 @@ function ApiKeyInput({
 /** Available models per provider. */
 const PROVIDER_MODELS: Record<TTSProvider, { value: string; label: string }[]> = {
   openai: [
-    { value: '', label: 'gpt-4o-mini-tts (default)' },
-    { value: 'tts-1', label: 'tts-1' },
-    { value: 'tts-1-hd', label: 'tts-1-hd' },
+    { value: '', label: 'Server default' },
+    { value: 'gpt-realtime-2.1-mini', label: 'GPT-Realtime-2.1 mini — recommended' },
+    { value: 'gpt-4o-mini-tts', label: 'GPT-4o mini TTS — legacy' },
+    { value: 'tts-1', label: 'TTS-1 — legacy' },
+    { value: 'tts-1-hd', label: 'TTS-1 HD — legacy' },
   ],
   replicate: [
     { value: '', label: 'qwen-tts (default)' },
@@ -449,7 +451,6 @@ export function AudioSettings({
   agentName = 'Agent',
   section = 'all',
 }: AudioSettingsProps) {
-  const models = PROVIDER_MODELS[ttsProvider] || [];
   const showInput = section === 'all' || section === 'input';
   const showOutput = section === 'all' || section === 'output';
   const wakeWordSupport = useMemo(() => getWakeWordSupport(), []);
@@ -462,6 +463,14 @@ export function AudioSettings({
       ? 'Shape the speaking voice, model, and playback behavior for replies and announcements.'
       : '';
   const { config, saved, updateField } = useTTSConfig();
+  const models = ttsProvider === 'openai'
+    ? PROVIDER_MODELS.openai.map((option) => option.value ? option : {
+        ...option,
+        label: `Server default (${config?.openai.model || 'gpt-realtime-2.1-mini'})`,
+      })
+    : PROVIDER_MODELS[ttsProvider] || [];
+  const effectiveOpenAIModel = ttsModel || config?.openai.model || 'gpt-realtime-2.1-mini';
+  const isRealtimeOpenAIModel = ttsProvider === 'openai' && effectiveOpenAIModel === 'gpt-realtime-2.1-mini';
   const { state: langState, support, isMultilingual, setLanguage } = useLanguage();
 
   // Fetch API key status once on mount
@@ -541,9 +550,10 @@ export function AudioSettings({
   const showEnglishOnlyWarning = isNonEnglishLocalStt && !isMultilingual;
   const showTinyAccuracyWarning = isNonEnglishLocalStt && isMultilingual && sttModel === 'tiny';
 
-  // All 13 OpenAI TTS voices. tts-1 and tts-1-hd only support a subset (no ballad, cedar, marin, verse).
+  // Realtime and legacy Speech API models have different supported voices.
   const LEGACY_ONLY_VOICES = new Set(['ballad', 'cedar', 'marin', 'verse']);
-  const isLegacyModel = ttsModel === 'tts-1' || ttsModel === 'tts-1-hd';
+  const REALTIME_VOICES = new Set(['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar']);
+  const isLegacyModel = effectiveOpenAIModel === 'tts-1' || effectiveOpenAIModel === 'tts-1-hd';
   const OPENAI_VOICES = [
     { value: 'alloy', label: 'Alloy — Neutral, balanced' },
     { value: 'ash', label: 'Ash — Warm, conversational' },
@@ -558,7 +568,7 @@ export function AudioSettings({
     { value: 'sage', label: 'Sage — Wise, measured' },
     { value: 'shimmer', label: 'Shimmer — Soft, gentle' },
     { value: 'verse', label: 'Verse — Versatile, dynamic' },
-  ].filter(v => !isLegacyModel || !LEGACY_ONLY_VOICES.has(v.value));
+  ].filter(v => isRealtimeOpenAIModel ? REALTIME_VOICES.has(v.value) : !isLegacyModel || !LEGACY_ONLY_VOICES.has(v.value));
 
   // Build Edge voice options from selected language.
   const edgeVoicesForLang = useMemo(
@@ -819,8 +829,8 @@ export function AudioSettings({
                   <p className="mt-1 text-[0.8rem] text-muted-foreground">Pick the OpenAI voice profile used for reply playback.</p>
                 </div>
                 <InlineSelect
-                  value={config.openai.voice}
-                  onChange={(v) => updateField('openai', 'voice', v)}
+                  value={isRealtimeOpenAIModel ? config.openai.realtimeVoice : config.openai.voice}
+                  onChange={(v) => updateField('openai', isRealtimeOpenAIModel ? 'realtimeVoice' : 'voice', v)}
                   options={OPENAI_VOICES}
                   ariaLabel="OpenAI Voice"
                   triggerClassName={`${INLINE_SELECT_TRIGGER_CLASS} min-w-[220px]`}

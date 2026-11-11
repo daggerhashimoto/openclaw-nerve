@@ -23,6 +23,7 @@ import { config } from '../lib/config.js';
 import { getTTSConfig, updateTTSConfig } from '../lib/tts-config.js';
 import { getTtsCache, setTtsCache } from '../services/tts-cache.js';
 import { synthesizeOpenAI } from '../services/openai-tts.js';
+import { OPENAI_REALTIME_TTS_MODEL } from '../services/openai-realtime-tts.js';
 import { synthesizeReplicate } from '../services/replicate-tts.js';
 import { synthesizeEdge } from '../services/edge-tts.js';
 import { synthesizeXiaomi } from '../services/xiaomi-tts.js';
@@ -91,10 +92,18 @@ app.post(
 
       const xiaomiStyle = effectiveProvider === 'xiaomi' ? getTTSConfig().xiaomi.style : '';
 
-      // Cache key includes provider + model + voice and Xiaomi style for proper isolation
+      // Resolve OpenAI defaults before caching so model, voice, or style changes never reuse stale audio.
+      const openaiConfig = effectiveProvider === 'openai' ? getTTSConfig().openai : null;
+      const effectiveOpenAIModel = model || openaiConfig?.model || '';
+      const effectiveOpenAIVoice = voice || (effectiveOpenAIModel === OPENAI_REALTIME_TTS_MODEL
+        ? openaiConfig?.realtimeVoice
+        : openaiConfig?.voice) || '';
+      const cacheModel = openaiConfig ? effectiveOpenAIModel : model || '';
+      const cacheVoice = openaiConfig ? effectiveOpenAIVoice : voice || '';
+      const cacheStyle = openaiConfig?.instructions || xiaomiStyle;
       const hash = crypto
         .createHash('md5')
-        .update(`${effectiveProvider}:${model || ''}:${voice || ''}:${xiaomiStyle}:${text}`)
+        .update(`${effectiveProvider}:${cacheModel}:${cacheVoice}:${cacheStyle}:${text}`)
         .digest('hex');
 
       const cached = getTtsCache(hash);
@@ -141,7 +150,7 @@ app.get('/api/tts/config', rateLimitGeneral, (c) => {
 /** Allowed top-level keys and their allowed child keys (all must be strings) */
 const TTS_CONFIG_SCHEMA: Record<string, string[]> = {
   qwen: ['mode', 'language', 'speaker', 'voiceDescription', 'styleInstruction'],
-  openai: ['model', 'voice', 'instructions'],
+  openai: ['model', 'voice', 'realtimeVoice', 'instructions'],
   edge: ['voice'],
   xiaomi: ['model', 'voice', 'style'],
 };

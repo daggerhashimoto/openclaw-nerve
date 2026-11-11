@@ -75,6 +75,11 @@ export interface ChatPanelHandle {
   addWorkspacePath: (path: string, kind: 'file' | 'directory', agentId?: string) => Promise<void>;
 }
 
+/** Thinking, tool calls and system lines start folded; replies start open. */
+function isCollapsedByDefault(msg: ChatMsg): boolean {
+  return Boolean(msg.isThinking) || isMessageCollapsible(msg);
+}
+
 /** Main chat panel with message list, infinite scroll, search, and input bar. */
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel({
   messages,
@@ -257,7 +262,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     // Resolve to stable msgId so collapse state survives list reordering.
     const msg = messages[idx];
     const key = msg?.msgId || msg?.tempId || idx;
-    setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+    // Flip what is on screen: a tool group or thinking block starts folded, so the first click opens it.
+    setCollapsed(prev => ({ ...prev, [key]: !(prev[key] ?? (msg ? isCollapsedByDefault(msg) : false)) }));
   };
 
   const toggleMemory = (key: string) => {
@@ -271,7 +277,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
 
   const renderMessage = (msg: ChatMsg, i: number) => {
     const collapseKey = msg.msgId || msg.tempId || i;
-    const isCollapsed = collapsed[collapseKey] ?? (msg.isThinking || isMessageCollapsible(msg));
+    const isCollapsed = collapsed[collapseKey] ?? isCollapsedByDefault(msg);
     const memoryKey = `mem-${collapseKey}`;
     const isMemoryCollapsed = collapsed[memoryKey] ?? true;
     const isCurrentMatch = search.currentMatch?.messageIndex === i;

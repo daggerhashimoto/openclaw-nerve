@@ -161,6 +161,24 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     await waitFor(() => expect(historyCalls()).toBeGreaterThan(0));
   });
 
+  it('names a web search in the activity log once its result says what was searched', async () => {
+    const { emit, getChat } = await setup();
+    const tool = (data: Record<string, unknown>) => ({ sessionKey: SESSION, runId: RUN, stream: 'tool', data });
+
+    emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }));
+    // Frames captured from the gateway: the start has no query, the result does.
+    emit('agent', tool({ phase: 'start', name: 'web_search', itemId: 'exec-1', toolCallId: 'exec-1', args: { queryUnavailable: true } }));
+    await waitFor(() => expect(getChat().activityLog.map((e) => e.description)).toEqual(['searching the web']));
+
+    emit('agent', tool({
+      phase: 'result', name: 'web_search', itemId: 'exec-1', toolCallId: 'exec-1', status: 'completed', isError: false,
+      meta: 'for "OpenClaw gateway release notes"', result: { status: 'completed', query: 'OpenClaw gateway release notes' },
+    }));
+    await waitFor(() => expect(getChat().activityLog).toMatchObject([
+      { description: 'searching: OpenClaw gateway release notes', phase: 'completed' },
+    ]));
+  });
+
   it('shows an image the agent delivered with its reply, which only history carries', async () => {
     // Captured from the gateway: the webchat final carries the reply text, and the delivered
     // image is written to the transcript as a gateway-hosted image block.

@@ -120,6 +120,10 @@ export type ContentBlockType = 'text' | 'tool_use' | 'toolCall' | 'tool_result' 
 export interface ChatMessage {
   role: ChatMessageRole;
   content: string | ContentBlock[];
+  /** On a tool result: the tool that produced it. */
+  toolName?: string;
+  /** On a tool result: the id of the call it answers. */
+  toolCallId?: string;
   text?: string;
   timestamp?: string | number;
   createdAt?: string | number;
@@ -136,6 +140,10 @@ export interface ChatMessage {
     runId?: string;
     /** Set on the first visible message after the gateway hid a turn's prompt (heartbeat polls). */
     turnBoundary?: boolean;
+    /** The transcript entry's own id; the same on every chat.history read. */
+    id?: string;
+    /** The entry's position in the session transcript. */
+    seq?: number;
   };
 }
 
@@ -246,6 +254,8 @@ export interface AgentToolStreamData {
   toolCallId?: string;
   name?: string;
   args?: Record<string, unknown>;
+  /** On a result: what the tool reported, e.g. a web search's `query` (Codex knows it only then). */
+  result?: unknown;
 }
 
 /** Payload for 'cron' events */

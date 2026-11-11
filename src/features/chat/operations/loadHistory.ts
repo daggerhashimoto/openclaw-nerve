@@ -545,6 +545,9 @@ export function groupToolMessages(msgs: ChatMsg[]): ChatMsg[] {
         rawText: entries.map(e => e.preview).join('\n'),
         timestamp: toolBuffer[0].timestamp,
         toolGroup: entries,
+        // The group is its first call grown longer: keeping that call's id means a group the
+        // operator opened stays open as calls are added (and a single call opened becomes an open group).
+        ...(filtered[0].msgId ? { msgId: filtered[0].msgId } : {}),
       });
     }
     toolBuffer = [];
@@ -651,18 +654,75 @@ function splitIntoTurns(messages: ChatMessage[]): ChatMessage[][] {
  * turn's final answer as intermediate.
  */
 export function processChatMessages(messages: ChatMessage[], options: { sessionKey?: string } = {}): ChatMsg[] {
-  const tagged = splitIntoTurns(messages).flatMap((turn) => {
+  const tagged = splitIntoTurns(withSearchQueries(messages)).flatMap((turn) => {
     const chatMsgs: ChatMsg[] = turn
       .filter(filterMessage)
-      .flatMap((message) => splitToolCallMessage(message, options));
+      .flatMap((message) => withSourceIds(splitToolCallMessage(message, options), message));
     return tagIntermediateMessages(groupToolMessages(chatMsgs));
   });
 
-  // Assign stable IDs to any message missing one (for React keying).
+  // Messages the gateway gave no id (older gateways) still need one for React keys.
   for (const msg of tagged) {
     if (!msg.msgId) msg.msgId = generateMsgId();
   }
   return tagged;
+}
+
+/** What a web search result says it searched for or opened, or null when it says neither. */
+function searchDetails(result: ChatMessage): Record<string, unknown> | null {
+  const text = typeof result.content === 'string'
+    ? result.content
+    : result.content.map((block) => (block.type === 'text' ? block.text ?? '' : '')).join('');
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const { query, queries, action, url, pattern } = parsed;
+    if (!query && !queries && !url) return null;
+    return { query, queries, action, url, pattern };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Codex records a web search call before it knows the query
+ * (`{ queryUnavailable: true }`); the query arrives with the result. Copy it
+ * onto the call so its row says what was searched.
+ */
+function withSearchQueries(messages: ChatMessage[]): ChatMessage[] {
+  const found = new Map<string, Record<string, unknown>>();
+  for (const message of messages) {
+    if (message.role !== 'toolResult' || message.toolName !== 'web_search' || !message.toolCallId) continue;
+    const details = searchDetails(message);
+    if (details) found.set(message.toolCallId, details);
+  }
+  if (found.size === 0) return messages;
+
+  return messages.map((message) => {
+    if (message.role !== 'assistant' || !Array.isArray(message.content)) return message;
+    let changed = false;
+    const content = message.content.map((block) => {
+      const details = block.id && block.name === 'web_search' ? found.get(block.id) : undefined;
+      if (!details) return block;
+      changed = true;
+      const known: Record<string, unknown> = { ...(typeof block.arguments === 'object' && block.arguments ? block.arguments : {}) };
+      delete known.queryUnavailable;
+      return { ...block, arguments: { ...known, ...details } };
+    });
+    return changed ? { ...message, content } : message;
+  });
+}
+
+/**
+ * Ids taken from the gateway's transcript entry, so a message is the same
+ * message on every history read. History reloads after each tool call during
+ * a run; with fresh ids every reload, whatever the operator had opened (a tool
+ * group, a thinking block) folded shut again and the list remounted.
+ */
+function withSourceIds(parts: ChatMsg[], source: ChatMessage): ChatMsg[] {
+  const sourceId = source.__openclaw?.id;
+  if (!sourceId) return parts;
+  return parts.map((part, k) => (part.msgId ? part : { ...part, msgId: `h-${sourceId}-${k}` }));
 }
 
 /**

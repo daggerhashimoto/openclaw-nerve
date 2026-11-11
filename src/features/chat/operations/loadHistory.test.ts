@@ -291,6 +291,78 @@ describe('tagIntermediateMessages', () => {
 });
 
 describe('processChatMessages', () => {
+  it('names a Codex web search from its result, since the call is recorded before the query is known', () => {
+    // Shapes from a 2026.9 gateway with the Codex harness.
+    const searchResult = (toolCallId: string, body: Record<string, unknown>): ChatMessage => ({
+      role: 'toolResult',
+      toolCallId,
+      toolName: 'web_search',
+      content: [{ type: 'text', text: JSON.stringify({ status: 'completed', ...body }, null, 2) }],
+    } as ChatMessage);
+    const result = processChatMessages([
+      { role: 'user', content: 'Look it up' },
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'exec-1', name: 'web_search', arguments: { queryUnavailable: true } }] },
+      searchResult('exec-1', { query: 'OpenClaw gateway release notes' }),
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'exec-2', name: 'web_search', arguments: { queryUnavailable: true } }] },
+      searchResult('exec-2', {
+        query: 'https://docs.openclaw.ai/concepts/memory-builtin',
+        action: 'openPage',
+        url: 'https://docs.openclaw.ai/concepts/memory-builtin',
+      }),
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'exec-3', name: 'web_search', arguments: { queryUnavailable: true } }] },
+      { role: 'assistant', content: 'Found it.' },
+    ]);
+
+    const group = result.find((m) => m.toolGroup);
+    expect(group?.toolGroup?.map((e) => e.preview)).toEqual([
+      'searching: OpenClaw gateway release notes',
+      'opening docs.openclaw.ai/concepts/memory-builtin',
+      // No result yet (still running): say what it is doing rather than an empty label.
+      'searching the web',
+    ]);
+  });
+
+  describe('message ids across history reads', () => {
+    const meta = (id: string) => ({ __openclaw: { runId: 'run-1', id } });
+    const prompt: ChatMessage = { role: 'user', content: 'Check the repo', ...meta('u-1') };
+    const call = (id: string, command: string): ChatMessage => ({
+      role: 'assistant',
+      content: [{ type: 'toolCall', name: 'exec', arguments: { command } }],
+      ...meta(id),
+    });
+
+    it('gives each message the gateway entry id, the same on every read', () => {
+      // One entry splits into narration and a tool call; each part gets its own id.
+      const narrated: ChatMessage = {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Looking first.' }, { type: 'toolCall', name: 'exec', arguments: { command: 'git status' } }],
+        ...meta('a-1'),
+      };
+      const first = processChatMessages([prompt, narrated]).map((m) => m.msgId);
+      const second = processChatMessages([prompt, narrated]).map((m) => m.msgId);
+
+      expect(first).toEqual(['h-u-1-0', 'h-a-1-0', 'h-a-1-1']);
+      expect(second).toEqual(first);
+    });
+
+    it('keeps a tool group id while calls are added to it', () => {
+      const before = processChatMessages([prompt, call('a-1', 'git status'), call('a-2', 'git log -1')]);
+      const after = processChatMessages([prompt, call('a-1', 'git status'), call('a-2', 'git log -1'), call('a-3', 'ls src')]);
+
+      const groupBefore = before.find((m) => m.toolGroup)!;
+      const groupAfter = after.find((m) => m.toolGroup)!;
+      expect(groupBefore.toolGroup).toHaveLength(2);
+      expect(groupAfter.toolGroup).toHaveLength(3);
+      expect(groupAfter.msgId).toBe(groupBefore.msgId);
+    });
+
+    it('still gives every message an id when the gateway sends none', () => {
+      const result = processChatMessages([{ role: 'user', content: 'Hello' }, { role: 'assistant', content: 'Hi' }]);
+      expect(result.every((m) => typeof m.msgId === 'string' && m.msgId.length > 0)).toBe(true);
+      expect(new Set(result.map((m) => m.msgId)).size).toBe(result.length);
+    });
+  });
+
   it('runs the full pipeline: filter → split → group → tag', () => {
     const msgs: ChatMessage[] = [
       { role: 'user', content: 'Hello' },

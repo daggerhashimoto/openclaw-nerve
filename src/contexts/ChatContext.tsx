@@ -35,6 +35,7 @@ import {
   extractFinalMessage,
   extractFinalMessages,
   deriveProcessingStage,
+  describeToolResult,
   isActiveAgentState,
   mergeRecoveredTail,
   getOrCreateRunState,
@@ -392,7 +393,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
         if (type === 'agent_tool_result') {
           const completedId = ap.data?.toolCallId;
-          if (completedId) completeActivityEntry(completedId);
+          if (completedId) completeActivityEntry(completedId, describeToolResult(ap.data));
           scheduleHistoryRefresh();
           return;
         }

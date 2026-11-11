@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
-import { X, Settings, LogOut, Mic, Monitor, Shield } from 'lucide-react';
+import { X, LogOut } from 'lucide-react';
 import { ConnectionSettings } from './ConnectionSettings';
 import { AudioSettings } from './AudioSettings';
 import { AppearanceSettings } from './AppearanceSettings';
@@ -56,12 +56,17 @@ function normalizeSavedCategory(value: string | null): SettingsCategory | null {
 }
 
 const SETTINGS_CATEGORIES = [
-  { key: 'advanced', label: 'Connection', icon: Shield },
-  { key: 'audio', label: 'Audio', icon: Mic },
-  { key: 'appearance', label: 'Appearance', icon: Monitor },
-] as const satisfies ReadonlyArray<{ key: SettingsCategory; label: string; icon: typeof Mic }>;
+  { key: 'advanced', label: 'Connection' },
+  { key: 'audio', label: 'Audio' },
+  { key: 'appearance', label: 'Appearance' },
+] as const satisfies ReadonlyArray<{ key: SettingsCategory; label: string }>;
 
-/** Slide-in drawer containing connection, audio, and appearance settings. */
+/**
+ * Slide-in drawer containing connection, audio, and appearance settings.
+ * A floating Panel plate on the right with the edge light along its inner edge; the
+ * header is a nameplate row, the categories are the same underline tabs as the
+ * workspace column, and the content is a list of rows separated by hairlines.
+ */
 export function SettingsDrawer({
   open,
   onClose,
@@ -125,7 +130,7 @@ export function SettingsDrawer({
   // Focus trap - keep focus within the drawer
   const handleTabKey = useCallback((e: KeyboardEvent) => {
     if (e.key !== 'Tab' || !drawerRef.current) return;
-    
+
     const focusableElements = drawerRef.current.querySelectorAll<HTMLElement>(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     );
@@ -158,9 +163,9 @@ export function SettingsDrawer({
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop: the room dims, nothing blurs */}
       <div
-        className="fixed inset-0 z-40 animate-fade-in bg-black/50 backdrop-blur-sm"
+        className="fixed inset-0 z-40 animate-fade-in bg-background/60"
         onClick={onClose}
       />
 
@@ -170,113 +175,106 @@ export function SettingsDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
-        className="fixed right-0 top-0 z-50 flex h-full w-full flex-col overflow-hidden border-l border-border/80 bg-card/92 shadow-[0_32px_90px_rgba(0,0,0,0.36)] backdrop-blur-2xl animate-slide-in-right sm:w-[410px] sm:max-w-[94vw]"
+        className="nerve-drawer fixed right-0 top-0 z-50 flex h-full w-full flex-col overflow-hidden animate-slide-in-right sm:w-[410px] sm:max-w-[94vw]"
       >
-        {/* Header */}
-        <div className="shrink-0 border-b border-border/70 bg-secondary/45 px-5 py-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-2">
-              <span className="cockpit-kicker" id="settings-title">
-                <Settings size={14} className="text-primary" aria-hidden="true" />
-                Control Room
-              </span>
-              <div className="cockpit-title text-[1.1rem]">Settings</div>
-            </div>
-            <button
-              ref={closeButtonRef}
-              onClick={onClose}
-              className="shell-icon-button min-h-9 px-3"
-              title="Close (Esc)"
-              aria-label="Close settings"
-            >
-              <X size={16} aria-hidden="true" />
-            </button>
-          </div>
+        {/* Header: a nameplate row */}
+        <div className="flex min-h-[2.933rem] shrink-0 items-center justify-between gap-3 border-b border-border pl-4 pr-2">
+          <h2 id="settings-title" className="nerve-nameplate text-foreground">Settings</h2>
+          <button
+            ref={closeButtonRef}
+            onClick={onClose}
+            className="shell-icon-button"
+            title="Close (Esc)"
+            aria-label="Close settings"
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+
+        {/* Categories: the same underline tabs as the workspace column */}
+        <div
+          className="flex shrink-0 items-stretch border-b border-border px-2"
+          role="tablist"
+          aria-label="Settings categories"
+        >
+          {SETTINGS_CATEGORIES.map((category) => {
+            const isActive = currentCategory === category.key;
+            const disabled = !isConnected && category.key !== 'advanced';
+            return (
+              <button
+                key={category.key}
+                role="tab"
+                aria-selected={isActive}
+                disabled={disabled}
+                onClick={() => setActiveCategory(category.key)}
+                data-active={isActive}
+                className={`-mb-px flex min-h-11 items-center border-b-2 px-3 text-[0.867rem] transition-colors duration-[120ms] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:min-h-[var(--row-unit)] ${
+                  isActive
+                    ? 'border-foreground text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                } ${disabled ? 'cursor-not-allowed opacity-45 hover:text-muted-foreground' : ''}`}
+              >
+                {category.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-          <div className="shrink-0 border-b border-border/60 bg-background/24 px-4 py-3">
-            <div className="-mx-0.5 flex flex-wrap gap-2 px-0.5 py-1 sm:flex-nowrap sm:overflow-x-auto" role="tablist" aria-label="Settings categories">
-              {SETTINGS_CATEGORIES.map((category) => {
-                const Icon = category.icon;
-                const isActive = currentCategory === category.key;
-                const disabled = !isConnected && category.key !== 'advanced';
-                return (
-                  <button
-                    key={category.key}
-                    role="tab"
-                    aria-selected={isActive}
-                    disabled={disabled}
-                    onClick={() => setActiveCategory(category.key)}
-                    data-active={isActive}
-                    className={`shell-chip min-h-11 min-w-[calc(50%-0.25rem)] flex-1 justify-center whitespace-nowrap px-3.5 text-[0.8rem] font-medium sm:min-h-10 sm:min-w-0 sm:flex-none sm:justify-start ${disabled ? 'cursor-not-allowed opacity-45 hover:translate-y-0 hover:border-border/80 hover:text-muted-foreground' : ''}`}
-                  >
-                      <Icon size={12} aria-hidden="true" />
-                    <span>{category.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          {currentCategory === 'audio' && (
+            <AudioSettings
+              section="all"
+              soundEnabled={soundEnabled}
+              onToggleSound={onToggleSound}
+              ttsProvider={ttsProvider}
+              ttsModel={ttsModel}
+              onTtsProviderChange={onTtsProviderChange}
+              onTtsModelChange={onTtsModelChange}
+              sttProvider={sttProvider}
+              sttInputMode={sttInputMode}
+              sttModel={sttModel}
+              onSttProviderChange={onSttProviderChange}
+              onSttInputModeChange={onSttInputModeChange}
+              onSttModelChange={onSttModelChange}
+              wakeWordEnabled={wakeWordEnabled}
+              onToggleWakeWord={onToggleWakeWord}
+              liveTranscriptionPreview={liveTranscriptionPreview}
+              onToggleLiveTranscriptionPreview={onToggleLiveTranscriptionPreview}
+              agentName={agentName}
+            />
+          )}
 
-          <div className="flex-1 overflow-y-auto px-4 py-5">
-            {currentCategory === 'audio' && (
-              <AudioSettings
-                section="all"
-                soundEnabled={soundEnabled}
-                onToggleSound={onToggleSound}
-                ttsProvider={ttsProvider}
-                ttsModel={ttsModel}
-                onTtsProviderChange={onTtsProviderChange}
-                onTtsModelChange={onTtsModelChange}
-                sttProvider={sttProvider}
-                sttInputMode={sttInputMode}
-                sttModel={sttModel}
-                onSttProviderChange={onSttProviderChange}
-                onSttInputModeChange={onSttInputModeChange}
-                onSttModelChange={onSttModelChange}
-                wakeWordEnabled={wakeWordEnabled}
-                onToggleWakeWord={onToggleWakeWord}
-                liveTranscriptionPreview={liveTranscriptionPreview}
-                onToggleLiveTranscriptionPreview={onToggleLiveTranscriptionPreview}
-                agentName={agentName}
-              />
-            )}
+          {currentCategory === 'appearance' && <AppearanceSettings />}
 
-            {currentCategory === 'appearance' && <AppearanceSettings />}
-
-            {currentCategory === 'advanced' && (
-              <ConnectionSettings
-                url={gatewayUrl}
-                token={gatewayToken}
-                onUrlChange={onUrlChange}
-                onTokenChange={onTokenChange}
-                onReconnect={onReconnect}
-                connectionState={connectionState}
-                onGatewayRestart={onGatewayRestart}
-                gatewayRestarting={gatewayRestarting}
-              />
-            )}
-          </div>
+          {currentCategory === 'advanced' && (
+            <ConnectionSettings
+              url={gatewayUrl}
+              token={gatewayToken}
+              onUrlChange={onUrlChange}
+              onTokenChange={onTokenChange}
+              onReconnect={onReconnect}
+              connectionState={connectionState}
+              onGatewayRestart={onGatewayRestart}
+              gatewayRestarting={gatewayRestarting}
+            />
+          )}
         </div>
 
-        {/* Footer */}
-        <div className="shrink-0 space-y-3 border-t border-border/70 bg-secondary/35 px-4 py-4">
-          {onLogout && (
+        {/* Footer: one quiet row, sign out at the left, the version at the right */}
+        <div className="flex min-h-[var(--row-unit)] shrink-0 items-center justify-between gap-3 border-t border-border py-1 pl-2 pr-4">
+          {onLogout ? (
             <button
               onClick={onLogout}
-              className="cockpit-toolbar-button w-full justify-center"
-              data-tone="danger"
+              className="shell-chip"
             >
               <LogOut size={14} aria-hidden="true" />
-              Sign Out
+              Sign out
             </button>
-          )}
-          <div className="flex items-center justify-between gap-3 px-1 text-[0.733rem] text-muted-foreground/70">
-            <span>OpenClaw Nerve</span>
-            <span className="font-mono text-[0.667rem] tracking-[0.08em]">v{__APP_VERSION__}</span>
-          </div>
+          ) : <span />}
+          <span className="text-[0.8rem] text-muted-foreground">
+            OpenClaw Nerve <span className="font-mono tabular">v{__APP_VERSION__}</span>
+          </span>
         </div>
       </div>
     </>

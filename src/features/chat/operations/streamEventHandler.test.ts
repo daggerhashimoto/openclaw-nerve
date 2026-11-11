@@ -1,4 +1,4 @@
-/** Tests for streamEventHandler — event classification, deltas, and activity log. */
+/** Tests for streamEventHandler: event classification, deltas, and activity log. */
 import { describe, it, expect } from 'vitest';
 import {
   isActiveAgentState,
@@ -7,6 +7,7 @@ import {
   extractFinalMessages,
   extractFinalMessage,
   buildActivityLogEntry,
+  describeToolResult,
   markToolCompleted,
   appendActivityEntry,
   deriveProcessingStage,
@@ -398,6 +399,40 @@ describe('markToolCompleted', () => {
     ];
     const updated = markToolCompleted(log, 'tc-999');
     expect(updated[0].phase).toBe('running');
+  });
+
+  it('takes a better description when the result supplies one', () => {
+    const log = [
+      { id: 'tc-1', toolName: 'web_search', description: 'searching the web', startedAt: 1, phase: 'running' as const },
+    ];
+    const updated = markToolCompleted(log, 'tc-1', 'searching: OpenClaw gateway release notes');
+    expect(updated[0]).toMatchObject({ phase: 'completed', description: 'searching: OpenClaw gateway release notes' });
+    expect(markToolCompleted(log, 'tc-1', null)[0].description).toBe('searching the web');
+  });
+});
+
+describe('describeToolResult', () => {
+  // Result frames as a 2026.9 gateway sends them with the Codex harness.
+  it('names the query of a web search, which only the result carries', () => {
+    expect(describeToolResult({
+      phase: 'result', name: 'web_search', toolCallId: 'exec-1',
+      result: { status: 'completed', query: 'OpenClaw gateway release notes' },
+    })).toBe('searching: OpenClaw gateway release notes');
+  });
+
+  it('names the text a find-in-page looks for', () => {
+    expect(describeToolResult({
+      phase: 'result', name: 'web_search', toolCallId: 'exec-4',
+      result: { status: 'completed', query: "'Local embeddings' in https://docs.openclaw.ai/x", action: 'findInPage', url: 'https://docs.openclaw.ai/x', pattern: 'Local embeddings' },
+    })).toBe('finding in page: Local embeddings');
+  });
+
+  it('leaves other results alone', () => {
+    expect(describeToolResult({
+      phase: 'result', name: 'bash', toolCallId: 'exec-2',
+      result: { status: 'completed', exitCode: 0, durationMs: 0 },
+    })).toBeNull();
+    expect(describeToolResult({ phase: 'result', name: 'web_search', toolCallId: 'exec-3', result: { status: 'failed' } })).toBeNull();
   });
 });
 

@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react';
 import type { ActivityLogEntry } from '@/contexts/ChatContext';
+import { formatClock, formatDuration } from '../utils';
+import { ToolRowContent, toolRowClass, toolStackClass } from './ToolRow';
 
 interface ActivityLogProps {
   entries: ActivityLogEntry[];
@@ -6,41 +9,38 @@ interface ActivityLogProps {
 }
 
 /**
- * Scrolling feed of recent tool-call activity with tree connectors.
- * Shows completed entries muted with ✓, running entries green with animated dots.
+ * Live feed of recent tool calls: one 28px row per call in a bordered stack.
+ * A running call is lit blue and shows its elapsed clock; a finished call goes
+ * dark and shows how long it took.
  */
 export function ActivityLog({ entries, maxVisible = 4 }: ActivityLogProps) {
+  const hasRunning = entries.some((entry) => entry.phase === 'running');
+  // Lazy initializer avoids an impure Date.now() call during render.
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!hasRunning) return;
+    const iv = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, [hasRunning]);
+
   if (entries.length === 0) return null;
 
   const visible = entries.slice(-maxVisible);
-  const lastIdx = visible.length - 1;
 
   return (
-    <div className="flex flex-col text-[0.733rem]" style={{ fontFamily: 'var(--font-mono, monospace)', lineHeight: 1.6 }}>
-      {visible.map((entry, i) => {
-        const isLast = i === lastIdx;
-        const connector = isLast ? '└' : '├';
+    <div className={toolStackClass} role="group" aria-label="Recent tool calls">
+      {visible.map((entry) => {
+        const running = entry.phase === 'running';
+        const meta = running
+          ? formatClock(now - entry.startedAt)
+          : entry.completedAt
+            ? formatDuration(entry.completedAt - entry.startedAt)
+            : undefined;
 
         return (
-          <div
-            key={entry.id}
-            className={`flex items-center gap-1.5 ${
-              entry.phase === 'completed' ? 'text-muted-foreground' : 'text-green'
-            }`}
-            style={{ animation: 'activity-fade-in 0.2s ease-out' }}
-          >
-            <span className="text-border select-none">{connector}</span>
-            <span className="break-all">{entry.description}</span>
-            {entry.phase === 'completed' && (
-              <span className="text-green text-[0.667rem] shrink-0">✓</span>
-            )}
-            {entry.phase === 'running' && (
-              <span className="inline-flex text-green text-xs shrink-0">
-                <span className="animate-[dot-fade_1.4s_infinite_0s] opacity-0">.</span>
-                <span className="animate-[dot-fade_1.4s_infinite_0.2s] opacity-0">.</span>
-                <span className="animate-[dot-fade_1.4s_infinite_0.4s] opacity-0">.</span>
-              </span>
-            )}
+          <div key={entry.id} className={toolRowClass}>
+            <ToolRowContent state={running ? 'live' : 'off'} text={entry.description} meta={meta} />
           </div>
         );
       })}

@@ -1,5 +1,5 @@
 /**
- * streamEventHandler — Pure functions for classifying and processing streaming events.
+ * streamEventHandler: Pure functions for classifying and processing streaming events.
  *
  * Extracted from ChatContext's subscribe callback. No React hooks, setState, or refs.
  */
@@ -7,6 +7,7 @@ import type {
   GatewayEvent,
   ChatEventPayload,
   AgentEventPayload,
+  AgentToolStreamData,
   ChatMessage,
   ContentBlock,
 } from '@/types';
@@ -268,15 +269,29 @@ export function buildActivityLogEntry(agentPayload: AgentEventPayload): Activity
 }
 
 /**
- * Mark a tool as completed in the activity log (returns a new array).
+ * A better description from a tool result, when the result says what the start
+ * could not. Codex reports a web search before it knows the query, so its
+ * start reads "searching the web" and only the result names the query.
+ */
+export function describeToolResult(data: AgentToolStreamData | undefined): string | null {
+  if (!data || data.name !== 'web_search' || !data.result || typeof data.result !== 'object') return null;
+  const { query, queries, action, url, pattern } = data.result as Record<string, unknown>;
+  if (!query && !queries && !url) return null;
+  return describeToolUse('web_search', { query, queries, action, url, pattern });
+}
+
+/**
+ * Mark a tool as completed in the activity log (returns a new array), taking
+ * the result's description when it has a better one.
  */
 export function markToolCompleted(
   log: ActivityLogEntry[],
   toolCallId: string,
+  description?: string | null,
 ): ActivityLogEntry[] {
   return log.map(e =>
     e.id === toolCallId
-      ? { ...e, phase: 'completed' as const, completedAt: Date.now() }
+      ? { ...e, ...(description ? { description } : {}), phase: 'completed' as const, completedAt: Date.now() }
       : e,
   );
 }

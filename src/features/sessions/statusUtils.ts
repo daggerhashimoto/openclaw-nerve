@@ -1,28 +1,47 @@
 import type { GranularAgentState } from '@/types';
+import { isGranularLive, paneStateFor, type PaneState } from '@/lib/paneState';
 
-/** Get badge display text */
-export function getStatusBadgeText(state: GranularAgentState): string {
-  if (state.toolName) return `TOOL: ${state.toolName}`;
-  return state.status;
+export { isGranularLive };
+
+/** Pane state for a granular agent state: live work lights the pane, errors go red, done and idle go dark. */
+export function getStatusPaneState(state: GranularAgentState): PaneState {
+  if (state.status === 'ERROR') return 'error';
+  return isGranularLive(state) ? 'live' : 'off';
 }
 
-/** Get Tailwind classes for the status badge (uses project semantic theme tokens) */
-export function getStatusBadgeClasses(state: GranularAgentState): string {
-  if (state.toolName) {
-    return 'bg-info/20 text-info animate-pulse';
-  }
+interface SessionPaneInput {
+  running: boolean;
+  unread?: boolean;
+  granularStatus?: GranularAgentState;
+}
 
-  switch (state.status) {
-    case 'THINKING':
-      return 'bg-orange/20 text-orange animate-pulse';
-    case 'STREAMING':
-      return 'bg-green/20 text-green animate-pulse';
-    case 'DONE':
-      return 'bg-green/20 text-green';
-    case 'ERROR':
-      return 'bg-red/20 text-red';
-    case 'IDLE':
+/**
+ * Pane state for a session row. Granular status is authoritative when present
+ * (error beats live beats waiting-on-you); otherwise the binary running flag decides.
+ */
+export function getSessionPaneState({ running, unread, granularStatus }: SessionPaneInput): PaneState {
+  if (!granularStatus) return paneStateFor({ running, unread });
+  return paneStateFor({
+    running: isGranularLive(granularStatus),
+    unread,
+    error: granularStatus.status === 'ERROR',
+  });
+}
+
+/** Plain sentence-case text for a granular state: the tool name, or the status in lower case. */
+export function getStatusBadgeText(state: GranularAgentState): string {
+  if (state.toolName) return state.toolName;
+  return state.status.toLowerCase();
+}
+
+/** Text colour for the granular state: live text while working, destructive on error, muted otherwise. */
+export function getStatusBadgeClasses(state: GranularAgentState): string {
+  switch (getStatusPaneState(state)) {
+    case 'live':
+      return 'text-live-text';
+    case 'error':
+      return 'text-destructive';
     default:
-      return 'bg-muted-foreground/20 text-muted-foreground';
+      return 'text-muted-foreground';
   }
 }

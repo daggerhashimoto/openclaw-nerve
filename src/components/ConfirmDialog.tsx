@@ -1,5 +1,4 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { AlertTriangle } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 
 /** Props for {@link ConfirmDialog}. */
@@ -18,7 +17,7 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   /** Called when the user cancels (button click, Escape, or backdrop click). */
   onCancel: () => void;
-  /** Visual style — `danger` shows a red confirm button. @default "default" */
+  /** Visual style: `danger` shows a red confirm button. @default "default" */
   variant?: 'danger' | 'warning' | 'default';
 }
 
@@ -81,29 +80,18 @@ export function ConfirmDialog({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 bg-background/78 backdrop-blur-md" role="presentation" onClick={onCancel} />
+      <div className="fixed inset-0 z-50 bg-background/80" role="presentation" onClick={onCancel} />
       <div
         ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         aria-describedby="confirm-dialog-message"
-        className="fixed top-1/2 left-1/2 z-50 min-w-[320px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border/75 bg-card/94 p-6 shadow-[0_36px_90px_rgba(0,0,0,0.42)] backdrop-blur-xl"
+        className="fixed top-1/2 left-1/2 z-50 min-w-[320px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-[3px] border border-border bg-popover p-5 shadow-[0_12px_32px_rgba(0,0,0,0.32)]"
       >
-        <div className="mb-5 flex items-start gap-3">
-          {variant !== 'default' && (
-            <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-xl border ${
-              variant === 'danger'
-                ? 'border-destructive/30 bg-destructive/10 text-destructive'
-                : 'border-orange/30 bg-orange/10 text-orange'
-            }`}>
-              <AlertTriangle size={18} aria-hidden="true" />
-            </span>
-          )}
-          <div>
-            <h3 id="confirm-dialog-title" className="text-base font-semibold text-foreground">{title}</h3>
-            <p id="confirm-dialog-message" className="mt-1 text-sm leading-6 text-muted-foreground">{message}</p>
-          </div>
+        <div className="mb-5">
+          <h3 id="confirm-dialog-title" className="text-[1rem] font-semibold text-foreground">{title}</h3>
+          <p id="confirm-dialog-message" className="mt-1 max-w-[52ch] text-[0.867rem] leading-6 text-muted-foreground">{message}</p>
         </div>
         <div className="flex justify-end gap-2">
           <button

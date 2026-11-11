@@ -1,36 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="#0d1117"/>
-  <!-- Dim structure -->
-  <line x1="16" y1="16" x2="16" y2="10.4" stroke="#301C0E" stroke-width="1" stroke-linecap="round"/>
-  <line x1="16" y1="16" x2="20.8" y2="13.2" stroke="#301C0E" stroke-width="1" stroke-linecap="round"/>
-  <line x1="16" y1="16" x2="20.8" y2="18.8" stroke="#301C0E" stroke-width="1" stroke-linecap="round"/>
-  <line x1="16" y1="16" x2="16" y2="21.6" stroke="#301C0E" stroke-width="1" stroke-linecap="round"/>
-  <line x1="16" y1="16" x2="11.2" y2="18.8" stroke="#301C0E" stroke-width="1" stroke-linecap="round"/>
-  <line x1="16" y1="16" x2="11.2" y2="13.2" stroke="#301C0E" stroke-width="1" stroke-linecap="round"/>
-  <polygon points="16,10.4 20.8,13.2 20.8,18.8 16,21.6 11.2,18.8 11.2,13.2" fill="none" stroke="#301C0E" stroke-width="0.8" stroke-linejoin="round"/>
-  <!-- Glow spokes -->
-  <line x1="16" y1="16" x2="16" y2="10.4" stroke="#FF8C32" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
-  <line x1="16" y1="16" x2="20.8" y2="13.2" stroke="#FF8C32" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
-  <line x1="16" y1="16" x2="20.8" y2="18.8" stroke="#FF8C32" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
-  <line x1="16" y1="16" x2="16" y2="21.6" stroke="#FF8C32" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
-  <line x1="16" y1="16" x2="11.2" y2="18.8" stroke="#FF8C32" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
-  <line x1="16" y1="16" x2="11.2" y2="13.2" stroke="#FF8C32" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
-  <!-- Glow ring -->
-  <polygon points="16,10.4 20.8,13.2 20.8,18.8 16,21.6 11.2,18.8 11.2,13.2" fill="none" stroke="#FF8C32" stroke-width="0.8" stroke-linejoin="round" opacity="0.4"/>
-  <!-- Center node -->
-  <circle cx="16" cy="16" r="3" fill="#FF8C32" opacity="0.85"/>
-  <circle cx="16" cy="16" r="1.5" fill="#FFDCB4" opacity="0.9"/>
-  <!-- Outer nodes — all lit -->
-  <circle cx="16" cy="10.4" r="1.8" fill="#FF8C32" opacity="0.8"/>
-  <circle cx="16" cy="10.4" r="0.9" fill="#FFDCB4" opacity="0.7"/>
-  <circle cx="20.8" cy="13.2" r="1.8" fill="#FF8C32" opacity="0.8"/>
-  <circle cx="20.8" cy="13.2" r="0.9" fill="#FFDCB4" opacity="0.7"/>
-  <circle cx="20.8" cy="18.8" r="1.8" fill="#FF8C32" opacity="0.8"/>
-  <circle cx="20.8" cy="18.8" r="0.9" fill="#FFDCB4" opacity="0.7"/>
-  <circle cx="16" cy="21.6" r="1.8" fill="#FF8C32" opacity="0.8"/>
-  <circle cx="16" cy="21.6" r="0.9" fill="#FFDCB4" opacity="0.7"/>
-  <circle cx="11.2" cy="18.8" r="1.8" fill="#FF8C32" opacity="0.8"/>
-  <circle cx="11.2" cy="18.8" r="0.9" fill="#FFDCB4" opacity="0.7"/>
-  <circle cx="11.2" cy="13.2" r="1.8" fill="#FF8C32" opacity="0.8"/>
-  <circle cx="11.2" cy="13.2" r="0.9" fill="#FFDCB4" opacity="0.7"/>
+  <!-- Nerve: a midnight square with one lit pane. The app repaints the pane live (src/lib/favicon.ts). -->
+  <rect width="32" height="32" rx="7" fill="#06080E"/>
+  <rect x="10" y="8" width="12" height="16" rx="1.5" fill="#ECE6DA"/>
 </svg>

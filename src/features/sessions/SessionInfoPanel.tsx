@@ -2,6 +2,9 @@ import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import type { Session } from '@/types';
 import { getSessionKey } from '@/types';
 import { fmtK } from '@/lib/formatting';
+import { cn } from '@/lib/utils';
+import { Pane } from '@/components/ui/Pane';
+import { paneStateFor, paneStateLabel } from '@/lib/paneState';
 import { getSessionType } from './sessionTree';
 
 /* ─── Helpers ────────────────────────────────────────────────────── */
@@ -22,12 +25,6 @@ function tokenPct(used: number | undefined, max: number | undefined): number {
   return Math.min(100, Math.round((used / max) * 100));
 }
 
-function barColor(pct: number): string {
-  if (pct >= 80) return 'bg-red';
-  if (pct >= 50) return 'bg-orange';
-  return 'bg-green';
-}
-
 /* ─── Types ──────────────────────────────────────────────────────── */
 
 interface SessionInfoPanelProps {
@@ -41,16 +38,22 @@ interface SessionInfoPanelProps {
 function InfoRow({
   label,
   value,
+  mono = false,
 }: {
   label: string;
   value: React.ReactNode;
+  /** Measurements (token counts, times) set in mono with tabular figures. */
+  mono?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-[2px]">
-      <span className="text-muted-foreground text-[0.667rem] shrink-0">
+    <div className="flex min-h-6 items-center justify-between gap-3">
+      <span className="shrink-0 text-[0.8rem] text-muted-foreground">
         {label}
       </span>
-      <span className="text-foreground text-[0.667rem] font-medium text-right truncate">
+      <span className={cn(
+        'truncate text-right text-[0.8rem] text-foreground',
+        mono && 'font-mono tabular',
+      )}>
         {value}
       </span>
     </div>
@@ -137,13 +140,13 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
   const totalTok = session.totalTokens;
   const ctxTok = session.contextTokens ?? 200_000;
   const pct = tokenPct(totalTok, ctxTok);
-  const barCls = barColor(pct);
   const running = runningProp ??
     (session.state === 'running' ||
     session.agentState === 'running' ||
     session.busy === true ||
     session.processing === true);
-  const status = running ? 'WORKING' : 'IDLE';
+  const paneState = paneStateFor({ running });
+  const status = paneStateLabel(paneState);
   const lastActive = session.updatedAt ?? session.lastActivity;
 
   return (
@@ -161,32 +164,24 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
       {open && (
         <div
           ref={panelRef}
-          className="absolute left-0 top-full z-50 mt-1 w-56 rounded border border-border bg-card shadow-lg shadow-black/30"
+          className="pointer-events-none absolute left-0 top-full z-50 mt-1 w-60 rounded-[3px] border border-border bg-popover text-popover-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)]"
         >
-          <div className="px-3 py-2.5 space-y-0.5">
+          <div className="px-3 py-2">
             {/* Model */}
             <InfoRow label="Model" value={model} />
 
             {/* Thinking */}
             {thinking && <InfoRow label="Thinking" value={thinking} />}
 
-            {/* Tokens with mini progress bar */}
-            <div className="py-[2px]">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground text-[0.667rem] shrink-0">
-                  Tokens
-                </span>
-                <span className="text-foreground text-[0.667rem] font-medium text-right">
-                  {totalTok != null ? fmtK(totalTok) : '—'} /{' '}
-                  {fmtK(ctxTok)} ({pct}%)
-                </span>
-              </div>
-              {/* Mini progress bar */}
-              <div className="mt-1 w-full h-1 bg-background border border-border/60 overflow-hidden rounded-sm">
-                <div
-                  className={`h-full ${barCls}`}
-                  style={{ width: `${pct}%` }}
-                />
+            {/* Tokens with a 2px context track (real data, neutral) */}
+            <div className="pb-1">
+              <InfoRow
+                label="Tokens"
+                mono
+                value={`${totalTok != null ? fmtK(totalTok) : 'n/a'} / ${fmtK(ctxTok)} (${pct}%)`}
+              />
+              <div className="h-[2px] w-full overflow-hidden rounded-[1px] bg-border" aria-hidden="true">
+                <div className="h-full bg-muted-foreground" style={{ width: `${pct}%` }} />
               </div>
             </div>
 
@@ -194,13 +189,14 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
             {(session.inputTokens != null ||
               session.outputTokens != null) && (
               <InfoRow
-                label="In / Out"
-                value={`${session.inputTokens != null ? fmtK(session.inputTokens) : '—'} / ${session.outputTokens != null ? fmtK(session.outputTokens) : '—'}`}
+                label="In / out"
+                mono
+                value={`${session.inputTokens != null ? fmtK(session.inputTokens) : 'n/a'} / ${session.outputTokens != null ? fmtK(session.outputTokens) : 'n/a'}`}
               />
             )}
 
-            {/* Last Active */}
-            <InfoRow label="Last Active" value={relativeTime(lastActive)} />
+            {/* Last active */}
+            <InfoRow label="Last active" value={relativeTime(lastActive)} />
 
             {/* Channel */}
             {session.channel && (
@@ -208,17 +204,17 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
             )}
 
             {/* Status */}
-            <div className="flex items-center justify-between gap-3 py-[2px]">
-              <span className="text-muted-foreground text-[0.667rem] shrink-0">
+            <div className="flex min-h-6 items-center justify-between gap-3">
+              <span className="shrink-0 text-[0.8rem] text-muted-foreground">
                 Status
               </span>
               <span
-                className={`text-[0.6rem] font-bold tracking-[1px] uppercase px-1.5 py-0.5 rounded-sm ${
-                  running
-                    ? 'bg-green/20 text-green'
-                    : 'bg-muted-foreground/20 text-muted-foreground'
-                }`}
+                className={cn(
+                  'flex items-center gap-1.5 text-[0.8rem]',
+                  running ? 'text-live-text' : 'text-muted-foreground',
+                )}
               >
+                <Pane state={paneState} size="sm" />
                 {status}
               </span>
             </div>

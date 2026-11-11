@@ -161,17 +161,18 @@ export function ResizablePanels({
         {left}
       </div>
 
-      {/* Resize handle */}
+      {/* Resize handle: a 1px rule in the layout, with a wider invisible hit area on top */}
       <div
         onMouseDown={handleMouseDown}
         onDoubleClick={handleDoubleClick}
-        className="group relative flex w-3 cursor-col-resize shrink-0 items-stretch justify-center"
+        className="group relative z-10 w-px shrink-0 cursor-col-resize bg-border before:absolute before:inset-y-0 before:-left-1 before:-right-1 before:content-['']"
         title="Drag to resize. Double click to reset"
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize panels"
       >
-        <div className="pointer-events-none my-3 w-px rounded-full bg-border transition-colors group-hover:bg-primary/55 group-hover:shadow-[0_0_16px_rgba(0,0,0,0.22)] group-active:bg-primary/70" />
+        <div className="pointer-events-none absolute inset-y-0 -left-px -right-px bg-transparent transition-colors duration-[120ms] group-hover:bg-raised group-active:bg-raised" />
+        <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-border transition-colors duration-[120ms] group-hover:bg-pane-edge group-active:bg-pane-edge" />
       </div>
 
       {/* Right panel */}

@@ -1,6 +1,5 @@
-import { Brain, ChevronRight } from 'lucide-react';
+import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
-import { Card, CardContent } from '@/components/ui/card';
 
 interface MemoriesSectionProps {
   memories: string;
@@ -11,22 +10,20 @@ interface MemoriesSectionProps {
 /** Collapsible section showing memories referenced in a message. */
 export function MemoriesSection({ memories, isCollapsed, onToggle }: MemoriesSectionProps) {
   return (
-    <div className="w-full mx-4 my-1 max-w-[calc(100%-2rem)]">
+    <div className="w-full">
       <Collapsible open={!isCollapsed} onOpenChange={onToggle}>
-        <Card className="overflow-hidden rounded-2xl border-border/50 bg-card/40 py-0 shadow-none">
-          <CollapsibleTrigger className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left transition-colors cursor-pointer hover:bg-primary/[0.04]">
-            <ChevronRight size={12} className={`text-muted-foreground shrink-0 transition-transform duration-200 ${!isCollapsed ? 'rotate-90' : ''}`} />
-            <Brain size={12} className="shrink-0 text-primary/80" />
-            <span className="flex-1 truncate text-[0.733rem] font-medium text-muted-foreground">Referenced memories</span>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <CardContent className="border-t border-border/40 bg-background/32 px-3.5 py-3">
-              <div className="max-h-[200px] overflow-y-auto whitespace-pre-wrap text-[0.8rem] leading-6 text-foreground/74">
-                {memories}
-              </div>
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
+        <CollapsibleTrigger className="flex min-h-[var(--row-unit)] w-full cursor-pointer items-center gap-2 rounded-sm text-left text-[0.8rem] text-muted-foreground transition-colors duration-[120ms] hover:text-foreground">
+          {isCollapsed
+            ? <ChevronRight size={14} className="shrink-0" aria-hidden="true" />
+            : <ChevronDown size={14} className="shrink-0" aria-hidden="true" />}
+          <Brain size={14} className="shrink-0" aria-hidden="true" />
+          <span className="flex-1 truncate font-medium">Referenced memories</span>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mb-1 max-h-[200px] overflow-y-auto whitespace-pre-wrap rounded-[3px] border border-border bg-card px-3 py-2 text-[0.8rem] leading-relaxed text-foreground">
+            {memories}
+          </div>
+        </CollapsibleContent>
       </Collapsible>
     </div>
   );

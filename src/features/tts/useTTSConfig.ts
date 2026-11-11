@@ -11,6 +11,7 @@ export interface TTSVoiceConfig {
   openai: {
     model: string;
     voice: string;
+    realtimeVoice: string;
     instructions: string;
   };
   edge: {

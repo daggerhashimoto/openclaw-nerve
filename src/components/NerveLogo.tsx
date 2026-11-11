@@ -136,7 +136,7 @@ function StaticNerveLogo({ size }: { size: number }) {
         <span
           key={`node-${index}`}
           aria-hidden="true"
-          className="absolute rounded-full border border-primary/45 bg-primary/25 shadow-[0_0_10px_rgba(255,140,50,0.25)]"
+          className="absolute rounded-full border border-primary/45 bg-primary/25"
           style={{
             left: node.x - outerRadius,
             top: node.y - outerRadius,
@@ -147,7 +147,7 @@ function StaticNerveLogo({ size }: { size: number }) {
       ))}
       <span
         aria-hidden="true"
-        className="absolute rounded-full border border-primary/70 bg-primary/35 shadow-[0_0_14px_rgba(255,140,50,0.32)]"
+        className="absolute rounded-full border border-primary/70 bg-primary/35"
         style={{
           left: center - nodeRadius,
           top: center - nodeRadius,

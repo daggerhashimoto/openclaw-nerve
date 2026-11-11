@@ -15,6 +15,7 @@ export {
   extractFinalMessage,
   extractFinalMessages,
   buildActivityLogEntry,
+  describeToolResult,
   markToolCompleted,
   appendActivityEntry,
   deriveProcessingStage,

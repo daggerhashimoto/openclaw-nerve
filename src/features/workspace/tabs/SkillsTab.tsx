@@ -1,9 +1,9 @@
 /**
- * SkillsTab — Browse installed skills and their status.
+ * SkillsTab: browse installed skills and their status.
  */
 
-import { useState, useCallback } from 'react';
-import { RefreshCw, Circle, ExternalLink, ChevronDown, ChevronRight, Puzzle } from 'lucide-react';
+import { useState, useCallback, type ReactNode } from 'react';
+import { RefreshCw, ExternalLink, ChevronDown, ChevronRight, Puzzle } from 'lucide-react';
 import { useSkills, type Skill, type SkillMissing } from '../hooks/useSkills';
 
 /** Format missing requirements into a human-readable string. */
@@ -17,16 +17,6 @@ function formatMissing(missing: SkillMissing): string {
   return parts.join(', ');
 }
 
-/** Source badge color. */
-function sourceColor(source: string): string {
-  switch (source) {
-    case 'bundled': return 'bg-purple/20 text-purple';
-    case 'workspace': return 'bg-blue/20 text-blue';
-    case 'clawhub': return 'bg-green/20 text-green';
-    default: return 'bg-muted/30 text-muted-foreground';
-  }
-}
-
 function SkillRow({ skill }: { skill: Skill }) {
   const [expanded, setExpanded] = useState(false);
   const hasMissing = !skill.eligible && skill.missing && formatMissing(skill.missing);
@@ -35,88 +25,73 @@ function SkillRow({ skill }: { skill: Skill }) {
     setExpanded(prev => !prev);
   }, []);
 
+  const ghostAction =
+    'grid size-6 shrink-0 place-items-center rounded-[3px] text-muted-foreground transition-colors duration-[120ms] hover:bg-raised hover:text-foreground';
+
   return (
-    <div className="border-b border-border/40">
-      <div className="px-3 py-2 flex items-start gap-2">
-        {/* Status dot */}
-        <div className="flex-shrink-0 mt-1">
-          <Circle
-            size={8}
-            fill={skill.eligible ? 'currentColor' : 'none'}
-            className={skill.eligible ? 'text-green' : 'text-muted-foreground'}
-          />
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            {skill.emoji && <span className="text-[0.733rem]">{skill.emoji}</span>}
-            <span className="text-[0.733rem] text-foreground leading-tight truncate font-medium">
-              {skill.name}
-            </span>
-            {/* Source badge */}
-            <span className={`text-[0.6rem] px-1 py-px rounded-sm leading-tight ${sourceColor(skill.source)}`}>
-              {skill.source}
-            </span>
-          </div>
-          {skill.description && (
-            <div className="text-[0.667rem] text-muted-foreground mt-0.5 line-clamp-2 leading-snug">
-              {skill.description}
-            </div>
-          )}
-          {skill.disabled && (
-            <div className="text-[0.667rem] text-muted-foreground mt-0.5 italic">Disabled</div>
-          )}
-          {skill.blockedByAllowlist && (
-            <div className="text-[0.667rem] text-muted-foreground mt-0.5 italic">Blocked by allowlist</div>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {skill.homepage && (
-            <a
-              href={skill.homepage}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-muted-foreground hover:text-purple transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
-              title={`Open ${skill.name} homepage`}
-              aria-label={`Open ${skill.name} homepage`}
-            >
-              <ExternalLink size={10} />
-            </a>
-          )}
-          {hasMissing && (
-            <button
-              onClick={handleExpand}
-              className="bg-transparent border border-transparent text-muted-foreground cursor-pointer p-0.5 focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
-              aria-label={expanded ? 'Hide missing requirements' : 'Show missing requirements'}
-            >
-              {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-            </button>
-          )}
-        </div>
+    <div className="pb-1">
+      <div className="flex min-h-[var(--row-unit)] items-center gap-2 pl-3 pr-1.5">
+        <span className="min-w-0 flex-1 truncate text-[0.867rem] text-foreground">
+          {skill.name}
+        </span>
+        <span className="shrink-0 text-[0.8rem] text-muted-foreground">
+          {skill.source}
+        </span>
+        {skill.homepage && (
+          <a
+            href={skill.homepage}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={ghostAction}
+            title={`Open ${skill.name} homepage`}
+            aria-label={`Open ${skill.name} homepage`}
+          >
+            <ExternalLink size={14} />
+          </a>
+        )}
+        {hasMissing && (
+          <button
+            onClick={handleExpand}
+            className={`${ghostAction} cursor-pointer`}
+            aria-label={expanded ? 'Hide missing requirements' : 'Show missing requirements'}
+          >
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+        )}
       </div>
 
-      {/* Expanded missing requirements */}
-      {expanded && hasMissing && (
-        <div className="px-3 pb-2 pl-8">
-          <div className="text-[0.667rem] text-muted-foreground">
-            <span className="text-red/70">Missing:</span>{' '}
-            {formatMissing(skill.missing!)}
+      <div className="pl-3 pr-3 text-[0.8rem] leading-snug text-muted-foreground">
+        {skill.description && (
+          <div className="line-clamp-2">
+            {skill.description}
           </div>
-        </div>
-      )}
+        )}
+        {skill.disabled && (
+          <div className="mt-0.5">Disabled</div>
+        )}
+        {skill.blockedByAllowlist && (
+          <div className="mt-0.5">Blocked by allowlist</div>
+        )}
+        {/* Expanded missing requirements */}
+        {expanded && hasMissing && (
+          <div className="mt-1">
+            <span className="text-foreground">Missing:</span>{' '}
+            <span className="font-mono">{formatMissing(skill.missing!)}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 interface SkillsTabProps {
   agentId: string;
+  /** The Config picker, when this view is mounted under it; takes the header row with the refresh action. */
+  picker?: ReactNode;
 }
 
 /** Workspace tab listing installed skills and flagging missing dependencies. */
-export function SkillsTab({ agentId }: SkillsTabProps) {
+export function SkillsTab({ agentId, picker }: SkillsTabProps) {
   const { skills, isLoading, error, refresh } = useSkills(agentId);
   const [showUnavailable, setShowUnavailable] = useState(false);
 
@@ -125,79 +100,83 @@ export function SkillsTab({ agentId }: SkillsTabProps) {
   const eligibleCount = eligibleSkills.length;
   const totalCount = skills.length;
 
+  const refreshButton = (
+    <button
+      onClick={refresh}
+      disabled={isLoading}
+      className="shell-icon-button shrink-0 cursor-pointer disabled:opacity-50"
+      title="Refresh skills"
+      aria-label="Refresh skills"
+    >
+      <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+    </button>
+  );
+
   return (
     <div className="h-full flex flex-col min-h-0">
+      {picker && (
+        <div className="flex shrink-0 items-center gap-1 border-b border-border py-1 pl-2 pr-1">
+          <div className="min-w-0 flex-1">{picker}</div>
+          {refreshButton}
+        </div>
+      )}
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {/* Skills count + Refresh row */}
+        {/* Skills count row */}
         {!isLoading && skills.length > 0 && (
-          <div className="flex items-center border-b border-border/40">
-            <div className="flex items-center gap-2 px-3 py-1.5 text-[0.733rem] flex-1">
-              <span className="shrink-0 text-muted-foreground">
-                <Puzzle size={12} />
-              </span>
-              <span className="text-muted-foreground">
-                {eligibleCount} active
-                {unavailableSkills.length > 0 && (
-                  <span className="text-muted-foreground/50"> / {totalCount} total</span>
-                )}
-              </span>
-            </div>
-            <button
-              onClick={refresh}
-              disabled={isLoading}
-              className="shrink-0 px-2 py-1.5 bg-transparent border-0 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0"
-              title="Refresh skills"
-              aria-label="Refresh skills"
-            >
-              <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
-            </button>
+          <div className="flex min-h-[var(--row-unit)] items-center gap-2 border-b border-border pl-3 pr-1">
+            <span className="min-w-0 flex-1 truncate text-[0.8rem] text-muted-foreground">
+              <span className="font-mono tabular">{eligibleCount}</span> active
+              {unavailableSkills.length > 0 && (
+                <> of <span className="font-mono tabular">{totalCount}</span> total</>
+              )}
+            </span>
+            {!picker && refreshButton}
           </div>
         )}
 
         {/* Error */}
         <div aria-live="polite" aria-atomic="true">
           {error && (
-            <div className="px-3 py-2 text-[0.667rem] text-red bg-red/10">{error}</div>
+            <div className="border-b border-border bg-destructive/10 px-3 py-2 text-[0.8rem] text-destructive">{error}</div>
           )}
         </div>
 
-        {/* Loading skeleton */}
+        {/* Loading */}
         {isLoading && !skills.length && !error && (
-          <div className="space-y-2 py-2">
-            <div className="h-10 bg-muted/20 animate-pulse rounded mx-3" />
-            <div className="h-10 bg-muted/20 animate-pulse rounded mx-3" />
-            <div className="h-10 bg-muted/20 animate-pulse rounded mx-3" />
+          <div className="flex min-h-[var(--row-unit)] items-center px-3 text-[0.8rem] text-muted-foreground">
+            Loading skills…
           </div>
         )}
 
         {/* Empty state */}
         {!isLoading && !eligibleSkills.length && !error && (
-          <div className="text-muted-foreground px-3 py-8 text-center flex flex-col items-center gap-2">
-            <Puzzle size={20} className="text-muted-foreground/50" />
-            <span className="text-[0.733rem]">No skills found</span>
+          <div className="flex flex-col items-center gap-2 px-3 py-8 text-center text-muted-foreground">
+            <Puzzle size={16} aria-hidden="true" />
+            <span className="text-[0.8rem]">No skills found</span>
           </div>
         )}
 
-        {/* Skill rows — only eligible/ready skills */}
+        {/* Skill rows: only eligible/ready skills */}
         {eligibleSkills.map(skill => (
           <SkillRow key={skill.name} skill={skill} />
         ))}
 
-        {/* Unavailable skills — collapsible section */}
+        {/* Unavailable skills: collapsible section */}
         {unavailableSkills.length > 0 && (
-          <div className="border-t border-border/40 mt-1">
+          <div className="mt-1 border-t border-border">
             <button
               onClick={() => setShowUnavailable(prev => !prev)}
-              className="w-full flex items-center gap-1.5 px-3 py-2 bg-transparent border-0 cursor-pointer text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
+              className="flex min-h-[var(--row-unit)] w-full cursor-pointer items-center gap-2 border-0 bg-transparent pl-3 pr-3 text-[0.867rem] text-foreground transition-colors duration-[120ms] hover:bg-raised"
             >
-              {showUnavailable ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-              <span className="text-[0.667rem] uppercase tracking-wider">
-                Unavailable ({unavailableSkills.length})
-              </span>
+              {showUnavailable
+                ? <ChevronDown size={14} aria-hidden="true" className="shrink-0 text-muted-foreground" />
+                : <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-muted-foreground" />}
+              <span className="min-w-0 flex-1 truncate text-left">Unavailable</span>
+              <span className="shrink-0 font-mono text-[0.8rem] text-muted-foreground tabular">{unavailableSkills.length}</span>
             </button>
             {showUnavailable && (
-              <div className="opacity-60">
+              <div>
                 {unavailableSkills.map(skill => (
                   <SkillRow key={skill.name} skill={skill} />
                 ))}

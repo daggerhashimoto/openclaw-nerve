@@ -62,7 +62,7 @@ export function buildFileTreeMenuActions(
   if (!inTrash && path !== '.trash') {
     actions.push({
       id: 'trash',
-      label: options.isCustomWorkspace ? 'Permanently Delete' : 'Move to Trash',
+      label: options.isCustomWorkspace ? 'Permanently delete' : 'Move to trash',
       icon: Trash2,
       destructive: true,
       onSelect: options.onTrash,

@@ -25,6 +25,23 @@ function renderTopBar(props: Partial<React.ComponentProps<typeof TopBar>> = {}) 
 }
 
 describe('TopBar', () => {
+  it('lights the brand pane with the fleet and names the state', () => {
+    renderTopBar({ activity: 'live' });
+    expect(screen.getByRole('img', { name: /agents working/i })).toHaveAttribute('data-state', 'live');
+  });
+
+  it('turns the brand pane cantaloupe when work waits on the operator', () => {
+    renderTopBar({ activity: 'operator' });
+    expect(screen.getByRole('img', { name: /waiting on you/i })).toHaveAttribute('data-state', 'operator');
+  });
+
+  it('keeps the brand pane dark and silent when the house is quiet', () => {
+    const { container } = renderTopBar();
+    const pane = container.querySelector('.nerve-brand-pane');
+    expect(pane).toHaveAttribute('data-state', 'off');
+    expect(pane).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('shows the tasks view toggle by default', () => {
     renderTopBar();
 

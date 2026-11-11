@@ -34,10 +34,12 @@ export interface TTSVoiceConfig {
   };
   /** OpenAI TTS settings */
   openai: {
-    /** OpenAI TTS model (gpt-4o-mini-tts, tts-1, tts-1-hd) */
+    /** OpenAI TTS model (Realtime or a legacy Speech API model) */
     model: string;
-    /** Voice name (alloy, ash, ballad, cedar, coral, echo, fable, marin, nova, onyx, sage, shimmer, verse) */
+    /** Voice used by legacy Speech API models */
     voice: string;
+    /** Voice used by gpt-realtime-2.1-mini */
+    realtimeVoice: string;
     /** Natural language instructions for how the voice should sound */
     instructions: string;
   };
@@ -66,8 +68,9 @@ const DEFAULTS: TTSVoiceConfig = {
     styleInstruction: '',
   },
   openai: {
-    model: 'gpt-4o-mini-tts',
+    model: 'gpt-realtime-2.1-mini',
     voice: 'nova',
+    realtimeVoice: 'marin',
     instructions:
       'Speak naturally and conversationally, like a real person. Warm, friendly tone with a slight British accent. Keep it casual and relaxed, not robotic or overly formal.',
   },

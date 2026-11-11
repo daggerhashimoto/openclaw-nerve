@@ -8,13 +8,15 @@ vi.mock('@/features/tts/useTTS', () => ({
   useTTS: () => ({ speak: vi.fn() }),
 }));
 
-vi.mock('@/lib/themes', () => ({
-  themeNames: ['ayu-dark'],
+// Real theme catalogue and resolution; only the DOM side effect is stubbed.
+vi.mock('@/lib/themes', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/themes')>()),
   applyTheme: vi.fn(),
 }));
 
 vi.mock('@/lib/fonts', () => ({
-  fontNames: ['instrument-sans'],
+  fontNames: ['atkinson-hyperlegible', 'instrument-sans'],
+  DEFAULT_FONT: 'atkinson-hyperlegible',
   applyFont: vi.fn(),
 }));
 
@@ -106,5 +108,53 @@ describe('SettingsContext performance mode', () => {
     });
 
     expect(result.current.performanceMode).toBe(true);
+  });
+});
+
+describe('SettingsContext theme', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it.each([
+    ['ayu-dark', 'nerve-dark'],
+    ['midnight', 'nerve-dark'],
+    ['monochrome', 'nerve-dark'],
+    ['light', 'nerve-light'],
+  ])('moves the stored legacy theme "%s" to the Nerve default "%s"', (saved, expected) => {
+    localStorage.setItem('oc-theme', saved);
+
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    expect(result.current.theme).toBe(expected);
+    expect(localStorage.getItem('oc-theme')).toBe(expected);
+  });
+
+  it('defaults fresh installs to Night', () => {
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    expect(result.current.theme).toBe('nerve-dark');
+  });
+
+  it.each([
+    ['classic-dracula', 'nerve-dark'],
+    ['classic-ayu-dark', 'nerve-dark'],
+    ['classic-light', 'nerve-light'],
+  ])('moves the retired Classic theme "%s" to "%s" and persists it', (saved, expected) => {
+    localStorage.setItem('oc-theme', saved);
+
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    expect(result.current.theme).toBe(expected);
+    expect(localStorage.getItem('oc-theme')).toBe(expected);
+  });
+
+  it('switches between Night and Daylight and persists the choice', () => {
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    act(() => result.current.setTheme('nerve-light'));
+
+    expect(result.current.theme).toBe('nerve-light');
+    expect(localStorage.getItem('oc-theme')).toBe('nerve-light');
   });
 });

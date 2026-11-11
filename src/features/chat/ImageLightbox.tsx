@@ -13,9 +13,15 @@ interface ImageLightboxProps {
 const lightboxButtonClass =
   'inline-flex min-h-11 items-center gap-1.5 rounded-[3px] border border-border bg-popover px-2.5 text-[0.8rem] font-medium text-foreground transition-colors duration-[120ms] hover:bg-raised sm:min-h-[var(--row-unit)]';
 
-/** Thumbnail that expands into a full-screen lightbox on click. */
+/**
+ * Thumbnail that expands into a full-screen lightbox on click. An image that
+ * cannot be loaded (a gateway-hosted image the gateway has since forgotten,
+ * say) leaves a quiet note in its place rather than a broken image or a gap.
+ */
 export function ImageLightbox({ src, alt = 'Image', thumbnailClassName }: ImageLightboxProps) {
   const [open, setOpen] = useState(false);
+  // The source that failed, so a new source gets a fresh try.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
 
   const handleDownload = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -47,6 +53,17 @@ export function ImageLightbox({ src, alt = 'Image', thumbnailClassName }: ImageL
     window.open(src, '_blank');
   }, [src]);
 
+  if (failedSrc === src) {
+    return (
+      <span
+        className="inline-flex min-h-[var(--row-unit)] w-fit items-center self-start rounded-[3px] border border-border bg-card px-2.5 text-[0.8rem] text-muted-foreground"
+        title={alt}
+      >
+        Image no longer available
+      </span>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogPrimitive.Trigger asChild>
@@ -55,7 +72,7 @@ export function ImageLightbox({ src, alt = 'Image', thumbnailClassName }: ImageL
           alt={alt}
           className={thumbnailClassName || "max-w-[512px] max-h-[512px] cursor-pointer rounded-[3px] border border-border object-contain transition-colors duration-[120ms] hover:border-pane-edge"}
           loading="lazy"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          onError={() => setFailedSrc(src)}
         />
       </DialogPrimitive.Trigger>
       <DialogPortal>

@@ -25,6 +25,8 @@ import { getTTSConfig, resolveEdgeTTSVoice } from '../lib/tts-config.js';
 
 const DEFAULT_VOICE = 'en-US-AriaNeural';
 
+export type EdgeWordTiming = {word: string; start: number; end: number};
+
 // Windows epoch offset: seconds between 1601-01-01 and 1970-01-01
 const WIN_EPOCH = 11644473600;
 
@@ -40,6 +42,37 @@ function escapeXml(text: string): string {
         c
       ]!,
   );
+}
+
+export function parseEdgeWordBoundaryMessage(message: string): EdgeWordTiming[] {
+  if (!message.includes('Path:audio.metadata')) return [];
+  const body = message.split('\r\n\r\n', 2)[1];
+  if (!body) return [];
+  try {
+    const payload = JSON.parse(body) as {
+      Metadata?: Array<{
+        Type?: string;
+        Data?: {Offset?: number; Duration?: number; text?: {Text?: string}};
+      }>;
+    };
+    return (payload.Metadata ?? []).flatMap((entry) => {
+      const word = String(entry.Data?.text?.Text ?? '').trim();
+      const offset = Number(entry.Data?.Offset);
+      const duration = Number(entry.Data?.Duration);
+      if (entry.Type !== 'WordBoundary' || !word || !Number.isFinite(offset) || !Number.isFinite(duration)) {
+        return [];
+      }
+      const start = Math.max(0, offset / 10_000_000);
+      const end = start + Math.max(0, duration / 10_000_000);
+      return [{
+        word,
+        start: Math.round(start * 1_000_000) / 1_000_000,
+        end: Math.round(end * 1_000_000) / 1_000_000,
+      }];
+    });
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -80,15 +113,16 @@ function deriveVoiceLocale(voiceName: string): string {
 export async function synthesizeEdge(
   text: string,
   voice?: string,
+  includeWordBoundaries = false,
 ): Promise<
-  { ok: true; buf: Buffer } | { ok: false; message: string; status: number }
+  { ok: true; buf: Buffer; words: EdgeWordTiming[] } | { ok: false; message: string; status: number }
 > {
   // Voice resolution: explicit param > language-aware config > tts-config.json > DEFAULT_VOICE
   const resolved = resolveEdgeTTSVoice();
   const effectiveVoice = voice || resolved.voice || getTTSConfig().edge.voice || DEFAULT_VOICE;
   console.log(`[edge-tts] Starting synthesis, voice=${effectiveVoice}`);
   try {
-    const buf = await new Promise<Buffer>((resolve, reject) => {
+    const synthesis = await new Promise<{buf: Buffer; words: EdgeWordTiming[]}>((resolve, reject) => {
       const muid = crypto.randomBytes(16).toString('hex').toUpperCase();
       const ws = new WebSocket(buildWsUrl(), {
         host: 'speech.platform.bing.com',
@@ -102,6 +136,7 @@ export async function synthesizeEdge(
       });
 
       const audioData: Buffer[] = [];
+      const words: EdgeWordTiming[] = [];
       const timeout = setTimeout(() => {
         ws.close();
         reject(new Error('Edge TTS timeout after 30s'));
@@ -110,9 +145,10 @@ export async function synthesizeEdge(
       ws.on('message', (rawData: Buffer, isBinary: boolean) => {
         if (!isBinary) {
           const data = rawData.toString('utf8');
+          if (includeWordBoundaries) words.push(...parseEdgeWordBoundaryMessage(data));
           if (data.includes('turn.end')) {
             clearTimeout(timeout);
-            resolve(Buffer.concat(audioData));
+            resolve({buf: Buffer.concat(audioData), words});
             ws.close();
           }
           return;
@@ -136,7 +172,7 @@ export async function synthesizeEdge(
             audio: {
               metadataoptions: {
                 sentenceBoundaryEnabled: false,
-                wordBoundaryEnabled: false,
+                wordBoundaryEnabled: includeWordBoundaries,
               },
               outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
             },
@@ -175,10 +211,10 @@ export async function synthesizeEdge(
       });
     });
 
-    if (buf.length === 0) {
+    if (synthesis.buf.length === 0) {
       return { ok: false, message: 'Edge TTS returned empty audio', status: 500 };
     }
-    return { ok: true, buf };
+    return { ok: true, ...synthesis };
   } catch (err) {
     console.error('[edge-tts] error:', (err as Error).message);
     return {

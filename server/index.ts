@@ -35,7 +35,7 @@ startFileWatcher();
 
 const httpServer = serve(
   {
-    fetch: app.fetch,
+    fetch: (request, env) => app.fetch(request, env),
     port: config.port,
     hostname: config.host,
   },

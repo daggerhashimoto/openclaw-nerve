@@ -7,7 +7,7 @@ import { eventKind, logPaneState } from './activityWords';
 describe('AgentLog', () => {
   it('lights a pane only for failures and approval requests', () => {
     expect(logPaneState('❌')).toBe('error');
-    expect(logPaneState('⛔')).toBe('error');
+    expect(logPaneState('⛔')).toBe('off'); // aborted, usually the operator's Stop: not a failure
     expect(logPaneState('🔐')).toBe('operator');
     expect(logPaneState('🧠')).toBe('off');
     expect(logPaneState('🔧')).toBe('off');

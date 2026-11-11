@@ -52,10 +52,12 @@ describe('TokenUsage', () => {
     render(<TokenUsage data={data} />);
     expect(screen.getByText('$2,615.81')).toBeInTheDocument();
     expect(screen.getByText('all time')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'OpenAI Codex details' })).toHaveTextContent('$10.00');
-    expect(screen.getByRole('button', { name: 'Anthropic details' })).toHaveTextContent('$2.50');
-    expect(screen.getByRole('meter', { name: 'OpenAI Codex share of spend' })).toHaveAttribute('aria-valuenow', '100');
-    expect(screen.getByRole('meter', { name: 'Anthropic share of spend' })).toHaveAttribute('aria-valuenow', '25');
+    // The accessible name carries the cost (and any errors), since it replaces the visible text.
+    expect(screen.getByRole('button', { name: 'OpenAI Codex, $10.00' })).toHaveTextContent('$10.00');
+    expect(screen.getByRole('button', { name: 'Anthropic, $2.50, 3 errors' })).toHaveTextContent('$2.50');
+    // Shares of the providers' combined spend ($12.50), not ratios to the largest.
+    expect(screen.getByRole('meter', { name: 'OpenAI Codex share of spend' })).toHaveAttribute('aria-valuenow', '80');
+    expect(screen.getByRole('meter', { name: 'Anthropic share of spend' })).toHaveAttribute('aria-valuenow', '20');
   });
 
   it('hides the share meter when there is only one provider', () => {
@@ -65,7 +67,7 @@ describe('TokenUsage', () => {
 
   it('marks a provider with errors with a red pane and lists them in the details', () => {
     render(<TokenUsage data={data} />);
-    const row = screen.getByRole('button', { name: 'Anthropic details' });
+    const row = screen.getByRole('button', { name: 'Anthropic, $2.50, 3 errors' });
     expect(row.querySelector('.pane')).toHaveAttribute('data-state', 'error');
     fireEvent.click(row);
     expect(row).toHaveAttribute('aria-expanded', 'true');
@@ -81,7 +83,7 @@ describe('TokenUsage', () => {
     };
     limits.codexLastChecked = Date.now() - 3 * 60_000;
     render(<TokenUsage data={data} />);
-    fireEvent.click(screen.getByRole('button', { name: 'OpenAI Codex details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'OpenAI Codex, $10.00' }));
 
     expect(screen.getByText('Input').nextElementSibling).toHaveTextContent('1.0M tokens');
     expect(screen.getByText('Cached').nextElementSibling).toHaveTextContent('5.0M tokens');
@@ -96,7 +98,7 @@ describe('TokenUsage', () => {
   it('says when limits are unavailable', () => {
     limits.claudeLimits = { available: false };
     render(<TokenUsage data={data} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Anthropic details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Anthropic, $2.50, 3 errors' }));
     expect(screen.getByText('Unavailable')).toBeInTheDocument();
   });
 
@@ -111,7 +113,7 @@ describe('TokenUsage', () => {
 
   it('carries no emoji, glyph icons or tracked capitals', () => {
     const { container } = render(<TokenUsage data={data} />);
-    fireEvent.click(screen.getByRole('button', { name: 'OpenAI Codex details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'OpenAI Codex, $10.00' }));
     expect(container.textContent).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}◆▼↑↓]/u);
     expect(container.querySelector('.uppercase')).toBeNull();
     expect(container.querySelector('[class*="tracking-"]')).toBeNull();

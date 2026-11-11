@@ -226,7 +226,11 @@ describe('ChatHeader', () => {
       />
     );
 
-    expect(screen.getByRole('status')).toHaveTextContent('Could not load configured models');
+    // Announced, and not hidden at any width: on a narrow header it takes its own row.
+    const error = screen.getByRole('alert');
+    expect(error).toHaveTextContent('Could not load configured models');
+    expect(error.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    expect(error).toHaveClass('@max-[40rem]:basis-full');
     expect(screen.getByRole('button', { name: 'Model' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Model' })).toHaveTextContent('No configured models');
   });

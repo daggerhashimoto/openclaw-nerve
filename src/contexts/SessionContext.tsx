@@ -437,7 +437,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let badge = 'SYSTEM', badgeCls = 'badge-system', desc = evt;
 
     if (evt.startsWith('chat')) {
-      badge = 'CHAT'; badgeCls = 'badge-chat';
+      badge = 'CHAT'; badgeCls = p.state === 'error' ? 'badge-error' : 'badge-chat';
       desc = chatStateDescs[p.state || ''] || (p.sessionKey ? 'Message from ' + p.sessionKey : 'Chat event');
     } else if (evt.startsWith('agent')) {
       badge = 'AGENT'; badgeCls = 'badge-agent';

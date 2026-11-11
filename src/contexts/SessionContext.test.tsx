@@ -3,6 +3,7 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 import { SessionProvider, useSessionContext } from './SessionContext';
 import { getSessionKey, type GatewayEvent } from '@/types';
 import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
+import { EventLog } from '@/features/activity/EventLog';
 
 const mockUseGateway = vi.fn();
 const mockUseSettings = vi.fn();
@@ -79,6 +80,11 @@ function SessionUnreadProbe() {
       </button>
     </div>
   );
+}
+
+function SessionEventLog() {
+  const { eventEntries } = useSessionContext();
+  return <EventLog entries={eventEntries} />;
 }
 
 function SessionStatusProbe() {
@@ -1193,5 +1199,26 @@ describe('SessionContext', () => {
 
     expect(rpcBeforeReconnect.mock.calls.filter(([method]) => method === 'sessions.list')).toHaveLength(preReconnectSessionsListCalls);
     expect(rpcAfterReconnect).not.toHaveBeenCalledWith('sessions.list', expect.anything());
+  });
+
+  it('records a chat error as a failure in the event log', async () => {
+    render(
+      <SessionProvider>
+        <SessionEventLog />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(subscribedHandler).not.toBeNull());
+
+    act(() => {
+      subscribedHandler?.({ type: 'event', event: 'chat', payload: { sessionKey: 'agent:main:main', state: 'final' } });
+    });
+    expect(screen.getByText('Response complete')).toHaveClass('text-foreground');
+    expect(screen.queryByLabelText('Failed')).toBeNull();
+
+    act(() => {
+      subscribedHandler?.({ type: 'event', event: 'chat', payload: { sessionKey: 'agent:main:main', state: 'error' } });
+    });
+    expect(screen.getByText('Chat error')).toHaveClass('text-destructive');
+    expect(screen.getByLabelText('Failed')).toHaveAttribute('data-state', 'error');
   });
 });

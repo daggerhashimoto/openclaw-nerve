@@ -2,11 +2,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 
-const mockConfig = { gatewayUrl: 'http://127.0.0.1:18789', gatewayToken: 'gw-token' };
+const mockConfig = { gatewayUrl: 'http://127.0.0.1:18789', gatewayToken: 'gw-token', auth: false };
+const client = { address: '127.0.0.1' };
 
 vi.mock('../lib/config.js', () => ({ config: mockConfig }));
 vi.mock('../middleware/rate-limit.js', () => ({
   rateLimitGeneral: async (_c: unknown, next: () => Promise<void>) => next(),
+}));
+vi.mock('@hono/node-server/conninfo', () => ({
+  getConnInfo: () => ({ remote: { address: client.address } }),
 }));
 
 const MEDIA_PATH = '/api/chat/media/outgoing/agent%3Amain%3Amain/784f0288-9a9a-4a96-8c9a-c3b846b7a796/full';
@@ -25,6 +29,8 @@ describe('GET /api/chat-media', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
     mockConfig.gatewayUrl = 'http://127.0.0.1:18789';
     mockConfig.gatewayToken = 'gw-token';
+    mockConfig.auth = false;
+    client.address = '127.0.0.1';
     vi.resetModules();
   });
 
@@ -82,6 +88,21 @@ describe('GET /api/chat-media', () => {
     const res = await request(MEDIA_PATH);
     expect(res.status).toBe(503);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not use the gateway token for a remote client when Nerve auth is off', async () => {
+    client.address = '203.0.113.7';
+    const res = await request(MEDIA_PATH);
+    expect(res.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('serves a remote client once Nerve auth is on (the auth middleware has checked the session)', async () => {
+    client.address = '203.0.113.7';
+    mockConfig.auth = true;
+    const res = await request(MEDIA_PATH);
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('passes a gateway 404 through as 404', async () => {

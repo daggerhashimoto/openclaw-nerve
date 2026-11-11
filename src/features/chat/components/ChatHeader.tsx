@@ -150,19 +150,20 @@ export function ChatHeader({
             displayLabel={selectedEffortLabel}
             options={effortOptions}
           />
-
-          {uiError && (
-            <span
-              className="hidden min-w-0 max-w-[220px] items-center gap-1.5 text-[0.8rem] text-destructive md:inline-flex"
-              title={uiError}
-              role="status"
-              aria-live="polite"
-            >
-              <Pane state="error" size="sm" />
-              <span className="truncate">{uiError}</span>
-            </span>
-          )}
         </div>
+
+        {/* A failed model or effort change. Beside the selectors on a wide header; on a narrow one it
+            takes its own row and wraps, so a phone shows the whole reason. */}
+        {uiError && (
+          <span
+            className="flex min-w-0 max-w-[220px] items-center gap-1.5 text-[0.8rem] text-destructive @max-[40rem]:order-last @max-[40rem]:max-w-none @max-[40rem]:basis-full"
+            title={uiError}
+            role="alert"
+          >
+            <Pane state="error" size="sm" />
+            <span className="truncate @max-[40rem]:whitespace-normal">{uiError}</span>
+          </span>
+        )}
 
         {/* Run state: lit while the agent works, dark when idle. Never narrower than its words and clock,
             so it cannot run under the buttons. On a narrow header a run takes its own second row with

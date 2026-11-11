@@ -3,11 +3,11 @@ import type { PaneState } from '@/lib/paneState';
 /**
  * The glyph a log line was recorded with is history, not state, so most lines
  * carry a dark pane. Only two meanings light it: a failure is red, and a
- * request for the operator's approval is cantaloupe.
+ * request for the operator's approval is cantaloupe. An aborted response is
+ * usually the operator pressing Stop, so it stays dark rather than reading as failed.
  */
 const PANE_BY_ICON: Record<string, PaneState> = {
   '❌': 'error',
-  '⛔': 'error',
   '🔐': 'operator',
 };
 

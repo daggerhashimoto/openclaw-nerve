@@ -159,8 +159,8 @@ function ClaudeLimitsSection({ limits, lastChecked }: { limits: ClaudeCodeLimits
 
 interface ProviderRowProps {
   entry: TokenEntry;
-  /** Largest provider cost, for the share meter; undefined hides the meter (one provider has no share). */
-  maxCost?: number;
+  /** Spend across the listed providers, for the share meter; undefined hides the meter (one provider has no share). */
+  spendTotal?: number;
   codexLimits: CodexLimits | null;
   claudeLimits: ClaudeCodeLimits | null;
   codexLastChecked: number | null;
@@ -177,7 +177,7 @@ function Detail({ label, value, tone }: { label: string; value: string; tone?: '
   );
 }
 
-function ProviderRow({ entry, maxCost, codexLimits, claudeLimits, codexLastChecked, claudeLastChecked }: ProviderRowProps) {
+function ProviderRow({ entry, spendTotal, codexLimits, claudeLimits, codexLastChecked, claudeLastChecked }: ProviderRowProps) {
   const [expanded, setExpanded] = useState(false);
   const name = providerName(entry.source);
   const errors = entry.errorCount || 0;
@@ -191,7 +191,7 @@ function ProviderRow({ entry, maxCost, codexLimits, claudeLimits, codexLastCheck
         type="button"
         onClick={() => setExpanded((open) => !open)}
         aria-expanded={expanded}
-        aria-label={`${name} details`}
+        aria-label={`${name}, ${fmtDollars(entry.cost)}${errors > 0 ? `, ${errors} errors` : ''}`}
         className="group flex min-h-[var(--row-unit)] w-full cursor-pointer items-center gap-2 rounded-[2px] border-0 bg-transparent px-3 text-left transition-colors duration-[120ms] hover:bg-raised focus-visible:bg-raised focus-visible:outline-none"
       >
         <ChevronRight
@@ -201,8 +201,8 @@ function ProviderRow({ entry, maxCost, codexLimits, claudeLimits, codexLastCheck
         />
         {errors > 0 && <Pane state="error" size="sm" label={`${errors} errors`} />}
         <span className="min-w-0 truncate text-[0.867rem] text-foreground">{name}</span>
-        {maxCost !== undefined && (
-          <Meter percent={(entry.cost / maxCost) * 100} label={`${name} share of spend`} />
+        {spendTotal !== undefined && (
+          <Meter percent={(entry.cost / spendTotal) * 100} label={`${name} share of spend`} />
         )}
         <span className="ml-auto shrink-0 font-mono text-[0.867rem] tabular text-foreground">{fmtDollars(entry.cost)}</span>
       </button>
@@ -247,7 +247,7 @@ export function TokenUsage({ data }: TokenUsageProps) {
     () => (data?.entries || []).filter((e) => e.cost > 0 || (e.messageCount || 0) > 0 || (e.errorCount || 0) > 0),
     [data?.entries],
   );
-  const maxCost = useMemo(() => Math.max(1, ...entries.map((e) => e.cost)), [entries]);
+  const spendTotal = useMemo(() => entries.reduce((sum, e) => sum + e.cost, 0), [entries]);
   const { codexLimits, claudeLimits, codexLastChecked, claudeLastChecked } = useLimits();
 
   const totalCost = data?.persistent?.totalCost ?? data?.totalCost ?? 0;
@@ -278,7 +278,7 @@ export function TokenUsage({ data }: TokenUsageProps) {
               <ProviderRow
                 key={entry.source}
                 entry={entry}
-                maxCost={entries.length > 1 ? maxCost : undefined}
+                spendTotal={entries.length > 1 && spendTotal > 0 ? spendTotal : undefined}
                 codexLimits={codexLimits}
                 claudeLimits={claudeLimits}
                 codexLastChecked={codexLastChecked}

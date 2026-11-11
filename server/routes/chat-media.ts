@@ -8,11 +8,15 @@
  * gateway token, which the browser must never hold, so Nerve fetches it here.
  *
  * Only that one gateway path shape is accepted, and only raster images are
- * passed through (an SVG served from Nerve's origin could run script).
+ * passed through (an SVG served from Nerve's origin could run script). The
+ * token is used only for clients the WebSocket proxy would inject it for:
+ * an authenticated session, or loopback when auth is off.
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import { getConnInfo } from '@hono/node-server/conninfo';
 import { config } from '../lib/config.js';
+import { canInjectGatewayToken } from '../lib/trust-utils.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 
 const app = new Hono();
@@ -30,6 +34,17 @@ function gatewayOrigin(): string {
   return url.origin;
 }
 
+/** The caller as the trust check sees it: the socket address plus forwarding headers. */
+function requestClient(c: Context) {
+  let remoteAddress: string | undefined;
+  try {
+    remoteAddress = getConnInfo(c).remote.address;
+  } catch {
+    // No socket information (e.g. app.request in tests); treated as untrusted unless auth is on.
+  }
+  return { socket: { remoteAddress }, headers: c.req.header() };
+}
+
 /** The gateway URL for an accepted media path, or null when the path is refused. */
 export function resolveChatMediaUrl(path: string): string | null {
   if (!CHAT_MEDIA_PATH_RE.test(path)) return null;
@@ -45,6 +60,9 @@ app.get('/api/chat-media', rateLimitGeneral, async (c) => {
   const target = resolveChatMediaUrl(path);
   if (!target) return c.json({ ok: false, error: 'Not a chat media path' }, 400);
   if (!config.gatewayToken) return c.json({ ok: false, error: 'Gateway token is not configured' }, 503);
+  if (!canInjectGatewayToken(requestClient(c))) {
+    return c.json({ ok: false, error: 'Chat media is only served to trusted clients' }, 403);
+  }
 
   let upstream: Response;
   try {

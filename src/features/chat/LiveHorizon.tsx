@@ -41,8 +41,8 @@ const LAYOUT: Column[] = (() => {
  * eye. CSS only (stepped scaleY, no timers), and not in the DOM at all when the session is idle,
  * in performance mode, or under reduced motion (see .nerve-horizon in index.css).
  */
-export const LiveHorizon = memo(function LiveHorizon({ active }: { active: boolean }) {
-  if (!active || isPerformanceModePreferenceEnabled()) return null;
+export const LiveHorizon = memo(function LiveHorizon({ active, performanceMode = false }: { active: boolean; performanceMode?: boolean }) {
+  if (!active || performanceMode || isPerformanceModePreferenceEnabled()) return null;
   return (
     <div className="nerve-horizon" aria-hidden="true" data-testid="live-horizon">
       {LAYOUT.map((c, i) => (

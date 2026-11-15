@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { createChart, ColorType, CrosshairMode, LineSeries, AreaSeries, CandlestickSeries } from 'lightweight-charts';
 import type { IChartApi } from 'lightweight-charts';
 import type { ChartData } from './extractCharts';
+import { useThemeVersion } from './useThemeVersion';
 
 function getCSSVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -23,21 +24,6 @@ function getChartColors() {
     rule: getCSSVar('--color-border') || 'rgba(255,255,255,0.1)',
     mono: getCSSVar('--font-mono') || 'monospace',
   };
-}
-
-/**
- * Counts theme changes. applyTheme writes the tokens onto the root element, so a
- * mounted chart rebuilds with the new colours instead of keeping the old palette.
- */
-function useThemeVersion(): number {
-  const [version, setVersion] = useState(0);
-  useEffect(() => {
-    if (typeof MutationObserver === 'undefined') return;
-    const observer = new MutationObserver(() => setVersion((v) => v + 1));
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'style'] });
-    return () => observer.disconnect();
-  }, []);
-  return version;
 }
 
 /** Flat translucent fill for area series: a hex colour plus an alpha byte. */

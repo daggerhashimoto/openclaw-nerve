@@ -23,6 +23,9 @@ const MIN_WIDTH = 160;
 const MAX_WIDTH = 400;
 const DEFAULT_WIDTH = 248;
 /** Sentinel value for width state when collapsed. */
+/** How long a file change waits for the run state that explains it before it is forgotten. */
+const PENDING_CHANGE_WINDOW_MS = 10_000;
+
 const COLLAPSED_WIDTH = 0;
 
 const WIDTH_STORAGE_KEY = 'nerve-file-tree-width';
@@ -136,6 +139,8 @@ export function FileTreePanel({
   const lastHandledChangeSequenceRef = useRef<number | null>(null);
   // The file the running agent last changed: lit with a live pane until the run ends.
   const [livePath, setLivePath] = useState<string | null>(null);
+  // A change that arrives a beat before the run state does: remembered, and lit once the run shows.
+  const pendingChangeRef = useRef<{ path: string; at: number } | null>(null);
   useEffect(() => {
     if (!lastChangedEvent) return;
     if (lastChangedEvent.agentId !== workspaceAgentId) return;
@@ -144,12 +149,19 @@ export function FileTreePanel({
     lastHandledChangeSequenceRef.current = lastChangedEvent.sequence;
     handleFileChange(lastChangedEvent.path);
     if (agentRunning) setLivePath(lastChangedEvent.path);
+    else pendingChangeRef.current = { path: lastChangedEvent.path, at: Date.now() };
   }, [agentRunning, handleFileChange, lastChangedEvent, workspaceAgentId]);
 
   // The pane goes dark when the run ends or the workspace changes. Mounting the panel
   // (the compact drawer opens) is not a workspace change, so a live file stays lit.
   useEffect(() => {
-    if (!agentRunning) setLivePath(null);
+    if (!agentRunning) {
+      setLivePath(null);
+      return;
+    }
+    const pending = pendingChangeRef.current;
+    pendingChangeRef.current = null;
+    if (pending && Date.now() - pending.at < PENDING_CHANGE_WINDOW_MS) setLivePath(pending.path);
   }, [agentRunning]);
   const previousWorkspaceRef = useRef(workspaceAgentId);
   useEffect(() => {

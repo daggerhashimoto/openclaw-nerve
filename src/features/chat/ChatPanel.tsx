@@ -49,6 +49,8 @@ interface ChatPanelProps {
   hasMore?: boolean;
   /** True once this room's history has been fetched; an empty room says so only then */
   historyLoaded?: boolean;
+  /** Performance mode freezes cosmetic live visuals such as the horizon. */
+  performanceMode?: boolean;
   /** Mobile file browser toggle handler */
   onToggleFileBrowser?: () => void;
   /** Whether the mobile file browser is currently collapsed. */
@@ -88,7 +90,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   processingStage,
   lastEventTimestamp = 0, currentToolDescription = null, activityLog = [],
   onWakeWordState, onReset, searchOpen, onSearchClose, id, agentName = 'Agent', agentHue,
-  loadMore, hasMore = false, historyLoaded = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
+  loadMore, hasMore = false, historyLoaded = false, performanceMode = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
   onToggleMobileTopBar, isMobileTopBarHidden = false,
   onOpenWorkspacePath,
   pathLinkPrefixes,
@@ -378,7 +380,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   return (
     <div id={id} className="nerve-room-plate isolate h-full flex flex-col min-w-0 relative">
       {/* The live horizon: a faint equalizer behind the composer while this session works */}
-      <LiveHorizon active={isGenerating} />
+      <LiveHorizon active={isGenerating} performanceMode={performanceMode} />
       {/* Session header */}
       <ChatHeader
         onReset={onReset}

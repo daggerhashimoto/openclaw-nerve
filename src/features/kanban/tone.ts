@@ -49,7 +49,9 @@ export function priorityWord(priority: string | null | undefined): { word: strin
 /** The agent id behind an `agent:<id>` assignee, or null for the operator and unassigned. */
 export function assigneeAgentId(assignee: string | null | undefined): string | null {
   if (!assignee || !assignee.startsWith('agent:')) return null;
-  const id = assignee.slice('agent:'.length);
+  // The server canonicalises assignees to agent:<id>; a persisted legacy value such as
+  // agent:reviewer:main still means the reviewer family, so take the first segment.
+  const id = assignee.slice('agent:'.length).split(':')[0];
   return id || null;
 }
 

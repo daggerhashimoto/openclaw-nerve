@@ -289,6 +289,26 @@ describe('mergeRecoveredTail', () => {
       expect(result.map((m) => m.msgId)).toEqual(recovered.map((m) => m.msgId));
     });
 
+    it('shows a row once when history orders it differently from the transcript on screen', () => {
+      // A recovery mid-run left the streamed reply out (it was still in the stream
+      // buffer) but brought the compaction row, so the live final landed after it.
+      const existing = [
+        historyRow('user', 'Question', 'e1', T),
+        historyRow('system', 'Compaction', 'e3', T + 2000),
+        liveRow('assistant', 'Answer', T + 3000),
+      ];
+      const recovered = [
+        historyRow('user', 'Question', 'e1', T),
+        historyRow('assistant', 'Answer', 'e2', T + 1000),
+        historyRow('system', 'Compaction', 'e3', T + 2000),
+      ];
+
+      const result = mergeRecoveredTail(existing, recovered);
+
+      expect(texts(result)).toEqual(['Question', 'Answer', 'Compaction']);
+      expect(result.map((m) => m.msgId)).toEqual(recovered.map((m) => m.msgId));
+    });
+
     it('keeps the full tool group when the recovered window starts inside it', () => {
       // The window cut the first call off, so the recovered group is the rest of the
       // calls under the second call's id. The group already shown covers them.

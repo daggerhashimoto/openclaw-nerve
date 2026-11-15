@@ -153,6 +153,21 @@ function extendAnchorBackwards(
 }
 
 /**
+ * A transcript entry shows once. Rows kept from the existing transcript drop any
+ * entry that also comes back in the recovered rows, whose copy sits where history
+ * puts it. The two can overlap when the screen had rows in another order, for
+ * example a live final appended after a compaction row that history records after it.
+ */
+function withoutRecoveredEntries(kept: ChatMsg[], recoveredRows: ChatMsg[]): ChatMsg[] {
+  const ids = new Set(recoveredRows.map(transcriptRowId).filter(Boolean));
+  if (ids.size === 0) return kept;
+  return kept.filter((row) => {
+    const id = transcriptRowId(row);
+    return !id || !ids.has(id);
+  });
+}
+
+/**
  * Put back the prompts a merge replaced that history does not hold yet. One still
  * sending goes at the end, where the gateway will record it; a failed one goes
  * where it falls in time among the rows that replaced it (from regionStart on).
@@ -203,16 +218,19 @@ export function mergeRecoveredTail(existing: ChatMsg[], recovered: ChatMsg[]): C
     const overlapped = recovered
       .slice(0, overlap)
       .map((row, i) => (isExactMatch(existing[start + i], row) ? row : existing[start + i]));
-    const merged = [...existing.slice(0, start), ...overlapped, ...recovered.slice(overlap)];
-    return restoreUnsentPrompts(merged, existing.slice(start), start);
+    // A recovered row paired with an existing row by content has an id the existing
+    // transcript lacks (see createRowMatcher), so checking all of recovered is safe.
+    const prefix = withoutRecoveredEntries(existing.slice(0, start), recovered);
+    const merged = [...prefix, ...overlapped, ...recovered.slice(overlap)];
+    return restoreUnsentPrompts(merged, existing.slice(start), prefix.length);
   }
 
   // Anchor path: find a matching point in the existing tail and replace only suffix.
   const anchor = findTailAnchor(existing.length, recovered.length, same);
   if (anchor) {
-    const preservedPrefix = existing.slice(0, anchor.existingIdx);
     const patchedTail = recovered.slice(anchor.recoveredIdx);
-    return restoreUnsentPrompts([...preservedPrefix, ...patchedTail], existing.slice(anchor.existingIdx), anchor.existingIdx);
+    const preservedPrefix = withoutRecoveredEntries(existing.slice(0, anchor.existingIdx), patchedTail);
+    return restoreUnsentPrompts([...preservedPrefix, ...patchedTail], existing.slice(anchor.existingIdx), preservedPrefix.length);
   }
 
   // Last resort: no overlap or anchor, so the recovered window replaces the

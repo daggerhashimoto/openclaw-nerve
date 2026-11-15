@@ -6,6 +6,7 @@ export {
   splitToolCallMessage,
   groupToolMessages,
   tagIntermediateMessages,
+  transcriptRowId,
 } from './loadHistory';
 export { buildUserMessage, sendChatMessage } from './sendMessage';
 export type { ChatSendAck, ChatSendStatus } from './sendMessage';
@@ -22,7 +23,7 @@ export {
   isActiveAgentState,
 } from './streamEventHandler';
 export type { ClassifiedEvent, StreamEventType, FinalMessageData } from './streamEventHandler';
-export { keepUnsentMessages, mergeRecoveredTail } from './mergeRecoveredTail';
+export { isUnsentPrompt, keepUnsentMessages, mergeRecoveredTail } from './mergeRecoveredTail';
 export {
   createFallbackRunId,
   getOrCreateRunState,

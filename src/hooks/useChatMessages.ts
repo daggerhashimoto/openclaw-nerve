@@ -5,7 +5,7 @@
  * history loading, and message merge/dedup utilities.
  */
 import { useState, useRef, useCallback, useMemo } from 'react';
-import { keepUnsentMessages, loadChatHistory } from '@/features/chat/operations';
+import { isUnsentPrompt, keepUnsentMessages, loadChatHistory, transcriptRowId } from '@/features/chat/operations';
 import { generateMsgId } from '@/features/chat/types';
 import type { ChatMsg } from '@/features/chat/types';
 
@@ -39,15 +39,45 @@ export function isLikelyDuplicateMessage(a: ChatMsg, b: ChatMsg): boolean {
   );
 }
 
+/**
+ * Index of the first row of the turn a live final belongs to: the row after the
+ * latest prompt. A prompt still sending or not sent is not in the transcript yet,
+ * so it does not start a turn.
+ */
+function currentTurnStart(msgs: ChatMsg[]): number {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === 'user' && !isUnsentPrompt(msgs[i])) return i + 1;
+  }
+  return 0;
+}
+
 export function mergeFinalMessages(existing: ChatMsg[], incoming: ChatMsg[]): ChatMsg[] {
   if (incoming.length === 0) return existing;
   const merged = [...existing];
+  // Rows that already took an incoming row's place, so one row never stands in for two.
+  const claimed = new Set<ChatMsg>();
 
   for (const msg of incoming) {
-    const last = merged[merged.length - 1];
-
-    if (last && isLikelyDuplicateMessage(last, msg)) {
-      merged[merged.length - 1] = msg;
+    // A history read can show the reply before its live final arrives, and by then
+    // other rows can follow it (a tool result, a compaction row), so the whole turn
+    // is searched, not just the last row. A live final carries no transcript id, so
+    // the match is by content and time (isLikelyDuplicateMessage).
+    const turnStart = currentTurnStart(merged);
+    let match = -1;
+    for (let i = merged.length - 1; i >= turnStart; i--) {
+      if (!claimed.has(merged[i]) && isLikelyDuplicateMessage(merged[i], msg)) {
+        match = i;
+        break;
+      }
+    }
+    if (match >= 0) {
+      // The history copy stays: it has the transcript id and whatever history adds to it.
+      if (transcriptRowId(merged[match])) {
+        claimed.add(merged[match]);
+      } else {
+        merged[match] = msg;
+        claimed.add(msg);
+      }
       continue;
     }
 

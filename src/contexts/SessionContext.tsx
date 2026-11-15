@@ -85,6 +85,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const terminalPingSeenRef = useRef<Map<string, number>>(new Map());
   const doneTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const delayedRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Refreshes overlap (events, the poll, spawn and delete all start one). Each takes a number when it
+  // starts; one that answers after a later refresh or a delete has landed is an older snapshot and is dropped.
+  const refreshStartedRef = useRef(0);
+  const refreshLandedRef = useRef(0);
 
   // Derive busyState from agentStatus for backward compatibility. A failed run is over, not busy.
   const busyState = useMemo(() => {
@@ -559,8 +563,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const refreshSessions = useCallback(async () => {
     if (connectionState !== 'connected') return;
+    const refreshId = ++refreshStartedRef.current;
     try {
       const newSessions = await listAuthoritativeSessions();
+      if (refreshId <= refreshLandedRef.current) return;
+      refreshLandedRef.current = refreshId;
       const nextCurrentSession = pickDefaultSessionKey(newSessions, currentSessionRef.current);
       
       // Smart diffing: preserve object references for unchanged sessions.
@@ -869,6 +876,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } finally {
       // Mirror what the gateway actually deleted, also when a later delete in the tree failed.
       if (deletedKeys.length > 0) {
+        // A refresh still in flight may hold a snapshot from before these deletes and would bring the rows back.
+        refreshLandedRef.current = refreshStartedRef.current;
         const shouldReplaceCurrent = deletedKeys.includes(currentSessionRef.current);
         const remaining = sessionsRef.current.filter(s => !deletedKeys.includes(getSessionKey(s)));
         setSessions(prev => prev.filter(s => !deletedKeys.includes(getSessionKey(s))));

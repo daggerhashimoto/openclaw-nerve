@@ -625,6 +625,103 @@ describe('SessionContext', () => {
       expect(onError).not.toHaveBeenCalled();
       expect(deleteCalls()).toEqual(['agent:ops:cron:nightly:run:r1', 'agent:ops:cron:nightly']);
     });
+
+    it('keeps a deleted session gone when a refresh that started before the delete lands after it', async () => {
+      installDeleteGateway([
+        { sessionKey: 'agent:main:main', label: 'Main' },
+        { sessionKey: 'agent:ops:main', label: 'Ops' },
+        { sessionKey: 'agent:ops:subagent:worker', label: 'Worker' },
+      ], () => null);
+      // Hold one full sessions.list answer, taken before the delete, until after the delete has landed.
+      const gateway = rpcMock.getMockImplementation()!;
+      let holdNextFullList = false;
+      let releaseHeldList = () => {};
+      rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+        const answer = await gateway(method, params);
+        if (method === 'sessions.list' && !params?.spawnedBy && holdNextFullList) {
+          holdNextFullList = false;
+          await new Promise<void>((resolve) => { releaseHeldList = resolve; });
+        }
+        return answer;
+      });
+      const onError = vi.fn();
+
+      render(
+        <SessionProvider>
+          <SessionRefreshProbe />
+          <DeleteProbe target="agent:ops:subagent:worker" onError={onError} />
+        </SessionProvider>,
+      );
+      await screen.findByText('agent:ops:subagent:worker');
+
+      holdNextFullList = true;
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click();
+      });
+      await act(async () => {
+        screen.getByTestId('delete').click();
+      });
+      await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main']));
+
+      const spawnedByCallsBefore = rpcMock.mock.calls.filter(([method, params]) => method === 'sessions.list' && params?.spawnedBy).length;
+      await act(async () => {
+        releaseHeldList();
+      });
+      // The held refresh has finished once it has asked for both roots' children.
+      await waitFor(() => {
+        expect(rpcMock.mock.calls.filter(([method, params]) => method === 'sessions.list' && params?.spawnedBy)).toHaveLength(spawnedByCallsBefore + 2);
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main']);
+    });
+  });
+
+  it('applies only the newest of two overlapping refreshes when the older one answers last', async () => {
+    let listed = [
+      { sessionKey: 'agent:main:main', label: 'Main' },
+      { sessionKey: 'agent:main:subagent:worker', label: 'Worker' },
+    ];
+    let holdNextFullList = false;
+    let releaseHeldList = () => {};
+    rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method !== 'sessions.list') return {};
+      if (params?.spawnedBy) return { sessions: [] };
+      const answer = { sessions: listed };
+      if (holdNextFullList) {
+        holdNextFullList = false;
+        await new Promise<void>((resolve) => { releaseHeldList = resolve; });
+      }
+      return answer;
+    });
+
+    render(
+      <SessionProvider>
+        <SessionRefreshProbe />
+        <SessionLabels />
+      </SessionProvider>,
+    );
+    await screen.findByText('Worker');
+
+    holdNextFullList = true;
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+    });
+    listed = [{ sessionKey: 'agent:main:main', label: 'Main' }];
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+    });
+    await waitFor(() => expect(screen.queryByText('Worker')).not.toBeInTheDocument());
+
+    await act(async () => {
+      releaseHeldList();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.queryByText('Worker')).not.toBeInTheDocument();
   });
 
   it('uses the full gateway session list for sidebar refreshes so older agent chats stay visible', async () => {

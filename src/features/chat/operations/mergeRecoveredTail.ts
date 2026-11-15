@@ -156,7 +156,7 @@ function extendAnchorBackwards(
  * A transcript entry shows once. Rows kept from the existing transcript drop any
  * entry that also comes back in the recovered rows, whose copy sits where history
  * puts it. The two can overlap when the screen had rows in another order, for
- * example a live final appended after a compaction row that history records after it.
+ * example a live final appended after a row that history records after it.
  */
 function withoutRecoveredEntries(kept: ChatMsg[], recoveredRows: ChatMsg[]): ChatMsg[] {
   const ids = new Set(recoveredRows.map(transcriptRowId).filter(Boolean));

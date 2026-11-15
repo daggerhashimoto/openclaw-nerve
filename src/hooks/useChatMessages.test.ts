@@ -21,14 +21,20 @@ function liveRow(text: string, ts: number): ChatMsg {
 
 const texts = (msgs: ChatMsg[]) => msgs.map((m) => m.rawText);
 
+/**
+ * A visible row history records after a reply. #376 hit this with a compaction row;
+ * those are hidden since #374, so the tests use a row that still shows.
+ */
+const LATER_ROW = 'Model switched to gpt-5.5';
+
 describe('mergeFinalMessages', () => {
-  it('keeps one copy when history already showed the reply and a compaction row after it', () => {
+  it('keeps one copy when history already showed the reply and a later row after it', () => {
     // The shape behind #376: a recovery read history after the reply was recorded and
-    // the session compacted, before the live final arrived.
+    // a later row followed it, before the live final arrived.
     const existing = [
       historyRow('user', 'Audit task 10', 'e1', T),
       historyRow('assistant', 'Task 10 audit is verified complete.', 'e2', T + 18_000),
-      historyRow('system', 'Compaction', 'e3', T + 40_000),
+      historyRow('system', LATER_ROW, 'e3', T + 40_000),
     ];
 
     const result = mergeFinalMessages(existing, [liveRow('Task 10 audit is verified complete.', T + 45_000)]);
@@ -70,13 +76,13 @@ describe('mergeFinalMessages', () => {
     const existing = [
       historyRow('user', 'Question', 'e1', T),
       liveRow('Answer', T + 1000),
-      historyRow('system', 'Compaction', 'e2', T + 2000),
+      historyRow('system', LATER_ROW, 'e2', T + 2000),
     ];
     const incoming = liveRow('Answer', T + 1500);
 
     const result = mergeFinalMessages(existing, [incoming]);
 
-    expect(texts(result)).toEqual(['Question', 'Answer', 'Compaction']);
+    expect(texts(result)).toEqual(['Question', 'Answer', LATER_ROW]);
     expect(result[1]).toBe(incoming);
   });
 
@@ -121,11 +127,11 @@ describe('mergeFinalMessages', () => {
 
     const result = mergeFinalMessages(existing, [
       ...processChatMessages([{ role: 'assistant', content: [{ type: 'text', text: 'Done.' }], timestamp: T + 2000 }]),
-      historyRow('system', 'Compaction', 'e3', T + 2500),
+      historyRow('system', LATER_ROW, 'e3', T + 2500),
       liveRow('Done.', T + 3000),
     ]);
 
-    expect(texts(result)).toEqual(['Question', 'Done.', 'Compaction', 'Done.']);
+    expect(texts(result)).toEqual(['Question', 'Done.', LATER_ROW, 'Done.']);
   });
 });
 

@@ -320,10 +320,11 @@ Creates a unit file at `/etc/systemd/system/nerve.service` with:
 
 - `ExecStart=<node> server-dist/index.js`
 - `WorkingDirectory=<INSTALL_DIR>`
-- `EnvironmentFile=<INSTALL_DIR>/.env`
 - `NODE_ENV=production`
 - explicit `HOME` and `PATH`
 - `Restart=on-failure`
+
+The unit does not load `.env` (no `EnvironmentFile=`). The server loads `<INSTALL_DIR>/.env` itself with dotenv, from its working directory, exactly as it does under launchd. systemd parses `.env` files differently (it rejects `export KEY=...` and keeps inline comments), and anything it set would win, because dotenv never overrides a variable that is already set. Units written by older installers still carry `EnvironmentFile=`; the next installer run with root access replaces them.
 
 ### 5A.2 Service user detection
 Determines service user/home by:
@@ -393,7 +394,7 @@ If both fail, leaves the plist and prints the manual load command as a next step
 ## 6) Final Output and Exit Codes
 
 ### 6.1 Health check
-When systemd or launchd started Nerve, the installer polls `http://<HOST>:<PORT>/health` from `.env` (wildcard hosts are probed on loopback, like the updater does) once a second, for up to 20 tries or 30 seconds.
+When systemd or launchd started Nerve, the installer polls `http://<HOST>:<PORT>/health` once a second, for up to 20 tries or 30 seconds. It reads `HOST` and `PORT` from `.env` the way the server does: dotenv parsing, then `Number(PORT || 3080)` for the port. Wildcard hosts are probed on loopback, like the updater does. If `PORT` is not a usable port (an integer from 1 to 65535), it says so instead of probing.
 
 ### 6.2 Completion UI
 Prints “Done”, then one of:

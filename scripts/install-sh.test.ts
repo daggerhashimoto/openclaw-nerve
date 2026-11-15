@@ -397,24 +397,30 @@ function runPrinted(command: string, prelude: string): string {
   return result.stdout;
 }
 
-/** Calls install.sh's own env_file_value helper on an .env with `content`. */
-function installerEnvValue(content: string | null, key: string): string {
+/**
+ * Runs one of install.sh's .env helpers (env_file_value KEY, or nerve_port)
+ * against an .env with `content`, using the helper definitions from the script.
+ */
+function runInstallerHelper(content: string | null, ...command: string[]): string {
   const source = readFileSync(INSTALLER, 'utf8');
-  // The helper ends with its node heredoc, so its closing brace follows EOF.
-  const helper = /^env_file_value\(\) \{\n[\s\S]*?\nEOF\n\}\n/m.exec(source)?.[0];
-  if (!helper) throw new Error('install.sh has no env_file_value() { ... EOF } block');
+  // env_file_value ends with its node heredoc, so its closing brace follows EOF.
+  const envFileValue = /^env_file_value\(\) \{\n[\s\S]*?\nEOF\n\}\n/m.exec(source)?.[0];
+  const nervePort = /^nerve_port\(\) \{\n[\s\S]*?\n\}\n/m.exec(source)?.[0];
+  if (!envFileValue || !nervePort) throw new Error('install.sh lacks env_file_value() or nerve_port()');
   const dir = mkdtempSync(path.join(os.tmpdir(), 'nerve-install-sh-env-'));
   tempRoots.push(dir);
   if (content !== null) writeFileSync(path.join(dir, '.env'), content);
   const tools = toolbox();
   const result = spawnSync(
     path.join(tools.sysbin, 'bash'),
-    ['-c', `set -euo pipefail\n${helper}\nenv_file_value "$1"`, 'env_file_value', key],
+    ['-c', `set -euo pipefail\n${envFileValue}\n${nervePort}\n"$@"`, 'install-helpers', ...command],
     { encoding: 'utf8', env: { PATH: `${tools.common}:${tools.sysbin}`, INSTALL_DIR: dir } },
   );
-  if (result.status !== 0) throw new Error(`env_file_value ${key} failed: ${result.stderr}`);
+  if (result.status !== 0) throw new Error(`${command.join(' ')} failed: ${result.stderr}`);
   return result.stdout;
 }
+
+const installerEnvValue = (content: string | null, key: string) => runInstallerHelper(content, 'env_file_value', key);
 
 afterAll(() => {
   if (process.env.KEEP_ROOTS) { console.log("ROOTS", tempRoots.join(" ")); return; }
@@ -449,7 +455,8 @@ describe.skipIf(isRoot).concurrent('install.sh', () => {
       ]);
       expect(run.installedUnit).toContain(`User=${USERNAME}`);
       expect(run.installedUnit).toContain(`WorkingDirectory=${run.installDir}`);
-      expect(run.installedUnit).toContain(`EnvironmentFile=${run.installDir}/.env`);
+      // .env is left to the server's dotenv; systemd parses EnvironmentFile= differently.
+      expect(run.installedUnit).not.toContain('EnvironmentFile=');
       expect(run.output).toContain(`Using sudo to install ${run.unitFile}`);
       expect(healthChecks(run)).toHaveLength(1);
       expect(run.output).toContain(SUCCESS_BANNER);
@@ -572,6 +579,59 @@ describe.skipIf(isRoot).concurrent('install.sh', () => {
         value: content === null ? '' : (parseDotenv(content)[key] ?? ''),
       }));
       expect(actual).toEqual(expected);
+    }, TEST_TIMEOUT_MS);
+
+    it('leaves .env to the server, so the service and the probe agree on the port', async ({ expect }) => {
+      // systemd's EnvironmentFile= would reject `export PORT=4123` and keep PORT=1111,
+      // and dotenv never overrides a variable systemd already set.
+      const run = await install({
+        env: 'GATEWAY_URL=http://127.0.0.1:18789\nGATEWAY_TOKEN=test-token\nPORT=1111\nexport PORT=4123\n',
+      });
+
+      expect(run.code).toBe(0);
+      expect(run.installedUnit).not.toContain('EnvironmentFile=');
+      // dotenv resolves .env from the working directory.
+      expect(run.installedUnit).toContain(`WorkingDirectory=${run.installDir}\n`);
+      expect(healthChecks(run, 'http://127.0.0.1:4123/health')).toHaveLength(1);
+      expect(healthChecks(run, 'http://127.0.0.1:1111/health')).toEqual([]);
+    }, TEST_TIMEOUT_MS);
+
+    it('converts PORT to a number the way the server does', ({ expect }) => {
+      // server/lib/config.ts: Number(process.env.PORT || DEFAULT_PORT), then listen().
+      // '' means the server could not be reached: listen() rejects the value, or 0
+      // picks a random port.
+      const cases: Array<{ content: string | null; port: string }> = [
+        { content: 'PORT=4123\n', port: '4123' },
+        { content: 'PORT=+4123\n', port: '4123' },
+        { content: 'PORT=" 4123 "\n', port: '4123' },
+        { content: 'PORT=4123.0\n', port: '4123' },
+        { content: 'PORT=0x1F90\n', port: '8080' },
+        { content: 'PORT=1e3\n', port: '1000' },
+        { content: 'PORT=\n', port: '3080' },
+        { content: 'HOST=::\n', port: '3080' },
+        { content: null, port: '3080' },
+        { content: 'PORT=0\n', port: '' },
+        { content: 'PORT=abc\n', port: '' },
+        { content: 'PORT=4123abc\n', port: '' },
+        { content: 'PORT=4123.5\n', port: '' },
+        { content: 'PORT=-1\n', port: '' },
+        { content: 'PORT=70000\n', port: '' },
+      ];
+
+      const actual = cases.map(({ content }) => ({ content, port: runInstallerHelper(content, 'nerve_port') }));
+      expect(actual).toEqual(cases);
+    }, TEST_TIMEOUT_MS);
+
+    it('says PORT is unusable instead of probing a port the server cannot be on', async ({ expect }) => {
+      const run = await install({
+        env: 'GATEWAY_URL=http://127.0.0.1:18789\nGATEWAY_TOKEN=test-token\nPORT=abc\n',
+      });
+
+      expect(run.code).toBe(2);
+      expect(run.calls.filter((call) => /\/health$/.test(call) && !call.includes(':18789/'))).toEqual([]);
+      expect(run.output).toContain('PORT in .env (abc) is not a usable port (use 1 to 65535).');
+      expect(printedSteps(run)).toEqual([`cd ${run.installDir} && npm run setup`, 'sudo systemctl restart nerve.service']);
+      expect(run.output).not.toContain(SUCCESS_BANNER);
     }, TEST_TIMEOUT_MS);
   });
 

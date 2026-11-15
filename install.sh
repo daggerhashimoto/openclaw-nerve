@@ -189,15 +189,14 @@ if (value !== undefined) process.stdout.write(value);
 EOF
 }
 
-# Nerve's port, parsed like the updater does (parseInt, default 3080).
+# Nerve's port, converted the way server/lib/config.ts does it:
+# Number(PORT || 3080), so "+4123", "4123.0" and "0x1F90" all count. Prints
+# nothing when the server could not be reached on that value: listen() rejects
+# anything but an integer up to 65535, and 0 means a random port.
 nerve_port() {
-  local port
-  port=$(env_file_value PORT)
-  if [[ "$port" =~ ^[[:space:]]*([0-9]+) ]]; then
-    echo "${BASH_REMATCH[1]}"
-  else
-    echo 3080
-  fi
+  local raw
+  raw=$(env_file_value PORT)
+  node -e 'const port = Number(process.argv[1] || 3080); if (Number.isInteger(port) && port >= 1 && port <= 65535) process.stdout.write(String(port));' -- "$raw" || true
 }
 
 # URL of Nerve's /health endpoint. Mirrors the updater's health check: wildcard
@@ -206,6 +205,7 @@ nerve_port() {
 nerve_health_url() {
   local port host
   port=$(nerve_port)
+  [[ -n "$port" ]] || return 0  # no reachable port, so no URL
   host=$(env_file_value HOST)
   host="${host#"${host%%[![:space:]]*}"}"
   host="${host%"${host##*[![:space:]]}"}"
@@ -1157,7 +1157,9 @@ User=${install_user}
 Group=${install_user}
 WorkingDirectory=${working_dir}
 ExecStart=${node_bin} server-dist/index.js
-EnvironmentFile=${working_dir}/.env
+# .env is deliberately not loaded by systemd: the server loads it from
+# WorkingDirectory with dotenv, as it does under launchd. systemd parses .env
+# differently, and its values would win because dotenv never overrides them.
 Environment=NODE_ENV=production
 Environment=HOME=${install_home}
 Environment=PATH=${node_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -1396,7 +1398,12 @@ fi
 
 if [[ "$SERVICE_STARTED" == "true" ]]; then
   health_url=$(nerve_health_url)
-  if run_with_dots "Waiting for Nerve to respond" wait_for_nerve "$health_url"; then
+  if [[ -z "$health_url" ]]; then
+    NOT_RUNNING_HEADLINE="PORT in .env ($(env_file_value PORT)) is not a usable port (use 1 to 65535)."
+    warn "$NOT_RUNNING_HEADLINE"
+    SERVICE_INCOMPLETE=true
+    START_STEPS=("cd $(shell_quote "$INSTALL_DIR") && npm run setup" "$RESTART_CMD")
+  elif run_with_dots "Waiting for Nerve to respond" wait_for_nerve "$health_url"; then
     ok "Nerve is responding at ${health_url}"
     NERVE_RUNNING=true
   else
@@ -1414,6 +1421,7 @@ echo ""
 
 # Detect port from .env
 local_port=$(nerve_port)
+local_port="${local_port:-3080}"  # an unusable PORT is reported above; setup defaults to 3080
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo -e "     ${YELLOW}${BOLD}⊘  Dry run complete — nothing was modified${NC}"

@@ -6,6 +6,7 @@ import { getSessionKey, type Session, type AgentLogEntry, type EventEntry, type 
 import { playPing } from '@/features/voice/audio-feedback';
 import { describeToolUse } from '@/utils/helpers';
 import { buildSessionTree } from '@/features/sessions/sessionTree';
+import { getSessionDeleteRefusal } from '@/features/sessions/sessionDeletion';
 import {
   buildAgentRootSessionKey,
   extractIdentityName,
@@ -855,23 +856,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const authoritativeSessions = await listAuthoritativeSessions();
     const descendants = findDescendantSessionKeys(sessionKey, authoritativeSessions);
     const keysToDelete = [...descendants, sessionKey];
-    const shouldReplaceCurrent = keysToDelete.includes(currentSessionRef.current);
-    const remaining = sessionsRef.current.filter(s => !keysToDelete.includes(getSessionKey(s)));
-    const nextCurrentSession = shouldReplaceCurrent ? pickDefaultSessionKey(remaining) : currentSessionRef.current;
+    // The target is deleted last, so a gateway refusal would only arrive after every child is gone.
+    const refusal = getSessionDeleteRefusal(keysToDelete);
+    if (refusal) throw new Error(refusal);
 
-    for (const key of keysToDelete) {
-      await rpc('sessions.delete', { key, deleteTranscript: true });
-    }
-
-    setSessions(prev => prev.filter(s => !keysToDelete.includes(getSessionKey(s))));
-    if (unreadSessionKeysRef.current.size > 0) {
-      const next = new Set(unreadSessionKeysRef.current);
-      for (const key of keysToDelete) next.delete(key);
-      unreadSessionKeysRef.current = next;
-      setUnreadSessionKeys(next);
-    }
-    if (shouldReplaceCurrent) {
-      setCurrentSession(nextCurrentSession);
+    const deletedKeys: string[] = [];
+    try {
+      for (const key of keysToDelete) {
+        await rpc('sessions.delete', { key, deleteTranscript: true });
+        deletedKeys.push(key);
+      }
+    } finally {
+      // Mirror what the gateway actually deleted, also when a later delete in the tree failed.
+      if (deletedKeys.length > 0) {
+        const shouldReplaceCurrent = deletedKeys.includes(currentSessionRef.current);
+        const remaining = sessionsRef.current.filter(s => !deletedKeys.includes(getSessionKey(s)));
+        setSessions(prev => prev.filter(s => !deletedKeys.includes(getSessionKey(s))));
+        if (unreadSessionKeysRef.current.size > 0) {
+          const next = new Set(unreadSessionKeysRef.current);
+          for (const key of deletedKeys) next.delete(key);
+          unreadSessionKeysRef.current = next;
+          setUnreadSessionKeys(next);
+        }
+        if (shouldReplaceCurrent) {
+          setCurrentSession(pickDefaultSessionKey(remaining));
+        }
+      }
     }
   }, [findDescendantSessionKeys, listAuthoritativeSessions, rpc, setCurrentSession]);
 

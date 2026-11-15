@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { extractTTSMarkers, migrateTTSProvider } from './useTTS';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
+import { extractTTSMarkers, migrateTTSProvider, useTTS } from './useTTS';
+import { setUiSoundVolume } from '@/features/voice/audio-feedback';
 
 describe('extractTTSMarkers', () => {
   it('should extract a single TTS marker', () => {
@@ -89,5 +91,45 @@ describe('migrateTTSProvider', () => {
   it('should default unknown values to "openai"', () => {
     expect(migrateTTSProvider('unknown')).toBe('openai');
     expect(migrateTTSProvider('')).toBe('openai');
+  });
+});
+
+describe('useTTS and the UI sound volume', () => {
+  afterEach(() => {
+    setUiSoundVolume(1);
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('speaks at full volume while UI sounds are set to 0', async () => {
+    const played: Array<{ volume: number; muted: boolean }> = [];
+    class FakeAudio extends EventTarget {
+      volume = 1;
+      muted = false;
+      src: string;
+      constructor(src: string) {
+        super();
+        this.src = src;
+      }
+      play() {
+        played.push({ volume: this.volume, muted: this.muted });
+        return Promise.resolve();
+      }
+      pause() {}
+    }
+    vi.stubGlobal('Audio', FakeAudio);
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      headers: new Headers({ 'Content-Type': 'audio/mpeg' }),
+    })));
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:tts');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    setUiSoundVolume(0);
+    const { result } = renderHook(() => useTTS(true, 'edge'));
+    await act(() => result.current.speak('Task complete'));
+
+    expect(played).toEqual([{ volume: 1, muted: false }]);
   });
 });

@@ -876,4 +876,333 @@ describe('MarkdownRenderer', () => {
     const bq = document.querySelector('blockquote');
     expect(bq).toBeTruthy();
   });
+
+  describe('math rendering', () => {
+    const renderMarkdown = (content: string) => render(<MarkdownRenderer content={content} />).container;
+    // KaTeX keeps the TeX source of every rendered expression in a MathML
+    // annotation, so this lists exactly which parts of the input became math.
+    const texSources = (root: ParentNode) =>
+      Array.from(root.querySelectorAll('annotation[encoding="application/x-tex"]'), (node) => node.textContent);
+    const expectNoMath = (root: ParentNode) => {
+      expect(root.querySelector('.katex')).toBeNull();
+      expect(root.querySelector('.katex-error')).toBeNull();
+    };
+
+    describe('currency prose stays literal', () => {
+      it.each([
+        'This run cost $5 and the next one $10.',
+        'Spent $0.42 on input, $1.20 on output.',
+        '$5-$10',
+        'Pricing is between $5 and $10 per $1M tokens.',
+        'Price is $5 today.',
+        'Input $3/1M, output $15/1M, cached $0.30/$0.60.',
+        'Budget: $5,000 for March, $7,500 for April.',
+        'Costs went from $5\nto $10 overnight.',
+      ])('keeps %j as plain text', (content) => {
+        const container = renderMarkdown(content);
+        expectNoMath(container);
+        expect(container.textContent).toBe(content);
+      });
+
+      it('keeps a currency amount literal when the next dollar sign is inside inline code', () => {
+        const container = renderMarkdown('It costs $5 with `PRICE=$x` set.');
+        expectNoMath(container);
+        expect(container.querySelector('code')?.textContent).toBe('PRICE=$x');
+        expect(container.textContent).toBe('It costs $5 with PRICE=$x set.');
+      });
+
+      it('keeps prices in a table cell literal while a neighbouring cell renders math', () => {
+        const container = renderMarkdown([
+          '| Item | Value |',
+          '| --- | --- |',
+          '| formula | $x^2$ |',
+          '| price | $5 per $1M tokens |',
+        ].join('\n'));
+        const cells = container.querySelectorAll('td');
+        expect(cells).toHaveLength(4);
+        expect(texSources(cells[1])).toEqual(['x^2']);
+        expect(cells[3].textContent).toBe('$5 per $1M tokens');
+        expect(texSources(container)).toEqual(['x^2']);
+      });
+
+      it.each([
+        ['$ x$', 'opening dollar followed by a space'],
+        ['$x $', 'closing dollar preceded by a space'],
+        ['$x$5', 'closing dollar followed by a digit'],
+      ])('keeps %j literal (%s)', (content) => {
+        const container = renderMarkdown(content);
+        expectNoMath(container);
+        expect(container.textContent).toBe(content);
+      });
+
+      it.each([
+        ['$HOME/$USER', 'closing dollar followed by a letter'],
+        ['US$x$', 'opening dollar preceded by a letter'],
+        ['a$x$b', 'dollars touching letters on both sides'],
+        ['5$x$', 'opening dollar preceded by a digit'],
+        ['$x$b', 'closing dollar followed by a letter'],
+      ])('keeps %j literal (%s)', (content) => {
+        const container = renderMarkdown(content);
+        expectNoMath(container);
+        expect(container.textContent).toBe(content);
+      });
+    });
+
+    it.each(['It is $x$.', 'Wrap it ($x$) here.', 'Then $x$, and more.'])(
+      'renders single-dollar math next to punctuation in %j',
+      (content) => {
+        expect(texSources(renderMarkdown(content))).toEqual(['x']);
+      },
+    );
+
+    it('renders single-dollar math inside strong emphasis', () => {
+      const container = renderMarkdown('This is **$x$** in bold.');
+      expect(texSources(container.querySelector('strong')!)).toEqual(['x']);
+    });
+
+    describe('escaped square brackets', () => {
+      it.each([
+        ['see \\[1\\] and \\[2\\]', 'see [1] and [2]'],
+        ['\\[x\\](http://a.b)', '[x](http://a.b)'],
+        ['usage: cmd \\[--flag=value\\] file', 'usage: cmd [--flag=value] file'],
+      ])('keeps %j literal, as plain markdown renders it', (content, text) => {
+        const container = renderMarkdown(content);
+        expectNoMath(container);
+        expect(container.textContent).toBe(text);
+      });
+
+      it.each([
+        [String.raw`Energy \[ E = mc^2 \] holds.`, 'E = mc^2', 'padded with spaces'],
+        [String.raw`Square \[x^2\] it.`, 'x^2', 'contains a caret'],
+        [String.raw`Divide \[\frac{a}{b}\] now.`, String.raw`\frac{a}{b}`, 'contains a backslash'],
+        ['Wide \\[\nx\n\\] sum.', 'x', 'padded with line endings'],
+      ])('renders %j as display math (%s)', (content, tex) => {
+        const container = renderMarkdown(content);
+        expect(texSources(container)).toEqual([tex]);
+        expect(container.querySelector('.katex-display')).toBeTruthy();
+      });
+
+      it('keeps the block form unchanged even when its content is a bare number', () => {
+        const container = renderMarkdown(['\\[', '1', '\\]'].join('\n'));
+        expect(texSources(container)).toEqual(['1']);
+        expect(container.querySelector('.katex-display')).toBeTruthy();
+      });
+    });
+
+    it('treats \\(optional\\) in prose as inline math (deliberate: \\( is always a math opener)', () => {
+      const container = renderMarkdown('Pass \\(optional\\) thing.');
+      expect(texSources(container)).toEqual(['optional']);
+      expect(container.querySelector('.katex-display')).toBeNull();
+    });
+
+    it('does not let a currency dollar swallow a later valid expression', () => {
+      const container = renderMarkdown('I paid $5 for $x^2$ lessons.');
+      expect(texSources(container)).toEqual(['x^2']);
+      expect(container.textContent?.startsWith('I paid $5 for ')).toBe(true);
+      expect(container.textContent?.endsWith(' lessons.')).toBe(true);
+    });
+
+    it('keeps an escaped dollar literal', () => {
+      const container = renderMarkdown('An escaped \\$5 and \\$x^2\\$ stay literal.');
+      expectNoMath(container);
+      expect(container.textContent).toBe('An escaped $5 and $x^2$ stay literal.');
+    });
+
+    it('renders inline math delimited by single dollars', () => {
+      const container = renderMarkdown('The identity $x^2 + y^2 = z^2$ holds.');
+      expect(texSources(container)).toEqual(['x^2 + y^2 = z^2']);
+      expect(container.querySelector('.katex-display')).toBeNull();
+    });
+
+    it.each(['$x^2$', '$E=mc^2$'])('renders %j as inline math', (content) => {
+      const container = renderMarkdown(content);
+      expect(texSources(container)).toEqual([content.slice(1, -1)]);
+      expect(container.querySelector('.katex-display')).toBeNull();
+    });
+
+    it('lets an escaped dollar sit inside single-dollar math', () => {
+      const container = renderMarkdown('Cost is $a\\$b$ here.');
+      expect(texSources(container)).toEqual(['a\\$b']);
+    });
+
+    it('renders double-dollar math inside a sentence as display math', () => {
+      const container = renderMarkdown(String.raw`The area $$\int_0^1 x\,dx$$ is one half.`);
+      expect(texSources(container)).toEqual([String.raw`\int_0^1 x\,dx`]);
+      expect(container.querySelector('.katex-display')).toBeTruthy();
+    });
+
+    it('renders block math delimited by double dollars on their own lines as a display equation', () => {
+      const container = renderMarkdown('Before\n\n$$\n\\int_0^1 x \\, dx\n$$\n\nAfter');
+      const display = container.querySelector('.katex-display');
+      expect(display).toBeTruthy();
+      expect(display?.querySelector('.katex')).toBeTruthy();
+      expect(texSources(container)).toEqual(['\\int_0^1 x \\, dx']);
+    });
+
+    it('renders double-dollar display math whose delimiters share lines with the content', () => {
+      const container = renderMarkdown(
+        ['$$\\begin{aligned}', 'a &= b \\\\', 'c &= d', '\\end{aligned}$$', '', 'After'].join('\n'),
+      );
+      expect(container.querySelector('.katex-display')).toBeTruthy();
+      expect(container.querySelector('.katex-error')).toBeNull();
+      expect(container.querySelector('p:last-child')?.textContent).toBe('After');
+    });
+
+    it('renders \\(...\\) as inline math', () => {
+      const container = renderMarkdown(String.raw`Add \(a+b\) to both sides.`);
+      expect(texSources(container)).toEqual(['a+b']);
+      expect(container.querySelector('.katex-display')).toBeNull();
+      expect(container.textContent).not.toContain('\\(');
+    });
+
+    it('renders \\[...\\] inside a paragraph as display math', () => {
+      const container = renderMarkdown(String.raw`The sum \[ \sum_{i=1}^n i \] is triangular.`);
+      expect(texSources(container)).toEqual([String.raw`\sum_{i=1}^n i`]);
+      expect(container.querySelector('.katex-display')).toBeTruthy();
+    });
+
+    it('renders a \\[ block on its own lines as display math even when a line looks like a list item', () => {
+      const container = renderMarkdown(['Total:', '', '\\[', '\\sum_{i=1}^n i', '- \\frac{n}{2}', '\\]', '', 'Done.'].join('\n'));
+      expect(texSources(container)).toEqual(['\\sum_{i=1}^n i\n- \\frac{n}{2}']);
+      expect(container.querySelector('.katex-display')).toBeTruthy();
+      expect(container.querySelector('ul')).toBeNull();
+      expect(container.textContent?.endsWith('Done.')).toBe(true);
+    });
+
+    it('renders block math inside block quotes and list items', () => {
+      const container = renderMarkdown(['> $$', '> x^2', '> $$', '', '- item', '', '  \\[', '  y^2', '  \\]'].join('\n'));
+      expect(texSources(container.querySelector('blockquote')!)).toEqual(['x^2']);
+      expect(texSources(container.querySelector('li')!)).toEqual(['y^2']);
+      expect(container.querySelectorAll('.katex-display')).toHaveLength(2);
+    });
+
+    it('renders the issue 312 example as typeset math', () => {
+      const { container } = render(
+        <MarkdownRenderer content={'The figure of merit $FoM = \\frac{S}{FWHM_n + FWHM_\\gamma}$ matters.'} />,
+      );
+      expect(container.querySelector('.katex')).toBeTruthy();
+      // KaTeX preserves the LaTeX source in the MathML annotation for screen readers;
+      // visual confirmation that the math was rendered comes from the .katex span above.
+      // The visual HTML output contains the typeset fraction characters (no backslash).
+      expect(container.querySelector('.katex-html')?.textContent ?? '').not.toContain('\\frac');
+    });
+
+    it('does not parse dollar signs inside fenced code blocks as math', () => {
+      render(<MarkdownRenderer content={'```python\nprice = $5\nother = $10\n```'} />);
+      const pre = document.querySelector('pre');
+      expect(pre).toBeTruthy();
+      expect(pre?.textContent).toContain('$5');
+      expect(pre?.textContent).toContain('$10');
+      expect(document.querySelector('.katex')).toBeNull();
+    });
+
+    it('does not parse fenced ```math code blocks as equations (treats them as LaTeX code)', () => {
+      render(<MarkdownRenderer content={'```math\n\\frac{1}{2}\n```'} />);
+      // Verify the block is typeset as code, NOT as a KaTeX equation.
+      expect(document.querySelector('.katex')).toBeNull();
+      // Verify it routed through the CodeBlock component (which wraps the
+      // <pre> in .code-block-wrapper and adds a .code-lang label) rather
+      // than falling to the inline-code path that would lose the block UI.
+      const wrapper = document.querySelector('.code-block-wrapper');
+      expect(wrapper).toBeTruthy();
+      const langLabel = wrapper?.querySelector('.code-lang');
+      expect(langLabel?.textContent).toBe('latex');
+      const pre = wrapper?.querySelector('pre');
+      expect(pre?.textContent).toContain('\\frac{1}{2}');
+    });
+
+    it('does not parse dollar signs inside inline code as math', () => {
+      render(<MarkdownRenderer content="Use the `$variable` syntax for shell expansion" />);
+      const code = document.querySelector('code');
+      expect(code).toBeTruthy();
+      expect(code?.textContent).toBe('$variable');
+      expect(document.querySelector('.katex')).toBeNull();
+    });
+
+    it('leaves every math delimiter inside inline code alone', () => {
+      const container = renderMarkdown('Write `$x^2$`, `$$y$$`, `\\(a\\)` and `\\[b\\]` literally.');
+      expectNoMath(container);
+      expect(Array.from(container.querySelectorAll('code'), (node) => node.textContent))
+        .toEqual(['$x^2$', '$$y$$', '\\(a\\)', '\\[b\\]']);
+    });
+
+    it('leaves every math delimiter inside a fenced code block alone', () => {
+      const source = ['$x^2$ and $$y$$', '\\(a\\) and \\[b\\]', '$$', 'z', '$$'].join('\n');
+      const container = renderMarkdown('```text\n' + source + '\n```');
+      expectNoMath(container);
+      expect(container.querySelector('pre')?.textContent).toContain(source);
+    });
+
+    it('does not throw on malformed LaTeX and renders a visible error fallback', () => {
+      let container: HTMLElement | null = null;
+      expect(() => {
+        const result = render(<MarkdownRenderer content="Try $\\frac{1$ now" />);
+        container = result.container;
+      }).not.toThrow();
+      // R4: malformed LaTeX should not crash; rehype-katex catches the parse error
+      // and emits a .katex-error span (or, in some edge cases, the raw source).
+      const errorSpan = container!.querySelector('.katex-error');
+      const rawSourceVisible = container!.textContent?.includes('\\frac');
+      expect(errorSpan ?? rawSourceVisible ?? null).toBeTruthy();
+    });
+
+    it('keeps KaTeX trust disabled so \\href cannot produce a link', () => {
+      const container = renderMarkdown(String.raw`Click $\href{javascript:alert(1)}{x}$ now.`);
+      expect(texSources(container)).toEqual([String.raw`\href{javascript:alert(1)}{x}`]);
+      expect(container.querySelector('a, [href]')).toBeNull();
+    });
+
+    describe('streaming partial input', () => {
+      it.each([
+        ['an unclosed single-dollar expression', 'Consider $x^2', 'Consider $x^2'],
+        ['an unclosed double-dollar expression', 'Consider $$x^2', 'Consider $$x^2'],
+        ['an unclosed \\( expression', 'Consider \\(x^2 + y', 'Consider (x^2 + y'],
+        ['an unclosed \\[ expression', 'Consider \\[x^2', 'Consider [x^2'],
+      ])('renders %s as plain text', (_label, content, text) => {
+        const container = renderMarkdown(content);
+        expectNoMath(container);
+        expect(container.textContent).toBe(text);
+      });
+
+      it('renders an unclosed $$ block as plain text until its closing fence arrives', () => {
+        const { container, rerender } = render(<MarkdownRenderer content={'Formula:\n\n$$\n\\frac{1}{'} />);
+        expectNoMath(container);
+        expect(container.textContent).toContain('\\frac{1}{');
+
+        rerender(<MarkdownRenderer content={'Formula:\n\n$$\n\\frac{1}{2}\n$'} />);
+        expectNoMath(container);
+
+        rerender(<MarkdownRenderer content={'Formula:\n\n$$\n\\frac{1}{2}\n$$'} />);
+        expect(texSources(container)).toEqual(['\\frac{1}{2}']);
+        expect(container.querySelector('.katex-error')).toBeNull();
+      });
+
+      it('keeps an unclosed block inside a block quote as plain text without swallowing what follows', () => {
+        const container = renderMarkdown(['> $$', '> x^2', '', 'After the quote.'].join('\n'));
+        expectNoMath(container);
+        expect(container.querySelector('blockquote')?.textContent?.trim()).toBe('$$\nx^2');
+        expect(container.querySelector(':scope > div > p:last-child')?.textContent).toBe('After the quote.');
+      });
+
+      it('renders an unclosed \\[ block as plain text until its closing fence arrives', () => {
+        const { container, rerender } = render(<MarkdownRenderer content={'\\[\n\\sum_{i=1}^n'} />);
+        expectNoMath(container);
+        expect(container.textContent).toContain('\\sum_{i=1}^n');
+
+        rerender(<MarkdownRenderer content={'\\[\n\\sum_{i=1}^n i\n\\]'} />);
+        expect(texSources(container)).toEqual(['\\sum_{i=1}^n i']);
+      });
+
+      it('never shows a KaTeX error while a mixed sentence streams in one character at a time', () => {
+        const full = String.raw`Since $\frac{a}{b}$ and \(\sqrt{x}\) hold, $$\int_0^1 f$$ follows for $5.`;
+        const { container, rerender } = render(<MarkdownRenderer content="" />);
+        for (let end = 1; end <= full.length; end += 1) {
+          rerender(<MarkdownRenderer content={full.slice(0, end)} />);
+          expect(container.querySelector('.katex-error')).toBeNull();
+        }
+        expect(texSources(container)).toEqual([String.raw`\frac{a}{b}`, String.raw`\sqrt{x}`, String.raw`\int_0^1 f`]);
+        expect(container.textContent?.endsWith(' follows for $5.')).toBe(true);
+      });
+    });
+  });
 });

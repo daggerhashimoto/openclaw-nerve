@@ -1522,6 +1522,25 @@ html[data-theme="light"] .nerve-horizon {
 .markdown-content h2 { @apply text-base; }
 .markdown-content h3 { @apply text-sm; }
 
+.markdown-content .katex,
+.markdown-content .katex-display {
+  color: inherit;
+}
+
+.markdown-content .katex-display {
+  margin: 0.5em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* KaTeX writes its default error color (#cc0000) as an inline style on
+ * .katex-error spans, which would otherwise beat any class-selector color
+ * rule by specificity. !important is the minimum needed to let the themed
+ * destructive token win the cascade against that inline attribute. */
+.markdown-content .katex-error {
+  color: color-mix(in srgb, var(--color-destructive) 80%, var(--color-foreground)) !important;
+}
+
 .markdown-document {
   background: var(--color-background);
 }
@@ -1875,6 +1894,55 @@ html[data-theme="light"] .name-hued {
 }
 .settings-row:last-child {
   border-bottom: 0;
+}
+/* A range in a settings row: a native input (keyboard and touch come from the platform) drawn as
+   a Raised track with a pane for its thumb, lit Cantaloupe like the switch's thumb and dark at 0. */
+.settings-range {
+  --range-thumb: var(--color-operator);
+  -webkit-appearance: none;
+  appearance: none;
+  width: 7.5rem;
+  height: var(--row-unit);
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.settings-range[data-off] {
+  --range-thumb: var(--color-muted-foreground);
+}
+.settings-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-raised);
+}
+.settings-range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-raised);
+}
+.settings-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0.667rem;
+  height: 0.933rem;
+  margin-top: calc((4px - 0.933rem) / 2);
+  border: 0;
+  border-radius: 1px;
+  background: var(--range-thumb);
+  transition: background-color var(--switch-duration) var(--switch-ease);
+}
+.settings-range::-moz-range-thumb {
+  width: 0.667rem;
+  height: 0.933rem;
+  border: 0;
+  border-radius: 1px;
+  background: var(--range-thumb);
+  transition: background-color var(--switch-duration) var(--switch-ease);
+}
+@media (max-width: 640px) {
+  .settings-range {
+    height: 44px;
+  }
 }
 
 /* A transcript divider: one hairline across the column with a word on it (a day, or the way to

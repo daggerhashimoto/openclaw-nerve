@@ -276,7 +276,7 @@ export function buildActivityLogEntry(agentPayload: AgentEventPayload): Activity
 export function describeToolResult(data: AgentToolStreamData | undefined): string | null {
   if (!data || data.name !== 'web_search' || !data.result || typeof data.result !== 'object') return null;
   const { query, queries, action, url, pattern } = data.result as Record<string, unknown>;
-  if (!query && !queries && !url) return null;
+  if (!query && !queries && !url && !pattern) return null;
   return describeToolUse('web_search', { query, queries, action, url, pattern });
 }
 

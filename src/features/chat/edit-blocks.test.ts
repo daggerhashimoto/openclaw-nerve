@@ -154,4 +154,21 @@ describe('apply_patch (Codex harness) support', () => {
     expect(writes).toHaveLength(1);
     expect(writes[0].content).toBe('export const c = 1;');
   });
+
+  it('shows a deleted file as its old contents against nothing', () => {
+    const patch = ['*** Begin Patch', '*** Delete File: src/old.ts', '-export const old = 1;', '-export const older = 2;', '*** End Patch'].join('\n');
+    const text = '**tool:** `apply_patch`\n```json\n' + JSON.stringify({ input: patch }) + '\n```';
+    const edits = extractEditBlocks(text);
+    expect(edits).toEqual([{ filePath: 'src/old.ts', oldText: 'export const old = 1;\nexport const older = 2;', newText: '' }]);
+  });
+
+  it('files a renamed update under its destination, in both patch shapes', () => {
+    const cli = ['*** Begin Patch', '*** Update File: src/a.ts', '*** Move to: src/b.ts', '@@', '-const a = 1;', '+const a = 2;', '*** End Patch'].join('\n');
+    const cliText = '**tool:** `apply_patch`\n```json\n' + JSON.stringify({ input: cli }) + '\n```';
+    expect(extractEditBlocks(cliText)[0].filePath).toBe('src/b.ts');
+
+    const appServer = { changes: [{ path: 'src/a.ts', kind: { type: 'update', move_path: 'src/b.ts' }, diff: '@@\n-const a = 1;\n+const a = 2;' }] };
+    const appText = '**tool:** `apply_patch`\n```json\n' + JSON.stringify(appServer) + '\n```';
+    expect(extractEditBlocks(appText)[0].filePath).toBe('src/b.ts');
+  });
 });

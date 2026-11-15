@@ -1,12 +1,13 @@
 /** One-shot speech synthesis through OpenAI's Realtime API. */
 import WebSocket from 'ws';
+import { OPENAI_REALTIME_URL } from '../lib/constants.js';
 
 export const OPENAI_REALTIME_TTS_MODEL = 'gpt-realtime-2.1-mini';
 export const OPENAI_REALTIME_VOICES = [
   'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar',
 ] as const;
 
-const REALTIME_URL = `wss://api.openai.com/v1/realtime?model=${OPENAI_REALTIME_TTS_MODEL}`;
+const REALTIME_URL = `${OPENAI_REALTIME_URL}?model=${OPENAI_REALTIME_TTS_MODEL}`;
 const SAMPLE_RATE = 24_000;
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const TIMEOUT_MS = 60_000;

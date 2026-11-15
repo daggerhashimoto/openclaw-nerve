@@ -16,6 +16,8 @@ interface PatchChange {
   path: string;
   kind: 'update' | 'add' | 'delete';
   diff: string;
+  /** Destination when the change also renames the file (`*** Move to:` or `kind.move_path`). */
+  movePath?: string;
 }
 
 function parseBeginPatch(text: string): PatchChange[] {
@@ -33,7 +35,12 @@ function parseBeginPatch(text: string): PatchChange[] {
       current = { path: header[2].trim(), kind: header[1].toLowerCase() as PatchChange['kind'], diff: '' };
       continue;
     }
-    if (/^\*\*\* (Begin|End) Patch/.test(line) || /^\*\*\* Move to:/.test(line)) continue;
+    const move = /^\*\*\* Move to: (.+)$/.exec(line);
+    if (move) {
+      if (current) current.movePath = move[1].trim();
+      continue;
+    }
+    if (/^\*\*\* (Begin|End) Patch/.test(line)) continue;
     if (current) lines.push(line);
   }
   flush();
@@ -51,10 +58,12 @@ function parseApplyPatch(json: string): PatchChange[] {
     const out: PatchChange[] = [];
     for (const raw of input.changes) {
       if (!raw || typeof raw !== 'object') continue;
-      const change = raw as { path?: unknown; kind?: { type?: unknown } | string; diff?: unknown };
+      const change = raw as { path?: unknown; kind?: { type?: unknown; move_path?: unknown } | string; diff?: unknown; move_path?: unknown };
       const kind = typeof change.kind === 'string' ? change.kind : change.kind?.type;
       if (kind !== 'update' && kind !== 'add' && kind !== 'delete') continue;
-      out.push({ path: String(change.path || ''), kind, diff: typeof change.diff === 'string' ? change.diff : '' });
+      const rawMove = typeof change.kind === 'object' && change.kind ? change.kind.move_path : change.move_path;
+      const movePath = typeof rawMove === 'string' && rawMove ? rawMove : undefined;
+      out.push({ path: String(change.path || ''), kind, diff: typeof change.diff === 'string' ? change.diff : '', movePath });
     }
     return out;
   }
@@ -125,9 +134,21 @@ export function extractEditBlocks(rawText: string): EditBlock[] {
   }
 
   for (const change of applyPatchChanges(rawText)) {
-    if (change.kind !== 'update' || !change.diff) continue;
-    const { oldText, newText } = splitHunk(change.diff);
-    if (oldText || newText) blocks.push({ filePath: change.path, oldText, newText });
+    if (!change.diff) continue;
+    // A rename shows under the name the file has after the patch
+    const filePath = change.movePath || change.path;
+    if (change.kind === 'update') {
+      const { oldText, newText } = splitHunk(change.diff);
+      if (oldText || newText) blocks.push({ filePath, oldText, newText });
+    } else if (change.kind === 'delete') {
+      // A deletion is the old contents against nothing
+      const oldText = change.diff
+        .split('\n')
+        .filter((line) => !line.startsWith('@@'))
+        .map((line) => (line.startsWith('-') ? line.slice(1) : line))
+        .join('\n');
+      if (oldText) blocks.push({ filePath, oldText, newText: '' });
+    }
   }
 
   return blocks;

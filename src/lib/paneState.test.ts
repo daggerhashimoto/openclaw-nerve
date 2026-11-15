@@ -75,6 +75,13 @@ describe('fleetCounts', () => {
     expect(fleetCounts({ sessions: [a], generating: true })).toEqual({ total: 1, running: 1, waiting: 0, failed: 0 });
   });
 
+  it('counts the generating open session beside another runner, and only once', () => {
+    const flags = { busyState: { 'agent:b': true } };
+    expect(fleetCounts({ sessions: [a, b], ...flags, generating: true, currentSessionKey: 'agent:a' }).running).toBe(2);
+    expect(fleetCounts({ sessions: [a, b], busyState: { 'agent:a': true, 'agent:b': true }, generating: true, currentSessionKey: 'agent:a' }).running).toBe(2);
+    expect(fleetCounts({ sessions: [a, b], ...flags, generating: true }).running).toBe(1);
+  });
+
   it('says it in words, failures last', () => {
     expect(fleetWords({ total: 3, running: 1, waiting: 1, failed: 1 })).toBe('1 working, 1 waiting on you, 1 failed');
     expect(fleetWords({ total: 2, running: 0, waiting: 0, failed: 0 })).toBe('2 agents, all quiet');

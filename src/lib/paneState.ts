@@ -48,6 +48,8 @@ interface FleetActivityInput {
   agentStatus?: Record<string, GranularAgentState>;
   /** The open session is generating right now, even before the gateway reports it busy. */
   generating?: boolean;
+  /** Key of the open session, so a generating session is not counted twice once the gateway agrees. */
+  currentSessionKey?: string;
 }
 
 type SessionFlags = Pick<FleetActivityInput, 'busyState' | 'unreadSessions' | 'agentStatus'>;
@@ -90,17 +92,21 @@ export interface FleetCounts {
   failed: number;
 }
 
-export function fleetCounts({ sessions, busyState, unreadSessions, agentStatus, generating }: FleetActivityInput): FleetCounts {
+export function fleetCounts({ sessions, busyState, unreadSessions, agentStatus, generating, currentSessionKey }: FleetActivityInput): FleetCounts {
   let running = 0;
   let waiting = 0;
   let failed = 0;
+  let currentLive = false;
   for (const session of sessions) {
     const state = sessionPaneState(session, { busyState, unreadSessions, agentStatus });
     if (state === 'error') failed += 1;
     else if (state === 'live') running += 1;
     else if (state === 'operator') waiting += 1;
+    if (state === 'live' && currentSessionKey && getSessionKey(session) === currentSessionKey) currentLive = true;
   }
-  if (generating && running === 0) running = 1;
+  // The open session generating before the gateway says so is one more worker, unless it
+  // is already counted (or, without a key to check, unless anything at all is counted).
+  if (generating && !(currentSessionKey ? currentLive : running > 0)) running += 1;
   return { total: sessions.length, running, waiting, failed };
 }
 

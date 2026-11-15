@@ -677,7 +677,7 @@ function searchDetails(result: ChatMessage): Record<string, unknown> | null {
     const parsed = JSON.parse(text) as Record<string, unknown>;
     if (!parsed || typeof parsed !== 'object') return null;
     const { query, queries, action, url, pattern } = parsed;
-    if (!query && !queries && !url) return null;
+    if (!query && !queries && !url && !pattern) return null;
     return { query, queries, action, url, pattern };
   } catch {
     return null;

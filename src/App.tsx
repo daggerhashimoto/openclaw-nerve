@@ -119,12 +119,12 @@ export default function App({ onLogout }: AppProps) {
 
   // The whole fleet in one pane: drives the brand pane and the animated logo in the top bar.
   const shellActivity = useMemo(
-    () => fleetActivity({ sessions, busyState, unreadSessions, agentStatus, generating: isGenerating }),
-    [sessions, busyState, unreadSessions, agentStatus, isGenerating],
+    () => fleetActivity({ sessions, busyState, unreadSessions, agentStatus, generating: isGenerating, currentSessionKey: currentSession }),
+    [sessions, busyState, unreadSessions, agentStatus, isGenerating, currentSession],
   );
   const shellFleet = useMemo(
-    () => fleetCounts({ sessions, busyState, unreadSessions, agentStatus, generating: isGenerating }),
-    [sessions, busyState, unreadSessions, agentStatus, isGenerating],
+    () => fleetCounts({ sessions, busyState, unreadSessions, agentStatus, generating: isGenerating, currentSessionKey: currentSession }),
+    [sessions, busyState, unreadSessions, agentStatus, isGenerating, currentSession],
   );
 
   // Identity hue of the open session's agent family, for the chat header and transcript panes.
@@ -861,6 +861,7 @@ export default function App({ onLogout }: AppProps) {
             loadMore={loadMore}
             hasMore={hasMore}
             historyLoaded={historyLoaded}
+            performanceMode={performanceMode}
             onToggleFileBrowser={isCompactLayout ? handleToggleFileBrowser : fileBrowserCollapsed ? handleToggleFileBrowser : undefined}
             isFileBrowserCollapsed={fileBrowserCollapsed}
             onToggleMobileTopBar={isCompactLayout ? toggleMobileTopBar : undefined}
@@ -1164,6 +1165,7 @@ export default function App({ onLogout }: AppProps) {
           unreadSessions={unreadSessions}
           agentStatus={agentStatus}
           generating={isGenerating}
+          currentSessionKey={currentSession}
           contextTokens={contextTokens}
           contextLimit={contextLimit}
           performanceMode={performanceMode}

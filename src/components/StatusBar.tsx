@@ -28,6 +28,8 @@ interface StatusBarProps {
   agentStatus?: Record<string, GranularAgentState>;
   /** The open session is generating, even before the gateway reports it busy. */
   generating?: boolean;
+  /** Key of the open session, so a generating session is counted once. */
+  currentSessionKey?: string;
 }
 
 function Separator() {
@@ -51,13 +53,14 @@ export function StatusBar({
   unreadSessions,
   agentStatus,
   generating = false,
+  currentSessionKey,
 }: StatusBarProps) {
   useGateway(); // Keep gateway context connected
 
   // The same reading the top bar uses, so the two never disagree about who is working.
   const fleet = useMemo(
-    () => (sessions ? fleetCounts({ sessions, busyState, unreadSessions, agentStatus, generating }) : null),
-    [sessions, busyState, unreadSessions, agentStatus, generating],
+    () => (sessions ? fleetCounts({ sessions, busyState, unreadSessions, agentStatus, generating, currentSessionKey }) : null),
+    [sessions, busyState, unreadSessions, agentStatus, generating, currentSessionKey],
   );
 
   const runningCount = fleet?.running ?? 0;

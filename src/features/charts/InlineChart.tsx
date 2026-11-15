@@ -4,6 +4,7 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
 } from 'recharts';
 import type { ChartData } from './extractCharts';
+import { useThemeVersion } from './useThemeVersion';
 
 const LightweightChart = lazy(() => import('./LightweightChart'));
 const TradingViewWidget = lazy(() => import('./TradingViewWidget'));
@@ -50,7 +51,9 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 }
 
 export default function InlineChart({ chart }: { chart: ChartData }) {
-  const colors = useMemo(getThemeColors, []);
+  // Resampled when the theme changes, so an open chart follows Night and Daylight
+  const themeVersion = useThemeVersion();
+  const colors = useMemo(getThemeColors, [themeVersion]);
   const palette = colors.chart;
 
   try {

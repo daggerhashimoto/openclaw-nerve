@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pcm16ToWav } from './openai-realtime-tts.js';
+import { realtimeSocketUrl } from '../lib/constants.js';
 
 describe('pcm16ToWav', () => {
   it('wraps 24 kHz mono PCM in a playable WAV header', () => {
@@ -13,5 +14,12 @@ describe('pcm16ToWav', () => {
     expect(wav.readUInt16LE(34)).toBe(16);
     expect(wav.readUInt32LE(40)).toBe(pcm.length);
     expect(wav.subarray(44)).toEqual(pcm);
+  });
+});
+
+describe('realtimeSocketUrl', () => {
+  it('derives the Realtime socket from the configured OpenAI base', () => {
+    expect(realtimeSocketUrl('https://api.openai.com/v1')).toBe('wss://api.openai.com/v1/realtime');
+    expect(realtimeSocketUrl('http://proxy.internal:8080/openai/v1/')).toBe('ws://proxy.internal:8080/openai/v1/realtime');
   });
 });

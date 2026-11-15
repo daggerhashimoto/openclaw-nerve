@@ -22,6 +22,13 @@ describe('LiveHorizon', () => {
     expect(screen.queryByTestId('live-horizon')).not.toBeInTheDocument();
   });
 
+  it('leaves the DOM the moment performance mode is switched on', () => {
+    const view = render(<LiveHorizon active />);
+    expect(screen.getByTestId('live-horizon')).toBeInTheDocument();
+    view.rerender(<LiveHorizon active performanceMode />);
+    expect(screen.queryByTestId('live-horizon')).not.toBeInTheDocument();
+  });
+
   it('stays off in performance mode', () => {
     localStorage.setItem(PERFORMANCE_MODE_STORAGE_KEY, 'true');
     render(<LiveHorizon active />);

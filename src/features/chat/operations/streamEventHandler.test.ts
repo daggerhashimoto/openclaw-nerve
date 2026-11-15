@@ -412,6 +412,14 @@ describe('markToolCompleted', () => {
 });
 
 describe('describeToolResult', () => {
+  it('keeps a find-in-page result that carries only its pattern', () => {
+    expect(describeToolResult({
+      name: 'web_search',
+      phase: 'result',
+      result: { status: 'completed', action: 'findInPage', pattern: 'Local embeddings' },
+    } as never)).toBe('finding in page: Local embeddings');
+  });
+
   // Result frames as a 2026.9 gateway sends them with the Codex harness.
   it('names the query of a web search, which only the result carries', () => {
     expect(describeToolResult({

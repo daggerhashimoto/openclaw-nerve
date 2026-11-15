@@ -23,6 +23,11 @@
  *   line ending in `$$` or `\]`; a block that never closes is shown as plain
  *   text rather than as a half-typeset formula.
  *
+ * Parsing stays linear: when an opener scans to the end of its paragraph (or
+ * to a backtick) without finding a closer, every later opener of the same kind
+ * before that point would scan a subset of the same text and fail too, so the
+ * failure is remembered per tokenizer and those openers fail immediately.
+ *
  * The output matches remark-math (`inlineMath` and `math` nodes that become
  * `<code class="language-math math-inline|math-display">`), so rehype-katex
  * typesets it unchanged. `$$...$$` and `\[...\]` inside a paragraph produce
@@ -138,9 +143,24 @@ function previousIsNotDollar(this: TokenizeContext, code: Code): boolean {
   return code !== DOLLAR || this.events[this.events.length - 1][1].type === 'characterEscape';
 }
 
+type TextMathKind = 'dollar' | 'doubleDollar' | 'paren' | 'bracket';
+type ScannedKind = Exclude<TextMathKind, 'dollar'>;
+
+/**
+ * Per text tokenizer (one per paragraph, heading or table cell): for each
+ * opener kind, the source range in which an earlier opener of that kind found
+ * no closer before the end of the text or the next backtick. A later opener of
+ * the same kind inside that range would scan a subset of the same characters,
+ * so it fails without scanning again; this keeps a message full of unclosed
+ * `\(`, `\[` or `$$` linear. Single dollars need no entry: their scan always
+ * stops at the next `$`, so it never overlaps another single-dollar scan.
+ */
+const unclosedRanges = new WeakMap<TokenizeContext, Partial<Record<ScannedKind, { start: number; end: number }>>>();
+
 function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, nok: State): State {
+  const startOffset = this.now().offset;
   let outer: Token;
-  let opener: 'dollar' | 'doubleDollar' | 'paren' | 'bracket';
+  let opener: TextMathKind;
   let openSize = 0;
   let closeSize = 0;
   let pending: Token;
@@ -148,6 +168,15 @@ function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, no
   let hasContent = false;
 
   const isDollarOpener = () => opener === 'dollar' || opener === 'doubleDollar';
+  const knownUnclosed = (kind: ScannedKind) => {
+    const range = unclosedRanges.get(this)?.[kind];
+    return range !== undefined && startOffset >= range.start && startOffset < range.end;
+  };
+  const rememberUnclosed = (kind: ScannedKind) => {
+    const ranges = unclosedRanges.get(this) ?? {};
+    ranges[kind] = { start: startOffset, end: this.now().offset };
+    unclosedRanges.set(this, ranges);
+  };
 
   return start;
 
@@ -177,6 +206,7 @@ function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, no
     } else {
       opener = 'doubleDollar';
       outer.type = 'texMathDisplay';
+      if (knownUnclosed(opener)) return nok(code);
     }
     return between(code);
   }
@@ -190,6 +220,7 @@ function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, no
     } else {
       return nok(code);
     }
+    if (knownUnclosed(opener)) return nok(code);
     effects.consume(code);
     effects.exit('texMathDelimiter');
     return between;
@@ -199,7 +230,10 @@ function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, no
   function between(code: Code): State | undefined {
     // No closing delimiter (yet): plain text. A backtick means a code span
     // starts here, and code spans are never part of math.
-    if (code === null || code === BACKTICK) return nok(code);
+    if (code === null || code === BACKTICK) {
+      if (opener !== 'dollar') rememberUnclosed(opener);
+      return nok(code);
+    }
     if (isLineEnding(code)) {
       effects.enter('lineEnding');
       effects.consume(code);
@@ -300,6 +334,10 @@ function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, no
   }
 }
 
+// A failed opener simply fails: micromark then emits its characters as `data`,
+// which joins the surrounding run of `data` tokens. (Emitting a separate token
+// instead would split that run, and micromark merges every run with its own
+// array splice, which made price-heavy paragraphs quadratic.)
 const dollarTextMath: Construct = { name: 'texMathDollar', tokenize: tokenizeTextMath, previous: previousIsNotDollar };
 const backslashTextMath: Construct = { name: 'texMathBackslash', tokenize: tokenizeTextMath };
 
@@ -395,7 +433,19 @@ function tokenizeBlockMath(this: TokenizeContext, effects: Effects, ok: State, n
   function valueStart(code: Code): State | undefined {
     effects.enter('texMathBlockValue');
     effects.consume(code);
-    return code === BACKSLASH ? escaped : value;
+    if (code === BACKSLASH) return escaped;
+    // A `$` run that failed as a closer: no suffix of it can close either (it
+    // is shorter, or has the same tail), so take the whole run instead of
+    // retrying the closer at every dollar.
+    return code === DOLLAR ? dollarRun : value;
+  }
+
+  function dollarRun(code: Code): State | undefined {
+    if (code === DOLLAR) {
+      effects.consume(code);
+      return dollarRun;
+    }
+    return value(code);
   }
 
   function value(code: Code): State | undefined {

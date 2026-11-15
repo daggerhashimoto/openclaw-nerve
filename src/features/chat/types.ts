@@ -124,6 +124,8 @@ export interface ChatMsg {
   tempId?: string;
   /** On a prompt from history: the key the gateway recorded it under (see recordsPrompt) */
   idempotencyKey?: string;
+  /** On a reply from history that ended its run: the run's id, which its live final carries too */
+  terminalRunId?: string;
   /** Grouped tool calls: when set, this is a grouped tool bubble */
   toolGroup?: ToolGroupEntry[];
   /** Intermediate assistant message (narration between tool calls, not the final answer) */

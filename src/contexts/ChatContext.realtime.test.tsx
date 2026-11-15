@@ -371,6 +371,84 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply]);
   });
 
+  /** Sends a prompt and lets a recovery bring its reply, recorded as the run's terminal one, before the final. */
+  async function replyShownBeforeItsFinal(reply: string) {
+    const history: unknown[] = [earlier];
+    const harness = await setup(history);
+    const { emit, getChat, rpcMock, historyCalls } = harness;
+
+    await act(async () => {
+      await getChat().loadHistory();
+    });
+    await act(async () => {
+      await getChat().handleSend('Audit task 10');
+    });
+    emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }), 7);
+    history.push(
+      { role: 'user', content: 'Audit task 10', timestamp: NOW + 200, idempotencyKey: `${sentKey(rpcMock)}:user`, __openclaw: { id: 'e2', runId: RUN } },
+      { role: 'assistant', content: [{ type: 'text', text: reply }], timestamp: NOW + 1000, stopReason: 'stop', __openclaw: { id: 'e3', runId: RUN, runTerminal: true } },
+      { role: 'system', content: [{ type: 'text', text: 'Compaction' }], timestamp: NOW + 2000, __openclaw: { id: 'e4', kind: 'compaction' } },
+    );
+    const loadsBeforeGap = historyCalls();
+    emit('agent', { sessionKey: SESSION, runId: RUN, seq: 5, stream: 'tool', data: { phase: 'start', name: 'exec', toolCallId: 't1' } }, 9);
+    await waitFor(() => expect(historyCalls()).toBeGreaterThan(loadsBeforeGap));
+    await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply]));
+
+    return { ...harness, history };
+  }
+
+  it('shows the reply once when its final comes minutes after history showed it (#376)', async () => {
+    const reply = 'Task 10 audit is verified complete.';
+    const { emit, getChat, historyCalls } = await replyShownBeforeItsFinal(reply);
+
+    // The compaction held the end of the run back: the final is stamped 85s after the reply.
+    emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 86_000) }), 10);
+    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply]);
+
+    const loadsAfterFinal = historyCalls();
+    await waitFor(() => expect(historyCalls()).toBeGreaterThan(loadsAfterFinal));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply]);
+  });
+
+  it('shows the reply once when its final comes after the next prompt, even if the refresh fails (#376)', async () => {
+    const reply = 'Task 10 audit is verified complete.';
+    const { emit, getChat, rpcMock, historyCalls, history } = await replyShownBeforeItsFinal(reply);
+    const base = rpcMock.getMockImplementation()!;
+    let historyFails = false;
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'chat.send') return { runId: 'run-2', status: 'started' };
+      if (method === 'chat.history' && historyFails) {
+        historyFails = false;
+        throw new Error('Disconnected');
+      }
+      return base(method);
+    });
+
+    // The operator answers the reply on screen before its run has ended.
+    await act(async () => {
+      await getChat().handleSend('Thanks, next one');
+    });
+    history.push({ role: 'user', content: 'Thanks, next one', timestamp: NOW + 4000, idempotencyKey: `${sentKey(rpcMock, 1)}:user`, __openclaw: { id: 'e5', runId: 'run-2' } });
+
+    historyFails = true;
+    const loadsAfterSend = historyCalls();
+    emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 3000) }), 10);
+    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply, 'Thanks, next one']);
+    await waitFor(() => expect(historyCalls()).toBeGreaterThan(loadsAfterSend));
+
+    // The next run ends without a tool call, so its final is the next history read.
+    history.push({ role: 'assistant', content: [{ type: 'text', text: 'On it.' }], timestamp: NOW + 5000, stopReason: 'stop', __openclaw: { id: 'e6', runId: 'run-2', runTerminal: true } });
+    const loadsBeforeNextFinal = historyCalls();
+    emit('chat', { sessionKey: SESSION, runId: 'run-2', state: 'final', seq: 20, stopReason: 'stop', message: textMessage('On it.', NOW + 5000) }, 11);
+    await waitFor(() => expect(historyCalls()).toBeGreaterThan(loadsBeforeNextFinal));
+    await waitFor(() => {
+      expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply, 'Thanks, next one', 'On it.']);
+    });
+  });
+
   it('reconciles a late final for a settled run from history instead of appending it', async () => {
     const history = [
       { role: 'user', content: 'Write about clouds', timestamp: NOW },

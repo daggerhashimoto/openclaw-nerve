@@ -38,6 +38,7 @@ import {
   describeToolResult,
   isActiveAgentState,
   mergeRecoveredTail,
+  isUnsentPrompt,
   keepUnsentMessages,
   getOrCreateRunState,
   hasSeqGap,
@@ -245,17 +246,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       subagentPollInFlightRef.current = true;
       try {
         const sk = currentSessionRef.current;
-        const history = await loadChatHistory({ rpc, sessionKey: sk, limit: 500 });
+        const result = await loadChatHistory({ rpc, sessionKey: sk, limit: 500 });
         if (sk !== currentSessionRef.current) return;
         const prev = getAllMessages();
-        const result = keepUnsentMessages(prev, history);
+        // Compare against the rows history gave; prompts not sent yet are kept apart.
+        const shown = prev.filter((m) => !isUnsentPrompt(m));
         if (
-          result.length === prev.length &&
+          result.length === shown.length &&
           result.length > 0 &&
-          result[result.length - 1]?.rawText === prev[prev.length - 1]?.rawText &&
-          result[result.length - 1]?.role === prev[prev.length - 1]?.role
+          result[result.length - 1]?.rawText === shown[shown.length - 1]?.rawText &&
+          result[result.length - 1]?.role === shown[shown.length - 1]?.role
         ) return;
-        applyMessageWindow(result, false);
+        applyMessageWindow(keepUnsentMessages(prev, result), false);
       } catch { /* best-effort */ } finally {
         subagentPollInFlightRef.current = false;
       }

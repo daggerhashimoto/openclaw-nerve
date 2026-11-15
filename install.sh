@@ -962,9 +962,54 @@ else
 fi
 
 # ── Auto-generate .env from OpenClaw gateway config ───────────────────
+# Format a value so dotenv reads it back unchanged. dotenv cuts a bare value at
+# #, and it strips one pair of matching quotes without decoding \ escapes, so
+# quote only when # is present and pick a quote character the value lacks.
+dotenv_value() {
+  local value="$1"
+  [[ "$value" == *"#"* ]] || { printf '%s' "$value"; return 0; }
+  if [[ "$value" != *"'"* ]]; then
+    printf "'%s'" "$value"
+  elif [[ "$value" != *'"'* ]]; then
+    printf '"%s"' "$value"
+  else
+    printf '%s' "$value"
+  fi
+}
+
+# Older installs wrote GATEWAY_TOKEN unquoted. A token with a # inside it loses
+# the rest of the value once dotenv parses the line, so quote that line in place.
+# A # behind whitespace is a real comment and is left alone.
+migrate_env_gateway_token() {
+  local line raw quoted tmp repl
+  line=$(grep -m1 '^GATEWAY_TOKEN=' .env 2>/dev/null || true)
+  [[ -n "$line" ]] || return 0
+  raw="${line#GATEWAY_TOKEN=}"
+  raw="${raw%$'\r'}"
+  case "$raw" in
+    \"*|\'*) return 0 ;;
+  esac
+  [[ "$raw" =~ [^[:space:]]# ]] || return 0
+  quoted=$(dotenv_value "$raw")
+  [[ "$quoted" == "$raw" ]] && return 0
+  tmp=$(mktemp .env.XXXXXX) || return 0
+  repl="GATEWAY_TOKEN=${quoted}"
+  if REPL="$repl" awk '
+      $0 ~ /^GATEWAY_TOKEN=/ && !done { print ENVIRON["REPL"]; done = 1; next }
+      { print }
+    ' .env > "$tmp" 2>/dev/null && cat "$tmp" > .env; then
+    rm -f "$tmp"
+    ok "Quoted GATEWAY_TOKEN in .env so dotenv keeps the whole value"
+  else
+    rm -f "$tmp"
+    warn "Could not quote GATEWAY_TOKEN in .env — check the token by hand"
+  fi
+}
+
 generate_env_from_gateway() {
-  # Already have an .env? Don't overwrite.
+  # Already have an .env? Don't overwrite, only make the token round-trip.
   if [[ -f .env ]]; then
+    migrate_env_gateway_token
     ok "Existing .env found — keeping current configuration"
     return 0
   fi
@@ -1013,7 +1058,7 @@ generate_env_from_gateway() {
     fi
     cat > .env <<ENVEOF
 GATEWAY_URL=${gw_url}
-GATEWAY_TOKEN=${gw_token}
+GATEWAY_TOKEN=$(dotenv_value "${gw_token}")
 PORT=${nerve_port}
 ENVEOF
     ok "Generated .env from OpenClaw gateway config"
@@ -1187,6 +1232,12 @@ EOF
 
   RESTART_CMD="${ROOT_PREFIX}systemctl restart nerve.service"
   if [[ "$unit_installed" == "true" ]]; then
+    # The unit runs as install_user. When the installer ran as root the token file is
+    # root-owned and the service cannot read it; hand it over, keeping its mode.
+    if [[ -f "${working_dir}/.env" && "$install_user" != "root" ]] \
+      && ! as_root chown "${install_user}:" "${working_dir}/.env" 2>/dev/null; then
+      warn "Could not hand .env to ${install_user} — the service may fail to read it"
+    fi
     LOGS_HINT="${ROOT_PREFIX}journalctl -u nerve.service -n 50 --no-pager"
     if [[ -f "${working_dir}/.env" ]]; then
       if run_with_dots "Starting systemd service" as_root bash -c "systemctl daemon-reload && systemctl enable nerve.service &>/dev/null && systemctl restart nerve.service"; then

@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - The generated systemd unit no longer passes `.env` through `EnvironmentFile=`, so an inline comment stays out of the value and the service binds the port from `.env` (#395)
+- A `GATEWAY_TOKEN` holding `#` is written quoted, and an unquoted one already in `.env` is quoted in place, so dotenv keeps the whole token; the service user is given ownership of `.env` before the unit starts
 
 ## [1.5.4] - 2026-10-06
 

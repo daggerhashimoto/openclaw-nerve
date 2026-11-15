@@ -201,10 +201,12 @@ When called (and `.env` doesn’t already exist), it:
    - otherwise local gateway from `openclaw.json` port (fallback `http://127.0.0.1:18789`)
 3. Writes minimal `.env`:
    - `GATEWAY_URL=<resolved-url>`
-   - `GATEWAY_TOKEN=<token>`
+   - `GATEWAY_TOKEN=<token>`, quoted when the token contains `#` so dotenv keeps the whole value
    - `PORT=3080`
 
 If token missing, it warns and sets `ENV_MISSING=true`.
+
+When `.env` already exists it is kept, except that an unquoted `GATEWAY_TOKEN` whose `#` is glued to the token is rewritten with the same quoting; a `#` behind whitespace is a real comment and is left alone.
 
 If token exists but port `3080` is already occupied:
 
@@ -344,7 +346,7 @@ Installing the unit needs root:
   - prints the exact commands to install, enable and restart it
   - leaves an existing unit and the service it runs untouched
 
-With root access it writes the unit with `install -m 0644`, then runs `daemon-reload`, `enable`, and (if `.env` exists) `restart`. If `.env` is missing it enables the unit but does not start it.
+With root access it writes the unit with `install -m 0644`, then runs `daemon-reload`, `enable`, and (if `.env` exists) `restart`. If `.env` is missing it enables the unit but does not start it. Before the restart, `.env` is handed to `install_user` with `chown` so the unit can read the token; the file mode is left as it is.
 
 ### 5A.4 When service install is triggered
 Only when systemd is the running init system (`/run/systemd/system` exists). A `systemctl` binary alone, as in some containers and WSL setups, is treated as no systemd.

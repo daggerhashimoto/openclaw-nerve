@@ -853,6 +853,54 @@ describe('SessionContext', () => {
     expect(playPingMock).toHaveBeenCalledTimes(1);
   });
 
+  it('marks a background root unread but does not ping its completion while sound is off', async () => {
+    soundEnabledValue = false;
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            { sessionKey: 'agent:main:main', label: 'Main' },
+            { sessionKey: 'agent:reviewer:main', label: 'Reviewer' },
+          ],
+        };
+      }
+      return {};
+    });
+
+    render(
+      <SessionProvider>
+        <SessionUnreadProbe />
+      </SessionProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:main:main');
+    });
+
+    act(() => {
+      subscribedHandler?.({
+        type: 'event',
+        event: 'chat',
+        payload: { sessionKey: 'agent:reviewer:main', state: 'started' },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('reviewer-unread').textContent).toBe('true');
+    });
+
+    await act(async () => {
+      subscribedHandler?.({
+        type: 'event',
+        event: 'chat',
+        payload: { sessionKey: 'agent:reviewer:main', state: 'final' },
+      });
+      await Promise.resolve();
+    });
+
+    expect(playPingMock).not.toHaveBeenCalled();
+  });
+
   it('dedupes background completion pings when lifecycle and chat terminal events arrive for the same root', async () => {
     rpcMock.mockImplementation(async (method: string) => {
       if (method === 'sessions.list') {

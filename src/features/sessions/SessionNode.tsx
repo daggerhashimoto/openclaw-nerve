@@ -4,29 +4,15 @@ import type { GranularAgentState } from '@/types';
 import { fmtK } from '@/lib/formatting';
 import { cn } from '@/lib/utils';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
-import { PROGRESS_BAR_TRANSITION } from '@/lib/progress-colors';
-import { getStatusBadgeText, getStatusBadgeClasses } from './statusUtils';
-import { ChevronRight, ChevronDown, EllipsisVertical, PenLine, Timer, CornerDownRight } from 'lucide-react';
+import { Pane } from '@/components/ui/Pane';
+import { paneStateFor, paneStateLabel } from '@/lib/paneState';
+import { getSessionPaneState, getStatusBadgeText } from './statusUtils';
+import { ChevronRight, ChevronDown, EllipsisVertical, Palette, PenLine, Square, Trash2 } from 'lucide-react';
 import { SessionInfoPanel } from './SessionInfoPanel';
+import { AGENT_HUES } from '@/lib/agentColors';
 
-// Pre-defined color configs to avoid object creation during render
-const COLORS_CRITICAL = {
-  bar: 'bg-red',
-  glow: 'rgba(231, 76, 60, 0.3)',
-  growGlow: 'rgba(231, 76, 60, 0.5)',
-} as const;
-
-const COLORS_WARNING = {
-  bar: 'bg-orange',
-  glow: 'rgba(232, 168, 56, 0.3)',
-  growGlow: 'rgba(232, 168, 56, 0.5)',
-} as const;
-
-const COLORS_NORMAL = {
-  bar: 'bg-green',
-  glow: 'rgba(76, 175, 80, 0.3)',
-  growGlow: 'rgba(76, 175, 80, 0.5)',
-} as const;
+const GHOST_ACTION = 'inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-[3px] border-0 bg-transparent text-muted-foreground transition-colors duration-[120ms] hover:text-foreground';
+const GHOST_DANGER = 'inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-[3px] border-0 bg-transparent text-muted-foreground transition-colors duration-[120ms] hover:text-destructive';
 
 interface SessionNodeProps {
   node: TreeNode;
@@ -46,6 +32,11 @@ interface SessionNodeProps {
   renameValue: string;
   renameInputRef: React.RefObject<HTMLInputElement | null>;
   granularStatus?: GranularAgentState;
+  /** Identity hue for this row's pane (already shaded for depth). */
+  hue?: string;
+  /** Root agent id this row belongs to; root rows can pick the family's hue. */
+  agentId?: string | null;
+  onPickColor?: (agentId: string, hex: string) => void;
   onSelect: (key: string) => void;
   onToggleExpand: (key: string) => void;
   onDelete?: (key: string, label: string) => void;
@@ -78,15 +69,16 @@ function arePropsEqual(prev: SessionNodeProps, next: SessionNodeProps): boolean 
     prev.isRenaming === next.isRenaming &&
     prev.renameValue === next.renameValue &&
     prev.granularStatus === next.granularStatus &&
+    prev.hue === next.hue &&
+    prev.agentId === next.agentId &&
     prev.compact === next.compact
   );
 }
 
-/** Single session node in the session tree with status badge and actions. */
+/** Single session row in the agents tree: a lit pane, the name, its meta, and hover actions. */
 export const SessionNode = memo(function SessionNode({
   node,
   isActive,
-  isGrowing,
   running,
   displayTokens,
   label,
@@ -101,6 +93,9 @@ export const SessionNode = memo(function SessionNode({
   renameValue,
   renameInputRef,
   granularStatus,
+  hue,
+  agentId,
+  onPickColor,
   onSelect,
   onToggleExpand,
   onDelete,
@@ -112,12 +107,6 @@ export const SessionNode = memo(function SessionNode({
   compact = false,
 }: SessionNodeProps) {
   const { session, key: sessionKey, depth } = node;
-  const max = session.contextTokens || 200000;
-  const pct = Math.min(100, Math.round((displayTokens / max) * 100));
-  const colors = pct >= 80 ? COLORS_CRITICAL : pct >= 50 ? COLORS_WARNING : COLORS_NORMAL;
-  const boxShadow = isGrowing
-    ? `0 0 6px ${colors.growGlow}`
-    : `0 0 4px ${colors.glow}`;
 
   const handleSelect = useCallback(() => onSelect(sessionKey), [onSelect, sessionKey]);
   const handleToggle = useCallback((e: React.MouseEvent) => {
@@ -147,7 +136,74 @@ export const SessionNode = memo(function SessionNode({
   const hasAbortAction = Boolean(onAbort && running);
   const hasRenameAction = Boolean(canRenameDelete && onStartRename && !isRenaming);
   const hasDeleteAction = Boolean(canRenameDelete && onDelete);
-  const hasActions = hasAbortAction || hasRenameAction || hasDeleteAction;
+  const hasColorAction = Boolean(isRootAgent && agentId && onPickColor);
+  const hasActions = hasAbortAction || hasRenameAction || hasDeleteAction || hasColorAction;
+
+  // Agent colour: a strip of the seven identity hues, opened from a root row's actions
+  const [hueOpen, setHueOpen] = useState(false);
+  const hueRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hueOpen) return;
+    const handleOutside = (event: MouseEvent) => {
+      if (hueRef.current?.contains(event.target as Node)) return;
+      setHueOpen(false);
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setHueOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [hueOpen]);
+
+  const handleHueToggle = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setHueOpen(prev => !prev);
+  }, []);
+
+  const handlePickHue = useCallback((e: React.MouseEvent, hex: string) => {
+    e.stopPropagation();
+    if (agentId) onPickColor?.(agentId, hex);
+    setHueOpen(false);
+    setActionsOpen(false);
+  }, [agentId, onPickColor]);
+
+  const hueSwatches = (
+    <div ref={hueRef} role="group" aria-label="Agent colour" className="flex items-center gap-1 px-1">
+      {AGENT_HUES.map((option) => {
+        const current = hue === option.hex;
+        return (
+          <button
+            key={option.hex}
+            type="button"
+            title={option.name}
+            aria-label={current ? `${option.name}, current` : option.name}
+            aria-pressed={current}
+            className={cn('hue-swatch', current && 'hue-swatch-current')}
+            style={{ '--swatch': option.hex } as React.CSSProperties}
+            onClick={(e) => handlePickHue(e, option.hex)}
+          />
+        );
+      })}
+    </div>
+  );
+
+  const colorButton = hasColorAction && (
+    <button
+      type="button"
+      onClick={handleHueToggle}
+      title="Agent colour"
+      aria-label="Agent colour"
+      aria-expanded={hueOpen}
+      className={GHOST_ACTION}
+    >
+      <Palette size={14} aria-hidden="true" />
+    </button>
+  );
 
   useEffect(() => {
     if (!compact || !actionsOpen) return;
@@ -182,33 +238,51 @@ export const SessionNode = memo(function SessionNode({
     setActionsOpen(false);
   }, [handleDeleteClick]);
 
-  // Compute badge text and classes from granular status or fall back to binary
-  const badgeText = (isCron || isCronRun)
-    ? (running ? 'RUNNING' : isCron ? 'CRON' : 'RUN')
-    : granularStatus ? getStatusBadgeText(granularStatus) : (running ? 'WORKING' : 'IDLE');
-  const badgeClasses = (isCron || isCronRun)
-    ? (running ? 'bg-purple/20 text-purple' : 'bg-purple/10 text-purple/70')
-    : granularStatus
-      ? getStatusBadgeClasses(granularStatus)
-      : (running ? 'bg-green/20 text-green' : 'bg-muted-foreground/20 text-muted-foreground');
+  // One pane per row. Granular status is authoritative for agent rows; cron rows follow the running flag.
+  const paneState = (isCron || isCronRun)
+    ? paneStateFor({ running, unread: isUnread })
+    : getSessionPaneState({ running, unread: isUnread, granularStatus });
+  const isLive = paneState === 'live';
 
-  // Indentation: 14px per depth level
-  const indent = depth * 14;
+  // Secondary meta: what the agent is doing while live, otherwise the kind of session or its model
+  const kindLabel = isSubagent
+    ? 'subagent'
+    : isCron
+      ? 'cron'
+      : isCronRun
+        ? 'cron run'
+        : session.model?.split('/').pop();
+  const metaText = isLive && granularStatus && !(isCron || isCronRun)
+    ? getStatusBadgeText(granularStatus)
+    : kindLabel;
+
+  // A dark room does not announce itself: idle rows say nothing on the right, so a
+  // "waiting on you" or a live token count stands out the moment it appears.
+  const stateText = paneState === 'operator'
+    ? 'waiting on you'
+    : paneState === 'error'
+      ? 'error'
+      : null;
+
+  // Indentation: 16px per depth level. The chevron gutter is always reserved so the panes line up.
+  const indent = depth * 16;
 
   return (
     <div
       className={cn(
-        'group relative w-full flex items-center border-b border-border/40 text-xs hover:bg-secondary',
-        isActive && 'border-l-[3px] border-l-primary bg-primary/5 shadow-[inset_0_0_12px_rgba(232,168,56,0.06)]',
-        isUnread && !isActive && 'bg-green/5',
-        isCronRun && !isActive && 'opacity-60'
+        'group relative flex w-full items-center text-[0.867rem] transition-colors duration-[120ms] hover:bg-raised',
+        compact ? 'min-h-8' : 'min-h-[var(--row-unit)]',
+        isActive && 'bg-raised',
       )}
+      /* The open room's row takes a tint of its family colour */
+      style={isActive && hue ? { backgroundColor: `color-mix(in srgb, ${hue} 14%, var(--color-raised))` } : undefined}
     >
-      {/* Tree connector: subtle left border for children */}
+      {/* Tree guide: a 1px rule dropping from the parent's chevron */}
       {depth > 0 && (
-        <div
-          className="absolute top-0 bottom-0 border-l border-border/30"
-          style={{ left: `${(depth - 1) * 14 + 10}px` }}
+        <span
+          aria-hidden="true"
+          className="absolute top-0 bottom-0 w-px bg-border"
+          style={{ left: `${(depth - 1) * 16 + 11}px` }}
         />
       )}
 
@@ -217,27 +291,28 @@ export const SessionNode = memo(function SessionNode({
         onClick={handleSelect}
         aria-current={isActive ? 'true' : undefined}
         className={cn(
-          'flex-1 min-w-0 flex items-center gap-2 bg-transparent border-0 text-left cursor-pointer py-2',
-          compact ? 'pr-1' : 'pr-3'
+          'flex min-w-0 flex-1 cursor-pointer items-center gap-2 self-stretch border-0 bg-transparent text-left',
+          compact ? 'pr-1' : 'pr-2.5'
         )}
-        style={{ paddingLeft: `${indent + 8}px` }}
+        style={{ paddingLeft: `${indent + 4}px` }}
       >
-        {/* Collapse/expand chevron for nodes with children */}
+        {/* Collapse/expand chevron for nodes with children; an empty gutter otherwise */}
         {hasChildren ? (
           <span
             role="button"
             tabIndex={0}
             onClick={handleToggle}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggle(e as unknown as React.MouseEvent); } }}
-            className="shrink-0 w-4 h-4 flex items-center justify-center bg-transparent border-0 cursor-pointer text-muted-foreground hover:text-foreground p-0"
+            className="-mr-0.5 flex size-3.5 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-muted-foreground hover:text-foreground"
             aria-label={isExpanded ? 'Collapse' : 'Expand'}
           >
-            {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </span>
         ) : (
-          // Spacer to keep alignment when no chevron
-          depth > 0 ? <span className="shrink-0 w-4" /> : null
+          <span aria-hidden="true" className="-mr-0.5 w-3.5 shrink-0" />
         )}
+
+        <Pane state={paneState} hue={hue} label={isLive || paneState === 'off' ? paneStateLabel(paneState) : undefined} />
 
         {/* Label (or rename input) */}
         {isRenaming ? (
@@ -252,73 +327,77 @@ export const SessionNode = memo(function SessionNode({
             }}
             onBlur={onRenameCommit}
             onClick={(e) => e.stopPropagation()}
-            className="text-foreground text-[0.667rem] font-bold flex-1 min-w-0 bg-background border border-border/60 px-1 py-0 font-mono focus:outline-none focus:border-primary"
+            className="h-6 min-w-0 flex-1 rounded-[3px] border border-input bg-background px-1.5 text-[0.867rem] text-foreground focus:border-ring focus:outline-none"
           />
         ) : (
           <SessionInfoPanel session={node.session} running={running}>
-            <span className={cn(
-              "text-[0.667rem] font-bold flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer",
-              isCronRun ? "text-muted-foreground font-normal" : "text-foreground"
-            )}>
-              {isCron && <Timer size={11} className="text-purple mr-1 inline shrink-0" aria-label="Cron job" />}
-              {isCronRun && <CornerDownRight size={10} className="text-purple/60 mr-1 inline shrink-0" aria-label="Cron run" />}
-              {label}
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className={cn(
+                'min-w-0 cursor-pointer truncate',
+                isCronRun ? 'text-muted-foreground' : 'text-foreground',
+                // Agents are named in the display face; their sessions stay in the reading face
+                depth === 0 ? 'font-display font-semibold' : isActive && 'font-medium',
+              )}>
+                {label}
+              </span>
+              {metaText && (
+                <span className={cn(
+                  'text-[0.8rem] text-muted-foreground',
+                  // A kind tag (cron, subagent, model) is short and stays whole; live tool text may truncate.
+                  metaText === kindLabel ? 'shrink-0' : 'min-w-0 shrink-[3] truncate',
+                )}>
+                  {metaText}
+                </span>
+              )}
             </span>
           </SessionInfoPanel>
         )}
 
-        {/* Progress bar */}
-        <div className="w-12 h-1.5 bg-background border border-border/60 overflow-hidden shrink-0">
-          <div
-            className={`h-full ${colors.bar}`}
-            style={{
-              width: `${pct}%`,
-              boxShadow,
-              transition: PROGRESS_BAR_TRANSITION,
-            }}
+        {/* Right-aligned state: live work shows its token count, unread waits on you, otherwise idle */}
+        {isLive ? (
+          <AnimatedNumber
+            value={displayTokens}
+            format={fmtK}
+            className="shrink-0 pl-1 text-right font-mono text-[0.8rem] tabular text-live-text"
+            duration={700}
           />
-        </div>
-
-        {/* Token count */}
-        <AnimatedNumber
-          value={displayTokens}
-          format={fmtK}
-          className="text-muted-foreground text-[0.6rem] w-14 text-right shrink-0"
-          duration={700}
-        />
-
-        {/* Unread indicator + Status badge */}
-        {isUnread && <span className="unread-dot" aria-label="Unread" />}
-        <span
-          className={`text-[0.6rem] font-bold tracking-[1px] uppercase px-1.5 py-0.5 rounded-sm shrink-0 ${badgeClasses}`}
-        >
-          {badgeText}
-        </span>
+        ) : stateText ? (
+          <span
+            className={cn(
+              'shrink-0 whitespace-nowrap pl-1 text-right text-[0.8rem]',
+              paneState === 'operator' && 'text-operator-text',
+              paneState === 'error' && 'text-destructive',
+            )}
+          >
+            {stateText}
+          </span>
+        ) : null}
       </button>
 
       {compact ? (
         hasActions && (
-          <div ref={actionsRef} className="flex items-center gap-0.5 shrink-0 pr-1">
-            {actionsOpen && (
+          <div ref={actionsRef} className="flex shrink-0 items-center gap-0.5 pr-1">
+            {actionsOpen && (hueOpen ? hueSwatches : (
               <>
                 {hasAbortAction && (
                   <button
                     type="button"
                     onClick={handleAbortFromMenu}
                     title="Abort session"
-                    className="bg-card border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+                    className={GHOST_DANGER}
                   >
-                    ⏹
+                    <Square size={14} aria-hidden="true" />
                   </button>
                 )}
+                {colorButton}
                 {hasRenameAction && (
                   <button
                     type="button"
                     onClick={handleRenameFromMenu}
                     title="Rename session"
-                    className="bg-card border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+                    className={GHOST_ACTION}
                   >
-                    <PenLine size={10} />
+                    <PenLine size={14} aria-hidden="true" />
                   </button>
                 )}
                 {hasDeleteAction && (
@@ -326,13 +405,13 @@ export const SessionNode = memo(function SessionNode({
                     type="button"
                     onClick={handleDeleteFromMenu}
                     title="Delete session"
-                    className="bg-card border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+                    className={GHOST_DANGER}
                   >
-                    ✕
+                    <Trash2 size={14} aria-hidden="true" />
                   </button>
                 )}
               </>
-            )}
+            ))}
 
             <button
               type="button"
@@ -340,25 +419,30 @@ export const SessionNode = memo(function SessionNode({
               title="Session actions"
               aria-label="Session actions"
               aria-expanded={actionsOpen}
-              className="bg-transparent border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[0.667rem] w-6 h-6 flex items-center justify-center"
+              className={cn(GHOST_ACTION, actionsOpen && 'bg-raised text-foreground')}
             >
-              <EllipsisVertical size={12} />
+              <EllipsisVertical size={14} aria-hidden="true" />
             </button>
           </div>
         )
       ) : (
-        /* Hover actions — abort is available for all running sessions */
-        <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity z-10">
+        /* Hover and focus actions; abort is available for all running sessions */
+        <div className={cn(
+          'absolute top-1/2 right-1 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-[3px] bg-raised opacity-0 transition-opacity duration-[120ms] group-focus-within:opacity-100 group-hover:opacity-100',
+          hueOpen && 'opacity-100',
+        )}>
+          {hueOpen ? hueSwatches : (<>
           {hasAbortAction && (
             <button
               type="button"
               onClick={handleAbortClick}
               title="Abort session"
-              className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+              className={GHOST_DANGER}
             >
-              ⏹
+              <Square size={14} aria-hidden="true" />
             </button>
           )}
+          {colorButton}
           {canRenameDelete && (
             <>
               {hasRenameAction && (
@@ -366,9 +450,9 @@ export const SessionNode = memo(function SessionNode({
                   type="button"
                   onClick={handleRenameClick}
                   title="Rename session"
-                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+                  className={GHOST_ACTION}
                 >
-                  <PenLine size={10} />
+                  <PenLine size={14} aria-hidden="true" />
                 </button>
               )}
               {hasDeleteAction && (
@@ -376,13 +460,14 @@ export const SessionNode = memo(function SessionNode({
                   type="button"
                   onClick={handleDeleteClick}
                   title="Delete session"
-                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+                  className={GHOST_DANGER}
                 >
-                  ✕
+                  <Trash2 size={14} aria-hidden="true" />
                 </button>
               )}
             </>
           )}
+          </>)}
         </div>
       )}
     </div>

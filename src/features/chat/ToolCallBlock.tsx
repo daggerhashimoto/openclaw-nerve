@@ -1,11 +1,11 @@
 import React, { lazy, Suspense, useMemo, memo } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
-import { Card, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { decodeHtmlEntities } from '@/lib/formatting';
 import { escapeRegex } from '@/lib/constants';
 import { extractEditBlocks, extractWriteBlocks } from './edit-blocks';
+import { ToolRowContent, toolRowButtonClass, toolRowClass } from './components/ToolRow';
 import type { ChatMsg } from './types';
 
 const DiffView = lazy(() => import('./DiffView').then((module) => ({ default: module.DiffView })));
@@ -48,49 +48,51 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
   const sanitizedHtml = useMemo(() => sanitizeHtml(msg.html), [msg.html]);
 
   return (
-    <div className="msg msg-tool relative max-w-full break-words mx-4 my-1.5">
+    <div className="msg msg-tool relative max-w-full break-words">
       <Collapsible open={!isCollapsed} onOpenChange={() => onToggleCollapse(index)}>
-        <Card className="overflow-hidden rounded-2xl border-border/50 bg-card/62 py-0 shadow-none">
-          <CollapsibleTrigger className="flex w-full items-center gap-2 px-3.5 py-3 text-left transition-colors cursor-pointer hover:bg-primary/[0.04]">
-            <ChevronRight size={14} className={`text-muted-foreground shrink-0 transition-transform duration-200 ${!isCollapsed ? 'rotate-90' : ''}`} />
-            <span className="cockpit-badge shrink-0">Tool</span>
-            <span className="flex-1 truncate text-[0.8rem] text-foreground/78">{highlightText(toolPreview, searchQuery)}</span>
-            <span className="shrink-0 font-mono text-[0.667rem] text-muted-foreground">{timeStr}</span>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <CardContent className="border-t border-border/40 bg-background/42 px-3 py-3">
-              {editBlocks.length > 0 ? (
-                <Suspense fallback={<div className="text-xs text-muted-foreground">Loading diff...</div>}>
-                  <div className="space-y-2">
-                    {editBlocks.map((block, i) => (
-                      <DiffView key={i} oldText={block.oldText} newText={block.newText} filePath={block.filePath} />
-                    ))}
-                  </div>
-                </Suspense>
-              ) : writeBlocks.length > 0 ? (
-                <Suspense fallback={<div className="text-xs text-muted-foreground">Loading file preview...</div>}>
-                  <div className="space-y-2">
-                    {writeBlocks.map((block, i) => (
-                      <FileContentView key={i} content={block.content} filePath={block.filePath} />
-                    ))}
-                  </div>
-                </Suspense>
-              ) : (
-                <div
-                  className="msg-body whitespace-pre-wrap text-[0.8rem] font-mono opacity-85 max-h-[300px] overflow-y-auto"
-                  dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-                />
-              )}
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
+        <CollapsibleTrigger className={cn(toolRowClass, toolRowButtonClass)}>
+          <ToolRowContent
+            state="off"
+            text={toolPreview}
+            meta={timeStr}
+            expandable
+            expanded={!isCollapsed}
+            renderText={(text) => highlightText(text, searchQuery)}
+          />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="border-t border-border px-2.5 py-2 font-mono text-[0.8rem]">
+            {editBlocks.length > 0 ? (
+              <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading diff</div>}>
+                <div className="space-y-2">
+                  {editBlocks.map((block, i) => (
+                    <DiffView key={i} oldText={block.oldText} newText={block.newText} filePath={block.filePath} />
+                  ))}
+                </div>
+              </Suspense>
+            ) : writeBlocks.length > 0 ? (
+              <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading file preview</div>}>
+                <div className="space-y-2">
+                  {writeBlocks.map((block, i) => (
+                    <FileContentView key={i} content={block.content} filePath={block.filePath} />
+                  ))}
+                </div>
+              </Suspense>
+            ) : (
+              <div
+                className="max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words text-muted-foreground [overflow-wrap:anywhere] [&_code]:font-mono [&_p]:m-0"
+                dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+              />
+            )}
+          </div>
+        </CollapsibleContent>
       </Collapsible>
     </div>
   );
 }
 
 /**
- * Memoized ToolCallBlock — skips re-render when content/state are unchanged.
+ * Memoized ToolCallBlock: skips re-render when content/state are unchanged.
  * Tool call blocks often contain expensive syntax-highlighted diffs,
  * so avoiding unnecessary re-renders is important for scroll performance.
  */

@@ -1,5 +1,5 @@
 /**
- * sendMessage — Pure functions for building and sending chat messages.
+ * sendMessage: Pure functions for building and sending chat messages.
  *
  * Extracted from ChatContext.handleSend. No React hooks, setState, or refs.
  */
@@ -103,7 +103,7 @@ export function buildUserMessage(params: {
 // ─── Send the chat message via RPC ─────────────────────────────────────────────
 
 /**
- * Send a chat message through the gateway RPC. Pure network call — no state management.
+ * Send a chat message through the gateway RPC. Pure network call: no state management.
  */
 export async function sendChatMessage(params: {
   rpc: RpcFn;

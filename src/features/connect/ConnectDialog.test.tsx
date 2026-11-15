@@ -113,7 +113,7 @@ describe('ConnectDialog', () => {
       />,
     );
 
-    const connectButton = screen.getByText('Connect to Gateway');
+    const connectButton = screen.getByText('Connect to gateway');
     fireEvent.click(connectButton);
 
     expect(onConnect).toHaveBeenCalledWith('ws://localhost:1234/ws', '');
@@ -133,7 +133,7 @@ describe('ConnectDialog', () => {
       />,
     );
 
-    fireEvent.click(screen.getByText('Connect to Gateway'));
+    fireEvent.click(screen.getByText('Connect to gateway'));
 
     expect(onConnect).toHaveBeenCalledWith('ws://127.0.0.1:1234/ws', '');
   });
@@ -154,7 +154,7 @@ describe('ConnectDialog', () => {
 
     expect(screen.getByLabelText('Gateway token')).toBeTruthy();
 
-    fireEvent.click(screen.getByText('Connect to Gateway'));
+    fireEvent.click(screen.getByText('Connect to gateway'));
 
     expect(onConnect).toHaveBeenCalledWith('ws://custom.example/ws', 'custom-token');
   });

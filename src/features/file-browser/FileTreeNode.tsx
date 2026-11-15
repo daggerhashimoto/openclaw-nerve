@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { ChevronRight, ChevronDown, EllipsisVertical, Loader2 } from 'lucide-react';
-import { FileIcon, FolderIcon } from './utils/fileIcons';
 import { isImageFile, isPdfFile } from './utils/fileTypes';
 import type { TreeEntry } from './types';
+import { Pane } from '@/components/ui/Pane';
 
 const LONG_PRESS_MS = 450;
 const MOVE_TOLERANCE_PX = 10;
@@ -33,6 +33,8 @@ interface FileTreeNodeProps {
   renderChildren?: boolean;
   compact?: boolean;
   onOpenActions?: (entry: TreeEntry, anchorRect: DOMRect) => void;
+  /** Path the running agent last changed; that row carries a live pane. */
+  livePath?: string | null;
 }
 
 export function FileTreeNode({
@@ -61,6 +63,7 @@ export function FileTreeNode({
   renderChildren = true,
   compact,
   onOpenActions,
+  livePath = null,
 }: FileTreeNodeProps) {
   const longPressTimerRef = useRef<number | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -70,6 +73,10 @@ export function FileTreeNode({
   const isDir = entry.type === 'directory';
   const isExpanded = expandedPaths.has(entry.path);
   const isSelected = selectedPath === entry.path;
+  // The live pane sits on the changed file, or on the nearest visible ancestor:
+  // a collapsed folder lights when the changed file is somewhere inside it.
+  const isLiveFile = livePath === entry.path;
+  const isLiveFolder = isDir && !isExpanded && livePath !== null && livePath.startsWith(`${entry.path}/`);
   const isLoading = loadingPaths.has(entry.path);
   const isRenaming = renamingPath === entry.path;
   const canDrag = entry.path !== '.trash' && !isRenaming;
@@ -184,12 +191,17 @@ export function FileTreeNode({
   };
 
   return (
-    <div role="treeitem" aria-expanded={isDir ? isExpanded : undefined} aria-selected={isSelected}>
+    <div
+      role="treeitem"
+      aria-expanded={isDir ? isExpanded : undefined}
+      aria-selected={isSelected}
+      className={renderChildren ? undefined : 'h-full'}
+    >
       <div
-        className={`flex items-center gap-1 py-[2px] pr-2 cursor-pointer select-none text-[0.8rem] leading-5 hover:bg-muted/50 ${
-          isSelected ? 'bg-muted/70 text-foreground' : 'text-muted-foreground'
+        className={`flex h-full min-h-[28px] items-center gap-1.5 pr-2 cursor-pointer select-none text-[0.867rem] leading-5 text-foreground transition-colors duration-[120ms] hover:bg-raised focus-visible:outline-offset-[-2px] ${
+          isSelected ? 'bg-raised font-medium' : ''
         } ${entry.binary && !canOpen ? 'opacity-50' : ''} ${
-          isDropTarget ? 'bg-primary/15 ring-1 ring-primary/40' : ''
+          isDropTarget ? 'bg-raised ring-1 ring-inset ring-muted-foreground' : ''
         } ${isDragSource ? 'opacity-50' : ''}`}
         style={{
           paddingLeft: depth * 16 + 8,
@@ -225,22 +237,17 @@ export function FileTreeNode({
         {/* Expand/collapse chevron for directories */}
         {isDir ? (
           isLoading ? (
-            <Loader2 className="shrink-0 animate-spin text-muted-foreground" size={12} />
+            <Loader2 className="shrink-0 animate-spin text-muted-foreground" size={14} />
           ) : isExpanded ? (
-            <ChevronDown className="shrink-0 text-muted-foreground" size={12} />
+            <ChevronDown className="shrink-0 text-muted-foreground" size={14} />
           ) : (
-            <ChevronRight className="shrink-0 text-muted-foreground" size={12} />
+            <ChevronRight className="shrink-0 text-muted-foreground" size={14} />
           )
         ) : (
-          <span className="shrink-0 w-3" /> /* spacer for alignment */
+          <span className="shrink-0 w-3.5" /> /* spacer for alignment */
         )}
 
-        {/* Icon */}
-        {isDir ? (
-          <FolderIcon open={isExpanded} />
-        ) : (
-          <FileIcon name={entry.name} />
-        )}
+        {/* No type icons: the chevron says folder, weight says folder, and the name does the rest */}
 
         {/* Name */}
         {isRenaming ? (
@@ -254,15 +261,22 @@ export function FileTreeNode({
             }}
             onBlur={onRenameCommit}
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 min-w-0 bg-background border border-border/60 px-1 py-0 text-[0.8rem] leading-5 text-foreground focus:outline-none focus:border-primary"
+            className="flex-1 min-w-0 rounded-sm border border-input bg-background px-1 py-0 text-[0.867rem] leading-5 text-foreground focus:outline-none focus:border-ring"
           />
         ) : (
-          <span className="flex-1 min-w-0 truncate">{entry.name}</span>
+          <span className={`flex-1 min-w-0 truncate${isDir ? ' font-medium' : ''}`}>{entry.name}</span>
+        )}
+        {(isLiveFile || isLiveFolder) && (
+          <Pane
+            state="live"
+            size="sm"
+            label={isLiveFile ? 'Changed by the running agent' : 'Contains a file changed by the running agent'}
+          />
         )}
         {showCompactActions && (
           <button
             type="button"
-            className="ml-auto flex-shrink-0 p-0 text-muted-foreground hover:text-foreground"
+            className="ml-auto flex-shrink-0 rounded-[3px] p-0 text-muted-foreground transition-colors duration-[120ms] hover:text-foreground"
             aria-label={`Open actions for ${entry.name}`}
             title={`Open actions for ${entry.name}`}
             draggable={false}
@@ -307,6 +321,7 @@ export function FileTreeNode({
               onRenameCancel={onRenameCancel}
               compact={compact}
               onOpenActions={onOpenActions}
+              livePath={livePath}
             />
           ))}
         </div>

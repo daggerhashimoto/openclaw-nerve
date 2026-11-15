@@ -36,7 +36,7 @@ describe('buildFileTreeMenuActions', () => {
     });
 
     expect(actions.map((action) => action.id)).toEqual(['add-to-chat', 'rename', 'trash']);
-    expect(actions.map((action) => action.label)).toEqual(['Add to chat', 'Rename', 'Move to Trash']);
+    expect(actions.map((action) => action.label)).toEqual(['Add to chat', 'Rename', 'Move to trash']);
   });
 
   it('keeps restore and rename actions for files already in trash', () => {

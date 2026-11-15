@@ -6,7 +6,7 @@ export interface ImageAttachment {
   name: string;
 }
 
-/** Image data as stored on messages (no id needed — not user-removable) */
+/** Image data as stored on messages (no id needed: not user-removable) */
 export type MessageImage = Omit<ImageAttachment, 'id'>;
 
 export type UploadMode = 'inline' | 'file_reference';
@@ -105,7 +105,7 @@ export function generateMsgId(): string {
 }
 
 export interface ChatMsg {
-  /** Stable unique ID for React keying — assigned once at creation, never changes. */
+  /** Stable unique ID for React keying: assigned once at creation, never changes. */
   msgId?: string;
   role: ChatMsgRole;
   html: string;
@@ -122,7 +122,7 @@ export interface ChatMsg {
   failed?: boolean;
   /** Temporary ID for optimistic updates */
   tempId?: string;
-  /** Grouped tool calls — when set, this is a grouped tool bubble */
+  /** Grouped tool calls: when set, this is a grouped tool bubble */
   toolGroup?: ToolGroupEntry[];
   /** Intermediate assistant message (narration between tool calls, not the final answer) */
   intermediate?: boolean;
@@ -138,7 +138,7 @@ export interface ChatMsg {
   thinkingDurationMs?: number;
   /** Whether this is a voice (STT-transcribed) message */
   isVoice?: boolean;
-  /** System notification (subagent/cron completion) — rendered as collapsible strip */
+  /** System notification (subagent/cron completion): rendered as collapsible strip */
   isSystemNotification?: boolean;
   /** Short label for system notification strip (e.g. "Subagent completed: kb-fix-auth") */
   systemLabel?: string;

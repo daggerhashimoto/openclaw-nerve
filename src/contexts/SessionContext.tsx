@@ -85,11 +85,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const doneTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const delayedRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Derive busyState from agentStatus for backward compatibility
+  // Derive busyState from agentStatus for backward compatibility. A failed run is over, not busy.
   const busyState = useMemo(() => {
     const result: Record<string, boolean> = {};
     for (const [key, state] of Object.entries(agentStatus)) {
-      result[key] = state.status !== 'IDLE' && state.status !== 'DONE';
+      result[key] = state.status !== 'IDLE' && state.status !== 'DONE' && state.status !== 'ERROR';
     }
     return result;
   }, [agentStatus]);
@@ -437,7 +437,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let badge = 'SYSTEM', badgeCls = 'badge-system', desc = evt;
 
     if (evt.startsWith('chat')) {
-      badge = 'CHAT'; badgeCls = 'badge-chat';
+      badge = 'CHAT'; badgeCls = p.state === 'error' ? 'badge-error' : 'badge-chat';
       desc = chatStateDescs[p.state || ''] || (p.sessionKey ? 'Message from ' + p.sessionKey : 'Chat event');
     } else if (evt.startsWith('agent')) {
       badge = 'AGENT'; badgeCls = 'badge-agent';
@@ -807,6 +807,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     };
   }, []);
+
+  // A reconnect may have missed lifecycle events, so the granular statuses held across the gap
+  // are suspect: a retained DONE could hide a run that started while we were away, and a retained
+  // THINKING could keep a pane lit for a run that ended. Drop them all and let the refreshed
+  // session snapshot decide until new events arrive.
+  const wasConnectedRef = useRef(false);
+  useEffect(() => {
+    if (connectionState !== 'connected') return;
+    if (wasConnectedRef.current) {
+      for (const key of Object.keys(doneTimeoutsRef.current)) {
+        clearTimeout(doneTimeoutsRef.current[key]);
+      }
+      doneTimeoutsRef.current = {};
+      setAgentStatus({});
+    }
+    wasConnectedRef.current = true;
+  }, [connectionState]);
 
   // Poll sessions when connected (reduced to 30s - WebSocket events provide real-time updates)
   useEffect(() => {

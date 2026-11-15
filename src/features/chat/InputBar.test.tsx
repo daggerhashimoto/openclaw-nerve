@@ -262,7 +262,8 @@ describe('InputBar', () => {
   it('shows the command palette shortcut in the composer helper copy', () => {
     render(<InputBar onSend={vi.fn()} isGenerating={false} />);
 
-    expect(screen.getByText(/⌘K command palette/i)).toBeInTheDocument();
+    expect(screen.getByText('⌘K')).toBeInTheDocument();
+    expect(screen.getByText(/command palette/i)).toBeInTheDocument();
     expect(screen.queryByText(/Ctrl\+F search/i)).not.toBeInTheDocument();
   });
 
@@ -352,7 +353,7 @@ describe('InputBar', () => {
 
     await waitFor(() => {
       expect(screen.getAllByText('attach-me.png')).toHaveLength(1);
-      expect(screen.getByText('Local File')).toBeInTheDocument();
+      expect(screen.getByText('Local file')).toBeInTheDocument();
       expect(screen.queryByText('Path Ref')).not.toBeInTheDocument();
     });
 

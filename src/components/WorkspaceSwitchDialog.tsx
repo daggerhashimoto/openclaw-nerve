@@ -1,4 +1,3 @@
-import { AlertTriangle } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -34,22 +33,15 @@ export function WorkspaceSwitchDialog({
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen && !busy) onCancel(); }}>
       <DialogContent showCloseButton={false} className="sm:max-w-md">
-        <DialogHeader className="gap-3 text-left">
-          <div className="flex items-start gap-3">
-            <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-2xl border border-orange/30 bg-orange/10 text-orange">
-              <AlertTriangle size={18} aria-hidden="true" />
-            </span>
-            <div className="space-y-1">
-              <DialogTitle>Unsaved workspace edits</DialogTitle>
-              <DialogDescription className="leading-6">
-                Save or discard the dirty files in this agent before switching to {targetText}.
-              </DialogDescription>
-            </div>
-          </div>
+        <DialogHeader className="gap-1 text-left">
+          <DialogTitle className="text-[1rem]">Unsaved workspace edits</DialogTitle>
+          <DialogDescription className="text-[0.867rem] leading-6">
+            Save or discard the dirty files in this agent before switching to {targetText}.
+          </DialogDescription>
         </DialogHeader>
 
         {error && (
-          <p role="alert" className="rounded-2xl border border-destructive/25 bg-destructive/8 px-3 py-2 text-sm leading-6 text-destructive">
+          <p role="alert" className="rounded-[3px] border border-destructive/40 px-3 py-2 text-[0.867rem] leading-6 text-destructive">
             {error}
           </p>
         )}

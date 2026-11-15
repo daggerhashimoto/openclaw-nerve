@@ -28,6 +28,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 - The Classic skin and the fourteen community themes (PR #391)
 
+### Fixed
+- The generated systemd unit no longer passes `.env` through `EnvironmentFile=`, so an inline comment stays out of the value and the service binds the port from `.env` (#395)
+
 ## [1.5.4] - 2026-10-06
 
 ### Highlights

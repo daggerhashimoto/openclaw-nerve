@@ -506,6 +506,121 @@ describe('SessionContext', () => {
     });
   });
 
+  describe('deleteSession', () => {
+    // Gateway stand-in: lists what is still stored and refuses keys the way sessions.delete does.
+    function installDeleteGateway(initial: Array<Record<string, unknown>>, refuse: (key: string) => string | null) {
+      let stored = [...initial];
+      rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+        if (method === 'sessions.list') return { sessions: stored };
+        if (method === 'sessions.delete') {
+          const key = String(params?.key);
+          const refusal = refuse(key);
+          if (refusal) throw new Error(refusal);
+          stored = stored.filter((session) => session.sessionKey !== key);
+          return { ok: true, key, deleted: true, archived: [] };
+        }
+        return {};
+      });
+    }
+
+    function deleteCalls() {
+      return rpcMock.mock.calls.filter(([method]) => method === 'sessions.delete').map(([, params]) => params.key);
+    }
+
+    function listedKeys() {
+      return screen.getAllByRole('listitem').map((item) => item.textContent);
+    }
+
+    function DeleteProbe({ target, select, onError }: { target: string; select?: string; onError: (err: Error) => void }) {
+      const { sessions, currentSession, deleteSession, setCurrentSession } = useSessionContext();
+      return (
+        <div>
+          <div data-testid="current-session">{currentSession}</div>
+          <ul>
+            {sessions.map((session) => <li key={getSessionKey(session)}>{getSessionKey(session)}</li>)}
+          </ul>
+          {select && <button data-testid="select" onClick={() => setCurrentSession(select)} />}
+          <button data-testid="delete" onClick={() => { deleteSession(target).catch(onError); }} />
+        </div>
+      );
+    }
+
+    it('refuses an agent main session up front instead of deleting its children first', async () => {
+      installDeleteGateway([
+        { sessionKey: 'agent:main:main', label: 'Main' },
+        { sessionKey: 'agent:ops:main', label: 'Ops' },
+        { sessionKey: 'agent:ops:subagent:worker', label: 'Worker' },
+        { sessionKey: 'agent:ops:cron:nightly', label: 'Nightly' },
+      ], (key) => (key === 'agent:ops:main' ? 'Cannot delete the main session (agent:ops:main).' : null));
+      const onError = vi.fn();
+
+      render(<SessionProvider><DeleteProbe target="agent:ops:main" onError={onError} /></SessionProvider>);
+      await screen.findByText('agent:ops:subagent:worker');
+
+      await act(async () => {
+        screen.getByTestId('delete').click();
+      });
+
+      await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+      expect(deleteCalls()).toEqual([]);
+      expect(onError.mock.calls[0][0].message).toContain('Nothing was deleted');
+      expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main', 'agent:ops:subagent:worker', 'agent:ops:cron:nightly']);
+    });
+
+    it('drops exactly the sessions that were deleted when a later delete in the tree fails', async () => {
+      installDeleteGateway([
+        { sessionKey: 'agent:main:main', label: 'Main' },
+        { sessionKey: 'agent:ops:main', label: 'Ops' },
+        { sessionKey: 'agent:ops:subagent:lead', label: 'Lead' },
+        { sessionKey: 'agent:ops:subagent:helper-a', label: 'Helper A', parentSessionKey: 'agent:ops:subagent:lead' },
+        { sessionKey: 'agent:ops:subagent:helper-b', label: 'Helper B', parentSessionKey: 'agent:ops:subagent:lead' },
+      ], (key) => (key === 'agent:ops:subagent:helper-b' ? `Session ${key} is still active; try again.` : null));
+      const onError = vi.fn();
+
+      render(
+        <SessionProvider>
+          <DeleteProbe target="agent:ops:subagent:lead" select="agent:ops:subagent:helper-a" onError={onError} />
+        </SessionProvider>,
+      );
+      await screen.findByText('agent:ops:subagent:helper-a');
+      act(() => {
+        screen.getByTestId('select').click();
+      });
+      expect(screen.getByTestId('current-session')).toHaveTextContent('agent:ops:subagent:helper-a');
+
+      await act(async () => {
+        screen.getByTestId('delete').click();
+      });
+
+      await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+      expect(onError.mock.calls[0][0].message).toContain('still active');
+      expect(deleteCalls()).toEqual(['agent:ops:subagent:helper-a', 'agent:ops:subagent:helper-b']);
+      expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main', 'agent:ops:subagent:lead', 'agent:ops:subagent:helper-b']);
+      expect(screen.getByTestId('current-session')).toHaveTextContent('agent:main:main');
+    });
+
+    it('deletes children before the target and removes the whole tree when every delete succeeds', async () => {
+      installDeleteGateway([
+        { sessionKey: 'agent:main:main', label: 'Main' },
+        { sessionKey: 'agent:ops:main', label: 'Ops' },
+        { sessionKey: 'agent:ops:cron:nightly', label: 'Nightly' },
+        { sessionKey: 'agent:ops:cron:nightly:run:r1', label: 'Run 1' },
+      ], () => null);
+      const onError = vi.fn();
+
+      render(<SessionProvider><DeleteProbe target="agent:ops:cron:nightly" onError={onError} /></SessionProvider>);
+      await screen.findByText('agent:ops:cron:nightly:run:r1');
+
+      await act(async () => {
+        screen.getByTestId('delete').click();
+      });
+
+      await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main']));
+      expect(onError).not.toHaveBeenCalled();
+      expect(deleteCalls()).toEqual(['agent:ops:cron:nightly:run:r1', 'agent:ops:cron:nightly']);
+    });
+  });
+
   it('uses the full gateway session list for sidebar refreshes so older agent chats stay visible', async () => {
     render(
       <SessionProvider>

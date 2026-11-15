@@ -67,6 +67,15 @@ function findNodeByKey(nodes: ReturnType<typeof buildSessionTree>, key: string):
   return null;
 }
 
+/** Why the gateway refused a rename, in a few words for the line under the field. */
+function describeRenameFailure(err: unknown): string {
+  const message = (err instanceof Error ? err.message : String(err ?? '')).trim();
+  if (/^label already in use\b/i.test(message)) return 'Name already in use';
+  const reason = message.replace(/^invalid label:\s*/i, 'Name ');
+  if (!reason) return 'Rename failed';
+  return reason.charAt(0).toUpperCase() + reason.slice(1);
+}
+
 /** Sidebar list of agent sessions with tree structure and context menus. */
 export function SessionList({ sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string; descendantCount: number; isRootAgent: boolean; error?: string } | null>(null);
@@ -74,6 +83,10 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
   const [spawnOpen, setSpawnOpen] = useState(false);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [renameError, setRenameError] = useState<string | null>(null);
+  // The open edit: the name it opened with, the name the gateway last refused, and whether a save is in flight.
+  // A ref, so a blur fired as the field closes or while a save runs cannot send the name again.
+  const renameRef = useRef<{ key: string; original: string; refused: string | null; saving: boolean } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [expandedState, setExpandedState] = useState<Record<string, boolean>>({});
 
@@ -94,23 +107,54 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
   }, [deleteTarget, onDelete]);
 
   const startRename = useCallback((sessionKey: string, currentLabel: string) => {
+    renameRef.current = { key: sessionKey, original: currentLabel.trim(), refused: null, saving: false };
     setRenamingKey(sessionKey);
     setRenameValue(currentLabel);
+    setRenameError(null);
     setTimeout(() => renameInputRef.current?.focus(), 0);
   }, []);
 
-  const commitRename = useCallback(async () => {
-    if (!renamingKey || !onRename) return;
-    const trimmed = renameValue.trim();
-    if (trimmed) {
-      try { await onRename(renamingKey, trimmed); } catch (err) { console.error('Failed to rename session:', err); }
-    }
-    setRenamingKey(null);
-  }, [renamingKey, renameValue, onRename]);
-
   const cancelRename = useCallback(() => {
+    renameRef.current = null;
     setRenamingKey(null);
+    setRenameError(null);
   }, []);
+
+  const commitRename = useCallback(async () => {
+    const edit = renameRef.current;
+    if (!edit || edit.saving) return;
+    const label = renameValue.trim();
+    // An empty or unchanged name is not a rename: close without asking the gateway.
+    if (!onRename || !label || label === edit.original) {
+      cancelRename();
+      return;
+    }
+    edit.saving = true;
+    try {
+      await onRename(edit.key, label);
+      if (renameRef.current === edit) cancelRename();
+    } catch (err) {
+      if (renameRef.current !== edit) {
+        console.error('Failed to rename session:', err);
+        return;
+      }
+      // Keep the field open with what the operator typed, and say why.
+      edit.refused = label;
+      setRenameError(describeRenameFailure(err));
+    } finally {
+      edit.saving = false;
+    }
+  }, [renameValue, onRename, cancelRename]);
+
+  const blurRename = useCallback(() => {
+    const edit = renameRef.current;
+    // Leaving a refused name as it was abandons the edit instead of sending it again.
+    if (edit?.refused && edit.refused === renameValue.trim()) {
+      cancelRename();
+      return;
+    }
+    void commitRename();
+  }, [renameValue, commitRename, cancelRename]);
 
   const handleRenameChange = useCallback((value: string) => {
     setRenameValue(value);
@@ -253,6 +297,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
               isUnread={unreadSessions?.[sessionKey] ?? false}
               isRenaming={renamingKey === sessionKey}
               renameValue={renameValue}
+              renameError={renamingKey === sessionKey ? renameError : null}
               renameInputRef={renameInputRef}
               granularStatus={agentStatus?.[sessionKey]}
               hue={hueForNode(node)}
@@ -265,6 +310,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
               onAbort={onAbort}
               onRenameChange={handleRenameChange}
               onRenameCommit={commitRename}
+              onRenameBlur={blurRename}
               onRenameCancel={cancelRename}
               compact={compact}
             />

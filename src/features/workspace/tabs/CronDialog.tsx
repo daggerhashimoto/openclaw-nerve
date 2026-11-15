@@ -276,7 +276,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
       onCancel={handleClose}
       onClick={handleDialogClick}
       aria-labelledby="cron-dialog-title"
-      className="fixed inset-0 z-50 m-auto max-h-[calc(100dvh-1.067rem)] w-[min(1040px,calc(100vw-1.067rem))] overflow-y-auto rounded-md border border-border bg-popover p-0 text-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)] backdrop:bg-background/80 sm:max-h-[calc(100dvh-2rem)]"
+      className="fixed inset-0 z-50 m-auto max-h-[calc(100dvh-1.067rem)] w-[min(1040px,calc(100vw-1.067rem))] overflow-y-auto rounded-md border border-border bg-popover p-0 text-foreground nerve-menu-shadow backdrop:bg-background/80 sm:max-h-[calc(100dvh-2rem)]"
       style={{ overscrollBehavior: 'contain' }}
     >
       <form onSubmit={handleSubmit} onClick={e => e.stopPropagation()} className="flex flex-col">

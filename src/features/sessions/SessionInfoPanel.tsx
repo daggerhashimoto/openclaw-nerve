@@ -164,7 +164,7 @@ export const SessionInfoPanel = memo(function SessionInfoPanel({
       {open && (
         <div
           ref={panelRef}
-          className="pointer-events-none absolute left-0 top-full z-50 mt-1 w-60 rounded-[3px] border border-border bg-popover text-popover-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)]"
+          className="pointer-events-none absolute left-0 top-full z-50 mt-1 w-60 rounded-[3px] border border-border bg-popover text-popover-foreground nerve-menu-shadow"
         >
           <div className="px-3 py-2">
             {/* Model */}

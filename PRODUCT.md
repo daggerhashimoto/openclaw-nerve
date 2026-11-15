@@ -42,7 +42,11 @@ Capabilities (shipped, preserve through the overhaul):
 Decided for the overhaul (2026-10-31):
 
 - Theming: Nerve ships one branded identity in a dark and a light version, and every install defaults to it.
-- Legacy look: retired. The previous appearance, its 14 community themes and the opt-in Classic skin that briefly carried them were dropped on 2026-11-02, once the components had been rewritten and the skin no longer resembled the original. Stored theme values from either era map onto Night or Daylight by scheme.
+- Legacy look: retired. The previous appearance, its 14 community themes and the opt-in Classic skin that briefly carried them were dropped on 2026-11-02, once the components had been rewritten and the skin no longer resembled the original. Stored legacy values map by scheme: light ones to Daylight, dark ones to the default.
+
+Decided 2026-11-15 (Workbench):
+
+- Theming: Nerve ships two worlds that share one meaning for colour (blue is agent work, cantaloupe is the operator, red is failure). Workbench, adapted from the Ruled Workbench design system the user made for the Nerve landing page, comes as Workbench Night, the default for every install, and Workbench Paper. The night light identity stays available as Night and Daylight. A browser that stored Night under the old default moves to Workbench Night once; picking Night again sticks.
 
 Technical constraints:
 
@@ -56,7 +60,8 @@ Terminology: agent, fleet, gateway, session, subagent, cron, workspace, memory, 
 
 - Name: Nerve. This is the only binding brand asset.
 - The logo mark, the tagline ("The cockpit OpenClaw deserves."), and the cockpit framing in copy are all open to redesign.
-- Palette pinned by the user for the overhaul: midnight black, electric blue, cantaloupe orange.
+- Palette pinned by the user for the overhaul: midnight black, electric blue, cantaloupe orange. It carries the Night and Daylight themes.
+- Workbench pinned by the user (2026-11-15): the Ruled Workbench design system is the source for the Workbench themes. Its cobalt is the live light, cantaloupe stays the operator's colour, red stays error, and labels stay sentence case.
 
 ## Evidence on Hand
 

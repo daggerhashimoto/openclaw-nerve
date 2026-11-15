@@ -117,11 +117,11 @@ describe('SettingsContext theme', () => {
   });
 
   it.each([
-    ['ayu-dark', 'nerve-dark'],
-    ['midnight', 'nerve-dark'],
-    ['monochrome', 'nerve-dark'],
+    ['ayu-dark', 'workbench-night'],
+    ['midnight', 'workbench-night'],
+    ['monochrome', 'workbench-night'],
     ['light', 'nerve-light'],
-  ])('moves the stored legacy theme "%s" to the Nerve default "%s"', (saved, expected) => {
+  ])('moves the stored legacy theme "%s" to "%s"', (saved, expected) => {
     localStorage.setItem('oc-theme', saved);
 
     const { result } = renderHook(() => useSettings(), { wrapper });
@@ -130,15 +130,27 @@ describe('SettingsContext theme', () => {
     expect(localStorage.getItem('oc-theme')).toBe(expected);
   });
 
-  it('defaults fresh installs to Night', () => {
+  it('defaults fresh installs to Workbench Night', () => {
     const { result } = renderHook(() => useSettings(), { wrapper });
 
-    expect(result.current.theme).toBe('nerve-dark');
+    expect(result.current.theme).toBe('workbench-night');
+  });
+
+  it('moves a stored Night to Workbench Night once, and keeps Night when it is picked again', () => {
+    localStorage.setItem('oc-theme', 'nerve-dark');
+    const first = renderHook(() => useSettings(), { wrapper });
+    expect(first.result.current.theme).toBe('workbench-night');
+
+    act(() => first.result.current.setTheme('nerve-dark'));
+    first.unmount();
+
+    const second = renderHook(() => useSettings(), { wrapper });
+    expect(second.result.current.theme).toBe('nerve-dark');
   });
 
   it.each([
-    ['classic-dracula', 'nerve-dark'],
-    ['classic-ayu-dark', 'nerve-dark'],
+    ['classic-dracula', 'workbench-night'],
+    ['classic-ayu-dark', 'workbench-night'],
     ['classic-light', 'nerve-light'],
   ])('moves the retired Classic theme "%s" to "%s" and persists it', (saved, expected) => {
     localStorage.setItem('oc-theme', saved);

@@ -189,7 +189,7 @@ export function FileEditor({ file, onContentChange, onSave, onRetry }: FileEdito
       {/* Lock overlay: centered over the dimmed editor while the agent writes */}
       {file.locked && (
         <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none" role="status" aria-live="polite">
-          <div className="flex items-center gap-3 rounded-[3px] border border-border bg-popover px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.32)] pointer-events-auto">
+          <div className="flex items-center gap-3 rounded-[3px] border border-border bg-popover px-4 py-2.5 nerve-menu-shadow pointer-events-auto">
             <Pane state="live" />
             <div className="flex flex-col gap-0.5">
               <span className="text-[0.867rem] font-medium text-live-text">Agent is editing this file</span>

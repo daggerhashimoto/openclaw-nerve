@@ -1196,7 +1196,9 @@ EOF
         warn "Systemd service failed to start"
         SERVICE_INCOMPLETE=true
         NOT_RUNNING_HEADLINE="The Nerve service failed to start."
-        START_STEPS=("$RESTART_CMD")
+        # The unit on disk may be newer than what systemd has loaded (the combined
+        # command can fail at any step), so the retry reloads before it restarts.
+        START_STEPS=("${ROOT_PREFIX}systemctl daemon-reload" "$RESTART_CMD")
       fi
     else
       if as_root bash -c "systemctl daemon-reload && systemctl enable nerve.service &>/dev/null"; then

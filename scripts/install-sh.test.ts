@@ -490,7 +490,8 @@ describe.skipIf(isRoot).concurrent('install.sh', () => {
       expect(run.output).toContain('Job for nerve.service failed.');
       expect(run.output).toContain('The Nerve service failed to start.');
       expect(run.output).toContain('sudo journalctl -u nerve.service -n 50 --no-pager');
-      expect(run.output).toContain('sudo systemctl restart nerve.service');
+      // The retry reloads first: the unit on disk may be newer than the one systemd has loaded
+      expect(printedSteps(run)).toEqual(['sudo systemctl daemon-reload', 'sudo systemctl restart nerve.service']);
       expect(run.output).not.toContain(SUCCESS_BANNER);
     }, TEST_TIMEOUT_MS);
 

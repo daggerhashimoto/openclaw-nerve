@@ -17,12 +17,14 @@ TEMP_FILES=()
 RWD_PIDS=()
 
 cleanup() {
+  # The ${arr[@]+...} form keeps bash 3.2 (macOS /bin/bash) from failing on an
+  # empty array under set -u, which would turn exit 0 into exit 1 here.
   # Kill any lingering run_with_dots background processes
-  for pid in "${RWD_PIDS[@]}"; do
+  for pid in ${RWD_PIDS[@]+"${RWD_PIDS[@]}"}; do
     kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null || true
   done
   # Remove temp files and directories (stderr captures, build backups)
-  for f in "${TEMP_FILES[@]}"; do
+  for f in ${TEMP_FILES[@]+"${TEMP_FILES[@]}"}; do
     rm -rf "$f" 2>/dev/null || true
   done
 }
@@ -41,6 +43,17 @@ GATEWAY_TOKEN=""
 GATEWAY_URL_OVERRIDE=""
 ACCESS_MODE=""
 ENV_MISSING=false
+SYSTEMD_UNIT_FILE="/etc/systemd/system/nerve.service"
+SYSTEMD_RUN_DIR="/run/systemd/system"  # exists only while systemd is the running init system
+SERVICE_STARTED=false     # a service manager (re)started Nerve during this run
+NERVE_RUNNING=false       # Nerve then answered its /health check
+SERVICE_INCOMPLETE=false  # the service step failed or needs root, so Nerve is not running
+START_STEPS=()            # commands the user still has to run to start Nerve
+LOGS_HINT=""              # command that shows the service logs, once a service exists
+RESTART_CMD=""            # command that restarts the service, once a service exists
+NOT_RUNNING_HEADLINE="Nerve is installed but not running yet."
+ROOT_PREFIX="sudo "       # prefix for printed commands that need root
+if [[ $EUID -eq 0 ]]; then ROOT_PREFIX=""; fi
 
 # ── Colors ────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -122,6 +135,104 @@ check_port() {
 repo_has_local_changes() {
   local repo_dir="$1"
   git -C "$repo_dir" status --porcelain --untracked-files=normal 2>/dev/null | grep -q .
+}
+
+# Run a command as root: directly when the installer is root, otherwise through
+# sudo -n. Call can_run_as_root first so sudo never waits on a hidden prompt.
+as_root() {
+  if [[ $EUID -eq 0 ]]; then
+    "$@"
+  else
+    sudo -n "$@"
+  fi
+}
+
+# Succeeds when as_root can work. Interactive installs may be asked for the sudo
+# password once; non-interactive installs only use passwordless sudo.
+can_run_as_root() {
+  [[ $EUID -eq 0 ]] && return 0
+  command -v sudo &>/dev/null || return 1
+  sudo -n true &>/dev/null && return 0
+  [[ "$INTERACTIVE" == "true" ]] || return 1
+  info "Installing the service needs sudo, so you may be asked for your password"
+  sudo -v < /dev/tty
+}
+
+# Succeeds when systemd is the running init system (the same check as sd_booted).
+# A systemctl binary alone is not enough: containers and WSL can ship one without
+# systemd running, and every systemctl call then fails.
+systemd_running() {
+  command -v systemctl &>/dev/null && [[ -d "$SYSTEMD_RUN_DIR" ]]
+}
+
+# Value of KEY in Nerve's .env, read the way the server reads it: the server and
+# the updater load .env with dotenv, and the script below is dotenv 17's parse()
+# (export prefix, spaces around =, inline comments, quotes, CRLF, last one wins).
+# Prints nothing when the file or the key is missing.
+env_file_value() {
+  [[ -f "${INSTALL_DIR}/.env" ]] || return 0
+  node - "${INSTALL_DIR}/.env" "$1" <<'EOF' || true
+const fs = require('node:fs');
+const [file, key] = process.argv.slice(2);
+const LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
+const lines = fs.readFileSync(file, 'utf8').replace(/\r\n?/mg, '\n');
+let value;
+let match;
+while ((match = LINE.exec(lines)) !== null) {
+  if (match[1] !== key) continue;
+  value = (match[2] || '').trim();
+  const quote = value[0];
+  value = value.replace(/^(['"`])([\s\S]*)\1$/mg, '$2');
+  if (quote === '"') value = value.replace(/\\n/g, '\n').replace(/\\r/g, '\r');
+}
+if (value !== undefined) process.stdout.write(value);
+EOF
+}
+
+# Nerve's port, converted the way server/lib/config.ts does it:
+# Number(PORT || 3080), so "+4123", "4123.0" and "0x1F90" all count. Prints
+# nothing when the server could not be reached on that value: listen() rejects
+# anything but an integer up to 65535, and 0 means a random port.
+nerve_port() {
+  local raw
+  raw=$(env_file_value PORT)
+  node -e 'const port = Number(process.argv[1] || 3080); if (Number.isInteger(port) && port >= 1 && port <= 65535) process.stdout.write(String(port));' -- "$raw" || true
+}
+
+# URL of Nerve's /health endpoint. Mirrors the updater's health check: wildcard
+# bind addresses are probed on loopback. Unlike the updater it ignores PORT and
+# HOST in its own environment, which the service never sees.
+nerve_health_url() {
+  local port host
+  port=$(nerve_port)
+  [[ -n "$port" ]] || return 0  # no reachable port, so no URL
+  host=$(env_file_value HOST)
+  host="${host#"${host%%[![:space:]]*}"}"
+  host="${host%"${host##*[![:space:]]}"}"
+  case "$host" in
+    ""|0.0.0.0) host="127.0.0.1" ;;
+    ::|"[::]") host="[::1]" ;;
+    \[*) ;;
+    *:*) host="[${host}]" ;;
+  esac
+  echo "http://${host}:${port}/health"
+}
+
+# Quote a path for a command the user is meant to copy and paste.
+shell_quote() {
+  printf '%q' "$1"
+}
+
+# Poll a /health URL once a second, for up to 20 tries or 30 seconds. Each try
+# allows 5 seconds because /health itself waits up to 3 seconds on its gateway probe.
+wait_for_nerve() {
+  local url="$1" deadline=$((SECONDS + 30))
+  for _ in $(seq 1 20); do
+    curl -sf --max-time 5 -o /dev/null "$url" && return 0
+    (( SECONDS < deadline )) || return 1
+    sleep 1
+  done
+  return 1
 }
 
 # Animated dots while a background process runs
@@ -507,7 +618,7 @@ check_build_tools() {
       return 0
     fi
     if [[ $EUID -eq 0 ]]; then
-      run_with_dots "Installing build tools" bash -c "DEBIAN_FRONTEND=noninteractive apt-get update -qq &>/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential &>/dev/null"
+      run_with_dots "Installing build tools" bash -c "DEBIAN_FRONTEND=noninteractive apt-get update -qq &>/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential &>/dev/null" || true
       if command -v make &>/dev/null && command -v g++ &>/dev/null; then
         ok "Build tools installed"
         return 0
@@ -697,8 +808,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
 else
   npm_log=$(mktemp /tmp/nerve-npm-install-XXXXXX)
 
-  run_with_dots "Installing dependencies" bash -c "npm ci --loglevel=error > '$npm_log' 2>&1"
-  if [[ $RWD_EXIT -eq 0 ]]; then
+  if run_with_dots "Installing dependencies" bash -c "npm ci --loglevel=error > '$npm_log' 2>&1"; then
     ok "Dependencies installed"
 
     # Back up existing build outputs for rollback on failure
@@ -752,8 +862,7 @@ else
 
   build_log=$(mktemp /tmp/nerve-build-XXXXXX)
 
-  run_with_dots "Building project" bash -c "npm run build > '$build_log' 2>&1"
-  if [[ $RWD_EXIT -eq 0 ]]; then
+  if run_with_dots "Building project" bash -c "npm run build > '$build_log' 2>&1"; then
     ok "Client and server built"
   else
     fail "Build failed"
@@ -822,8 +931,7 @@ else
     ok "Speech model already downloaded (${WHISPER_MODEL_KEY})"
   else
     mkdir -p "$WHISPER_MODEL_DIR"
-    run_with_dots "Downloading speech model ${WHISPER_MODEL_KEY} (${WHISPER_MODEL_SIZE})" bash -c "curl -fsSL -o '$WHISPER_MODEL_PATH' '$WHISPER_MODEL_URL' 2>/dev/null"
-    if [[ $RWD_EXIT -eq 0 ]]; then
+    if run_with_dots "Downloading speech model ${WHISPER_MODEL_KEY} (${WHISPER_MODEL_SIZE})" bash -c "curl -fsSL -o '$WHISPER_MODEL_PATH' '$WHISPER_MODEL_URL' 2>/dev/null"; then
       ok "Speech model ready (${WHISPER_MODEL_KEY})"
     else
       warn "Speech model download failed — local STT may fail unless STT_PROVIDER=openai with OPENAI_API_KEY"
@@ -838,15 +946,13 @@ else
       hint "Install with:"
       cmd "brew install ffmpeg"
     elif $IS_DEBIAN; then
-      run_with_dots "Installing ffmpeg" bash -c "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg &>/dev/null"
-      if [[ $RWD_EXIT -eq 0 ]]; then
+      if run_with_dots "Installing ffmpeg" bash -c "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg &>/dev/null"; then
         ok "ffmpeg installed"
       else
         warn "ffmpeg install failed — voice input may not work"
       fi
     elif $IS_FEDORA; then
-      run_with_dots "Installing ffmpeg" bash -c "sudo dnf install -y -q ffmpeg &>/dev/null"
-      if [[ $RWD_EXIT -eq 0 ]]; then
+      if run_with_dots "Installing ffmpeg" bash -c "sudo dnf install -y -q ffmpeg &>/dev/null"; then
         ok "ffmpeg installed"
       else
         warn "ffmpeg install failed — voice input may not work"
@@ -983,7 +1089,7 @@ fi
 stage "Service"
 
 setup_systemd() {
-  local service_file="/etc/systemd/system/nerve.service"
+  local service_file="$SYSTEMD_UNIT_FILE"
   local node_bin
   node_bin=$(which node)
   local working_dir="$INSTALL_DIR"
@@ -1038,6 +1144,7 @@ setup_systemd() {
 
   local tmp_service
   tmp_service=$(mktemp /tmp/nerve.service.XXXXXX)
+  TEMP_FILES+=("$tmp_service")
 
   cat > "$tmp_service" <<EOF
 [Unit]
@@ -1050,7 +1157,9 @@ User=${install_user}
 Group=${install_user}
 WorkingDirectory=${working_dir}
 ExecStart=${node_bin} server-dist/index.js
-EnvironmentFile=${working_dir}/.env
+# .env is deliberately not loaded by systemd: the server loads it from
+# WorkingDirectory with dotenv, as it does under launchd. systemd parses .env
+# differently, and its values would win because dotenv never overrides them.
 Environment=NODE_ENV=production
 Environment=HOME=${install_home}
 Environment=PATH=${node_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -1061,32 +1170,67 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-  if [[ $EUID -eq 0 ]]; then
-    mv "$tmp_service" "$service_file"
-    if [[ -f "${working_dir}/.env" ]]; then
-      run_with_dots "Systemd service" bash -c "systemctl daemon-reload && systemctl enable nerve.service &>/dev/null && systemctl start nerve.service"
-      if [[ $RWD_EXIT -eq 0 ]]; then
-        ok "Systemd service installed and started"
-      else
-        warn "Systemd service install failed — try: sudo systemctl start nerve.service"
-      fi
+  local unit_existed=false unit_installed=false
+  if [[ -f "$service_file" ]]; then unit_existed=true; fi
+  if can_run_as_root; then
+    if [[ $EUID -ne 0 ]]; then
+      info "Using sudo to install ${service_file} and (re)start nerve.service"
+    fi
+    if as_root install -m 0644 "$tmp_service" "$service_file"; then
+      unit_installed=true
     else
-      systemctl daemon-reload
-      systemctl enable nerve.service &>/dev/null
-      ok "Systemd service installed (not started — run ${CYAN}npm run setup${NC} first, then ${CYAN}systemctl start nerve.service${NC})"
+      warn "Could not write ${service_file}"
     fi
   else
-    echo ""
-    info "To install as a systemd service (requires sudo):"
-    echo ""
-    echo "    sudo mv ${tmp_service} ${service_file}"
-    echo "    sudo systemctl daemon-reload"
-    echo "    sudo systemctl enable nerve.service"
-    echo "    sudo systemctl start nerve.service"
-    echo ""
-    info "Service will run as: ${install_user}"
-    echo ""
+    warn "Could not get root access, so the systemd service was not installed"
   fi
+
+  RESTART_CMD="${ROOT_PREFIX}systemctl restart nerve.service"
+  if [[ "$unit_installed" == "true" ]]; then
+    LOGS_HINT="${ROOT_PREFIX}journalctl -u nerve.service -n 50 --no-pager"
+    if [[ -f "${working_dir}/.env" ]]; then
+      if run_with_dots "Starting systemd service" as_root bash -c "systemctl daemon-reload && systemctl enable nerve.service &>/dev/null && systemctl restart nerve.service"; then
+        ok "Systemd service installed and started"
+        SERVICE_STARTED=true
+      else
+        warn "Systemd service failed to start"
+        SERVICE_INCOMPLETE=true
+        NOT_RUNNING_HEADLINE="The Nerve service failed to start."
+        # The unit on disk may be newer than what systemd has loaded (the combined
+        # command can fail at any step), so the retry reloads before it restarts.
+        START_STEPS=("${ROOT_PREFIX}systemctl daemon-reload" "$RESTART_CMD")
+      fi
+    else
+      if as_root bash -c "systemctl daemon-reload && systemctl enable nerve.service &>/dev/null"; then
+        ok "Systemd service installed (not started yet: .env is missing)"
+      else
+        warn "Systemd service installed but could not be enabled"
+      fi
+      START_STEPS=("cd $(shell_quote "$working_dir") && npm run setup" "$RESTART_CMD")
+    fi
+  else
+    # Keep the unit somewhere that survives a reboot so the commands below stay valid.
+    local saved_unit="${HOME}/.nerve/nerve.service"
+    mkdir -p "$(dirname "$saved_unit")"
+    cp "$tmp_service" "$saved_unit"
+    info "Saved the service unit to ${saved_unit}"
+    SERVICE_INCOMPLETE=true
+    if [[ "$unit_existed" == "true" ]]; then
+      # The old unit, and a service it may still be running, were left untouched.
+      NOT_RUNNING_HEADLINE="Nerve was updated, but nerve.service was not restarted."
+    fi
+    START_STEPS=()
+    if [[ ! -f "${working_dir}/.env" ]]; then
+      START_STEPS+=("cd $(shell_quote "$working_dir") && npm run setup")
+    fi
+    START_STEPS+=(
+      "${ROOT_PREFIX}install -m 0644 $(shell_quote "$saved_unit") $(shell_quote "$service_file")"
+      "${ROOT_PREFIX}systemctl daemon-reload"
+      "${ROOT_PREFIX}systemctl enable nerve.service"
+      "$RESTART_CMD"
+    )
+  fi
+  info "Service user: ${install_user}"
 }
 
 setup_launchd() {
@@ -1153,18 +1297,25 @@ EOF
   if launchctl bootstrap "gui/${uid}" "$plist_file" 2>/dev/null; then
     ok "launchd service installed and started"
     info "Nerve will start automatically on login"
+    SERVICE_STARTED=true
   elif launchctl load "$plist_file" 2>/dev/null; then
     ok "launchd service installed and started (legacy loader)"
     info "Nerve will start automatically on login"
+    SERVICE_STARTED=true
   else
-    ok "launchd plist created at ${plist_file}"
-    info "Load it with: launchctl load ${plist_file}"
+    warn "launchd plist created at ${plist_file}, but it could not be loaded"
+    SERVICE_INCOMPLETE=true
+    START_STEPS=("launchctl load $(shell_quote "$plist_file")")
+  fi
+  if [[ "$SERVICE_STARTED" == "true" ]]; then
+    LOGS_HINT="tail -n 50 $(shell_quote "${working_dir}/nerve.log")"
+    RESTART_CMD="launchctl kickstart -k gui/${uid}/com.nerve.server"
   fi
   echo ""
   info "Manage:"
   echo "    launchctl stop com.nerve.server"
   echo "    launchctl start com.nerve.server"
-  echo "    launchctl unload ${plist_file}"
+  echo "    launchctl unload $(shell_quote "$plist_file")"
   echo ""
 }
 
@@ -1191,7 +1342,8 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
         if [[ "$(echo "$answer" | tr "[:upper:]" "[:lower:]")" != "n" ]]; then
           setup_launchd
         else
-          ok "Skipped — start manually with: cd ${INSTALL_DIR} && npm run prod"
+          ok "Skipped the launchd service"
+          START_STEPS=("cd $(shell_quote "$INSTALL_DIR") && npm start")
         fi
       else
         info "Cannot read input — installing launchd service by default"
@@ -1203,25 +1355,22 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
     fi
     echo ""
   fi
-elif command -v systemctl &>/dev/null; then
+elif systemd_running; then
   if [[ "$DRY_RUN" == "true" ]]; then
-    if [[ -f /etc/systemd/system/nerve.service ]]; then
+    if [[ -f "$SYSTEMD_UNIT_FILE" ]]; then
       dry "Service already exists — would restart it"
     else
       dry "Would prompt to install systemd service"
-      dry "Would create /etc/systemd/system/nerve.service"
+      dry "Would create ${SYSTEMD_UNIT_FILE}"
       dry "Would enable and start the service"
     fi
   else
     echo -e "${BOLD}  Systemd service${NC}"
     echo ""
-    if [[ -f /etc/systemd/system/nerve.service ]]; then
+    if [[ -f "$SYSTEMD_UNIT_FILE" ]]; then
+      # No separate stop: setup_systemd restarts the unit in place, or leaves it
+      # untouched when it lacks root, so the service is never left stopped.
       info "Updating existing systemd service..."
-      if [[ $EUID -eq 0 ]]; then
-        systemctl stop nerve.service 2>/dev/null || true
-      else
-        sudo systemctl stop nerve.service 2>/dev/null || true
-      fi
       setup_systemd
     elif [[ "$INTERACTIVE" == "true" ]]; then
       printf "  ${RAIL}  ${YELLOW}?${NC} Install as a systemd service? (Y/n) "
@@ -1229,20 +1378,41 @@ elif command -v systemctl &>/dev/null; then
         if [[ "$(echo "$answer" | tr "[:upper:]" "[:lower:]")" != "n" ]]; then
           setup_systemd
         else
-          ok "Skipped — start manually with: cd ${INSTALL_DIR} && npm run prod"
+          ok "Skipped the systemd service"
+          START_STEPS=("cd $(shell_quote "$INSTALL_DIR") && npm start")
         fi
       else
         info "Cannot read input — installing systemd service by default"
         setup_systemd
       fi
-    elif [[ $EUID -eq 0 ]]; then
-      info "Non-interactive mode — installing systemd service automatically"
-      setup_systemd
     else
-      info "Non-interactive mode — generating systemd service file"
+      info "Non-interactive mode: installing the systemd service"
       setup_systemd
     fi
     echo ""
+  fi
+elif [[ "$DRY_RUN" == "true" ]]; then
+  dry "systemd is not running: would print how to start Nerve manually"
+else
+  warn "systemd is not running on this host, so Nerve was not installed as a service"
+  START_STEPS=("cd $(shell_quote "$INSTALL_DIR") && npm start")
+fi
+
+if [[ "$SERVICE_STARTED" == "true" ]]; then
+  health_url=$(nerve_health_url)
+  if [[ -z "$health_url" ]]; then
+    NOT_RUNNING_HEADLINE="PORT in .env ($(env_file_value PORT)) is not a usable port (use 1 to 65535)."
+    warn "$NOT_RUNNING_HEADLINE"
+    SERVICE_INCOMPLETE=true
+    START_STEPS=("cd $(shell_quote "$INSTALL_DIR") && npm run setup" "$RESTART_CMD")
+  elif run_with_dots "Waiting for Nerve to respond" wait_for_nerve "$health_url"; then
+    ok "Nerve is responding at ${health_url}"
+    NERVE_RUNNING=true
+  else
+    warn "Nerve did not respond at ${health_url}"
+    SERVICE_INCOMPLETE=true
+    NOT_RUNNING_HEADLINE="Nerve was started but did not respond at ${health_url}."
+    START_STEPS=("$RESTART_CMD")
   fi
 fi
 
@@ -1252,11 +1422,8 @@ echo -e "  ${GREEN}●${NC} ${GREEN}${BOLD}Done${NC}"
 echo ""
 
 # Detect port from .env
-local_port=3080
-if [[ -f "${INSTALL_DIR}/.env" ]]; then
-  port_val=$(grep -E "^PORT=" "${INSTALL_DIR}/.env" 2>/dev/null | cut -d= -f2 || true)
-  [[ -n "$port_val" ]] && local_port="$port_val"
-fi
+local_port=$(nerve_port)
+local_port="${local_port:-3080}"  # an unusable PORT is reported above; setup defaults to 3080
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo -e "     ${YELLOW}${BOLD}⊘  Dry run complete — nothing was modified${NC}"
@@ -1264,44 +1431,67 @@ if [[ "$DRY_RUN" == "true" ]]; then
   echo -e "     ${DIM}Run without --dry-run to install for real.${NC}"
 else
   # Use the actual IP if HOST is 0.0.0.0 (network mode)
-  host_val=$(grep -E "^HOST=" "${INSTALL_DIR}/.env" 2>/dev/null | cut -d= -f2 || true)
+  host_val=$(env_file_value HOST)
   if [[ "$host_val" == "0.0.0.0" ]]; then
     detected_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || ipconfig getifaddr en0 2>/dev/null || echo "")
     local_url="http://${detected_ip:-localhost}:${local_port}"
   else
     local_url="http://localhost:${local_port}"
   fi
-  url_len=${#local_url}
-  # Box must fit both the header text and the URL, with breathing room
-  header_len=29  # "Open Nerve in your browser:" + padding
-  url_line_len=$((url_len + 4))  # "→ " + url + padding
-  if [[ $header_len -gt $url_line_len ]]; then
-    box_inner=$((header_len + 4))
-  else
-    box_inner=$((url_line_len + 4))
-  fi
 
-  echo ""
-  echo -e "     ${GREEN}${BOLD}✅ Nerve installed!${NC}"
-  echo ""
-  echo -e "     ${ORANGE}╭$(printf '─%.0s' $(seq 1 $box_inner))╮${NC}"
-  echo -e "     ${ORANGE}│${NC}$(printf ' %.0s' $(seq 1 $box_inner))${ORANGE}│${NC}"
-  echo -e "     ${ORANGE}│${NC}  ${BOLD}Open Nerve in your browser:${NC}$(printf ' %.0s' $(seq 1 $((box_inner - 29))))${ORANGE}│${NC}"
-  echo -e "     ${ORANGE}│${NC}  ${CYAN}${BOLD}→ ${local_url}${NC}$(printf ' %.0s' $(seq 1 $((box_inner - url_len - 4))))${ORANGE}│${NC}"
-  echo -e "     ${ORANGE}│${NC}$(printf ' %.0s' $(seq 1 $box_inner))${ORANGE}│${NC}"
-  echo -e "     ${ORANGE}╰$(printf '─%.0s' $(seq 1 $box_inner))╯${NC}"
-  echo ""
-  print_deployment_guides || true
-  echo ""
-  echo -e "     ${DIM}Directory:  cd ${INSTALL_DIR}${NC}"
-  if $IS_MAC; then
-    echo -e "     ${DIM}Restart:   launchctl stop com.nerve.server && launchctl start com.nerve.server${NC}"
-    echo -e "     ${DIM}Logs:      tail -f ${INSTALL_DIR}/nerve.log${NC}"
-  elif command -v systemctl &>/dev/null; then
-    echo -e "     ${DIM}Restart:   sudo systemctl restart nerve.service${NC}"
-    echo -e "     ${DIM}Logs:      sudo journalctl -u nerve.service -f${NC}"
+  if [[ "$NERVE_RUNNING" == "true" ]]; then
+    url_len=${#local_url}
+    # Box must fit both the header text and the URL, with breathing room
+    header_len=29  # "Open Nerve in your browser:" + padding
+    url_line_len=$((url_len + 4))  # "→ " + url + padding
+    if [[ $header_len -gt $url_line_len ]]; then
+      box_inner=$((header_len + 4))
+    else
+      box_inner=$((url_line_len + 4))
+    fi
+
+    echo ""
+    echo -e "     ${GREEN}${BOLD}✅ Nerve installed!${NC}"
+    echo ""
+    echo -e "     ${ORANGE}╭$(printf '─%.0s' $(seq 1 $box_inner))╮${NC}"
+    echo -e "     ${ORANGE}│${NC}$(printf ' %.0s' $(seq 1 $box_inner))${ORANGE}│${NC}"
+    echo -e "     ${ORANGE}│${NC}  ${BOLD}Open Nerve in your browser:${NC}$(printf ' %.0s' $(seq 1 $((box_inner - 29))))${ORANGE}│${NC}"
+    echo -e "     ${ORANGE}│${NC}  ${CYAN}${BOLD}→ ${local_url}${NC}$(printf ' %.0s' $(seq 1 $((box_inner - url_len - 4))))${ORANGE}│${NC}"
+    echo -e "     ${ORANGE}│${NC}$(printf ' %.0s' $(seq 1 $box_inner))${ORANGE}│${NC}"
+    echo -e "     ${ORANGE}╰$(printf '─%.0s' $(seq 1 $box_inner))╯${NC}"
+    echo ""
+    print_deployment_guides || true
+    echo ""
+    printf '     %bDirectory:  cd %s%b\n' "$DIM" "$(shell_quote "$INSTALL_DIR")" "$NC"
+    if $IS_MAC; then
+      echo -e "     ${DIM}Restart:   launchctl stop com.nerve.server && launchctl start com.nerve.server${NC}"
+      printf '     %bLogs:      tail -f %s%b\n' "$DIM" "$(shell_quote "${INSTALL_DIR}/nerve.log")" "$NC"
+    else
+      echo -e "     ${DIM}Restart:   ${ROOT_PREFIX}systemctl restart nerve.service${NC}"
+      echo -e "     ${DIM}Logs:      ${ROOT_PREFIX}journalctl -u nerve.service -f${NC}"
+    fi
   else
-    echo -e "     ${DIM}Start:     cd ${INSTALL_DIR} && npm run prod${NC}"
+    echo ""
+    echo -e "     ${YELLOW}${BOLD}${NOT_RUNNING_HEADLINE}${NC}"
+    if [[ -n "$LOGS_HINT" ]]; then
+      echo ""
+      echo "     Check the logs:"
+      # printf, not echo -e: the commands may hold backslashes from shell_quote.
+      printf '       %b%s%b\n' "$CYAN" "$LOGS_HINT" "$NC"
+    fi
+    if [[ ${#START_STEPS[@]} -gt 0 ]]; then
+      echo ""
+      echo "     Start it with:"
+      for step in "${START_STEPS[@]}"; do
+        printf '       %b%s%b\n' "$CYAN" "$step" "$NC"
+      done
+    fi
+    echo ""
+    echo -e "     Once it is running, open ${CYAN}${BOLD}${local_url}${NC}"
+    echo ""
+    print_deployment_guides || true
+    echo ""
+    printf '     %bDirectory:  cd %s%b\n' "$DIM" "$(shell_quote "$INSTALL_DIR")" "$NC"
   fi
 fi
 echo ""
@@ -1313,7 +1503,10 @@ fi
 
 if [[ "$ENV_MISSING" == "true" ]] || [[ ! -f "${INSTALL_DIR}/.env" ]]; then
   warn "Install complete but Nerve is not fully configured"
-  info "Run: cd ${INSTALL_DIR} && npm run setup"
+  printf '  %b  %b→%b Run: %s\n' "$RAIL" "$CYAN" "$NC" "cd $(shell_quote "$INSTALL_DIR") && npm run setup"
   exit 2  # partial success — installed but non-functional
+fi
+if [[ "$SERVICE_INCOMPLETE" == "true" ]]; then
+  exit 2  # installed, but Nerve is not running: the steps printed above say why and what to run
 fi
 exit 0

@@ -966,7 +966,8 @@ export default function App({ onLogout }: AppProps) {
   const compactFileBrowserSwipeEnabled =
     isCompactLayout &&
     viewMode !== 'kanban' &&
-    fileBrowserCollapsed;
+    fileBrowserCollapsed &&
+    !paletteOpen;
   const compactFileBrowserSwipe = useEdgeSwipeToOpen({
     enabled: compactFileBrowserSwipeEnabled,
     onOpen: handleOpenCompactFileBrowserFromSwipe,

@@ -5,6 +5,14 @@ const EDGE_SWIPE_ZONE_PX = 24;
 const OPEN_THRESHOLD_PX = 72;
 const MAX_VERTICAL_DRIFT_PX = 36;
 
+// Modal surfaces render inside the app shell, so their touches reach the shell's
+// handlers too. The command palette has no dialog role and is gated by its owner.
+const OPEN_MODAL_SELECTOR = '[role="dialog"], [role="alertdialog"], dialog[open]';
+
+function isModalOpen(): boolean {
+  return typeof document !== 'undefined' && document.querySelector(OPEN_MODAL_SELECTOR) !== null;
+}
+
 interface EdgeSwipeBindings {
   onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
   onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void;
@@ -27,19 +35,10 @@ export function useEdgeSwipeToOpen({
 }: UseEdgeSwipeToOpenOptions): UseEdgeSwipeToOpenResult {
   const pointerIdRef = useRef<number | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
-  const capturedTargetRef = useRef<HTMLDivElement | null>(null);
 
   const reset = useCallback(() => {
-    if (pointerIdRef.current !== null && capturedTargetRef.current) {
-      try {
-        capturedTargetRef.current.releasePointerCapture(pointerIdRef.current);
-      } catch {
-        // Pointer capture may already be released or unavailable.
-      }
-    }
     pointerIdRef.current = null;
     startRef.current = null;
-    capturedTargetRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -48,24 +47,17 @@ export function useEdgeSwipeToOpen({
     }
   }, [enabled, reset]);
 
-  useEffect(() => reset, [reset]);
-
+  // No pointer capture on purpose. A touch is already delivered to the element it started on,
+  // so the shell sees the whole gesture, and capturing here would redirect the click that ends
+  // a tap in the edge strip away from the control under the finger.
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!enabled || event.pointerType !== 'touch' || event.clientX > EDGE_SWIPE_ZONE_PX) return;
     if (pointerIdRef.current !== null) return;
-
-    reset();
+    if (isModalOpen()) return;
 
     pointerIdRef.current = event.pointerId;
     startRef.current = { x: event.clientX, y: event.clientY };
-
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-      capturedTargetRef.current = event.currentTarget;
-    } catch {
-      // Pointer capture is unavailable in some test environments.
-    }
-  }, [enabled, reset]);
+  }, [enabled]);
 
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!enabled || event.pointerType !== 'touch') return;

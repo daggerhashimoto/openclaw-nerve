@@ -38,6 +38,8 @@ import {
   describeToolResult,
   isActiveAgentState,
   mergeRecoveredTail,
+  isUnsentPrompt,
+  keepUnsentMessages,
   getOrCreateRunState,
   hasSeqGap,
   pruneRunRegistry,
@@ -247,13 +249,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const result = await loadChatHistory({ rpc, sessionKey: sk, limit: 500 });
         if (sk !== currentSessionRef.current) return;
         const prev = getAllMessages();
+        // Compare against the rows history gave; prompts not sent yet are kept apart.
+        const shown = prev.filter((m) => !isUnsentPrompt(m));
         if (
-          result.length === prev.length &&
+          result.length === shown.length &&
           result.length > 0 &&
-          result[result.length - 1]?.rawText === prev[prev.length - 1]?.rawText &&
-          result[result.length - 1]?.role === prev[prev.length - 1]?.role
+          result[result.length - 1]?.rawText === shown[shown.length - 1]?.rawText &&
+          result[result.length - 1]?.role === shown[shown.length - 1]?.role
         ) return;
-        applyMessageWindow(result, false);
+        applyMessageWindow(keepUnsentMessages(prev, result), false);
       } catch { /* best-effort */ } finally {
         subagentPollInFlightRef.current = false;
       }
@@ -635,7 +639,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     streamHook.setStream((prev: ChatStreamState) => ({ ...prev, html: '', runId: undefined }));
     setProcessingStage('thinking');
 
-    const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : 'ik-' + Date.now();
+    // The bubble's tempId is the send key: the gateway records the prompt under it, so a
+    // history read can tell its recorded copy apart from another prompt with the same text.
+    const idempotencyKey = tempId;
     try {
       const ack = await sendChatMessage({
         rpc,

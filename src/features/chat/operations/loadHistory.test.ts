@@ -7,6 +7,7 @@ import {
   tagIntermediateMessages,
   processChatMessages,
   loadChatHistory,
+  transcriptRowId,
 } from './loadHistory';
 import type { ChatMessage } from '@/types';
 import type { ChatMsg } from '@/features/chat/types';
@@ -394,6 +395,35 @@ describe('processChatMessages', () => {
       const result = processChatMessages([{ role: 'user', content: 'Hello' }, { role: 'assistant', content: 'Hi' }]);
       expect(result.every((m) => typeof m.msgId === 'string' && m.msgId.length > 0)).toBe(true);
       expect(new Set(result.map((m) => m.msgId)).size).toBe(result.length);
+    });
+
+    it('marks only rows that took their id from the transcript entry', () => {
+      const [fromHistory, fromLiveFinal] = [
+        processChatMessages([{ role: 'assistant', content: 'Hi', ...meta('a-1') }])[0],
+        processChatMessages([{ role: 'assistant', content: 'Hi' }])[0],
+      ];
+      expect(transcriptRowId(fromHistory)).toBe('h-a-1-0');
+      expect(transcriptRowId(fromLiveFinal)).toBeNull();
+    });
+  });
+
+  describe('send keys on recorded prompts', () => {
+    it('keeps the key the gateway recorded a prompt under, wherever it puts it', () => {
+      const result = processChatMessages([
+        { role: 'user', content: 'Top level', idempotencyKey: 'k1:user' },
+        { role: 'user', content: 'In metadata', __openclaw: { idempotencyKey: 'k2:user' } },
+        { role: 'assistant', content: 'A reply', idempotencyKey: 'run-1' },
+      ]);
+      expect(result.map((m) => m.idempotencyKey)).toEqual(['k1:user', 'k2:user', undefined]);
+    });
+
+    it('keeps the key on the prompt only, not on system lines split out of it', () => {
+      const result = processChatMessages([{
+        role: 'user',
+        content: 'System: [2026-11-15 10:00:00 UTC] Cron finished\nAnd my question',
+        idempotencyKey: 'k3:user',
+      }]);
+      expect(result.map((m) => [m.role, m.idempotencyKey])).toEqual([['event', undefined], ['user', 'k3:user']]);
     });
   });
 

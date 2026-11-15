@@ -211,6 +211,164 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     expect(getChat().messages.filter((m) => m.rawText === 'Here it is.')).toHaveLength(1);
   });
 
+  /** The idempotency key the nth chat.send carried. */
+  function sentKey(rpcMock: { mock: { calls: unknown[][] } }, nth = 0): string {
+    const sends = rpcMock.mock.calls.filter(([method]) => method === 'chat.send');
+    return (sends[nth][1] as { idempotencyKey: string }).idempotencyKey;
+  }
+
+  const earlier = { role: 'user', content: 'Earlier', timestamp: NOW - 60_000, __openclaw: { id: 'e1' } };
+
+  it('keeps a prompt still sending through a history reload, then shows its recorded copy once', async () => {
+    const history: unknown[] = [earlier];
+    const { getChat, rpcMock } = await setup(history);
+    const base = rpcMock.getMockImplementation()!;
+    let ack!: (value: unknown) => void;
+    rpcMock.mockImplementation((method: string) => (
+      method === 'chat.send' ? new Promise((resolve) => { ack = resolve; }) : base(method)
+    ));
+
+    let sending!: Promise<void>;
+    act(() => {
+      sending = getChat().handleSend('Hello');
+    });
+    await act(async () => {
+      await getChat().loadHistory();
+    });
+    expect(getChat().messages.map((m) => [m.rawText, Boolean(m.pending)])).toEqual([['Earlier', false], ['Hello', true]]);
+
+    // The gateway records the prompt under the send key, then history is read again.
+    history.push({ role: 'user', content: 'Hello', timestamp: NOW + 400, idempotencyKey: `${sentKey(rpcMock)}:user`, __openclaw: { id: 'e2' } });
+    await act(async () => {
+      await getChat().loadHistory();
+    });
+    expect(getChat().messages.map((m) => [m.rawText, Boolean(m.pending)])).toEqual([['Earlier', false], ['Hello', false]]);
+
+    await act(async () => {
+      ack({ runId: RUN, status: 'started' });
+      await sending;
+    });
+    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Hello']);
+  });
+
+  it('keeps a prompt that failed to send through a history reload, still failed', async () => {
+    const { getChat, rpcMock } = await setup([earlier]);
+    const base = rpcMock.getMockImplementation()!;
+    rpcMock.mockImplementation((method: string) => (
+      method === 'chat.send' ? Promise.reject(new Error('Disconnected')) : base(method)
+    ));
+
+    await act(async () => {
+      await getChat().handleSend('Hello');
+    });
+    await act(async () => {
+      await getChat().loadHistory();
+    });
+
+    const rows = getChat().messages;
+    expect(rows.map((m) => m.rawText)).toEqual(['Earlier', 'Hello']);
+    expect(rows[1].failed).toBe(true);
+  });
+
+  it('keeps the live stream intact when history is recovered mid-run', async () => {
+    const history: unknown[] = [earlier];
+    const { emit, getChat, rpcMock, historyCalls } = await setup(history);
+
+    await act(async () => {
+      await getChat().loadHistory();
+    });
+    const loads = historyCalls();
+    await act(async () => {
+      await getChat().handleSend('Write about forests');
+    });
+    history.push(
+      { role: 'user', content: 'Write about forests', timestamp: NOW + 300, idempotencyKey: `${sentKey(rpcMock)}:user`, __openclaw: { id: 'e2' } },
+      { role: 'assistant', content: [{ type: 'text', text: 'Forests absorb carbon dioxide.' }], timestamp: NOW + 900, __openclaw: { id: 'e3', runId: RUN } },
+    );
+    emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }), 7);
+    emit('chat', chat({ state: 'delta', seq: 33, deltaText: 'Forests absorb carbon dioxide.', message: textMessage('Forests absorb carbon dioxide.', NOW) }), 8);
+    // Frame 9 never arrives: recovery reads history while the reply is still streaming.
+    emit('chat', chat({ state: 'delta', seq: 37, deltaText: ' They also' }), 10);
+
+    await waitFor(() => expect(historyCalls()).toBeGreaterThan(loads));
+    await waitFor(() => expect(getChat().stream.isRecovering).toBe(false));
+
+    expect(getChat().stream.html).toContain('Forests absorb carbon dioxide. They also');
+    // The recorded prompt replaced the local one; the streamed text stays out of the transcript.
+    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Write about forests']);
+  });
+
+  it('shows the reply once when history brought a compaction row before the live final (#376)', async () => {
+    const reply = 'Task 10 audit is verified complete.';
+    const history: unknown[] = [earlier];
+    const { emit, getChat, rpcMock, historyCalls } = await setup(history);
+
+    await act(async () => {
+      await getChat().loadHistory();
+    });
+    await act(async () => {
+      await getChat().handleSend('Audit task 10');
+    });
+    emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }), 7);
+    emit('chat', chat({ state: 'delta', seq: 33, deltaText: reply, message: textMessage(reply, NOW) }), 8);
+
+    // The gateway records the reply, then compacts the session before the final goes out.
+    history.push(
+      { role: 'user', content: 'Audit task 10', timestamp: NOW + 200, idempotencyKey: `${sentKey(rpcMock)}:user`, __openclaw: { id: 'e2' } },
+      { role: 'assistant', content: [{ type: 'text', text: reply }], timestamp: NOW + 1000, __openclaw: { id: 'e3', runId: RUN } },
+      { role: 'system', content: [{ type: 'text', text: 'Compaction' }], timestamp: NOW + 2000, __openclaw: { id: 'e4', kind: 'compaction' } },
+    );
+    // A frame goes missing, so history is recovered while the reply is still the stream.
+    const loadsBeforeGap = historyCalls();
+    emit('chat', chat({ state: 'delta', seq: 40, deltaText: '' }), 10);
+    await waitFor(() => expect(historyCalls()).toBeGreaterThan(loadsBeforeGap));
+    await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toContain('Compaction'));
+
+    emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 3000) }), 11);
+    expect(getChat().messages.filter((m) => m.rawText === reply)).toHaveLength(1);
+
+    // The final schedules one more history read; afterwards every row shows once, in history order.
+    const loadsAfterFinal = historyCalls();
+    await waitFor(() => expect(historyCalls()).toBeGreaterThan(loadsAfterFinal));
+    await waitFor(() => {
+      expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply, 'Compaction']);
+    });
+  });
+
+  it('does not append the live final after the compaction row that follows its history copy (#376)', async () => {
+    const reply = 'Task 10 audit is verified complete.';
+    const history: unknown[] = [earlier];
+    const { emit, getChat, rpcMock, historyCalls } = await setup(history);
+
+    await act(async () => {
+      await getChat().loadHistory();
+    });
+    await act(async () => {
+      await getChat().handleSend('Audit task 10');
+    });
+    emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }), 7);
+    history.push(
+      { role: 'user', content: 'Audit task 10', timestamp: NOW + 200, idempotencyKey: `${sentKey(rpcMock)}:user`, __openclaw: { id: 'e2' } },
+      { role: 'assistant', content: [{ type: 'text', text: reply }], timestamp: NOW + 1000, __openclaw: { id: 'e3', runId: RUN } },
+      { role: 'system', content: [{ type: 'text', text: 'Compaction' }], timestamp: NOW + 2000, __openclaw: { id: 'e4', kind: 'compaction' } },
+    );
+    // Nothing streamed, and a frame goes missing: the recovery brings the reply and the compaction row.
+    const loadsBeforeGap = historyCalls();
+    emit('agent', { sessionKey: SESSION, runId: RUN, seq: 5, stream: 'tool', data: { phase: 'start', name: 'exec', toolCallId: 't1' } }, 9);
+    await waitFor(() => expect(historyCalls()).toBeGreaterThan(loadsBeforeGap));
+    await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply, 'Compaction']));
+
+    emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 3000) }), 10);
+    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply, 'Compaction']);
+
+    const loadsAfterFinal = historyCalls();
+    await waitFor(() => expect(historyCalls()).toBeGreaterThan(loadsAfterFinal));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply, 'Compaction']);
+  });
+
   it('reconciles a late final for a settled run from history instead of appending it', async () => {
     const history = [
       { role: 'user', content: 'Write about clouds', timestamp: NOW },

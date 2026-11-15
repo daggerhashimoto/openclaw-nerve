@@ -134,8 +134,15 @@ export interface ChatMessage {
   MediaTypes?: string[];
   MediaUrl?: string;
   MediaUrls?: string[];
+  /**
+   * On a prompt in chat.history: the key the gateway recorded it under. For a
+   * chat.send prompt a 2026.9 gateway records `<chat.send idempotencyKey>:user`.
+   */
+  idempotencyKey?: string;
   /** Gateway transcript metadata (chat.history). */
   __openclaw?: {
+    /** The same key as the message's own idempotencyKey, when the gateway copies it here. */
+    idempotencyKey?: string;
     /** Agent run that produced the message; changes when a new turn starts. */
     runId?: string;
     /** Set on the first visible message after the gateway hid a turn's prompt (heartbeat polls). */

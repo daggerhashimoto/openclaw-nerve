@@ -724,6 +724,47 @@ describe('SessionContext', () => {
     expect(screen.queryByText('Worker')).not.toBeInTheDocument();
   });
 
+  it('carries a status or updatedAt change into a listed row even when nothing else changed', async () => {
+    let worker = { status: 'running', updatedAt: 1_000 };
+    rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method !== 'sessions.list') return {};
+      if (params?.spawnedBy) return { sessions: [] };
+      return {
+        sessions: [
+          { sessionKey: 'agent:main:main', label: 'Main' },
+          { sessionKey: 'agent:main:subagent:worker', label: 'Worker', totalTokens: 1_200, ...worker },
+        ],
+      };
+    });
+
+    function WorkerRow() {
+      const { sessions } = useSessionContext();
+      const row = sessions.find((session) => getSessionKey(session) === 'agent:main:subagent:worker');
+      return <div data-testid="worker-row">{row ? `${row.status}@${row.updatedAt}` : 'none'}</div>;
+    }
+
+    render(
+      <SessionProvider>
+        <SessionRefreshProbe />
+        <WorkerRow />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('worker-row')).toHaveTextContent('running@1000'));
+
+    // The run failed before it spent a token: only the status moved.
+    worker = { status: 'failed', updatedAt: 1_000 };
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+    });
+    await waitFor(() => expect(screen.getByTestId('worker-row')).toHaveTextContent('failed@1000'));
+
+    worker = { status: 'failed', updatedAt: 2_000 };
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+    });
+    await waitFor(() => expect(screen.getByTestId('worker-row')).toHaveTextContent('failed@2000'));
+  });
+
   it('uses the full gateway session list for sidebar refreshes so older agent chats stay visible', async () => {
     render(
       <SessionProvider>

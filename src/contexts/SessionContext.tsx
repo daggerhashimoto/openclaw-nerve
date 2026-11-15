@@ -29,6 +29,14 @@ const FULL_SESSIONS_LIMIT = 1000;
 const MAIN_SESSION_KEY = 'agent:main:main';
 const SESSIONS_SPAWNED_LIMIT = 500;
 
+// A refresh keeps a row's old object unless one of these differs, so every field the agents
+// column, the fleet pane and the session info panel read has to be here (run state included).
+const DIFFED_SESSION_FIELDS = [
+  'state', 'agentState', 'status', 'busy', 'processing', 'updatedAt',
+  'totalTokens', 'inputTokens', 'outputTokens', 'contextTokens', 'model', 'thinking', 'thinkingLevel',
+  'label', 'displayName', 'channel', 'parentSessionKey', 'parentId',
+] as const satisfies readonly (keyof Session)[];
+
 export type SubagentCleanupMode = 'keep' | 'delete';
 
 export interface SpawnSessionOpts {
@@ -590,19 +598,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             return newSession;
           }
           
-          // Compare relevant fields to detect changes
-          const changed = (
-            existing.state !== newSession.state ||
-            existing.totalTokens !== newSession.totalTokens ||
-            existing.contextTokens !== newSession.contextTokens ||
-            existing.model !== newSession.model ||
-            existing.thinking !== newSession.thinking ||
-            existing.thinkingLevel !== newSession.thinkingLevel ||
-            existing.label !== newSession.label ||
-            existing.displayName !== newSession.displayName ||
-            existing.parentSessionKey !== newSession.parentSessionKey ||
-            existing.parentId !== newSession.parentId
-          );
+          const changed = DIFFED_SESSION_FIELDS.some((field) => existing[field] !== newSession[field]);
           
           if (changed) {
             hasChanges = true;

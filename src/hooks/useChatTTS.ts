@@ -41,11 +41,11 @@ export function buildVoiceFallbackText(raw: string): string | null {
 // ─── Hook ───────────────────────────────────────────────────────────────────────
 
 interface UseChatTTSDeps {
-  ttsEnabled: React.RefObject<boolean>;
+  soundEnabled: React.RefObject<boolean>;
   speak: React.RefObject<(text: string) => void>;
 }
 
-export function useChatTTS({ ttsEnabled, speak }: UseChatTTSDeps) {
+export function useChatTTS({ soundEnabled, speak }: UseChatTTSDeps) {
   const lastMessageWasVoiceRef = useRef(false);
   const playedSoundsRef = useRef<Set<string>>(new Set());
 
@@ -69,22 +69,20 @@ export function useChatTTS({ ttsEnabled, speak }: UseChatTTSDeps) {
 
     if (finalData?.ttsText && !playedSoundsRef.current.has(finalData.ttsText)) {
       playedSoundsRef.current.add(finalData.ttsText);
-      if (ttsEnabled.current) speak.current(finalData.ttsText);
-      else playPing();
+      speak.current(finalData.ttsText);
     } else if (!finalData?.ttsText && lastMessageWasVoiceRef.current && finalData?.text) {
       // Voice fallback: agent forgot [tts:...] marker — auto-speak cleaned response
       const fallback = buildVoiceFallbackText(finalData.text);
-      if (fallback && ttsEnabled.current) speak.current(fallback);
-      else playPing();
-    } else {
+      if (fallback) speak.current(fallback);
+    } else if (soundEnabled.current) {
       playPing();
     }
-  }, [ttsEnabled, speak]);
+  }, [soundEnabled, speak]);
 
-  /** Play the completion ping through the independent UI sound channel. */
+  /** Play the completion ping sound if sound is enabled. */
   const playCompletionPing = useCallback(() => {
-    playPing();
-  }, []);
+    if (soundEnabled.current) playPing();
+  }, [soundEnabled]);
 
   return useMemo(() => ({
     trackVoiceMessage,

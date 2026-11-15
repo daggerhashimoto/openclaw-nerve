@@ -15,10 +15,10 @@ describe('useChatTTS', () => {
     vi.clearAllMocks();
   });
 
-  it('uses the independent UI sound channel for a completed text response', () => {
-    const ttsEnabled = { current: true };
+  it('pings a completed text response while sound is on', () => {
+    const soundEnabled = { current: true };
     const speak = { current: vi.fn() };
-    const { result } = renderHook(() => useChatTTS({ ttsEnabled, speak }));
+    const { result } = renderHook(() => useChatTTS({ soundEnabled, speak }));
 
     act(() => result.current.handleFinalTTS(null, true));
 
@@ -26,20 +26,33 @@ describe('useChatTTS', () => {
     expect(speak.current).not.toHaveBeenCalled();
   });
 
-  it('plays an explicitly requested completion ping through the UI sound channel', () => {
-    const ttsEnabled = { current: true };
+  it('does not ping a completed text response while sound is off', () => {
+    const soundEnabled = { current: false };
     const speak = { current: vi.fn() };
-    const { result } = renderHook(() => useChatTTS({ ttsEnabled, speak }));
+    const { result } = renderHook(() => useChatTTS({ soundEnabled, speak }));
+
+    act(() => result.current.handleFinalTTS(null, true));
+
+    expect(playPingMock).not.toHaveBeenCalled();
+  });
+
+  it('plays a requested completion ping only while sound is on', () => {
+    const soundEnabled = { current: true };
+    const speak = { current: vi.fn() };
+    const { result } = renderHook(() => useChatTTS({ soundEnabled, speak }));
 
     act(() => result.current.playCompletionPing());
+    expect(playPingMock).toHaveBeenCalledOnce();
 
+    soundEnabled.current = false;
+    act(() => result.current.playCompletionPing());
     expect(playPingMock).toHaveBeenCalledOnce();
   });
 
-  it('falls back to a UI ping when a TTS response arrives with spoken replies disabled', () => {
-    const ttsEnabled = { current: false };
+  it('does not swap a spoken reply for a ping while sound is off', () => {
+    const soundEnabled = { current: false };
     const speak = { current: vi.fn() };
-    const { result } = renderHook(() => useChatTTS({ ttsEnabled, speak }));
+    const { result } = renderHook(() => useChatTTS({ soundEnabled, speak }));
 
     act(() => result.current.handleFinalTTS({
       message: { role: 'assistant', content: 'Done' },
@@ -48,7 +61,6 @@ describe('useChatTTS', () => {
       charts: [],
     }, true));
 
-    expect(speak.current).not.toHaveBeenCalled();
-    expect(playPingMock).toHaveBeenCalledOnce();
+    expect(playPingMock).not.toHaveBeenCalled();
   });
 });

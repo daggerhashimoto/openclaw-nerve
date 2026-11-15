@@ -165,31 +165,62 @@ systemd_running() {
   command -v systemctl &>/dev/null && [[ -d "$SYSTEMD_RUN_DIR" ]]
 }
 
-# Value of the last KEY= line in Nerve's .env, without CR, surrounding spaces or
-# matching quotes. Prints nothing when the file or key is missing.
+# Value of KEY in Nerve's .env, read the way the server reads it: the server and
+# the updater load .env with dotenv, and the script below is dotenv 17's parse()
+# (export prefix, spaces around =, inline comments, quotes, CRLF, last one wins).
+# Prints nothing when the file or the key is missing.
 env_file_value() {
-  local value
-  value=$(grep -E "^${1}=" "${INSTALL_DIR}/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r' || true)
-  value=$(printf '%s' "$value" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
-  if [[ "$value" =~ ^\".*\"$ || "$value" =~ ^\'.*\'$ ]]; then
-    value="${value:1:${#value}-2}"
+  [[ -f "${INSTALL_DIR}/.env" ]] || return 0
+  node - "${INSTALL_DIR}/.env" "$1" <<'EOF' || true
+const fs = require('node:fs');
+const [file, key] = process.argv.slice(2);
+const LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
+const lines = fs.readFileSync(file, 'utf8').replace(/\r\n?/mg, '\n');
+let value;
+let match;
+while ((match = LINE.exec(lines)) !== null) {
+  if (match[1] !== key) continue;
+  value = (match[2] || '').trim();
+  const quote = value[0];
+  value = value.replace(/^(['"`])([\s\S]*)\1$/mg, '$2');
+  if (quote === '"') value = value.replace(/\\n/g, '\n').replace(/\\r/g, '\r');
+}
+if (value !== undefined) process.stdout.write(value);
+EOF
+}
+
+# Nerve's port, parsed like the updater does (parseInt, default 3080).
+nerve_port() {
+  local port
+  port=$(env_file_value PORT)
+  if [[ "$port" =~ ^[[:space:]]*([0-9]+) ]]; then
+    echo "${BASH_REMATCH[1]}"
+  else
+    echo 3080
   fi
-  printf '%s' "$value"
 }
 
 # URL of Nerve's /health endpoint. Mirrors the updater's health check: wildcard
-# bind addresses are probed on loopback.
+# bind addresses are probed on loopback. Unlike the updater it ignores PORT and
+# HOST in its own environment, which the service never sees.
 nerve_health_url() {
   local port host
-  port=$(env_file_value PORT)
+  port=$(nerve_port)
   host=$(env_file_value HOST)
+  host="${host#"${host%%[![:space:]]*}"}"
+  host="${host%"${host##*[![:space:]]}"}"
   case "$host" in
     ""|0.0.0.0) host="127.0.0.1" ;;
     ::|"[::]") host="[::1]" ;;
     \[*) ;;
     *:*) host="[${host}]" ;;
   esac
-  echo "http://${host}:${port:-3080}/health"
+  echo "http://${host}:${port}/health"
+}
+
+# Quote a path for a command the user is meant to copy and paste.
+shell_quote() {
+  printf '%q' "$1"
 }
 
 # Poll a /health URL once a second, for up to 20 tries or 30 seconds. Each try
@@ -1171,7 +1202,7 @@ EOF
       else
         warn "Systemd service installed but could not be enabled"
       fi
-      START_STEPS=("cd ${working_dir} && npm run setup" "$RESTART_CMD")
+      START_STEPS=("cd $(shell_quote "$working_dir") && npm run setup" "$RESTART_CMD")
     fi
   else
     # Keep the unit somewhere that survives a reboot so the commands below stay valid.
@@ -1186,10 +1217,10 @@ EOF
     fi
     START_STEPS=()
     if [[ ! -f "${working_dir}/.env" ]]; then
-      START_STEPS+=("cd ${working_dir} && npm run setup")
+      START_STEPS+=("cd $(shell_quote "$working_dir") && npm run setup")
     fi
     START_STEPS+=(
-      "${ROOT_PREFIX}install -m 0644 ${saved_unit} ${service_file}"
+      "${ROOT_PREFIX}install -m 0644 $(shell_quote "$saved_unit") $(shell_quote "$service_file")"
       "${ROOT_PREFIX}systemctl daemon-reload"
       "${ROOT_PREFIX}systemctl enable nerve.service"
       "$RESTART_CMD"
@@ -1270,17 +1301,17 @@ EOF
   else
     warn "launchd plist created at ${plist_file}, but it could not be loaded"
     SERVICE_INCOMPLETE=true
-    START_STEPS=("launchctl load ${plist_file}")
+    START_STEPS=("launchctl load $(shell_quote "$plist_file")")
   fi
   if [[ "$SERVICE_STARTED" == "true" ]]; then
-    LOGS_HINT="tail -n 50 ${working_dir}/nerve.log"
+    LOGS_HINT="tail -n 50 $(shell_quote "${working_dir}/nerve.log")"
     RESTART_CMD="launchctl kickstart -k gui/${uid}/com.nerve.server"
   fi
   echo ""
   info "Manage:"
   echo "    launchctl stop com.nerve.server"
   echo "    launchctl start com.nerve.server"
-  echo "    launchctl unload ${plist_file}"
+  echo "    launchctl unload $(shell_quote "$plist_file")"
   echo ""
 }
 
@@ -1308,7 +1339,7 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
           setup_launchd
         else
           ok "Skipped the launchd service"
-          START_STEPS=("cd ${INSTALL_DIR} && npm start")
+          START_STEPS=("cd $(shell_quote "$INSTALL_DIR") && npm start")
         fi
       else
         info "Cannot read input — installing launchd service by default"
@@ -1344,7 +1375,7 @@ elif systemd_running; then
           setup_systemd
         else
           ok "Skipped the systemd service"
-          START_STEPS=("cd ${INSTALL_DIR} && npm start")
+          START_STEPS=("cd $(shell_quote "$INSTALL_DIR") && npm start")
         fi
       else
         info "Cannot read input — installing systemd service by default"
@@ -1360,7 +1391,7 @@ elif [[ "$DRY_RUN" == "true" ]]; then
   dry "systemd is not running: would print how to start Nerve manually"
 else
   warn "systemd is not running on this host, so Nerve was not installed as a service"
-  START_STEPS=("cd ${INSTALL_DIR} && npm start")
+  START_STEPS=("cd $(shell_quote "$INSTALL_DIR") && npm start")
 fi
 
 if [[ "$SERVICE_STARTED" == "true" ]]; then
@@ -1382,9 +1413,7 @@ echo -e "  ${GREEN}●${NC} ${GREEN}${BOLD}Done${NC}"
 echo ""
 
 # Detect port from .env
-local_port=3080
-port_val=$(env_file_value PORT)
-if [[ -n "$port_val" ]]; then local_port="$port_val"; fi
+local_port=$(nerve_port)
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo -e "     ${YELLOW}${BOLD}⊘  Dry run complete — nothing was modified${NC}"
@@ -1423,10 +1452,10 @@ else
     echo ""
     print_deployment_guides || true
     echo ""
-    echo -e "     ${DIM}Directory:  cd ${INSTALL_DIR}${NC}"
+    printf '     %bDirectory:  cd %s%b\n' "$DIM" "$(shell_quote "$INSTALL_DIR")" "$NC"
     if $IS_MAC; then
       echo -e "     ${DIM}Restart:   launchctl stop com.nerve.server && launchctl start com.nerve.server${NC}"
-      echo -e "     ${DIM}Logs:      tail -f ${INSTALL_DIR}/nerve.log${NC}"
+      printf '     %bLogs:      tail -f %s%b\n' "$DIM" "$(shell_quote "${INSTALL_DIR}/nerve.log")" "$NC"
     else
       echo -e "     ${DIM}Restart:   ${ROOT_PREFIX}systemctl restart nerve.service${NC}"
       echo -e "     ${DIM}Logs:      ${ROOT_PREFIX}journalctl -u nerve.service -f${NC}"
@@ -1437,13 +1466,14 @@ else
     if [[ -n "$LOGS_HINT" ]]; then
       echo ""
       echo "     Check the logs:"
-      echo -e "       ${CYAN}${LOGS_HINT}${NC}"
+      # printf, not echo -e: the commands may hold backslashes from shell_quote.
+      printf '       %b%s%b\n' "$CYAN" "$LOGS_HINT" "$NC"
     fi
     if [[ ${#START_STEPS[@]} -gt 0 ]]; then
       echo ""
       echo "     Start it with:"
       for step in "${START_STEPS[@]}"; do
-        echo -e "       ${CYAN}${step}${NC}"
+        printf '       %b%s%b\n' "$CYAN" "$step" "$NC"
       done
     fi
     echo ""
@@ -1451,7 +1481,7 @@ else
     echo ""
     print_deployment_guides || true
     echo ""
-    echo -e "     ${DIM}Directory:  cd ${INSTALL_DIR}${NC}"
+    printf '     %bDirectory:  cd %s%b\n' "$DIM" "$(shell_quote "$INSTALL_DIR")" "$NC"
   fi
 fi
 echo ""
@@ -1463,7 +1493,7 @@ fi
 
 if [[ "$ENV_MISSING" == "true" ]] || [[ ! -f "${INSTALL_DIR}/.env" ]]; then
   warn "Install complete but Nerve is not fully configured"
-  info "Run: cd ${INSTALL_DIR} && npm run setup"
+  printf '  %b  %b→%b Run: %s\n' "$RAIL" "$CYAN" "$NC" "cd $(shell_quote "$INSTALL_DIR") && npm run setup"
   exit 2  # partial success — installed but non-functional
 fi
 if [[ "$SERVICE_INCOMPLETE" == "true" ]]; then

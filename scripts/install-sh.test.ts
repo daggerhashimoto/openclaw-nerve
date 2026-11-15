@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -15,6 +15,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse as parseDotenv } from 'dotenv';
 import { afterAll, describe, it } from 'vitest';
 
 /**
@@ -70,6 +71,10 @@ interface Scenario {
   env?: string;
   /** Installer flags added after --branch and --dir. */
   args?: string[];
+  /** Put spaces in HOME, the install directory and the unit file path. */
+  spacedPaths?: boolean;
+  /** false: OpenClaw has no gateway token, so the installer cannot write .env. */
+  gatewayToken?: boolean;
 }
 
 interface InstallRun {
@@ -244,14 +249,16 @@ async function install(scenario: Scenario = {}): Promise<InstallRun> {
     healthDelaySeconds: 0,
     env: undefined,
     args: [],
+    spacedPaths: false,
+    gatewayToken: true,
     ...scenario,
   } satisfies Scenario;
 
   const tools = toolbox();
-  const root = mkdtempSync(path.join(os.tmpdir(), 'nerve-install-sh-'));
+  const root = mkdtempSync(path.join(os.tmpdir(), s.spacedPaths ? 'nerve install sh ' : 'nerve-install-sh-'));
   tempRoots.push(root);
   const home = path.join(root, 'home');
-  const installDir = path.join(root, 'nerve');
+  const installDir = path.join(root, s.spacedPaths ? 'My Nerve' : 'nerve');
   const callsFile = path.join(root, 'calls.log');
   const unitFile = path.join(root, 'etc-systemd-system', 'nerve.service');
   const systemdRunDir = path.join(root, 'run-systemd-system');
@@ -262,7 +269,7 @@ async function install(scenario: Scenario = {}): Promise<InstallRun> {
   writeFileSync(callsFile, '');
   writeFileSync(
     path.join(home, '.openclaw', 'openclaw.json'),
-    JSON.stringify({ gateway: { port: 18789, auth: { token: 'test-token' } } }),
+    JSON.stringify({ gateway: { port: 18789, auth: s.gatewayToken ? { token: 'test-token' } : {} } }),
   );
   if (s.speechModel === 'cached') {
     writeFileSync(path.join(home, '.nerve', 'models', 'ggml-base.bin'), 'model');
@@ -350,6 +357,64 @@ async function install(scenario: Scenario = {}): Promise<InstallRun> {
 
 const systemctlCalls = (run: InstallRun) => run.calls.filter((call) => call.startsWith('systemctl '));
 const healthChecks = (run: InstallRun, url = NERVE_HEALTH_URL) => run.calls.filter((call) => call === `curl ${url}`);
+
+/** The commands printed under "Start it with:". */
+function printedSteps(run: InstallRun): string[] {
+  const lines = run.output.split('\n');
+  const start = lines.findIndex((line) => line.trim() === 'Start it with:');
+  if (start === -1) throw new Error('No "Start it with:" section in the installer output');
+  const steps: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (!line.trim()) break;
+    steps.push(line.trim());
+  }
+  return steps;
+}
+
+/** The single printed line that starts with `prefix`, without the rail and surrounding space. */
+function printedLine(run: InstallRun, prefix: string): string {
+  const matches = run.output
+    .split('\n')
+    .map((line) => line.trim().replace(/^│\s+/, ''))
+    .filter((line) => line.startsWith(prefix));
+  if (matches.length !== 1) throw new Error(`Expected one printed line starting with ${prefix}, found ${matches.length}`);
+  return matches[0];
+}
+
+/**
+ * Runs a command the installer printed for the user to copy, as bash would
+ * after a paste. `prelude` defines shell functions that stand in for commands
+ * such as sudo or npm. Throws when bash rejects or fails the command.
+ */
+function runPrinted(command: string, prelude: string): string {
+  const result = spawnSync(path.join(toolbox().sysbin, 'bash'), ['-c', `${prelude}\n${command}`], {
+    encoding: 'utf8',
+    env: { PATH: toolbox().sysbin },
+  });
+  if (result.status !== 0) {
+    throw new Error(`Printed command failed (${result.status}): ${command}\n${result.stderr}`);
+  }
+  return result.stdout;
+}
+
+/** Calls install.sh's own env_file_value helper on an .env with `content`. */
+function installerEnvValue(content: string | null, key: string): string {
+  const source = readFileSync(INSTALLER, 'utf8');
+  // The helper ends with its node heredoc, so its closing brace follows EOF.
+  const helper = /^env_file_value\(\) \{\n[\s\S]*?\nEOF\n\}\n/m.exec(source)?.[0];
+  if (!helper) throw new Error('install.sh has no env_file_value() { ... EOF } block');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'nerve-install-sh-env-'));
+  tempRoots.push(dir);
+  if (content !== null) writeFileSync(path.join(dir, '.env'), content);
+  const tools = toolbox();
+  const result = spawnSync(
+    path.join(tools.sysbin, 'bash'),
+    ['-c', `set -euo pipefail\n${helper}\nenv_file_value "$1"`, 'env_file_value', key],
+    { encoding: 'utf8', env: { PATH: `${tools.common}:${tools.sysbin}`, INSTALL_DIR: dir } },
+  );
+  if (result.status !== 0) throw new Error(`env_file_value ${key} failed: ${result.stderr}`);
+  return result.stdout;
+}
 
 afterAll(() => {
   if (process.env.KEEP_ROOTS) { console.log("ROOTS", tempRoots.join(" ")); return; }
@@ -463,15 +528,50 @@ describe.skipIf(isRoot).concurrent('install.sh', () => {
       expect(run.output).not.toContain(SUCCESS_BANNER);
     }, TEST_TIMEOUT_MS);
 
-    it('probes the PORT and HOST of an existing .env, quoted or not', async ({ expect }) => {
+    it('probes the PORT and HOST of an existing .env the way the server reads them', async ({ expect }) => {
       const run = await install({
-        env: 'GATEWAY_URL=http://127.0.0.1:18789\nGATEWAY_TOKEN=test-token\nPORT="4123"\nHOST=\'::\'\n',
+        env: [
+          'GATEWAY_URL=http://127.0.0.1:18789',
+          'GATEWAY_TOKEN=test-token',
+          'PORT=1111',
+          'export PORT = 4123 # local port',
+          'HOST = "::"   # every interface',
+          '',
+        ].join('\r\n'),
       });
 
       expect(run.code).toBe(0);
       expect(healthChecks(run, 'http://[::1]:4123/health')).toHaveLength(1);
       expect(run.output).toContain('http://localhost:4123');
       expect(run.output).toContain(SUCCESS_BANNER);
+    }, TEST_TIMEOUT_MS);
+
+    it('reads .env values exactly like dotenv, which the server and updater use', ({ expect }) => {
+      const cases: Array<{ name: string; content: string | null; key: string }> = [
+        { name: 'plain value', content: 'PORT=4123\n', key: 'PORT' },
+        { name: 'inline comment after an unquoted value', content: 'PORT=4123 # local port\n', key: 'PORT' },
+        { name: 'spaces around =', content: 'PORT = 4123\n', key: 'PORT' },
+        { name: 'tabs and trailing spaces', content: 'PORT=\t4123  \n', key: 'PORT' },
+        { name: 'export prefix', content: 'export PORT=4123\n', key: 'PORT' },
+        { name: 'double quotes keep a #', content: 'HOST="a#b" # comment\n', key: 'HOST' },
+        { name: 'single quotes keep a # and spaces', content: "HOST='a # b'\n", key: 'HOST' },
+        { name: 'backticks', content: 'HOST=`::`\n', key: 'HOST' },
+        { name: 'CRLF line endings', content: 'PORT=4123\r\nHOST=::\r\n', key: 'PORT' },
+        { name: 'CRLF on the last line', content: 'PORT=4123\r\nHOST=::\r\n', key: 'HOST' },
+        { name: 'last assignment wins', content: 'PORT=1111\nPORT=4123\n', key: 'PORT' },
+        { name: 'commented-out assignment', content: '# PORT=1111\nPORT=4123\n', key: 'PORT' },
+        { name: 'similar key names', content: 'PORTS=1\nMY_PORT=2\nPORT=4123\nPORT_X=3\n', key: 'PORT' },
+        { name: 'empty value', content: 'PORT=\n', key: 'PORT' },
+        { name: 'missing key', content: 'HOST=::\n', key: 'PORT' },
+        { name: 'no .env file', content: null, key: 'PORT' },
+      ];
+
+      const actual = cases.map(({ name, content, key }) => ({ name, value: installerEnvValue(content, key) }));
+      const expected = cases.map(({ name, content, key }) => ({
+        name,
+        value: content === null ? '' : (parseDotenv(content)[key] ?? ''),
+      }));
+      expect(actual).toEqual(expected);
     }, TEST_TIMEOUT_MS);
   });
 
@@ -535,6 +635,63 @@ describe.skipIf(isRoot).concurrent('install.sh', () => {
       expect(run.output).toContain(`launchctl load ${plist}`);
       expect(run.output).toContain('Nerve is installed but not running yet.');
       expect(run.output).not.toContain(SUCCESS_BANNER);
+    }, TEST_TIMEOUT_MS);
+  });
+
+  describe('printed commands still work when paths contain spaces', () => {
+    it('quotes the install directory in the manual start and directory commands', async ({ expect }) => {
+      const run = await install({ systemd: 'absent', spacedPaths: true });
+
+      expect(run.code).toBe(0);
+      expect(run.installDir).toContain(' ');
+      const [start] = printedSteps(run);
+      expect(start).toMatch(/&& npm start$/);
+      expect(runPrinted(start, 'npm() { pwd; echo "npm $*"; }')).toBe(`${run.installDir}\nnpm start\n`);
+      const directory = printedLine(run, 'Directory:').replace(/^Directory:\s+/, '');
+      expect(runPrinted(`${directory} && pwd`, '')).toBe(`${run.installDir}\n`);
+    }, TEST_TIMEOUT_MS);
+
+    it('quotes the saved unit and unit paths in the commands printed without root access', async ({ expect }) => {
+      const run = await install({ sudo: 'denied', spacedPaths: true });
+      const savedUnit = path.join(run.home, '.nerve', 'nerve.service');
+
+      expect(run.code).toBe(2);
+      expect(run.unitFile).toContain(' ');
+      const steps = printedSteps(run);
+      expect(steps).toHaveLength(4);
+      // Run each step with a sudo that executes its arguments and a systemctl that records them.
+      const calls = steps.map((step) => runPrinted(step, 'systemctl() { echo "systemctl $*"; }\nsudo() { "$@"; }'));
+      expect(calls.slice(1)).toEqual([
+        'systemctl daemon-reload\n',
+        'systemctl enable nerve.service\n',
+        'systemctl restart nerve.service\n',
+      ]);
+      expect(readFileSync(run.unitFile, 'utf8')).toBe(readFileSync(savedUnit, 'utf8'));
+    }, TEST_TIMEOUT_MS);
+
+    it('quotes the setup command when .env still has to be created', async ({ expect }) => {
+      const run = await install({ gatewayToken: false, spacedPaths: true });
+
+      expect(run.code).toBe(2);
+      expect(existsSync(path.join(run.installDir, '.env'))).toBe(false);
+      const [setup, restart] = printedSteps(run);
+      const npmPrelude = 'npm() { pwd; echo "npm $*"; }';
+      expect(runPrinted(setup, npmPrelude)).toBe(`${run.installDir}\nnpm run setup\n`);
+      expect(runPrinted(restart, 'sudo() { echo "$*"; }')).toBe('systemctl restart nerve.service\n');
+      const finalHint = printedLine(run, '→ Run: cd ').replace(/^→ Run:\s+/, '');
+      expect(runPrinted(finalHint, npmPrelude)).toBe(`${run.installDir}\nnpm run setup\n`);
+    }, TEST_TIMEOUT_MS);
+
+    it('quotes the launchd log and load commands', async ({ expect }) => {
+      const notAnswering = await install({ platform: 'Darwin', nerveHealth: 'down', spacedPaths: true });
+      const logs = printedLine(notAnswering, 'tail -n 50 ');
+      expect(runPrinted(logs, 'tail() { printf "%s\\n" "$@"; }')).toBe(`-n\n50\n${notAnswering.installDir}/nerve.log\n`);
+
+      const notLoaded = await install({ platform: 'Darwin', launchd: 'fail', spacedPaths: true });
+      const plist = path.join(notLoaded.home, 'Library', 'LaunchAgents', 'com.nerve.server.plist');
+      const [load] = printedSteps(notLoaded);
+      expect(runPrinted(load, 'launchctl() { printf "%s\\n" "$@"; }')).toBe(`load\n${plist}\n`);
+      expect(existsSync(plist)).toBe(true);
     }, TEST_TIMEOUT_MS);
   });
 

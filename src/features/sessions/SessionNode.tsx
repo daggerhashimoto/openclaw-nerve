@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { TreeNode } from './sessionTree';
 import type { GranularAgentState } from '@/types';
 import { fmtK } from '@/lib/formatting';
@@ -30,6 +30,8 @@ interface SessionNodeProps {
   isUnread: boolean;
   isRenaming: boolean;
   renameValue: string;
+  /** Why the gateway refused the last rename of this row; set only on the row being renamed. */
+  renameError?: string | null;
   renameInputRef: React.RefObject<HTMLInputElement | null>;
   granularStatus?: GranularAgentState;
   /** Identity hue for this row's pane (already shaded for depth). */
@@ -44,6 +46,7 @@ interface SessionNodeProps {
   onAbort?: (key: string) => void;
   onRenameChange: (value: string) => void;
   onRenameCommit: () => void;
+  onRenameBlur: () => void;
   onRenameCancel: () => void;
   /** Compact mode for mobile/topbar dropdown; uses kebab actions instead of hover actions. */
   compact?: boolean;
@@ -68,10 +71,14 @@ function arePropsEqual(prev: SessionNodeProps, next: SessionNodeProps): boolean 
     prev.isUnread === next.isUnread &&
     prev.isRenaming === next.isRenaming &&
     prev.renameValue === next.renameValue &&
+    prev.renameError === next.renameError &&
     prev.granularStatus === next.granularStatus &&
     prev.hue === next.hue &&
     prev.agentId === next.agentId &&
-    prev.compact === next.compact
+    prev.compact === next.compact &&
+    // Rename and Delete are offered by handler presence, so a handler coming or going must re-render
+    Boolean(prev.onStartRename) === Boolean(next.onStartRename) &&
+    Boolean(prev.onDelete) === Boolean(next.onDelete)
   );
 }
 
@@ -91,6 +98,7 @@ export const SessionNode = memo(function SessionNode({
   isUnread,
   isRenaming,
   renameValue,
+  renameError,
   renameInputRef,
   granularStatus,
   hue,
@@ -103,10 +111,12 @@ export const SessionNode = memo(function SessionNode({
   onAbort,
   onRenameChange,
   onRenameCommit,
+  onRenameBlur,
   onRenameCancel,
   compact = false,
 }: SessionNodeProps) {
   const { session, key: sessionKey, depth } = node;
+  const renameErrorId = useId();
 
   const handleSelect = useCallback(() => onSelect(sessionKey), [onSelect, sessionKey]);
   const handleToggle = useCallback((e: React.MouseEvent) => {
@@ -132,10 +142,13 @@ export const SessionNode = memo(function SessionNode({
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsRef = useRef<HTMLDivElement>(null);
 
-  const canRenameDelete = isRootAgent || isSubagent || isCron || isCronRun;
+  // sessions.patch accepts a label on any session the gateway lists, so every row can be renamed.
+  const canRename = Boolean(onStartRename);
+  // SessionList withholds onDelete for sessions the gateway refuses to delete (sessionDeletion.ts).
+  const canDelete = Boolean(onDelete);
   const hasAbortAction = Boolean(onAbort && running);
-  const hasRenameAction = Boolean(canRenameDelete && onStartRename && !isRenaming);
-  const hasDeleteAction = Boolean(canRenameDelete && onDelete);
+  const hasRenameAction = canRename && !isRenaming;
+  const hasDeleteAction = canDelete;
   const hasColorAction = Boolean(isRootAgent && agentId && onPickColor);
   const hasActions = hasAbortAction || hasRenameAction || hasDeleteAction || hasColorAction;
 
@@ -267,7 +280,18 @@ export const SessionNode = memo(function SessionNode({
   // Indentation: 16px per depth level. The chevron gutter is always reserved so the panes line up.
   const indent = depth * 16;
 
+  // Tree guide: a 1px rule dropping from the parent's chevron
+  const treeGuide = depth > 0 && (
+    <span
+      aria-hidden="true"
+      className="absolute top-0 bottom-0 w-px bg-border"
+      style={{ left: `${(depth - 1) * 16 + 11}px` }}
+    />
+  );
+  const showRenameError = isRenaming && Boolean(renameError);
+
   return (
+    <>
     <div
       className={cn(
         'group relative flex w-full items-center text-[0.867rem] transition-colors duration-[120ms] hover:bg-raised',
@@ -277,14 +301,7 @@ export const SessionNode = memo(function SessionNode({
       /* The open room's row takes a tint of its family colour */
       style={isActive && hue ? { backgroundColor: `color-mix(in srgb, ${hue} 14%, var(--color-raised))` } : undefined}
     >
-      {/* Tree guide: a 1px rule dropping from the parent's chevron */}
-      {depth > 0 && (
-        <span
-          aria-hidden="true"
-          className="absolute top-0 bottom-0 w-px bg-border"
-          style={{ left: `${(depth - 1) * 16 + 11}px` }}
-        />
-      )}
+      {treeGuide}
 
       <button
         type="button"
@@ -325,9 +342,11 @@ export const SessionNode = memo(function SessionNode({
               if (e.key === 'Enter') onRenameCommit();
               if (e.key === 'Escape') onRenameCancel();
             }}
-            onBlur={onRenameCommit}
+            onBlur={onRenameBlur}
             onClick={(e) => e.stopPropagation()}
-            className="h-6 min-w-0 flex-1 rounded-[3px] border border-input bg-background px-1.5 text-[0.867rem] text-foreground focus:border-ring focus:outline-none"
+            aria-invalid={showRenameError || undefined}
+            aria-describedby={showRenameError ? renameErrorId : undefined}
+            className="h-6 min-w-0 flex-1 rounded-[3px] border border-input bg-background px-1.5 text-[0.867rem] text-foreground focus:border-ring focus:outline-none aria-invalid:border-destructive"
           />
         ) : (
           <SessionInfoPanel session={node.session} running={running}>
@@ -443,33 +462,46 @@ export const SessionNode = memo(function SessionNode({
             </button>
           )}
           {colorButton}
-          {canRenameDelete && (
-            <>
-              {hasRenameAction && (
-                <button
-                  type="button"
-                  onClick={handleRenameClick}
-                  title="Rename session"
-                  className={GHOST_ACTION}
-                >
-                  <PenLine size={14} aria-hidden="true" />
-                </button>
-              )}
-              {hasDeleteAction && (
-                <button
-                  type="button"
-                  onClick={handleDeleteClick}
-                  title="Delete session"
-                  className={GHOST_DANGER}
-                >
-                  <Trash2 size={14} aria-hidden="true" />
-                </button>
-              )}
-            </>
+          {hasRenameAction && (
+            <button
+              type="button"
+              onClick={handleRenameClick}
+              title="Rename session"
+              className={GHOST_ACTION}
+            >
+              <PenLine size={14} aria-hidden="true" />
+            </button>
+          )}
+          {hasDeleteAction && (
+            <button
+              type="button"
+              onClick={handleDeleteClick}
+              title="Delete session"
+              className={GHOST_DANGER}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+            </button>
           )}
           </>)}
         </div>
       )}
     </div>
+
+    {/* A refused rename: one more line on the row unit, the reason set under the field */}
+    {showRenameError && (
+      <div
+        className={cn('relative flex w-full items-center gap-2', compact ? 'min-h-8 pr-1' : 'min-h-[var(--row-unit)] pr-2.5')}
+        style={{ paddingLeft: `${indent + 4}px` }}
+      >
+        {treeGuide}
+        {/* The row's chevron gutter and pane column, held empty so the reason starts where the field does */}
+        <span aria-hidden="true" className="-mr-0.5 w-3.5 shrink-0" />
+        <span aria-hidden="true" className="w-[0.667rem] shrink-0" />
+        <p id={renameErrorId} role="alert" title={renameError ?? undefined} className="min-w-0 truncate text-[0.8rem] text-destructive">
+          {renameError}
+        </p>
+      </div>
+    )}
+    </>
   );
 }, arePropsEqual);

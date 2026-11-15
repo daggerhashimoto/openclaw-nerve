@@ -12,6 +12,7 @@ export type STTInputMode = 'browser' | 'local' | 'hybrid';
 interface SettingsContextValue {
   soundEnabled: boolean;
   toggleSound: () => void;
+  /** Volume of every UI sound (voice input chimes, completion ping), 0 silent to 1 full. TTS is separate. */
   uiSoundVolume: number;
   setUiSoundVolume: (volume: number) => void;
   ttsProvider: TTSProvider;
@@ -65,7 +66,6 @@ const COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showChatboxCommandPaletteButto
 const LEGACY_TOPBAR_COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showTopBarCommandPaletteButton';
 const LEGACY_COMPACT_COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showFloatingCommandPaletteButton';
 const UI_SOUND_VOLUME_STORAGE_KEY = 'nerve:uiSoundVolume';
-const SPOKEN_REPLIES_STORAGE_KEY = 'oc-sound';
 
 const ALLOWED_FONT_SIZES = new Set([10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24]);
 const ALLOWED_EDITOR_FONT_SIZES = new Set([10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24]);
@@ -78,16 +78,14 @@ function normalizeEditorFontSize(size: number): number {
   return Number.isFinite(size) && ALLOWED_EDITOR_FONT_SIZES.has(size) ? size : 13;
 }
 
+/**
+ * The stored UI sound volume (0 to 1). Nothing stored means full volume, which is how UI sounds
+ * played before the setting existed; the sound toggle (oc-sound) is deliberately not consulted,
+ * because it never governed the voice input chimes.
+ */
 function resolveInitialUiSoundVolume(): number {
   const saved = localStorage.getItem(UI_SOUND_VOLUME_STORAGE_KEY);
-  if (saved !== null && saved.trim() !== '') {
-    return normalizeUiSoundVolume(Number(saved));
-  }
-
-  const legacySoundPreference = localStorage.getItem(SPOKEN_REPLIES_STORAGE_KEY);
-  const volume = legacySoundPreference === null || legacySoundPreference === 'true' ? 1 : 0;
-  localStorage.setItem(UI_SOUND_VOLUME_STORAGE_KEY, String(volume));
-  return volume;
+  return saved === null || saved.trim() === '' ? 1 : normalizeUiSoundVolume(Number(saved));
 }
 
 function resolveInitialCommandPaletteButtonVisible(): boolean {
@@ -132,7 +130,7 @@ function resolveInitialTheme(): ThemeName {
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [soundEnabled, setSoundEnabled] = useState(localStorage.getItem(SPOKEN_REPLIES_STORAGE_KEY) === 'true');
+  const [soundEnabled, setSoundEnabled] = useState(localStorage.getItem('oc-sound') === 'true');
   const [uiSoundVolume, setUiSoundVolumeState] = useState(resolveInitialUiSoundVolume);
   const [ttsProvider, setTtsProvider] = useState<TTSProvider>(() => migrateTTSProvider(localStorage.getItem('oc-tts-provider') || 'edge'));
   const [ttsModel, setTtsModelState] = useState(() => localStorage.getItem('oc-tts-model') || '');
@@ -225,7 +223,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const toggleSound = useCallback(() => {
     setSoundEnabled(prev => {
       const next = !prev;
-      localStorage.setItem(SPOKEN_REPLIES_STORAGE_KEY, String(next));
+      localStorage.setItem('oc-sound', String(next));
       return next;
     });
   }, []);

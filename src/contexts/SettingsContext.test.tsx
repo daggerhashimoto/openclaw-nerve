@@ -12,10 +12,9 @@ vi.mock('@/features/tts/useTTS', () => ({
   useTTS: () => ({ speak: vi.fn() }),
 }));
 
-vi.mock('@/features/voice/audio-feedback', () => ({
-  normalizeUiSoundVolume: (volume: number) => (
-    Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : 1
-  ),
+// Real normalisation; only the side effect on the audio graph is stubbed.
+vi.mock('@/features/voice/audio-feedback', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/voice/audio-feedback')>()),
   setUiSoundVolume: applyUiSoundVolumeMock,
 }));
 
@@ -206,7 +205,6 @@ describe('SettingsContext UI sound volume', () => {
   });
 
   it('restores and applies the saved UI sound volume', async () => {
-    localStorage.setItem('oc-sound', 'false');
     localStorage.setItem('nerve:uiSoundVolume', '0.35');
 
     render(
@@ -219,30 +217,23 @@ describe('SettingsContext UI sound volume', () => {
     await waitFor(() => expect(applyUiSoundVolumeMock).toHaveBeenCalledWith(0.35));
   });
 
-  it('migrates an explicitly disabled legacy sound preference to muted UI sounds', async () => {
-    localStorage.setItem('oc-sound', 'false');
+  it('defaults to full volume without writing a value when none is stored', async () => {
+    const { result } = renderHook(() => useSettings(), { wrapper });
 
-    render(
-      <SettingsProvider>
-        <VolumeProbe />
-      </SettingsProvider>,
-    );
-
-    expect(screen.getByRole('button')).toHaveTextContent('0');
-    expect(localStorage.getItem('nerve:uiSoundVolume')).toBe('0');
-    await waitFor(() => expect(applyUiSoundVolumeMock).toHaveBeenCalledWith(0));
+    expect(result.current.uiSoundVolume).toBe(1);
+    await waitFor(() => expect(applyUiSoundVolumeMock).toHaveBeenCalledWith(1));
+    expect(localStorage.getItem('nerve:uiSoundVolume')).toBeNull();
   });
 
-  it('defaults fresh installs to full UI sound volume', async () => {
-    render(
-      <SettingsProvider>
-        <VolumeProbe />
-      </SettingsProvider>,
-    );
+  it('keeps UI sounds at full volume for a stored sound toggle that is off', async () => {
+    localStorage.setItem('oc-sound', 'false');
 
-    expect(screen.getByRole('button')).toHaveTextContent('1');
-    expect(localStorage.getItem('nerve:uiSoundVolume')).toBe('1');
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    expect(result.current.soundEnabled).toBe(false);
+    expect(result.current.uiSoundVolume).toBe(1);
     await waitFor(() => expect(applyUiSoundVolumeMock).toHaveBeenCalledWith(1));
+    expect(localStorage.getItem('nerve:uiSoundVolume')).toBeNull();
   });
 
   it('persists UI sound volume changes independently', async () => {
@@ -256,6 +247,47 @@ describe('SettingsContext UI sound volume', () => {
 
     expect(screen.getByRole('button')).toHaveTextContent('0.25');
     expect(localStorage.getItem('nerve:uiSoundVolume')).toBe('0.25');
+    expect(localStorage.getItem('oc-sound')).toBeNull();
     await waitFor(() => expect(applyUiSoundVolumeMock).toHaveBeenLastCalledWith(0.25));
+  });
+
+  it('keeps the chosen volume across a reload', async () => {
+    const first = renderHook(() => useSettings(), { wrapper });
+    act(() => first.result.current.setUiSoundVolume(0));
+    first.unmount();
+    applyUiSoundVolumeMock.mockClear();
+
+    const second = renderHook(() => useSettings(), { wrapper });
+
+    expect(second.result.current.uiSoundVolume).toBe(0);
+    await waitFor(() => expect(applyUiSoundVolumeMock).toHaveBeenCalledWith(0));
+  });
+
+  it.each([
+    ['not a number', 'loud', 1],
+    ['blank', '  ', 1],
+    ['NaN', 'NaN', 1],
+    ['Infinity', 'Infinity', 1],
+    ['above full', '1.7', 1],
+    ['below silent', '-0.4', 0],
+  ])('normalises a stored value that is %s', async (_case, stored, expected) => {
+    localStorage.setItem('nerve:uiSoundVolume', stored);
+
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    expect(result.current.uiSoundVolume).toBe(expected);
+    await waitFor(() => expect(applyUiSoundVolumeMock).toHaveBeenLastCalledWith(expected));
+  });
+
+  it('clamps a volume set out of range before storing it', () => {
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    act(() => result.current.setUiSoundVolume(3));
+    expect(result.current.uiSoundVolume).toBe(1);
+    expect(localStorage.getItem('nerve:uiSoundVolume')).toBe('1');
+
+    act(() => result.current.setUiSoundVolume(-2));
+    expect(result.current.uiSoundVolume).toBe(0);
+    expect(localStorage.getItem('nerve:uiSoundVolume')).toBe('0');
   });
 });

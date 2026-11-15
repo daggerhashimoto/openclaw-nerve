@@ -5,7 +5,7 @@
  * history loading, and message merge/dedup utilities.
  */
 import { useState, useRef, useCallback, useMemo } from 'react';
-import { loadChatHistory } from '@/features/chat/operations';
+import { keepUnsentMessages, loadChatHistory } from '@/features/chat/operations';
 import { generateMsgId } from '@/features/chat/types';
 import type { ChatMsg } from '@/features/chat/types';
 
@@ -136,7 +136,10 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
     try {
       const result = await loadChatHistory({ rpc, sessionKey: sk, limit: 500 });
       if (!isCurrent()) return;
-      applyMessageWindow(result, true);
+      // Prompts still sending or that failed to send are not in history; keep them
+      // (read now, so one sent while the request was out is kept too).
+      const sameRoom = sk === currentSessionRef.current;
+      applyMessageWindow(sameRoom ? keepUnsentMessages(allMessagesRef.current, result) : result, true);
     } catch (e) {
       if (!isCurrent()) return;
       const errMsg = e instanceof Error ? e.message : String(e);

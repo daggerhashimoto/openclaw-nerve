@@ -657,7 +657,7 @@ export function processChatMessages(messages: ChatMessage[], options: { sessionK
   const tagged = splitIntoTurns(withSearchQueries(messages)).flatMap((turn) => {
     const chatMsgs: ChatMsg[] = turn
       .filter(filterMessage)
-      .flatMap((message) => withSourceIds(splitToolCallMessage(message, options), message));
+      .flatMap((message) => withSendKey(withSourceIds(splitToolCallMessage(message, options), message), message));
     return tagIntermediateMessages(groupToolMessages(chatMsgs));
   });
 
@@ -725,6 +725,16 @@ function withSourceIds(parts: ChatMsg[], source: ChatMessage): ChatMsg[] {
   const sourceId = source.__openclaw?.id;
   if (!sourceId) return parts;
   return parts.map((part, k) => (part.msgId ? part : { ...part, msgId: `${TRANSCRIPT_ID_PREFIX}${sourceId}-${k}` }));
+}
+
+/**
+ * A prompt keeps the key the gateway recorded it under, so a prompt sent from
+ * this browser can recognise its recorded copy exactly (see recordsPrompt).
+ */
+function withSendKey(parts: ChatMsg[], source: ChatMessage): ChatMsg[] {
+  const key = source.idempotencyKey ?? source.__openclaw?.idempotencyKey;
+  if (source.role !== 'user' || !key) return parts;
+  return parts.map((part) => (part.role === 'user' ? { ...part, idempotencyKey: key } : part));
 }
 
 /**

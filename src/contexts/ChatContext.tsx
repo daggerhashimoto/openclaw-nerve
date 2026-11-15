@@ -38,6 +38,7 @@ import {
   describeToolResult,
   isActiveAgentState,
   mergeRecoveredTail,
+  keepUnsentMessages,
   getOrCreateRunState,
   hasSeqGap,
   pruneRunRegistry,
@@ -244,9 +245,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       subagentPollInFlightRef.current = true;
       try {
         const sk = currentSessionRef.current;
-        const result = await loadChatHistory({ rpc, sessionKey: sk, limit: 500 });
+        const history = await loadChatHistory({ rpc, sessionKey: sk, limit: 500 });
         if (sk !== currentSessionRef.current) return;
         const prev = getAllMessages();
+        const result = keepUnsentMessages(prev, history);
         if (
           result.length === prev.length &&
           result.length > 0 &&
@@ -635,7 +637,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     streamHook.setStream((prev: ChatStreamState) => ({ ...prev, html: '', runId: undefined }));
     setProcessingStage('thinking');
 
-    const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : 'ik-' + Date.now();
+    // The bubble's tempId is the send key: the gateway records the prompt under it, so a
+    // history read can tell its recorded copy apart from another prompt with the same text.
+    const idempotencyKey = tempId;
     try {
       const ack = await sendChatMessage({
         rpc,

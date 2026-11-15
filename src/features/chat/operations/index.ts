@@ -22,7 +22,7 @@ export {
   isActiveAgentState,
 } from './streamEventHandler';
 export type { ClassifiedEvent, StreamEventType, FinalMessageData } from './streamEventHandler';
-export { mergeRecoveredTail } from './mergeRecoveredTail';
+export { keepUnsentMessages, mergeRecoveredTail } from './mergeRecoveredTail';
 export {
   createFallbackRunId,
   getOrCreateRunState,

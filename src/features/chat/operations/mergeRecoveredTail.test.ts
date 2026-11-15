@@ -1,6 +1,6 @@
 /** Tests for mergeRecoveredTail. */
 import { describe, it, expect } from 'vitest';
-import { mergeRecoveredTail } from './mergeRecoveredTail';
+import { keepUnsentMessages, mergeRecoveredTail } from './mergeRecoveredTail';
 import { processChatMessages } from './loadHistory';
 import type { ChatMsg } from '@/features/chat/types';
 import type { ChatMessage } from '@/types';
@@ -24,6 +24,17 @@ function historyRow(role: ChatMessage['role'], text: string, id: string, ts: num
 function liveRow(role: ChatMessage['role'], text: string, ts: number): ChatMsg {
   const [row] = processChatMessages([{ role, content: text, timestamp: ts }]);
   return row;
+}
+
+/** A prompt typed here; its tempId is the idempotency key chat.send carried. */
+function localPrompt(text: string, sendKey: string, ts: number, state: 'pending' | 'failed' | 'sent'): ChatMsg {
+  return {
+    ...makeMsg('user', text, ts),
+    msgId: `m-local-${sendKey}`,
+    tempId: sendKey,
+    pending: state === 'pending',
+    ...(state === 'failed' ? { failed: true } : {}),
+  };
 }
 
 const texts = (msgs: ChatMsg[]) => msgs.map((m) => m.rawText);
@@ -297,6 +308,162 @@ describe('mergeRecoveredTail', () => {
       expect(result).toHaveLength(3);
       expect(result[1].toolGroup).toHaveLength(3);
       expect(result[2].rawText).toBe('All read.');
+    });
+  });
+
+  describe('prompts not sent yet', () => {
+    it('keeps a prompt still sending when the recovered tail does not have it yet', () => {
+      const existing = [
+        historyRow('user', 'Question', 'e1', T),
+        historyRow('assistant', 'Answer', 'e2', T + 1000),
+        localPrompt('Optimistic next', 'k1', T + 4000, 'pending'),
+      ];
+      const recovered = [historyRow('assistant', 'Answer from stale tail', 'e2', T + 1000)];
+
+      const result = mergeRecoveredTail(existing, recovered);
+
+      expect(texts(result)).toEqual(['Question', 'Answer from stale tail', 'Optimistic next']);
+      expect(result[2].pending).toBe(true);
+    });
+
+    it('gives way to the recorded copy that carries its send key', () => {
+      // Same text and time bucket: by content alone the local bubble would stay.
+      const existing = [
+        historyRow('user', 'Question', 'e1', T),
+        historyRow('assistant', 'Answer', 'e2', T + 1000),
+        localPrompt('Next', 'k1', T + 3000, 'pending'),
+      ];
+      const recovered = [
+        historyRow('user', 'Question', 'e1', T),
+        historyRow('assistant', 'Answer', 'e2', T + 1000),
+        historyRow('user', 'Next', 'e3', T + 3000, { idempotencyKey: 'k1:user' }),
+        historyRow('assistant', 'Reply', 'e4', T + 6000),
+      ];
+
+      const result = mergeRecoveredTail(existing, recovered);
+
+      expect(texts(result)).toEqual(['Question', 'Answer', 'Next', 'Reply']);
+      expect(result.map((m) => m.msgId)).toEqual(recovered.map((m) => m.msgId));
+      expect(result.some((m) => m.pending)).toBe(false);
+    });
+
+    it('keeps a prompt that failed to send, still failed', () => {
+      const existing = [
+        historyRow('user', 'Question', 'e1', T),
+        historyRow('assistant', 'Answer', 'e2', T + 1000),
+        localPrompt('Retry me', 'k2', T + 4000, 'failed'),
+      ];
+      const recovered = [
+        historyRow('user', 'Question', 'e1', T),
+        historyRow('assistant', 'Answer', 'e2', T + 1000),
+      ];
+
+      const result = mergeRecoveredTail(existing, recovered);
+
+      expect(texts(result)).toEqual(['Question', 'Answer', 'Retry me']);
+      expect(result[2].failed).toBe(true);
+    });
+
+    it('drops a failed prompt that history shows the gateway recorded after all', () => {
+      const existing = [
+        historyRow('user', 'Question', 'e1', T),
+        localPrompt('Retry me', 'k3', T + 95_000, 'failed'),
+      ];
+      const recovered = [
+        historyRow('user', 'Question', 'e1', T),
+        historyRow('user', 'Retry me', 'e2', T + 3000, { idempotencyKey: 'k3:user' }),
+      ];
+
+      const result = mergeRecoveredTail(existing, recovered);
+
+      expect(texts(result)).toEqual(['Question', 'Retry me']);
+      expect(result[1].failed).toBeFalsy();
+    });
+
+    it('does not take a recorded prompt with the same text but another send key for a failed one', () => {
+      const existing = [
+        historyRow('user', 'Question', 'e1', T),
+        localPrompt('yes', 'k4', T + 9000, 'failed'),
+      ];
+      const recovered = [
+        historyRow('user', 'Question', 'e1', T),
+        historyRow('user', 'yes', 'e2', T + 3000, { idempotencyKey: 'other-tab:user' }),
+      ];
+
+      const result = mergeRecoveredTail(existing, recovered);
+
+      expect(texts(result)).toEqual(['Question', 'yes', 'yes']);
+      expect(result[2].failed).toBe(true);
+    });
+
+    it('with no anchor, replaces the transcript but keeps prompts not recorded yet', () => {
+      const existing = [
+        liveRow('user', 'Old message 1', 1_000_000),
+        liveRow('assistant', 'Old reply 1', 1_000_001),
+        localPrompt('Lost on the way', 'k5', T + 2000, 'failed'),
+        { ...makeMsg('system', 'Send error: Disconnected', T + 2001), msgId: 'm-error' },
+        localPrompt('Still sending', 'k6', T + 3000, 'pending'),
+      ];
+      const recovered = [
+        historyRow('user', 'Completely different', 'e1', T),
+        historyRow('assistant', 'New reply', 'e2', T + 1000),
+      ];
+
+      const result = mergeRecoveredTail(existing, recovered);
+
+      expect(texts(result)).toEqual(['Completely different', 'New reply', 'Lost on the way', 'Still sending']);
+      expect(result[2].failed).toBe(true);
+      expect(result[3].pending).toBe(true);
+    });
+  });
+
+  describe('keepUnsentMessages (full history reload)', () => {
+    it('keeps a prompt still sending at the end of the reloaded transcript', () => {
+      const previous = [historyRow('user', 'Question', 'e1', T), localPrompt('Next', 'k1', T + 2000, 'pending')];
+      const history = [historyRow('user', 'Question', 'e1', T), historyRow('assistant', 'Late answer', 'e2', T + 9000)];
+
+      const result = keepUnsentMessages(previous, history);
+
+      expect(texts(result)).toEqual(['Question', 'Late answer', 'Next']);
+      expect(result[2].pending).toBe(true);
+    });
+
+    it('collapses a prompt into its recorded copy once history has it', () => {
+      const previous = [historyRow('user', 'Question', 'e1', T), localPrompt('Next', 'k1', T + 2000, 'pending')];
+      const history = [
+        historyRow('user', 'Question', 'e1', T),
+        historyRow('user', 'Next', 'e2', T + 2500, { idempotencyKey: 'k1:user' }),
+      ];
+
+      const result = keepUnsentMessages(previous, history);
+
+      expect(result).toEqual(history);
+    });
+
+    it('puts a failed prompt back where it was in time, not after later turns', () => {
+      const previous = [
+        historyRow('user', 'First', 'e1', T),
+        historyRow('assistant', 'Reply one', 'e2', T + 1000),
+        localPrompt('Not delivered', 'k2', T + 5000, 'failed'),
+      ];
+      const history = [
+        historyRow('user', 'First', 'e1', T),
+        historyRow('assistant', 'Reply one', 'e2', T + 1000),
+        historyRow('user', 'Second', 'e3', T + 60_000),
+        historyRow('assistant', 'Reply two', 'e4', T + 61_000),
+      ];
+
+      const result = keepUnsentMessages(previous, history);
+
+      expect(texts(result)).toEqual(['First', 'Reply one', 'Not delivered', 'Second', 'Reply two']);
+      expect(result[2].failed).toBe(true);
+    });
+
+    it('does not keep a prompt the gateway already acknowledged', () => {
+      const previous = [historyRow('user', 'Question', 'e1', T), localPrompt('Next', 'k1', T + 2000, 'sent')];
+      const history = [historyRow('user', 'Question', 'e1', T)];
+
+      expect(keepUnsentMessages(previous, history)).toEqual(history);
     });
   });
 });

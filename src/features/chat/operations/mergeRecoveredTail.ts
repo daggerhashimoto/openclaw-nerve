@@ -29,16 +29,44 @@ function messageSignature(msg: ChatMsg): string {
   return `${msg.role}|${textHash}|${tsBucket}|${flags}`;
 }
 
+/** A prompt typed in this browser: its tempId is the idempotency key chat.send carried. */
+function isLocalPrompt(msg: ChatMsg): boolean {
+  return msg.role === 'user' && Boolean(msg.tempId);
+}
+
+/** A prompt still sending, or one whose send failed: so far it exists only in this browser. */
+export function isUnsentPrompt(msg: ChatMsg): boolean {
+  return isLocalPrompt(msg) && Boolean(msg.pending || msg.failed);
+}
+
+/**
+ * Whether a history row is the gateway's record of a prompt sent from here. A
+ * 2026.9 gateway records a chat.send prompt under `<idempotency key>:user`
+ * (its buildRunUserTurnIdempotencyKey); the bare key is accepted as well.
+ */
+function recordsPrompt(row: ChatMsg, prompt: ChatMsg): boolean {
+  if (row.role !== 'user' || !row.idempotencyKey || !prompt.tempId) return false;
+  return row.idempotencyKey === `${prompt.tempId}:user` || row.idempotencyKey === prompt.tempId;
+}
+
+/** Matched by transcript id or by send key rather than by content. */
+function isExactMatch(existingRow: ChatMsg, recoveredRow: ChatMsg): boolean {
+  const id = transcriptRowId(recoveredRow);
+  return (id !== null && id === transcriptRowId(existingRow)) || recordsPrompt(recoveredRow, existingRow);
+}
+
 /** Whether existing[existingIdx] and recovered[recoveredIdx] are the same message. */
 type RowMatcher = (existingIdx: number, recoveredIdx: number) => boolean;
 
 /**
  * Rows that both carry a transcript id are the same message exactly when the ids
  * are equal; text and time do not matter, so a copy history has since revised or
- * re-timed still lines up. A row without an id (a live final, an optimistic
- * prompt, a row from a gateway that sends no ids) falls back to its content
- * signature, but never onto a row whose id appears on the other side too: that
- * row already has its own counterpart, so a look-alike is a different message.
+ * re-timed still lines up. A prompt sent from here and a recorded prompt that
+ * carries a send key are the same exactly when the keys agree. Any other row
+ * without an id (a live final, a row from a gateway that sends no ids) falls back
+ * to its content signature, but never onto a row whose id appears on the other
+ * side too: that row already has its own counterpart, so a look-alike is a
+ * different message.
  */
 function createRowMatcher(existing: ChatMsg[], recovered: ChatMsg[]): RowMatcher {
   const existingIds = existing.map(transcriptRowId);
@@ -52,6 +80,9 @@ function createRowMatcher(existing: ChatMsg[], recovered: ChatMsg[]): RowMatcher
     const existingId = existingIds[existingIdx];
     const recoveredId = recoveredIds[recoveredIdx];
     if (existingId && recoveredId) return existingId === recoveredId;
+    if (isLocalPrompt(existing[existingIdx]) && recovered[recoveredIdx].idempotencyKey) {
+      return recordsPrompt(recovered[recoveredIdx], existing[existingIdx]);
+    }
     if (existingId && recoveredIdSet.has(existingId)) return false;
     if (recoveredId && existingIdSet.has(recoveredId)) return false;
     return existingSigs[existingIdx] === recoveredSigs[recoveredIdx];
@@ -122,6 +153,38 @@ function extendAnchorBackwards(
 }
 
 /**
+ * Put back the prompts a merge replaced that history does not hold yet. One still
+ * sending goes at the end, where the gateway will record it; a failed one goes
+ * where it falls in time among the rows that replaced it (from regionStart on).
+ * A prompt is never put back once a row in the result records it, so on a
+ * gateway that records send keys it cannot show twice.
+ */
+function restoreUnsentPrompts(merged: ChatMsg[], replaced: ChatMsg[], regionStart: number): ChatMsg[] {
+  const kept = new Set(merged);
+  const lost = replaced.filter(
+    (msg) => isUnsentPrompt(msg) && !kept.has(msg) && !merged.some((row) => recordsPrompt(row, msg)),
+  );
+  if (lost.length === 0) return merged;
+
+  const result = [...merged];
+  for (const msg of lost) {
+    if (!msg.failed) continue;
+    const later = result.findIndex((row, i) => i >= regionStart && row.timestamp.getTime() > msg.timestamp.getTime());
+    result.splice(later < 0 ? result.length : later, 0, msg);
+  }
+  return [...result, ...lost.filter((msg) => !msg.failed)];
+}
+
+/**
+ * A transcript rebuilt from a full history read, keeping the prompts from the
+ * previous transcript that are still sending or failed to send until history
+ * records them.
+ */
+export function keepUnsentMessages(previous: ChatMsg[], history: ChatMsg[]): ChatMsg[] {
+  return restoreUnsentPrompts(history, previous, 0);
+}
+
+/**
  * Merge a recovered history tail into the current transcript without replacing
  * unaffected prefix messages.
  */
@@ -135,12 +198,13 @@ export function mergeRecoveredTail(existing: ChatMsg[], recovered: ChatMsg[]): C
   const overlap = findSuffixPrefixOverlap(existing.length, recovered.length, same);
   if (overlap > 0) {
     const start = existing.length - overlap;
-    // A row matched by its transcript id takes the recovered copy, which history may
-    // have revised since; a row matched by content alone stays as displayed.
+    // A row matched by transcript id or send key takes the recovered copy, which
+    // history may have revised since; a row matched by content alone stays as displayed.
     const overlapped = recovered
       .slice(0, overlap)
-      .map((row, i) => (transcriptRowId(row) && transcriptRowId(existing[start + i]) ? row : existing[start + i]));
-    return [...existing.slice(0, start), ...overlapped, ...recovered.slice(overlap)];
+      .map((row, i) => (isExactMatch(existing[start + i], row) ? row : existing[start + i]));
+    const merged = [...existing.slice(0, start), ...overlapped, ...recovered.slice(overlap)];
+    return restoreUnsentPrompts(merged, existing.slice(start), start);
   }
 
   // Anchor path: find a matching point in the existing tail and replace only suffix.
@@ -148,9 +212,12 @@ export function mergeRecoveredTail(existing: ChatMsg[], recovered: ChatMsg[]): C
   if (anchor) {
     const preservedPrefix = existing.slice(0, anchor.existingIdx);
     const patchedTail = recovered.slice(anchor.recoveredIdx);
-    return [...preservedPrefix, ...patchedTail];
+    return restoreUnsentPrompts([...preservedPrefix, ...patchedTail], existing.slice(anchor.existingIdx), anchor.existingIdx);
   }
 
-  // Last resort: no overlap/anchor detected, prefer authoritative recovered tail.
-  return recovered;
+  // Last resort: no overlap or anchor, so the recovered window replaces the
+  // transcript (an older prefix outside it is lost, as before). Only prompts not
+  // sent yet carry over; any other local row could be a copy of a recovered row
+  // that no longer matches, so keeping it could show it twice.
+  return restoreUnsentPrompts(recovered, existing, 0);
 }

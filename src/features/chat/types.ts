@@ -120,8 +120,10 @@ export interface ChatMsg {
   pending?: boolean;
   /** Optimistic: message send failed */
   failed?: boolean;
-  /** Temporary ID for optimistic updates */
+  /** Temporary ID for optimistic updates; also the idempotency key chat.send carried */
   tempId?: string;
+  /** On a prompt from history: the key the gateway recorded it under (see recordsPrompt) */
+  idempotencyKey?: string;
   /** Grouped tool calls: when set, this is a grouped tool bubble */
   toolGroup?: ToolGroupEntry[];
   /** Intermediate assistant message (narration between tool calls, not the final answer) */

@@ -288,7 +288,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
                 : 'This will permanently delete the session and archive its transcript.'}
             </DialogDescription>
             {deleteTarget?.error && (
-              <p role="alert" className="text-red text-xs break-words">{deleteTarget.error}</p>
+              <p role="alert" className="text-[0.8rem] text-destructive break-words">{deleteTarget.error}</p>
             )}
           </DialogHeader>
           <div className="rounded-[3px] border border-border bg-background px-3 py-2">

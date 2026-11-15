@@ -2,7 +2,6 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import type { PluggableList } from 'unified';
 import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { hljs } from '@/lib/highlight';
 import { sanitizeHtml } from '@/lib/sanitize';
@@ -10,6 +9,7 @@ import { escapeRegex } from '@/lib/constants';
 import { CodeBlockActions } from './CodeBlockActions';
 import { parseBeadLinkHref, type BeadLinkTarget } from '@/features/beads';
 import { renderInlinePathReferences } from './inlineReferences';
+import { remarkTexMath } from './remarkTexMath';
 
 // KaTeX options (D4): trust=false blocks \href and other vector commands;
 // strict='ignore' silences warnings on assistant-emitted unknown commands;
@@ -26,7 +26,7 @@ const REHYPE_KATEX_OPTIONS = {
 };
 
 // rehype-katex targets <code class="language-math|math-display|math-inline"> nodes.
-// That picks up both legit math (remark-math emits these classes alongside
+// That picks up both legit math (remarkTexMath emits these classes alongside
 // math-inline/math-display on its own <code> nodes) AND fenced ```math code
 // blocks (markdown emits only language-math). We want the former typeset and
 // the latter preserved as a code block (R3). The heuristic: when a <code> has
@@ -51,7 +51,9 @@ function rehypeRenameFencedMathToLatex() {
   return (tree: HastNode) => walk(tree);
 }
 
-const REMARK_PLUGINS: PluggableList = [remarkGfm, remarkMath, remarkStableHeadingIds];
+// remarkTexMath parses $...$, $$...$$, \(...\) and \[...\] with Pandoc's
+// single-dollar rule, so currency prose ("$5 and $10") stays text.
+const REMARK_PLUGINS: PluggableList = [remarkGfm, remarkTexMath, remarkStableHeadingIds];
 const REHYPE_PLUGINS: PluggableList = [
   rehypeRenameFencedMathToLatex,
   [rehypeKatex, REHYPE_KATEX_OPTIONS],

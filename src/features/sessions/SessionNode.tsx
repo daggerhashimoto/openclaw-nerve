@@ -71,7 +71,10 @@ function arePropsEqual(prev: SessionNodeProps, next: SessionNodeProps): boolean 
     prev.granularStatus === next.granularStatus &&
     prev.hue === next.hue &&
     prev.agentId === next.agentId &&
-    prev.compact === next.compact
+    prev.compact === next.compact &&
+    // Rename and Delete are offered by handler presence, so a handler coming or going must re-render
+    Boolean(prev.onStartRename) === Boolean(next.onStartRename) &&
+    Boolean(prev.onDelete) === Boolean(next.onDelete)
   );
 }
 
@@ -132,10 +135,13 @@ export const SessionNode = memo(function SessionNode({
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsRef = useRef<HTMLDivElement>(null);
 
-  const canRenameDelete = isRootAgent || isSubagent || isCron || isCronRun;
+  // sessions.patch accepts a label on any session the gateway lists, so every row can be renamed.
+  const canRename = Boolean(onStartRename);
+  // SessionList withholds onDelete for sessions the gateway refuses to delete (sessionDeletion.ts).
+  const canDelete = Boolean(onDelete);
   const hasAbortAction = Boolean(onAbort && running);
-  const hasRenameAction = Boolean(canRenameDelete && onStartRename && !isRenaming);
-  const hasDeleteAction = Boolean(canRenameDelete && onDelete);
+  const hasRenameAction = canRename && !isRenaming;
+  const hasDeleteAction = canDelete;
   const hasColorAction = Boolean(isRootAgent && agentId && onPickColor);
   const hasActions = hasAbortAction || hasRenameAction || hasDeleteAction || hasColorAction;
 
@@ -443,29 +449,25 @@ export const SessionNode = memo(function SessionNode({
             </button>
           )}
           {colorButton}
-          {canRenameDelete && (
-            <>
-              {hasRenameAction && (
-                <button
-                  type="button"
-                  onClick={handleRenameClick}
-                  title="Rename session"
-                  className={GHOST_ACTION}
-                >
-                  <PenLine size={14} aria-hidden="true" />
-                </button>
-              )}
-              {hasDeleteAction && (
-                <button
-                  type="button"
-                  onClick={handleDeleteClick}
-                  title="Delete session"
-                  className={GHOST_DANGER}
-                >
-                  <Trash2 size={14} aria-hidden="true" />
-                </button>
-              )}
-            </>
+          {hasRenameAction && (
+            <button
+              type="button"
+              onClick={handleRenameClick}
+              title="Rename session"
+              className={GHOST_ACTION}
+            >
+              <PenLine size={14} aria-hidden="true" />
+            </button>
+          )}
+          {hasDeleteAction && (
+            <button
+              type="button"
+              onClick={handleDeleteClick}
+              title="Delete session"
+              className={GHOST_DANGER}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+            </button>
           )}
           </>)}
         </div>

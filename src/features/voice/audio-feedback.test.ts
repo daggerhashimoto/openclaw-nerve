@@ -5,6 +5,7 @@ const mockStart = vi.fn();
 const mockConnect = vi.fn();
 const mockGainConnect = vi.fn();
 const mockGain = { gain: { value: 1 }, connect: mockGainConnect };
+const mockCreateGain = vi.fn(() => mockGain);
 const mockDestination = {};
 
 const mockCreateBufferSource = vi.fn(() => ({
@@ -24,7 +25,7 @@ class MockAudioContext {
   state = 'running';
   destination = mockDestination;
   createBufferSource = mockCreateBufferSource;
-  createGain = vi.fn(() => mockGain);
+  createGain = mockCreateGain;
   decodeAudioData = mockDecodeAudioData;
   resume = mockResume;
 }
@@ -53,6 +54,7 @@ describe('audio-feedback', () => {
     mockStart.mockClear();
     mockConnect.mockClear();
     mockGainConnect.mockClear();
+    mockCreateGain.mockClear();
     mockGain.gain.value = 1;
     mockCreateBufferSource.mockClear();
     mockDecodeAudioData.mockClear();
@@ -129,6 +131,61 @@ describe('audio-feedback', () => {
       expect(normalizeUiSoundVolume(-1)).toBe(0);
       expect(normalizeUiSoundVolume(2)).toBe(1);
       expect(normalizeUiSoundVolume(Number.NaN)).toBe(1);
+    });
+  });
+
+  describe('UI sound volume', () => {
+    const playEverySound = () => {
+      playWakePing();
+      playSubmitPing();
+      playCancelPing();
+      playPing();
+    };
+
+    it('plays every UI sound at full gain when no volume has been set', () => {
+      playEverySound();
+
+      expect(mockStart).toHaveBeenCalledTimes(4);
+      expect(mockCreateGain).toHaveBeenCalledOnce();
+      expect(mockGain.gain.value).toBe(1);
+      expect(mockConnect).toHaveBeenCalledTimes(4);
+      for (const [target] of mockConnect.mock.calls) expect(target).toBe(mockGain);
+    });
+
+    it('scales every UI sound through the one gain node', () => {
+      setUiSoundVolume(0.4);
+      playEverySound();
+
+      expect(mockCreateGain).toHaveBeenCalledOnce();
+      expect(mockGain.gain.value).toBe(0.4);
+      for (const [target] of mockConnect.mock.calls) expect(target).toBe(mockGain);
+    });
+
+    it('starts no UI sound at all at volume 0', () => {
+      setUiSoundVolume(0);
+      playEverySound();
+
+      expect(mockCreateBufferSource).not.toHaveBeenCalled();
+      expect(mockStart).not.toHaveBeenCalled();
+    });
+
+    it('silences a sound already playing when the volume drops to 0', () => {
+      playPing();
+      expect(mockGain.gain.value).toBe(1);
+
+      setUiSoundVolume(0);
+
+      expect(mockGain.gain.value).toBe(0);
+    });
+
+    it('plays again once the volume comes back up from 0', () => {
+      setUiSoundVolume(0);
+      playPing();
+      setUiSoundVolume(0.6);
+      playPing();
+
+      expect(mockStart).toHaveBeenCalledOnce();
+      expect(mockGain.gain.value).toBe(0.6);
     });
   });
 

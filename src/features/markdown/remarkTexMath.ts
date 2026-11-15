@@ -8,9 +8,12 @@
  * `tex_math_dollars` rule instead: the opening `$` must be followed by a
  * non-space character, the closing `$` must be preceded by a non-space
  * character and must not be followed by a digit, and the first unescaped `$`
- * after the opener is the only closing candidate. When the rule fails the
- * opener stays plain text and parsing resumes on the next character, so
- * "paid $5 for $x^2$ lessons" still renders `x^2`.
+ * after the opener is the only closing candidate. GitHub's two extra
+ * conditions also apply: the opening `$` must not follow a letter or digit and
+ * the closing `$` must not be followed by one, so `$HOME/$USER` and `US$5`
+ * stay text. When the rule fails the opener stays plain text and parsing
+ * resumes on the next character, so "paid $5 for $x^2$ lessons" still renders
+ * `x^2`.
  *
  * Working inside the tokenizer means code spans, code blocks, backslash escapes
  * and container blocks are handled by micromark itself; as with code spans,
@@ -19,6 +22,9 @@
  *   close an earlier currency `$`;
  * - an expression whose closing delimiter has not arrived yet (streaming) is
  *   plain text;
+ * - inside a paragraph `\[...\]` is math only when its content is padded with
+ *   whitespace on both sides or contains a backslash or a caret, so escaped
+ *   brackets such as `\[1\]` or `\[x\](url)` keep their markdown meaning;
  * - `$$` or `\[` alone on a line opens a display block that ends at the first
  *   line ending in `$$` or `\]`; a block that never closes is shown as plain
  *   text rather than as a half-typeset formula.
@@ -102,6 +108,7 @@ const DIGIT_9 = 57;
 const LEFT_BRACKET = 91;
 const BACKSLASH = 92;
 const RIGHT_BRACKET = 93;
+const CARET = 94;
 const BACKTICK = 96;
 
 const isLineEnding = (code: Code): boolean => code !== null && code <= LINE_ENDING_MAX;
@@ -110,6 +117,9 @@ const isSpaceOrTab = (code: Code): boolean =>
 const isWhitespace = (code: Code): boolean =>
   code !== null && (code < 0 || code === SPACE || /\s/.test(String.fromCharCode(code)));
 const isAsciiDigit = (code: Code): boolean => code !== null && code >= DIGIT_0 && code <= DIGIT_9;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+const isLetterOrDigit = (code: Code): boolean =>
+  code !== null && code >= 0 && (isAsciiDigit(code) || LETTER_OR_DIGIT.test(String.fromCharCode(code)));
 
 /** Consume a run of spaces and tabs (at most `max - 1`) as one token, then continue with `next`. */
 function spaceRun(effects: Effects, next: State, type: 'linePrefix' | 'whitespace', max = Infinity): State {
@@ -159,13 +169,17 @@ const unclosedRanges = new WeakMap<TokenizeContext, Partial<Record<ScannedKind, 
 
 function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, nok: State): State {
   const startOffset = this.now().offset;
+  const previous = this.previous;
   let outer: Token;
   let opener: TextMathKind;
   let openSize = 0;
   let closeSize = 0;
   let pending: Token;
   let afterWhitespace = false;
+  let whitespaceBeforeBackslash = false;
+  let startsWithWhitespace = false;
   let hasContent = false;
+  let hasBackslashOrCaret = false;
 
   const isDollarOpener = () => opener === 'dollar' || opener === 'doubleDollar';
   const knownUnclosed = (kind: ScannedKind) => {
@@ -201,7 +215,8 @@ function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, no
     effects.exit('texMathDelimiter');
     if (openSize === 1) {
       // Pandoc: the opening `$` must be followed by a non-space character.
-      if (code === null || isWhitespace(code)) return nok(code);
+      // GitHub: ...and must not follow a letter or digit (`US$x$`, `a$x$b`).
+      if (code === null || isWhitespace(code) || isLetterOrDigit(previous)) return nok(code);
       opener = 'dollar';
     } else {
       opener = 'doubleDollar';
@@ -223,7 +238,12 @@ function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, no
     if (knownUnclosed(opener)) return nok(code);
     effects.consume(code);
     effects.exit('texMathDelimiter');
-    return between;
+    return contentStart;
+  }
+
+  function contentStart(code: Code): State | undefined {
+    startsWithWhitespace = isWhitespace(code);
+    return between(code);
   }
 
   /** Outside a value chunk: at a line ending, a backslash, a possible closing delimiter, or new value text. */
@@ -261,6 +281,7 @@ function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, no
     effects.consume(code);
     afterWhitespace = isWhitespace(code);
     if (!afterWhitespace) hasContent = true;
+    if (code === CARET) hasBackslashOrCaret = true;
     return value;
   }
 
@@ -269,6 +290,7 @@ function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, no
    * dollar math and `\\)` is a TeX line break followed by `)`, not `\)`.
    */
   function backslash(code: Code): State | undefined {
+    whitespaceBeforeBackslash = afterWhitespace;
     pending = effects.enter('texMathDelimiter');
     effects.consume(code);
     afterWhitespace = false;
@@ -278,6 +300,16 @@ function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, no
   function afterBackslash(code: Code): State | undefined {
     if ((opener === 'paren' && code === RIGHT_PAREN) || (opener === 'bracket' && code === RIGHT_BRACKET)) {
       if (!hasContent) return nok(code);
+      // Inside a paragraph `\[...\]` is only math when it looks like TeX:
+      // padded on both sides, or containing a backslash or caret. Otherwise it
+      // is an escaped bracket pair, as in `\[1\]` or `\[x\](url)`.
+      if (
+        opener === 'bracket' &&
+        !hasBackslashOrCaret &&
+        !(startsWithWhitespace && whitespaceBeforeBackslash)
+      ) {
+        return nok(code);
+      }
       effects.consume(code);
       effects.exit('texMathDelimiter');
       effects.exit(outer.type);
@@ -286,6 +318,7 @@ function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, no
     // Not a closing delimiter: the backslash is part of the value.
     pending.type = 'texMathValue';
     hasContent = true;
+    hasBackslashOrCaret = true;
     if (code === null || code === BACKTICK || isLineEnding(code)) {
       effects.exit('texMathValue');
       return between(code);
@@ -310,7 +343,8 @@ function tokenizeTextMath(this: TokenizeContext, effects: Effects, ok: State, no
 
   function afterSingleClose(code: Code): State | undefined {
     // Pandoc: ...and must not be followed by a digit, so "$5-$10" stays text.
-    if (isAsciiDigit(code)) return nok(code);
+    // GitHub: ...nor by a letter, so "$HOME/$USER" stays text.
+    if (isLetterOrDigit(code)) return nok(code);
     effects.exit(outer.type);
     return ok(code);
   }

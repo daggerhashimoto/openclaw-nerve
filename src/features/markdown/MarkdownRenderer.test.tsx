@@ -934,6 +934,65 @@ describe('MarkdownRenderer', () => {
         expectNoMath(container);
         expect(container.textContent).toBe(content);
       });
+
+      it.each([
+        ['$HOME/$USER', 'closing dollar followed by a letter'],
+        ['US$x$', 'opening dollar preceded by a letter'],
+        ['a$x$b', 'dollars touching letters on both sides'],
+        ['5$x$', 'opening dollar preceded by a digit'],
+        ['$x$b', 'closing dollar followed by a letter'],
+      ])('keeps %j literal (%s)', (content) => {
+        const container = renderMarkdown(content);
+        expectNoMath(container);
+        expect(container.textContent).toBe(content);
+      });
+    });
+
+    it.each(['It is $x$.', 'Wrap it ($x$) here.', 'Then $x$, and more.'])(
+      'renders single-dollar math next to punctuation in %j',
+      (content) => {
+        expect(texSources(renderMarkdown(content))).toEqual(['x']);
+      },
+    );
+
+    it('renders single-dollar math inside strong emphasis', () => {
+      const container = renderMarkdown('This is **$x$** in bold.');
+      expect(texSources(container.querySelector('strong')!)).toEqual(['x']);
+    });
+
+    describe('escaped square brackets', () => {
+      it.each([
+        ['see \\[1\\] and \\[2\\]', 'see [1] and [2]'],
+        ['\\[x\\](http://a.b)', '[x](http://a.b)'],
+        ['usage: cmd \\[--flag=value\\] file', 'usage: cmd [--flag=value] file'],
+      ])('keeps %j literal, as plain markdown renders it', (content, text) => {
+        const container = renderMarkdown(content);
+        expectNoMath(container);
+        expect(container.textContent).toBe(text);
+      });
+
+      it.each([
+        [String.raw`Energy \[ E = mc^2 \] holds.`, 'E = mc^2', 'padded with spaces'],
+        [String.raw`Square \[x^2\] it.`, 'x^2', 'contains a caret'],
+        [String.raw`Divide \[\frac{a}{b}\] now.`, String.raw`\frac{a}{b}`, 'contains a backslash'],
+        ['Wide \\[\nx\n\\] sum.', 'x', 'padded with line endings'],
+      ])('renders %j as display math (%s)', (content, tex) => {
+        const container = renderMarkdown(content);
+        expect(texSources(container)).toEqual([tex]);
+        expect(container.querySelector('.katex-display')).toBeTruthy();
+      });
+
+      it('keeps the block form unchanged even when its content is a bare number', () => {
+        const container = renderMarkdown(['\\[', '1', '\\]'].join('\n'));
+        expect(texSources(container)).toEqual(['1']);
+        expect(container.querySelector('.katex-display')).toBeTruthy();
+      });
+    });
+
+    it('treats \\(optional\\) in prose as inline math (deliberate: \\( is always a math opener)', () => {
+      const container = renderMarkdown('Pass \\(optional\\) thing.');
+      expect(texSources(container)).toEqual(['optional']);
+      expect(container.querySelector('.katex-display')).toBeNull();
     });
 
     it('does not let a currency dollar swallow a later valid expression', () => {

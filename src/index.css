@@ -404,6 +404,12 @@
   backdrop-filter: blur(12px);
 }
 
+.shell-icon-button > svg {
+  /* The button's own padding is unlayered and beats Tailwind's px-0, so the
+     content box can be narrower than the icon; never let the icon shrink to fit. */
+  flex-shrink: 0;
+}
+
 .shell-icon-button:hover {
   border-color: color-mix(in srgb, var(--color-primary) 34%, var(--color-border));
   color: var(--color-foreground);

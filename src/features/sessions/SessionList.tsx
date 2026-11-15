@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Plus, RefreshCw } from 'lucide-react';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
+import { isUndeletableSessionKey } from './sessionDeletion';
 
 interface SessionListProps {
   sessions: Session[];
@@ -222,7 +223,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
               granularStatus={agentStatus?.[sessionKey]}
               onSelect={onSelect}
               onToggleExpand={handleToggleExpand}
-              onDelete={onDelete ? handleSetDeleteTarget : undefined}
+              onDelete={onDelete && !isUndeletableSessionKey(sessionKey) ? handleSetDeleteTarget : undefined}
               onStartRename={onRename ? startRename : undefined}
               onAbort={onAbort}
               onRenameChange={handleRenameChange}

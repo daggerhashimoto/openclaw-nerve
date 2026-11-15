@@ -48,4 +48,17 @@ describe('SessionList delete', () => {
     expect(onDelete).toHaveBeenCalledTimes(2);
     expect(onDelete).toHaveBeenNthCalledWith(2, 'agent:ops:subagent:worker');
   });
+
+  it('offers Delete on child sessions but not on agent main session rows, which the gateway refuses', () => {
+    renderSessionList([
+      { sessionKey: 'agent:main:main', label: 'Main' },
+      { sessionKey: 'agent:ops:main', label: 'Ops' },
+      { sessionKey: 'agent:ops:subagent:worker', label: 'Worker' },
+      { sessionKey: 'agent:ops:cron:nightly', label: 'Nightly' },
+    ], vi.fn(async () => {}));
+
+    // Every row can still be renamed; only the two child rows can be deleted
+    expect(screen.getAllByTitle('Rename session')).toHaveLength(4);
+    expect(screen.getAllByTitle('Delete session')).toHaveLength(2);
+  });
 });

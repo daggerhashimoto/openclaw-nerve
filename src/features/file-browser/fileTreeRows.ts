@@ -1,6 +1,10 @@
 import type { TreeEntry } from './types';
 
-export const FILE_TREE_ROW_HEIGHT = 24;
+/**
+ * Virtual row height: the shared 28px row unit (1.867rem at the default 15px base).
+ * Kept in px because the virtual list positions rows in px.
+ */
+export const FILE_TREE_ROW_HEIGHT = 28;
 export const FILE_TREE_OVERSCAN_ROWS = 8;
 export const MAX_VISIBLE_FILE_TREE_ROWS = 10_000;
 

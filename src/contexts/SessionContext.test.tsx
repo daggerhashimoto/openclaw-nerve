@@ -3,6 +3,7 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 import { SessionProvider, useSessionContext } from './SessionContext';
 import { getSessionKey, type GatewayEvent } from '@/types';
 import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
+import { EventLog } from '@/features/activity/EventLog';
 
 const mockUseGateway = vi.fn();
 const mockUseSettings = vi.fn();
@@ -79,6 +80,11 @@ function SessionUnreadProbe() {
       </button>
     </div>
   );
+}
+
+function SessionEventLog() {
+  const { eventEntries } = useSessionContext();
+  return <EventLog entries={eventEntries} />;
 }
 
 function SessionStatusProbe() {
@@ -1193,5 +1199,65 @@ describe('SessionContext', () => {
 
     expect(rpcBeforeReconnect.mock.calls.filter(([method]) => method === 'sessions.list')).toHaveLength(preReconnectSessionsListCalls);
     expect(rpcAfterReconnect).not.toHaveBeenCalledWith('sessions.list', expect.anything());
+  });
+
+  it('records a chat error as a failure in the event log', async () => {
+    render(
+      <SessionProvider>
+        <SessionEventLog />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(subscribedHandler).not.toBeNull());
+
+    act(() => {
+      subscribedHandler?.({ type: 'event', event: 'chat', payload: { sessionKey: 'agent:main:main', state: 'final' } });
+    });
+    expect(screen.getByText('Response complete')).toHaveClass('text-foreground');
+    expect(screen.queryByLabelText('Failed')).toBeNull();
+
+    act(() => {
+      subscribedHandler?.({ type: 'event', event: 'chat', payload: { sessionKey: 'agent:main:main', state: 'error' } });
+    });
+    expect(screen.getByText('Chat error')).toHaveClass('text-destructive');
+    expect(screen.getByLabelText('Failed')).toHaveAttribute('data-state', 'error');
+  });
+
+  it('drops the granular statuses held across a reconnect so the refreshed snapshot decides', async () => {
+    const view = render(
+      <SessionProvider>
+        <SessionStatusProbe />
+      </SessionProvider>,
+    );
+
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith('sessions.list', { limit: 1000 });
+    });
+
+    act(() => {
+      subscribedHandler?.({ type: 'event', event: 'chat', payload: { sessionKey: 'agent:reviewer:main', state: 'started' } });
+    });
+    expect(screen.getByTestId('reviewer-status')).toHaveTextContent('THINKING');
+
+    // The gateway drops; the status is kept while we are away
+    act(() => {
+      connectionStateValue = 'reconnecting';
+      view.rerender(
+        <SessionProvider>
+          <SessionStatusProbe />
+        </SessionProvider>,
+      );
+    });
+    expect(screen.getByTestId('reviewer-status')).toHaveTextContent('THINKING');
+
+    // Back online: whatever happened in the gap is unknown, so the retained status goes
+    act(() => {
+      connectionStateValue = 'connected';
+      view.rerender(
+        <SessionProvider>
+          <SessionStatusProbe />
+        </SessionProvider>,
+      );
+    });
+    expect(screen.getByTestId('reviewer-status')).toHaveTextContent('NONE');
   });
 });

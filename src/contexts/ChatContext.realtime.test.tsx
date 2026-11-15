@@ -161,6 +161,56 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     await waitFor(() => expect(historyCalls()).toBeGreaterThan(0));
   });
 
+  it('names a web search in the activity log once its result says what was searched', async () => {
+    const { emit, getChat } = await setup();
+    const tool = (data: Record<string, unknown>) => ({ sessionKey: SESSION, runId: RUN, stream: 'tool', data });
+
+    emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }));
+    // Frames captured from the gateway: the start has no query, the result does.
+    emit('agent', tool({ phase: 'start', name: 'web_search', itemId: 'exec-1', toolCallId: 'exec-1', args: { queryUnavailable: true } }));
+    await waitFor(() => expect(getChat().activityLog.map((e) => e.description)).toEqual(['searching the web']));
+
+    emit('agent', tool({
+      phase: 'result', name: 'web_search', itemId: 'exec-1', toolCallId: 'exec-1', status: 'completed', isError: false,
+      meta: 'for "OpenClaw gateway release notes"', result: { status: 'completed', query: 'OpenClaw gateway release notes' },
+    }));
+    await waitFor(() => expect(getChat().activityLog).toMatchObject([
+      { description: 'searching: OpenClaw gateway release notes', phase: 'completed' },
+    ]));
+  });
+
+  it('shows an image the agent delivered with its reply, which only history carries', async () => {
+    // Captured from the gateway: the webchat final carries the reply text, and the delivered
+    // image is written to the transcript as a gateway-hosted image block.
+    const imagePath = '/api/chat/media/outgoing/agent%3Amain%3Amain/9f6ffd21-93cd-402d-b568-00f5562daa41/full';
+    const history = [
+      { role: 'user', content: 'Make an image', timestamp: NOW },
+      {
+        role: 'assistant',
+        timestamp: NOW + 25_000,
+        content: [
+          { type: 'text', text: 'Here it is.' },
+          { type: 'image', url: imagePath, openUrl: imagePath, alt: 'codex-image-generation-2.png', mimeType: 'image/png' },
+        ],
+      },
+    ];
+    const { emit, getChat } = await setup(history);
+
+    await act(async () => {
+      await getChat().handleSend('Make an image');
+    });
+    emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }));
+    emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage('Here it is.', NOW + 25_000) }));
+
+    await waitFor(() => {
+      const reply = getChat().messages.find((m) => m.rawText === 'Here it is.');
+      expect(reply?.extractedImages).toEqual([
+        { url: `/api/chat-media?path=${encodeURIComponent(imagePath)}`, alt: 'codex-image-generation-2.png' },
+      ]);
+    });
+    expect(getChat().messages.filter((m) => m.rawText === 'Here it is.')).toHaveLength(1);
+  });
+
   it('reconciles a late final for a settled run from history instead of appending it', async () => {
     const history = [
       { role: 'user', content: 'Write about clouds', timestamp: NOW },

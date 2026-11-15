@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { ArrowUpCircle } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -7,6 +6,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import { Pane } from '@/components/ui/Pane';
 
 interface VersionCheck {
   current: string;
@@ -39,7 +39,7 @@ export function UpdateBadge() {
         const data: VersionCheck = await res.json();
         setVersionInfo(data);
       } catch {
-        // Silently ignore — aborted or network error
+        // Silently ignore: aborted or network error
       }
     };
     check();
@@ -59,18 +59,18 @@ export function UpdateBadge() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 text-[0.6rem] text-primary hover:text-primary/80 transition-colors cursor-pointer ml-1.5"
+        className="inline-flex h-5 cursor-pointer items-center gap-1.5 rounded-[3px] px-1.5 text-[0.8rem] text-foreground transition-colors duration-[120ms] hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
         title={`Update available: v${versionInfo.latest}`}
         aria-label={`Update available: version ${versionInfo.latest}. Click for instructions.`}
       >
-        <ArrowUpCircle className="w-3 h-3" />
-        <span className="uppercase tracking-wide font-bold">update</span>
+        <Pane state="operator" size="sm" />
+        <span>Update</span>
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Update Available</DialogTitle>
+            <DialogTitle>Update available</DialogTitle>
             <DialogDescription>
               Nerve <span className="font-mono font-semibold text-foreground">v{versionInfo.latest}</span> is
               available. You're running <span className="font-mono text-muted-foreground">v{versionInfo.current}</span>.
@@ -78,26 +78,26 @@ export function UpdateBadge() {
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div>
-              <p className="text-xs text-muted-foreground mb-1">Project directory</p>
-              <pre className="bg-secondary rounded-md px-3 py-2 text-xs font-mono text-muted-foreground select-all whitespace-pre-wrap break-all">
+              <p className="mb-1 text-[0.8rem] text-muted-foreground">Project directory</p>
+              <pre className="rounded-[3px] border border-border bg-background px-3 py-2 font-mono text-[0.8rem] text-muted-foreground select-all whitespace-pre-wrap break-all">
                 {versionInfo.projectDir}
               </pre>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground mb-2">
+              <p className="mb-2 text-[0.867rem] text-muted-foreground">
                 Copy and paste this into your OpenClaw session or terminal:
               </p>
-              <pre className="bg-secondary rounded-md px-3 py-2 text-sm font-mono select-all whitespace-pre-wrap break-all">
+              <pre className="rounded-[3px] border border-border bg-background px-3 py-2 font-mono text-[0.867rem] text-foreground select-all whitespace-pre-wrap break-all">
                 {updateCommand}
               </pre>
             </div>
-            <div className="text-xs text-muted-foreground space-y-1">
+            <div className="space-y-1 text-[0.8rem] text-muted-foreground">
               <p>This will fetch the latest release, rebuild, restart, and verify health.</p>
               <p>If anything fails, Nerve automatically rolls back to your current version.</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground mb-1">Other options:</p>
-              <pre className="bg-secondary rounded-md px-3 py-2 text-xs font-mono text-muted-foreground whitespace-pre-wrap">
+              <p className="mb-1 text-[0.8rem] text-muted-foreground">Other options:</p>
+              <pre className="rounded-[3px] border border-border bg-background px-3 py-2 font-mono text-[0.8rem] text-muted-foreground whitespace-pre-wrap">
 {`# Preview first
 ${dryRunCommand}
 

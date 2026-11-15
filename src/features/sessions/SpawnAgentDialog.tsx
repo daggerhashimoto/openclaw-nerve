@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowRight, Bot, GitBranch } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bot, GitBranch } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Pane } from '@/components/ui/Pane';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +38,13 @@ const AFTER_RUN_OPTIONS: InlineSelectOption[] = [
   { value: 'delete', label: 'Delete' },
 ];
 const INHERITED_MODEL_VALUE = 'primary';
+
+// Flat choice plates: neutral hover, no lift, no glow
+const CHOICE_CARD = 'flex min-h-[200px] flex-col gap-3 rounded-[3px] border border-border bg-card p-4 text-left transition-colors duration-[120ms] hover:bg-raised';
+const CHOICE_ICON = 'flex size-8 shrink-0 items-center justify-center rounded-[3px] border border-border text-muted-foreground';
+const CHOICE_POINTS = 'grid list-disc gap-x-4 gap-y-0.5 pl-4 text-[0.8rem] text-muted-foreground marker:text-pane-edge sm:grid-cols-2';
+const SELECT_TRIGGER = 'w-full min-h-11 justify-between rounded-[3px] border-input bg-background px-2.5 py-1.5 font-sans text-[0.867rem] text-foreground sm:min-h-[2.133rem] sm:px-2.5 sm:py-0 sm:text-[0.867rem]';
+const SELECT_MENU = 'p-1';
 
 type ModelEntry = { id: string; alias?: string };
 type ModelCatalogResponse = {
@@ -233,94 +242,54 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
       <DialogContent
         className={
           mode === null
-            ? 'max-h-[calc(100dvh-1.067rem)] overflow-y-auto overscroll-contain sm:max-h-[min(100dvh-4rem,54rem)] sm:overflow-visible sm:max-w-4xl lg:max-w-[72rem]'
+            ? 'max-h-[calc(100dvh-1.067rem)] overflow-y-auto overscroll-contain sm:max-h-[min(100dvh-4rem,54rem)] sm:overflow-visible sm:max-w-3xl'
             : 'max-h-[calc(100dvh-1.067rem)] overflow-y-auto overscroll-contain sm:max-h-[min(100dvh-4rem,48rem)] sm:overflow-visible sm:max-w-xl'
         }
       >
         {mode === null ? (
           <>
             <DialogHeader>
-              <div className="cockpit-surface overflow-hidden border-border/80 bg-secondary/34 p-4 sm:p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1.5">
-                    <div className="cockpit-kicker">
-                      <span className="text-primary">◆</span>
-                      Session Control
-                    </div>
-                    <DialogTitle className="text-[1.45rem] font-semibold tracking-[-0.035em] text-foreground">
-                      Choose the kind of agent you want to start
-                    </DialogTitle>
-                    <DialogDescription className="max-w-[42ch] text-sm leading-6 text-muted-foreground">
-                      Pick whether this is a new top-level agent with its own chat and subagents, or a focused subagent that plugs into an existing top-level agent.
-                    </DialogDescription>
-                  </div>
-                  <div className="hidden min-w-[170px] rounded-[20px] border border-border/70 bg-background/60 p-3 sm:block">
-                    <div className="text-[0.667rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground/80">2-step flow</div>
-                    <div className="mt-3 space-y-2 text-xs text-muted-foreground">
-                      <div className="flex items-center gap-2 text-foreground">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/18 text-[0.667rem] font-semibold text-primary">1</span>
-                        Choose agent type
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted/70 text-[0.667rem] font-semibold text-muted-foreground">2</span>
-                        Configure the runtime
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <DialogTitle className="text-[1.2rem] font-semibold text-foreground">
+                Choose the kind of agent you want to start
+              </DialogTitle>
+              <DialogDescription className="max-w-[60ch] text-[0.867rem] leading-relaxed text-muted-foreground">
+                Pick whether this is a new top-level agent with its own chat and subagents, or a focused subagent that plugs into an existing top-level agent.
+              </DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-3 sm:grid-cols-[1.06fr_0.94fr]">
+            <div className="grid gap-3 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={() => setMode('root')}
-                className="group relative overflow-hidden rounded-[26px] border border-border/80 bg-card/88 p-0 text-left transition-transform hover:-translate-y-px hover:border-primary/60"
+                className={CHOICE_CARD}
               >
-                <span className="pointer-events-none absolute -right-10 top-0 h-28 w-28 rounded-full bg-primary/10 blur-2xl transition-opacity group-hover:opacity-100" />
-                <span className="pointer-events-none absolute left-0 top-0 h-full w-1.5 bg-primary/60" />
-                <div className="relative flex min-h-[218px] flex-col gap-4 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-[16px] border border-primary/25 bg-primary/12 text-primary">
-                        <Bot size={20} />
-                      </span>
-                      <div className="space-y-1">
-                        <span className="cockpit-badge" data-tone="success">Top-level agent</span>
-                        <div className="text-base font-semibold tracking-[-0.02em] text-foreground">New agent</div>
-                      </div>
-                    </div>
-                    <span className="text-[0.667rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground/80">Independent</span>
+                <div className="flex items-center gap-3">
+                  <span className={CHOICE_ICON}>
+                    <Bot size={16} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[0.933rem] font-semibold text-foreground">New agent</div>
+                    <div className="text-[0.8rem] text-muted-foreground">Top-level agent, independent</div>
                   </div>
+                </div>
 
-                  <div className="space-y-2">
-                    <p className="max-w-[30ch] text-sm leading-6 text-muted-foreground">
-                      Create another top-level agent with its own chat, its own subagents, and its own scheduled work.
-                    </p>
-                  </div>
+                <p className="text-[0.867rem] leading-relaxed text-muted-foreground">
+                  Create another top-level agent with its own chat, its own subagents, and its own scheduled work.
+                </p>
 
-                  <div className="grid gap-2 text-[0.8rem] text-muted-foreground sm:grid-cols-2">
-                    <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
-                      Own root conversation
-                    </div>
-                    <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
-                      Own subagents
-                    </div>
-                    <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
-                      Rename or delete later
-                    </div>
-                    <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
-                      Good for separate roles
-                    </div>
-                  </div>
+                <ul className={CHOICE_POINTS}>
+                  <li>Own root conversation</li>
+                  <li>Own subagents</li>
+                  <li>Rename or delete later</li>
+                  <li>Good for separate roles</li>
+                </ul>
 
-                  <div className="mt-auto flex items-center justify-between border-t border-border/70 pt-3 text-sm">
-                    <span className="font-medium text-foreground">Start a new top-level agent</span>
-                    <span className="flex items-center gap-1 text-primary transition-transform group-hover:translate-x-0.5">
-                      Continue
-                      <ArrowRight size={15} />
-                    </span>
-                  </div>
+                <div className="mt-auto flex items-center justify-between border-t border-border pt-2.5 text-[0.867rem]">
+                  <span className="text-muted-foreground">Start a new top-level agent</span>
+                  <span className="flex items-center gap-1 font-medium text-foreground">
+                    Continue
+                    <ArrowRight size={14} aria-hidden="true" />
+                  </span>
                 </div>
               </button>
 
@@ -331,63 +300,50 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                   setMode('subagent');
                 }}
                 disabled={!hasRootAgents}
-                className="group relative overflow-hidden rounded-[26px] border border-border/80 bg-card/84 p-0 text-left transition-transform hover:-translate-y-px hover:border-primary/60 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:border-border/80"
+                className={cn(CHOICE_CARD, 'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-card')}
               >
-                <span className="pointer-events-none absolute -left-8 bottom-0 h-24 w-24 rounded-full bg-info/10 blur-2xl transition-opacity group-hover:opacity-100" />
-                <span className="pointer-events-none absolute left-0 top-0 h-full w-1.5 bg-info/55" />
-                <div className="relative flex min-h-[218px] flex-col gap-4 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-[16px] border border-info/25 bg-info/12 text-info">
-                        <GitBranch size={20} />
-                      </span>
-                      <div className="space-y-1">
-                        <span className="cockpit-badge" data-tone="info">Attached child</span>
-                        <div className="text-base font-semibold tracking-[-0.02em] text-foreground">New subagent</div>
-                      </div>
-                    </div>
-                    <span className="text-[0.667rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground/80">Focused</span>
+                <div className="flex items-center gap-3">
+                  <span className={CHOICE_ICON}>
+                    <GitBranch size={16} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[0.933rem] font-semibold text-foreground">New subagent</div>
+                    <div className="text-[0.8rem] text-muted-foreground">Attached child, focused</div>
                   </div>
-
-                  <div className="space-y-2">
-                    <p className="max-w-[30ch] text-sm leading-6 text-muted-foreground">
-                      Spin up a focused subagent under an existing top-level agent so the result stays attached to that agent.
-                    </p>
-                  </div>
-
-                  <div className="grid gap-2 text-[0.8rem] text-muted-foreground">
-                    <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
-                      Pick which root owns the work
-                    </div>
-                    <div className="rounded-[16px] border border-border/70 bg-background/46 px-3 py-2.5">
-                      Best for audits, one-off tasks, and parallel help
-                    </div>
-                  </div>
-
-                  <div className="mt-auto flex items-center justify-between border-t border-border/70 pt-3 text-sm">
-                    <span className="font-medium text-foreground">
-                      {hasRootAgents ? 'Attach work to an existing agent' : 'Needs a top-level agent first'}
-                    </span>
-                    <span className="flex items-center gap-1 text-info transition-transform group-hover:translate-x-0.5">
-                      {hasRootAgents ? 'Continue' : 'Locked'}
-                      <ArrowRight size={15} />
-                    </span>
-                  </div>
-
-                  {!hasRootAgents && (
-                    <div className="rounded-[16px] border border-border/70 bg-background/58 px-3 py-2 text-[0.8rem] leading-5 text-muted-foreground">
-                      Create a top-level agent first, then come back here to launch attached subagents.
-                    </div>
-                  )}
                 </div>
+
+                <p className="text-[0.867rem] leading-relaxed text-muted-foreground">
+                  Spin up a focused subagent under an existing top-level agent so the result stays attached to that agent.
+                </p>
+
+                <ul className={CHOICE_POINTS}>
+                  <li>Pick which root owns the work</li>
+                  <li>Best for audits, one-off tasks, and parallel help</li>
+                </ul>
+
+                <div className="mt-auto flex items-center justify-between border-t border-border pt-2.5 text-[0.867rem]">
+                  <span className="text-muted-foreground">
+                    {hasRootAgents ? 'Attach work to an existing agent' : 'Needs a top-level agent first'}
+                  </span>
+                  <span className="flex items-center gap-1 font-medium text-foreground">
+                    {hasRootAgents ? 'Continue' : 'Locked'}
+                    <ArrowRight size={14} aria-hidden="true" />
+                  </span>
+                </div>
+
+                {!hasRootAgents && (
+                  <div className="cockpit-note">
+                    Create a top-level agent first, then come back here to launch attached subagents.
+                  </div>
+                )}
               </button>
             </div>
 
             <DialogFooter className="items-center justify-between gap-3 sm:flex-row">
-              <p className="text-[0.8rem] leading-5 text-muted-foreground">
+              <p className="text-[0.8rem] leading-relaxed text-muted-foreground">
                 Top-level agents are full sessions. Subagents are short-lived specialists that stay under one of those agents.
               </p>
-              <Button type="button" variant="outline" onClick={handleCancel} className="text-xs">
+              <Button type="button" variant="outline" onClick={handleCancel}>
                 Cancel
               </Button>
             </DialogFooter>
@@ -396,18 +352,15 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
           <>
             <DialogHeader>
               <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" onClick={handleBack} disabled={spawning} className="h-9 px-3 text-xs">
+                <Button type="button" variant="ghost" size="xs" onClick={handleBack} disabled={spawning} className="text-[0.8rem]">
+                  <ArrowLeft size={14} aria-hidden="true" />
                   Back
                 </Button>
-                <div className="cockpit-kicker">
-                  <span className="text-primary">◆</span>
-                  {mode === 'root' ? 'Top-level agent' : 'Subagent'}
-                </div>
               </div>
-              <DialogTitle className="text-[1.35rem] font-semibold tracking-[-0.03em] text-foreground">
+              <DialogTitle className="text-[1.2rem] font-semibold text-foreground">
                 {mode === 'root' ? 'Configure new agent' : 'Configure subagent'}
               </DialogTitle>
-              <DialogDescription className="text-sm text-muted-foreground">
+              <DialogDescription className="text-[0.867rem] text-muted-foreground">
                 {mode === 'root'
                   ? 'Name the new top-level agent, then give it the opening task and runtime defaults.'
                   : 'Choose which top-level agent should own the new subagent, then set the task and runtime defaults.'}
@@ -417,7 +370,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
             <div className="flex flex-col gap-3">
               {mode === 'root' ? (
                 <div>
-                  <label className="cockpit-field-label mb-2 block">Agent name</label>
+                  <label className="cockpit-field-label mb-1.5 block">Agent name</label>
                   <input
                     type="text"
                     value={agentNameInput}
@@ -425,31 +378,31 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                     placeholder="e.g. reviewer"
                     className="cockpit-input"
                   />
-                  <p className="cockpit-note mt-2">
+                  <p className="cockpit-field-hint mt-1.5">
                     This becomes the top-level session label and the stable agent identity for its subagents.
                   </p>
                 </div>
               ) : (
                 <div>
-                  <label className="cockpit-field-label mb-2 block">Parent agent</label>
+                  <label className="cockpit-field-label mb-1.5 block">Parent agent</label>
                   <InlineSelect
                     value={parentRootKey}
                     onChange={setParentRootKey}
                     options={rootOptions.length > 0 ? rootOptions : [{ value: '', label: 'No root agents available' }]}
                     ariaLabel="Select parent agent"
                     disabled={spawning || rootOptions.length === 0}
-                    triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
-                    menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
+                    triggerClassName={SELECT_TRIGGER}
+                    menuClassName={SELECT_MENU}
                     inline
                   />
-                  <p className="cockpit-field-hint mt-2">
+                  <p className="cockpit-field-hint mt-1.5">
                     Subagents stay attached to the selected top-level agent and report back into that session.
                   </p>
                 </div>
               )}
 
               <div>
-                <label className="cockpit-field-label mb-2 block">
+                <label className="cockpit-field-label mb-1.5 block">
                   {mode === 'root' ? `Opening task for ${rootNamePreview}` : 'Task / prompt'}
                 </label>
                 <textarea
@@ -463,7 +416,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
 
               {mode === 'subagent' && (
                 <div>
-                  <label className="cockpit-field-label mb-2 block">Label (optional)</label>
+                  <label className="cockpit-field-label mb-1.5 block">Label (optional)</label>
                   <input
                     type="text"
                     value={label}
@@ -476,18 +429,18 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
 
               {mode === 'subagent' && (
                 <div>
-                  <label className="cockpit-field-label mb-2 block">After run</label>
+                  <label className="cockpit-field-label mb-1.5 block">After run</label>
                   <InlineSelect
                     value={cleanup}
                     onChange={(value) => setCleanup(value as SubagentCleanupMode)}
                     options={AFTER_RUN_OPTIONS}
                     ariaLabel="After run"
                     disabled={spawning}
-                    triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
-                    menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
+                    triggerClassName={SELECT_TRIGGER}
+                    menuClassName={SELECT_MENU}
                     inline
                   />
-                  <p className="cockpit-field-hint mt-2">
+                  <p className="cockpit-field-hint mt-1.5">
                     Keep leaves the finished subagent visible. Delete removes it automatically after the run ends.
                   </p>
                 </div>
@@ -495,28 +448,28 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
 
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="cockpit-field-label mb-2 block">Model</label>
+                  <label className="cockpit-field-label mb-1.5 block">Model</label>
                   <InlineSelect
                     value={model}
                     onChange={setModel}
                     options={visibleModelOptions}
                     ariaLabel="Select model"
                     disabled={spawning || modelOptions.length === 0}
-                    triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
-                    menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
+                    triggerClassName={SELECT_TRIGGER}
+                    menuClassName={SELECT_MENU}
                     inline
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="cockpit-field-label mb-2 block">Thinking</label>
+                  <label className="cockpit-field-label mb-1.5 block">Thinking</label>
                   <InlineSelect
                     value={thinking}
                     onChange={(value) => setThinking(value as ThinkingSelection)}
                     options={THINKING_LEVELS}
                     ariaLabel="Select thinking level"
                     disabled={spawning}
-                    triggerClassName="min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-sm font-sans text-foreground"
-                    menuClassName="rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]"
+                    triggerClassName={SELECT_TRIGGER}
+                    menuClassName={SELECT_MENU}
                     inline
                   />
                 </div>
@@ -529,17 +482,18 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                 <p className="cockpit-note" data-tone="danger">{spawnError}</p>
               )}
               {spawning && (
-                <p className="cockpit-note animate-pulse">
+                <p className="cockpit-note flex items-center gap-2">
+                  <Pane state="live" size="sm" />
                   {mode === 'root' ? 'Bringing the new root agent online...' : 'Waiting for the new subagent to appear...'}
                 </p>
               )}
             </div>
 
             <DialogFooter className="gap-2">
-              <Button type="button" variant="outline" onClick={handleCancel} disabled={spawning} className="text-xs">
+              <Button type="button" variant="outline" onClick={handleCancel} disabled={spawning}>
                 Cancel
               </Button>
-              <Button type="button" onClick={handleLaunch} disabled={disableLaunch} className="min-w-[132px] text-xs">
+              <Button type="button" onClick={handleLaunch} disabled={disableLaunch} className="min-w-[132px]">
                 {spawning ? (
                   <span className="flex items-center gap-1.5">
                     <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />

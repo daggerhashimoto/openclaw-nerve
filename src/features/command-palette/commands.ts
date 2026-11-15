@@ -1,5 +1,5 @@
 import type { Command } from './types';
-import { themes, type ThemeName } from '@/lib/themes';
+import { themes, themeNames, type ThemeName } from '@/lib/themes';
 import { fonts, type FontName } from '@/lib/fonts';
 import type { TTSProvider } from '@/features/tts/useTTS';
 import type { Session } from '@/types';
@@ -29,24 +29,8 @@ export interface CommandActions {
   canShowKanban?: boolean;
 }
 
-const THEME_LABELS: Record<ThemeName, string> = {
-  'midnight': 'Midnight',
-  'light': 'Light',
-  'phosphor': 'Phosphor',
-  'dracula': 'Dracula',
-  'nord': 'Nord',
-  'solarized-dark': 'Solarized Dark',
-  'catppuccin-mocha': 'Catppuccin Mocha',
-  'tokyo-night': 'Tokyo Night',
-  'gruvbox-dark': 'Gruvbox Dark',
-  'one-dark': 'One Dark',
-  'monokai': 'Monokai',
-  'ayu-dark': 'Ayu Dark',
-  'rose-pine': 'Rosé Pine',
-  'monochrome': 'Monochrome',
-};
-
 const FONT_LABELS: Record<FontName, string> = {
+  'atkinson-hyperlegible': 'Nerve default',
   'instrument-sans': 'Instrument Sans',
   'space-grotesk': 'Space Grotesk',
   'jetbrains-mono': 'JetBrains Mono',
@@ -54,12 +38,12 @@ const FONT_LABELS: Record<FontName, string> = {
 
 /** Build the full list of command-palette commands from action callbacks. */
 export function createCommands(actions: CommandActions): Command[] {
-  const themeCommands: Command[] = (Object.keys(themes) as ThemeName[]).map((key) => ({
+  const themeCommands: Command[] = themeNames.map((key) => ({
     id: `theme-${key}`,
-    label: `Theme: ${THEME_LABELS[key] || key}`,
+    label: `Theme: ${themes[key].label}`,
     action: () => actions.onSetTheme(key),
     category: 'appearance' as const,
-    keywords: ['theme', 'color', 'dark', 'light', key.replace(/-/g, ' ')],
+    keywords: ['theme', 'color', 'dark', 'light', key.replace(/-/g, ' '), themes[key].label],
   }));
 
   const fontCommands: Command[] = (Object.keys(fonts) as FontName[]).map((key) => ({

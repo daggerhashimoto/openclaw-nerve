@@ -1,4 +1,4 @@
-/** Tests for extractCharts — parsing [chart:{...}] markers. */
+/** Tests for extractCharts: parsing [chart:{...}] markers. */
 import { describe, it, expect } from 'vitest';
 import { extractChartMarkers } from './extractCharts';
 

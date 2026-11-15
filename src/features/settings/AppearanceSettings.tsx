@@ -8,7 +8,7 @@ import { fonts, fontNames, type FontName } from '@/lib/fonts';
 const INLINE_SELECT_TRIGGER_CLASS =
   'min-h-11 w-full justify-between rounded-[3px] border-transparent bg-raised px-2 py-1 text-left text-[0.867rem] font-sans text-foreground sm:min-h-[var(--row-unit)] sm:min-w-[148px] sm:py-0 sm:text-[0.867rem]';
 const INLINE_SELECT_MENU_CLASS =
-  'rounded-[3px] border-border bg-popover py-1 shadow-[0_12px_32px_rgba(0,0,0,0.32)]';
+  'rounded-[3px] border-border bg-popover py-1 nerve-menu-shadow';
 
 const EDITOR_FONT_SIZE_OPTIONS = [
   { value: '10', label: '10px' },
@@ -91,13 +91,13 @@ export function AppearanceSettings() {
         />
       </div>
 
-      {/* Theme selector: Night or Daylight */}
+      {/* Theme selector: the night light world (Night, Daylight) or the Workbench world */}
       <div className="settings-row items-start justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <Monitor size={14} className="text-muted-foreground" />
           <div className="flex flex-col">
             <span className="text-[0.867rem] font-medium text-foreground">Theme</span>
-            <span className="text-[0.8rem] text-muted-foreground">Night or Daylight. Same meanings, different light.</span>
+            <span className="text-[0.8rem] text-muted-foreground">Night light or Workbench, each dark and light. Same meanings.</span>
           </div>
         </div>
         <div className="relative w-full sm:w-auto">

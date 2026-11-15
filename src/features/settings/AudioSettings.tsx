@@ -51,7 +51,7 @@ const EDGE_ENGLISH_VOICE_OPTIONS: EdgeVoiceOption[] = [
 const INLINE_SELECT_TRIGGER_CLASS =
   'min-h-11 w-full justify-between rounded-[3px] border-transparent bg-raised px-2 py-1 text-left text-[0.867rem] font-sans text-foreground sm:min-h-[var(--row-unit)] sm:py-0 sm:text-[0.867rem] sm:w-auto';
 const INLINE_SELECT_MENU_CLASS =
-  'rounded-[3px] border-border bg-popover py-1 shadow-[0_12px_32px_rgba(0,0,0,0.32)]';
+  'rounded-[3px] border-border bg-popover py-1 nerve-menu-shadow';
 
 function getEdgeVoiceOptions(
   lang: string,

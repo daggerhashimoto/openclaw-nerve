@@ -86,7 +86,7 @@ export function ImageLightbox({ src, alt = 'Image', thumbnailClassName }: ImageL
           <img
             src={src}
             alt={alt}
-            className="max-w-[90vw] max-h-[85vh] rounded-[3px] object-contain shadow-[0_12px_32px_rgba(0,0,0,0.32)]"
+            className="max-w-[90vw] max-h-[85vh] rounded-[3px] object-contain nerve-menu-shadow"
             onClick={(e) => e.stopPropagation()}
           />
           {/* Top-right action buttons */}

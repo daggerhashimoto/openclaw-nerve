@@ -987,7 +987,7 @@ export function FileTreePanel({
       {visibleContextMenu && menuEntry && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 min-w-[180px] rounded-[3px] border border-border bg-popover py-1 text-popover-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)] select-none touch-manipulation"
+          className="fixed z-50 min-w-[180px] rounded-[3px] border border-border bg-popover py-1 text-popover-foreground nerve-menu-shadow select-none touch-manipulation"
           style={{
             left: visibleContextMenu.x,
             top: visibleContextMenu.y,
@@ -1027,7 +1027,7 @@ export function FileTreePanel({
 
       {/* Toast */}
       {visibleToast && (
-        <div className="fixed bottom-4 left-2 right-2 z-[70] flex w-auto min-w-0 max-w-[min(92vw,680px)] items-center gap-2 rounded-[3px] border border-border bg-popover py-1 pl-3 pr-1 text-[0.867rem] text-popover-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)] sm:left-4 sm:right-auto sm:min-w-[320px]">
+        <div className="fixed bottom-4 left-2 right-2 z-[70] flex w-auto min-w-0 max-w-[min(92vw,680px)] items-center gap-2 rounded-[3px] border border-border bg-popover py-1 pl-3 pr-1 text-[0.867rem] text-popover-foreground nerve-menu-shadow sm:left-4 sm:right-auto sm:min-w-[320px]">
           <span className={`flex-1 ${visibleToast.type === 'error' ? 'text-destructive' : 'text-foreground'}`}>
             {visibleToast.message}
           </span>

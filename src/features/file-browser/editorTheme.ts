@@ -1,11 +1,12 @@
 /**
- * CodeMirror theme for Nerve's night and daylight worlds.
+ * CodeMirror theme for Nerve's themes.
  *
  * Chrome reads the app's --color-* tokens, so it follows whichever theme is
  * active. Syntax colours are CSS variables defined on the editor root, with a
- * daylight override keyed off html[data-theme="light"]; they match
- * public/hljs/nerve-dark.min.css and nerve-light.min.css and stay off
- * electric blue and cantaloupe, which carry live and operator state.
+ * daylight override keyed off html[data-theme="light"] and Workbench's text
+ * tones keyed off html[data-world="workbench"]; they match the vendored
+ * highlight.js themes in public/hljs and stay off the live blue and
+ * cantaloupe, which carry live and operator state.
  */
 
 import { EditorView } from '@codemirror/view';
@@ -35,6 +36,18 @@ const daylightSyntax = {
   '--cm-syn-deleted': '#9B2320',
 } as const;
 
+/** Workbench keeps the syntax hues and takes its own comment and heading tones (its ink and muted). */
+const workbenchNightSyntax = {
+  '--cm-syn-comment': '#8F96A3',
+  '--cm-syn-heading': '#F1F2F4',
+} as const;
+
+const workbenchPaperSyntax = {
+  '--cm-syn-comment': '#5C636F',
+  '--cm-syn-heading': '#000000',
+  '--cm-syn-deleted': '#9B2F1F',
+} as const;
+
 const raisedTint = 'color-mix(in srgb, var(--color-raised) 70%, transparent)';
 const neutralMark = 'color-mix(in srgb, var(--color-foreground) 14%, transparent)';
 const neutralMarkStrong = 'color-mix(in srgb, var(--color-foreground) 26%, transparent)';
@@ -52,6 +65,12 @@ export const nerveTheme = EditorView.theme(
     },
     'html[data-theme="light"] &': {
       ...daylightSyntax,
+    },
+    'html[data-world="workbench"] &': {
+      ...workbenchNightSyntax,
+    },
+    'html[data-world="workbench"][data-theme="light"] &': {
+      ...workbenchPaperSyntax,
     },
     '.cm-content': {
       padding: '8px 0',

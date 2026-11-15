@@ -416,6 +416,27 @@ describe('mergeRecoveredTail', () => {
       expect(result[2].failed).toBe(true);
     });
 
+    it('settles: merging the same history twice changes nothing the second time', () => {
+      const existing = [
+        historyRow('user', 'First', 'e1', T),
+        historyRow('assistant', 'Reply one', 'e2', T + 1000),
+        localPrompt('Not delivered', 'k2', T + 5000, 'failed'),
+        localPrompt('Still sending', 'k3', T + 70_000, 'pending'),
+      ];
+      const recovered = [
+        historyRow('user', 'First', 'e1', T),
+        historyRow('assistant', 'Reply one', 'e2', T + 1000),
+        historyRow('user', 'Second', 'e3', T + 60_000),
+        historyRow('assistant', 'Reply two', 'e4', T + 61_000),
+      ];
+
+      const once = mergeRecoveredTail(existing, recovered);
+      const twice = mergeRecoveredTail(once, recovered);
+
+      expect(texts(once)).toEqual(['First', 'Reply one', 'Not delivered', 'Second', 'Reply two', 'Still sending']);
+      expect(twice).toEqual(once);
+    });
+
     it('with no anchor, replaces the transcript but keeps prompts not recorded yet', () => {
       const existing = [
         liveRow('user', 'Old message 1', 1_000_000),

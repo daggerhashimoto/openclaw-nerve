@@ -129,10 +129,10 @@ export function createCommands(actions: CommandActions): Command[] {
     },
     {
       id: 'sound',
-      label: 'Toggle spoken replies',
+      label: 'Toggle sound effects',
       action: actions.onToggleSound,
       category: 'settings',
-      keywords: ['audio', 'mute', 'tts', 'voice'],
+      keywords: ['audio', 'mute', 'sfx'],
     },
     {
       id: 'settings',

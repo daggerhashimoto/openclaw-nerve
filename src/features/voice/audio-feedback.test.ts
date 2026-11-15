@@ -132,6 +132,16 @@ describe('audio-feedback', () => {
       expect(normalizeUiSoundVolume(2)).toBe(1);
       expect(normalizeUiSoundVolume(Number.NaN)).toBe(1);
     });
+
+    it('rounds UI sound volume to whole percent, so a value that reads 0% is silent', () => {
+      expect(normalizeUiSoundVolume(0.004)).toBe(0);
+      expect(normalizeUiSoundVolume(0.333)).toBe(0.33);
+      expect(normalizeUiSoundVolume(0.35)).toBe(0.35);
+
+      setUiSoundVolume(0.004);
+      playPing();
+      expect(mockStart).not.toHaveBeenCalled();
+    });
   });
 
   describe('UI sound volume', () => {

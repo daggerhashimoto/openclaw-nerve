@@ -7,10 +7,13 @@ let uiSoundVolume = 1;
 const bufferCache = new Map<string, AudioBuffer>();
 const loadingCache = new Map<string, Promise<AudioBuffer | null>>();
 
-/** Clamp a UI sound volume to 0 (silent) through 1 (full); anything that is not a finite number means full. */
+/**
+ * Clamp a UI sound volume to 0 (silent) through 1 (full), rounded to whole percent so the value the
+ * settings row shows is the value that plays; anything that is not a finite number means full.
+ */
 export function normalizeUiSoundVolume(volume: number): number {
   if (!Number.isFinite(volume)) return 1;
-  return Math.min(1, Math.max(0, volume));
+  return Math.round(Math.min(1, Math.max(0, volume)) * 100) / 100;
 }
 
 /**

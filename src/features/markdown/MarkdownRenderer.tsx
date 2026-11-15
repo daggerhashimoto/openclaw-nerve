@@ -3,6 +3,9 @@ import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import type { PluggableList } from 'unified';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
+// Imported here rather than from the app entry so the KaTeX stylesheet ships
+// in this lazily loaded chunk and stays out of the entry CSS.
+import 'katex/dist/katex.min.css';
 import { hljs } from '@/lib/highlight';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { escapeRegex } from '@/lib/constants';

@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Plus, RefreshCw } from 'lucide-react';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
+import { isUndeletableSessionKey } from './sessionDeletion';
 
 interface SessionListProps {
   sessions: Session[];
@@ -68,7 +69,7 @@ function findNodeByKey(nodes: ReturnType<typeof buildSessionTree>, key: string):
 
 /** Sidebar list of agent sessions with tree structure and context menus. */
 export function SessionList({ sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
-  const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string; descendantCount: number; isRootAgent: boolean } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string; descendantCount: number; isRootAgent: boolean; error?: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
@@ -79,13 +80,16 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget || !onDelete) return;
     setDeleting(true);
+    setDeleteTarget({ ...deleteTarget, error: undefined });
     try {
       await onDelete(deleteTarget.key);
+      setDeleteTarget(null);
     } catch (err) {
       console.error('Failed to delete session:', err);
+      // Keep the dialog open so the operator can see why nothing, or only part of the tree, was deleted.
+      setDeleteTarget({ ...deleteTarget, error: err instanceof Error ? err.message : String(err) });
     } finally {
       setDeleting(false);
-      setDeleteTarget(null);
     }
   }, [deleteTarget, onDelete]);
 
@@ -256,7 +260,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
               onPickColor={setAgentHue}
               onSelect={onSelect}
               onToggleExpand={handleToggleExpand}
-              onDelete={onDelete ? handleSetDeleteTarget : undefined}
+              onDelete={onDelete && !isUndeletableSessionKey(sessionKey) ? handleSetDeleteTarget : undefined}
               onStartRename={onRename ? startRename : undefined}
               onAbort={onAbort}
               onRenameChange={handleRenameChange}
@@ -283,6 +287,9 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
                 ? `This will permanently delete this session and ${deleteTarget.descendantCount} nested child session${deleteTarget.descendantCount === 1 ? '' : 's'}.`
                 : 'This will permanently delete the session and archive its transcript.'}
             </DialogDescription>
+            {deleteTarget?.error && (
+              <p role="alert" className="text-red text-xs break-words">{deleteTarget.error}</p>
+            )}
           </DialogHeader>
           <div className="rounded-[3px] border border-border bg-background px-3 py-2">
             <p className="mb-0.5 text-[0.8rem] text-muted-foreground">Session</p>

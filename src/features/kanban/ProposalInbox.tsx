@@ -1,28 +1,9 @@
 import { memo, useState, useEffect } from 'react';
-import { Check, X, ArrowUpCircle, PlusCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Check, X } from 'lucide-react';
+import { Pane } from '@/components/ui/Pane';
 import type { KanbanProposal } from './hooks/useProposals';
-import { TASK_STATUS_TONE } from './tone';
 
-/* ── Type badge ── */
-function TypeBadge({ type }: { type: 'create' | 'update' }) {
-  if (type === 'create') {
-    return (
-      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[0.667rem] font-semibold ${TASK_STATUS_TONE.done.badgeClass}`}>
-        <PlusCircle size={10} />
-        Create
-      </span>
-    );
-  }
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[0.667rem] font-semibold ${TASK_STATUS_TONE.todo.badgeClass}`}>
-      <ArrowUpCircle size={10} />
-      Update
-    </span>
-  );
-}
-
-/* ── Relative timestamp (ticks every 30s for live updates) ── */
+/* Relative timestamp (ticks every 30s for live updates) */
 function RelativeTime({ ts }: { ts: number }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -37,31 +18,24 @@ function RelativeTime({ ts }: { ts: number }) {
   else if (secs < 86400) label = `${Math.floor(secs / 3600)}h ago`;
   else label = `${Math.floor(secs / 86400)}d ago`;
 
-  return <span className="text-[0.667rem] text-muted-foreground tabular-nums">{label}</span>;
+  return <span className="font-mono tabular">{label}</span>;
 }
 
-/* ── Summary text ── */
+/* Summary: the title in Reading White, then what the proposal is in one muted line */
 function ProposalSummary({ proposal }: { proposal: KanbanProposal }) {
   const { type, payload } = proposal;
   if (type === 'create') {
     const title = (payload.title as string) || 'Untitled';
     const priority = payload.priority as string | undefined;
     const labels = payload.labels as string[] | undefined;
+    const parts = ['New task', priority, labels?.join(', ')].filter(Boolean);
     return (
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium text-foreground truncate">{title}</p>
-        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-          {priority && (
-            <span className="text-[0.667rem] text-muted-foreground">
-              {priority}
-            </span>
-          )}
-          {labels?.map((l) => (
-            <span key={l} className="text-[0.667rem] px-1 py-0 rounded bg-muted text-muted-foreground">
-              {l}
-            </span>
-          ))}
-        </div>
+        <p className="truncate text-[0.867rem] text-foreground">{title}</p>
+        <p className="flex flex-wrap gap-x-2 text-[0.8rem] text-muted-foreground">
+          {parts.map((part, i) => <span key={i} className="truncate">{part}</span>)}
+          <RelativeTime ts={proposal.proposedAt} />
+        </p>
       </div>
     );
   }
@@ -71,17 +45,18 @@ function ProposalSummary({ proposal }: { proposal: KanbanProposal }) {
   const changes = Object.keys(payload).filter((k) => k !== 'id');
   return (
     <div className="min-w-0 flex-1">
-      <p className="text-xs font-medium text-foreground truncate">
-        Update: <span className="font-mono text-[0.667rem] text-muted-foreground">{taskId.slice(0, 8)}</span>
+      <p className="truncate text-[0.867rem] text-foreground">
+        Update <span className="font-mono text-[0.8rem] text-muted-foreground">{taskId.slice(0, 8)}</span>
       </p>
-      <p className="text-[0.667rem] text-muted-foreground truncate">
-        Fields: {changes.join(', ') || 'none'}
+      <p className="flex flex-wrap gap-x-2 text-[0.8rem] text-muted-foreground">
+        <span className="truncate">{changes.length ? changes.join(', ') : 'no fields'}</span>
+        <RelativeTime ts={proposal.proposedAt} />
       </p>
     </div>
   );
 }
 
-/* ── Single proposal row ── */
+/* Single proposal row: a cantaloupe pane (it waits on you), the summary, Approve and Reject */
 function ProposalRow({
   proposal,
   onApprove,
@@ -112,45 +87,38 @@ function ProposalRow({
   };
 
   return (
-    <div className="flex items-start gap-3 border-b border-border/40 px-4 py-3 transition-colors last:border-b-0 hover:bg-primary/[0.04]">
-      <div className="flex flex-col items-start gap-1 shrink-0 pt-0.5">
-        <TypeBadge type={proposal.type} />
-        <RelativeTime ts={proposal.proposedAt} />
-      </div>
-
+    <div className="flex items-start gap-2 border-b border-border py-2 pl-3 pr-1 last:border-b-0">
+      <Pane state="operator" size="sm" label="Waiting on you" className="mt-[5px]" />
       <ProposalSummary proposal={proposal} />
-
-      <div className="flex items-center gap-1 shrink-0">
-        <Button
-          variant="outline"
-          size="xs"
+      <div className="flex shrink-0 items-center gap-0.5">
+        <button
+          type="button"
           onClick={handleApprove}
           disabled={acting}
           title="Approve"
           aria-label="Approve proposal"
-          className="border-green/30 bg-green/8 text-green hover:bg-green/12"
+          className="shell-chip disabled:opacity-50"
         >
           <Check size={14} />
           <span className="hidden sm:inline">Approve</span>
-        </Button>
-        <Button
-          variant="outline"
-          size="xs"
+        </button>
+        <button
+          type="button"
           onClick={handleReject}
           disabled={acting}
           title="Reject"
           aria-label="Reject proposal"
-          className="border-destructive/22 bg-destructive/8 text-destructive hover:bg-destructive/14"
+          className="shell-chip hover:text-destructive disabled:opacity-50"
         >
           <X size={14} />
           <span className="hidden sm:inline">Reject</span>
-        </Button>
+        </button>
       </div>
     </div>
   );
 }
 
-/* ── Main inbox panel ── */
+/* Main inbox panel */
 interface ProposalInboxProps {
   proposals: KanbanProposal[];
   onApprove: (id: string) => void | Promise<void>;
@@ -164,9 +132,8 @@ export const ProposalInbox = memo(function ProposalInbox({
 }: ProposalInboxProps) {
   if (proposals.length === 0) {
     return (
-      <div className="px-4 py-8 text-center">
-        <div className="cockpit-badge mx-auto w-fit">Inbox clear</div>
-        <p className="mt-3 text-sm text-muted-foreground">No pending proposals right now.</p>
+      <div className="px-3 py-6 text-center text-[0.8rem] text-muted-foreground">
+        No proposals waiting.
       </div>
     );
   }

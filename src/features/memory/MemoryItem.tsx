@@ -1,5 +1,5 @@
 /**
- * MemoryItem — Single memory row with edit and delete actions.
+ * MemoryItem: single memory row with edit and delete actions.
  *
  * Displays a memory item with type-specific styling. Sections are
  * collapsible (click to toggle). Daily entries and sections have
@@ -8,11 +8,11 @@
  * Supports optimistic update states:
  * - pending: Shows spinner, muted styling
  * - failed: Red highlight, shows error state
- * - deleting: Fade out animation
+ * - deleting: Dimmed while the delete settles
  */
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Calendar, Trash2, Pencil, Loader2, AlertCircle, ChevronRight, EllipsisVertical } from 'lucide-react';
+import { Trash2, Pencil, Loader2, AlertCircle, ChevronRight, EllipsisVertical } from 'lucide-react';
 import type { Memory } from '@/types';
 
 interface MemoryItemProps {
@@ -36,10 +36,12 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
     onDelete(memory.text, memory.type, memory.date);
   }, [memory.pending, memory.deleting, memory.text, memory.type, memory.date, onDelete]);
 
+  // Sections and daily files open their own editor; an item opens the section that holds it
+  // (the list hands items an onEdit that already points at the parent section).
   const handleEdit = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     if (memory.pending || memory.deleting) return;
-    if ((memory.type === 'section' || memory.type === 'daily') && onEdit) {
+    if (onEdit) {
       onEdit(memory.text, memory.type, memory.date);
     }
   }, [memory.pending, memory.deleting, memory.text, memory.type, memory.date, onEdit]);
@@ -61,7 +63,8 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
     (memory.type === 'section' && onToggleExpand) ||
     (memory.type === 'daily' && onEdit);
 
-  const isEditable = (memory.type === 'section' || memory.type === 'daily') && onEdit;
+  const isEditable = Boolean(onEdit);
+  const editTitle = memory.type === 'item' ? 'Edit in section' : memory.type === 'daily' ? 'Edit entry' : 'Edit section';
 
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsRef = useRef<HTMLDivElement>(null);
@@ -96,16 +99,19 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
 
   // Optimistic state styling
   const stateClasses = memory.deleting
-    ? 'opacity-50 scale-95 transition-all duration-300'
+    ? 'opacity-50'
     : memory.failed
-      ? 'bg-red/10 border-l-2 border-l-red'
+      ? 'bg-destructive/10'
       : memory.pending
         ? 'opacity-70'
         : '';
 
+  const ghostAction =
+    'grid size-6 shrink-0 place-items-center rounded-[3px] text-muted-foreground transition-colors duration-[120ms] hover:bg-raised';
+
   return (
     <div
-      className={`group relative flex items-center gap-2 px-3 py-1.5 border-b border-border/40 text-[0.733rem] hover:bg-foreground/[0.02] transition-colors ${
+      className={`group relative flex min-h-[var(--row-unit)] items-center gap-2 pl-3 pr-1.5 text-[0.867rem] transition-colors duration-[120ms] hover:bg-raised focus-visible:bg-raised ${
         isClickable && !memory.pending && !memory.deleting ? 'cursor-pointer' : ''
       } ${stateClasses}`}
       onClick={handleClick}
@@ -116,49 +122,44 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
     >
       {memory.type === 'section' ? (
         <>
-          <span
-            className={`shrink-0 text-primary/60 transition-transform duration-150 ${
-              isExpanded ? 'rotate-90' : ''
-            }`}
-          >
-            <ChevronRight size={12} />
-          </span>
-          <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-primary font-bold">
+          <ChevronRight
+            size={14}
+            aria-hidden="true"
+            className={`shrink-0 text-muted-foreground ${isExpanded ? 'rotate-90' : ''}`}
+          />
+          <span className="min-w-0 flex-1 truncate font-medium text-foreground">
             {memory.text}
           </span>
-          {!isExpanded && typeof itemCount === 'number' && itemCount > 0 && (
-            <span className="text-[0.6rem] text-muted-foreground/50 shrink-0">
+          {typeof itemCount === 'number' && itemCount > 0 && (
+            <span className="shrink-0 font-mono text-[0.8rem] text-muted-foreground tabular">
               {itemCount}
             </span>
           )}
         </>
       ) : memory.type === 'daily' ? (
         <>
-          <span className="text-muted-foreground shrink-0 text-[0.667rem] flex items-center">
-            <Calendar size={10} />
-          </span>
-          <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-            <span className="text-muted-foreground">{memory.date}</span> {memory.text}
-          </span>
-        </>
-      ) : (
-        <>
-          <span className="text-primary shrink-0 text-[0.667rem]">›</span>
-          <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground">
+          {/* A dated note: the date is a column, the title reads in foreground */}
+          <span className="shrink-0 pl-[22px] font-mono text-[0.8rem] text-muted-foreground tabular">{memory.date}</span>
+          <span className="min-w-0 flex-1 truncate text-foreground">
             {memory.text}
           </span>
         </>
+      ) : (
+        /* The item is the content: it reads in foreground and wraps to two lines before clipping */
+        <span className="line-clamp-2 min-w-0 flex-1 py-1 pl-[22px] leading-5 text-foreground">
+          {memory.text}
+        </span>
       )}
 
       {/* Status indicators for optimistic updates */}
       {memory.pending && (
-        <span className="shrink-0 text-primary animate-spin">
-          <Loader2 size={12} />
+        <span className="shrink-0 text-muted-foreground animate-spin">
+          <Loader2 size={14} />
         </span>
       )}
       {memory.failed && (
-        <span className="shrink-0 text-red" title="Operation failed">
-          <AlertCircle size={12} />
+        <span className="shrink-0 text-destructive" title="Operation failed">
+          <AlertCircle size={14} />
         </span>
       )}
 
@@ -167,56 +168,57 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
           <div ref={actionsRef} className="relative shrink-0">
             <button
               onClick={handleKebabToggle}
-              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+              className={`${ghostAction} hover:text-foreground`}
               title="Memory actions"
               aria-label="Memory actions"
               aria-expanded={actionsOpen}
             >
-              <EllipsisVertical size={13} />
+              <EllipsisVertical size={14} />
             </button>
 
             {actionsOpen && (
-              <div className="absolute right-0 top-full mt-1 flex items-center gap-0.5 bg-card border border-border/70 shadow-lg p-0.5 z-20">
+              <div className="absolute right-0 top-full z-20 mt-1 flex items-center gap-0.5 rounded-[3px] border border-border bg-popover p-0.5 shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
                 {isEditable && (
                   <button
                     onClick={handleEditFromMenu}
-                    className="p-1 text-muted-foreground hover:text-purple transition-colors"
-                    title="Edit section"
+                    className={`${ghostAction} hover:text-foreground`}
+                    title={editTitle}
                     aria-label="Edit memory"
                   >
-                    <Pencil size={12} />
+                    <Pencil size={14} />
                   </button>
                 )}
                 <button
                   onClick={handleDeleteFromMenu}
-                  className="p-1 text-muted-foreground hover:text-red transition-colors"
+                  className={`${ghostAction} hover:text-destructive`}
                   title="Delete memory"
                   aria-label="Delete memory"
                 >
-                  <Trash2 size={12} />
+                  <Trash2 size={14} />
                 </button>
               </div>
             )}
           </div>
         ) : (
           <>
-            {/* Edit button — visible on hover for editable items */}
+            {/* Edit button: revealed on hover or focus for editable items */}
             {isEditable && (
               <button
                 onClick={handleEdit}
-                className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-purple transition-all shrink-0"
-                title="Edit section"
+                className={`${ghostAction} opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100`}
+                title={editTitle}
+                aria-label="Edit memory"
               >
-                <Pencil size={12} />
+                <Pencil size={14} />
               </button>
             )}
-            {/* Delete button — visible on hover (not when pending/deleting) */}
+            {/* Delete button: revealed on hover or focus (not when pending/deleting) */}
             <button
               onClick={handleDelete}
-              className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-red transition-all shrink-0"
+              className={`${ghostAction} opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100`}
               title="Delete memory"
             >
-              <Trash2 size={12} />
+              <Trash2 size={14} />
             </button>
           </>
         )
@@ -234,5 +236,7 @@ export const MemoryItem = memo(MemoryItemInner, (prev, next) =>
   prev.memory.deleting === next.memory.deleting &&
   prev.isExpanded === next.isExpanded &&
   prev.itemCount === next.itemCount &&
-  prev.compact === next.compact
+  prev.compact === next.compact &&
+  prev.onEdit === next.onEdit &&
+  prev.onDelete === next.onDelete
 );

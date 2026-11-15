@@ -65,4 +65,22 @@ describe('NerveLogo', () => {
     expect(document.querySelector('canvas')).not.toBeInTheDocument();
     expect(globalThis.requestAnimationFrame).not.toHaveBeenCalled();
   });
+
+  it('animates with CSS only, never an animation loop', () => {
+    render(<NerveLogo size={64} />);
+
+    const logo = screen.getByRole('img', { name: /nerve logo/i });
+    expect(logo).not.toHaveAttribute('data-static-logo');
+    expect(logo.querySelector('style')).toBeInTheDocument();
+    expect(globalThis.requestAnimationFrame).not.toHaveBeenCalled();
+  });
+
+  it('uses the bold small-size cut at 32px and below', () => {
+    const { container, unmount } = render(<NerveLogo size={24} static />);
+    expect(container.querySelector('svg')).toHaveAttribute('viewBox', '8.5 8.5 47 47');
+    unmount();
+
+    const large = render(<NerveLogo size={64} static />);
+    expect(large.container.querySelector('svg')).toHaveAttribute('viewBox', '5.5 5.5 53 53');
+  });
 });

@@ -10,7 +10,7 @@ export interface RunState {
   lastFrameSeq: number | null;
   /** Raw (uncleaned) accumulated text; protocol v4 `deltaText` appends to it */
   bufferRaw: string;
-  /** Cleaned delta text (TTS/chart markers stripped) — used for display */
+  /** Cleaned delta text (TTS/chart markers stripped): used for display */
   bufferText: string;
   finalized: boolean;
   /** Set once a started/status/delta frame has begun the turn */

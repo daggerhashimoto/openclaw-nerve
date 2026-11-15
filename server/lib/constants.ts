@@ -13,6 +13,13 @@ export const REPLICATE_BASE_URL = process.env.REPLICATE_BASE_URL || 'https://api
 // ─── API endpoints (derived from base URLs) ──────────────────────────────────
 
 export const OPENAI_TTS_URL = `${OPENAI_BASE_URL}/audio/speech`;
+/** The Realtime API socket for the same base, so a proxy or compatible provider keeps working. */
+export const OPENAI_REALTIME_URL = realtimeSocketUrl(OPENAI_BASE_URL);
+
+/** `https://host/v1` becomes `wss://host/v1/realtime` (and http becomes ws). */
+export function realtimeSocketUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/, '').replace(/^http/i, 'ws')}/realtime`;
+}
 export const OPENAI_WHISPER_URL = `${OPENAI_BASE_URL}/audio/transcriptions`;
 export const REPLICATE_QWEN_TTS_URL = `${REPLICATE_BASE_URL}/models/qwen/qwen3-tts/predictions`;
 

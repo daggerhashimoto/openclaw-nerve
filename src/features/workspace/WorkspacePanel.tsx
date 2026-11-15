@@ -1,5 +1,5 @@
 /**
- * WorkspacePanel — Tabbed container replacing the standalone MemoryList.
+ * WorkspacePanel: tabbed container replacing the standalone MemoryList.
  * Tabs: Memory, Crons, Kanban, Config (with Files/Skills sub-views)
  * Active tab persisted in localStorage. Content lazy-loaded per tab.
  * Tab action buttons (add, refresh) render in the tab bar header.
@@ -8,6 +8,14 @@
 import { useState, useCallback, lazy, Suspense, useEffect } from 'react';
 import { WorkspaceTabs, type TabId } from './WorkspaceTabs';
 import { CronsTab, ConfigTab, SkillsTab } from './tabs';
+import {
+  CONFIG_SELECT_MENU_CLASS,
+  CONFIG_SELECT_TRIGGER_CLASS,
+  SKILLS_VIEW_OPTION,
+  configFileOptions,
+  rememberSelectedConfigFile,
+} from './tabs/configFiles';
+import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useCrons } from './hooks/useCrons';
 import { getWorkspaceStorageKey } from './workspaceScope';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -23,6 +31,8 @@ const KanbanQuickView = lazy(() =>
 const CONFIG_VIEW_KEY = 'nerve-config-view';
 
 type ConfigView = 'files' | 'skills';
+
+const CONFIG_PICKER_OPTIONS = [...configFileOptions(), SKILLS_VIEW_OPTION];
 
 function getInitialConfigView(agentId: string): ConfigView {
   try {
@@ -60,7 +70,11 @@ interface ConfigWithSkillsProps {
   cronWarning?: string | null;
 }
 
-/** Combined Config tab with Files/Skills sub-view toggle. */
+/**
+ * Combined Config tab. One picker on the header row names what the panel shows: one of the
+ * workspace files, or the installed skills. ConfigTab owns the picker while a file is open
+ * (it guards unsaved edits); the Skills view carries the same picker so the control never moves.
+ */
 function ConfigWithSkills({ agentId, cronWarning = null }: ConfigWithSkillsProps) {
   const [view, setView] = useState<ConfigView>(() => getInitialConfigView(agentId));
 
@@ -69,27 +83,44 @@ function ConfigWithSkills({ agentId, cronWarning = null }: ConfigWithSkillsProps
     persistConfigView(nextView, agentId);
   }, [agentId]);
 
+  const handleFileViewChange = useCallback((value: string) => {
+    if (value === SKILLS_VIEW_OPTION.value) switchView('skills');
+  }, [switchView]);
+
+  const handleSkillsPickerChange = useCallback((value: string) => {
+    if (value === SKILLS_VIEW_OPTION.value) return;
+    rememberSelectedConfigFile(agentId, value);
+    switchView('files');
+  }, [agentId, switchView]);
+
+  if (view === 'files') {
+    return (
+      <ConfigTab
+        key={agentId}
+        agentId={agentId}
+        cronWarning={cronWarning}
+        viewOptions={[SKILLS_VIEW_OPTION]}
+        onViewChange={handleFileViewChange}
+      />
+    );
+  }
+
   return (
-    <div className="h-full flex flex-col min-h-0">
-      <div className="flex items-center gap-0.5 px-2 py-1 border-b border-border/40">
-        {(['files', 'skills'] as const).map(nextView => (
-          <button
-            key={nextView}
-            onClick={() => switchView(nextView)}
-            className={`text-[0.667rem] uppercase tracking-wider px-2 py-0.5 rounded-sm border-0 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 ${
-              view === nextView
-                ? 'bg-purple/15 text-purple font-semibold'
-                : 'bg-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {nextView}
-          </button>
-        ))}
-      </div>
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {view === 'files' ? <ConfigTab key={agentId} agentId={agentId} cronWarning={cronWarning} /> : <SkillsTab key={agentId} agentId={agentId} />}
-      </div>
-    </div>
+    <SkillsTab
+      key={agentId}
+      agentId={agentId}
+      picker={(
+        <InlineSelect
+          inline
+          value={SKILLS_VIEW_OPTION.value}
+          onChange={handleSkillsPickerChange}
+          options={CONFIG_PICKER_OPTIONS}
+          ariaLabel="Select config file"
+          triggerClassName={CONFIG_SELECT_TRIGGER_CLASS}
+          menuClassName={CONFIG_SELECT_MENU_CLASS}
+        />
+      )}
+    />
   );
 }
 
@@ -181,7 +212,7 @@ export function WorkspacePanel({
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className={activeTab === 'memory' ? 'h-full' : 'hidden'} hidden={activeTab !== 'memory'} role="tabpanel" id="workspace-tabpanel-memory" aria-labelledby="workspace-tab-memory">
           {visitedTabs.has('memory') && (
-            <Suspense fallback={<div className="flex items-center justify-center text-muted-foreground text-xs p-4">Loading…</div>}>
+            <Suspense fallback={<div className="flex items-center justify-center text-muted-foreground text-[0.8rem] p-4">Loading…</div>}>
               <MemoryList
                 key={workspaceAgentId}
                 agentId={workspaceAgentId}
@@ -206,7 +237,7 @@ export function WorkspacePanel({
         {kanbanVisible && (
           <div className={activeTab === 'kanban' ? 'h-full' : 'hidden'} hidden={activeTab !== 'kanban'} role="tabpanel" id="workspace-tabpanel-kanban" aria-labelledby="workspace-tab-kanban">
             {visitedTabs.has('kanban') && (
-              <Suspense fallback={<div className="flex items-center justify-center text-muted-foreground text-xs p-4">Loading...</div>}>
+              <Suspense fallback={<div className="flex items-center justify-center text-muted-foreground text-[0.8rem] p-4">Loading...</div>}>
                 <KanbanQuickView
                   onOpenBoard={onOpenBoard ?? (() => {})}
                   onOpenTask={(task) => onOpenTask ? onOpenTask(task.id) : onOpenBoard?.()}

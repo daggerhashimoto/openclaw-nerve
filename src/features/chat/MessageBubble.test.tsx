@@ -25,8 +25,8 @@ function makeMessage(overrides: Partial<ChatMsg> = {}): ChatMsg {
 }
 
 describe('MessageBubble', () => {
-  it('right-anchors user bubbles while keeping message text left-aligned', () => {
-    const { container } = render(
+  it('heads operator messages with a "You" line and sets the text in a left-aligned plate', () => {
+    const { container, getByText } = render(
       <MessageBubble
         msg={makeMessage()}
         index={0}
@@ -38,13 +38,36 @@ describe('MessageBubble', () => {
     );
 
     const bubble = container.querySelector('.msg-user');
+    const plate = container.querySelector('.msg-user .bg-message-user');
     const body = container.querySelector('.msg-body');
 
     expect(bubble).toBeTruthy();
-    expect(bubble?.className).toContain('ml-auto');
-    expect(bubble?.className).toContain('w-fit');
+    expect(getByText('You')).toBeTruthy();
+    expect(bubble?.querySelector('.pane[data-state="operator"]')).toBeTruthy();
+    expect(plate).toBeTruthy();
+    expect(plate?.className).toContain('w-full');
+    // The operator's whole turn sits on the plate: the name line is inside it
+    expect(plate?.textContent).toContain('You');
     expect(body).toBeTruthy();
+    expect(plate?.contains(body)).toBe(true);
     expect(body?.className).toContain('text-left');
+  });
+
+  it('leads assistant messages with the agent name and a dark pane once done', () => {
+    const { container, getByText } = render(
+      <MessageBubble
+        msg={makeMessage({ role: 'assistant', rawText: 'Done.' })}
+        index={0}
+        isCollapsed={false}
+        isMemoryCollapsed={false}
+        onToggleCollapse={() => {}}
+        onToggleMemory={() => {}}
+        agentName="Jen (main)"
+      />,
+    );
+
+    expect(getByText('Jen (main)')).toBeTruthy();
+    expect(container.querySelector('.msg-assistant .pane[data-state="off"]')).toBeTruthy();
   });
 
   it('re-renders when onOpenWorkspacePath changes', async () => {
@@ -123,7 +146,7 @@ describe('MessageBubble', () => {
 
     await waitFor(() => {
       expect(getByText('capture.mov')).toBeTruthy();
-      expect(getByText('Local File')).toBeTruthy();
+      expect(getByText('Local file')).toBeTruthy();
       expect(getByText('/workspace/capture.mov')).toBeTruthy();
     });
   });

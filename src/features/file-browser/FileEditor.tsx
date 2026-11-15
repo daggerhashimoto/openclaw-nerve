@@ -1,5 +1,5 @@
 /**
- * FileEditor — CodeMirror 6 wrapper for editing workspace files.
+ * FileEditor: CodeMirror 6 wrapper for editing workspace files.
  *
  * Lazy-loaded (only imported when a file tab is opened).
  * Features: syntax highlighting, line numbers, search (Ctrl+F),
@@ -12,7 +12,8 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLi
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { search, searchKeymap } from '@codemirror/search';
 import { bracketMatching, foldGutter } from '@codemirror/language';
-import { Loader2, AlertTriangle, RotateCw, LockKeyhole } from 'lucide-react';
+import { Loader2, AlertTriangle, RotateCw } from 'lucide-react';
+import { Pane } from '@/components/ui/Pane';
 import { nerveTheme, nerveHighlighting } from './editorTheme';
 import { getLanguageExtension, shouldWrap } from './utils/languageMap';
 import type { OpenFile } from './types';
@@ -76,7 +77,7 @@ export function FileEditor({ file, onContentChange, onSave, onRetry }: FileEdito
             );
           }
         }),
-        // readOnly via compartment — can be reconfigured without recreating
+        // readOnly via compartment: can be reconfigured without recreating
         readOnlyCompartment.current.of(EditorState.readOnly.of(false)),
       ];
 
@@ -121,7 +122,7 @@ export function FileEditor({ file, onContentChange, onSave, onRetry }: FileEdito
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file.path, file.loading, file.error]);
 
-  // Toggle readOnly via compartment reconfiguration — no editor recreate
+  // Toggle readOnly via compartment reconfiguration, no editor recreate
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -153,7 +154,7 @@ export function FileEditor({ file, onContentChange, onSave, onRetry }: FileEdito
   // Loading state
   if (file.loading) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-xs gap-2">
+      <div className="flex items-center justify-center h-full text-muted-foreground text-[0.8rem] gap-2">
         <Loader2 className="animate-spin" size={14} />
         Loading {file.name}...
       </div>
@@ -163,17 +164,17 @@ export function FileEditor({ file, onContentChange, onSave, onRetry }: FileEdito
   // Error state
   if (file.error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
-        <AlertTriangle size={24} className="text-destructive" />
-        <div className="text-sm">
+      <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
+        <AlertTriangle size={16} className="text-destructive" />
+        <div className="text-[0.867rem]">
           Failed to load <span className="font-mono text-foreground">{file.name}</span>
         </div>
-        <div className="text-xs">{file.error}</div>
+        <div className="text-[0.8rem]">{file.error}</div>
         <button
           onClick={() => onRetry(file.path)}
-          className="flex items-center gap-1.5 text-xs text-primary hover:underline mt-1"
+          className="mt-1 inline-flex min-h-[var(--row-unit)] items-center gap-1.5 rounded-[3px] px-2 text-[0.867rem] text-foreground transition-colors duration-[120ms] hover:bg-raised"
         >
-          <RotateCw size={12} />
+          <RotateCw size={14} />
           Retry
         </button>
       </div>
@@ -183,18 +184,17 @@ export function FileEditor({ file, onContentChange, onSave, onRetry }: FileEdito
   return (
     <div className="h-full flex flex-col min-h-0 relative">
       {/* CodeMirror container */}
-      <div ref={containerRef} className={`flex-1 min-h-0 overflow-hidden transition-opacity duration-200 ${file.locked ? 'opacity-30' : ''}`} />
+      <div ref={containerRef} className={`flex-1 min-h-0 overflow-hidden transition-opacity duration-[120ms] ${file.locked ? 'opacity-30' : ''}`} />
 
-      {/* Lock overlay — centered over dimmed editor */}
+      {/* Lock overlay: centered over the dimmed editor while the agent writes */}
       {file.locked && (
         <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none" role="status" aria-live="polite">
-          <div className="flex items-center gap-3 px-5 py-3 rounded-lg bg-background/90 border border-primary/30 shadow-lg shadow-primary/5 pointer-events-auto">
-            <LockKeyhole size={16} className="text-primary shrink-0" />
+          <div className="flex items-center gap-3 rounded-[3px] border border-border bg-popover px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.32)] pointer-events-auto">
+            <Pane state="live" />
             <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-foreground">AI is editing this file</span>
-              <span className="text-[0.733rem] text-muted-foreground">Editor locked until changes complete</span>
+              <span className="text-[0.867rem] font-medium text-live-text">Agent is editing this file</span>
+              <span className="text-[0.8rem] text-muted-foreground">Editor locked until changes complete</span>
             </div>
-            <span className="text-primary animate-pulse text-lg leading-none ml-1">···</span>
           </div>
         </div>
       )}

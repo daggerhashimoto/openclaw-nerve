@@ -1,9 +1,12 @@
+import { nameHueStyle } from '@/lib/agentColors';
 import { useState, useCallback, lazy, Suspense, memo } from 'react';
+import { Check, ChevronDown, ChevronRight, Code, Copy, Mic } from 'lucide-react';
+import { Pane } from '@/components/ui/Pane';
+import type { PaneState } from '@/lib/paneState';
 import { MemoriesSection } from './MemoriesSection';
 import { ImageLightbox } from './ImageLightbox';
 import { isMessageCollapsible } from './types';
 import { decodeHtmlEntities } from '@/lib/formatting';
-import { isStructuredMarkdown } from '@/lib/text/isStructuredMarkdown';
 import type { ChatMsg } from './types';
 import type { BeadLinkTarget } from '@/features/beads';
 
@@ -20,16 +23,6 @@ function extractMemories(rawText: string): { memories: string | null; content: s
     return { memories, content };
   }
   return { memories: null, content: rawText };
-}
-
-function formatMissionTime(msgTime: Date, firstTime: Date | null): string {
-  if (!firstTime) return '';
-  const diff = Math.max(0, msgTime.getTime() - firstTime.getTime());
-  const totalSec = Math.floor(diff / 1000);
-  const h = Math.floor(totalSec / 3600).toString().padStart(2, '0');
-  const m = Math.floor((totalSec % 3600) / 60).toString().padStart(2, '0');
-  const s = (totalSec % 60).toString().padStart(2, '0');
-  return `T+${h}:${m}:${s}`;
 }
 
 function formatBytes(bytes: number): string {
@@ -51,44 +44,40 @@ interface MessageBubbleProps {
   searchQuery?: string;
   isCurrentMatch?: boolean;
   agentName?: string;
+  /** Identity hue of the agent family; tints the assistant's pane while it is off. */
+  agentHue?: string;
   onOpenWorkspacePath?: (path: string) => void | Promise<void>;
   pathLinkPrefixes?: string[];
   pathLinkAliases?: Record<string, string>;
   onOpenBeadId?: (target: BeadLinkTarget) => void | Promise<void>;
 }
 
-const borderClass = (role: string) => {
-  if (role === 'user') return 'border-l-primary';
-  if (role === 'assistant') return 'border-l-green';
-  return 'border-l-muted-foreground';
+/** Accessible names for the assistant pane when it is lit. */
+const ASSISTANT_PANE_LABEL: Partial<Record<PaneState, string>> = {
+  live: 'Writing',
+  error: 'Failed',
 };
 
-const bgClass = (role: string) => {
-  if (role === 'user') return 'bg-message-user';
-  if (role === 'assistant') return 'bg-message-assistant';
-  if (role === 'system' || role === 'event') return 'bg-message-system';
-  return '';
-};
+/** System lines that report a failure (gateway turn errors, send and reset errors, history load errors). */
+const SYSTEM_FAILURE = /^[^\p{L}\p{N}]*(?:send error|reset failed|failed to load history|this turn ended before a reply|error\b|failed\b)/iu;
 
-function RoleBadge({ role, agentName = 'Agent' }: { role: string; agentName?: string }) {
-  if (role === 'user') {
-    return <span className="cockpit-badge" data-tone="primary">Operator</span>;
-  }
-  if (role === 'assistant') {
-    return <span className="cockpit-badge" data-tone="success">{agentName}</span>;
-  }
-  if (role === 'event') {
-    return <span className="cockpit-badge" data-tone="warning">Event</span>;
-  }
-  return <span className="cockpit-badge">System</span>;
-}
+/** Shared header line geometry: one row unit, name, time, then quiet extras. */
+const headerRowClass = 'flex min-h-[var(--row-unit)] min-w-0 items-center gap-2';
 
-function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, firstMessageTime, searchQuery, isCurrentMatch, agentName, onOpenWorkspacePath, pathLinkPrefixes, pathLinkAliases, onOpenBeadId }: MessageBubbleProps) {
+/** Expand/collapse toggle surface inside a header line. */
+const headerToggleClass =
+  'flex min-w-0 flex-1 cursor-pointer select-none items-center gap-2 rounded-sm';
+
+const timeClass = 'shrink-0 font-mono text-[0.8rem] tabular text-muted-foreground';
+
+/** Matches a fenced code block marker in raw message text. */
+const CODE_FENCE = /`{3}/;
+
+function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, searchQuery, isCurrentMatch, agentName, agentHue, onOpenWorkspacePath, pathLinkPrefixes, pathLinkAliases, onOpenBeadId }: MessageBubbleProps) {
   const isUser = msg.role === 'user';
   const isAssistant = msg.role === 'assistant';
   const isSystem = msg.role === 'system' || msg.role === 'event';
   const timeStr = msg.timestamp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  const missionTime = formatMissionTime(msg.timestamp, firstMessageTime ?? null);
   const isCollapsible = isMessageCollapsible(msg);
   const [copied, setCopied] = useState(false);
   const [sysExpanded, setSysExpanded] = useState(false);
@@ -105,25 +94,27 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
     }
   }, [msg.rawText]);
 
-  // System notification strip (subagent/cron completions) — collapsible, not a full bubble
+  // System notification strip (subagent/cron completions): collapsible, not a full message
   if (msg.isSystemNotification) {
-    const statusIcon = msg.systemLabel?.includes('failed') || msg.systemLabel?.includes('timed out') ? '⚠' : '⚡';
+    const failed = Boolean(msg.systemLabel?.includes('failed') || msg.systemLabel?.includes('timed out'));
     return (
-      <div className="group relative border-b border-border/20">
+      <div className="group relative">
         <button
           type="button"
           onClick={() => setSysExpanded(!sysExpanded)}
           aria-expanded={sysExpanded}
-          className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-4 py-2 text-[0.733rem] text-muted-foreground transition-colors hover:bg-secondary/50"
+          className={`${headerRowClass} w-full cursor-pointer rounded-sm border-0 bg-transparent text-left text-[0.8rem] text-muted-foreground transition-colors duration-[120ms] hover:text-foreground`}
         >
-          <span className={`shrink-0 w-3 transition-transform ${sysExpanded ? 'rotate-90' : ''}`}>›</span>
-          <span>{statusIcon}</span>
-          <span className="truncate font-medium text-info">{msg.systemLabel || 'System notification'}</span>
-          <span className="ml-auto shrink-0 font-mono text-[0.667rem] text-info/40">{timeStr}</span>
+          <Pane state={failed ? 'error' : 'off'} size="sm" label={failed ? 'Failed' : undefined} />
+          <span className="min-w-0 truncate font-medium">{msg.systemLabel || 'System notification'}</span>
+          <span className={`ml-auto ${timeClass}`}>{timeStr}</span>
+          {sysExpanded
+            ? <ChevronDown size={14} className="shrink-0" aria-hidden="true" />
+            : <ChevronRight size={14} className="shrink-0" aria-hidden="true" />}
         </button>
         {sysExpanded && (
-          <div className="max-h-[300px] overflow-y-auto border-t border-border/20 bg-secondary/30 px-8 py-3 text-[0.8rem] text-muted-foreground">
-            <pre className="whitespace-pre-wrap font-mono text-[0.667rem] leading-relaxed">{msg.rawText}</pre>
+          <div className="mb-2 max-h-[300px] overflow-y-auto rounded-[3px] border border-border bg-card px-3 py-2">
+            <pre className="whitespace-pre-wrap font-mono text-[0.8rem] leading-relaxed text-muted-foreground">{msg.rawText}</pre>
           </div>
         )}
       </div>
@@ -158,9 +149,9 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
 
   const memoryCollapsedKey = memoryKey ?? `mem-${msg.msgId || msg.tempId || index}`;
 
-  // Visual indicator for current search match
-  const matchClass = isCurrentMatch ? 'ring-2 ring-primary/60 ring-offset-1 ring-offset-background' : '';
-  
+  // Visual indicator for current search match: the operator's own find
+  const matchClass = isCurrentMatch ? 'rounded-[3px] ring-1 ring-operator/60 ring-offset-4 ring-offset-background' : '';
+
   // Pending/failed state classes for optimistic updates
   const pendingClass = msg.pending ? 'msg-pending' : '';
   const failedClass = msg.failed ? 'msg-failed' : '';
@@ -168,38 +159,43 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
   // Intermediate assistant messages: narration between tool calls, not the final answer
   const isIntermediate = msg.intermediate && isAssistant;
 
-  // Thinking bubbles: collapsible, dimmed, with thinking icon
+  const toggleOnKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleCollapse(index); }
+  };
+
+  // Thinking: a quiet, collapsible line; the trace opens beneath a 1px rule
   if (msg.isThinking) {
     return (
-      <div className="group msg msg-assistant relative max-w-full break-words mx-4 my-0.5">
+      <div className="group msg msg-assistant relative max-w-full break-words pl-6">
         <div
           role="button"
           tabIndex={0}
           aria-expanded={!isCollapsed}
-          className="flex items-start gap-2 rounded-2xl border border-primary/10 bg-primary/[0.03] px-3 py-2 transition-colors cursor-pointer select-none hover:border-primary/18 hover:bg-primary/[0.05]"
+          className={`${headerRowClass} cursor-pointer select-none rounded-sm text-[0.8rem] text-muted-foreground transition-colors duration-[120ms] hover:text-foreground`}
           onClick={() => onToggleCollapse(index)}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleCollapse(index); } }}
+          onKeyDown={toggleOnKey}
         >
-          <span className={`mt-0.5 w-3 shrink-0 text-[0.667rem] text-primary/60 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}>›</span>
-          <span className="mt-0.5 shrink-0 text-[0.667rem] text-primary/60">💭</span>
-          <span className="shrink-0 text-[0.733rem] font-medium text-primary/78">Thinking</span>
-          {msg.thinkingDurationMs && (
-            <span className="shrink-0 text-[0.667rem] tabular-nums text-primary/52">
-              • {msg.thinkingDurationMs >= 1000
+          {isCollapsed
+            ? <ChevronRight size={14} className="shrink-0" aria-hidden="true" />
+            : <ChevronDown size={14} className="shrink-0" aria-hidden="true" />}
+          <span className="shrink-0 font-medium">Thinking</span>
+          {msg.thinkingDurationMs ? (
+            <span className="shrink-0 font-mono tabular">
+              {msg.thinkingDurationMs >= 1000
                 ? `${(msg.thinkingDurationMs / 1000).toFixed(1)}s`
                 : `${msg.thinkingDurationMs}ms`}
             </span>
-          )}
+          ) : null}
           {isCollapsed && (
-            <span className="min-w-0 flex-1 truncate text-[0.667rem] italic text-primary/44">
+            <span className="min-w-0 flex-1 truncate italic">
               {msg.rawText.slice(0, 100)}{msg.rawText.length > 100 ? '…' : ''}
             </span>
           )}
-          <span className="mt-0.5 shrink-0 font-mono text-[0.667rem] tabular-nums text-primary/36">{timeStr}</span>
+          <span className={`ml-auto ${timeClass}`}>{timeStr}</span>
         </div>
         {!isCollapsed && (
-          <div className="ml-3 border-l border-primary/12 px-3 pb-2 pt-1 text-[0.8rem] text-foreground/70 msg-body-intermediate">
-            <Suspense fallback={<span className="text-muted-foreground text-xs">…</span>}>
+          <div className="mb-1 ml-[7px] border-l border-border pb-1 pl-3 text-foreground msg-body-intermediate">
+            <Suspense fallback={<span className="text-[0.8rem] text-muted-foreground">Loading</span>}>
               <MarkdownRenderer content={msg.rawText} searchQuery={searchQuery} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
             </Suspense>
           </div>
@@ -208,151 +204,205 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
     );
   }
 
-  // Intermediate messages get a compact, de-emphasized render
+  // Intermediate messages: muted, smaller, no chrome
   if (isIntermediate) {
     return (
-      <div className="group msg msg-assistant relative max-w-full break-words mx-4 my-0.5">
+      <div className="group msg msg-assistant relative max-w-full break-words pl-6">
         <div
           role="button"
           tabIndex={0}
           aria-expanded={!isCollapsed}
-          className="flex items-start gap-2 cursor-pointer select-none hover:bg-foreground/[0.02] transition-colors py-1 px-2 rounded"
+          className="flex min-h-[var(--row-unit)] cursor-pointer select-none items-start gap-2 rounded-sm py-[5px] text-[0.8rem] leading-[18px] text-muted-foreground transition-colors duration-[120ms] hover:text-foreground"
           onClick={() => onToggleCollapse(index)}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleCollapse(index); } }}
+          onKeyDown={toggleOnKey}
         >
-          <span className={`text-muted-foreground text-[0.667rem] shrink-0 w-3 mt-0.5 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}>›</span>
-          <span className="text-muted-foreground/50 text-[0.667rem] shrink-0 mt-0.5">💬</span>
+          {isCollapsed
+            ? <ChevronRight size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+            : <ChevronDown size={14} className="mt-0.5 shrink-0" aria-hidden="true" />}
           {isCollapsed ? (
-            <span className="text-muted-foreground/70 text-[0.733rem] truncate flex-1 min-w-0 italic">
+            <span className="min-w-0 flex-1 truncate">
               {msg.rawText.split('\n').find(l => l.trim())?.slice(0, 100) || msg.rawText.slice(0, 100)}
               {msg.rawText.length > 100 ? '…' : ''}
             </span>
           ) : (
-            <div className="text-muted-foreground/70 text-[0.8rem] flex-1 min-w-0 msg-body-intermediate">
-              <Suspense fallback={<span className="text-muted-foreground text-xs">…</span>}>
+            <div className="min-w-0 flex-1 text-foreground msg-body-intermediate">
+              <Suspense fallback={<span className="text-[0.8rem] text-muted-foreground">Loading</span>}>
                 <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
               </Suspense>
             </div>
           )}
-          <span className="text-muted-foreground/40 text-[0.667rem] shrink-0 tabular-nums mt-0.5">{timeStr}</span>
+          <span className={timeClass}>{timeStr}</span>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className={`group msg msg-${msg.role} relative max-w-full break-words ${isUser ? 'ml-auto w-fit max-w-full overflow-visible flex flex-col sm:max-w-[72ch]' : 'overflow-hidden'} ${bgClass(msg.role)} ${matchClass} ${pendingClass} ${failedClass}`}>
-      {/* Collapsible memories section for user messages */}
-      {isUser && memories && (
-        <MemoriesSection
-          memories={memories}
-          isCollapsed={isMemoryCollapsed}
-          onToggle={() => onToggleMemory(memoryCollapsedKey)}
-        />
+  // Header line: pane, who, when. The operator is warm; the agent is lit while it writes;
+  // a system line is dark unless it reports a failure, then its pane is red.
+  const isNote = !isUser && !isAssistant;
+  const systemFailed = isNote && (Boolean(msg.failed) || SYSTEM_FAILURE.test((msg.rawText || msg.html || '').replace(/<[^>]*>/g, '')));
+  const paneState: PaneState | null = isUser
+    ? 'operator'
+    : isAssistant
+      ? (msg.failed ? 'error' : msg.streaming ? 'live' : 'off')
+      : (systemFailed ? 'error' : 'off');
+  const speaker = isUser
+    ? 'You'
+    : isAssistant
+      ? (agentName || 'Agent')
+      : msg.role === 'event' ? 'Event' : 'System';
+  // The operator's plate already says who is speaking, so "You" stays in reading white and the
+  // agent's name carries its family colour (the same hue as its pane).
+  const speakerClass = isUser
+    ? 'shrink-0 font-display font-semibold text-foreground'
+    : isAssistant
+      ? 'min-w-0 truncate font-display font-semibold text-foreground'
+      : 'shrink-0 font-medium';
+
+  const images = msg.images && msg.images.length > 0 && !(isAssistant && msg.extractedImages && msg.extractedImages.length > 0) && (
+    <div className="mb-2 flex flex-wrap gap-2">
+      {msg.images.map((img, j) =>
+        isAssistant ? (
+          <ImageLightbox key={j} src={img.preview} alt={img.name || 'image'} thumbnailClassName="max-w-[200px] max-h-[150px] cursor-pointer rounded-[3px] border border-border object-contain transition-colors duration-[120ms] hover:border-pane-edge" />
+        ) : (
+          <img key={j} src={img.preview} alt={img.name || 'image'} className="max-w-[200px] max-h-[150px] rounded-[3px] border border-border object-contain" />
+        )
       )}
-      {/* Message header — click to collapse/expand */}
-      <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={!isCollapsed}
-        className={`flex items-center py-1.5 gap-2 cursor-pointer select-none hover:bg-foreground/[0.02] transition-colors ${isUser ? 'px-3 sm:px-4 flex-row-reverse' : 'px-3 sm:px-4'}`}
-        onClick={() => onToggleCollapse(index)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleCollapse(index); } }}
-      >
-        <span className={`text-muted-foreground text-xs shrink-0 w-3 transition-transform ${!isCollapsed ? 'rotate-90' : ''} ${isUser ? 'rotate-180' : ''} ${!isCollapsed && isUser ? '-rotate-90' : ''}`}>›</span>
-        <RoleBadge role={msg.role} agentName={agentName} />
-        {isCollapsed && preview && (
-          <span className="text-muted-foreground text-[0.667rem] opacity-60 overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0">
-            {isSystem && msg.rawText && /```/.test(msg.rawText) && (
-              <span className="text-orange/70 mr-1" title="Contains code">{'</>'}</span>
-            )}
-            {preview}
-          </span>
+    </div>
+  );
+
+  const body = displayContent && (
+    <div className={`msg-body text-foreground ${isUser ? 'block w-full min-w-0 max-w-full text-left' : ''}`}>
+      <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading</div>}>
+        <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
+      </Suspense>
+    </div>
+  );
+
+  const attachments = msg.uploadAttachments && msg.uploadAttachments.length > 0 && (
+    <div className="mt-2 flex flex-col gap-1.5">
+      {msg.uploadAttachments.map((attachment) => (
+        <div key={attachment.id} className="rounded-[3px] border border-border bg-card px-2.5 py-1.5 text-[0.8rem] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-foreground">{attachment.name}</span>
+            <span className="cockpit-badge">
+              {attachment.mode === 'file_reference' ? 'Local file' : 'Inline'}
+            </span>
+            <span className="font-mono tabular">{formatBytes(attachment.sizeBytes)}</span>
+            <span className="font-mono">{attachment.mimeType}</span>
+          </div>
+          {attachment.reference?.path && (
+            <div className="mt-1 break-all font-mono text-[0.8rem] text-muted-foreground">{attachment.reference.path}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
+  // Header line: pane in the gutter, who, when, then the quiet extras; click to collapse or expand
+  const header = (
+      <div className={`${headerRowClass} ${isSystem ? 'text-[0.8rem]' : 'text-[0.867rem]'}`}>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={!isCollapsed}
+          className={headerToggleClass}
+          onClick={() => onToggleCollapse(index)}
+          onKeyDown={toggleOnKey}
+        >
+          {/* The pane sits in the gutter so every message's text shares one left edge */}
+          {paneState && (
+            <Pane state={paneState} size="sm" className="absolute left-0 top-[1.1rem]" hue={isAssistant ? agentHue : undefined} label={isAssistant ? ASSISTANT_PANE_LABEL[paneState] : undefined} />
+          )}
+          <span className={`msg-speaker ${speakerClass} ${isAssistant && agentHue ? 'name-hued' : ''}`} style={isAssistant ? nameHueStyle(agentHue) : undefined}>{speaker}</span>
+          <span className={timeClass}>{timeStr}</span>
+          {isVoiceMessage && (
+            <span className="inline-flex shrink-0 items-center gap-1 text-[0.8rem] text-muted-foreground">
+              <Mic size={14} aria-hidden="true" />
+              Voice
+            </span>
+          )}
+          {msg.pending && <span className="shrink-0 text-[0.8rem] text-muted-foreground">Sending</span>}
+          {msg.failed && <span className="shrink-0 text-[0.8rem] text-destructive">Not sent</span>}
+          {isCollapsed && preview && (
+            <span className="flex min-w-0 flex-1 items-center gap-1 text-[0.8rem] text-muted-foreground">
+              {isSystem && msg.rawText && CODE_FENCE.test(msg.rawText) && (
+                <Code size={14} className="shrink-0" aria-label="Contains code" />
+              )}
+              <span className="truncate">{preview}</span>
+            </span>
+          )}
+          {isCollapsed && <ChevronRight size={14} className="ml-auto shrink-0 text-muted-foreground" aria-hidden="true" />}
+        </div>
+        {/* Copy: appears on hover or keyboard focus */}
+        {!msg.streaming && !isCollapsed && (
+          <button
+            type="button"
+            className="hidden h-6 shrink-0 items-center gap-1 rounded-[3px] px-1.5 text-[0.8rem] text-muted-foreground opacity-0 transition-[opacity,color,background-color] duration-[120ms] hover:bg-raised hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 sm:inline-flex"
+            aria-label="Copy message to clipboard"
+            onClick={handleCopy}
+          >
+            {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+            {copied ? 'Copied' : 'Copy'}
+          </button>
         )}
-        <span className={`text-muted-foreground text-[0.667rem] shrink-0 tabular-nums ${isUser ? 'mr-auto' : 'ml-auto'}`}>
-          {timeStr}
-          {missionTime && <span className="ml-1.5 opacity-60">· {missionTime}</span>}
-        </span>
       </div>
-      {!isCollapsed && (
-        <div className={`relative pb-2 border-transparent ${isUser ? 'px-3 pr-5 mr-1.5 border-r-2 border-r-primary sm:px-4 sm:pr-10 sm:mr-4' : 'px-3 pl-7 ml-2 border-l-2 sm:px-4 sm:pl-10 sm:ml-4'} ${!isUser ? borderClass(msg.role) : ''}`}>
-          {msg.images && msg.images.length > 0 && !(isAssistant && msg.extractedImages && msg.extractedImages.length > 0) && (
-            <div className={`flex gap-2 flex-wrap mb-2 ${isUser ? 'justify-end' : ''}`}>
-              {msg.images.map((img, j) => 
-                isAssistant ? (
-                  <ImageLightbox key={j} src={img.preview} alt={img.name || 'image'} thumbnailClassName="max-w-[200px] max-h-[150px] rounded border border-border/60 object-contain cursor-pointer hover:border-primary/60 transition-colors" />
-                ) : (
-                  <img key={j} src={img.preview} alt={img.name || 'image'} className="max-w-[200px] max-h-[150px] rounded border border-border/60 object-contain" />
-                )
+
+  );
+
+  return (
+    <div className={`group msg msg-${msg.role} relative max-w-full break-words pb-1 pl-6 pt-2 ${isSystem ? 'text-muted-foreground' : ''} ${matchClass} ${pendingClass} ${failedClass}`}>
+      {isUser ? (
+        /* The operator's turn is one warm plate: header, memories and body together */
+        <div className="msg-bubble plate-operator w-full max-w-[var(--reading-measure)] rounded-[3px] bg-message-user px-3 pb-2 pt-0.5">
+          {header}
+          {memories && (
+            <MemoriesSection
+              memories={memories}
+              isCollapsed={isMemoryCollapsed}
+              onToggle={() => onToggleMemory(memoryCollapsedKey)}
+            />
+          )}
+
+          {!isCollapsed && (
+            <>
+              {images}
+              {body}
+              {attachments}
+            </>
+          )}
+        </div>
+      ) : (
+        <>
+          {header}
+          {!isCollapsed && (
+            <div className={`msg-content relative mt-0.5 ${isSystem ? 'text-[0.867rem]' : ''}`}>
+              {images}
+              {body}
+              {msg.charts && msg.charts.length > 0 && (
+                <div className="w-full">
+                  <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading chart</div>}>
+                    {msg.charts.map((chart, ci) => (
+                      <InlineChart key={ci} chart={chart} />
+                    ))}
+                  </Suspense>
+                </div>
+              )}
+              {attachments}
+              {msg.extractedImages && msg.extractedImages.length > 0 && (
+                <div className="mt-2 flex flex-col gap-2">
+                  {msg.extractedImages.map((img, idx) => (
+                    <ImageLightbox
+                      key={idx}
+                      src={img.url}
+                      alt={img.alt || 'Agent image'}
+                    />
+                  ))}
+                </div>
               )}
             </div>
           )}
-          <div className={`msg-body text-foreground ${isUser ? 'block w-full min-w-0 max-w-full pr-1.5 text-left sm:pr-0' : ''} ${isAssistant ? (isStructuredMarkdown(msg.rawText) ? 'max-w-[1120px]' : 'max-w-[68ch]') : ''}`}>
-            {isVoiceMessage && (
-              <span className="cockpit-badge mr-2 inline-flex align-middle" data-tone="primary">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-                Voice
-              </span>
-            )}
-            {displayContent && (
-              <Suspense fallback={<div className="text-muted-foreground text-xs">Loading…</div>}>
-                <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
-              </Suspense>
-            )}
-          </div>
-          {msg.charts && msg.charts.length > 0 && (
-            <div className="w-full max-w-[1120px]">
-              <Suspense fallback={<div className="text-muted-foreground text-xs">Loading chart…</div>}>
-                {msg.charts.map((chart, ci) => (
-                  <InlineChart key={ci} chart={chart} />
-                ))}
-              </Suspense>
-            </div>
-          )}
-          {msg.uploadAttachments && msg.uploadAttachments.length > 0 && (
-            <div className="mt-3 flex flex-col gap-2">
-              {msg.uploadAttachments.map((attachment) => (
-                <div key={attachment.id} className="rounded-xl border border-border/60 bg-secondary/30 px-3 py-2 text-[0.733rem] text-muted-foreground">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium text-foreground">{attachment.name}</span>
-                    <span className="cockpit-badge" data-tone={attachment.mode === 'file_reference' ? 'warning' : 'primary'}>
-                      {attachment.mode === 'file_reference' ? 'Local File' : 'Inline'}
-                    </span>
-                    <span>{formatBytes(attachment.sizeBytes)}</span>
-                    <span>{attachment.mimeType}</span>
-                  </div>
-                  {attachment.reference?.path && (
-                    <div className="mt-1 font-mono text-[0.667rem] text-muted-foreground/90">{attachment.reference.path}</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {msg.extractedImages && msg.extractedImages.length > 0 && (
-            <div className="flex flex-col gap-2 mt-2">
-              {msg.extractedImages.map((img, idx) => (
-                <ImageLightbox
-                  key={idx}
-                  src={img.url}
-                  alt={img.alt || 'Agent image'}
-                />
-              ))}
-            </div>
-          )}
-          {/* Action buttons — visible on hover */}
-          {!msg.streaming && (
-            <div className="absolute top-0 right-3 hidden gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:right-4 sm:flex">
-              {/* Copy button */}
-              <button
-                className="cockpit-toolbar-button min-h-7 px-2 text-[0.667rem]"
-                aria-label="Copy message to clipboard"
-                onClick={handleCopy}
-              >
-                {copied ? '✓' : 'COPY'}
-              </button>
-            </div>
-          )}
-        </div>
+        </>
       )}
     </div>
   );
@@ -419,6 +469,7 @@ export const MessageBubble = memo(MessageBubbleInner, (prev, next) => {
   
   // Agent name (rare change but must re-render when it does)
   if (prev.agentName !== next.agentName) return false;
+  if (prev.agentHue !== next.agentHue) return false;
   if (prev.onOpenWorkspacePath !== next.onOpenWorkspacePath) return false;
   if (prev.pathLinkPrefixes !== next.pathLinkPrefixes) return false;
   if (prev.pathLinkAliases !== next.pathLinkAliases) return false;

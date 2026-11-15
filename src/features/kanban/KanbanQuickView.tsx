@@ -1,42 +1,47 @@
 /**
- * KanbanQuickView — Compact read-only overview of active Kanban tasks.
- * Shows To Do, In Progress, and Review columns as mini-lists inside the workspace panel.
- * Self-contained: manages its own data via useKanban hook.
+ * KanbanQuickView: compact read-only overview of active Kanban tasks.
+ * Shows To do, In progress and Review as short lists inside the workspace column,
+ * in the column's own row idiom: a pane leads each task, the assignee closes the row.
+ * Self-contained: manages its own data via the useKanban hook.
  */
 
 import { useMemo } from 'react';
 import { ArrowRight } from 'lucide-react';
+import { Pane } from '@/components/ui/Pane';
+import { paneStateLabel } from '@/lib/paneState';
+import { nameHueStyle, useAgentHues } from '@/lib/agentColors';
 import type { KanbanTask, TaskStatus } from './types';
-import { COLUMN_LABELS } from './types';
 import { useKanban } from './hooks/useKanban';
-import { getTaskPriorityTone, getTaskStatusTone } from './tone';
+import { assigneeAgentId, assigneeName, boardWords, columnTitle, taskPaneState } from './tone';
 
-/* ── Statuses shown in quick view ── */
+/* Statuses shown in quick view */
 const QUICK_STATUSES: TaskStatus[] = ['todo', 'in-progress', 'review'];
 const MAX_ROWS = 5;
+const NO_IDS: readonly string[] = [];
 
 interface KanbanQuickViewProps {
   onOpenBoard: () => void;
   onOpenTask: (task: KanbanTask) => void;
 }
 
-function TaskRow({ task, onClick }: { task: KanbanTask; onClick: () => void }) {
-  const priorityTone = getTaskPriorityTone(task.priority);
+function TaskRow({ task, hue, onClick }: { task: KanbanTask; hue?: string; onClick: () => void }) {
+  const paneState = taskPaneState(task);
+  const name = assigneeName(task.assignee);
+  const agentId = assigneeAgentId(task.assignee);
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="group flex w-full items-center gap-2 rounded-2xl border border-transparent px-2 py-2 text-left text-xs transition-colors cursor-pointer hover:border-primary/16 hover:bg-primary/[0.05]"
+      className="flex min-h-[var(--row-unit)] w-full cursor-pointer items-center gap-2 border-0 bg-transparent pl-3 pr-3 text-left text-[0.867rem] transition-colors duration-[120ms] hover:bg-raised"
     >
-      <span
-        className={`h-1.5 w-1.5 shrink-0 rounded-full ${priorityTone.dotClass}`}
-        title={task.priority}
-      />
-      <span className="truncate flex-1 text-foreground/80 group-hover:text-foreground">
-        {task.title}
-      </span>
-      {task.assignee && (
-        <span className="shrink-0 text-[0.667rem] text-muted-foreground truncate max-w-[60px]">
-          {task.assignee.replace(/^agent:/, '')}
+      <Pane state={paneState} hue={hue} label={paneStateLabel(paneState)} />
+      <span className="min-w-0 flex-1 truncate text-foreground">{task.title}</span>
+      {name && (
+        <span
+          className={`max-w-[6rem] shrink-0 truncate text-[0.8rem] text-muted-foreground ${agentId && hue ? 'name-hued' : ''}`}
+          style={agentId ? nameHueStyle(hue) : undefined}
+        >
+          {name}
         </span>
       )}
     </button>
@@ -46,31 +51,30 @@ function TaskRow({ task, onClick }: { task: KanbanTask; onClick: () => void }) {
 function StatusSection({
   status,
   tasks,
+  hueFor,
   onOpenTask,
 }: {
   status: TaskStatus;
   tasks: KanbanTask[];
+  hueFor: (task: KanbanTask) => string | undefined;
   onOpenTask: (task: KanbanTask) => void;
 }) {
-  const tone = getTaskStatusTone(status);
   const visible = tasks.slice(0, MAX_ROWS);
   const overflow = tasks.length - MAX_ROWS;
 
   return (
-    <div className="mb-2 last:mb-0">
-      <div className="mb-1 flex items-center gap-2 px-2">
-        <span className={`text-[0.667rem] font-medium uppercase tracking-[0.16em] ${tone.textClass}`}>
-          {COLUMN_LABELS[status]}
-        </span>
-        <span className="font-mono text-[0.667rem] text-muted-foreground/60">{tasks.length}</span>
+    <div>
+      <div className="flex min-h-[var(--row-unit)] items-center gap-2 pl-3 pr-3">
+        <span className="min-w-0 flex-1 truncate text-[0.867rem] font-medium text-foreground">{columnTitle(status)}</span>
+        <span className="shrink-0 font-mono text-[0.8rem] text-muted-foreground tabular">{tasks.length}</span>
       </div>
       {visible.map(task => (
-        <TaskRow key={task.id} task={task} onClick={() => onOpenTask(task)} />
+        <TaskRow key={task.id} task={task} hue={hueFor(task)} onClick={() => onOpenTask(task)} />
       ))}
       {overflow > 0 && (
-        <span className="block px-1.5 text-[0.667rem] text-muted-foreground/50">
+        <div className="flex min-h-[var(--row-unit)] items-center pl-[1.917rem] text-[0.8rem] text-muted-foreground">
           +{overflow} more
-        </span>
+        </div>
       )}
     </div>
   );
@@ -86,47 +90,53 @@ export function KanbanQuickView({ onOpenBoard, onOpenTask }: KanbanQuickViewProp
     }));
   }, [tasksByStatus]);
 
-  const totalActive = (statusCounts.todo || 0) + (statusCounts['in-progress'] || 0) + (statusCounts.review || 0);
+  const assigneeIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const section of sections) {
+      for (const task of section.tasks) {
+        const id = assigneeAgentId(task.assignee);
+        if (id) ids.add(id);
+      }
+    }
+    return ids.size ? Array.from(ids).sort() : NO_IDS;
+  }, [sections]);
+  const { hueFor } = useAgentHues(assigneeIds);
+  const hueForTask = (task: KanbanTask) => {
+    const id = assigneeAgentId(task.assignee);
+    return id ? hueFor(id) : undefined;
+  };
+
+  const activeCounts = {
+    todo: statusCounts.todo || 0,
+    'in-progress': statusCounts['in-progress'] || 0,
+    review: statusCounts.review || 0,
+  };
+  const totalActive = activeCounts.todo + activeCounts['in-progress'] + activeCounts.review;
   const allEmpty = totalActive === 0;
+  const words = boardWords(activeCounts).replace(/^\d+ tasks?/, (m) => `${m.split(' ')[0]} active`);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Header */}
-      <div className="border-b border-border/40 px-3 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="cockpit-kicker text-[0.6rem]">
-              <span className="text-primary">◆</span>
-              Kanban
-            </span>
-          {totalActive > 0 && (
-            <span className="cockpit-badge" data-tone="primary">
-              {totalActive}
-            </span>
-          )}
-        </div>
-        <button
-          onClick={onOpenBoard}
-          className="cockpit-toolbar-button px-3 text-[0.733rem]"
-        >
-          Open Board
-          <ArrowRight size={11} />
+      {/* Header row: the active board in words, and the way to the full board */}
+      <div className="flex min-h-[var(--row-unit)] items-center gap-2 border-b border-border pl-3 pr-1">
+        <span className="min-w-0 flex-1 truncate text-[0.8rem] text-muted-foreground">{words}</span>
+        <button type="button" onClick={onOpenBoard} className="shell-chip shrink-0">
+          <span>Open board</span>
+          <ArrowRight size={14} aria-hidden="true" />
         </button>
-        </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-2 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {error && (
-          <p className="text-[0.733rem] text-destructive px-1.5">{error}</p>
+          <p className="px-3 py-2 text-[0.8rem] text-destructive">{error}</p>
         )}
         {loading && !error && (
-          <p className="px-2 text-[0.733rem] text-muted-foreground/60 animate-pulse">Loading tasks…</p>
+          <p className="flex min-h-[var(--row-unit)] items-center px-3 text-[0.8rem] text-muted-foreground">Loading tasks</p>
         )}
         {!loading && allEmpty && !error && (
-          <div className="px-2 py-5 text-center">
-            <div className="cockpit-badge mx-auto w-fit">Quiet board</div>
-            <p className="mt-3 text-[0.733rem] text-muted-foreground/70">No active tasks right now.</p>
+          <div className="px-3 py-4 text-center text-[0.8rem] text-muted-foreground">
+            No active tasks.
           </div>
         )}
         {!loading && !allEmpty && sections.map(({ status, tasks }) =>
@@ -135,6 +145,7 @@ export function KanbanQuickView({ onOpenBoard, onOpenTask }: KanbanQuickViewProp
               key={status}
               status={status}
               tasks={tasks}
+              hueFor={hueForTask}
               onOpenTask={onOpenTask}
             />
           ) : null

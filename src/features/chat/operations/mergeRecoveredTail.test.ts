@@ -23,6 +23,24 @@ describe('mergeRecoveredTail', () => {
     expect(mergeRecoveredTail(existing, [])).toEqual(existing);
   });
 
+  it('takes the recovered reply when history adds an attachment the live final did not carry', () => {
+    const ts = 1700000000000;
+    const existing = [
+      makeMsg('user', 'Make an image', ts),
+      makeMsg('assistant', 'Here it is.', ts + 25_000),
+    ];
+    const withImage = {
+      ...makeMsg('assistant', 'Here it is.', ts + 25_000),
+      extractedImages: [{ url: '/api/chat-media?path=x', alt: 'image.png' }],
+    };
+    const recovered = [makeMsg('user', 'Make an image', ts), withImage];
+
+    const result = mergeRecoveredTail(existing, recovered);
+
+    expect(result).toHaveLength(2);
+    expect(result[1].extractedImages).toEqual([{ url: '/api/chat-media?path=x', alt: 'image.png' }]);
+  });
+
   it('appends new messages when recovered starts where existing ends', () => {
     const ts = 1700000000000;
     const existing = [

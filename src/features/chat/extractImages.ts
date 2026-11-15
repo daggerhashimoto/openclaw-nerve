@@ -1,5 +1,5 @@
 /**
- * extractImages — Pull image references out of agent message text.
+ * extractImages: Pull image references out of agent message text.
  *
  * Detects three patterns:
  *  1. Markdown images: ![alt](url)
@@ -49,7 +49,7 @@ export function extractImages(text: string): ImageExtractionResult {
 
   let cleaned = text;
 
-  // 1. Markdown images — only extract if the URL looks like an image
+  // 1. Markdown images: only extract if the URL looks like an image
   cleaned = cleaned.replace(MD_IMAGE_RE, (match, alt: string, url: string) => {
     if (!IMAGE_EXTENSIONS.test(url.split('?')[0])) return match; // keep non-image markdown links
     const raw = url.trim();

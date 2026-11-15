@@ -6,9 +6,9 @@ import { themes, themeNames, type ThemeName } from '@/lib/themes';
 import { fonts, fontNames, type FontName } from '@/lib/fonts';
 
 const INLINE_SELECT_TRIGGER_CLASS =
-  'min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-left text-sm font-sans text-foreground sm:min-w-[148px]';
+  'min-h-11 w-full justify-between rounded-[3px] border-transparent bg-raised px-2 py-1 text-left text-[0.867rem] font-sans text-foreground sm:min-h-[var(--row-unit)] sm:min-w-[148px] sm:py-0 sm:text-[0.867rem]';
 const INLINE_SELECT_MENU_CLASS =
-  'rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]';
+  'rounded-[3px] border-border bg-popover py-1 shadow-[0_12px_32px_rgba(0,0,0,0.32)]';
 
 const EDITOR_FONT_SIZE_OPTIONS = [
   { value: '10', label: '10px' },
@@ -74,21 +74,14 @@ export function AppearanceSettings() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-1.5">
-        <span className="cockpit-kicker">
-          <span className="text-primary">◆</span>
-          Appearance
-        </span>
-      </div>
-
+    <div className="space-y-0">
       {/* Performance mode */}
-      <div className="cockpit-row items-start justify-between">
+      <div className="settings-row items-start justify-between">
         <div className="flex items-center gap-3">
-          <Gauge size={14} className={performanceMode ? 'text-green' : 'text-muted-foreground'} aria-hidden="true" />
+          <Gauge size={14} className={performanceMode ? 'text-muted-foreground' : 'text-muted-foreground'} aria-hidden="true" />
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground" id="performance-mode-label">Performance mode</span>
-            <span className="text-xs text-muted-foreground">Freeze cosmetic live visuals and use slower shell timers.</span>
+            <span className="text-[0.867rem] font-medium text-foreground" id="performance-mode-label">Performance mode</span>
+            <span className="text-[0.8rem] text-muted-foreground">Freeze cosmetic live visuals and use slower shell timers.</span>
           </div>
         </div>
         <Switch
@@ -98,13 +91,13 @@ export function AppearanceSettings() {
         />
       </div>
 
-      {/* Theme selector */}
-      <div className="cockpit-row items-start justify-between">
+      {/* Theme selector: Night or Daylight */}
+      <div className="settings-row items-start justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <Monitor size={14} className="text-primary" />
+          <Monitor size={14} className="text-muted-foreground" />
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground">Theme</span>
-            <span className="text-xs text-muted-foreground">Swap the full cockpit palette in one move.</span>
+            <span className="text-[0.867rem] font-medium text-foreground">Theme</span>
+            <span className="text-[0.8rem] text-muted-foreground">Night or Daylight. Same meanings, different light.</span>
           </div>
         </div>
         <div className="relative w-full sm:w-auto">
@@ -120,12 +113,12 @@ export function AppearanceSettings() {
       </div>
 
       {/* Font selector */}
-      <div className="cockpit-row items-start justify-between">
+      <div className="settings-row items-start justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <Type size={14} className="text-primary" />
+          <Type size={14} className="text-muted-foreground" />
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground">UI font</span>
-            <span className="text-xs text-muted-foreground">Code blocks stay monospace</span>
+            <span className="text-[0.867rem] font-medium text-foreground">UI font</span>
+            <span className="text-[0.8rem] text-muted-foreground">Code blocks stay monospace</span>
           </div>
         </div>
         <div className="relative w-full sm:w-auto">
@@ -141,12 +134,12 @@ export function AppearanceSettings() {
       </div>
 
       {/* Font size selector */}
-      <div className="cockpit-row items-start justify-between">
+      <div className="settings-row items-start justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <ALargeSmall size={14} className="text-primary" />
+          <ALargeSmall size={14} className="text-muted-foreground" />
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground">Font size</span>
-            <span className="text-xs text-muted-foreground">Base size for all UI text</span>
+            <span className="text-[0.867rem] font-medium text-foreground">Font size</span>
+            <span className="text-[0.8rem] text-muted-foreground">Base size for all UI text</span>
           </div>
         </div>
         <div className="relative w-full sm:w-auto">
@@ -162,12 +155,12 @@ export function AppearanceSettings() {
       </div>
 
       {/* Editor font size selector */}
-      <div className="cockpit-row items-start justify-between">
+      <div className="settings-row items-start justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <Code2 size={14} className="text-primary" />
+          <Code2 size={14} className="text-muted-foreground" />
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground">Editor font size</span>
-            <span className="text-xs text-muted-foreground">Size for the code editor</span>
+            <span className="text-[0.867rem] font-medium text-foreground">Editor font size</span>
+            <span className="text-[0.8rem] text-muted-foreground">Size for the code editor</span>
           </div>
         </div>
         <div className="relative w-full sm:w-auto">
@@ -183,12 +176,12 @@ export function AppearanceSettings() {
       </div>
 
       {/* Events Panel Visibility */}
-      <div className="cockpit-row items-start justify-between">
+      <div className="settings-row items-start justify-between">
         <div className="flex items-center gap-3">
-          <Eye size={14} className={eventsVisible ? 'text-primary' : 'text-muted-foreground'} aria-hidden="true" />
+          <Eye size={14} className={eventsVisible ? 'text-muted-foreground' : 'text-muted-foreground'} aria-hidden="true" />
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground" id="events-label">Show events</span>
-            <span className="text-xs text-muted-foreground">Keep the event rail visible in the telemetry row.</span>
+            <span className="text-[0.867rem] font-medium text-foreground" id="events-label">Show events</span>
+            <span className="text-[0.8rem] text-muted-foreground">Keep the event rail visible in the telemetry row.</span>
           </div>
         </div>
         <Switch
@@ -199,12 +192,12 @@ export function AppearanceSettings() {
       </div>
 
       {/* Log Panel Visibility */}
-      <div className="cockpit-row items-start justify-between">
+      <div className="settings-row items-start justify-between">
         <div className="flex items-center gap-3">
-          <Activity size={14} className={logVisible ? 'text-green' : 'text-muted-foreground'} aria-hidden="true" />
+          <Activity size={14} className={logVisible ? 'text-muted-foreground' : 'text-muted-foreground'} aria-hidden="true" />
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground" id="log-label">Show activity log</span>
-            <span className="text-xs text-muted-foreground">Surface agent activity in the top chrome.</span>
+            <span className="text-[0.867rem] font-medium text-foreground" id="log-label">Show activity log</span>
+            <span className="text-[0.8rem] text-muted-foreground">Surface agent activity in the top chrome.</span>
           </div>
         </div>
         <Switch
@@ -215,12 +208,12 @@ export function AppearanceSettings() {
       </div>
 
       {/* Hidden workspace entries visibility */}
-      <div className="cockpit-row items-start justify-between">
+      <div className="settings-row items-start justify-between">
         <div className="flex items-center gap-3">
-          <Eye size={14} className={showHiddenWorkspaceEntries ? 'text-primary' : 'text-muted-foreground'} aria-hidden="true" />
+          <Eye size={14} className={showHiddenWorkspaceEntries ? 'text-muted-foreground' : 'text-muted-foreground'} aria-hidden="true" />
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground" id="hidden-workspace-entries-label">Show hidden workspace entries</span>
-            <span className="text-xs text-muted-foreground">Reveal dotfiles and dotfolders in the workspace browser when you need them.</span>
+            <span className="text-[0.867rem] font-medium text-foreground" id="hidden-workspace-entries-label">Show hidden workspace entries</span>
+            <span className="text-[0.8rem] text-muted-foreground">Reveal dotfiles and dotfolders in the workspace browser when you need them.</span>
           </div>
         </div>
         <Switch
@@ -231,12 +224,12 @@ export function AppearanceSettings() {
       </div>
 
       {/* Chatbox command palette visibility */}
-      <div className="cockpit-row items-start justify-between">
+      <div className="settings-row items-start justify-between">
         <div className="flex items-center gap-3">
-          <Command size={14} className={commandPaletteButtonVisible ? 'text-primary' : 'text-muted-foreground'} aria-hidden="true" />
+          <Command size={14} className={commandPaletteButtonVisible ? 'text-muted-foreground' : 'text-muted-foreground'} aria-hidden="true" />
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground" id="chatbox-commands-label">Show chatbox Commands button</span>
-            <span className="text-xs text-muted-foreground">Keep the Commands launcher visible in the chat composer.</span>
+            <span className="text-[0.867rem] font-medium text-foreground" id="chatbox-commands-label">Show chatbox Commands button</span>
+            <span className="text-[0.8rem] text-muted-foreground">Keep the Commands launcher visible in the chat composer.</span>
           </div>
         </div>
         <Switch
@@ -247,12 +240,12 @@ export function AppearanceSettings() {
       </div>
 
       {/* Workspace Kanban Visibility */}
-      <div className="cockpit-row items-start justify-between">
+      <div className="settings-row items-start justify-between">
         <div className="flex items-center gap-3">
-          <Columns3 size={14} className={kanbanVisible ? 'text-primary' : 'text-muted-foreground'} aria-hidden="true" />
+          <Columns3 size={14} className={kanbanVisible ? 'text-muted-foreground' : 'text-muted-foreground'} aria-hidden="true" />
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground" id="kanban-label">Show workspace tasks</span>
-            <span className="text-xs text-muted-foreground">Toggle the Kanban view inside the workspace tabs.</span>
+            <span className="text-[0.867rem] font-medium text-foreground" id="kanban-label">Show workspace tasks</span>
+            <span className="text-[0.8rem] text-muted-foreground">Toggle the Kanban view inside the workspace tabs.</span>
           </div>
         </div>
         <Switch

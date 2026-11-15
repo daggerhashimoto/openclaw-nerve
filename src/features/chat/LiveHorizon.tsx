@@ -1,20 +1,6 @@
 import { memo } from 'react';
 import { isPerformanceModePreferenceEnabled } from '@/lib/performanceMode';
 
-/**
- * Prototype flag. Set localStorage `nerve:flag:liveHorizon` to `true` to see the horizon.
- * Read once per render so flipping it and reloading is enough.
- */
-export const LIVE_HORIZON_FLAG_KEY = 'nerve:flag:liveHorizon';
-
-function isLiveHorizonFlagOn(): boolean {
-  try {
-    return typeof localStorage !== 'undefined' && localStorage.getItem(LIVE_HORIZON_FLAG_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
 /** Columns sit on a 14px pitch from the centre outward; the room's overflow clips what does not fit. */
 const COLUMNS = 96;
 const PITCH = 14;
@@ -56,7 +42,7 @@ const LAYOUT: Column[] = (() => {
  * in performance mode, or under reduced motion (see .nerve-horizon in index.css).
  */
 export const LiveHorizon = memo(function LiveHorizon({ active }: { active: boolean }) {
-  if (!active || !isLiveHorizonFlagOn() || isPerformanceModePreferenceEnabled()) return null;
+  if (!active || isPerformanceModePreferenceEnabled()) return null;
   return (
     <div className="nerve-horizon" aria-hidden="true" data-testid="live-horizon">
       {LAYOUT.map((c, i) => (

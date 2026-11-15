@@ -377,7 +377,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
 
   return (
     <div id={id} className="nerve-room-plate isolate h-full flex flex-col min-w-0 relative">
-      {/* The live horizon: a faint equalizer behind the composer while this session works (flagged prototype) */}
+      {/* The live horizon: a faint equalizer behind the composer while this session works */}
       <LiveHorizon active={isGenerating} />
       {/* Session header */}
       <ChatHeader

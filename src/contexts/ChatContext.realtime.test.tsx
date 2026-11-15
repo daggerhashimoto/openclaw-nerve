@@ -322,7 +322,9 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     const loadsBeforeGap = historyCalls();
     emit('chat', chat({ state: 'delta', seq: 40, deltaText: '' }), 10);
     await waitFor(() => expect(historyCalls()).toBeGreaterThan(loadsBeforeGap));
-    await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toContain('Compaction'));
+    // The recovery finishes with the reply still in the stream; the compaction row stays hidden (#374).
+    await waitFor(() => expect(getChat().stream.isRecovering).toBe(false));
+    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10']);
 
     emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 3000) }), 11);
     expect(getChat().messages.filter((m) => m.rawText === reply)).toHaveLength(1);
@@ -331,7 +333,7 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     const loadsAfterFinal = historyCalls();
     await waitFor(() => expect(historyCalls()).toBeGreaterThan(loadsAfterFinal));
     await waitFor(() => {
-      expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply, 'Compaction']);
+      expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply]);
     });
   });
 
@@ -352,21 +354,21 @@ describe('ChatContext realtime handling (protocol v4)', () => {
       { role: 'assistant', content: [{ type: 'text', text: reply }], timestamp: NOW + 1000, __openclaw: { id: 'e3', runId: RUN } },
       { role: 'system', content: [{ type: 'text', text: 'Compaction' }], timestamp: NOW + 2000, __openclaw: { id: 'e4', kind: 'compaction' } },
     );
-    // Nothing streamed, and a frame goes missing: the recovery brings the reply and the compaction row.
+    // Nothing streamed, and a frame goes missing: the recovery brings the reply (the compaction row stays hidden, #374).
     const loadsBeforeGap = historyCalls();
     emit('agent', { sessionKey: SESSION, runId: RUN, seq: 5, stream: 'tool', data: { phase: 'start', name: 'exec', toolCallId: 't1' } }, 9);
     await waitFor(() => expect(historyCalls()).toBeGreaterThan(loadsBeforeGap));
-    await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply, 'Compaction']));
+    await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply]));
 
     emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 3000) }), 10);
-    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply, 'Compaction']);
+    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply]);
 
     const loadsAfterFinal = historyCalls();
     await waitFor(() => expect(historyCalls()).toBeGreaterThan(loadsAfterFinal));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
-    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply, 'Compaction']);
+    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Audit task 10', reply]);
   });
 
   it('reconciles a late final for a settled run from history instead of appending it', async () => {

@@ -20,6 +20,12 @@ function historyRow(role: ChatMessage['role'], text: string, id: string, ts: num
   return row;
 }
 
+/**
+ * A visible row history records after a reply. #376 hit this with a compaction row;
+ * those are hidden since #374, so the tests use a row that still shows.
+ */
+const LATER_ROW = 'Model switched to gpt-5.5';
+
 /** A row from a live event (a chat final): the gateway sends no transcript id with it. */
 function liveRow(role: ChatMessage['role'], text: string, ts: number): ChatMsg {
   const [row] = processChatMessages([{ role, content: text, timestamp: ts }]);
@@ -196,24 +202,24 @@ describe('mergeRecoveredTail', () => {
     });
 
     it('does not let a live copy stand in for a reply already shown under its id', () => {
-      // A recovery brought in the reply and a later compaction row before the live
+      // A recovery brought in the reply and a later row before the live
       // final arrived, so the live copy sits after both. The next recovery must not
       // anchor that live copy on the reply and repeat the tail.
       const existing = [
         historyRow('user', 'Question', 'e1', T),
         historyRow('assistant', 'Answer', 'e2', T + 1000),
-        historyRow('system', 'Compaction', 'e3', T + 2000),
+        historyRow('system', LATER_ROW, 'e3', T + 2000),
         liveRow('assistant', 'Answer', T + 1500),
       ];
       const recovered = [
         historyRow('user', 'Question', 'e1', T),
         historyRow('assistant', 'Answer', 'e2', T + 1000),
-        historyRow('system', 'Compaction', 'e3', T + 2000),
+        historyRow('system', LATER_ROW, 'e3', T + 2000),
       ];
 
       const result = mergeRecoveredTail(existing, recovered);
 
-      expect(texts(result)).toEqual(['Question', 'Answer', 'Compaction']);
+      expect(texts(result)).toEqual(['Question', 'Answer', LATER_ROW]);
       expect(result.map((m) => m.msgId)).toEqual(recovered.map((m) => m.msgId));
     });
 
@@ -291,21 +297,21 @@ describe('mergeRecoveredTail', () => {
 
     it('shows a row once when history orders it differently from the transcript on screen', () => {
       // A recovery mid-run left the streamed reply out (it was still in the stream
-      // buffer) but brought the compaction row, so the live final landed after it.
+      // buffer) but brought the later row, so the live final landed after it.
       const existing = [
         historyRow('user', 'Question', 'e1', T),
-        historyRow('system', 'Compaction', 'e3', T + 2000),
+        historyRow('system', LATER_ROW, 'e3', T + 2000),
         liveRow('assistant', 'Answer', T + 3000),
       ];
       const recovered = [
         historyRow('user', 'Question', 'e1', T),
         historyRow('assistant', 'Answer', 'e2', T + 1000),
-        historyRow('system', 'Compaction', 'e3', T + 2000),
+        historyRow('system', LATER_ROW, 'e3', T + 2000),
       ];
 
       const result = mergeRecoveredTail(existing, recovered);
 
-      expect(texts(result)).toEqual(['Question', 'Answer', 'Compaction']);
+      expect(texts(result)).toEqual(['Question', 'Answer', LATER_ROW]);
       expect(result.map((m) => m.msgId)).toEqual(recovered.map((m) => m.msgId));
     });
 

@@ -59,7 +59,7 @@ export function mergeFinalMessages(existing: ChatMsg[], incoming: ChatMsg[]): Ch
 
   for (const msg of incoming) {
     // A history read can show the reply before its live final arrives, and by then
-    // other rows can follow it (a tool result, a compaction row), so the whole turn
+    // other rows can follow it (a tool result, a system line), so the whole turn
     // is searched, not just the last row. A live final carries no transcript id, so
     // the match is by content and time (isLikelyDuplicateMessage).
     const turnStart = currentTurnStart(merged);

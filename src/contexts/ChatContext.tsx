@@ -18,7 +18,7 @@ import { createContext, useContext, useCallback, useRef, useEffect, useState, us
 import { useGateway } from './GatewayContext';
 import { useSessionContext } from './SessionContext';
 import { useSettings } from './SettingsContext';
-import { getSessionKey, type GatewayEvent } from '@/types';
+import { getSessionKey, type ChatEventPayload, type GatewayEvent } from '@/types';
 import {
   getRootAgentSessionKey,
   isRootChildSession,
@@ -47,6 +47,7 @@ import {
   resolveRunId,
   createFallbackRunId,
   updateHighestSeq,
+  HeartbeatRuns,
 } from '@/features/chat/operations';
 import { generateMsgId } from '@/features/chat/types';
 import type { ImageAttachment, ChatMsg, OutgoingUploadPayload } from '@/features/chat/types';
@@ -132,6 +133,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const activeRunIdRef = useRef<string | null>(null);
   const lastGatewaySeqRef = useRef<number | null>(null);
   const historyRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Heartbeats on the open session never show as a run; rows one commits wait until it is over.
+  const [heartbeatRuns] = useState(() => new HeartbeatRuns());
+  const heartbeatRowsPendingRef = useRef(false);
 
   // ─── Compose hooks ────────────────────────────────────────────────────────
   const msgHook = useChatMessages({ rpc, currentSessionRef });
@@ -193,6 +197,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     runsRef.current.clear();
     activeRunIdRef.current = null;
     lastGatewaySeqRef.current = null;
+    heartbeatRuns.settle();
+    heartbeatRowsPendingRef.current = false;
     if (historyRefreshRef.current) {
       clearTimeout(historyRefreshRef.current);
       historyRefreshRef.current = null;
@@ -210,6 +216,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         triggerRecovery('reconnect');
       }
       clearDisconnectState();
+      // A heartbeat's end may have been missed while away; history is read again on connect.
+      heartbeatRuns.settle();
+      heartbeatRowsPendingRef.current = false;
     }
 
     if (connectionState === 'reconnecting' && prevConnection === 'connected') {
@@ -223,6 +232,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     triggerRecovery,
     clearDisconnectState,
     captureDisconnectState,
+    heartbeatRuns,
   ]);
 
   useEffect(() => {
@@ -327,6 +337,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         } catch { /* best-effort */ }
       }, 300);
     };
+    const flushHeartbeatRows = () => {
+      if (!heartbeatRowsPendingRef.current) return;
+      heartbeatRowsPendingRef.current = false;
+      scheduleHistoryRefresh();
+    };
 
     return subscribe((msg: GatewayEvent) => {
       let recoveryTriggeredThisEvent = false;
@@ -339,8 +354,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       // Track gateway frame sequence. The counter is per connection and covers
       // every event frame, so it must advance before filtering by type or session.
       if (typeof msg.seq === 'number') {
-        if (hasSeqGap(lastGatewaySeqRef.current, msg.seq) && (isGeneratingRef.current || Boolean(activeRunIdRef.current))) {
+        const gap = hasSeqGap(lastGatewaySeqRef.current, msg.seq);
+        if (gap && (isGeneratingRef.current || Boolean(activeRunIdRef.current))) {
           triggerRecoveryOnce('frame-gap');
+        }
+        // The lost frames may hold a heartbeat's end; stop holding its rows back.
+        if (gap && heartbeatRuns.running(currentSessionRef.current)) {
+          heartbeatRuns.settle();
+          flushHeartbeatRows();
         }
         lastGatewaySeqRef.current = updateHighestSeq(lastGatewaySeqRef.current, msg.seq);
       }
@@ -348,10 +369,29 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const committed = classifyCommittedRow(msg);
       if (committed) {
         if (committed.sessionKey !== currentSessionRef.current) return;
+        if (heartbeatRuns.running(committed.sessionKey)) {
+          heartbeatRowsPendingRef.current = true;
+          return;
+        }
         // Rows of a run on screen are reconciled by its final; a new prompt
         // (an inbound channel message) shows as soon as it is committed.
         const runOnScreen = isGeneratingRef.current || activeRunIdRef.current !== null;
         if (!runOnScreen || committed.role === 'user') scheduleHistoryRefresh();
+        return;
+      }
+
+      // Heartbeats stay quiet: no run on screen, indicator, ping, speech or recovery.
+      // A reply one commits is brought in from history once it is over.
+      const heartbeat = heartbeatRuns.observe(msg);
+      if (heartbeat) {
+        const sk = currentSessionRef.current;
+        if (heartbeat.ended && heartbeat.sessionKey === sk && !heartbeatRuns.running(sk)) {
+          const cp = (msg.payload || {}) as ChatEventPayload;
+          if (msg.event === 'chat' && cp.state === 'final' && extractFinalMessages(cp).length > 0) {
+            heartbeatRowsPendingRef.current = true;
+          }
+          flushHeartbeatRows();
+        }
         return;
       }
 
@@ -649,6 +689,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     handleFinalTTS,
     subscribe,
     rpc,
+    heartbeatRuns,
   ]);
 
   // ─── Send message ─────────────────────────────────────────────────────────

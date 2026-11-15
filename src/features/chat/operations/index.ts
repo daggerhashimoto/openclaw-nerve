@@ -25,6 +25,8 @@ export {
 } from './streamEventHandler';
 export type { ClassifiedEvent, CommittedRow, StreamEventType, FinalMessageData } from './streamEventHandler';
 export { isUnsentPrompt, keepUnsentMessages, mergeRecoveredTail } from './mergeRecoveredTail';
+export { HeartbeatRuns } from './heartbeatRuns';
+export type { HeartbeatFrame } from './heartbeatRuns';
 export {
   createFallbackRunId,
   getOrCreateRunState,

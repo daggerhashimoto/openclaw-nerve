@@ -43,9 +43,12 @@ describe('ChatContext with runs started outside Nerve (#334)', () => {
     vi.useRealTimers();
   });
 
-  async function setup(history: unknown[]) {
+  const pingMock = vi.fn();
+  const speakMock = vi.fn();
+
+  async function setup(history: unknown[], openSession = TELEGRAM) {
     let handler: ((msg: GatewayEvent) => void) | null = null;
-    const gateway = { connectionState: 'connected' as ConnectionState, currentSession: TELEGRAM };
+    const gateway = { connectionState: 'connected' as ConnectionState, currentSession: openSession };
     const rpcMock = vi.fn<(method: string, params?: Record<string, unknown>) => Promise<unknown>>(async (method) => {
       if (method === 'chat.history') return { messages: [...history] };
       if (method === 'chat.send') return { runId: RUN, status: 'started' };
@@ -66,7 +69,11 @@ describe('ChatContext with runs started outside Nerve (#334)', () => {
       useSessionContext: () => ({ currentSession: gateway.currentSession, sessions: [] }),
     }));
     vi.doMock('./SettingsContext', () => ({
-      useSettings: () => ({ soundEnabled: false, speak: vi.fn() }),
+      useSettings: () => ({ soundEnabled: true, speak: speakMock }),
+    }));
+    vi.doMock('@/features/voice/audio-feedback', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      playPing: pingMock,
     }));
 
     const { ChatProvider, useChat } = await import('./ChatContext');
@@ -88,9 +95,9 @@ describe('ChatContext with runs started outside Nerve (#334)', () => {
     await waitFor(() => expect(handler).not.toBeNull());
     await waitFor(() => expect(chat?.historyLoaded).toBe(true));
 
-    const emit = (event: string, payload: Record<string, unknown>) => {
+    const emit = (event: string, payload: Record<string, unknown>, seq?: number) => {
       act(() => {
-        handler!({ type: 'event', event, payload });
+        handler!({ type: 'event', event, payload, ...(seq !== undefined ? { seq } : {}) });
       });
     };
     const rerenderWith = (next: Partial<typeof gateway>) => {
@@ -250,5 +257,100 @@ describe('ChatContext with runs started outside Nerve (#334)', () => {
     await settle();
 
     expect(calls('chat.history').length).toBe(loads);
+  });
+
+  describe('heartbeats', () => {
+    // A heartbeat runs on the main session. Every agent frame of the run carries
+    // isHeartbeat (server-chat agentPayload); chat frames carry no flag. The gateway
+    // drops a heartbeat's tool frames, and its chat deltas unless heartbeat acks are
+    // shown on webchat. A HEARTBEAT_OK reply ends in a final without a message, and
+    // its rows never reach a session.message subscriber.
+    const HEARTBEAT = 'run-hb-1';
+    const heartbeatAgent = (stream: string, data: Record<string, unknown>) => ({
+      ...agent(stream, data),
+      runId: HEARTBEAT,
+      sessionKey: OTHER,
+      isHeartbeat: true,
+      session: { key: OTHER, status: 'running', hasActiveRun: true },
+    });
+    const heartbeatChat = (payload: Record<string, unknown>) => ({ runId: HEARTBEAT, sessionKey: OTHER, agentId: 'main', ...payload });
+    const alert = {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'Disk usage is at 91%.' }],
+      timestamp: NOW + 5_000,
+      __openclaw: { id: 'h1', seq: 4, runId: HEARTBEAT },
+    };
+
+    const expectQuiet = (chatApi: ChatApi) => {
+      expect(chatApi.isGenerating).toBe(false);
+      expect(chatApi.processingStage).toBeNull();
+      expect(chatApi.stream.html).toBe('');
+      expect(chatApi.stream.isRecovering).toBeFalsy();
+      expect(chatApi.activityLog).toEqual([]);
+    };
+
+    it('leaves the chat as it was when the heartbeat answers HEARTBEAT_OK', async () => {
+      const { emit, getChat, calls, settle } = await setup([earlier], OTHER);
+      const loads = calls('chat.history').length;
+
+      emit('agent', heartbeatAgent('lifecycle', { phase: 'start', startedAt: NOW }));
+      expectQuiet(getChat());
+      emit('agent', heartbeatAgent('item', { kind: 'tool', phase: 'end', name: 'read', toolCallId: 'hb-tc-1', status: 'completed' }));
+      emit('agent', heartbeatAgent('lifecycle', { phase: 'end', startedAt: NOW, endedAt: NOW + 3_000 }));
+      emit('chat', heartbeatChat({ state: 'final', seq: 12, stopReason: 'stop' }));
+      await settle();
+
+      expectQuiet(getChat());
+      expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier']);
+      expect(calls('chat.history').length).toBe(loads);
+      expect(pingMock).not.toHaveBeenCalled();
+      expect(speakMock).not.toHaveBeenCalled();
+
+      // A run that is not a heartbeat still shows as before.
+      emit('agent', { ...agent('lifecycle', { phase: 'start', startedAt: NOW + 10_000 }), sessionKey: OTHER });
+      await waitFor(() => expect(getChat().isGenerating).toBe(true));
+    });
+
+    it('shows a reply the heartbeat committed once it is over, without the indicator', async () => {
+      const history: unknown[] = [earlier];
+      const { emit, getChat, calls, settle } = await setup(history, OTHER);
+      const loads = calls('chat.history').length;
+
+      emit('agent', heartbeatAgent('lifecycle', { phase: 'start', startedAt: NOW }));
+      // Sent when heartbeat acks are shown on webchat; it has no flag, only the run id.
+      emit('chat', heartbeatChat({ state: 'delta', seq: 5, deltaText: 'Disk usage', message: { role: 'assistant', content: [{ type: 'text', text: 'Disk usage' }], timestamp: NOW + 4_000 } }));
+      expectQuiet(getChat());
+
+      history.push(alert);
+      emit('session.message', committed(alert, { sessionKey: OTHER, runId: HEARTBEAT }));
+      await settle();
+      expect(calls('chat.history').length).toBe(loads);
+      expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier']);
+
+      emit('agent', heartbeatAgent('lifecycle', { phase: 'end', startedAt: NOW, endedAt: NOW + 5_100 }));
+      emit('chat', heartbeatChat({ state: 'final', seq: 9, stopReason: 'stop', message: { role: 'assistant', content: [{ type: 'text', text: 'Disk usage is at 91%.' }], timestamp: NOW + 5_100 } }));
+
+      await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Disk usage is at 91%.']));
+      await settle();
+      expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Disk usage is at 91%.']);
+      expect(calls('chat.history').length).toBe(loads + 1);
+      expectQuiet(getChat());
+      expect(pingMock).not.toHaveBeenCalled();
+      expect(speakMock).not.toHaveBeenCalled();
+    });
+
+    it('does not hold back committed rows when the heartbeat\'s end was lost', async () => {
+      const history: unknown[] = [earlier];
+      const { emit, getChat } = await setup(history, OTHER);
+
+      emit('agent', heartbeatAgent('lifecycle', { phase: 'start', startedAt: NOW }), 10);
+      history.push(alert);
+      emit('session.message', committed(alert, { sessionKey: OTHER, runId: HEARTBEAT }), 11);
+      // Frames 12 and 13 (the heartbeat's end) were dropped for a slow connection.
+      emit('tick', {}, 14);
+
+      await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Disk usage is at 91%.']));
+      expectQuiet(getChat());
+    });
   });
 });

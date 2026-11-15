@@ -1,5 +1,5 @@
 /**
- * useSkills — Fetch skills list from the server.
+ * useSkills: fetch skills list from the server.
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';

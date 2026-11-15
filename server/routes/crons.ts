@@ -8,6 +8,13 @@
  * POST   /api/crons/:id/toggle — Toggle enabled/disabled
  * POST   /api/crons/:id/run    — Run a cron job immediately
  * GET    /api/crons/:id/runs   — Get run history
+ *
+ * Cron management goes through the gateway's cron.* RPC methods over the
+ * persistent WebSocket. The `cron` tool behind POST /tools/invoke needs a
+ * trusted agent-run identity that plain HTTP callers cannot supply, so it
+ * fails with "trusted operational run instance required". Only
+ * sessions_spawn (manual runs of isolated agent-turn jobs) still uses the
+ * HTTP tool path.
  */
 
 import { Hono } from 'hono';
@@ -16,6 +23,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { config } from '../lib/config.js';
 import { invokeGatewayTool } from '../lib/gateway-client.js';
+import { gatewayRpcCall } from '../lib/gateway-rpc.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 
 const scheduleSchema = z.union([
@@ -48,12 +56,6 @@ const cronJobSchema = z.object({
     sessionKey: z.string().max(200).optional(),
     agentId: sessionAgentIdSchema,
     enabled: z.boolean().optional(),
-    notify: z.boolean().optional(),
-    // Legacy compat — Nerve may send these flat fields
-    prompt: z.string().max(10000).optional(),
-    model: z.string().max(200).optional(),
-    thinkingLevel: z.string().max(50).optional(),
-    channel: z.string().max(200).optional(),
   }),
 });
 
@@ -67,17 +69,27 @@ const cronPatchSchema = z.object({
     sessionKey: z.string().max(200).optional(),
     agentId: sessionAgentIdSchema,
     enabled: z.boolean().optional(),
-    notify: z.boolean().optional(),
-    prompt: z.string().max(10000).optional(),
-    model: z.string().max(200).optional(),
-    thinkingLevel: z.string().max(50).optional(),
-    channel: z.string().max(200).optional(),
   }),
 });
+
+/**
+ * Flat fields the old cron tool moved into payload/delivery. cron.add and
+ * cron.update validate a closed schema, so reject them up front with a 400
+ * instead of letting zod strip them silently or the gateway answer 502.
+ */
+const LEGACY_FLAT_FIELDS = ['prompt', 'model', 'thinkingLevel', 'channel', 'notify'];
+
+function legacyFlatFieldsError(fields: Record<string, unknown>): string | null {
+  const present = LEGACY_FLAT_FIELDS.filter((field) => field in fields);
+  if (present.length === 0) return null;
+  return `Unsupported field(s): ${present.join(', ')}. Use payload (message, model, thinking) and delivery instead.`;
+}
 
 const app = new Hono();
 
 const GATEWAY_RUN_TIMEOUT_MS = 60_000;
+const CRON_LIST_PAGE_LIMIT = 200;
+const CRON_LIST_MAX_PAGES = 50;
 const MANUAL_CRON_RUNS_DIR = join(config.home, '.openclaw', 'cron', 'nerve-manual-runs');
 
 interface ManualCronRunEntry {
@@ -101,7 +113,8 @@ function getCronJobsFromResult(result: unknown): Record<string, unknown>[] {
 }
 
 function getCronRunEntriesFromResult(result: unknown): Record<string, unknown>[] {
-  const r = result as { runs?: unknown; details?: { entries?: unknown; runs?: unknown } };
+  const r = result as { entries?: unknown; runs?: unknown; details?: { entries?: unknown; runs?: unknown } };
+  if (Array.isArray(r?.entries)) return r.entries as Record<string, unknown>[];
   if (Array.isArray(r?.runs)) return r.runs as Record<string, unknown>[];
   if (Array.isArray(r?.details?.entries)) return r.details.entries as Record<string, unknown>[];
   if (Array.isArray(r?.details?.runs)) return r.details.runs as Record<string, unknown>[];
@@ -211,15 +224,40 @@ function replaceCronJobsInResult(result: unknown, jobs: Record<string, unknown>[
 
 async function getGatewayCronRunEntries(jobId: string): Promise<Record<string, unknown>[]> {
   try {
-    const gatewayResult = await invokeGatewayTool('cron', {
-      action: 'runs',
-      jobId,
-      limit: 10,
-    });
+    const gatewayResult = await gatewayRpcCall('cron.runs', { id: jobId, limit: 10 });
     return getCronRunEntriesFromResult(gatewayResult);
   } catch (err) {
     console.warn('[crons] gateway runs unavailable, falling back to manual history only:', (err as Error).message);
     return [];
+  }
+}
+
+/**
+ * List every cron job. cron.list returns at most 200 jobs per page and reports
+ * hasMore/nextOffset beyond that, so follow the pages instead of dropping jobs.
+ */
+async function listAllCronJobs(timeoutMs?: number): Promise<{ result: unknown; jobs: Record<string, unknown>[] }> {
+  const params = { includeDisabled: true };
+  const first = await gatewayRpcCall('cron.list', params, timeoutMs);
+  const jobs = [...getCronJobsFromResult(first)];
+  let page = first as { hasMore?: unknown; nextOffset?: unknown } | null;
+  let pages = 1;
+  while (page?.hasMore === true && typeof page.nextOffset === 'number' && pages < CRON_LIST_MAX_PAGES) {
+    page = await gatewayRpcCall('cron.list', { ...params, limit: CRON_LIST_PAGE_LIMIT, offset: page.nextOffset }, timeoutMs) as typeof page;
+    jobs.push(...getCronJobsFromResult(page));
+    pages += 1;
+  }
+  return { result: pages > 1 ? { ...(first as object), hasMore: false, nextOffset: null } : first, jobs };
+}
+
+/** Look up one job. Gateways without cron.get fall back to the full list. */
+async function getCronJob(id: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    return await gatewayRpcCall('cron.get', { id }, GATEWAY_RUN_TIMEOUT_MS) as Record<string, unknown>;
+  } catch (err) {
+    if ((err as Error).message !== 'unknown method: cron.get') throw err;
+    const { jobs } = await listAllCronJobs(GATEWAY_RUN_TIMEOUT_MS);
+    return jobs.find((entry) => (entry.id || entry.jobId) === id);
   }
 }
 
@@ -253,11 +291,7 @@ function buildCronSpawnLabel(job: Record<string, unknown>): string {
 
 app.get('/api/crons', rateLimitGeneral, async (c) => {
   try {
-    const result = await invokeGatewayTool('cron', {
-      action: 'list',
-      includeDisabled: true,
-    });
-    const jobs = getCronJobsFromResult(result);
+    const { result, jobs } = await listAllCronJobs();
     const mergedJobs = jobs.length > 0 ? await mergeManualRunStateIntoJobs(jobs) : jobs;
     return c.json({ ok: true, result: replaceCronJobsInResult(result, mergedJobs) });
   } catch (err) {
@@ -271,12 +305,11 @@ app.post('/api/crons', rateLimitGeneral, async (c) => {
     const raw = await c.req.json();
     const parsed = cronJobSchema.safeParse(raw);
     if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
+    const legacyError = legacyFlatFieldsError(raw.job);
+    if (legacyError) return c.json({ ok: false, error: legacyError }, 400);
     const body = parsed.data;
     const normalizedJob = normalizeCronTarget(body.job);
-    const result = await invokeGatewayTool('cron', {
-      action: 'add',
-      job: normalizedJob,
-    });
+    const result = await gatewayRpcCall('cron.add', normalizedJob);
     return c.json({ ok: true, result });
   } catch (err) {
     console.error('[crons] add error:', (err as Error).message);
@@ -290,13 +323,11 @@ app.patch('/api/crons/:id', rateLimitGeneral, async (c) => {
     const raw = await c.req.json();
     const parsed = cronPatchSchema.safeParse(raw);
     if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
+    const legacyError = legacyFlatFieldsError(raw.patch);
+    if (legacyError) return c.json({ ok: false, error: legacyError }, 400);
     const body = parsed.data;
     const normalizedPatch = normalizeCronTarget(body.patch);
-    const result = await invokeGatewayTool('cron', {
-      action: 'update',
-      jobId: id,
-      patch: normalizedPatch,
-    });
+    const result = await gatewayRpcCall('cron.update', { id, patch: normalizedPatch });
     return c.json({ ok: true, result });
   } catch (err) {
     console.error('[crons] update error:', (err as Error).message);
@@ -307,10 +338,7 @@ app.patch('/api/crons/:id', rateLimitGeneral, async (c) => {
 app.delete('/api/crons/:id', rateLimitGeneral, async (c) => {
   const id = c.req.param('id');
   try {
-    const result = await invokeGatewayTool('cron', {
-      action: 'remove',
-      jobId: id,
-    });
+    const result = await gatewayRpcCall('cron.remove', { id });
     return c.json({ ok: true, result });
   } catch (err) {
     console.error('[crons] remove error:', (err as Error).message);
@@ -323,11 +351,7 @@ app.post('/api/crons/:id/toggle', rateLimitGeneral, async (c) => {
   // Get current state first, then flip
   try {
     const body = await c.req.json<{ enabled: boolean }>().catch(() => ({ enabled: true }));
-    const result = await invokeGatewayTool('cron', {
-      action: 'update',
-      jobId: id,
-      patch: { enabled: body.enabled },
-    });
+    const result = await gatewayRpcCall('cron.update', { id, patch: { enabled: body.enabled } });
     return c.json({ ok: true, result });
   } catch (err) {
     console.error('[crons] toggle error:', (err as Error).message);
@@ -338,12 +362,7 @@ app.post('/api/crons/:id/toggle', rateLimitGeneral, async (c) => {
 app.post('/api/crons/:id/run', rateLimitGeneral, async (c) => {
   const id = c.req.param('id');
   try {
-    const listResult = await invokeGatewayTool('cron', {
-      action: 'list',
-      includeDisabled: true,
-    }, GATEWAY_RUN_TIMEOUT_MS) as Record<string, unknown>;
-    const jobs = getCronJobsFromResult(listResult);
-    const job = jobs.find((entry) => (entry.id || entry.jobId) === id);
+    const job = await getCronJob(id);
 
     if (job && isIsolatedAgentTurnCron(job)) {
       const payload = job.payload as Record<string, unknown>;
@@ -386,10 +405,7 @@ app.post('/api/crons/:id/run', rateLimitGeneral, async (c) => {
       return c.json({ ok: true, result });
     }
 
-    const result = await invokeGatewayTool('cron', {
-      action: 'run',
-      jobId: id,
-    }, GATEWAY_RUN_TIMEOUT_MS);
+    const result = await gatewayRpcCall('cron.run', { id, mode: 'force' }, GATEWAY_RUN_TIMEOUT_MS);
     return c.json({ ok: true, result });
   } catch (err) {
     console.error('[crons] run error:', (err as Error).message);

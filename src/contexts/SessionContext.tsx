@@ -6,6 +6,7 @@ import { getSessionKey, type Session, type AgentLogEntry, type EventEntry, type 
 import { playPing } from '@/features/voice/audio-feedback';
 import { describeToolUse } from '@/utils/helpers';
 import { buildSessionTree } from '@/features/sessions/sessionTree';
+import { getSessionDeleteRefusal } from '@/features/sessions/sessionDeletion';
 import {
   buildAgentRootSessionKey,
   extractIdentityName,
@@ -21,6 +22,7 @@ import {
 
 const BUSY_STATES = new Set(['running', 'thinking', 'tool_use', 'delta', 'started']);
 const IDLE_STATES = new Set(['idle', 'done', 'error', 'final', 'aborted', 'completed']);
+const TERMINAL_PING_DEDUP_MS = 5_000;
 
 // Use the full session list for the sidebar so older root chats stay visible.
 const FULL_SESSIONS_LIMIT = 1000;
@@ -80,14 +82,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const soundEnabledRef = useRef(soundEnabled);
   const logStateRef = useRef<Record<string, boolean>>({});
   const toolSeenRef = useRef<Map<string, number>>(new Map());
+  const terminalPingSeenRef = useRef<Map<string, number>>(new Map());
   const doneTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const delayedRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Derive busyState from agentStatus for backward compatibility
+  // Derive busyState from agentStatus for backward compatibility. A failed run is over, not busy.
   const busyState = useMemo(() => {
     const result: Record<string, boolean> = {};
     for (const [key, state] of Object.entries(agentStatus)) {
-      result[key] = state.status !== 'IDLE' && state.status !== 'DONE';
+      result[key] = state.status !== 'IDLE' && state.status !== 'DONE' && state.status !== 'ERROR';
     }
     return result;
   }, [agentStatus]);
@@ -277,8 +280,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUnreadSessionKeys(next);
   }, []);
 
-  const pingSession = useCallback((sessionKey: string) => {
+  const pingSession = useCallback((sessionKey: string, runId?: string) => {
     if (!sessionKey || currentSessionRef.current === sessionKey || !soundEnabledRef.current) return;
+    const now = Date.now();
+    const dedupeKey = runId ? `${sessionKey}:${runId}` : sessionKey;
+    const lastPingAt = terminalPingSeenRef.current.get(dedupeKey);
+    if (lastPingAt && now - lastPingAt < TERMINAL_PING_DEDUP_MS) return;
+    terminalPingSeenRef.current.set(dedupeKey, now);
     playPing();
   }, []);
 
@@ -430,7 +438,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let badge = 'SYSTEM', badgeCls = 'badge-system', desc = evt;
 
     if (evt.startsWith('chat')) {
-      badge = 'CHAT'; badgeCls = 'badge-chat';
+      badge = 'CHAT'; badgeCls = p.state === 'error' ? 'badge-error' : 'badge-chat';
       desc = chatStateDescs[p.state || ''] || (p.sessionKey ? 'Message from ' + p.sessionKey : 'Chat event');
     } else if (evt.startsWith('agent')) {
       badge = 'AGENT'; badgeCls = 'badge-agent';
@@ -542,7 +550,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       addAgentLogEntry('🔗', 'connected to gateway');
     } else if (evt.includes('error')) {
       addAgentLogEntry('❌', (typeof p.message === 'string' ? p.message : p.error) || 'something went wrong');
-    } else if (evt === 'exec.approval.request') {
+    } else if (evt === 'exec.approval.requested') {
       addAgentLogEntry('🔐', 'requesting exec approval');
     } else if (evt === 'exec.approval.resolved') {
       addAgentLogEntry('🔓', 'exec approved');
@@ -690,7 +698,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
               setGranularStatus(sk, { status: 'DONE', since: Date.now() });
               if (isTopLevelAgentSessionKey(sk)) {
                 markSessionUnread(sk);
-                pingSession(sk);
+                pingSession(sk, eventRunId(ap));
               }
               refreshSessions();
               scheduleDelayedRefresh();
@@ -698,7 +706,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
               setGranularStatus(sk, { status: 'ERROR', since: Date.now() });
               if (isTopLevelAgentSessionKey(sk)) {
                 markSessionUnread(sk);
-                pingSession(sk);
+                pingSession(sk, eventRunId(ap));
               }
               refreshSessions();
             }
@@ -735,7 +743,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setGranularStatus(sk, { status: 'DONE', since: Date.now() });
             if (isTopLevelAgentSessionKey(sk)) {
               markSessionUnread(sk);
-              pingSession(sk);
+              pingSession(sk, eventRunId(cp));
             }
             refreshSessions();
             // Delayed refresh to catch token counts that may not be available immediately.
@@ -744,7 +752,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setGranularStatus(sk, { status: 'ERROR', since: Date.now() });
             if (isTopLevelAgentSessionKey(sk)) {
               markSessionUnread(sk);
-              pingSession(sk);
+              pingSession(sk, eventRunId(cp));
             }
           } else if (state === 'aborted') {
             setGranularStatus(sk, { status: 'IDLE', since: Date.now() });
@@ -801,6 +809,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // A reconnect may have missed lifecycle events, so the granular statuses held across the gap
+  // are suspect: a retained DONE could hide a run that started while we were away, and a retained
+  // THINKING could keep a pane lit for a run that ended. Drop them all and let the refreshed
+  // session snapshot decide until new events arrive.
+  const wasConnectedRef = useRef(false);
+  useEffect(() => {
+    if (connectionState !== 'connected') return;
+    if (wasConnectedRef.current) {
+      for (const key of Object.keys(doneTimeoutsRef.current)) {
+        clearTimeout(doneTimeoutsRef.current[key]);
+      }
+      doneTimeoutsRef.current = {};
+      setAgentStatus({});
+    }
+    wasConnectedRef.current = true;
+  }, [connectionState]);
+
   // Poll sessions when connected (reduced to 30s - WebSocket events provide real-time updates)
   useEffect(() => {
     if (connectionState !== 'connected') return;
@@ -831,23 +856,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const authoritativeSessions = await listAuthoritativeSessions();
     const descendants = findDescendantSessionKeys(sessionKey, authoritativeSessions);
     const keysToDelete = [...descendants, sessionKey];
-    const shouldReplaceCurrent = keysToDelete.includes(currentSessionRef.current);
-    const remaining = sessionsRef.current.filter(s => !keysToDelete.includes(getSessionKey(s)));
-    const nextCurrentSession = shouldReplaceCurrent ? pickDefaultSessionKey(remaining) : currentSessionRef.current;
+    // The target is deleted last, so a gateway refusal would only arrive after every child is gone.
+    const refusal = getSessionDeleteRefusal(keysToDelete);
+    if (refusal) throw new Error(refusal);
 
-    for (const key of keysToDelete) {
-      await rpc('sessions.delete', { key, deleteTranscript: true });
-    }
-
-    setSessions(prev => prev.filter(s => !keysToDelete.includes(getSessionKey(s))));
-    if (unreadSessionKeysRef.current.size > 0) {
-      const next = new Set(unreadSessionKeysRef.current);
-      for (const key of keysToDelete) next.delete(key);
-      unreadSessionKeysRef.current = next;
-      setUnreadSessionKeys(next);
-    }
-    if (shouldReplaceCurrent) {
-      setCurrentSession(nextCurrentSession);
+    const deletedKeys: string[] = [];
+    try {
+      for (const key of keysToDelete) {
+        await rpc('sessions.delete', { key, deleteTranscript: true });
+        deletedKeys.push(key);
+      }
+    } finally {
+      // Mirror what the gateway actually deleted, also when a later delete in the tree failed.
+      if (deletedKeys.length > 0) {
+        const shouldReplaceCurrent = deletedKeys.includes(currentSessionRef.current);
+        const remaining = sessionsRef.current.filter(s => !deletedKeys.includes(getSessionKey(s)));
+        setSessions(prev => prev.filter(s => !deletedKeys.includes(getSessionKey(s))));
+        if (unreadSessionKeysRef.current.size > 0) {
+          const next = new Set(unreadSessionKeysRef.current);
+          for (const key of deletedKeys) next.delete(key);
+          unreadSessionKeysRef.current = next;
+          setUnreadSessionKeys(next);
+        }
+        if (shouldReplaceCurrent) {
+          setCurrentSession(pickDefaultSessionKey(remaining));
+        }
+      }
     }
   }, [findDescendantSessionKeys, listAuthoritativeSessions, rpc, setCurrentSession]);
 
@@ -971,4 +1005,19 @@ export function useSessionContext() {
   const ctx = useContext(SessionContext);
   if (!ctx) throw new Error('useSessionContext must be used within SessionProvider');
   return ctx;
+}
+
+function eventRunId(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const record = payload as Record<string, unknown>;
+  const direct = stringValue(record.runId) ?? stringValue(record.id);
+  if (direct) return direct;
+  const data = record.data;
+  if (!data || typeof data !== 'object') return undefined;
+  const dataRecord = data as Record<string, unknown>;
+  return stringValue(dataRecord.runId) ?? stringValue(dataRecord.id);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }

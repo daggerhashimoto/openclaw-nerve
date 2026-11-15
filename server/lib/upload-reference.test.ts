@@ -62,7 +62,7 @@ describe('upload-reference helpers', () => {
 
     expect(result.kind).toBe('imported_workspace_reference');
     expect(result.canonicalPath).toMatch(/^\.temp\/nerve-uploads\/\d{4}\/\d{2}\/\d{2}\/proof-[a-f0-9]{8}\.txt$/);
-    expect(result.absolutePath).toBe(path.join(workspaceRoot, result.canonicalPath));
+    await expect(fs.realpath(path.join(workspaceRoot, result.canonicalPath))).resolves.toBe(result.absolutePath);
     expect(result.mimeType).toBe('text/plain');
     expect(result.sizeBytes).toBe(12);
     expect(result.originalName).toBe('proof.txt');

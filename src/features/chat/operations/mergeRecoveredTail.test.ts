@@ -23,6 +23,24 @@ describe('mergeRecoveredTail', () => {
     expect(mergeRecoveredTail(existing, [])).toEqual(existing);
   });
 
+  it('takes the recovered reply when history adds an attachment the live final did not carry', () => {
+    const ts = 1700000000000;
+    const existing = [
+      makeMsg('user', 'Make an image', ts),
+      makeMsg('assistant', 'Here it is.', ts + 25_000),
+    ];
+    const withImage = {
+      ...makeMsg('assistant', 'Here it is.', ts + 25_000),
+      extractedImages: [{ url: '/api/chat-media?path=x', alt: 'image.png' }],
+    };
+    const recovered = [makeMsg('user', 'Make an image', ts), withImage];
+
+    const result = mergeRecoveredTail(existing, recovered);
+
+    expect(result).toHaveLength(2);
+    expect(result[1].extractedImages).toEqual([{ url: '/api/chat-media?path=x', alt: 'image.png' }]);
+  });
+
   it('appends new messages when recovered starts where existing ends', () => {
     const ts = 1700000000000;
     const existing = [
@@ -69,6 +87,31 @@ describe('mergeRecoveredTail', () => {
     expect(result.some(m => m.rawText === 'Message C')).toBe(true);
     // Old reply should be replaced, not retained
     expect(result.some(m => m.rawText === 'Old reply B')).toBe(false);
+  });
+
+  it('inserts a recovered message that belongs before an already displayed reply', () => {
+    // An interim reply committed mid-turn (e.g. via the message tool) can reach
+    // the client after the run's final reply is already on screen.
+    const ts = 1700000000000;
+    const existing = [
+      makeMsg('user', 'Message A', ts),
+      makeMsg('assistant', 'Reply A', ts + 1000),
+      makeMsg('user', 'Write about clouds', ts + 2000),
+      makeMsg('assistant', 'Rain falls.', ts + 8000),
+    ];
+    const recovered = [
+      makeMsg('user', 'Write about clouds', ts + 2000),
+      makeMsg('assistant', 'Clouds form.', ts + 5000),
+      makeMsg('assistant', 'Rain falls.', ts + 8000),
+    ];
+    const result = mergeRecoveredTail(existing, recovered);
+    expect(result.map(m => m.rawText)).toEqual([
+      'Message A',
+      'Reply A',
+      'Write about clouds',
+      'Clouds form.',
+      'Rain falls.',
+    ]);
   });
 
   it('falls back to recovered when no overlap or anchor found', () => {

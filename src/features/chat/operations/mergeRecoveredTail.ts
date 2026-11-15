@@ -20,6 +20,9 @@ function messageSignature(msg: ChatMsg): string {
     msg.intermediate ? 'intermediate' : '',
     msg.toolGroup ? `toolGroup:${msg.toolGroup.length}` : '',
     msg.images?.length ? `images:${msg.images.length}` : '',
+    // A reply whose attachment (a generated image) only arrives with history must not match its
+    // image-less live copy, or the recovered version is dropped as a duplicate.
+    msg.extractedImages?.length ? `extracted:${msg.extractedImages.length}` : '',
   ].filter(Boolean).join(',');
 
   return `${msg.role}|${textHash}|${tsBucket}|${flags}`;
@@ -53,12 +56,42 @@ function findTailAnchor(existingSigs: string[], recoveredSigs: string[]) {
     const sig = existingSigs[existingIdx];
     for (let recoveredIdx = 0; recoveredIdx < recoveredSigs.length; recoveredIdx++) {
       if (recoveredSigs[recoveredIdx] === sig) {
-        return { existingIdx, recoveredIdx };
+        return extendAnchorBackwards(existingSigs, recoveredSigs, existingIdx, recoveredIdx, tailStart);
       }
     }
   }
 
   return null;
+}
+
+/**
+ * Walk an anchor back while the preceding existing messages also appear, in
+ * order, earlier in the recovered tail. Anchoring only on the latest match
+ * would drop recovered messages that belong before an already displayed one,
+ * such as an interim reply committed before the run's final answer.
+ */
+function extendAnchorBackwards(
+  existingSigs: string[],
+  recoveredSigs: string[],
+  existingIdx: number,
+  recoveredIdx: number,
+  tailStart: number,
+) {
+  while (existingIdx > tailStart && recoveredIdx > 0) {
+    const sig = existingSigs[existingIdx - 1];
+    let match = -1;
+    for (let i = recoveredIdx - 1; i >= 0; i--) {
+      if (recoveredSigs[i] === sig) {
+        match = i;
+        break;
+      }
+    }
+    if (match < 0) break;
+    existingIdx -= 1;
+    recoveredIdx = match;
+  }
+
+  return { existingIdx, recoveredIdx };
 }
 
 /**

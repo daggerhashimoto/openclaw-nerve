@@ -3,11 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { FileTreeNode } from './FileTreeNode';
 import type { TreeEntry } from './types';
 
-vi.mock('./utils/fileIcons', () => ({
-  FileIcon: ({ name }: { name: string }) => <div data-testid={`file-icon-${name}`} />,
-  FolderIcon: ({ open }: { open: boolean }) => <div data-testid={`folder-icon-${open ? 'open' : 'closed'}`} />,
-}));
-
 vi.mock('./utils/fileTypes', () => ({
   isImageFile: () => false,
   isPdfFile: () => false,
@@ -29,6 +24,9 @@ const directoryEntry: TreeEntry = {
 type RenderNodeOverrides = Partial<{
   entry: TreeEntry;
   compact: boolean;
+  livePath: string | null;
+  expandedPaths: Set<string>;
+  renderChildren: boolean;
   onOpenActions: (entry: TreeEntry, anchorRect: DOMRect) => void;
   onContextMenu: (entry: TreeEntry, event: React.MouseEvent) => void;
   onSelect: (path: string) => void;
@@ -183,5 +181,37 @@ describe('FileTreeNode', () => {
     });
 
     expect(screen.getByText(entry.name)).toHaveClass('flex-1', 'min-w-0', 'truncate');
+  });
+
+  describe('live pane', () => {
+    const crons: TreeEntry = { name: 'crons', path: 'crons', type: 'directory', children: [] };
+
+    it('lights the file the running agent changed', () => {
+      renderNode({ livePath: 'package.json' });
+      expect(screen.getByRole('img', { name: 'Changed by the running agent' })).toHaveAttribute('data-state', 'live');
+    });
+
+    it('stays dark on other files and when nothing is live', () => {
+      const { rerender } = renderNode({ livePath: 'crons/nightly-backup.json' });
+      expect(screen.queryByRole('img', { name: /running agent/ })).not.toBeInTheDocument();
+      rerender(<></>);
+      renderNode({ livePath: null });
+      expect(screen.queryByRole('img', { name: /running agent/ })).not.toBeInTheDocument();
+    });
+
+    it('lights a collapsed folder that contains the changed file', () => {
+      renderNode({ entry: crons, livePath: 'crons/nightly-backup.json' });
+      expect(screen.getByRole('img', { name: 'Contains a file changed by the running agent' })).toHaveAttribute('data-state', 'live');
+    });
+
+    it('leaves an expanded folder dark so the visible file carries the pane', () => {
+      renderNode({ entry: crons, livePath: 'crons/nightly-backup.json', expandedPaths: new Set(['crons']), renderChildren: false });
+      expect(screen.queryByRole('img', { name: /running agent/ })).not.toBeInTheDocument();
+    });
+
+    it('does not treat a sibling with a shared prefix as an ancestor', () => {
+      renderNode({ entry: crons, livePath: 'crons-archive/old.json' });
+      expect(screen.queryByRole('img', { name: /running agent/ })).not.toBeInTheDocument();
+    });
   });
 });

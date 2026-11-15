@@ -25,6 +25,7 @@ import { createDeviceBlock, getDeviceIdentity } from './device-identity.js';
 import { gatewayRpcCall } from './gateway-rpc.js';
 import { canInjectGatewayToken } from './trust-utils.js';
 import { isAllowedOrigin } from './origin-utils.js';
+import { BoundedWebSocketSender } from './ws-backpressure.js';
 
 /** @internal — exported for test overrides */
 export const _internals = { challengeTimeoutMs: 5_000 };
@@ -166,6 +167,15 @@ function createGatewayRelay(
   const connStartTime = Date.now();
   let clientToGatewayCount = 0;
   let gatewayToClientCount = 0;
+  let gwWs: WebSocket;
+  let gwSender: BoundedWebSocketSender | null = null;
+  const clientSender = new BoundedWebSocketSender(clientWs, {
+    label: `${tag} gateway->client`,
+    closeReason: 'Client backlog exceeded',
+    onOverflow: () => {
+      if (gwWs?.readyState === WebSocket.OPEN) gwWs.close(1013, 'Client backlog exceeded');
+    },
+  });
 
   // ─── Keepalive: ping both sides every 30s, kill dead connections ────────
   const PING_INTERVAL = 30_000;
@@ -194,7 +204,6 @@ function createGatewayRelay(
     if (gwWs?.readyState === WebSocket.OPEN) gwWs.ping();
   }, PING_INTERVAL);
 
-  let gwWs: WebSocket;
   let challengeNonce: string | null = null;
   let handshakeComplete = false;
   let useDeviceIdentity = true;
@@ -225,14 +234,18 @@ function createGatewayRelay(
     return true;
   }
 
-  /** Flush buffered messages to gateway in FIFO order. */
+  /** Flush buffered messages to gateway in FIFO order. Preserves the unsent tail
+   *  if `sendToGateway` returns false (e.g., backpressure), so frames aren't dropped. */
   function flushPending(): void {
-    if (!gwWs || gwWs.readyState !== WebSocket.OPEN) return;
-    for (const msg of pending) {
-      gwWs.send(msg.isBinary ? msg.data : msg.data.toString());
+    if (!gwWs || gwWs.readyState !== WebSocket.OPEN || !gwSender) return;
+    let flushed = 0;
+    while (flushed < pending.length) {
+      const msg = pending[flushed]!;
+      if (!sendToGateway(msg.data, msg.isBinary)) break;
+      pendingBytes -= typeof msg.data === 'string' ? Buffer.byteLength(msg.data) : msg.data.length;
+      flushed++;
     }
-    pending = [];
-    pendingBytes = 0;
+    pending = pending.slice(flushed);
   }
 
   /** Clear the challenge nonce timeout if active. */
@@ -277,9 +290,28 @@ function createGatewayRelay(
       ? injectDeviceIdentity(modified, nonce)
       : modified;
 
-    gwWs.send(JSON.stringify(final));
+    if (!sendToGateway(JSON.stringify(final), false)) return;
     handshakeComplete = true;
     flushPending();
+  }
+
+  function closeClientForGatewayBackpressure(): void {
+    if (clientWs.readyState === WebSocket.OPEN || clientWs.readyState === WebSocket.CONNECTING) {
+      clientWs.close(1013, 'Gateway backlog exceeded');
+    }
+  }
+
+  function sendToGateway(data: Buffer | string, isBinary: boolean): boolean {
+    if (!gwSender) return false;
+    const sent = gwSender.send(data, isBinary);
+    if (sent) clientToGatewayCount++;
+    return sent;
+  }
+
+  function sendToClient(data: Buffer | string, isBinary: boolean): boolean {
+    const sent = clientSender.send(data, isBinary);
+    if (sent) gatewayToClientCount++;
+    return sent;
   }
 
   /** Start a deadline timer — sends connect without identity on expiry. */
@@ -292,6 +324,8 @@ function createGatewayRelay(
   }
 
   function openGateway(): void {
+    gwSender?.dispose();
+    gwSender = null;
     gatewayAlive = true;
     challengeNonce = null;
     handshakeComplete = false;
@@ -300,6 +334,11 @@ function createGatewayRelay(
 
     gwWs = new WebSocket(targetUrl.toString(), {
       headers: { Origin: clientOrigin },
+    });
+    gwSender = new BoundedWebSocketSender(gwWs, {
+      label: `${tag} client->gateway`,
+      closeReason: 'Gateway backlog exceeded',
+      onOverflow: closeClientForGatewayBackpressure,
     });
 
     gwWs.on('pong', () => { gatewayAlive = true; });
@@ -320,10 +359,7 @@ function createGatewayRelay(
         } catch { /* ignore */ }
       }
 
-      if (clientWs.readyState === WebSocket.OPEN) {
-        gatewayToClientCount++;
-        clientWs.send(isBinary ? data : data.toString());
-      }
+      if (clientWs.readyState === WebSocket.OPEN) sendToClient(data, isBinary);
     });
 
     gwWs.on('open', () => {
@@ -449,17 +485,17 @@ function createGatewayRelay(
           gatewayCall(msg.method, msg.params || {})
             .then((result) => {
               if (clientWs.readyState === WebSocket.OPEN) {
-                clientWs.send(JSON.stringify({ type: 'res', id: reqId, ok: true, payload: result }));
+                sendToClient(JSON.stringify({ type: 'res', id: reqId, ok: true, payload: result }), false);
               }
             })
             .catch((err) => {
               if (clientWs.readyState === WebSocket.OPEN) {
-                clientWs.send(JSON.stringify({
+                sendToClient(JSON.stringify({
                   type: 'res',
                   id: reqId,
                   ok: false,
                   error: { code: -32000, message: (err as Error).message },
-                }));
+                }), false);
               }
             });
           return;
@@ -467,13 +503,14 @@ function createGatewayRelay(
       } catch { /* pass through */ }
     }
 
-    clientToGatewayCount++;
-    gwWs.send(isBinary ? data : data.toString());
+    sendToGateway(data, isBinary);
   });
 
   clientWs.on('close', (code, reason) => {
     clearInterval(pingTimer);
     clearChallengeTimer();
+    clientSender.dispose();
+    gwSender?.dispose();
     const duration = Date.now() - connStartTime;
     console.log(`${tag} Client closed: code=${code}, reason=${reason?.toString()}`);
     console.log(`${tag} Summary: duration=${duration}ms, client->gw=${clientToGatewayCount}, gw->client=${gatewayToClientCount}`);
@@ -482,6 +519,8 @@ function createGatewayRelay(
   clientWs.on('error', (err) => {
     clearInterval(pingTimer);
     clearChallengeTimer();
+    clientSender.dispose();
+    gwSender?.dispose();
     console.error(`${tag} Client error:`, err.message);
     if (gwWs) gwWs.close();
   });

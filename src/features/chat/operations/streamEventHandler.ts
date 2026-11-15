@@ -1,5 +1,5 @@
 /**
- * streamEventHandler — Pure functions for classifying and processing streaming events.
+ * streamEventHandler: Pure functions for classifying and processing streaming events.
  *
  * Extracted from ChatContext's subscribe callback. No React hooks, setState, or refs.
  */
@@ -7,6 +7,7 @@ import type {
   GatewayEvent,
   ChatEventPayload,
   AgentEventPayload,
+  AgentToolStreamData,
   ChatMessage,
   ContentBlock,
 } from '@/types';
@@ -21,6 +22,8 @@ const ACTIVE_STATES = new Set([
   'thinking', 'processing', 'tool_use', 'executing', 'tool', 'started', 'delta',
 ]);
 
+const TOOL_ITEM_END_PHASES = new Set(['end', 'complete', 'completed']);
+
 /** Check if an agent state indicates active processing (for mid-stream join detection). */
 export function isActiveAgentState(state: string): boolean {
   return ACTIVE_STATES.has(state);
@@ -34,8 +37,10 @@ export type StreamEventType =
   | 'assistant_stream'
   | 'agent_tool_start'
   | 'agent_tool_result'
+  | 'tool_item_end'
   | 'agent_state'
   | 'chat_started'
+  | 'chat_status'
   | 'chat_delta'
   | 'chat_final'
   | 'chat_error'
@@ -111,6 +116,16 @@ export function classifyStreamEvent(event: GatewayEvent): ClassifiedEvent | null
       return { ...base, type: 'ignore' };
     }
 
+    // Item stream: a finished tool item (including the message tool that
+    // delivers interim replies) means new transcript entries may be committed.
+    if (ap.stream === 'item') {
+      const data = (ap.data || {}) as { kind?: unknown; phase?: unknown };
+      if (data.kind === 'tool' && typeof data.phase === 'string' && TOOL_ITEM_END_PHASES.has(data.phase)) {
+        return { ...base, type: 'tool_item_end' };
+      }
+      return { ...base, type: 'ignore' };
+    }
+
     // Agent state changes (thinking, tool_use, etc.)
     const agentState = ap.state || ap.agentState;
     if (agentState) {
@@ -133,6 +148,8 @@ export function classifyStreamEvent(event: GatewayEvent): ClassifiedEvent | null
     const state = cp.state;
 
     if (state === 'started') return { ...base, type: 'chat_started' };
+    // Protocol v4 gateways send repeated `status` frames instead of `started`.
+    if (state === 'status') return { ...base, type: 'chat_status' };
     if (state === 'delta') return { ...base, type: 'chat_delta' };
     if (state === 'final') return { ...base, type: 'chat_final' };
     if (state === 'aborted') return { ...base, type: 'chat_aborted' };
@@ -147,21 +164,32 @@ export function classifyStreamEvent(event: GatewayEvent): ClassifiedEvent | null
 // ─── Delta extraction ──────────────────────────────────────────────────────────
 
 /**
- * Extract the streaming text delta from a chat delta event.
- * Returns null if no text content is present.
+ * Resolve the full streaming text after a chat delta event.
+ *
+ * A `message` snapshot is authoritative. Protocol v4 gateways only include one
+ * on the first frame of a run or a new baseline; later frames carry the append
+ * in `deltaText`, or the whole replacement when `replace` is set. Markers are
+ * stripped from the accumulated text so ones split across frames still match.
+ * Returns null if the event carries no text update.
  */
 export function extractStreamDelta(
   chatPayload: ChatEventPayload,
+  previousText = '',
 ): { text: string; cleaned: string; ttsText: string | null; charts: ChartData[] } | null {
   if (chatPayload.state !== 'delta') return null;
-  if (!chatPayload.message || typeof chatPayload.message === 'string') return null;
 
-  const deltaText = extractText(chatPayload.message);
-  if (deltaText === undefined) return null;
+  let text: string;
+  if (chatPayload.message && typeof chatPayload.message !== 'string') {
+    text = extractText(chatPayload.message);
+  } else if (typeof chatPayload.deltaText === 'string') {
+    text = chatPayload.replace ? chatPayload.deltaText : previousText + chatPayload.deltaText;
+  } else {
+    return null;
+  }
 
-  const { cleaned: ttsStripped, ttsText } = extractTTSMarkers(deltaText);
+  const { cleaned: ttsStripped, ttsText } = extractTTSMarkers(text);
   const { cleaned, charts } = extractChartMarkers(ttsStripped);
-  return { text: deltaText, cleaned, ttsText, charts };
+  return { text, cleaned, ttsText, charts };
 }
 
 // ─── Final message extraction ──────────────────────────────────────────────────
@@ -241,15 +269,29 @@ export function buildActivityLogEntry(agentPayload: AgentEventPayload): Activity
 }
 
 /**
- * Mark a tool as completed in the activity log (returns a new array).
+ * A better description from a tool result, when the result says what the start
+ * could not. Codex reports a web search before it knows the query, so its
+ * start reads "searching the web" and only the result names the query.
+ */
+export function describeToolResult(data: AgentToolStreamData | undefined): string | null {
+  if (!data || data.name !== 'web_search' || !data.result || typeof data.result !== 'object') return null;
+  const { query, queries, action, url, pattern } = data.result as Record<string, unknown>;
+  if (!query && !queries && !url && !pattern) return null;
+  return describeToolUse('web_search', { query, queries, action, url, pattern });
+}
+
+/**
+ * Mark a tool as completed in the activity log (returns a new array), taking
+ * the result's description when it has a better one.
  */
 export function markToolCompleted(
   log: ActivityLogEntry[],
   toolCallId: string,
+  description?: string | null,
 ): ActivityLogEntry[] {
   return log.map(e =>
     e.id === toolCallId
-      ? { ...e, phase: 'completed' as const, completedAt: Date.now() }
+      ? { ...e, ...(description ? { description } : {}), phase: 'completed' as const, completedAt: Date.now() }
       : e,
   );
 }

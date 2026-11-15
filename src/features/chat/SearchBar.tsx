@@ -1,7 +1,7 @@
 /**
- * SearchBar — Inline search input for filtering chat messages
- * 
- * Slides in below COMMS header when search is active.
+ * SearchBar: inline search input for filtering chat messages.
+ *
+ * Sits below the session header when search is active.
  * Keyboard shortcuts: Enter (next), Shift+Enter (prev), Escape (close)
  */
 
@@ -57,23 +57,24 @@ export function SearchBar({
   const noResults = query.trim() && matchCount === 0;
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-card border-b border-border/60 shrink-0 animate-slide-down">
-      <Search size={14} className="text-muted-foreground shrink-0" />
-      
+    <div className="flex min-h-[var(--row-unit)] shrink-0 items-center gap-2 border-b border-border bg-card pl-3 pr-0.5">
+      <Search size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+
       <input
         ref={inputRef}
         type="text"
         value={query}
         onChange={e => onQueryChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Search messages..."
+        placeholder="Search messages"
+        aria-label="Search messages"
         spellCheck={false}
-        className="flex-1 bg-transparent text-foreground text-[0.867rem] font-mono outline-none placeholder:text-muted-foreground/50"
+        className="h-[1.467rem] min-w-0 flex-1 rounded-[3px] border border-input bg-background px-2 text-[0.867rem] text-foreground outline-none transition-colors duration-[120ms] placeholder:text-muted-foreground focus-visible:border-ring max-sm:h-9 max-sm:text-base"
       />
 
       {/* Results counter */}
       {query.trim() && (
-        <span className={`text-[0.667rem] tabular-nums shrink-0 ${noResults ? 'text-red' : 'text-muted-foreground'}`}>
+        <span className={`shrink-0 font-mono text-[0.8rem] tabular ${noResults ? 'text-destructive' : 'text-muted-foreground'}`}>
           {hasResults ? (
             <>{currentMatchIndex + 1} / {matchCount}</>
           ) : (
@@ -86,16 +87,20 @@ export function SearchBar({
       {hasResults && (
         <>
           <button
+            type="button"
             onClick={onPrev}
-            className="p-1 text-muted-foreground hover:text-primary transition-colors"
+            className="shell-icon-button shrink-0"
             title="Previous match (Shift+Enter)"
+            aria-label="Previous match"
           >
             <ChevronUp size={14} />
           </button>
           <button
+            type="button"
             onClick={onNext}
-            className="p-1 text-muted-foreground hover:text-primary transition-colors"
+            className="shell-icon-button shrink-0"
             title="Next match (Enter)"
+            aria-label="Next match"
           >
             <ChevronDown size={14} />
           </button>
@@ -104,9 +109,11 @@ export function SearchBar({
 
       {/* Close button */}
       <button
+        type="button"
         onClick={onClose}
-        className="p-1 text-muted-foreground hover:text-primary transition-colors"
+        className="shell-icon-button shrink-0"
         title="Close (Escape)"
+        aria-label="Close search"
       >
         <X size={14} />
       </button>

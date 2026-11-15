@@ -1,14 +1,19 @@
 /**
- * FileTreePanel — Collapsible file tree sidebar on the far left.
+ * FileTreePanel: Collapsible file tree sidebar on the far left.
  *
  * Shows workspace files in a tree structure. Directories lazy-load on expand.
  * Double-click a file to open it as an editor tab.
  */
 
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { PanelLeftClose, RefreshCw, X } from 'lucide-react';
 import { FileTreeNode } from './FileTreeNode';
 import { buildFileTreeMenuActions } from './fileTreeMenuActions';
+import {
+  FILE_TREE_OVERSCAN_ROWS,
+  FILE_TREE_ROW_HEIGHT,
+  flattenVisibleFileTree,
+} from './fileTreeRows';
 import { useFileTree } from './hooks/useFileTree';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -16,8 +21,11 @@ import type { TreeEntry } from './types';
 
 const MIN_WIDTH = 160;
 const MAX_WIDTH = 400;
-const DEFAULT_WIDTH = 220;
+const DEFAULT_WIDTH = 248;
 /** Sentinel value for width state when collapsed. */
+/** How long a file change waits for the run state that explains it before it is forgotten. */
+const PENDING_CHANGE_WINDOW_MS = 10_000;
+
 const COLLAPSED_WIDTH = 0;
 
 const WIDTH_STORAGE_KEY = 'nerve-file-tree-width';
@@ -61,7 +69,7 @@ interface FileTreePanelProps {
   addToChatEnabled?: boolean;
   onRemapOpenPaths?: (fromPath: string, toPath: string, targetAgentId?: string) => void;
   onCloseOpenPaths?: (pathPrefix: string, targetAgentId?: string) => void;
-  /** Called externally when a file changes (SSE) — refreshes affected directory. */
+  /** Called externally when a file changes (SSE); refreshes affected directory. */
   lastChangedEvent?: FileTreeChangeEvent | null;
   /** Ask the tree to reveal and select a workspace path. */
   revealRequest?: { id: number; path: string; kind: 'file' | 'directory'; agentId: string } | null;
@@ -71,6 +79,8 @@ interface FileTreePanelProps {
   onCollapseChange: (collapsed: boolean) => void;
   /** External control of collapsed state */
   collapsed: boolean;
+  /** Whether the agent is running now; files changed during a run are lit as live work. */
+  agentRunning?: boolean;
 }
 
 interface FileOpResult {
@@ -116,6 +126,7 @@ export function FileTreePanel({
   isCompactLayout = false,
   onCollapseChange,
   collapsed,
+  agentRunning = false,
 }: FileTreePanelProps) {
   const { showHiddenWorkspaceEntries } = useSettings();
   const {
@@ -126,6 +137,10 @@ export function FileTreePanel({
   // React to external file changes. Sequence keeps repeated same-path events distinct,
   // and agentId prevents a stale event from one workspace from replaying in another.
   const lastHandledChangeSequenceRef = useRef<number | null>(null);
+  // The file the running agent last changed: lit with a live pane until the run ends.
+  const [livePath, setLivePath] = useState<string | null>(null);
+  // A change that arrives a beat before the run state does: remembered, and lit once the run shows.
+  const pendingChangeRef = useRef<{ path: string; at: number } | null>(null);
   useEffect(() => {
     if (!lastChangedEvent) return;
     if (lastChangedEvent.agentId !== workspaceAgentId) return;
@@ -133,7 +148,27 @@ export function FileTreePanel({
 
     lastHandledChangeSequenceRef.current = lastChangedEvent.sequence;
     handleFileChange(lastChangedEvent.path);
-  }, [handleFileChange, lastChangedEvent, workspaceAgentId]);
+    if (agentRunning) setLivePath(lastChangedEvent.path);
+    else pendingChangeRef.current = { path: lastChangedEvent.path, at: Date.now() };
+  }, [agentRunning, handleFileChange, lastChangedEvent, workspaceAgentId]);
+
+  // The pane goes dark when the run ends or the workspace changes. Mounting the panel
+  // (the compact drawer opens) is not a workspace change, so a live file stays lit.
+  useEffect(() => {
+    if (!agentRunning) {
+      setLivePath(null);
+      return;
+    }
+    const pending = pendingChangeRef.current;
+    pendingChangeRef.current = null;
+    if (pending && Date.now() - pending.at < PENDING_CHANGE_WINDOW_MS) setLivePath(pending.path);
+  }, [agentRunning]);
+  const previousWorkspaceRef = useRef(workspaceAgentId);
+  useEffect(() => {
+    if (previousWorkspaceRef.current === workspaceAgentId) return;
+    previousWorkspaceRef.current = workspaceAgentId;
+    setLivePath(null);
+  }, [workspaceAgentId]);
 
   const lastHandledRevealIdRef = useRef<number | null>(null);
   useEffect(() => {
@@ -146,16 +181,41 @@ export function FileTreePanel({
   }, [revealPath, revealRequest, workspaceAgentId]);
 
   const panelRef = useRef<HTMLDivElement>(null);
+  const treeScrollRef = useRef<HTMLDivElement>(null);
   const widthRef = useRef(loadWidth());
   const draggingRef = useRef(false);
   const [width, setWidth] = useState(() => {
     return collapsed ? COLLAPSED_WIDTH : loadWidth();
   });
+  const [treeScrollTop, setTreeScrollTop] = useState(0);
+  const [treeViewportHeight, setTreeViewportHeight] = useState(0);
 
   // Handle external collapsed state changes (e.g., from mobile button)
   useEffect(() => {
     const targetWidth = collapsed ? COLLAPSED_WIDTH : widthRef.current;
     setWidth(targetWidth);
+  }, [collapsed]);
+
+  useEffect(() => {
+    const scrollEl = treeScrollRef.current;
+    if (!scrollEl) return undefined;
+
+    const updateViewport = () => {
+      setTreeViewportHeight(scrollEl.clientHeight);
+    };
+
+    updateViewport();
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(updateViewport)
+      : null;
+    resizeObserver?.observe(scrollEl);
+    window.addEventListener('resize', updateViewport);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateViewport);
+    };
   }, [collapsed]);
 
   const [contextMenu, setContextMenu] = useState<ScopedContextMenu | null>(null);
@@ -237,6 +297,42 @@ export function FileTreePanel({
   const visibleRenameState = renameState?.agentId === workspaceAgentId ? renameState : null;
   const visibleDragSource = dragSource?.agentId === workspaceAgentId ? dragSource.entry : null;
   const visibleDropTargetPath = dropTargetPath?.agentId === workspaceAgentId ? dropTargetPath.path : null;
+  const flatRows = useMemo(() => flattenVisibleFileTree(entries, expandedPaths), [entries, expandedPaths]);
+  const rawStartIndex = Math.floor(treeScrollTop / FILE_TREE_ROW_HEIGHT) - FILE_TREE_OVERSCAN_ROWS;
+  const maxStartIndex = Math.max(0, flatRows.length - 1);
+  const visibleStartIndex = Math.min(maxStartIndex, Math.max(0, rawStartIndex));
+  const visibleCapacity = treeViewportHeight > 0
+    ? Math.ceil(treeViewportHeight / FILE_TREE_ROW_HEIGHT) + FILE_TREE_OVERSCAN_ROWS * 2
+    : 80;
+  const visibleEndIndex = Math.min(flatRows.length, visibleStartIndex + visibleCapacity);
+  const virtualRows = flatRows.slice(visibleStartIndex, visibleEndIndex);
+  const virtualTreeHeight = flatRows.length * FILE_TREE_ROW_HEIGHT;
+
+  useEffect(() => {
+    if (!selectedPath) return;
+    const scrollEl = treeScrollRef.current;
+    if (!scrollEl) return;
+
+    const selectedIndex = flatRows.findIndex((row) => row.entry.path === selectedPath);
+    if (selectedIndex < 0) return;
+
+    const viewportHeight = scrollEl.clientHeight || treeViewportHeight;
+    if (viewportHeight <= 0) return;
+
+    const rowTop = selectedIndex * FILE_TREE_ROW_HEIGHT;
+    const rowBottom = rowTop + FILE_TREE_ROW_HEIGHT;
+    const currentTop = scrollEl.scrollTop;
+    const currentBottom = currentTop + viewportHeight;
+
+    if (rowTop < currentTop) {
+      scrollEl.scrollTop = rowTop;
+      setTreeScrollTop(rowTop);
+    } else if (rowBottom > currentBottom) {
+      const nextTop = rowBottom - viewportHeight;
+      scrollEl.scrollTop = nextTop;
+      setTreeScrollTop(nextTop);
+    }
+  }, [flatRows, selectedPath, treeViewportHeight]);
 
   useEffect(() => {
     workspaceAgentIdRef.current = workspaceAgentId;
@@ -625,7 +721,7 @@ export function FileTreePanel({
         result.undoTtlMs ?? UNDO_TOAST_TTL_MS,
       );
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Move to Trash failed';
+      const message = err instanceof Error ? err.message : 'Move to trash failed';
       showToastForAgent(targetAgentId, { type: 'error', message }, 4500);
       clearContextMenuIfCurrent(originatingContextMenu);
     }
@@ -768,7 +864,7 @@ export function FileTreePanel({
       style={isCompactLayout ? undefined : { width }}
     >
       <div
-        className="shell-panel flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden rounded-[28px]"
+        className="shell-panel flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden"
         onContextMenu={(e) => {
           // Right-click on empty panel area closes any open context menu.
           if (e.target === e.currentTarget) {
@@ -779,7 +875,7 @@ export function FileTreePanel({
       >
         {/* Header */}
         <div
-          className={`flex items-center justify-between border-b border-border/70 px-4 py-3 ${visibleDropTargetPath === '.' ? 'bg-primary/12 ring-1 ring-inset ring-primary/35' : 'bg-gradient-to-r from-secondary/90 to-card/85'}`}
+          className={`panel-header justify-between ${visibleDropTargetPath === '.' ? 'bg-raised! ring-1 ring-inset ring-muted-foreground' : ''}`}
           onDragOver={handleRootDragOver}
           onDragLeave={(e) => {
             if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
@@ -787,80 +883,102 @@ export function FileTreePanel({
           }}
           onDrop={handleRootDrop}
         >
-          <span className="text-[0.667rem] font-mono font-semibold uppercase tracking-[0.26em] text-muted-foreground">
-            {workspaceInfo?.isCustomWorkspace ? workspaceInfo.rootPath : 'Workspace'}
+          <span className="panel-label min-w-0">
+            {workspaceInfo?.isCustomWorkspace ? (
+              <span className="truncate font-mono text-[0.8rem] font-normal" title={workspaceInfo.rootPath}>
+                {workspaceInfo.rootPath}
+              </span>
+            ) : 'Workspace'}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center">
             <button
               onClick={() => refresh(workspaceAgentId)}
-              className="shell-icon-button size-10 px-0"
+              className="shell-icon-button px-0"
               title="Refresh file tree"
               aria-label="Refresh file tree"
             >
-              <RefreshCw size={16} />
+              <RefreshCw size={14} />
             </button>
             <button
               onClick={toggleCollapsed}
-              className="shell-icon-button size-10 px-0"
+              className="shell-icon-button px-0"
               title="Close file explorer (Ctrl+B)"
               aria-label="Close file explorer"
             >
-              <PanelLeftClose size={16} />
+              <PanelLeftClose size={14} />
             </button>
           </div>
         </div>
 
         {/* Tree content */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden py-1" role="tree" aria-label="File explorer">
+        <div
+          ref={treeScrollRef}
+          className="flex-1 overflow-y-auto overflow-x-hidden"
+          role="tree"
+          aria-label="File explorer"
+          onScroll={(event) => setTreeScrollTop(event.currentTarget.scrollTop)}
+        >
           {loading ? (
-            <div className="flex items-center gap-2 px-3 py-4 text-xs text-muted-foreground">
-              <RefreshCw className="animate-spin" size={12} />
+            <div className="flex min-h-[var(--row-unit)] items-center gap-2 px-3 text-[0.8rem] text-muted-foreground">
+              <RefreshCw className="animate-spin" size={14} />
               Loading...
             </div>
           ) : error ? (
-            <div className="px-3 py-4 text-xs text-destructive">
+            <div className="px-3 py-2 text-[0.8rem] text-destructive">
               {error}
               <button
                 onClick={() => refresh(workspaceAgentId)}
-                className="block mt-2 text-primary hover:underline"
+                className="mt-1 -ml-2 flex min-h-[var(--row-unit)] items-center rounded-[3px] px-2 text-[0.867rem] text-foreground transition-colors duration-[120ms] hover:bg-raised"
               >
                 Retry
               </button>
             </div>
           ) : entries.length === 0 ? (
-            <div className="px-3 py-4 text-xs text-muted-foreground">
+            <div className="flex min-h-[var(--row-unit)] items-center px-3 text-[0.8rem] text-muted-foreground">
               Empty workspace
             </div>
           ) : (
-            entries.map((entry) => (
-              <FileTreeNode
-                key={entry.path}
-                entry={entry}
-                depth={0}
-                expandedPaths={expandedPaths}
-                selectedPath={selectedPath}
-                loadingPaths={loadingPaths}
-                onToggleDir={toggleDirectory}
-                onOpenFile={onOpenFile}
-                onTouchLongPress={isCompactLayout ? undefined : openTouchContextMenu}
-                onSelect={selectFile}
-                onContextMenu={handleContextMenu}
-                dragSourcePath={visibleDragSource?.path || null}
-                dropTargetPath={visibleDropTargetPath}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                onDragOverDirectory={handleDragOverDirectory}
-                onDragLeaveDirectory={handleDragLeaveDirectory}
-                onDropDirectory={handleDropDirectory}
-                renamingPath={visibleRenameState?.path || null}
-                renameValue={visibleRenameState?.value || ''}
-                onRenameChange={handleRenameChange}
-                onRenameCommit={() => { void commitRename(); }}
-                onRenameCancel={cancelRename}
-                compact={isCompactLayout}
-                onOpenActions={openCompactActionsMenu}
-              />
-            ))
+            <div className="relative" style={{ height: virtualTreeHeight }}>
+              {virtualRows.map((row) => (
+                <div
+                  key={row.entry.path}
+                  className="absolute left-0 right-0"
+                  style={{
+                    top: row.index * FILE_TREE_ROW_HEIGHT,
+                    height: FILE_TREE_ROW_HEIGHT,
+                  }}
+                >
+                  <FileTreeNode
+                    entry={row.entry}
+                    depth={row.depth}
+                    expandedPaths={expandedPaths}
+                    selectedPath={selectedPath}
+                    loadingPaths={loadingPaths}
+                    onToggleDir={toggleDirectory}
+                    onOpenFile={onOpenFile}
+                    onTouchLongPress={isCompactLayout ? undefined : openTouchContextMenu}
+                    onSelect={selectFile}
+                    onContextMenu={handleContextMenu}
+                    dragSourcePath={visibleDragSource?.path || null}
+                    dropTargetPath={visibleDropTargetPath}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    onDragOverDirectory={handleDragOverDirectory}
+                    onDragLeaveDirectory={handleDragLeaveDirectory}
+                    onDropDirectory={handleDropDirectory}
+                    renamingPath={visibleRenameState?.path || null}
+                    renameValue={visibleRenameState?.value || ''}
+                    onRenameChange={handleRenameChange}
+                    onRenameCommit={() => { void commitRename(); }}
+                    onRenameCancel={cancelRename}
+                    renderChildren={false}
+                    compact={isCompactLayout}
+                    onOpenActions={openCompactActionsMenu}
+                    livePath={livePath}
+                  />
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -869,7 +987,7 @@ export function FileTreePanel({
       {visibleContextMenu && menuEntry && (
         <div
           ref={contextMenuRef}
-          className="shell-panel fixed z-50 min-w-[180px] rounded-2xl py-1.5 select-none touch-manipulation"
+          className="fixed z-50 min-w-[180px] rounded-[3px] border border-border bg-popover py-1 text-popover-foreground nerve-menu-shadow select-none touch-manipulation"
           style={{
             left: visibleContextMenu.x,
             top: visibleContextMenu.y,
@@ -884,23 +1002,23 @@ export function FileTreePanel({
               return (
                 <button
                   key={action.id}
-                  className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                  className={`flex min-h-[var(--row-unit)] w-full items-center gap-2 px-3 text-left text-[0.867rem] transition-colors duration-[120ms] ${
                     action.destructive
                       ? 'text-destructive hover:bg-destructive/10'
-                      : 'text-foreground hover:bg-muted/60'
+                      : 'text-foreground hover:bg-raised'
                   }`}
                   onClick={() => {
                     setContextMenu(null);
                     action.onSelect();
                   }}
                 >
-                  <Icon size={12} />
+                  <Icon size={14} />
                   {action.label}
                 </button>
               );
             })
           ) : (
-            <div className="px-3 py-1.5 text-xs text-muted-foreground">
+            <div className="flex min-h-[var(--row-unit)] items-center px-3 text-[0.8rem] text-muted-foreground">
               No actions
             </div>
           )}
@@ -909,24 +1027,24 @@ export function FileTreePanel({
 
       {/* Toast */}
       {visibleToast && (
-        <div className="shell-panel fixed bottom-4 left-2 right-2 z-[70] flex w-auto min-w-0 max-w-[min(92vw,680px)] items-center gap-3 rounded-2xl px-4 py-3 text-xs sm:left-4 sm:right-auto sm:min-w-[320px]">
+        <div className="fixed bottom-4 left-2 right-2 z-[70] flex w-auto min-w-0 max-w-[min(92vw,680px)] items-center gap-2 rounded-[3px] border border-border bg-popover py-1 pl-3 pr-1 text-[0.867rem] text-popover-foreground nerve-menu-shadow sm:left-4 sm:right-auto sm:min-w-[320px]">
           <span className={`flex-1 ${visibleToast.type === 'error' ? 'text-destructive' : 'text-foreground'}`}>
             {visibleToast.message}
           </span>
           {visibleToast.type === 'undo' && (
             <button
-              className="text-primary hover:underline shrink-0"
+              className="flex min-h-[var(--row-unit)] shrink-0 items-center rounded-[3px] px-2 font-medium text-foreground transition-colors duration-[120ms] hover:bg-raised"
               onClick={() => { void handleUndoToast(); }}
             >
               Undo
             </button>
           )}
           <button
-            className="ml-1 text-muted-foreground hover:text-foreground shrink-0"
+            className="shell-icon-button shrink-0"
             onClick={dismissToast}
             aria-label="Dismiss"
           >
-            <X size={12} />
+            <X size={14} />
           </button>
         </div>
       )}
@@ -934,14 +1052,15 @@ export function FileTreePanel({
       {/* Resize handle */}
       {!isCompactLayout && (
         <div
-          className="absolute top-0 -right-3 z-20 flex h-full w-3 cursor-col-resize items-stretch justify-center"
+          className="group absolute top-0 -right-1 z-20 h-full w-2 cursor-col-resize"
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClickResize}
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize file explorer"
         >
-          <div className="pointer-events-none my-3 w-px rounded-full bg-border transition-colors hover:bg-primary/55" />
+          {/* Invisible hit area centred on the column rule; the rule itself is drawn by the column border */}
+          <div className="pointer-events-none absolute inset-y-0 right-1 w-px bg-transparent transition-colors duration-[120ms] group-hover:bg-pane-edge group-active:bg-pane-edge" />
         </div>
       )}
 
@@ -949,9 +1068,9 @@ export function FileTreePanel({
       {visibleDeleteConfirmation && (
         <ConfirmDialog
           open={true}
-          title="Permanently Delete"
+          title="Permanently delete"
           message={`Are you sure you want to permanently delete "${visibleDeleteConfirmation.entry.name}"? This action cannot be undone.`}
-          confirmLabel="Permanently Delete"
+          confirmLabel="Delete permanently"
           cancelLabel="Cancel"
           variant="danger"
           onConfirm={() => { void confirmPermanentDelete(visibleDeleteConfirmation); }}

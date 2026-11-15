@@ -51,3 +51,13 @@ server/data/kanban/audit.log
 server-dist/data/kanban/tasks.json
 server-dist/data/kanban/audit.log
 node_modules
+
+# Impeccable working folders and browser automation output (DESIGN.md, PRODUCT.md, config and surfaces are tracked)
+.impeccable/ref/
+.impeccable/mocks/
+.impeccable/decision/
+.impeccable/review/
+.impeccable/build/
+.playwright-mcp/
+.playwright-cli/
+.impeccable/config.local.json

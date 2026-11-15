@@ -1,8 +1,9 @@
 /* eslint-disable react-refresh/only-export-components -- hook intentionally co-located with provider */
 import { createContext, useContext, useCallback, useRef, useState, useEffect, useMemo, type ReactNode } from 'react';
 import { useTTS, migrateTTSProvider, type TTSProvider } from '@/features/tts/useTTS';
-import { type ThemeName, applyTheme, themeNames } from '@/lib/themes';
-import { type FontName, applyFont, fontNames } from '@/lib/fonts';
+import { type ThemeName, applyTheme, loadStoredTheme } from '@/lib/themes';
+import { type FontName, applyFont, fontNames, DEFAULT_FONT } from '@/lib/fonts';
+import { PERFORMANCE_MODE_STORAGE_KEY, isPerformanceModePreferenceEnabled } from '@/lib/performanceMode';
 
 export type STTProvider = 'local' | 'openai';
 export type STTInputMode = 'browser' | 'local' | 'hybrid';
@@ -50,10 +51,12 @@ interface SettingsContextValue {
   setEditorFontSize: (size: number) => void;
   kanbanVisible: boolean;
   toggleKanbanVisible: () => void;
+  performanceMode: boolean;
+  togglePerformanceMode: () => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
-const FONT_REFRESH_STORAGE_KEY = 'nerve:font-refresh-20260312';
+const FONT_REFRESH_STORAGE_KEY = 'nerve:font-refresh-20261031';
 const KANBAN_VISIBILITY_STORAGE_KEY = 'nerve:workspace:kanban-visible';
 const COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showChatboxCommandPaletteButton';
 const LEGACY_TOPBAR_COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showTopBarCommandPaletteButton';
@@ -88,25 +91,27 @@ function resolveInitialFont(): FontName {
   const hasRefreshedFont = localStorage.getItem(FONT_REFRESH_STORAGE_KEY) === 'true';
 
   if (!hasRefreshedFont) {
-    const shouldAdoptInstrumentSans =
+    // One-time move to the redesign's face. Previous defaults (and the legacy
+    // values they replaced) adopt it; explicit picks of other faces are kept.
+    const shouldAdoptDefault =
       saved === null ||
       saved === 'inter' ||
       saved === 'system' ||
-      saved === 'jetbrains-mono';
+      saved === 'instrument-sans';
 
     localStorage.setItem(FONT_REFRESH_STORAGE_KEY, 'true');
 
-    if (shouldAdoptInstrumentSans) {
-      localStorage.setItem('oc-font', 'instrument-sans');
-      return 'instrument-sans';
-    }
-
-    if (saved && fontNames.includes(saved as FontName)) {
-      return saved as FontName;
+    if (shouldAdoptDefault) {
+      localStorage.setItem('oc-font', DEFAULT_FONT);
+      return DEFAULT_FONT;
     }
   }
 
-  return saved && fontNames.includes(saved as FontName) ? saved as FontName : 'instrument-sans';
+  return saved && fontNames.includes(saved as FontName) ? saved as FontName : DEFAULT_FONT;
+}
+
+function resolveInitialTheme(): ThemeName {
+  return loadStoredTheme();
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
@@ -145,10 +150,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     return localStorage.getItem('nerve:showHiddenWorkspaceEntries') === 'true';
   });
   const [commandPaletteButtonVisible, setCommandPaletteButtonVisible] = useState(resolveInitialCommandPaletteButtonVisible);
-  const [theme, setThemeState] = useState<ThemeName>(() => {
-    const saved = localStorage.getItem('oc-theme') as ThemeName | null;
-    return saved && themeNames.includes(saved) ? saved : 'ayu-dark';
-  });
+  const [theme, setThemeState] = useState<ThemeName>(resolveInitialTheme);
   const [font, setFontState] = useState<FontName>(resolveInitialFont);
   const [fontSize, setFontSizeState] = useState<number>(() => {
     const saved = localStorage.getItem('nerve:font-size');
@@ -164,6 +166,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const saved = localStorage.getItem(KANBAN_VISIBILITY_STORAGE_KEY);
     return saved !== 'false';
   });
+  const [performanceMode, setPerformanceMode] = useState(isPerformanceModePreferenceEnabled);
   const { speak } = useTTS(soundEnabled, ttsProvider, ttsModel || undefined);
   const wakeWordToggleRef = useRef<(() => void) | null>(null);
 
@@ -186,6 +189,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.style.setProperty('--editor-font-size', `${editorFontSize}px`);
   }, [editorFontSize]);
+
+  // Keep performance mode in sync with changes made by other tabs (key is null when storage is cleared)
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== PERFORMANCE_MODE_STORAGE_KEY) return;
+      setPerformanceMode(isPerformanceModePreferenceEnabled());
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   const toggleSound = useCallback(() => {
     setSoundEnabled(prev => {
@@ -365,6 +378,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const togglePerformanceMode = useCallback(() => {
+    const next = !performanceMode;
+    try {
+      localStorage.setItem(PERFORMANCE_MODE_STORAGE_KEY, String(next));
+    } catch {
+      // GatewayContext reads this key directly, so keep state in sync with storage when the write fails.
+      return;
+    }
+    setPerformanceMode(next);
+  }, [performanceMode]);
+
   const value = useMemo<SettingsContextValue>(() => ({
     soundEnabled,
     toggleSound,
@@ -408,6 +432,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setEditorFontSize,
     kanbanVisible,
     toggleKanbanVisible,
+    performanceMode,
+    togglePerformanceMode,
   }), [
     soundEnabled, toggleSound, ttsProvider, ttsModel, changeTtsProvider, changeTtsModel, toggleTtsProvider,
     sttProvider, changeSttProvider, sttInputMode, changeSttInputMode, sttModel, changeSttModel,
@@ -418,6 +444,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     commandPaletteButtonVisible, toggleCommandPaletteButtonVisible,
     theme, setTheme, font, setFont,
     fontSize, setFontSize, editorFontSize, setEditorFontSize, kanbanVisible, toggleKanbanVisible,
+    performanceMode, togglePerformanceMode,
   ]);
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

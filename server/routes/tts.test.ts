@@ -16,7 +16,7 @@ describe('TTS routes', () => {
     replicateToken?: string;
     mimoKey?: string;
     edgeResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number; contentType?: string };
-    openaiResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number };
+    openaiResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number; contentType?: string };
     replicateResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number };
     xiaomiResult?: { ok: boolean; buf?: Buffer; message?: string; status?: number; contentType?: string };
   } = {}) {
@@ -59,7 +59,7 @@ describe('TTS routes', () => {
     }));
     vi.doMock('../lib/tts-config.js', () => ({
       getTTSConfig: vi.fn(() => ({
-        openai: { voice: 'alloy', model: 'tts-1', instructions: '' },
+        openai: { voice: 'alloy', realtimeVoice: 'marin', model: 'tts-1', instructions: '' },
         edge: { voice: 'en-US-JennyNeural' },
         qwen: {},
         xiaomi: { model: 'mimo-v2-tts', voice: 'mimo_default', style: 'Happy' },
@@ -119,6 +119,20 @@ describe('TTS routes', () => {
         body: JSON.stringify({ text: 'Hello' }),
       });
       expect(res.status).toBe(200);
+    });
+
+    it('returns WAV audio for the Realtime model', async () => {
+      mockDeps({ openaiKey: 'sk-test', openaiResult: {
+        ok: true, buf: Buffer.from('RIFFdemo'), contentType: 'audio/wav',
+      } });
+      const app = await buildApp();
+      const res = await app.request('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'Hello', provider: 'openai', model: 'gpt-realtime-2.1-mini' }),
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('audio/wav');
     });
 
     it('uses explicit edge provider even when OpenAI key exists', async () => {

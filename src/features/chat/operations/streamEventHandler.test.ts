@@ -1,4 +1,4 @@
-/** Tests for streamEventHandler — event classification, deltas, and activity log. */
+/** Tests for streamEventHandler: event classification, deltas, and activity log. */
 import { describe, it, expect } from 'vitest';
 import {
   isActiveAgentState,
@@ -7,6 +7,7 @@ import {
   extractFinalMessages,
   extractFinalMessage,
   buildActivityLogEntry,
+  describeToolResult,
   markToolCompleted,
   appendActivityEntry,
   deriveProcessingStage,
@@ -98,6 +99,29 @@ describe('classifyStreamEvent', () => {
       expect(classifyStreamEvent(event)?.type).toBe('ignore');
     });
 
+    it('classifies a finished tool item as tool_item_end', () => {
+      for (const phase of ['end', 'complete', 'completed']) {
+        const event: GatewayEvent = {
+          type: 'event', event: 'agent',
+          payload: { stream: 'item', sessionKey: 'sk', data: { kind: 'tool', phase, name: 'message', toolCallId: 'tc-1' } },
+        };
+        expect(classifyStreamEvent(event)?.type).toBe('tool_item_end');
+      }
+    });
+
+    it('ignores tool items that have not finished and non-tool items', () => {
+      const started: GatewayEvent = {
+        type: 'event', event: 'agent',
+        payload: { stream: 'item', data: { kind: 'tool', phase: 'start', name: 'bash' } },
+      };
+      const analysis: GatewayEvent = {
+        type: 'event', event: 'agent',
+        payload: { stream: 'item', data: { kind: 'analysis', phase: 'end' } },
+      };
+      expect(classifyStreamEvent(started)?.type).toBe('ignore');
+      expect(classifyStreamEvent(analysis)?.type).toBe('ignore');
+    });
+
     it('classifies agent state changes', () => {
       const event: GatewayEvent = {
         type: 'event', event: 'agent',
@@ -163,6 +187,16 @@ describe('classifyStreamEvent', () => {
       expect(classifyStreamEvent(event)?.type).toBe('chat_error');
     });
 
+    it('classifies chat status as chat_status', () => {
+      const event: GatewayEvent = {
+        type: 'event', event: 'chat',
+        payload: { state: 'status', sessionKey: 'sk1', runId: 'r-1', phase: 'preparing_context' },
+      };
+      const result = classifyStreamEvent(event);
+      expect(result?.type).toBe('chat_status');
+      expect(result?.runId).toBe('r-1');
+    });
+
     it('ignores unknown chat states', () => {
       const event: GatewayEvent = {
         type: 'event', event: 'chat',
@@ -198,6 +232,62 @@ describe('extractStreamDelta', () => {
     const result = extractStreamDelta(payload);
     expect(result).not.toBeNull();
     expect(result!.text).toContain('Hello world');
+  });
+
+  // Protocol v4 gateways send the append in `deltaText` and only include a
+  // `message` snapshot on the first frame of a run or on a new baseline.
+  describe('deltaText appends', () => {
+    const snapshot = (text: string) => ({
+      role: 'assistant' as const,
+      content: [{ type: 'text' as const, text }],
+    });
+
+    it('appends deltaText to the previous text when no snapshot is present', () => {
+      const result = extractStreamDelta({ state: 'delta', deltaText: ' world' }, 'Hello');
+      expect(result?.text).toBe('Hello world');
+      expect(result?.cleaned).toBe('Hello world');
+    });
+
+    it('starts from empty text when there is no previous text', () => {
+      expect(extractStreamDelta({ state: 'delta', deltaText: 'Hi' })?.text).toBe('Hi');
+    });
+
+    it('treats a supplied snapshot as authoritative instead of appending deltaText', () => {
+      const result = extractStreamDelta(
+        { state: 'delta', deltaText: 'lo', message: snapshot('Hello') },
+        'stale text',
+      );
+      expect(result?.text).toBe('Hello');
+    });
+
+    it('replaces the previous text when replace is set', () => {
+      const result = extractStreamDelta({ state: 'delta', deltaText: 'Rewritten', replace: true }, 'Original');
+      expect(result?.text).toBe('Rewritten');
+    });
+
+    it('clears the text on an empty replacement', () => {
+      const result = extractStreamDelta({ state: 'delta', deltaText: '', replace: true }, 'Original');
+      expect(result).not.toBeNull();
+      expect(result?.text).toBe('');
+    });
+
+    it('strips a TTS marker that was split across two appends', () => {
+      const first = extractStreamDelta({ state: 'delta', deltaText: 'Done. [tts:All fin' }, '');
+      const second = extractStreamDelta({ state: 'delta', deltaText: 'ished]' }, first!.text);
+      expect(second?.cleaned).toBe('Done.');
+      expect(second?.ttsText).toBe('All finished');
+    });
+
+    it('accumulates a realistic frame sequence into the full text', () => {
+      const frames = [
+        { state: 'delta', deltaText: 'Fore', message: snapshot('Fore') },
+        { state: 'delta', deltaText: 'sts absorb' },
+        { state: 'delta', deltaText: ' carbon dioxide.' },
+      ];
+      let text = '';
+      for (const frame of frames) text = extractStreamDelta(frame, text)?.text ?? text;
+      expect(text).toBe('Forests absorb carbon dioxide.');
+    });
   });
 });
 
@@ -309,6 +399,48 @@ describe('markToolCompleted', () => {
     ];
     const updated = markToolCompleted(log, 'tc-999');
     expect(updated[0].phase).toBe('running');
+  });
+
+  it('takes a better description when the result supplies one', () => {
+    const log = [
+      { id: 'tc-1', toolName: 'web_search', description: 'searching the web', startedAt: 1, phase: 'running' as const },
+    ];
+    const updated = markToolCompleted(log, 'tc-1', 'searching: OpenClaw gateway release notes');
+    expect(updated[0]).toMatchObject({ phase: 'completed', description: 'searching: OpenClaw gateway release notes' });
+    expect(markToolCompleted(log, 'tc-1', null)[0].description).toBe('searching the web');
+  });
+});
+
+describe('describeToolResult', () => {
+  it('keeps a find-in-page result that carries only its pattern', () => {
+    expect(describeToolResult({
+      name: 'web_search',
+      phase: 'result',
+      result: { status: 'completed', action: 'findInPage', pattern: 'Local embeddings' },
+    } as never)).toBe('finding in page: Local embeddings');
+  });
+
+  // Result frames as a 2026.9 gateway sends them with the Codex harness.
+  it('names the query of a web search, which only the result carries', () => {
+    expect(describeToolResult({
+      phase: 'result', name: 'web_search', toolCallId: 'exec-1',
+      result: { status: 'completed', query: 'OpenClaw gateway release notes' },
+    })).toBe('searching: OpenClaw gateway release notes');
+  });
+
+  it('names the text a find-in-page looks for', () => {
+    expect(describeToolResult({
+      phase: 'result', name: 'web_search', toolCallId: 'exec-4',
+      result: { status: 'completed', query: "'Local embeddings' in https://docs.openclaw.ai/x", action: 'findInPage', url: 'https://docs.openclaw.ai/x', pattern: 'Local embeddings' },
+    })).toBe('finding in page: Local embeddings');
+  });
+
+  it('leaves other results alone', () => {
+    expect(describeToolResult({
+      phase: 'result', name: 'bash', toolCallId: 'exec-2',
+      result: { status: 'completed', exitCode: 0, durationMs: 0 },
+    })).toBeNull();
+    expect(describeToolResult({ phase: 'result', name: 'web_search', toolCallId: 'exec-3', result: { status: 'failed' } })).toBeNull();
   });
 });
 

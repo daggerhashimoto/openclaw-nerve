@@ -3,6 +3,7 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 import { SessionProvider, useSessionContext } from './SessionContext';
 import { getSessionKey, type GatewayEvent } from '@/types';
 import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
+import { EventLog } from '@/features/activity/EventLog';
 
 const mockUseGateway = vi.fn();
 const mockUseSettings = vi.fn();
@@ -79,6 +80,11 @@ function SessionUnreadProbe() {
       </button>
     </div>
   );
+}
+
+function SessionEventLog() {
+  const { eventEntries } = useSessionContext();
+  return <EventLog entries={eventEntries} />;
 }
 
 function SessionStatusProbe() {
@@ -506,6 +512,121 @@ describe('SessionContext', () => {
     });
   });
 
+  describe('deleteSession', () => {
+    // Gateway stand-in: lists what is still stored and refuses keys the way sessions.delete does.
+    function installDeleteGateway(initial: Array<Record<string, unknown>>, refuse: (key: string) => string | null) {
+      let stored = [...initial];
+      rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+        if (method === 'sessions.list') return { sessions: stored };
+        if (method === 'sessions.delete') {
+          const key = String(params?.key);
+          const refusal = refuse(key);
+          if (refusal) throw new Error(refusal);
+          stored = stored.filter((session) => session.sessionKey !== key);
+          return { ok: true, key, deleted: true, archived: [] };
+        }
+        return {};
+      });
+    }
+
+    function deleteCalls() {
+      return rpcMock.mock.calls.filter(([method]) => method === 'sessions.delete').map(([, params]) => params.key);
+    }
+
+    function listedKeys() {
+      return screen.getAllByRole('listitem').map((item) => item.textContent);
+    }
+
+    function DeleteProbe({ target, select, onError }: { target: string; select?: string; onError: (err: Error) => void }) {
+      const { sessions, currentSession, deleteSession, setCurrentSession } = useSessionContext();
+      return (
+        <div>
+          <div data-testid="current-session">{currentSession}</div>
+          <ul>
+            {sessions.map((session) => <li key={getSessionKey(session)}>{getSessionKey(session)}</li>)}
+          </ul>
+          {select && <button data-testid="select" onClick={() => setCurrentSession(select)} />}
+          <button data-testid="delete" onClick={() => { deleteSession(target).catch(onError); }} />
+        </div>
+      );
+    }
+
+    it('refuses an agent main session up front instead of deleting its children first', async () => {
+      installDeleteGateway([
+        { sessionKey: 'agent:main:main', label: 'Main' },
+        { sessionKey: 'agent:ops:main', label: 'Ops' },
+        { sessionKey: 'agent:ops:subagent:worker', label: 'Worker' },
+        { sessionKey: 'agent:ops:cron:nightly', label: 'Nightly' },
+      ], (key) => (key === 'agent:ops:main' ? 'Cannot delete the main session (agent:ops:main).' : null));
+      const onError = vi.fn();
+
+      render(<SessionProvider><DeleteProbe target="agent:ops:main" onError={onError} /></SessionProvider>);
+      await screen.findByText('agent:ops:subagent:worker');
+
+      await act(async () => {
+        screen.getByTestId('delete').click();
+      });
+
+      await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+      expect(deleteCalls()).toEqual([]);
+      expect(onError.mock.calls[0][0].message).toContain('Nothing was deleted');
+      expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main', 'agent:ops:subagent:worker', 'agent:ops:cron:nightly']);
+    });
+
+    it('drops exactly the sessions that were deleted when a later delete in the tree fails', async () => {
+      installDeleteGateway([
+        { sessionKey: 'agent:main:main', label: 'Main' },
+        { sessionKey: 'agent:ops:main', label: 'Ops' },
+        { sessionKey: 'agent:ops:subagent:lead', label: 'Lead' },
+        { sessionKey: 'agent:ops:subagent:helper-a', label: 'Helper A', parentSessionKey: 'agent:ops:subagent:lead' },
+        { sessionKey: 'agent:ops:subagent:helper-b', label: 'Helper B', parentSessionKey: 'agent:ops:subagent:lead' },
+      ], (key) => (key === 'agent:ops:subagent:helper-b' ? `Session ${key} is still active; try again.` : null));
+      const onError = vi.fn();
+
+      render(
+        <SessionProvider>
+          <DeleteProbe target="agent:ops:subagent:lead" select="agent:ops:subagent:helper-a" onError={onError} />
+        </SessionProvider>,
+      );
+      await screen.findByText('agent:ops:subagent:helper-a');
+      act(() => {
+        screen.getByTestId('select').click();
+      });
+      expect(screen.getByTestId('current-session')).toHaveTextContent('agent:ops:subagent:helper-a');
+
+      await act(async () => {
+        screen.getByTestId('delete').click();
+      });
+
+      await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+      expect(onError.mock.calls[0][0].message).toContain('still active');
+      expect(deleteCalls()).toEqual(['agent:ops:subagent:helper-a', 'agent:ops:subagent:helper-b']);
+      expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main', 'agent:ops:subagent:lead', 'agent:ops:subagent:helper-b']);
+      expect(screen.getByTestId('current-session')).toHaveTextContent('agent:main:main');
+    });
+
+    it('deletes children before the target and removes the whole tree when every delete succeeds', async () => {
+      installDeleteGateway([
+        { sessionKey: 'agent:main:main', label: 'Main' },
+        { sessionKey: 'agent:ops:main', label: 'Ops' },
+        { sessionKey: 'agent:ops:cron:nightly', label: 'Nightly' },
+        { sessionKey: 'agent:ops:cron:nightly:run:r1', label: 'Run 1' },
+      ], () => null);
+      const onError = vi.fn();
+
+      render(<SessionProvider><DeleteProbe target="agent:ops:cron:nightly" onError={onError} /></SessionProvider>);
+      await screen.findByText('agent:ops:cron:nightly:run:r1');
+
+      await act(async () => {
+        screen.getByTestId('delete').click();
+      });
+
+      await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main']));
+      expect(onError).not.toHaveBeenCalled();
+      expect(deleteCalls()).toEqual(['agent:ops:cron:nightly:run:r1', 'agent:ops:cron:nightly']);
+    });
+  });
+
   it('uses the full gateway session list for sidebar refreshes so older agent chats stay visible', async () => {
     render(
       <SessionProvider>
@@ -730,6 +851,203 @@ describe('SessionContext', () => {
     });
 
     expect(playPingMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('dedupes background completion pings when lifecycle and chat terminal events arrive for the same root', async () => {
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            { sessionKey: 'agent:main:main', label: 'Main' },
+            { sessionKey: 'agent:reviewer:main', label: 'Reviewer' },
+          ],
+        };
+      }
+      return {};
+    });
+
+    render(
+      <SessionProvider>
+        <SessionUnreadProbe />
+      </SessionProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:main:main');
+    });
+
+    await act(async () => {
+      subscribedHandler?.({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:reviewer:main',
+          stream: 'lifecycle',
+          data: { phase: 'end' },
+        },
+      });
+      subscribedHandler?.({
+        type: 'event',
+        event: 'chat',
+        payload: {
+          sessionKey: 'agent:reviewer:main',
+          state: 'final',
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(playPingMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('dedupes background completion pings by run id when lifecycle and chat terminal events agree', async () => {
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            { sessionKey: 'agent:main:main', label: 'Main' },
+            { sessionKey: 'agent:reviewer:main', label: 'Reviewer' },
+          ],
+        };
+      }
+      return {};
+    });
+
+    render(
+      <SessionProvider>
+        <SessionUnreadProbe />
+      </SessionProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:main:main');
+    });
+
+    await act(async () => {
+      subscribedHandler?.({
+        type: 'event',
+        event: 'agent',
+        payload: {
+          sessionKey: 'agent:reviewer:main',
+          stream: 'lifecycle',
+          data: { phase: 'end', runId: 'run-1' },
+        },
+      });
+      subscribedHandler?.({
+        type: 'event',
+        event: 'chat',
+        payload: {
+          sessionKey: 'agent:reviewer:main',
+          state: 'final',
+          runId: 'run-1',
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(playPingMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows separate completion pings for distinct background run ids', async () => {
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            { sessionKey: 'agent:main:main', label: 'Main' },
+            { sessionKey: 'agent:reviewer:main', label: 'Reviewer' },
+          ],
+        };
+      }
+      return {};
+    });
+
+    render(
+      <SessionProvider>
+        <SessionUnreadProbe />
+      </SessionProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:main:main');
+    });
+
+    await act(async () => {
+      subscribedHandler?.({
+        type: 'event',
+        event: 'chat',
+        payload: {
+          sessionKey: 'agent:reviewer:main',
+          state: 'final',
+          runId: 'run-1',
+        },
+      });
+      subscribedHandler?.({
+        type: 'event',
+        event: 'chat',
+        payload: {
+          sessionKey: 'agent:reviewer:main',
+          state: 'final',
+          runId: 'run-2',
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(playPingMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('allows another session-level completion ping after the dedupe window expires', async () => {
+    rpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            { sessionKey: 'agent:main:main', label: 'Main' },
+            { sessionKey: 'agent:reviewer:main', label: 'Reviewer' },
+          ],
+        };
+      }
+      return {};
+    });
+
+    render(
+      <SessionProvider>
+        <SessionUnreadProbe />
+      </SessionProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-session').textContent).toBe('agent:main:main');
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-10T16:00:00.000Z'));
+
+    await act(async () => {
+      subscribedHandler?.({
+        type: 'event',
+        event: 'chat',
+        payload: {
+          sessionKey: 'agent:reviewer:main',
+          state: 'final',
+        },
+      });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_001);
+      subscribedHandler?.({
+        type: 'event',
+        event: 'chat',
+        payload: {
+          sessionKey: 'agent:reviewer:main',
+          state: 'final',
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(playPingMock).toHaveBeenCalledTimes(2);
   });
 
   it('does not mark the currently viewed root unread or ping for its own chat events', async () => {
@@ -996,5 +1314,65 @@ describe('SessionContext', () => {
 
     expect(rpcBeforeReconnect.mock.calls.filter(([method]) => method === 'sessions.list')).toHaveLength(preReconnectSessionsListCalls);
     expect(rpcAfterReconnect).not.toHaveBeenCalledWith('sessions.list', expect.anything());
+  });
+
+  it('records a chat error as a failure in the event log', async () => {
+    render(
+      <SessionProvider>
+        <SessionEventLog />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(subscribedHandler).not.toBeNull());
+
+    act(() => {
+      subscribedHandler?.({ type: 'event', event: 'chat', payload: { sessionKey: 'agent:main:main', state: 'final' } });
+    });
+    expect(screen.getByText('Response complete')).toHaveClass('text-foreground');
+    expect(screen.queryByLabelText('Failed')).toBeNull();
+
+    act(() => {
+      subscribedHandler?.({ type: 'event', event: 'chat', payload: { sessionKey: 'agent:main:main', state: 'error' } });
+    });
+    expect(screen.getByText('Chat error')).toHaveClass('text-destructive');
+    expect(screen.getByLabelText('Failed')).toHaveAttribute('data-state', 'error');
+  });
+
+  it('drops the granular statuses held across a reconnect so the refreshed snapshot decides', async () => {
+    const view = render(
+      <SessionProvider>
+        <SessionStatusProbe />
+      </SessionProvider>,
+    );
+
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith('sessions.list', { limit: 1000 });
+    });
+
+    act(() => {
+      subscribedHandler?.({ type: 'event', event: 'chat', payload: { sessionKey: 'agent:reviewer:main', state: 'started' } });
+    });
+    expect(screen.getByTestId('reviewer-status')).toHaveTextContent('THINKING');
+
+    // The gateway drops; the status is kept while we are away
+    act(() => {
+      connectionStateValue = 'reconnecting';
+      view.rerender(
+        <SessionProvider>
+          <SessionStatusProbe />
+        </SessionProvider>,
+      );
+    });
+    expect(screen.getByTestId('reviewer-status')).toHaveTextContent('THINKING');
+
+    // Back online: whatever happened in the gap is unknown, so the retained status goes
+    act(() => {
+      connectionStateValue = 'connected';
+      view.rerender(
+        <SessionProvider>
+          <SessionStatusProbe />
+        </SessionProvider>,
+      );
+    });
+    expect(screen.getByTestId('reviewer-status')).toHaveTextContent('NONE');
   });
 });

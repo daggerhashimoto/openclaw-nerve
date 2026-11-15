@@ -61,7 +61,7 @@ export function useChatStreaming() {
     const flush = streamFlushRef.current;
     clearScheduledStreamFlush();
 
-    const html = renderToolResults(renderMarkdown(flush.text, { highlight: false }));
+    const html = renderToolResults(renderMarkdown(flush.text));
     setStream(prev => ({
       ...prev,
       html,
@@ -115,9 +115,9 @@ export function useChatStreaming() {
     }
   }, []);
 
-  /** Mark a tool as completed in the activity log. */
-  const completeActivityEntry = useCallback((toolCallId: string) => {
-    setActivityLog(prev => markToolCompleted(prev, toolCallId));
+  /** Mark a tool as completed in the activity log, with the result's description when it has a better one. */
+  const completeActivityEntry = useCallback((toolCallId: string, description?: string | null) => {
+    setActivityLog(prev => markToolCompleted(prev, toolCallId, description));
   }, []);
 
   // ─── Thinking duration tracking ───────────────────────────────────────────────

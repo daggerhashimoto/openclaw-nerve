@@ -1,0 +1,35 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-font",
+        "value": "instrument sans",
+        "files": [
+          "src/lib/fonts.ts"
+        ],
+        "createdAt": "2026-10-31T18:15:07.621Z",
+        "reason": "opt-in font registry: Instrument Sans is the Classic skin's face, not part of the Nerve system"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "space grotesk",
+        "files": [
+          "src/lib/fonts.ts"
+        ],
+        "createdAt": "2026-10-31T18:15:09.831Z",
+        "reason": "opt-in font registry: an operator-selectable UI font, not part of the Nerve system"
+      },
+      {
+        "rule": "overused-font",
+        "value": "geist",
+        "files": [
+          "src/lib/fonts.ts"
+        ],
+        "createdAt": "2026-11-01T19:00:09.797Z",
+        "reason": "chosen on purpose after the user rejected the characterful Bricolage setting; the brief now asks for sleek over distinctive"
+      }
+    ]
+  }
+}

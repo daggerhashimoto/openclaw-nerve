@@ -1,4 +1,5 @@
 import type { ChatMsg } from '@/features/chat/types';
+import { transcriptRowId } from './loadHistory';
 
 function hashString(input: string): number {
   let hash = 0;
@@ -28,12 +29,41 @@ function messageSignature(msg: ChatMsg): string {
   return `${msg.role}|${textHash}|${tsBucket}|${flags}`;
 }
 
-function findSuffixPrefixOverlap(existingSigs: string[], recoveredSigs: string[]): number {
-  const max = Math.min(existingSigs.length, recoveredSigs.length, 120);
+/** Whether existing[existingIdx] and recovered[recoveredIdx] are the same message. */
+type RowMatcher = (existingIdx: number, recoveredIdx: number) => boolean;
+
+/**
+ * Rows that both carry a transcript id are the same message exactly when the ids
+ * are equal; text and time do not matter, so a copy history has since revised or
+ * re-timed still lines up. A row without an id (a live final, an optimistic
+ * prompt, a row from a gateway that sends no ids) falls back to its content
+ * signature, but never onto a row whose id appears on the other side too: that
+ * row already has its own counterpart, so a look-alike is a different message.
+ */
+function createRowMatcher(existing: ChatMsg[], recovered: ChatMsg[]): RowMatcher {
+  const existingIds = existing.map(transcriptRowId);
+  const recoveredIds = recovered.map(transcriptRowId);
+  const existingIdSet = new Set(existingIds.filter(Boolean));
+  const recoveredIdSet = new Set(recoveredIds.filter(Boolean));
+  const existingSigs = existing.map(messageSignature);
+  const recoveredSigs = recovered.map(messageSignature);
+
+  return (existingIdx, recoveredIdx) => {
+    const existingId = existingIds[existingIdx];
+    const recoveredId = recoveredIds[recoveredIdx];
+    if (existingId && recoveredId) return existingId === recoveredId;
+    if (existingId && recoveredIdSet.has(existingId)) return false;
+    if (recoveredId && existingIdSet.has(recoveredId)) return false;
+    return existingSigs[existingIdx] === recoveredSigs[recoveredIdx];
+  };
+}
+
+function findSuffixPrefixOverlap(existingLength: number, recoveredLength: number, same: RowMatcher): number {
+  const max = Math.min(existingLength, recoveredLength, 120);
   for (let len = max; len >= 1; len--) {
     let match = true;
     for (let i = 0; i < len; i++) {
-      if (existingSigs[existingSigs.length - len + i] !== recoveredSigs[i]) {
+      if (!same(existingLength - len + i, i)) {
         match = false;
         break;
       }
@@ -49,14 +79,13 @@ function findSuffixPrefixOverlap(existingSigs: string[], recoveredSigs: string[]
  * reducing the risk of hash collisions on short/common messages anchoring
  * at the wrong position.
  */
-function findTailAnchor(existingSigs: string[], recoveredSigs: string[]) {
-  const tailStart = Math.max(0, existingSigs.length - 160);
+function findTailAnchor(existingLength: number, recoveredLength: number, same: RowMatcher) {
+  const tailStart = Math.max(0, existingLength - 160);
 
-  for (let existingIdx = existingSigs.length - 1; existingIdx >= tailStart; existingIdx--) {
-    const sig = existingSigs[existingIdx];
-    for (let recoveredIdx = 0; recoveredIdx < recoveredSigs.length; recoveredIdx++) {
-      if (recoveredSigs[recoveredIdx] === sig) {
-        return extendAnchorBackwards(existingSigs, recoveredSigs, existingIdx, recoveredIdx, tailStart);
+  for (let existingIdx = existingLength - 1; existingIdx >= tailStart; existingIdx--) {
+    for (let recoveredIdx = 0; recoveredIdx < recoveredLength; recoveredIdx++) {
+      if (same(existingIdx, recoveredIdx)) {
+        return extendAnchorBackwards(same, existingIdx, recoveredIdx, tailStart);
       }
     }
   }
@@ -71,17 +100,15 @@ function findTailAnchor(existingSigs: string[], recoveredSigs: string[]) {
  * such as an interim reply committed before the run's final answer.
  */
 function extendAnchorBackwards(
-  existingSigs: string[],
-  recoveredSigs: string[],
+  same: RowMatcher,
   existingIdx: number,
   recoveredIdx: number,
   tailStart: number,
 ) {
   while (existingIdx > tailStart && recoveredIdx > 0) {
-    const sig = existingSigs[existingIdx - 1];
     let match = -1;
     for (let i = recoveredIdx - 1; i >= 0; i--) {
-      if (recoveredSigs[i] === sig) {
+      if (same(existingIdx - 1, i)) {
         match = i;
         break;
       }
@@ -102,17 +129,22 @@ export function mergeRecoveredTail(existing: ChatMsg[], recovered: ChatMsg[]): C
   if (recovered.length === 0) return existing;
   if (existing.length === 0) return recovered;
 
-  const existingSigs = existing.map(messageSignature);
-  const recoveredSigs = recovered.map(messageSignature);
+  const same = createRowMatcher(existing, recovered);
 
   // Fast path: recovered starts where existing tail ends.
-  const overlap = findSuffixPrefixOverlap(existingSigs, recoveredSigs);
+  const overlap = findSuffixPrefixOverlap(existing.length, recovered.length, same);
   if (overlap > 0) {
-    return [...existing, ...recovered.slice(overlap)];
+    const start = existing.length - overlap;
+    // A row matched by its transcript id takes the recovered copy, which history may
+    // have revised since; a row matched by content alone stays as displayed.
+    const overlapped = recovered
+      .slice(0, overlap)
+      .map((row, i) => (transcriptRowId(row) && transcriptRowId(existing[start + i]) ? row : existing[start + i]));
+    return [...existing.slice(0, start), ...overlapped, ...recovered.slice(overlap)];
   }
 
   // Anchor path: find a matching point in the existing tail and replace only suffix.
-  const anchor = findTailAnchor(existingSigs, recoveredSigs);
+  const anchor = findTailAnchor(existing.length, recovered.length, same);
   if (anchor) {
     const preservedPrefix = existing.slice(0, anchor.existingIdx);
     const patchedTail = recovered.slice(anchor.recoveredIdx);

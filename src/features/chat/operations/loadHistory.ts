@@ -713,6 +713,8 @@ function withSearchQueries(messages: ChatMessage[]): ChatMessage[] {
   });
 }
 
+const TRANSCRIPT_ID_PREFIX = 'h-';
+
 /**
  * Ids taken from the gateway's transcript entry, so a message is the same
  * message on every history read. History reloads after each tool call during
@@ -722,7 +724,16 @@ function withSearchQueries(messages: ChatMessage[]): ChatMessage[] {
 function withSourceIds(parts: ChatMsg[], source: ChatMessage): ChatMsg[] {
   const sourceId = source.__openclaw?.id;
   if (!sourceId) return parts;
-  return parts.map((part, k) => (part.msgId ? part : { ...part, msgId: `h-${sourceId}-${k}` }));
+  return parts.map((part, k) => (part.msgId ? part : { ...part, msgId: `${TRANSCRIPT_ID_PREFIX}${sourceId}-${k}` }));
+}
+
+/**
+ * The id a row took from its gateway transcript entry, or null when it has none:
+ * rows from live events (a chat final carries no transcript id) and rows from
+ * gateways that send no ids get a generated id that means nothing across reads.
+ */
+export function transcriptRowId(msg: ChatMsg): string | null {
+  return msg.msgId?.startsWith(TRANSCRIPT_ID_PREFIX) ? msg.msgId : null;
 }
 
 /**

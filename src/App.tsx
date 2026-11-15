@@ -35,7 +35,7 @@ import type { ViewMode } from '@/features/command-palette/commands';
 import { ResizablePanels } from '@/components/ResizablePanels';
 import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
-import { createCommands } from '@/features/command-palette/commands';
+import { createCommands, createSessionCommands } from '@/features/command-palette/commands';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { DEFAULT_CHAT_PATH_LINKS_CONFIG, parseChatPathLinksConfig } from '@/features/chat/chatPathLinks';
@@ -126,6 +126,7 @@ export default function App({ onLogout }: AppProps) {
     setTheme, setFont,
     kanbanVisible,
     commandPaletteButtonVisible,
+    performanceMode,
   } = useSettings();
 
   // Connection management (extracted hook)
@@ -515,7 +516,7 @@ export default function App({ onLogout }: AppProps) {
 
   const openSpawnDialog = useCallback(() => setSpawnDialogOpen(true), []);
 
-  const commands = useMemo(() => createCommands({
+  const staticCommands = useMemo(() => createCommands({
     onNewSession: openSpawnDialog,
     onResetSession: handleReset,
     onToggleSound: toggleSound,
@@ -675,6 +676,16 @@ export default function App({ onLogout }: AppProps) {
       setCurrentSession(key);
     });
   }, [getWorkspaceSwitchLabel, requestWorkspaceTransition, setCurrentSession]);
+
+  const sessionCommands = useMemo(
+    () => createSessionCommands(sessions, currentSession, agentName, handleSessionChange),
+    [sessions, currentSession, agentName, handleSessionChange],
+  );
+
+  const commands = useMemo(
+    () => [...staticCommands, ...sessionCommands],
+    [staticCommands, sessionCommands],
+  );
 
   const handleSpawnSession = useCallback((opts: SpawnSessionOpts) => {
     const targetSessionKey = opts.kind === 'root'
@@ -986,6 +997,7 @@ export default function App({ onLogout }: AppProps) {
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           showKanbanView={kanbanVisible}
+          performanceMode={performanceMode}
         />
       )}
 
@@ -1119,6 +1131,7 @@ export default function App({ onLogout }: AppProps) {
           sparkline={sparkline}
           contextTokens={contextTokens}
           contextLimit={contextLimit}
+          performanceMode={performanceMode}
         />
       </div>
 

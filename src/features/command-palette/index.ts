@@ -1,3 +1,3 @@
 export { CommandPalette } from './CommandPalette';
-export { createCommands, filterCommands } from './commands';
+export { createCommands, createSessionCommands, filterCommands } from './commands';
 export type { Command } from './types';

@@ -30,6 +30,7 @@ interface FileTreeNodeProps {
   onRenameChange: (value: string) => void;
   onRenameCommit: () => void;
   onRenameCancel: () => void;
+  renderChildren?: boolean;
   compact?: boolean;
   onOpenActions?: (entry: TreeEntry, anchorRect: DOMRect) => void;
 }
@@ -57,6 +58,7 @@ export function FileTreeNode({
   onRenameChange,
   onRenameCommit,
   onRenameCancel,
+  renderChildren = true,
   compact,
   onOpenActions,
 }: FileTreeNodeProps) {
@@ -276,7 +278,7 @@ export function FileTreeNode({
       </div>
 
       {/* Children */}
-      {isDir && isExpanded && entry.children && (
+      {renderChildren && isDir && isExpanded && entry.children && (
         <div role="group">
           {entry.children.map((child) => (
             <FileTreeNode

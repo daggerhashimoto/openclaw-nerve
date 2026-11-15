@@ -27,6 +27,12 @@ export const cacheHeaders: MiddlewareHandler = async (c, next) => {
     return;
   }
 
+  // Missing/static error responses must not be cached as immutable assets.
+  if (c.res.status >= 400) {
+    c.header('Cache-Control', 'no-store');
+    return;
+  }
+
   // Hashed static assets — cache forever
   if (HASHED_ASSET_RE.test(path)) {
     c.header('Cache-Control', 'public, max-age=31536000, immutable');

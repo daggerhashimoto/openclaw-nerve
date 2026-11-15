@@ -109,8 +109,8 @@ function buildConnectParams(nonce: string) {
   const token = config.gatewayToken;
 
   return {
-    minProtocol: 3,
-    maxProtocol: 3,
+    minProtocol: 4,
+    maxProtocol: 4,
     client: {
       id: clientId,
       version: '0.1.0',

@@ -35,6 +35,7 @@ const {
   const settingsContext = {
     kanbanVisible: true,
     commandPaletteButtonVisible: true,
+    performanceMode: false,
   };
   const uploadConfigState = {
     fileReferenceEnabled: true,
@@ -187,6 +188,7 @@ vi.mock('@/contexts/SettingsContext', () => ({
     setFont: vi.fn(),
     kanbanVisible: settingsContext.kanbanVisible,
     commandPaletteButtonVisible: settingsContext.commandPaletteButtonVisible,
+    performanceMode: settingsContext.performanceMode,
   }),
 }));
 
@@ -231,6 +233,7 @@ vi.mock('@/hooks/useKeyboardShortcuts', () => ({
 
 vi.mock('@/features/command-palette/commands', () => ({
   createCommands: () => [],
+  createSessionCommands: () => [],
 }));
 
 vi.mock('@/features/file-browser', () => ({

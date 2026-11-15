@@ -255,6 +255,29 @@ describe('useFileTree', () => {
       });
     });
 
+    it('loads every page of a directory larger than one server page', async () => {
+      const firstPage: TreeEntry[] = [{ name: 'a.txt', path: 'a.txt', type: 'file', children: null }];
+      const secondPage: TreeEntry[] = [{ name: 'b.txt', path: 'b.txt', type: 'file', children: null }];
+      const workspaceInfo = { isCustomWorkspace: false, rootPath: '/workspace' };
+
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const cursor = getRequestUrl(input as RequestInfo).searchParams.get('cursor');
+        return {
+          ok: true,
+          json: async () => (cursor === '1'
+            ? { ok: true, entries: secondPage, workspaceInfo }
+            : { ok: true, entries: firstPage, nextCursor: '1', workspaceInfo }),
+        } as Response;
+      });
+
+      const { result } = renderHook(() => useFileTree());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+        expect(result.current.entries.map((entry) => entry.path)).toEqual(['a.txt', 'b.txt']);
+      });
+    });
+
     it('handles fetch errors gracefully', async () => {
       const mockFetch = vi.mocked(fetch);
       mockFetch.mockRejectedValue(new Error('Network error'));
@@ -418,6 +441,57 @@ describe('useFileTree', () => {
       renderHook(() => useFileTree('main'));
 
       expect(mockLocalStorage.getItem).toHaveBeenCalledWith(getWorkspaceStorageKey('file-tree-expanded', 'main'));
+    });
+
+    it('bounds persisted expansion hydration for large restored trees', async () => {
+      const mockLocalStorage = vi.mocked(localStorage);
+      const expandedDirs = Array.from({ length: 70 }, (_, index) => `dir-${String(index).padStart(3, '0')}`);
+      mockLocalStorage.getItem.mockImplementation((key: string) => {
+        if (key === getWorkspaceStorageKey('file-tree-expanded', 'main')) return JSON.stringify(expandedDirs);
+        return null;
+      });
+
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockImplementation(async (input) => {
+        const url = getRequestUrl(input);
+        const requestedPath = url.searchParams.get('path');
+
+        if (!requestedPath) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              entries: expandedDirs.map((dir) => ({
+                name: dir,
+                path: dir,
+                type: 'directory' as const,
+                children: null,
+              })),
+              workspaceInfo: { isCustomWorkspace: false, rootPath: '/workspace' },
+            }),
+          } as Response;
+        }
+
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [] }),
+        } as Response;
+      });
+
+      const { result } = renderHook(() => useFileTree('main'));
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      const hydratedPaths = mockFetch.mock.calls
+        .map((call) => getRequestUrl(call[0]).searchParams.get('path'))
+        .filter(Boolean);
+
+      expect(hydratedPaths).toHaveLength(64);
+      expect(result.current.expandedPaths.size).toBe(64);
+      expect(result.current.expandedPaths.has('dir-063')).toBe(true);
+      expect(result.current.expandedPaths.has('dir-064')).toBe(false);
     });
 
     it('includes showHidden in tree requests when enabled', async () => {

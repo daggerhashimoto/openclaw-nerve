@@ -554,7 +554,8 @@ export function groupToolMessages(msgs: ChatMsg[]): ChatMsg[] {
  * not the final answer.
  *
  * An assistant message is intermediate if it is followed by tool messages before
- * the next user message (or end of conversation).
+ * the next user message (or end of input). processChatMessages calls this once
+ * per turn, so turns whose prompt is hidden are kept apart as well.
  */
 export function tagIntermediateMessages(msgs: ChatMsg[]): ChatMsg[] {
   // Work on a shallow copy so we don't mutate the input
@@ -581,18 +582,45 @@ export function tagIntermediateMessages(msgs: ChatMsg[]): ChatMsg[] {
 // ─── Full pipeline ─────────────────────────────────────────────────────────────
 
 /**
+ * Split raw history into turns. A turn starts at a user message (including
+ * prompts filterMessage hides), at the gateway's turnBoundary marker (left where
+ * it stripped a heartbeat prompt), or when the run changes (other prompts the
+ * gateway hides without a marker).
+ */
+function splitIntoTurns(messages: ChatMessage[]): ChatMessage[][] {
+  const turns: ChatMessage[][] = [];
+  let previousRunId: string | undefined;
+
+  for (const message of messages) {
+    const runId = message.__openclaw?.runId;
+    const startsTurn = message.role === 'user'
+      || message.__openclaw?.turnBoundary === true
+      || Boolean(runId && previousRunId && runId !== previousRunId);
+    if (startsTurn || turns.length === 0) turns.push([]);
+    turns[turns.length - 1].push(message);
+    if (runId) previousRunId = runId;
+  }
+
+  return turns;
+}
+
+/**
  * Run an arbitrary ChatMessage[] through the same transcript processing pipeline
  * used by chat.history:
  *
- * filter → split → group → tag
+ * turns → filter → split → group → tag
+ *
+ * Each turn is processed on its own: otherwise the tool calls of a background
+ * turn with a hidden prompt (heartbeat, wake event) would tag the previous
+ * turn's final answer as intermediate.
  */
 export function processChatMessages(messages: ChatMessage[], options: { sessionKey?: string } = {}): ChatMsg[] {
-  const chatMsgs: ChatMsg[] = messages
-    .filter(filterMessage)
-    .flatMap((message) => splitToolCallMessage(message, options));
-
-  const grouped = groupToolMessages(chatMsgs);
-  const tagged = tagIntermediateMessages(grouped);
+  const tagged = splitIntoTurns(messages).flatMap((turn) => {
+    const chatMsgs: ChatMsg[] = turn
+      .filter(filterMessage)
+      .flatMap((message) => splitToolCallMessage(message, options));
+    return tagIntermediateMessages(groupToolMessages(chatMsgs));
+  });
 
   // Assign stable IDs to any message missing one (for React keying).
   for (const msg of tagged) {
@@ -604,7 +632,7 @@ export function processChatMessages(messages: ChatMessage[], options: { sessionK
 /**
  * Load chat history from the gateway, returning fully processed ChatMsg[].
  *
- * Pipeline: fetch → filter → split → group → tag
+ * Pipeline: fetch → turns → filter → split → group → tag
  *
  * The caller is responsible for calling `setMessages(result)`.
  */

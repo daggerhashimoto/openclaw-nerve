@@ -1,4 +1,5 @@
 import type { Extension } from '@codemirror/state';
+import { LanguageSupport, StreamLanguage } from '@codemirror/language';
 
 type LanguageLoader = () => Promise<Extension>;
 
@@ -28,37 +29,32 @@ const LANG_MAP: Record<string, LanguageLoader> = {
   '.sh': () =>
     Promise.all([
       import('@codemirror/legacy-modes/mode/shell'),
-      import('@codemirror/language'),
-    ]).then(([shell, lang]) =>
-      new lang.LanguageSupport(lang.StreamLanguage.define(shell.shell)),
+    ]).then(([shell]) =>
+      new LanguageSupport(StreamLanguage.define(shell.shell)),
     ),
   '.bash': () =>
     Promise.all([
       import('@codemirror/legacy-modes/mode/shell'),
-      import('@codemirror/language'),
-    ]).then(([shell, lang]) =>
-      new lang.LanguageSupport(lang.StreamLanguage.define(shell.shell)),
+    ]).then(([shell]) =>
+      new LanguageSupport(StreamLanguage.define(shell.shell)),
     ),
   '.zsh': () =>
     Promise.all([
       import('@codemirror/legacy-modes/mode/shell'),
-      import('@codemirror/language'),
-    ]).then(([shell, lang]) =>
-      new lang.LanguageSupport(lang.StreamLanguage.define(shell.shell)),
+    ]).then(([shell]) =>
+      new LanguageSupport(StreamLanguage.define(shell.shell)),
     ),
   '.rb': () =>
     Promise.all([
       import('@codemirror/legacy-modes/mode/ruby'),
-      import('@codemirror/language'),
-    ]).then(([ruby, lang]) =>
-      new lang.LanguageSupport(lang.StreamLanguage.define(ruby.ruby)),
+    ]).then(([ruby]) =>
+      new LanguageSupport(StreamLanguage.define(ruby.ruby)),
     ),
   '.pl': () =>
     Promise.all([
       import('@codemirror/legacy-modes/mode/perl'),
-      import('@codemirror/language'),
-    ]).then(([perl, lang]) =>
-      new lang.LanguageSupport(lang.StreamLanguage.define(perl.perl)),
+    ]).then(([perl]) =>
+      new LanguageSupport(StreamLanguage.define(perl.perl)),
     ),
 };
 

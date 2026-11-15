@@ -9,12 +9,16 @@ import { useState, useCallback, lazy, Suspense, useEffect } from 'react';
 import { WorkspaceTabs, type TabId } from './WorkspaceTabs';
 import { CronsTab, ConfigTab, SkillsTab } from './tabs';
 import { useCrons } from './hooks/useCrons';
-import { KanbanQuickView } from '@/features/kanban';
 import { getWorkspaceStorageKey } from './workspaceScope';
 import { useSettings } from '@/contexts/SettingsContext';
 import type { Memory } from '@/types';
 
 const MemoryList = lazy(() => import('@/features/dashboard/MemoryList').then(m => ({ default: m.MemoryList })));
+const KanbanQuickView = lazy(() =>
+  import('@/features/kanban/KanbanQuickView').then((module) => ({
+    default: module.KanbanQuickView,
+  })),
+);
 
 const CONFIG_VIEW_KEY = 'nerve-config-view';
 
@@ -202,10 +206,12 @@ export function WorkspacePanel({
         {kanbanVisible && (
           <div className={activeTab === 'kanban' ? 'h-full' : 'hidden'} hidden={activeTab !== 'kanban'} role="tabpanel" id="workspace-tabpanel-kanban" aria-labelledby="workspace-tab-kanban">
             {visitedTabs.has('kanban') && (
-              <KanbanQuickView
-                onOpenBoard={onOpenBoard ?? (() => {})}
-                onOpenTask={(task) => onOpenTask ? onOpenTask(task.id) : onOpenBoard?.()}
-              />
+              <Suspense fallback={<div className="flex items-center justify-center text-muted-foreground text-xs p-4">Loading...</div>}>
+                <KanbanQuickView
+                  onOpenBoard={onOpenBoard ?? (() => {})}
+                  onOpenTask={(task) => onOpenTask ? onOpenTask(task.id) : onOpenBoard?.()}
+                />
+              </Suspense>
             )}
           </div>
         )}

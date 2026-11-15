@@ -3,11 +3,9 @@
  * 
  * For formatting utilities, import directly from:
  *   - @/lib/formatting (esc, timeAgo, fmtTokens, fmtK)
- *   - @/lib/highlight (hljs, highlightCode)
  *   - @/features/voice/audio-feedback (playPing, playWakePing, etc.)
  */
 import { esc } from '@/lib/formatting';
-import { highlightCode } from '@/lib/highlight';
 import type { ContentBlock } from '@/types';
 
 // ─── Markdown cache ───
@@ -33,21 +31,21 @@ function setMarkdownCache(key: string, value: string): void {
 /**
  * Lightweight regex-based markdown renderer for streaming and tool results.
  *
- * Supports fenced code blocks (with syntax highlighting), inline code,
- * bold, italic, links, and unordered lists. Results are cached (LRU, max 200).
+ * Supports fenced code blocks, inline code, bold, italic, links, and unordered
+ * lists. Rich syntax highlighting lives in lazy-rendered markdown and diff
+ * components so chat runtime projection does not pull highlight.js into the
+ * initial bundle. Results are cached (LRU, max 200).
  */
-export function renderMarkdown(text: string, opts: { highlight?: boolean } = {}): string {
+export function renderMarkdown(text: string): string {
   if (!text) return '';
-  const highlight = opts.highlight !== false;
-  const cacheKey = (highlight ? 'h:' : 'nh:') + text;
+  const cacheKey = 'nh:' + text;
   const cached = getMarkdownCache(cacheKey);
   if (cached) return cached;
 
   let s = esc(text);
   s = s.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    const highlighted = highlight ? highlightCode(code, lang) : code;
     const langLabel = lang ? `<span class="code-lang">${esc(lang)}</span>` : '';
-    return `<pre class="hljs">${langLabel}<code>${highlighted}</code></pre>`;
+    return `<pre class="hljs">${langLabel}<code>${code}</code></pre>`;
   });
   s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');

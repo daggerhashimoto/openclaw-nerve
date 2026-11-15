@@ -3,6 +3,7 @@ import { createContext, useContext, useCallback, useRef, useState, useEffect, us
 import { useTTS, migrateTTSProvider, type TTSProvider } from '@/features/tts/useTTS';
 import { type ThemeName, applyTheme, themeNames } from '@/lib/themes';
 import { type FontName, applyFont, fontNames } from '@/lib/fonts';
+import { PERFORMANCE_MODE_STORAGE_KEY, isPerformanceModePreferenceEnabled } from '@/lib/performanceMode';
 
 export type STTProvider = 'local' | 'openai';
 export type STTInputMode = 'browser' | 'local' | 'hybrid';
@@ -50,6 +51,8 @@ interface SettingsContextValue {
   setEditorFontSize: (size: number) => void;
   kanbanVisible: boolean;
   toggleKanbanVisible: () => void;
+  performanceMode: boolean;
+  togglePerformanceMode: () => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -164,6 +167,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const saved = localStorage.getItem(KANBAN_VISIBILITY_STORAGE_KEY);
     return saved !== 'false';
   });
+  const [performanceMode, setPerformanceMode] = useState(isPerformanceModePreferenceEnabled);
   const { speak } = useTTS(soundEnabled, ttsProvider, ttsModel || undefined);
   const wakeWordToggleRef = useRef<(() => void) | null>(null);
 
@@ -186,6 +190,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.style.setProperty('--editor-font-size', `${editorFontSize}px`);
   }, [editorFontSize]);
+
+  // Keep performance mode in sync with changes made by other tabs (key is null when storage is cleared)
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== PERFORMANCE_MODE_STORAGE_KEY) return;
+      setPerformanceMode(isPerformanceModePreferenceEnabled());
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   const toggleSound = useCallback(() => {
     setSoundEnabled(prev => {
@@ -365,6 +379,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const togglePerformanceMode = useCallback(() => {
+    const next = !performanceMode;
+    try {
+      localStorage.setItem(PERFORMANCE_MODE_STORAGE_KEY, String(next));
+    } catch {
+      // GatewayContext reads this key directly, so keep state in sync with storage when the write fails.
+      return;
+    }
+    setPerformanceMode(next);
+  }, [performanceMode]);
+
   const value = useMemo<SettingsContextValue>(() => ({
     soundEnabled,
     toggleSound,
@@ -408,6 +433,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setEditorFontSize,
     kanbanVisible,
     toggleKanbanVisible,
+    performanceMode,
+    togglePerformanceMode,
   }), [
     soundEnabled, toggleSound, ttsProvider, ttsModel, changeTtsProvider, changeTtsModel, toggleTtsProvider,
     sttProvider, changeSttProvider, sttInputMode, changeSttInputMode, sttModel, changeSttModel,
@@ -418,6 +445,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     commandPaletteButtonVisible, toggleCommandPaletteButtonVisible,
     theme, setTheme, font, setFont,
     fontSize, setFontSize, editorFontSize, setEditorFontSize, kanbanVisible, toggleKanbanVisible,
+    performanceMode, togglePerformanceMode,
   ]);
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

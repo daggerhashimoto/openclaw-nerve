@@ -8,11 +8,13 @@ export interface RunState {
   startedAt: number;
   lastChatSeq: number | null;
   lastFrameSeq: number | null;
-  /** Raw (uncleaned) delta text — preserved for debugging */
+  /** Raw (uncleaned) accumulated text; protocol v4 `deltaText` appends to it */
   bufferRaw: string;
   /** Cleaned delta text (TTS/chart markers stripped) — used for display */
   bufferText: string;
   finalized: boolean;
+  /** Set once a started/status/delta frame has begun the turn */
+  turnStarted?: boolean;
   status?: ChatSendStatus;
   stopReason?: string;
 }

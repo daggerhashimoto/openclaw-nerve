@@ -1,5 +1,5 @@
 /**
- * useModelEffort — Manages model and effort (thinking level) selection state.
+ * useModelEffort: Manages model and effort (thinking level) selection state.
  *
  * Handles:
  * - Gateway model catalog fetching
@@ -159,7 +159,7 @@ export function useModelEffort(): UseModelEffortReturn {
   const [gatewayModels, setGatewayModels] = useState<GatewayModelInfo[] | null>(null);
   const [uiError, setUiError] = useState<string | null>(null);
 
-  // Fix 1: Optimistic lock — timestamp until which we ignore sync-back updates
+  // Fix 1: Optimistic lock: timestamp until which we ignore sync-back updates
   const modelLockUntilRef = useRef<number>(0);
   const effortLockUntilRef = useRef<number>(0);
   // Track pending confirmation timers so we can clean them up
@@ -290,7 +290,7 @@ export function useModelEffort(): UseModelEffortReturn {
     setPrevEffortSource(effortSource);
     // Fix 1: Respect optimistic lock for effort changes too
     if (Date.now() <= effortLockUntilRef.current) {
-      // Skip — we're in the grace period after a manual effort change
+      // Skip: we're in the grace period after a manual effort change
     } else {
       const nextEffortSelection = currentSessionThinking || INHERITED_EFFORT_VALUE;
       setSelectedEffort(nextEffortSelection);
@@ -390,7 +390,7 @@ export function useModelEffort(): UseModelEffortReturn {
       }
 
       if (resolvedModel && !signal.cancelled) {
-        // Cache the resolved model — this feeds into currentSessionModel which
+        // Cache the resolved model: this feeds into currentSessionModel which
         // drives the render-time sync. No optimistic lock needed because the
         // cache makes currentSessionModel return the correct value directly.
         setResolvedSessionModels(prev => ({ ...prev, [currentSession]: resolvedModel }));
@@ -407,7 +407,7 @@ export function useModelEffort(): UseModelEffortReturn {
   // 1. Try WS RPC sessions.patch (fast, direct)
   // 2. If WS fails, try cross-provider fallback via WS
   // 3. If all WS attempts fail, fall back to HTTP /api/gateway/session-patch
-  //    (uses session_status tool — proven reliable)
+  //    (uses session_status tool: proven reliable)
 
   const handleModelChange = useCallback(async (nextInput: string) => {
     let next = nextInput;
@@ -462,7 +462,7 @@ export function useModelEffort(): UseModelEffortReturn {
               try { localStorage.setItem(MODEL_KEY, next); } catch { /* ignore */ }
               wsSucceeded = true;
             } catch {
-              // WS completely broken — fall through to HTTP
+              // WS completely broken: fall through to HTTP
             }
           }
         }
@@ -518,7 +518,7 @@ export function useModelEffort(): UseModelEffortReturn {
             }
           }
         } catch {
-          // Non-critical — the optimistic value remains
+          // Non-critical: the optimistic value remains
         } finally {
           modelLockUntilRef.current = 0;
         }
@@ -549,7 +549,7 @@ export function useModelEffort(): UseModelEffortReturn {
       try {
         await rpc('sessions.patch', { key: currentSession, thinkingLevel: thinkingValue });
       } catch (wsErr) {
-        // WS failed — effort doesn't have an HTTP fallback (session_status
+        // WS failed: effort doesn't have an HTTP fallback (session_status
         // doesn't support thinkingLevel), so retry WS once after a short delay
         console.info('[useModelEffort] WS effort change failed, retrying:', (wsErr as Error).message);
         await new Promise(r => setTimeout(r, 1000));

@@ -5,7 +5,7 @@ import type { ChartData } from './extractCharts';
  * TradingView Advanced Chart widget using official script injection.
  *
  * TradingView's embed pattern requires a <script> tag with the config as
- * JSON text content — the script creates the iframe internally and handles
+ * JSON text content: the script creates the iframe internally and handles
  * referrer/origin validation. Direct iframe URLs return 403.
  */
 export default function TradingViewWidget({ chart }: { chart: ChartData }) {
@@ -44,7 +44,7 @@ export default function TradingViewWidget({ chart }: { chart: ChartData }) {
       theme: 'dark',
       style: '1',
       locale: 'en',
-      toolbar_bg: '#1a1a2e',
+      toolbar_bg: '#0D1119',
       enable_publishing: false,
       hide_side_toolbar: false,
       allow_symbol_change: true,
@@ -65,7 +65,7 @@ export default function TradingViewWidget({ chart }: { chart: ChartData }) {
   return (
     <div className="mt-3 w-full">
       {chart.title && (
-        <div className="text-xs font-mono text-muted-foreground mb-1">
+        <div className="mb-1 text-[0.8rem] font-medium text-muted-foreground">
           {chart.title}
         </div>
       )}

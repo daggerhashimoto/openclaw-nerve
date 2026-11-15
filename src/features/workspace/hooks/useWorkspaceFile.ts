@@ -1,5 +1,5 @@
 /**
- * useWorkspaceFile — Read/write a single workspace file by key.
+ * useWorkspaceFile: read/write a single workspace file by key.
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';

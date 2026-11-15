@@ -49,9 +49,9 @@ const EDGE_ENGLISH_VOICE_OPTIONS: EdgeVoiceOption[] = [
 ];
 
 const INLINE_SELECT_TRIGGER_CLASS =
-  'min-h-11 w-full justify-between rounded-2xl border-border/80 bg-background/65 px-3 py-2 text-left text-sm font-sans text-foreground sm:w-auto';
+  'min-h-11 w-full justify-between rounded-[3px] border-transparent bg-raised px-2 py-1 text-left text-[0.867rem] font-sans text-foreground sm:min-h-[var(--row-unit)] sm:py-0 sm:text-[0.867rem] sm:w-auto';
 const INLINE_SELECT_MENU_CLASS =
-  'rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_48px_rgba(0,0,0,0.28)]';
+  'rounded-[3px] border-border bg-popover py-1 shadow-[0_12px_32px_rgba(0,0,0,0.32)]';
 
 function getEdgeVoiceOptions(
   lang: string,
@@ -175,7 +175,7 @@ function ExpandableInput({
   }, [expanded]);
 
   return (
-    <div ref={containerRef} className="cockpit-row flex-col items-stretch gap-2">
+    <div ref={containerRef} className="settings-row flex-col items-stretch gap-2">
       <span className="cockpit-field-label">{label}</span>
       {expanded ? (
         <textarea
@@ -275,10 +275,10 @@ function SttModelSelector({ model, onModelChange }: { model: string; onModelChan
 
   return (
     <div className="space-y-3">
-      <div className="cockpit-row items-start justify-between">
+      <div className="settings-row items-start justify-between">
         <div className="min-w-0 flex-1">
-          <span className="text-sm font-medium text-foreground">STT model</span>
-          <p className="mt-1 text-xs text-muted-foreground">Choose the local Whisper model for browser-backed transcription.</p>
+          <span className="text-[0.867rem] font-medium text-foreground">STT model</span>
+          <p className="mt-1 text-[0.8rem] text-muted-foreground">Choose the local Whisper model for browser-backed transcription.</p>
         </div>
         <InlineSelect
           value={model}
@@ -302,8 +302,8 @@ function SttModelSelector({ model, onModelChange }: { model: string; onModelChan
       {download?.downloading && (
         <div className="cockpit-note" data-tone="primary">
           <div className="flex items-center gap-2">
-            <Download size={12} className="text-primary animate-pulse" />
-            <span className="font-mono text-[0.733rem] text-primary">
+            <Download size={12} className="text-operator-text" />
+            <span className="text-[0.8rem] text-operator-text">
               Downloading {download.model}... {download.percent}%
             </span>
           </div>
@@ -323,17 +323,17 @@ function SttModelSelector({ model, onModelChange }: { model: string; onModelChan
       )}
 
       {download && !download.downloading && !download.error && (
-        <div className="cockpit-note border-green/25 bg-green/8 text-green">
-          <span className="font-mono text-[0.733rem] animate-pulse">✓ Model ready</span>
+        <div className="cockpit-note">
+          <span className="text-[0.8rem]">Model ready</span>
         </div>
       )}
 
       {/* No-GPU warning for heavier models */}
       {hasGpu === false && model !== 'tiny' && model !== 'tiny.en' && (
-        <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-orange/85">
+        <div className="cockpit-note" data-tone="primary">
           <div className="flex items-start gap-2">
-          <AlertTriangle size={12} className="text-orange shrink-0 mt-0.5" />
-          <span className="text-[0.733rem]">
+          <AlertTriangle size={12} className="text-operator-text shrink-0 mt-0.5" />
+          <span className="text-[0.8rem]">
             No GPU detected — {model.includes('small') ? `${model} will be very slow on CPU` : `${model} may be slow on CPU`}. Use tiny for faster multilingual transcription.
           </span>
           </div>
@@ -379,17 +379,17 @@ function ApiKeyInput({
 
   if (saved) {
     return (
-      <div className="cockpit-note border-green/25 bg-green/8 text-green">
-        <span className="font-mono text-[0.733rem]">✓ {keyName} saved</span>
+      <div className="cockpit-note">
+        <span className="text-[0.8rem]">{keyName} saved</span>
       </div>
     );
   }
 
   return (
-    <div className="rounded-[20px] border border-orange/28 bg-orange/6 px-4 py-4">
+    <div className="cockpit-note" data-tone="primary">
       <div className="flex items-center gap-2">
-        <KeyRound size={12} className="text-orange shrink-0" />
-        <span className="text-[0.733rem] text-orange">{keyName} required for {provider}</span>
+        <KeyRound size={12} className="text-operator-text shrink-0" />
+        <span className="text-[0.8rem] text-operator-text">{keyName} required for {provider}</span>
       </div>
       <div className="mt-3 flex gap-2">
         <input
@@ -415,9 +415,11 @@ function ApiKeyInput({
 /** Available models per provider. */
 const PROVIDER_MODELS: Record<TTSProvider, { value: string; label: string }[]> = {
   openai: [
-    { value: '', label: 'gpt-4o-mini-tts (default)' },
-    { value: 'tts-1', label: 'tts-1' },
-    { value: 'tts-1-hd', label: 'tts-1-hd' },
+    { value: '', label: 'Server default' },
+    { value: 'gpt-realtime-2.1-mini', label: 'GPT-Realtime-2.1 mini — recommended' },
+    { value: 'gpt-4o-mini-tts', label: 'GPT-4o mini TTS — legacy' },
+    { value: 'tts-1', label: 'TTS-1 — legacy' },
+    { value: 'tts-1-hd', label: 'TTS-1 HD — legacy' },
   ],
   replicate: [
     { value: '', label: 'qwen-tts (default)' },
@@ -449,19 +451,26 @@ export function AudioSettings({
   agentName = 'Agent',
   section = 'all',
 }: AudioSettingsProps) {
-  const models = PROVIDER_MODELS[ttsProvider] || [];
   const showInput = section === 'all' || section === 'input';
   const showOutput = section === 'all' || section === 'output';
   const wakeWordSupport = useMemo(() => getWakeWordSupport(), []);
   const wakeWordSupported = wakeWordSupport.supported;
   const effectiveWakeWordEnabled = wakeWordSupported ? wakeWordEnabled : false;
-  const headingLabel = section === 'input' ? 'Input Capture' : section === 'output' ? 'Voice Output' : 'Audio';
+  const headingLabel = section === 'input' ? 'Input capture' : section === 'output' ? 'Voice output' : 'Language and voice';
   const headingCopy = section === 'input'
     ? 'Tune language detection, wake phrases, and transcription before speech reaches the agent.'
     : section === 'output'
       ? 'Shape the speaking voice, model, and playback behavior for replies and announcements.'
       : '';
   const { config, saved, updateField } = useTTSConfig();
+  const models = ttsProvider === 'openai'
+    ? PROVIDER_MODELS.openai.map((option) => option.value ? option : {
+        ...option,
+        label: `Server default (${config?.openai.model || 'gpt-realtime-2.1-mini'})`,
+      })
+    : PROVIDER_MODELS[ttsProvider] || [];
+  const effectiveOpenAIModel = ttsModel || config?.openai.model || 'gpt-realtime-2.1-mini';
+  const isRealtimeOpenAIModel = ttsProvider === 'openai' && effectiveOpenAIModel === 'gpt-realtime-2.1-mini';
   const { state: langState, support, isMultilingual, setLanguage } = useLanguage();
 
   // Fetch API key status once on mount
@@ -541,9 +550,10 @@ export function AudioSettings({
   const showEnglishOnlyWarning = isNonEnglishLocalStt && !isMultilingual;
   const showTinyAccuracyWarning = isNonEnglishLocalStt && isMultilingual && sttModel === 'tiny';
 
-  // All 13 OpenAI TTS voices. tts-1 and tts-1-hd only support a subset (no ballad, cedar, marin, verse).
+  // Realtime and legacy Speech API models have different supported voices.
   const LEGACY_ONLY_VOICES = new Set(['ballad', 'cedar', 'marin', 'verse']);
-  const isLegacyModel = ttsModel === 'tts-1' || ttsModel === 'tts-1-hd';
+  const REALTIME_VOICES = new Set(['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar']);
+  const isLegacyModel = effectiveOpenAIModel === 'tts-1' || effectiveOpenAIModel === 'tts-1-hd';
   const OPENAI_VOICES = [
     { value: 'alloy', label: 'Alloy — Neutral, balanced' },
     { value: 'ash', label: 'Ash — Warm, conversational' },
@@ -558,7 +568,7 @@ export function AudioSettings({
     { value: 'sage', label: 'Sage — Wise, measured' },
     { value: 'shimmer', label: 'Shimmer — Soft, gentle' },
     { value: 'verse', label: 'Verse — Versatile, dynamic' },
-  ].filter(v => !isLegacyModel || !LEGACY_ONLY_VOICES.has(v.value));
+  ].filter(v => isRealtimeOpenAIModel ? REALTIME_VOICES.has(v.value) : !isLegacyModel || !LEGACY_ONLY_VOICES.has(v.value));
 
   // Build Edge voice options from selected language.
   const edgeVoicesForLang = useMemo(
@@ -600,22 +610,19 @@ export function AudioSettings({
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
-        <span className="cockpit-kicker">
-          <span className="text-primary">◆</span>
-          {headingLabel}
-        </span>
+        <h3 className="settings-heading">{headingLabel}</h3>
         {headingCopy && <p className="cockpit-copy max-w-[36ch]">{headingCopy}</p>}
       </div>
 
       {/* Language Preference */}
       {showInput && langState && (
         <div className="space-y-3">
-          <div className="cockpit-row flex-col items-stretch gap-3">
+          <div className="settings-row flex-col items-stretch gap-3">
             <div className="flex min-w-0 items-start gap-3">
-              <Globe size={14} className="text-primary" aria-hidden="true" />
+              <Globe size={14} className="text-muted-foreground" aria-hidden="true" />
               <div className="flex min-w-0 flex-col">
-                <span className="text-sm font-medium text-foreground">Language</span>
-                <span className="text-xs text-muted-foreground">Match wake phrases, STT support, and voice options to the language you actually use.</span>
+                <span className="text-[0.867rem] font-medium text-foreground">Language</span>
+                <span className="text-[0.8rem] text-muted-foreground">Match wake phrases, STT support, and voice options to the language you actually use.</span>
               </div>
             </div>
             <InlineSelect
@@ -633,10 +640,10 @@ export function AudioSettings({
 
           {/* Compatibility warnings */}
           {showEnglishOnlyWarning && (
-            <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-orange/85">
+            <div className="cockpit-note" data-tone="primary">
               <div className="flex items-start gap-2">
-              <AlertTriangle size={12} className="text-orange shrink-0 mt-0.5" />
-              <span className="text-[0.733rem]">
+              <AlertTriangle size={12} className="text-operator-text shrink-0 mt-0.5" />
+              <span className="text-[0.8rem]">
                 Current model is English-only. Switch to a multilingual model below for {currentLangInfo?.name || langState.language} transcription.
               </span>
               </div>
@@ -644,16 +651,16 @@ export function AudioSettings({
           )}
 
           {showTinyAccuracyWarning && (
-            <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-orange/85">
+            <div className="cockpit-note" data-tone="primary">
               <div className="flex items-start gap-2">
-              <AlertTriangle size={12} className="text-orange shrink-0 mt-0.5" />
+              <AlertTriangle size={12} className="text-operator-text shrink-0 mt-0.5" />
               <div className="flex flex-1 items-start justify-between gap-2">
-                <span className="text-[0.733rem]">
+                <span className="text-[0.8rem]">
                   Tiny is fast, but conversational {currentLangInfo?.name || langState.language} can be less accurate. Use base for better results.
                 </span>
                 <button
                   onClick={() => onSttModelChange('base')}
-                  className="cockpit-toolbar-button shrink-0 border-orange/40 px-3 text-[0.733rem] text-orange hover:border-orange/55 hover:bg-orange/10"
+                  className="cockpit-toolbar-button shrink-0 px-3"
                 >
                   Use base
                 </button>
@@ -674,16 +681,16 @@ export function AudioSettings({
                   nativeName: currentLangInfo?.nativeName || langState.language,
                 });
               }}
-              className="cockpit-row group w-full items-start justify-between text-left"
+              className="settings-row group w-full items-start justify-between rounded-[3px] text-left transition-colors duration-[120ms] hover:bg-raised"
             >
               <div className="flex items-start gap-3">
-                <Mic size={14} className="text-primary" aria-hidden="true" />
+                <Mic size={14} className="text-muted-foreground" aria-hidden="true" />
                 <div className="flex flex-col">
-                  <span className="text-sm font-medium text-foreground">Voice phrases</span>
-                  <span className="text-xs text-muted-foreground">Customize wake, send, and cancel phrases for {currentLangInfo?.name || langState.language}.</span>
+                  <span className="text-[0.867rem] font-medium text-foreground">Voice phrases</span>
+                  <span className="text-[0.8rem] text-muted-foreground">Customize wake, send, and cancel phrases for {currentLangInfo?.name || langState.language}.</span>
                 </div>
               </div>
-              <span className="cockpit-badge group-hover:text-primary" data-tone={phrasesStatus[langState.language]?.configured ? 'primary' : undefined}>
+              <span className="cockpit-badge" data-tone={phrasesStatus[langState.language]?.configured ? 'primary' : undefined}>
                 {phrasesStatus[langState.language]?.configured ? 'Edit' : 'Configure'}
               </span>
             </button>
@@ -699,16 +706,16 @@ export function AudioSettings({
 
       {/* Sound Effects */}
       {showOutput && (
-        <div className="cockpit-row items-start justify-between">
+        <div className="settings-row items-start justify-between">
           <div className="flex items-center gap-3">
             {soundEnabled ? (
-              <Volume2 size={14} className="text-green" aria-hidden="true" />
+              <Volume2 size={14} className="text-muted-foreground" aria-hidden="true" />
             ) : (
               <VolumeX size={14} className="text-muted-foreground" aria-hidden="true" />
             )}
             <div className="flex flex-col">
-              <span className="text-sm font-medium text-foreground" id="sound-label">Sound effects</span>
-              <span className="text-xs text-muted-foreground">Keep subtle UI cues and audio confirmations enabled.</span>
+              <span className="text-[0.867rem] font-medium text-foreground" id="sound-label">Sound effects</span>
+              <span className="text-[0.8rem] text-muted-foreground">Keep subtle UI cues and audio confirmations enabled.</span>
             </div>
           </div>
           <Switch
@@ -722,13 +729,13 @@ export function AudioSettings({
       {/* TTS Provider */}
       {showOutput && (
         <div className="space-y-2">
-          <span className="cockpit-field-label">TTS Provider</span>
-          <div className="flex gap-2">
+          <span className="cockpit-field-label">TTS provider</span>
+          <div className="seg-track flex w-full">
             <button
               type="button"
               onClick={() => onTtsProviderChange('openai')}
               data-active={ttsProvider === 'openai'}
-              className="shell-chip min-h-11 flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
+              className="shell-chip min-h-11 flex-1 justify-center whitespace-nowrap px-2 sm:min-h-[var(--row-unit)]"
             >
               OpenAI
             </button>
@@ -736,7 +743,7 @@ export function AudioSettings({
               type="button"
               onClick={() => onTtsProviderChange('replicate')}
               data-active={ttsProvider === 'replicate'}
-              className="shell-chip min-h-11 flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
+              className="shell-chip min-h-11 flex-1 justify-center whitespace-nowrap px-2 sm:min-h-[var(--row-unit)]"
             >
               Replicate
             </button>
@@ -744,7 +751,7 @@ export function AudioSettings({
               type="button"
               onClick={() => onTtsProviderChange('edge')}
               data-active={ttsProvider === 'edge'}
-              className="shell-chip min-h-11 flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
+              className="shell-chip min-h-11 flex-1 justify-center whitespace-nowrap px-2 sm:min-h-[var(--row-unit)]"
             >
               Edge (Free)
             </button>
@@ -752,7 +759,7 @@ export function AudioSettings({
               type="button"
               onClick={() => onTtsProviderChange('xiaomi')}
               data-active={ttsProvider === 'xiaomi'}
-              className="shell-chip min-h-11 flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
+              className="shell-chip min-h-11 flex-1 justify-center whitespace-nowrap px-2 sm:min-h-[var(--row-unit)]"
             >
               Xiaomi Mimo
             </button>
@@ -760,10 +767,10 @@ export function AudioSettings({
           <p className="cockpit-field-hint px-1">Choose the voice engine first, then tune the model and speaking style below.</p>
 
           {langState?.language && langState.language !== 'en' && ttsProvider === 'replicate' && !langState.providers.qwen3 && (
-            <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-orange/85">
+            <div className="cockpit-note" data-tone="primary">
               <div className="flex items-start gap-2">
-              <AlertTriangle size={12} className="text-orange shrink-0 mt-0.5" />
-              <span className="text-[0.733rem]">
+              <AlertTriangle size={12} className="text-operator-text shrink-0 mt-0.5" />
+              <span className="text-[0.8rem]">
                 Qwen3 doesn't support {langState.supported.find((l) => l.code === langState.language)?.name || langState.language}. Voice output will use English.
               </span>
               </div>
@@ -786,10 +793,10 @@ export function AudioSettings({
 
       {/* TTS Model (shown when provider has multiple models) */}
       {showOutput && models.length > 0 && (
-        <div className="cockpit-row items-start justify-between">
+        <div className="settings-row items-start justify-between">
           <div className="min-w-0 flex-1">
-            <span className="text-sm font-medium text-foreground">TTS model</span>
-            <p className="mt-1 text-xs text-muted-foreground">Select the synthesis model exposed by the active provider.</p>
+            <span className="text-[0.867rem] font-medium text-foreground">TTS model</span>
+            <p className="mt-1 text-[0.8rem] text-muted-foreground">Select the synthesis model exposed by the active provider.</p>
           </div>
           <InlineSelect
             value={ttsProvider === 'xiaomi' ? (ttsModel || config?.xiaomi.model || '') : ttsModel}
@@ -809,21 +816,21 @@ export function AudioSettings({
       {showOutput && config && (
         <div className="space-y-3">
           {saved && (
-            <div className="cockpit-note border-green/25 bg-green/8 text-green">
-              <span className="font-mono text-[0.733rem] animate-pulse">Saved ✓</span>
+            <div className="cockpit-note">
+              <span className="text-[0.8rem]">Saved</span>
             </div>
           )}
 
           {ttsProvider === 'openai' && (
             <>
-              <div className="cockpit-row items-start justify-between">
+              <div className="settings-row items-start justify-between">
                 <div className="min-w-0 flex-1">
-                  <span className="text-sm font-medium text-foreground">Voice</span>
-                  <p className="mt-1 text-xs text-muted-foreground">Pick the OpenAI voice profile used for reply playback.</p>
+                  <span className="text-[0.867rem] font-medium text-foreground">Voice</span>
+                  <p className="mt-1 text-[0.8rem] text-muted-foreground">Pick the OpenAI voice profile used for reply playback.</p>
                 </div>
                 <InlineSelect
-                  value={config.openai.voice}
-                  onChange={(v) => updateField('openai', 'voice', v)}
+                  value={isRealtimeOpenAIModel ? config.openai.realtimeVoice : config.openai.voice}
+                  onChange={(v) => updateField('openai', isRealtimeOpenAIModel ? 'realtimeVoice' : 'voice', v)}
                   options={OPENAI_VOICES}
                   ariaLabel="OpenAI Voice"
                   triggerClassName={`${INLINE_SELECT_TRIGGER_CLASS} min-w-[220px]`}
@@ -840,10 +847,10 @@ export function AudioSettings({
           )}
 
           {ttsProvider === 'edge' && (
-            <div className="cockpit-row items-start justify-between">
+            <div className="settings-row items-start justify-between">
               <div className="min-w-0 flex-1">
-                <span className="text-sm font-medium text-foreground">Voice</span>
-                <p className="mt-1 text-xs text-muted-foreground">Use a language-matched Edge voice for free local playback.</p>
+                <span className="text-[0.867rem] font-medium text-foreground">Voice</span>
+                <p className="mt-1 text-[0.8rem] text-muted-foreground">Use a language-matched Edge voice for free local playback.</p>
               </div>
               <InlineSelect
                 value={config.edge.voice}
@@ -875,10 +882,10 @@ export function AudioSettings({
 
           {ttsProvider === 'xiaomi' && (
             <>
-              <div className="cockpit-row items-start justify-between">
+              <div className="settings-row items-start justify-between">
                 <div className="min-w-0 flex-1">
-                  <span className="text-sm font-medium text-foreground">Voice</span>
-                  <p className="mt-1 text-xs text-muted-foreground">Choose one of Xiaomi's built-in MiMo voices.</p>
+                  <span className="text-[0.867rem] font-medium text-foreground">Voice</span>
+                  <p className="mt-1 text-[0.8rem] text-muted-foreground">Choose one of Xiaomi's built-in MiMo voices.</p>
                 </div>
                 <InlineSelect
                   value={config.xiaomi.voice}
@@ -906,21 +913,21 @@ export function AudioSettings({
 
       {/* Wake Word */}
       {showInput && (
-        <div className="cockpit-row items-start justify-between">
+        <div className="settings-row items-start justify-between">
           <div className="flex items-center gap-3">
             {effectiveWakeWordEnabled ? (
-              <Mic size={14} className="text-green" aria-hidden="true" />
+              <Mic size={14} className="text-muted-foreground" aria-hidden="true" />
             ) : (
               <MicOff size={14} className="text-muted-foreground" aria-hidden="true" />
             )}
             <div className="flex flex-col">
-              <span className="text-sm font-medium text-foreground" id="wake-word-label">Wake word</span>
+              <span className="text-[0.867rem] font-medium text-foreground" id="wake-word-label">Wake word</span>
               {wakeWordSupported ? (
-                <span className="text-xs text-muted-foreground">Say "{wakePhraseDisplay}" to activate.</span>
+                <span className="text-[0.8rem] text-muted-foreground">Say "{wakePhraseDisplay}" to activate.</span>
               ) : (
                 <>
-                  <span className="text-xs text-muted-foreground">Wake word isn't supported on mobile web.</span>
-                  <span className="text-xs text-muted-foreground">Use the manual mic trigger instead.</span>
+                  <span className="text-[0.8rem] text-muted-foreground">Wake word isn't supported on mobile web.</span>
+                  <span className="text-[0.8rem] text-muted-foreground">Use the manual mic trigger instead.</span>
                 </>
               )}
             </div>
@@ -937,22 +944,19 @@ export function AudioSettings({
       {/* Speech-to-Text */}
       {showInput && (
         <div className="space-y-1.5 pt-2">
-          <span className="cockpit-kicker">
-            <span className="text-primary">◆</span>
-            Speech to Text
-          </span>
+          <h3 className="settings-heading">Speech to text</h3>
         </div>
       )}
 
       {showInput && (
         <div className="space-y-2">
-          <span className="cockpit-field-label">STT Provider</span>
-          <div className="flex gap-2">
+          <span className="cockpit-field-label">STT provider</span>
+          <div className="seg-track flex w-full">
             <button
               type="button"
               onClick={() => onSttProviderChange('local')}
               data-active={sttProvider === 'local'}
-              className="shell-chip min-h-11 flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
+              className="shell-chip min-h-11 flex-1 justify-center whitespace-nowrap px-2 sm:min-h-[var(--row-unit)]"
             >
               Local (Free)
             </button>
@@ -960,7 +964,7 @@ export function AudioSettings({
               type="button"
               onClick={() => onSttProviderChange('openai')}
               data-active={sttProvider === 'openai'}
-              className="shell-chip min-h-11 flex-1 justify-center rounded-2xl px-3 py-2 text-sm font-medium"
+              className="shell-chip min-h-11 flex-1 justify-center whitespace-nowrap px-2 sm:min-h-[var(--row-unit)]"
             >
               OpenAI
             </button>
@@ -982,10 +986,10 @@ export function AudioSettings({
 
       {showInput && sttProvider === 'local' && (
         <div className="space-y-2">
-          <div className="cockpit-row items-start justify-between">
+          <div className="settings-row items-start justify-between">
             <div className="flex min-w-0 flex-1 flex-col">
-              <span className="text-sm font-medium text-foreground">Input mode</span>
-              <span className="text-xs text-muted-foreground">Choose whether final text comes from the browser, the backend, or browser-first fallback.</span>
+              <span className="text-[0.867rem] font-medium text-foreground">Input mode</span>
+              <span className="text-[0.8rem] text-muted-foreground">Choose whether final text comes from the browser, the backend, or browser-first fallback.</span>
             </div>
             <InlineSelect
               value={sttInputMode}
@@ -1011,12 +1015,12 @@ export function AudioSettings({
       )}
 
       {showInput && (
-        <div className="cockpit-row items-start justify-between">
+        <div className="settings-row items-start justify-between">
           <div className="flex items-center gap-3">
-            <Mic size={14} className={liveTranscriptionPreview ? 'text-primary' : 'text-muted-foreground'} aria-hidden="true" />
+            <Mic size={14} className={liveTranscriptionPreview ? 'text-muted-foreground' : 'text-muted-foreground'} aria-hidden="true" />
             <div className="flex flex-col">
-              <span className="text-sm font-medium text-foreground" id="live-transcription-label">Live transcription preview</span>
-              <span className="text-xs text-muted-foreground">Show a browser preview while speaking; the committed transcript may still differ by provider.</span>
+              <span className="text-[0.867rem] font-medium text-foreground" id="live-transcription-label">Live transcription preview</span>
+              <span className="text-[0.8rem] text-muted-foreground">Show a browser preview while speaking; the committed transcript may still differ by provider.</span>
             </div>
           </div>
           <Switch

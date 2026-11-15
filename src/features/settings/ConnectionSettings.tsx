@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { RefreshCw, Eye, EyeOff, RotateCw } from 'lucide-react';
 import { DEFAULT_GATEWAY_WS } from '@/lib/constants';
+import { Pane } from '@/components/ui/Pane';
+import type { PaneState } from '@/lib/paneState';
 
 interface ConnectionSettingsProps {
   url: string;
@@ -13,17 +15,19 @@ interface ConnectionSettingsProps {
   gatewayRestarting?: boolean;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  connected: 'bg-green',
-  connecting: 'bg-orange animate-pulse',
-  reconnecting: 'bg-orange animate-pulse',
-  disconnected: 'bg-red',
+/* The gateway's pane follows the status bar: quiet when connected, cantaloupe while it is
+   trying (the operator may need to act), red when the link is down. */
+const STATUS_PANES: Record<ConnectionSettingsProps['connectionState'], PaneState> = {
+  connected: 'off',
+  connecting: 'operator',
+  reconnecting: 'operator',
+  disconnected: 'error',
 };
 
 const STATUS_LABELS: Record<string, string> = {
   connected: 'Connected',
-  connecting: 'Connecting...',
-  reconnecting: 'Reconnecting...',
+  connecting: 'Connecting',
+  reconnecting: 'Reconnecting',
   disconnected: 'Disconnected',
 };
 
@@ -39,28 +43,24 @@ export function ConnectionSettings({
   gatewayRestarting = false,
 }: ConnectionSettingsProps) {
   const [showToken, setShowToken] = useState(false);
+  const busy = connectionState === 'connecting' || connectionState === 'reconnecting';
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1.5">
-        <span className="cockpit-kicker">
-          <span className="text-primary">◆</span>
-          Gateway
-        </span>
-      </div>
+      <h3 className="settings-heading">Gateway</h3>
 
-      {/* Status indicator */}
-      <div className="cockpit-row">
+      {/* Status row */}
+      <div className="settings-row">
         <div className="flex min-w-0 items-center gap-3">
-          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${STATUS_COLORS[connectionState]}`} />
+          <Pane state={STATUS_PANES[connectionState]} label={STATUS_LABELS[connectionState]} />
           <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">Gateway status</p>
-            <p className="text-xs text-muted-foreground">{STATUS_LABELS[connectionState]}</p>
+            <p className="text-[0.867rem] font-medium text-foreground">Gateway status</p>
+            <p className="text-[0.8rem] text-muted-foreground">{STATUS_LABELS[connectionState]}</p>
           </div>
         </div>
         <button
           onClick={onReconnect}
-          disabled={connectionState === 'connecting' || connectionState === 'reconnecting'}
+          disabled={busy}
           className="cockpit-toolbar-button w-full justify-center sm:ml-auto sm:w-auto"
           title="Reconnect to gateway"
         >
@@ -83,9 +83,9 @@ export function ConnectionSettings({
         <span className="cockpit-field-hint">Use the local gateway or paste a remote relay endpoint.</span>
       </label>
 
-      {/* Auth Token */}
+      {/* Auth token */}
       <label className="cockpit-field">
-        <span className="cockpit-field-label">Auth Token</span>
+        <span className="cockpit-field-label">Auth token</span>
         <div className="relative">
           <input
             type={showToken ? 'text' : 'password'}
@@ -98,26 +98,24 @@ export function ConnectionSettings({
           <button
             type="button"
             onClick={() => setShowToken(!showToken)}
-            className="cockpit-toolbar-button absolute right-2 top-1/2 min-h-8 -translate-y-1/2 px-2.5"
+            className="shell-icon-button absolute right-1 top-1/2 -translate-y-1/2"
             title={showToken ? 'Hide token' : 'Show token'}
+            aria-label={showToken ? 'Hide token' : 'Show token'}
           >
             {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
         </div>
         <span className="cockpit-field-hint">Leave blank for unsecured local development.</span>
       </label>
-      {/* Gateway Service */}
+
+      {/* Gateway service */}
       {onGatewayRestart && (
         <>
-          <div className="cockpit-divider my-2" />
-          <div className="cockpit-row">
+          <h3 className="settings-heading pt-2">Gateway service</h3>
+          <div className="settings-row">
             <div className="min-w-0 flex-1">
-              <span className="cockpit-kicker text-[0.6rem]">
-                <span className="text-primary">◆</span>
-                Gateway Service
-              </span>
-              <p className="mt-2 text-sm font-medium text-foreground">Restart the local gateway</p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="text-[0.867rem] font-medium text-foreground">Restart the local gateway</p>
+              <p className="text-[0.8rem] text-muted-foreground">
                 Useful when pairing, models, or background workers need a clean reload.
               </p>
             </div>
@@ -128,7 +126,7 @@ export function ConnectionSettings({
               className="cockpit-toolbar-button w-full justify-center sm:w-auto"
             >
               <RotateCw size={14} aria-hidden="true" className={gatewayRestarting ? 'animate-spin' : ''} />
-              {gatewayRestarting ? 'Restarting...' : 'Restart'}
+              {gatewayRestarting ? 'Restarting' : 'Restart'}
             </button>
           </div>
         </>

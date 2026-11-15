@@ -31,15 +31,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (this.state.hasError) {
       return (
         <div className="h-screen flex flex-col items-center justify-center bg-background text-foreground p-8">
-          <h1 className="text-primary text-xl font-bold mb-4">Something went wrong</h1>
-          <pre className="text-xs text-muted-foreground max-w-lg overflow-auto mb-4 p-4 bg-card border border-border">
+          <h1 className="mb-3 text-[1.2rem] font-semibold text-foreground">Something went wrong</h1>
+          <pre className="mb-4 max-w-lg overflow-auto rounded-[3px] border border-border bg-card p-3 font-mono text-[0.8rem] text-muted-foreground">
             {this.state.error?.message}
           </pre>
-          <button 
+          <button
             onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-primary text-primary-foreground font-bold tracking-wider text-sm hover:opacity-90"
+            className="h-9 rounded-[3px] bg-primary px-4 text-[0.867rem] font-semibold text-primary-foreground transition-[filter] duration-[120ms] hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
           >
-            RELOAD
+            Reload
           </button>
         </div>
       );

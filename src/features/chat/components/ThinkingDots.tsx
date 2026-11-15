@@ -1,19 +1,14 @@
 import type { ProcessingStage } from '@/contexts/ChatContext';
+import { runStateLabel } from '../utils';
 
 interface ThinkingDotsProps {
   stage?: ProcessingStage;
 }
 
 /**
- * Animated dots for processing indicator
+ * Plain run-state text for the processing indicator ("Thinking", "Running",
+ * "Writing"). Replaces the old animated dots: state is said, not bounced.
  */
 export function ThinkingDots({ stage }: ThinkingDotsProps) {
-  const color = stage === 'tool_use' ? 'text-green' : 'text-primary';
-  return (
-    <span className={`inline-flex ${color} text-lg`}>
-      <span className="animate-[dot-fade_1.4s_infinite_0s] opacity-0">.</span>
-      <span className="animate-[dot-fade_1.4s_infinite_0.2s] opacity-0">.</span>
-      <span className="animate-[dot-fade_1.4s_infinite_0.4s] opacity-0">.</span>
-    </span>
-  );
+  return <span className="text-live-text">{runStateLabel(stage)}</span>;
 }

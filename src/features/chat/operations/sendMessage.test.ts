@@ -1,4 +1,4 @@
-/** Tests for sendMessage — message building and RPC sending. */
+/** Tests for sendMessage: message building and RPC sending. */
 import { describe, it, expect, vi } from 'vitest';
 import { appendUploadManifest, applyVoiceTTSHint, buildUserMessage, sendChatMessage } from './sendMessage';
 import type { OutgoingUploadPayload, UploadAttachmentDescriptor } from '../types';

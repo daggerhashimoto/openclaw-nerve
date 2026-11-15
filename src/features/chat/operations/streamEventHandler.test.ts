@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isActiveAgentState,
+  classifyCommittedRow,
   classifyStreamEvent,
   extractStreamDelta,
   extractFinalMessages,
@@ -204,6 +205,30 @@ describe('classifyStreamEvent', () => {
       };
       expect(classifyStreamEvent(event)?.type).toBe('ignore');
     });
+  });
+});
+
+describe('classifyCommittedRow', () => {
+  it('reads the session and role of a session.message row', () => {
+    const event: GatewayEvent = {
+      type: 'event', event: 'session.message',
+      payload: { sessionKey: 'agent:main:main', message: { role: 'user', content: 'Hi' }, messageSeq: 4 },
+    };
+    expect(classifyCommittedRow(event)).toEqual({ sessionKey: 'agent:main:main', role: 'user' });
+  });
+
+  it('treats a sessions.changed message phase as a committed row without one', () => {
+    const event: GatewayEvent = { type: 'event', event: 'sessions.changed', payload: { sessionKey: 'agent:main:main', phase: 'message', ts: 1 } };
+    expect(classifyCommittedRow(event)).toEqual({ sessionKey: 'agent:main:main' });
+  });
+
+  it('ignores other session changes and stream events', () => {
+    const lifecycle: GatewayEvent = { type: 'event', event: 'sessions.changed', payload: { sessionKey: 'agent:main:main', phase: 'start' } };
+    const patch: GatewayEvent = { type: 'event', event: 'sessions.changed', payload: { sessionKey: 'agent:main:main', reason: 'patch' } };
+    const chat: GatewayEvent = { type: 'event', event: 'chat', payload: { sessionKey: 'agent:main:main', state: 'final' } };
+    expect(classifyCommittedRow(lifecycle)).toBeNull();
+    expect(classifyCommittedRow(patch)).toBeNull();
+    expect(classifyCommittedRow(chat)).toBeNull();
   });
 });
 

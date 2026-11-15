@@ -30,6 +30,7 @@ import {
   processChatMessages,
   buildUserMessage,
   sendChatMessage,
+  classifyCommittedRow,
   classifyStreamEvent,
   extractStreamDelta,
   extractFinalMessage,
@@ -229,6 +230,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     loadHistory(currentSession);
   }, [connectionState, currentSession, loadHistory]);
 
+  // ─── Subscribe to the open session ────────────────────────────────────────
+  // The gateway sends a run started outside the Control UI (a Telegram or
+  // Discord message, a heartbeat) only to connections subscribed to its
+  // session, along with the rows it commits (`session.message`). A new
+  // connection starts with no subscriptions, so subscribe on every connect.
+  useEffect(() => {
+    if (connectionState !== 'connected' || !currentSession) return;
+    const key = currentSession;
+    rpc('sessions.messages.subscribe', { key }).catch((err) => {
+      console.debug('[ChatContext] sessions.messages.subscribe failed:', err);
+    });
+    return () => {
+      rpc('sessions.messages.unsubscribe', { key }).catch(() => { /* gone with the connection */ });
+    };
+  }, [connectionState, currentSession, rpc]);
+
   // ─── Periodic history poll for sub-agent sessions ─────────────────────────
   const isSubagentSession = currentSession ? isSubagentSessionKey(currentSession) : false;
   const subagentSessionState = isSubagentSession
@@ -326,6 +343,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           triggerRecoveryOnce('frame-gap');
         }
         lastGatewaySeqRef.current = updateHighestSeq(lastGatewaySeqRef.current, msg.seq);
+      }
+
+      const committed = classifyCommittedRow(msg);
+      if (committed) {
+        if (committed.sessionKey !== currentSessionRef.current) return;
+        // Rows of a run on screen are reconciled by its final; a new prompt
+        // (an inbound channel message) shows as soon as it is committed.
+        const runOnScreen = isGeneratingRef.current || activeRunIdRef.current !== null;
+        if (!runOnScreen || committed.role === 'user') scheduleHistoryRefresh();
+        return;
       }
 
       const classified = classifyStreamEvent(msg);

@@ -161,6 +161,34 @@ export function classifyStreamEvent(event: GatewayEvent): ClassifiedEvent | null
   return null;
 }
 
+// ─── Committed transcript rows ─────────────────────────────────────────────────
+
+export interface CommittedRow {
+  sessionKey?: string;
+  /** Role of the committed row, when the gateway sent the row itself */
+  role?: string;
+}
+
+/**
+ * Recognize a gateway notice that a row was committed to a session transcript:
+ * `session.message` carries the row, and `sessions.changed` with phase
+ * `message` reports one the gateway could not project. Returns null for
+ * anything else.
+ */
+export function classifyCommittedRow(event: GatewayEvent): CommittedRow | null {
+  const payload = (event.payload || {}) as { sessionKey?: unknown; phase?: unknown; message?: unknown };
+  const sessionKey = typeof payload.sessionKey === 'string' ? payload.sessionKey : undefined;
+
+  if (event.event === 'session.message') {
+    const role = (payload.message as { role?: unknown } | undefined)?.role;
+    return { sessionKey, role: typeof role === 'string' ? role : undefined };
+  }
+  if (event.event === 'sessions.changed' && payload.phase === 'message') {
+    return { sessionKey };
+  }
+  return null;
+}
+
 // ─── Delta extraction ──────────────────────────────────────────────────────────
 
 /**

@@ -110,11 +110,22 @@
   --bloom-live: 0 0 9px 0 color-mix(in srgb, var(--color-live) 62%, transparent);
   --bloom-operator: 0 0 9px 0 color-mix(in srgb, var(--color-operator) 58%, transparent);
   --bloom-error: 0 0 9px 0 color-mix(in srgb, var(--color-red) 58%, transparent);
+  /* Menus and popovers, and dialogs: the shadows floating chrome casts. Workbench prints them instead. */
+  --menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+  --dialog-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
 }
 html[data-theme="light"] {
   --bloom-live: none;
   --bloom-operator: none;
   --bloom-error: none;
+}
+
+/* Floating chrome reads its shadow from the theme, so a world can print it instead of blurring it */
+@utility nerve-menu-shadow {
+  box-shadow: var(--menu-shadow);
+}
+@utility nerve-dialog-shadow {
+  box-shadow: var(--dialog-shadow);
 }
 
 /* === Lit panes: the state marker === */
@@ -1855,4 +1866,220 @@ html[data-theme="light"] .name-hued {
     align-items: stretch;
     gap: 10px;
   }
+}
+
+/* === Workbench: the console printed as a working drawing ===
+   The Ruled Workbench design system (the Nerve landing page's), as the Workbench Night and
+   Workbench Paper themes. Colours come from themes.ts; this block carries what is not a colour.
+   The meanings hold (blue works, cantaloupe is the operator, red failed); what changes is the
+   material: drawn rules instead of edge light, printed offsets instead of blur, no bloom, a cool
+   wash from the top instead of the room light, paper grain, and the room pinned at its corners. */
+
+/* iA Writer Quattro S, self-hosted (SIL Open Font License, public/fonts/ia-writer-quattro/LICENSE.md).
+   Declared here, fetched only where a Workbench theme sets it as the reading face. */
+@font-face {
+  font-family: 'iA Writer Quattro S';
+  src: url('/fonts/ia-writer-quattro/iAWriterQuattroS-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'iA Writer Quattro S';
+  src: url('/fonts/ia-writer-quattro/iAWriterQuattroS-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'iA Writer Quattro S';
+  src: url('/fonts/ia-writer-quattro/iAWriterQuattroS-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'iA Writer Quattro S';
+  src: url('/fonts/ia-writer-quattro/iAWriterQuattroS-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+html[data-world="workbench"] {
+  /* Faces: Quattro reads and runs the UI, Plex Serif names things, Plex Mono measures.
+     An explicit font pick in Appearance still wins (it is set inline on the root). */
+  --font-sans: 'iA Writer Quattro S', 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'IBM Plex Serif', Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  /* Plates are ruled cells; floating surfaces print a hard offset, never a blur */
+  --plate-shadow: inset 0 0 0 1px var(--color-border);
+  --float-shadow:
+    inset 0 0 0 1px var(--color-border),
+    6px 6px 0 0 rgba(110, 150, 255, 0.06);
+  --menu-shadow: 6px 6px 0 0 rgba(110, 150, 255, 0.06);
+  --dialog-shadow: 6px 6px 0 0 rgba(110, 150, 255, 0.06);
+  /* Printed, not lit: panes switch flat */
+  --bloom-live: none;
+  --bloom-operator: none;
+  --bloom-error: none;
+  /* Drafting nodes, the cool opening wash, the grain, and the pressed edge of the Send key */
+  --wb-node-fill: var(--color-card);
+  --wb-node-edge: #6B7280;
+  --wb-wash-top: rgba(40, 80, 220, 0.08);
+  --wb-grain: 0.025;
+  --wb-key-edge: #B3764E;
+}
+html[data-world="workbench"][data-theme="light"] {
+  --float-shadow:
+    inset 0 0 0 1px var(--color-border),
+    6px 6px 0 0 rgba(7, 77, 207, 0.05);
+  --menu-shadow: 6px 6px 0 0 rgba(7, 77, 207, 0.05);
+  --dialog-shadow: 6px 6px 0 0 rgba(7, 77, 207, 0.05);
+  --wb-node-fill: #FFFFFF;
+  --wb-node-edge: #8E949D;
+  --wb-wash-top: rgba(219, 234, 254, 0.16);
+  --wb-grain: 0.03;
+  --wb-key-edge: #C88451;
+}
+
+/* Quattro is set tight, as in the source (-0.025em for body and control text). Code, measures and
+   names keep normal tracking. In the base layer, so an explicit tracking utility still wins. */
+@layer base {
+  html[data-world="workbench"] body {
+    letter-spacing: -0.025em;
+  }
+  html[data-world="workbench"] :is(code, pre, kbd, samp, .font-mono, .cockpit-code, .cockpit-kbd, .code-diff-view, .diff-header, .file-content-header, .code-lang, .nerve-divider, .nerve-fleet-words, .tool-result-body, .cm-editor) {
+    letter-spacing: normal;
+  }
+}
+
+/* The wordmark and names in Plex Serif at semibold with normal tracking: Workbench's serif, weighted
+   to hold a name in a row (the user kept the heavier setting, wordmark included) */
+html[data-world="workbench"] :is(.font-display, .nerve-wordmark, .nerve-nameplate) {
+  font-weight: 600;
+  letter-spacing: normal;
+}
+
+/* The room: a ruled sheet with Workbench's cool wash from the top instead of the night's room light */
+html[data-world="workbench"] .nerve-room-plate {
+  border-radius: 2px;
+}
+html[data-world="workbench"] .nerve-room {
+  background-image: linear-gradient(to bottom, var(--wb-wash-top), transparent 28%);
+}
+
+/* The operator's plate and the composer while the operator is in it: a warm ruled cell */
+html[data-world="workbench"] .plate-operator {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-operator) 14%, var(--color-border));
+}
+html[data-world="workbench"] .nerve-composer {
+  box-shadow: var(--plate-shadow);
+}
+html[data-world="workbench"] .nerve-composer-band:is(:focus-within, :has(textarea:not(:placeholder-shown))) .nerve-composer {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-operator) 55%, var(--color-border));
+}
+
+/* The rest of the night's lit edges, printed: task cards are ruled cells (a lifted card prints its
+   offset), the side-column editors warm to a ruled cell while the operator types, the login window
+   and the drawers have no inner light, and keycaps keep only their pressed lower edge. */
+html[data-world="workbench"] .nerve-task-card {
+  box-shadow: var(--plate-shadow);
+}
+html[data-world="workbench"] .nerve-task-card.is-lifted {
+  box-shadow: var(--float-shadow);
+}
+html[data-world="workbench"] .nerve-window-frame:focus-within .nerve-window {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-operator) 55%, var(--color-border));
+}
+html[data-world="workbench"] .nerve-login-window {
+  box-shadow: var(--plate-shadow);
+}
+html[data-world="workbench"] .nerve-login-window .nerve-window {
+  box-shadow: none;
+}
+html[data-world="workbench"] .nerve-drawer {
+  box-shadow: var(--float-shadow);
+}
+html[data-world="workbench"] .cockpit-kbd {
+  box-shadow: 0 1px 0 var(--color-input);
+}
+
+/* Signature: the room is pinned to the frame like a drafted sheet. A 7px diamond node sits on
+   each corner where the room's rules meet the frame, edge first, fill on top. */
+html[data-world="workbench"] .nerve-col-center {
+  position: relative;
+}
+html[data-world="workbench"] .nerve-col-center::before,
+html[data-world="workbench"] .nerve-col-center::after,
+html[data-world="workbench"] .nerve-login-sheet::before,
+html[data-world="workbench"] .nerve-login-sheet::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  --wb-diamond: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2 2'><path d='M1 0 2 1 1 2 0 1z'/></svg>");
+  -webkit-mask-image: var(--wb-diamond), var(--wb-diamond), var(--wb-diamond), var(--wb-diamond);
+  mask-image: var(--wb-diamond), var(--wb-diamond), var(--wb-diamond), var(--wb-diamond);
+  -webkit-mask-position: left top, right top, left bottom, right bottom;
+  mask-position: left top, right top, left bottom, right bottom;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+/* The login window is pinned the same way, its nodes centred on the window's own corners */
+html[data-world="workbench"] .nerve-login-sheet::before {
+  inset: -5.5px;
+  background: var(--wb-node-edge);
+  -webkit-mask-size: 11px 11px;
+  mask-size: 11px 11px;
+}
+html[data-world="workbench"] .nerve-login-sheet::after {
+  inset: -3.5px;
+  background: var(--wb-node-fill);
+  -webkit-mask-size: 7px 7px;
+  mask-size: 7px 7px;
+}
+html[data-world="workbench"] .nerve-col-center::before {
+  inset: 0.5px;
+  background: var(--wb-node-edge);
+  -webkit-mask-size: 11px 11px;
+  mask-size: 11px 11px;
+}
+html[data-world="workbench"] .nerve-col-center::after {
+  inset: 2.5px;
+  background: var(--wb-node-fill);
+  -webkit-mask-size: 7px 7px;
+  mask-size: 7px 7px;
+}
+
+/* Printed, never glass: the command palette's scrim dims the room without blurring it */
+html[data-world="workbench"] .nerve-scrim {
+  backdrop-filter: none;
+}
+
+/* Paper grain over the shell, as on the page's canvas; on Night it flips to light specks */
+html[data-world="workbench"] .nerve-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+  opacity: var(--wb-grain);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
+  background-size: 180px 180px;
+}
+html[data-world="workbench"][data-theme="dark"] .nerve-shell::after {
+  filter: invert(1);
+}
+
+/* Send: the cantaloupe key with Workbench's pressed lower edge; hover drops the edge, press settles */
+html[data-world="workbench"] .send-btn {
+  box-shadow: inset 0 -2px 0 0 var(--wb-key-edge);
+}
+html[data-world="workbench"] .send-btn:hover:not(:disabled) {
+  box-shadow: none;
+}
+html[data-world="workbench"] .send-btn:active:not(:disabled) {
+  transform: scale(0.99);
+  box-shadow: none;
 }

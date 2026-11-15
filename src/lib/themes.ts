@@ -1,32 +1,57 @@
 // Theme definitions for Nerve UI
 //
-// Nerve ships one identity in two lights. Colour carries meaning, never decoration:
-//   live      electric blue: agent work in progress (running, streaming, tool calls)
+// Every theme keeps one meaning for colour, never decoration:
+//   live      blue: agent work in progress (running, streaming, tool calls)
 //   operator  cantaloupe: the operator and anything waiting on the operator
 //   red       errors only
 // Everything finished or idle goes dark (pane-off).
 //
-// The 14 community themes, and the Classic skin that carried them after the
-// redesign, were retired on 2026-11-02. Stored values from either era map onto
-// Night or Daylight by scheme in resolveThemeName().
+// Two worlds carry that meaning. Night light (Night, Daylight) is the console as a
+// building lit at night. Workbench (Workbench Night, Workbench Paper) is the same
+// console printed as a working drawing, from the Ruled Workbench design system:
+// graphite or paper sheets, drawn rules, Workbench's cobalt as the live light. The
+// world is set as data-world on the root, so index.css can carry the parts of a
+// world that are not colours (faces, rules, shadows, grain).
+//
+// Workbench Night is the default since 2026-11-15. The 14 community themes, and
+// the Classic skin that carried them after the redesign, were retired on
+// 2026-11-02; stored values from either era resolve in resolveThemeName().
 
-export type ThemeName = 'nerve-dark' | 'nerve-light';
+import { loadWorkbenchFonts } from './fonts';
+import { refreshFavicon } from './favicon';
+
+export type ThemeName = 'nerve-dark' | 'nerve-light' | 'workbench-night' | 'workbench-paper';
+
+/** The visual world a theme belongs to; set as data-world on the document root. */
+export type ThemeWorld = 'night-light' | 'workbench';
 
 export interface Theme {
   name: ThemeName;
   label: string;
   /** Value for the root color-scheme and data-theme attribute. */
   scheme: 'dark' | 'light';
+  world: ThemeWorld;
   colors: Record<string, string>;
 }
 
-export const DEFAULT_THEME: ThemeName = 'nerve-dark';
+export const DEFAULT_THEME: ThemeName = 'workbench-night';
+
+/** localStorage key holding the operator's theme. */
+export const THEME_STORAGE_KEY = 'oc-theme';
+
+/**
+ * Marks the one-time move of a stored Night onto Workbench Night when it became
+ * the default. public/theme-boot.js reads the same key and value.
+ */
+export const THEME_DEFAULT_MIGRATION_KEY = 'oc-theme-default';
+export const THEME_DEFAULT_MIGRATION = 'workbench-night-2026-11';
 
 export const themes: Record<ThemeName, Theme> = {
   'nerve-dark': {
     name: 'nerve-dark',
     label: 'Night',
     scheme: 'dark',
+    world: 'night-light',
     colors: {
       // Deeper midnight: the centre column is the night, the wings are lifted a step,
       // and rules sit low so plates read by value and edge light, not by drawn lines.
@@ -90,6 +115,7 @@ export const themes: Record<ThemeName, Theme> = {
     name: 'nerve-light',
     label: 'Daylight',
     scheme: 'light',
+    world: 'night-light',
     colors: {
       '--color-background': '#F3F5F9',
       '--color-foreground': '#131722',
@@ -147,6 +173,140 @@ export const themes: Record<ThemeName, Theme> = {
       '--color-chart-5': '#C8322F',
     },
   },
+  'workbench-night': {
+    name: 'workbench-night',
+    label: 'Workbench Night',
+    scheme: 'dark',
+    world: 'workbench',
+    colors: {
+      // Ruled Workbench, Night: a graphite drafting sheet. Canvas is the frame, panel-white the
+      // room, and the translucent sheets of the source are flattened onto the panel as plates.
+      '--color-background': '#111318',
+      '--color-foreground': '#C3C8D1',
+      '--color-card': '#171A20',
+      '--color-plate': '#1F2228',
+      '--color-card-foreground': '#C3C8D1',
+      '--color-popover': '#1F2228',
+      '--color-popover-foreground': '#C3C8D1',
+      '--color-primary': '#FFA567',
+      '--color-primary-foreground': '#111318',
+      '--color-secondary': '#272A30',
+      '--color-secondary-foreground': '#C3C8D1',
+      '--color-muted': '#1F2228',
+      '--color-muted-foreground': '#8F96A3',
+      '--color-accent': '#272A30',
+      '--color-accent-foreground': '#C3C8D1',
+      '--color-destructive': '#FF5A5A',
+      '--color-destructive-foreground': '#111318',
+      // Rules are drawn structure in this world, not hairlines kept out of sight. Field edges are
+      // lifted from the source's edge (#4A505C, 2.3:1) to reach 3:1 on every Workbench surface.
+      '--color-border': '#2A2F38',
+      '--color-input': '#6D7380',
+      '--color-ring': '#FFA567',
+      '--color-green': '#9FC9A8',
+      '--color-red': '#FF5A5A',
+      '--color-orange': '#FFA567',
+      '--color-purple': '#B9A7FF',
+      '--color-info': '#8EA9FF',
+      // The operator's plate: the panel warmed by 16% cantaloupe
+      '--color-message-user': '#3C302B',
+      '--color-message-assistant': '#111318',
+      '--color-message-system': '#171A20',
+      '--color-scrollbar': '#2A2F38',
+      '--color-scrollbar-hover': '#4A505C',
+      // World tokens. Workbench's cobalt is the live light; the source's deep fill (#1D4FE3)
+      // reads at 2.7:1 on the panel, so a lit pane takes its lifted cobalt (#3462F2, 3.5:1)
+      // and live text its pale blue ink.
+      '--color-live': '#3462F2',
+      '--color-live-text': '#8EA9FF',
+      '--color-operator': '#FFA567',
+      '--color-operator-text': '#FFA567',
+      // An off pane is a drafting node: node fill with the node edge as its frame
+      '--color-pane-off': '#171A20',
+      '--color-pane-edge': '#3A404B',
+      '--color-raised': '#272A30',
+      // Sidebar colors
+      '--color-sidebar': '#171A20',
+      '--color-sidebar-foreground': '#C3C8D1',
+      '--color-sidebar-primary': '#FFA567',
+      '--color-sidebar-primary-foreground': '#111318',
+      '--color-sidebar-accent': '#272A30',
+      '--color-sidebar-accent-foreground': '#C3C8D1',
+      '--color-sidebar-border': '#2A2F38',
+      '--color-sidebar-ring': '#FFA567',
+      // Chart colors
+      '--color-chart-1': '#8EA9FF',
+      '--color-chart-2': '#FFA567',
+      '--color-chart-3': '#9FC9A8',
+      '--color-chart-4': '#B9A7FF',
+      '--color-chart-5': '#FF5A5A',
+    },
+  },
+  'workbench-paper': {
+    name: 'workbench-paper',
+    label: 'Workbench Paper',
+    scheme: 'light',
+    world: 'workbench',
+    colors: {
+      // Ruled Workbench, Paper: the source theme. Pale paper frame, near-white room.
+      '--color-background': '#F4F4F2',
+      '--color-foreground': '#393D45',
+      '--color-card': '#FBFBFA',
+      '--color-plate': '#F7F7F6',
+      '--color-card-foreground': '#393D45',
+      '--color-popover': '#FFFFFF',
+      '--color-popover-foreground': '#393D45',
+      '--color-primary': '#FF9F55',
+      '--color-primary-foreground': '#1B1E24',
+      '--color-secondary': '#E9EAEA',
+      '--color-secondary-foreground': '#393D45',
+      '--color-muted': '#E9EAEA',
+      '--color-muted-foreground': '#5C636F',
+      '--color-accent': '#E9EAEA',
+      '--color-accent-foreground': '#393D45',
+      '--color-destructive': '#BF3C27',
+      '--color-destructive-foreground': '#FFFFFF',
+      '--color-border': '#DADDE2',
+      // Field edges darkened from the source's edge (#BDC1C9, 1.6:1) to reach 3:1 on paper and white
+      '--color-input': '#808690',
+      '--color-ring': '#C4621A',
+      '--color-green': '#2F7D4F',
+      '--color-red': '#BF3C27',
+      '--color-orange': '#B4520F',
+      '--color-purple': '#6B4FD8',
+      '--color-info': '#1348DC',
+      // The operator's plate: the panel warmed by 14% cantaloupe
+      '--color-message-user': '#FCEEE3',
+      '--color-message-assistant': '#F4F4F2',
+      '--color-message-system': '#E9EAEA',
+      '--color-scrollbar': '#CBCFD4',
+      '--color-scrollbar-hover': '#A7ACB4',
+      // World tokens: Workbench's cobalt is the live light and its own ink
+      '--color-live': '#1348DC',
+      '--color-live-text': '#1348DC',
+      '--color-operator': '#FF9F55',
+      '--color-operator-text': '#B4520F',
+      // An off pane is a drafting node: white with the node edge as its frame
+      '--color-pane-off': '#FFFFFF',
+      '--color-pane-edge': '#CBCFD4',
+      '--color-raised': '#E9EAEA',
+      // Sidebar colors
+      '--color-sidebar': '#FBFBFA',
+      '--color-sidebar-foreground': '#393D45',
+      '--color-sidebar-primary': '#FF9F55',
+      '--color-sidebar-primary-foreground': '#1B1E24',
+      '--color-sidebar-accent': '#E9EAEA',
+      '--color-sidebar-accent-foreground': '#393D45',
+      '--color-sidebar-border': '#DADDE2',
+      '--color-sidebar-ring': '#C4621A',
+      // Chart colors
+      '--color-chart-1': '#1348DC',
+      '--color-chart-2': '#E07A2E',
+      '--color-chart-3': '#13857C',
+      '--color-chart-4': '#6B4FD8',
+      '--color-chart-5': '#BF3C27',
+    },
+  },
 };
 
 /** All available theme names as a typed array. */
@@ -155,13 +315,42 @@ export const themeNames = Object.keys(themes) as ThemeName[];
 /**
  * Map any stored theme value to a current theme. Values from before the
  * redesign (the unprefixed community theme names) and from the retired Classic
- * skin (their classic- prefixed copies) land on the Nerve identity: the light
- * themes map to Daylight and every dark theme maps to Night.
+ * skin (their classic- prefixed copies) land by scheme: the light themes map to
+ * Daylight, and every dark, missing or unknown value takes the default.
  */
 export function resolveThemeName(saved: string | null | undefined): ThemeName {
   if (saved && (themeNames as string[]).includes(saved)) return saved as ThemeName;
   if (saved === 'light' || saved === 'classic-light') return 'nerve-light';
   return DEFAULT_THEME;
+}
+
+/**
+ * The theme to start with, read from storage and written back resolved.
+ *
+ * Every load used to write the resolved theme back, so a stored Night cannot
+ * tell an operator's pick from the old default. When Workbench Night became the
+ * default, a stored Night moves to it once; picking Night again afterwards
+ * sticks. Storage that throws (private windows, blocked site data) falls back
+ * to the default.
+ */
+export function loadStoredTheme(storage: Pick<Storage, 'getItem' | 'setItem'> = localStorage): ThemeName {
+  let saved: string | null = null;
+  try {
+    saved = storage.getItem(THEME_STORAGE_KEY);
+  } catch {
+    return DEFAULT_THEME;
+  }
+  let theme = resolveThemeName(saved);
+  try {
+    if (storage.getItem(THEME_DEFAULT_MIGRATION_KEY) !== THEME_DEFAULT_MIGRATION) {
+      if (theme === 'nerve-dark') theme = DEFAULT_THEME;
+      storage.setItem(THEME_DEFAULT_MIGRATION_KEY, THEME_DEFAULT_MIGRATION);
+    }
+    if (saved !== theme) storage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // Storage refused the write; the theme still applies for this visit
+  }
+  return theme;
 }
 
 /** Apply a theme by setting CSS custom properties on the document root and loading the matching highlight.js stylesheet. */
@@ -182,6 +371,11 @@ export function applyTheme(themeName: ThemeName): void {
     }
   });
   root.dataset.theme = theme.scheme;
+  root.dataset.world = theme.world;
+  // Workbench's faces load only when a Workbench theme is in use
+  if (theme.world === 'workbench') loadWorkbenchFonts();
+  // The tab icon is drawn in the world's colours
+  refreshFavicon();
   root.style.colorScheme = theme.scheme;
 
   // Apply highlight.js theme (vendored locally to avoid CDN dependency)

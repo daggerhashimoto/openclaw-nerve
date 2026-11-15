@@ -125,7 +125,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()} modal={false}>
       <DialogPortal>
-        <div className="fixed inset-0 z-50 bg-black/38 backdrop-blur-sm" onClick={onClose} />
+        <div className="nerve-scrim fixed inset-0 z-50 bg-black/38 backdrop-blur-sm" onClick={onClose} />
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] pointer-events-none">
           <div 
             className="cockpit-command-shell pointer-events-auto w-full max-w-[38rem] animate-in fade-in-0 zoom-in-95 duration-150"

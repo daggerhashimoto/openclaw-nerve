@@ -58,6 +58,14 @@ export const displayFont = "'Geist', 'Atkinson Hyperlegible Next', 'Helvetica Ne
 
 const DISPLAY_FONT_URL = 'https://fonts.googleapis.com/css2?family=Geist:wght@400..800&display=swap';
 
+/**
+ * The Workbench themes' faces from Google Fonts: IBM Plex Serif for the wordmark
+ * and names, IBM Plex Mono for code and measures. Their reading and UI face,
+ * iA Writer Quattro S, is self-hosted under public/fonts (index.css @font-face).
+ */
+const WORKBENCH_FONTS_URL =
+  'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Serif:wght@400;500;600&display=swap';
+
 // Track which fonts have been loaded
 const loadedFonts = new Set<string>();
 
@@ -97,6 +105,11 @@ export function applyFont(fontName: FontName): void {
 
   // Set the UI font (--font-sans variable)
   root.style.setProperty('--font-sans', font.family);
+}
+
+/** Load the Workbench themes' Google faces (once); called by applyTheme for a Workbench theme. */
+export function loadWorkbenchFonts(): void {
+  loadGoogleFont(WORKBENCH_FONTS_URL);
 }
 
 // Initialize fonts used in the default shell before settings hydrate

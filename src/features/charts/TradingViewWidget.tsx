@@ -41,10 +41,11 @@ export default function TradingViewWidget({ chart }: { chart: ChartData }) {
       symbol,
       interval,
       timezone: 'Etc/UTC',
-      theme: 'dark',
+      // The embed takes the theme in force when it mounts
+      theme: document.documentElement.dataset.theme === 'light' ? 'light' : 'dark',
       style: '1',
       locale: 'en',
-      toolbar_bg: '#0D1119',
+      toolbar_bg: getComputedStyle(document.documentElement).getPropertyValue('--color-card').trim() || '#0D1119',
       enable_publishing: false,
       hide_side_toolbar: false,
       allow_symbol_change: true,

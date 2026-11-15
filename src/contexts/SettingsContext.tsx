@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components -- hook intentionally co-located with provider */
 import { createContext, useContext, useCallback, useRef, useState, useEffect, useMemo, type ReactNode } from 'react';
 import { useTTS, migrateTTSProvider, type TTSProvider } from '@/features/tts/useTTS';
-import { type ThemeName, applyTheme, resolveThemeName } from '@/lib/themes';
+import { type ThemeName, applyTheme, loadStoredTheme } from '@/lib/themes';
 import { type FontName, applyFont, fontNames, DEFAULT_FONT } from '@/lib/fonts';
 import { PERFORMANCE_MODE_STORAGE_KEY, isPerformanceModePreferenceEnabled } from '@/lib/performanceMode';
 
@@ -111,12 +111,7 @@ function resolveInitialFont(): FontName {
 }
 
 function resolveInitialTheme(): ThemeName {
-  const saved = localStorage.getItem('oc-theme');
-  const resolved = resolveThemeName(saved);
-  if (saved !== resolved) {
-    localStorage.setItem('oc-theme', resolved);
-  }
-  return resolved;
+  return loadStoredTheme();
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {

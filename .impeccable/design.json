@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-02T13:10:00Z",
+  "generatedAt": "2026-11-15T19:29:52Z",
   "title": "Design System: Nerve",
   "extensions": {
     "colorMeta": {
@@ -457,6 +457,630 @@
       "plate": {
         "value": "#121926",
         "purpose": "One step above the room: tool stacks, code blocks and the composer. Daylight: #F7F9FC."
+      },
+      "identity-cantaloupe": {
+        "role": "tertiary",
+        "displayName": "Identity Cantaloupe",
+        "canonical": "oklch(79.9% 0.132 54)",
+        "tonalRamp": [
+          "oklch(15.0% 0.033 54)",
+          "oklch(26.4% 0.058 54)",
+          "oklch(37.9% 0.082 54)",
+          "oklch(49.3% 0.107 54)",
+          "oklch(60.7% 0.132 54)",
+          "oklch(72.1% 0.107 54)",
+          "oklch(83.6% 0.082 54)",
+          "oklch(95.0% 0.057 54)"
+        ],
+        "purpose": "Agent family identity hue; never a state."
+      },
+      "identity-mint": {
+        "role": "tertiary",
+        "displayName": "Identity Mint",
+        "canonical": "oklch(77.3% 0.103 156)",
+        "tonalRamp": [
+          "oklch(15.0% 0.025 156)",
+          "oklch(26.4% 0.045 156)",
+          "oklch(37.9% 0.064 156)",
+          "oklch(49.3% 0.083 156)",
+          "oklch(60.7% 0.103 156)",
+          "oklch(72.1% 0.083 156)",
+          "oklch(83.6% 0.064 156)",
+          "oklch(95.0% 0.045 156)"
+        ],
+        "purpose": "Agent family identity hue; never a state."
+      },
+      "identity-lilac": {
+        "role": "tertiary",
+        "displayName": "Identity Lilac",
+        "canonical": "oklch(77.7% 0.125 293)",
+        "tonalRamp": [
+          "oklch(15.0% 0.031 293)",
+          "oklch(26.4% 0.054 293)",
+          "oklch(37.9% 0.078 293)",
+          "oklch(49.3% 0.101 293)",
+          "oklch(60.7% 0.125 293)",
+          "oklch(72.1% 0.101 293)",
+          "oklch(83.6% 0.078 293)",
+          "oklch(95.0% 0.054 293)"
+        ],
+        "purpose": "Agent family identity hue; never a state."
+      },
+      "identity-aqua": {
+        "role": "tertiary",
+        "displayName": "Identity Aqua",
+        "canonical": "oklch(80.5% 0.082 186)",
+        "tonalRamp": [
+          "oklch(15.0% 0.020 186)",
+          "oklch(26.4% 0.036 186)",
+          "oklch(37.9% 0.051 186)",
+          "oklch(49.3% 0.066 186)",
+          "oklch(60.7% 0.082 186)",
+          "oklch(72.1% 0.066 186)",
+          "oklch(83.6% 0.051 186)",
+          "oklch(95.0% 0.036 186)"
+        ],
+        "purpose": "Agent family identity hue; never a state."
+      },
+      "identity-rose": {
+        "role": "tertiary",
+        "displayName": "Identity Rose",
+        "canonical": "oklch(74.3% 0.165 5)",
+        "tonalRamp": [
+          "oklch(15.0% 0.041 5)",
+          "oklch(26.4% 0.072 5)",
+          "oklch(37.9% 0.103 5)",
+          "oklch(49.3% 0.134 5)",
+          "oklch(60.7% 0.165 5)",
+          "oklch(72.1% 0.134 5)",
+          "oklch(83.6% 0.103 5)",
+          "oklch(95.0% 0.072 5)"
+        ],
+        "purpose": "Agent family identity hue; never a state."
+      },
+      "identity-lemon": {
+        "role": "tertiary",
+        "displayName": "Identity Lemon",
+        "canonical": "oklch(87.5% 0.129 94)",
+        "tonalRamp": [
+          "oklch(15.0% 0.032 94)",
+          "oklch(26.4% 0.056 94)",
+          "oklch(37.9% 0.080 94)",
+          "oklch(49.3% 0.105 94)",
+          "oklch(60.7% 0.129 94)",
+          "oklch(72.1% 0.105 94)",
+          "oklch(83.6% 0.080 94)",
+          "oklch(95.0% 0.056 94)"
+        ],
+        "purpose": "Agent family identity hue; never a state."
+      },
+      "identity-sky": {
+        "role": "tertiary",
+        "displayName": "Identity Sky",
+        "canonical": "oklch(78.4% 0.111 238)",
+        "tonalRamp": [
+          "oklch(15.0% 0.027 238)",
+          "oklch(26.4% 0.048 238)",
+          "oklch(37.9% 0.069 238)",
+          "oklch(49.3% 0.090 238)",
+          "oklch(60.7% 0.111 238)",
+          "oklch(72.1% 0.090 238)",
+          "oklch(83.6% 0.069 238)",
+          "oklch(95.0% 0.048 238)"
+        ],
+        "purpose": "Agent family identity hue; never a state."
+      },
+      "daylight-plate": {
+        "role": "neutral",
+        "displayName": "Daylight Plate",
+        "canonical": "oklch(98.1% 0.005 258)",
+        "tonalRamp": [
+          "oklch(15.0% 0.001 258)",
+          "oklch(26.4% 0.002 258)",
+          "oklch(37.9% 0.003 258)",
+          "oklch(49.3% 0.004 258)",
+          "oklch(60.7% 0.005 258)",
+          "oklch(72.1% 0.004 258)",
+          "oklch(83.6% 0.003 258)",
+          "oklch(95.0% 0.002 258)"
+        ],
+        "purpose": "Daylight surfaces inside the room: tool stacks, code, composer."
+      },
+      "wb-graphite": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "oklch(18.7% 0.011 268)",
+        "tonalRamp": [
+          "oklch(15.0% 0.003 268)",
+          "oklch(26.4% 0.005 268)",
+          "oklch(37.9% 0.007 268)",
+          "oklch(49.3% 0.009 268)",
+          "oklch(60.7% 0.011 268)",
+          "oklch(72.1% 0.009 268)",
+          "oklch(83.6% 0.007 268)",
+          "oklch(95.0% 0.005 268)"
+        ],
+        "purpose": "Workbench Night frame, inputs, keycaps and the Send label."
+      },
+      "wb-panel": {
+        "role": "neutral",
+        "displayName": "Graphite Panel",
+        "canonical": "oklch(21.7% 0.013 264)",
+        "tonalRamp": [
+          "oklch(15.0% 0.003 264)",
+          "oklch(26.4% 0.006 264)",
+          "oklch(37.9% 0.008 264)",
+          "oklch(49.3% 0.010 264)",
+          "oklch(60.7% 0.013 264)",
+          "oklch(72.1% 0.010 264)",
+          "oklch(83.6% 0.008 264)",
+          "oklch(95.0% 0.006 264)"
+        ],
+        "purpose": "Workbench Night room sheet and side columns; off panes and corner node fill."
+      },
+      "wb-plate": {
+        "role": "neutral",
+        "displayName": "Graphite Plate",
+        "canonical": "oklch(25.1% 0.012 264)",
+        "tonalRamp": [
+          "oklch(15.0% 0.003 264)",
+          "oklch(26.4% 0.005 264)",
+          "oklch(37.9% 0.008 264)",
+          "oklch(49.3% 0.010 264)",
+          "oklch(60.7% 0.012 264)",
+          "oklch(72.1% 0.010 264)",
+          "oklch(83.6% 0.008 264)",
+          "oklch(95.0% 0.005 264)"
+        ],
+        "purpose": "Workbench Night tool stacks, code, composer and popovers."
+      },
+      "wb-raised": {
+        "role": "neutral",
+        "displayName": "Graphite Raised",
+        "canonical": "oklch(28.4% 0.012 264)",
+        "tonalRamp": [
+          "oklch(15.0% 0.003 264)",
+          "oklch(26.4% 0.005 264)",
+          "oklch(37.9% 0.007 264)",
+          "oklch(49.3% 0.010 264)",
+          "oklch(60.7% 0.012 264)",
+          "oklch(72.1% 0.010 264)",
+          "oklch(83.6% 0.007 264)",
+          "oklch(95.0% 0.005 264)"
+        ],
+        "purpose": "Workbench Night hover and selected fills."
+      },
+      "wb-rule": {
+        "role": "neutral",
+        "displayName": "Drawn Rule",
+        "canonical": "oklch(30.4% 0.018 262)",
+        "tonalRamp": [
+          "oklch(15.0% 0.004 262)",
+          "oklch(26.4% 0.008 262)",
+          "oklch(37.9% 0.011 262)",
+          "oklch(49.3% 0.014 262)",
+          "oklch(60.7% 0.018 262)",
+          "oklch(72.1% 0.014 262)",
+          "oklch(83.6% 0.011 262)",
+          "oklch(95.0% 0.008 262)"
+        ],
+        "purpose": "Workbench Night rules, drawn as structure."
+      },
+      "wb-field-edge": {
+        "role": "neutral",
+        "displayName": "Field Edge",
+        "canonical": "oklch(55.5% 0.021 266)",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 266)",
+          "oklch(26.4% 0.009 266)",
+          "oklch(37.9% 0.013 266)",
+          "oklch(49.3% 0.017 266)",
+          "oklch(60.7% 0.021 266)",
+          "oklch(72.1% 0.017 266)",
+          "oklch(83.6% 0.013 266)",
+          "oklch(95.0% 0.009 266)"
+        ],
+        "purpose": "Workbench Night input and outline edges at 3:1."
+      },
+      "wb-ink": {
+        "role": "neutral",
+        "displayName": "Workbench Ink",
+        "canonical": "oklch(83.2% 0.014 262)",
+        "tonalRamp": [
+          "oklch(15.0% 0.003 262)",
+          "oklch(26.4% 0.006 262)",
+          "oklch(37.9% 0.009 262)",
+          "oklch(49.3% 0.011 262)",
+          "oklch(60.7% 0.014 262)",
+          "oklch(72.1% 0.011 262)",
+          "oklch(83.6% 0.009 262)",
+          "oklch(95.0% 0.006 262)"
+        ],
+        "purpose": "Workbench Night primary text."
+      },
+      "wb-muted": {
+        "role": "neutral",
+        "displayName": "Workbench Muted",
+        "canonical": "oklch(67.2% 0.021 263)",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 263)",
+          "oklch(26.4% 0.009 263)",
+          "oklch(37.9% 0.013 263)",
+          "oklch(49.3% 0.017 263)",
+          "oklch(60.7% 0.021 263)",
+          "oklch(72.1% 0.017 263)",
+          "oklch(83.6% 0.013 263)",
+          "oklch(95.0% 0.009 263)"
+        ],
+        "purpose": "Workbench Night secondary text."
+      },
+      "wb-cobalt": {
+        "role": "secondary",
+        "displayName": "Workbench Cobalt",
+        "canonical": "oklch(55.5% 0.222 266)",
+        "tonalRamp": [
+          "oklch(15.0% 0.055 266)",
+          "oklch(26.4% 0.097 266)",
+          "oklch(37.9% 0.138 266)",
+          "oklch(49.3% 0.180 266)",
+          "oklch(60.7% 0.222 266)",
+          "oklch(72.1% 0.180 266)",
+          "oklch(83.6% 0.138 266)",
+          "oklch(95.0% 0.096 266)"
+        ],
+        "purpose": "Workbench Night live light: a lit pane, the running tool, the fleet pane."
+      },
+      "wb-cobalt-text": {
+        "role": "secondary",
+        "displayName": "Cobalt Ink",
+        "canonical": "oklch(74.9% 0.128 270)",
+        "tonalRamp": [
+          "oklch(15.0% 0.032 270)",
+          "oklch(26.4% 0.056 270)",
+          "oklch(37.9% 0.080 270)",
+          "oklch(49.3% 0.104 270)",
+          "oklch(60.7% 0.128 270)",
+          "oklch(72.1% 0.104 270)",
+          "oklch(83.6% 0.080 270)",
+          "oklch(95.0% 0.056 270)"
+        ],
+        "purpose": "Workbench Night live text: measures and clocks."
+      },
+      "wb-pane-edge": {
+        "role": "neutral",
+        "displayName": "Node Edge Pane",
+        "canonical": "oklch(37.0% 0.021 263)",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 263)",
+          "oklch(26.4% 0.009 263)",
+          "oklch(37.9% 0.013 263)",
+          "oklch(49.3% 0.017 263)",
+          "oklch(60.7% 0.021 263)",
+          "oklch(72.1% 0.017 263)",
+          "oklch(83.6% 0.013 263)",
+          "oklch(95.0% 0.009 263)"
+        ],
+        "purpose": "Workbench Night off pane frame."
+      },
+      "wb-operator-plate": {
+        "role": "neutral",
+        "displayName": "Graphite Operator Plate",
+        "canonical": "oklch(32.1% 0.020 44)",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 44)",
+          "oklch(26.4% 0.009 44)",
+          "oklch(37.9% 0.012 44)",
+          "oklch(49.3% 0.016 44)",
+          "oklch(60.7% 0.020 44)",
+          "oklch(72.1% 0.016 44)",
+          "oklch(83.6% 0.012 44)",
+          "oklch(95.0% 0.009 44)"
+        ],
+        "purpose": "Workbench Night operator message ground: panel warmed by 16% cantaloupe."
+      },
+      "wb-green": {
+        "role": "tertiary",
+        "displayName": "Workbench Green",
+        "canonical": "oklch(79.7% 0.064 151)",
+        "tonalRamp": [
+          "oklch(15.0% 0.016 151)",
+          "oklch(26.4% 0.028 151)",
+          "oklch(37.9% 0.040 151)",
+          "oklch(49.3% 0.052 151)",
+          "oklch(60.7% 0.064 151)",
+          "oklch(72.1% 0.052 151)",
+          "oklch(83.6% 0.040 151)",
+          "oklch(95.0% 0.028 151)"
+        ],
+        "purpose": "Workbench Night diff additions and confirmations."
+      },
+      "wb-node-edge": {
+        "role": "neutral",
+        "displayName": "Corner Node Edge",
+        "canonical": "oklch(55.1% 0.023 264)",
+        "tonalRamp": [
+          "oklch(15.0% 0.006 264)",
+          "oklch(26.4% 0.010 264)",
+          "oklch(37.9% 0.015 264)",
+          "oklch(49.3% 0.019 264)",
+          "oklch(60.7% 0.023 264)",
+          "oklch(72.1% 0.019 264)",
+          "oklch(83.6% 0.015 264)",
+          "oklch(95.0% 0.010 264)"
+        ],
+        "purpose": "Workbench Night corner node outline."
+      },
+      "wb-key-edge": {
+        "role": "primary",
+        "displayName": "Key Edge",
+        "canonical": "oklch(62.1% 0.095 53)",
+        "tonalRamp": [
+          "oklch(15.0% 0.023 53)",
+          "oklch(26.4% 0.041 53)",
+          "oklch(37.9% 0.059 53)",
+          "oklch(49.3% 0.077 53)",
+          "oklch(60.7% 0.094 53)",
+          "oklch(72.1% 0.077 53)",
+          "oklch(83.6% 0.059 53)",
+          "oklch(95.0% 0.041 53)"
+        ],
+        "purpose": "Workbench Night pressed lower edge of the Send key."
+      },
+      "wb-paper": {
+        "role": "neutral",
+        "displayName": "Drafting Paper",
+        "canonical": "oklch(96.7% 0.003 106)",
+        "tonalRamp": [
+          "oklch(15.0% 0.001 106)",
+          "oklch(26.4% 0.001 106)",
+          "oklch(37.9% 0.002 106)",
+          "oklch(49.3% 0.002 106)",
+          "oklch(60.7% 0.003 106)",
+          "oklch(72.1% 0.002 106)",
+          "oklch(83.6% 0.002 106)",
+          "oklch(95.0% 0.001 106)"
+        ],
+        "purpose": "Workbench Paper frame."
+      },
+      "wb-paper-panel": {
+        "role": "neutral",
+        "displayName": "Paper Panel",
+        "canonical": "oklch(98.8% 0.001 106)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 106)",
+          "oklch(26.4% 0.001 106)",
+          "oklch(37.9% 0.001 106)",
+          "oklch(49.3% 0.001 106)",
+          "oklch(60.7% 0.001 106)",
+          "oklch(72.1% 0.001 106)",
+          "oklch(83.6% 0.001 106)",
+          "oklch(95.0% 0.001 106)"
+        ],
+        "purpose": "Workbench Paper room sheet and side columns."
+      },
+      "wb-paper-plate": {
+        "role": "neutral",
+        "displayName": "Paper Plate",
+        "canonical": "oklch(97.6% 0.001 106)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 106)",
+          "oklch(26.4% 0.001 106)",
+          "oklch(37.9% 0.001 106)",
+          "oklch(49.3% 0.001 106)",
+          "oklch(60.7% 0.001 106)",
+          "oklch(72.1% 0.001 106)",
+          "oklch(83.6% 0.001 106)",
+          "oklch(95.0% 0.001 106)"
+        ],
+        "purpose": "Workbench Paper tool stacks, code and composer."
+      },
+      "wb-paper-white": {
+        "role": "neutral",
+        "displayName": "Paper White",
+        "canonical": "oklch(100.0% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 90)",
+          "oklch(26.4% 0.000 90)",
+          "oklch(37.9% 0.000 90)",
+          "oklch(49.3% 0.000 90)",
+          "oklch(60.7% 0.000 90)",
+          "oklch(72.1% 0.000 90)",
+          "oklch(83.6% 0.000 90)",
+          "oklch(95.0% 0.000 90)"
+        ],
+        "purpose": "Workbench Paper popovers, off panes and corner node fill."
+      },
+      "wb-paper-raised": {
+        "role": "neutral",
+        "displayName": "Paper Raised",
+        "canonical": "oklch(93.6% 0.001 197)",
+        "tonalRamp": [
+          "oklch(15.0% 0.000 197)",
+          "oklch(26.4% 0.000 197)",
+          "oklch(37.9% 0.001 197)",
+          "oklch(49.3% 0.001 197)",
+          "oklch(60.7% 0.001 197)",
+          "oklch(72.1% 0.001 197)",
+          "oklch(83.6% 0.001 197)",
+          "oklch(95.0% 0.000 197)"
+        ],
+        "purpose": "Workbench Paper hover and selected fills."
+      },
+      "wb-paper-rule": {
+        "role": "neutral",
+        "displayName": "Paper Rule",
+        "canonical": "oklch(89.7% 0.008 261)",
+        "tonalRamp": [
+          "oklch(15.0% 0.002 261)",
+          "oklch(26.4% 0.003 261)",
+          "oklch(37.9% 0.005 261)",
+          "oklch(49.3% 0.006 261)",
+          "oklch(60.7% 0.008 261)",
+          "oklch(72.1% 0.006 261)",
+          "oklch(83.6% 0.005 261)",
+          "oklch(95.0% 0.003 261)"
+        ],
+        "purpose": "Workbench Paper drawn rules."
+      },
+      "wb-paper-field-edge": {
+        "role": "neutral",
+        "displayName": "Paper Field Edge",
+        "canonical": "oklch(61.8% 0.017 261)",
+        "tonalRamp": [
+          "oklch(15.0% 0.004 261)",
+          "oklch(26.4% 0.007 261)",
+          "oklch(37.9% 0.010 261)",
+          "oklch(49.3% 0.014 261)",
+          "oklch(60.7% 0.017 261)",
+          "oklch(72.1% 0.014 261)",
+          "oklch(83.6% 0.010 261)",
+          "oklch(95.0% 0.007 261)"
+        ],
+        "purpose": "Workbench Paper input edges at 3:1."
+      },
+      "wb-paper-ink": {
+        "role": "neutral",
+        "displayName": "Graphite Ink",
+        "canonical": "oklch(35.9% 0.015 264)",
+        "tonalRamp": [
+          "oklch(15.0% 0.004 264)",
+          "oklch(26.4% 0.006 264)",
+          "oklch(37.9% 0.009 264)",
+          "oklch(49.3% 0.012 264)",
+          "oklch(60.7% 0.015 264)",
+          "oklch(72.1% 0.012 264)",
+          "oklch(83.6% 0.009 264)",
+          "oklch(95.0% 0.006 264)"
+        ],
+        "purpose": "Workbench Paper primary text."
+      },
+      "wb-paper-muted": {
+        "role": "neutral",
+        "displayName": "Paper Muted",
+        "canonical": "oklch(49.8% 0.021 261)",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 261)",
+          "oklch(26.4% 0.009 261)",
+          "oklch(37.9% 0.013 261)",
+          "oklch(49.3% 0.017 261)",
+          "oklch(60.7% 0.021 261)",
+          "oklch(72.1% 0.017 261)",
+          "oklch(83.6% 0.013 261)",
+          "oklch(95.0% 0.009 261)"
+        ],
+        "purpose": "Workbench Paper secondary text."
+      },
+      "wb-paper-cobalt": {
+        "role": "secondary",
+        "displayName": "Paper Cobalt",
+        "canonical": "oklch(47.9% 0.230 264)",
+        "tonalRamp": [
+          "oklch(15.0% 0.057 264)",
+          "oklch(26.4% 0.100 264)",
+          "oklch(37.9% 0.144 264)",
+          "oklch(49.3% 0.187 264)",
+          "oklch(60.7% 0.230 264)",
+          "oklch(72.1% 0.187 264)",
+          "oklch(83.6% 0.144 264)",
+          "oklch(95.0% 0.100 264)"
+        ],
+        "purpose": "Workbench Paper live light and live ink."
+      },
+      "wb-paper-red": {
+        "role": "tertiary",
+        "displayName": "Paper Red",
+        "canonical": "oklch(54.4% 0.171 32)",
+        "tonalRamp": [
+          "oklch(15.0% 0.042 32)",
+          "oklch(26.4% 0.074 32)",
+          "oklch(37.9% 0.107 32)",
+          "oklch(49.3% 0.139 32)",
+          "oklch(60.7% 0.171 32)",
+          "oklch(72.1% 0.139 32)",
+          "oklch(83.6% 0.107 32)",
+          "oklch(95.0% 0.074 32)"
+        ],
+        "purpose": "Workbench Paper failure and destructive."
+      },
+      "wb-paper-pane-edge": {
+        "role": "neutral",
+        "displayName": "Paper Pane Edge",
+        "canonical": "oklch(85.3% 0.008 254)",
+        "tonalRamp": [
+          "oklch(15.0% 0.002 254)",
+          "oklch(26.4% 0.004 254)",
+          "oklch(37.9% 0.005 254)",
+          "oklch(49.3% 0.007 254)",
+          "oklch(60.7% 0.008 254)",
+          "oklch(72.1% 0.007 254)",
+          "oklch(83.6% 0.005 254)",
+          "oklch(95.0% 0.004 254)"
+        ],
+        "purpose": "Workbench Paper off pane frame."
+      },
+      "wb-paper-operator-plate": {
+        "role": "neutral",
+        "displayName": "Paper Operator Plate",
+        "canonical": "oklch(95.7% 0.021 61)",
+        "tonalRamp": [
+          "oklch(15.0% 0.005 61)",
+          "oklch(26.4% 0.009 61)",
+          "oklch(37.9% 0.013 61)",
+          "oklch(49.3% 0.017 61)",
+          "oklch(60.7% 0.021 61)",
+          "oklch(72.1% 0.017 61)",
+          "oklch(83.6% 0.013 61)",
+          "oklch(95.0% 0.009 61)"
+        ],
+        "purpose": "Workbench Paper operator message ground: panel warmed by 14% cantaloupe."
+      },
+      "wb-paper-send-label": {
+        "role": "neutral",
+        "displayName": "Send Label Ink",
+        "canonical": "oklch(23.5% 0.012 264)",
+        "tonalRamp": [
+          "oklch(15.0% 0.003 264)",
+          "oklch(26.4% 0.005 264)",
+          "oklch(37.9% 0.008 264)",
+          "oklch(49.3% 0.010 264)",
+          "oklch(60.7% 0.012 264)",
+          "oklch(72.1% 0.010 264)",
+          "oklch(83.6% 0.008 264)",
+          "oklch(95.0% 0.005 264)"
+        ],
+        "purpose": "Workbench Paper label on the Send key."
+      },
+      "wb-paper-node-edge": {
+        "role": "neutral",
+        "displayName": "Paper Node Edge",
+        "canonical": "oklch(66.5% 0.015 258)",
+        "tonalRamp": [
+          "oklch(15.0% 0.004 258)",
+          "oklch(26.4% 0.007 258)",
+          "oklch(37.9% 0.009 258)",
+          "oklch(49.3% 0.012 258)",
+          "oklch(60.7% 0.015 258)",
+          "oklch(72.1% 0.012 258)",
+          "oklch(83.6% 0.009 258)",
+          "oklch(95.0% 0.007 258)"
+        ],
+        "purpose": "Workbench Paper corner node outline."
+      },
+      "wb-paper-key-edge": {
+        "role": "primary",
+        "displayName": "Paper Key Edge",
+        "canonical": "oklch(67.3% 0.107 57)",
+        "tonalRamp": [
+          "oklch(15.0% 0.027 57)",
+          "oklch(26.4% 0.047 57)",
+          "oklch(37.9% 0.067 57)",
+          "oklch(49.3% 0.087 57)",
+          "oklch(60.7% 0.107 57)",
+          "oklch(72.1% 0.087 57)",
+          "oklch(83.6% 0.067 57)",
+          "oklch(95.0% 0.047 57)"
+        ],
+        "purpose": "Workbench Paper pressed lower edge of the Send key."
       }
     },
     "typographyMeta": {
@@ -499,6 +1123,42 @@
       "keycap": {
         "displayName": "Keycap",
         "purpose": "Keyboard shortcut hints inside .cockpit-kbd."
+      },
+      "wb-display": {
+        "displayName": "Workbench Display",
+        "purpose": "The Nerve wordmark in Workbench: IBM Plex Serif 600 at normal tracking, followed by the fleet pane."
+      },
+      "wb-nameplate": {
+        "displayName": "Workbench Nameplate",
+        "purpose": "The open session's agent name in the Workbench chat header, Plex Serif 600, in its family hue."
+      },
+      "wb-name": {
+        "displayName": "Workbench Name",
+        "purpose": "Agent and speaker names in rows and message headers, Plex Serif 600 at normal tracking."
+      },
+      "wb-headline": {
+        "displayName": "Workbench Headline",
+        "purpose": "Settings and dialog section titles in iA Writer Quattro S (renders bold; Quattro ships 400 and 700)."
+      },
+      "wb-title": {
+        "displayName": "Workbench Title",
+        "purpose": "Panel header labels, field labels, Send, table heads in Quattro at -0.025em (renders bold)."
+      },
+      "wb-body": {
+        "displayName": "Workbench Body",
+        "purpose": "Agent prose in iA Writer Quattro S at -0.025em, held to the 72em reading measure."
+      },
+      "wb-ui": {
+        "displayName": "Workbench UI",
+        "purpose": "Chips, rows, inputs and tree entries in Quattro at -0.025em (renders regular)."
+      },
+      "wb-label": {
+        "displayName": "Workbench Label",
+        "purpose": "Status bar, metadata, hints and badges in Quattro at -0.025em."
+      },
+      "wb-mono": {
+        "displayName": "Workbench Mono",
+        "purpose": "Tool rows, timestamps, durations, models and code in IBM Plex Mono with tabular numerals at normal tracking."
       }
     },
     "shadows": [
@@ -515,12 +1175,17 @@
       {
         "name": "float-shadow",
         "value": "0 14px 36px rgba(0, 0, 0, 0.46), 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.07)",
-        "purpose": "The composer and the command palette shell: the only surfaces that float. Daylight: 0 14px 36px rgba(19, 23, 34, 0.14), 0 1px 2px rgba(19, 23, 34, 0.08), inset 0 0 0 1px var(--border)."
+        "purpose": "The composer and the command palette shell: the only surfaces that float. Daylight: 0 14px 36px rgba(19, 23, 34, 0.14), 0 1px 2px rgba(19, 23, 34, 0.08), inset 0 0 0 1px var(--border). Workbench prints it instead (see wb-print)."
       },
       {
         "name": "menu-shadow",
         "value": "0 12px 32px rgba(0, 0, 0, 0.32)",
-        "purpose": "Inline select listboxes, slash menus and top bar panels."
+        "purpose": "Night light menus, popovers, listboxes, top bar panels, toasts, confirmations, the cron dialog, the image lightbox and mobile drawers. Read from the theme via --menu-shadow; Workbench prints it."
+      },
+      {
+        "name": "dialog-shadow",
+        "value": "0 18px 48px rgba(0, 0, 0, 0.38)",
+        "purpose": "Night light shared modal dialog (Create task, Add memory and other form dialogs). Read from the theme via --dialog-shadow; Workbench prints it."
       },
       {
         "name": "pane-edge",
@@ -530,7 +1195,52 @@
       {
         "name": "Bloom",
         "value": "0 0 9px 0 color-mix(in srgb, var(--color-live) 62%, transparent)",
-        "purpose": "The light a lit pane throws on the ground in its own colour (live 62%, operator 58%, error 58%). Daylight sets it to none."
+        "purpose": "Night only: the light a lit pane throws on the ground in its own colour (live 62%, operator 58%, error 58%). Daylight and both Workbench themes set it to none."
+      },
+      {
+        "name": "wb-ruled-cell",
+        "value": "inset 0 0 0 1px var(--color-border)",
+        "purpose": "Workbench plate token: every plate, tool stack, task card at rest, the composer at rest and the login window."
+      },
+      {
+        "name": "wb-print",
+        "value": "inset 0 0 0 1px var(--color-border), 6px 6px 0 0 rgba(110, 150, 255, 0.06)",
+        "purpose": "Workbench float token: command palette shell, Settings and task drawers, a lifted task card. Paper: rgba(7, 77, 207, 0.05)."
+      },
+      {
+        "name": "wb-menu-dialog-print",
+        "value": "6px 6px 0 0 rgba(110, 150, 255, 0.06)",
+        "purpose": "Workbench --menu-shadow and --dialog-shadow: everything floating that takes those tokens. Paper: rgba(7, 77, 207, 0.05)."
+      },
+      {
+        "name": "wb-warm-rule",
+        "value": "inset 0 0 0 1px color-mix(in srgb, var(--color-operator) 14%, var(--color-border))",
+        "purpose": "Workbench operator message plate."
+      },
+      {
+        "name": "wb-window-rule",
+        "value": "inset 0 0 0 1px color-mix(in srgb, var(--color-operator) 55%, var(--color-border))",
+        "purpose": "Workbench composer and side-column editors while the operator is in them."
+      },
+      {
+        "name": "wb-key-edge",
+        "value": "inset 0 -2px 0 0 var(--wb-key-edge)",
+        "purpose": "Workbench Send key pressed lower edge; drops on hover and press."
+      },
+      {
+        "name": "wb-keycap-edge",
+        "value": "0 1px 0 var(--color-input)",
+        "purpose": "Workbench keycap: only the lower edge."
+      },
+      {
+        "name": "wb-cool-wash",
+        "value": "linear-gradient(to bottom, rgba(40, 80, 220, 0.08), transparent 28%)",
+        "purpose": "Workbench room ground in place of the room light (a background, not a shadow). Paper: rgba(219, 234, 254, 0.16)."
+      },
+      {
+        "name": "wb-grain",
+        "value": "fractal noise tile 180px at opacity 0.025 (Night, inverted) / 0.03 (Paper)",
+        "purpose": "Workbench paper grain over the whole shell, including the top bar."
       }
     ],
     "motion": [
@@ -685,106 +1395,157 @@
       "description": "Compact model and effort select in the chat header: transparent with an Input Edge stroke, 3px radius, Raised on hover, Slate chevron.",
       "html": "<div class=\"ds-select-row\"><button type=\"button\" class=\"ds-inline-select\" aria-haspopup=\"listbox\" aria-expanded=\"false\" aria-label=\"Model\"><span class=\"ds-inline-select-label\">claude-sonnet-4-5</span><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></button><button type=\"button\" class=\"ds-inline-select\" aria-haspopup=\"listbox\" aria-expanded=\"false\" aria-label=\"Effort\"><span class=\"ds-inline-select-label\">Medium</span><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></button></div>",
       "css": ".ds-select-row{display:inline-flex;gap:8px;padding:8px 12px;background:var(--color-background,#06080E)}.ds-inline-select{display:inline-flex;align-items:center;gap:4px;min-height:1.75rem;padding:0 8px;border-radius:3px;border:1px solid var(--color-input,#1F2736);background:transparent;color:var(--color-foreground,#ECE6DA);font-family:'Atkinson Hyperlegible Next','Helvetica Neue',Arial,sans-serif;font-size:0.8rem;cursor:pointer;transition:background-color 120ms cubic-bezier(0.2,0,0,1)}.ds-inline-select:hover{background:var(--color-raised,#1A2232)}.ds-inline-select:focus-visible{outline:2px solid var(--color-ring,#FFA567);outline-offset:1px}.ds-inline-select:disabled{opacity:0.5;cursor:not-allowed}.ds-inline-select-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ds-inline-select>svg{flex-shrink:0;color:var(--color-muted-foreground,#8C94A6)}"
+    },
+    {
+      "name": "Workbench Send Key",
+      "kind": "button",
+      "refersTo": "wb-button-primary",
+      "description": "Send in Workbench: the cantaloupe key with a 2px pressed lower edge that drops on hover; a press settles to 99% scale.",
+      "html": "<button type=\"button\" class=\"ds-wb-send\">Send <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 19V5\"/><path d=\"m5 12 7-7 7 7\"/></svg></button>",
+      "css": ".ds-wb-send{display:inline-flex;align-items:center;gap:6px;min-height:2rem;padding:0 0.875rem;border:0;border-radius:3px;background:#FFA567;color:#111318;font-family:'iA Writer Quattro S','IBM Plex Sans','Helvetica Neue',Arial,sans-serif;font-size:0.867rem;font-weight:600;letter-spacing:-0.025em;box-shadow:inset 0 -2px 0 0 #B3764E;cursor:pointer;transition:filter 120ms cubic-bezier(0.2,0,0,1),box-shadow 120ms cubic-bezier(0.2,0,0,1)}.ds-wb-send:hover{filter:brightness(1.1);box-shadow:none}.ds-wb-send:active{transform:scale(0.99);box-shadow:none}.ds-wb-send:focus-visible{outline:2px solid #FFA567;outline-offset:1px}"
+    },
+    {
+      "name": "Workbench Room Sheet with Corner Nodes",
+      "kind": "custom",
+      "refersTo": "wb-corner-node",
+      "description": "The Workbench signature: the room is a 2px ruled sheet pinned to the frame by four diamond nodes (7px fill over an 11px edge).",
+      "html": "<div class=\"ds-wb-frame\"><div class=\"ds-wb-sheet\"><span class=\"ds-wb-pane\" aria-label=\"Running\"></span> searching files</div></div>",
+      "css": ".ds-wb-frame{background:#111318;padding:12px}.ds-wb-sheet{position:relative;min-height:96px;padding:16px;border-radius:2px;background:#171A20 linear-gradient(to bottom,rgba(40,80,220,0.08),transparent 28%);box-shadow:inset 0 0 0 1px #2A2F38;color:#C3C8D1;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:0.8rem;display:flex;align-items:flex-start;gap:8px}.ds-wb-sheet::before,.ds-wb-sheet::after{content:'';position:absolute;pointer-events:none;--d:url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2 2'><path d='M1 0 2 1 1 2 0 1z'/></svg>\");-webkit-mask-image:var(--d),var(--d),var(--d),var(--d);mask-image:var(--d),var(--d),var(--d),var(--d);-webkit-mask-position:left top,right top,left bottom,right bottom;mask-position:left top,right top,left bottom,right bottom;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}.ds-wb-sheet::before{inset:-5.5px;background:#6B7280;-webkit-mask-size:11px 11px;mask-size:11px 11px}.ds-wb-sheet::after{inset:-3.5px;background:#171A20;-webkit-mask-size:7px 7px;mask-size:7px 7px}.ds-wb-pane{display:inline-block;width:0.533rem;height:0.733rem;border-radius:1px;background:#3462F2;margin-top:3px;transition:background 120ms cubic-bezier(0.2,0,0,1)}.ds-wb-sheet:hover .ds-wb-pane{background:#FFA567}"
+    },
+    {
+      "name": "Workbench Operator Plate",
+      "kind": "card",
+      "refersTo": "wb-plate-operator",
+      "description": "The operator's turn in Workbench Night: the panel warmed by 16% cantaloupe inside a warm rule, no edge light.",
+      "html": "<div class=\"ds-wb-op\"><div class=\"ds-wb-op-head\"><b>You</b> <span>17:29</span></div><p>hey hows it going</p></div>",
+      "css": ".ds-wb-op{max-width:72em;width:fit-content;padding:8px 12px;border-radius:3px;background:#3C302B;color:#C3C8D1;box-shadow:inset 0 0 0 1px color-mix(in srgb,#FFA567 14%,#2A2F38);font-family:'iA Writer Quattro S','IBM Plex Sans','Helvetica Neue',Arial,sans-serif;letter-spacing:-0.025em}.ds-wb-op-head b{font-family:'IBM Plex Serif',Georgia,serif;font-weight:600;letter-spacing:normal;font-size:0.8rem}.ds-wb-op-head span{font-family:'IBM Plex Mono',monospace;font-size:0.8rem;color:#8F96A3;letter-spacing:normal}.ds-wb-op p{margin:6px 0 0;font-size:1rem;line-height:1.6}"
+    },
+    {
+      "name": "Workbench Menu",
+      "kind": "custom",
+      "refersTo": "wb-room-sheet",
+      "description": "A floating listbox in Workbench: Popover fill, ruled edge, the hard 6px cobalt print, mono options, Raised on hover.",
+      "html": "<div class=\"ds-wb-menu\" role=\"listbox\"><div role=\"option\" tabindex=\"0\" class=\"ds-wb-opt\">primary</div><div role=\"option\" tabindex=\"0\" class=\"ds-wb-opt\">gpt-5.5</div><div role=\"option\" tabindex=\"0\" class=\"ds-wb-opt\">claude-opus-4-6</div></div>",
+      "css": ".ds-wb-menu{display:inline-block;min-width:160px;padding:4px 0;border:1px solid #2A2F38;border-radius:3px;background:#1F2228;box-shadow:6px 6px 0 0 rgba(110,150,255,0.06)}.ds-wb-opt{padding:4px 8px;font-family:'IBM Plex Mono',monospace;font-size:0.667rem;color:#C3C8D1;cursor:pointer;transition:background 120ms cubic-bezier(0.2,0,0,1)}.ds-wb-opt:hover,.ds-wb-opt:focus-visible{background:#272A30;outline:none}"
     }
   ],
   "narrative": {
     "northStar": "Night Light",
-    "overview": "An operator's console is a building seen at night. You do not read the facade by its architecture; you read it by which rooms are lit and how warm the light is. Nerve borrows that reading. Cold electric blue is an agent at work. Warm cantaloupe is the operator, and anything that has finished and now waits on the operator. When work is done the window goes back to its family colour: every room keeps its own light on at idle, and only a lit pane blooms, which is how work shows. Colour never decorates, it reports, and because every lit surface means something, the shell can hold a whole fleet in a glance without asking for attention.\n\nThe mood is midnight, exact, calm, dense, lit. This is an Operate-mode surface that stays open for hours, so the brand lives in precise details rather than expression: a 28px row unit shared by every list row, tool row and panel header; plates that read by value and a 1px edge light instead of drawn borders; one display face reserved for the wordmark and the names of agents and speakers; prose held to a measure that spans the column. Density is welcome because nothing pulses, glows or gradients. State changes are a light switch, 120ms, on or off.\n\nThe system refuses the hacker costume (scanlines, glowing HUD chrome, tracked uppercase labels), the grey dashboard with one decorative accent, glass and gradients, coloured side rails, and any pulsing or breathing motion. Daylight is the same building by day: cool paper, printed hairlines instead of edge light, panes printed as ink swatches, identical meanings. The previous appearance and its community themes are retired; Night and Daylight are the only two themes.",
+    "overview": "An operator's console is a building seen at night. You do not read the facade by its architecture; you read it by which rooms are lit and how warm the light is. Nerve borrows that reading. Cold blue is an agent at work. Warm cantaloupe is the operator, and anything that has finished and now waits on the operator. When work is done the window goes back to its family colour: every room keeps its own light on at idle, so the building reads as inhabited, and only a lit pane changes, which is how work shows. Colour never decorates, it reports, and because every lit surface means something, the shell can hold a whole fleet in a glance without asking for attention.\n\nNerve ships that meaning in two worlds, and the meaning is written once in this file because both worlds share it. **Workbench** (\"The Working Drawing\") is the default for every install, in Workbench Night (graphite) and Workbench Paper. It is the console printed as a working drawing, adapted from the Ruled Workbench design system the user made for the Nerve landing page: rules are drawn as structure, floating surfaces print a faint hard offset, panes switch flat without bloom, a cool wash falls from the top of the room, paper grain lies over the shell, and the room is pinned to the frame by four diamond corner nodes. **Night light** is the console as a building lit at night, in Night and Daylight: plates read by value and a 1px edge light, a lit pane throws a short bloom, and the room carries an ambient light from above. Daylight is that building by day: cool paper, printed hairlines, panes printed as ink swatches. A browser that stored Night under the old default moves to Workbench Night once; picking Night again sticks.\n\nWorkbench lends type, palette, density and one signature move; layout, navigation, controls, the row unit and every component are the same in both worlds. The mood is exact, calm and dense in both. This is an Operate-mode surface that stays open for hours, so the brand lives in precise details: a 28px row unit shared by every list row, tool row and panel header; one display face reserved for the wordmark and the names of agents and speakers; prose held to a measure that spans the column. State changes are a light switch, 120ms, on or off. Both worlds refuse the hacker costume (scanlines, glowing HUD chrome, tracked uppercase labels), the grey dashboard with one decorative accent, glass and decorative gradients, coloured side rails, and any pulsing or breathing motion. The retired community themes and Classic skin do not return; these four themes are the whole set.",
     "keyCharacteristics": [
-      "Light temperature is the state vocabulary: blue works, cantaloupe waits on you, red failed, dark is done.",
-      "Panes are the state marker: an idle pane shows its family colour at 84% strength, a lit pane switches to the state colour and casts a short bloom; no dots, rails or glyph icons.",
+      "Light temperature is the state vocabulary in both worlds: blue works, cantaloupe waits on you, red failed, dark is done.",
+      "Panes are the state marker: an idle pane shows its family colour at 84% strength, a lit pane switches to the state colour; Night light adds a short bloom, Workbench switches it flat. No dots, rails or glyph icons.",
       "One 28px row unit across list rows, tool rows, panel headers and the status bar; the top bar is 44px.",
-      "Raised plates read by tonal value plus a 1px top edge light; only floating surfaces cast a real offset shadow.",
-      "Corners stay between 1px and 4px; larger radius steps clamp to 4px.",
-      "Atkinson Hyperlegible Next for reading and UI, Atkinson Hyperlegible Mono with tabular numerals for measures, Geist for names only.",
-      "Sentence case everywhere; no eyebrows, kickers or tracked caps.",
-      "Motion is a 120ms switch with a near-linear ease-out; a new turn lands with one 200ms rise; reduced motion makes both instant.",
-      "The composer is the operator's next window: a dark plate with a dark gutter pane at rest, warmed to the operator plate with a lit pane while the operator is in it.",
-      "The shell is a Midnight frame around one lifted Panel room with a 6px reveal; tool stacks, code and the composer step up once more to Plate."
+      "The shell is a dark or paper frame around one lifted room with a 6px reveal; tool stacks, code and the composer step up once more to Plate.",
+      "Night light: plates read by value plus a 1px top edge light, and only floating surfaces cast a soft offset shadow. Workbench: plates are ruled cells, and floating surfaces print a hard 6px offset at 5% to 6%.",
+      "Workbench pins the room sheet (and the login window) to the frame with four 7px diamond nodes, as rules cross on a drafting sheet.",
+      "Corners stay between 1px and 4px; the Workbench room sheet is 2px.",
+      "Night light sets Atkinson Hyperlegible Next for reading and UI, Atkinson Hyperlegible Mono for measures, Geist for names. Workbench sets iA Writer Quattro S for reading and UI, IBM Plex Mono for measures, IBM Plex Serif for names.",
+      "Sentence case everywhere in both worlds; no eyebrows, kickers or tracked caps.",
+      "Motion is a 120ms switch with a near-linear ease-out; light travels down the spine 70ms per region when a run starts; a new turn lands with one 200ms rise; reduced motion makes all of it instant.",
+      "The composer is the operator's next window: at rest a quiet plate with a dark gutter pane, warmed to the operator plate with a lit pane while the operator is in it."
     ],
     "rules": [
       {
         "name": "The Light Temperature Rule",
-        "body": "Blue is agent work, cantaloupe is the operator and anything waiting on the operator, red is error, and nothing else is coloured. A surface that is not reporting one of those three states is a neutral. Family hues are identity, not state: they sit on idle panes, on names, on the header band and on the open row, and a pane that is lit always shows the state colour with its bloom. A cron row's pane carries the job's light: Electric Blue while a run is in flight, Signal Red while an enabled job's last run stands broken, off otherwise; a skipped run is quiet, not broken. A task's pane on the board follows the same rule: Electric Blue while its agent runs, Signal Red when the run broke, Cantaloupe while it waits in Review for the operator, off otherwise.",
+        "body": "In every world, blue is agent work, cantaloupe is the operator and anything waiting on the operator, red is error, and nothing else is coloured. A surface that is not reporting one of those three states is a neutral. Family hues are identity, not state: they sit on idle panes, on names, on the header band and on the open row, and a pane that is lit always shows the state colour.",
         "section": "colors"
       },
       {
         "name": "The Identity Rule",
-        "body": "Every agent family owns one of seven hues (main is pinned to Cantaloupe; children take a lighter shade of their root's hue), assigned on first sight and operator-pickable from a root row. The hue stays on at idle: 84% of it fills the family's off panes (70% in the frame), the agent's name takes it in the display face (darkened 42% toward ink in Daylight), the chat header band takes a 9% tint (14% in Daylight) and the open room's row a 14% tint over Raised. Electric Blue is never an identity hue, and a lit pane always shows the state colour, so identity and state never trade places. On the Tasks board the assignee's family hue sits in the glass of the task's off pane and colours the assignee's name.",
+        "body": "Every agent family owns one of seven hues (main is pinned to Cantaloupe; children take a lighter shade of their root's hue), assigned on first sight and operator-pickable from a root row. The hue stays on at idle: 84% of it fills the family's off panes (70% in the frame), the agent's name takes it in the display face (darkened 42% toward ink on the paper themes), the chat header band takes a 9% tint (14% on paper) and the open room's row a 14% tint over Raised. Blue is never an identity hue, and a lit pane always shows the state colour, so identity and state never trade places.",
         "section": "colors"
       },
       {
         "name": "The Window Rule",
-        "body": "The composer is the operator's next window. At rest it is a dark plate with a dark pane in the gutter; while the operator is in it (focus, or text already typed) it warms to Operator Plate with the warm edge light and the pane lights Cantaloupe, so the turn being written looks like the turns already sent. The side-column editors (memory section, config file) are windows too: Plate at rest, Operator Plate with the warm edge light and a lit Cantaloupe pane in their status line while the operator types; no focus ring, no drawn border. The login page is the first window: the brand pane lit Cantaloupe over the sign, and one floating password window that warms while the operator is in it.",
+        "body": "The composer is the operator's next window. At rest it is a quiet plate with a dark pane in the gutter; while the operator is in it (focus, or text already typed) it warms to the operator plate with a warm edge (an edge light in Night light, a 55% cantaloupe rule in Workbench) and the pane lights Cantaloupe, so the turn being written looks like the turns already sent. The side-column editors are windows too: the memory editor and the config editor sit on Plate and, while the operator is in them, warm the same way while the small pane in their status line lights Cantaloupe; no focus ring.",
+        "section": "colors"
+      },
+      {
+        "name": "The Lifted Cobalt Rule",
+        "body": "Workbench's cobalt is lifted where the source system's deep fill would fail: a lit pane on Workbench Night takes Workbench Cobalt and live text takes Cobalt Ink, and field edges on both Workbench themes are raised to 3:1. Never use the source's darker cobalt or lighter field edge on a Workbench surface.",
         "section": "colors"
       },
       {
         "name": "The Names Rule",
-        "body": "Geist is used only for the wordmark and for agent or speaker names. Headings, labels and buttons stay in Atkinson.",
+        "body": "The display face (Geist in Night light, Plex Serif in Workbench) is used only for the wordmark and for agent or speaker names. Headings, labels and buttons stay in the reading face.",
         "section": "typography"
       },
       {
         "name": "The Sentence Case Rule",
-        "body": "Every label, header, chip and button is sentence case. No eyebrows, no kickers above headings, no letterspaced capitals.",
+        "body": "Every label, header, chip and button is sentence case in both worlds. No eyebrows, no kickers above headings, no letterspaced capitals; Workbench's uppercase eyebrows from the landing page are not adopted.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tight Hand Rule",
+        "body": "In Workbench, Quattro body and control text tracks -0.025em; code, measures, dividers, the fleet in words, the editor and names keep normal tracking. An explicit tracking utility still wins.",
         "section": "typography"
       },
       {
         "name": "The One Row Rule",
-        "body": "Every list row, tool row, panel header and the status bar sits on the 1.867rem (28px) row unit; density comes from sharing one rhythm, not from shrinking it.",
+        "body": "Every list row, tool row, panel header and the status bar sits on the 1.867rem (28px) row unit in both worlds; density comes from sharing one rhythm, not from shrinking it.",
         "section": "layout"
       },
       {
         "name": "The Edge Light Rule",
-        "body": "Plates read by value and a 1px top highlight, not by drawn borders; Daylight prints a hairline instead. Drawn borders are reserved for inputs, outline buttons and hairline dividers.",
+        "body": "In Night, plates read by value and a 1px top highlight, not by drawn borders; Daylight prints a hairline instead. Drawn borders are reserved for inputs, outline buttons and hairline dividers.",
         "section": "elevation"
       },
       {
         "name": "The Frame Rule",
-        "body": "The shell is a dark frame around one lifted room. Top bar, side columns and status bar sit flat on Midnight with hairlines only; the centre column is a single plate of Panel with the edge light and 4px corners, and the frame shows for 6px around it. Surfaces inside the room step up once more to Plate.",
+        "body": "The shell is a frame around one lifted room, in both worlds. Top bar, side columns and status bar sit flat on the frame with rules only; the centre column is a single plate of Panel and the frame shows for 6px around it. Surfaces inside the room step up once more to Plate. Nothing else in the shell is a plate.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Printed Rule",
+        "body": "In Workbench nothing is lit: no edge light, no bloom, no room light, no blur, not even on the command palette's scrim. A plate is a ruled cell. Only floating chrome prints an offset, always hard, always 6px down and right, always at 5% to 6% cobalt; a surface that rests never prints.",
         "section": "elevation"
       },
       {
         "name": "The Switch Rule",
-        "body": "State changes switch in 120ms with `cubic-bezier(0.2, 0, 0, 1)`; nothing breathes or pulses, and reduced motion makes every transition and animation instant. Entrances (messages, menus, drawers) fade or slide once in 140ms to 220ms using the same ease. A new turn in the transcript lands with one 200ms rise of 6px and a fade, and that is the transcript's only entrance. Light travels: when a run starts, the fleet pane comes on first, the chat header 70ms later, the agents column at 140ms and the transcript gutter at 210ms; lights go out together. Arrivals use the arrive ease cubic-bezier(0.16, 1, 0.3, 1) at 180ms to 260ms, never a bounce. The Chat and Tasks switch is a view transition (chip slides across its track in 220ms, room cross-fades in 160ms); on send the composer lifts 3px and settles in 220ms.",
+        "body": "State changes switch in 120ms with `cubic-bezier(0.2, 0, 0, 1)`; nothing breathes or pulses, and reduced motion makes every transition and animation instant. Light travels: when a run starts, the fleet pane beside the wordmark comes on first, the chat header 70ms later, the agents column at 140ms and the transcript gutter at 210ms, so state arrives as one sweep down the spine; lights go out together. Arrivals (drawers, menus, the lifted chip crossing its track) use the arrive ease `cubic-bezier(0.16, 1, 0.3, 1)` at 180ms to 260ms, never a bounce. The Chat and Tasks switch is a view transition: the lifted chip slides across the segmented track in 220ms while the room cross-fades in 160ms. On send the composer lifts 3px and settles in 220ms as the turn leaves it and lands in the transcript. Entrances (messages, menus, drawers) fade or slide once in 140ms to 220ms using the same ease; a new turn in the transcript lands with one 200ms rise of 6px and a fade, and that is the transcript's only entrance. Motion is shared by both worlds.",
         "section": "elevation"
       },
       {
         "name": "The Bloom Rule",
-        "body": "A lit pane casts a short bloom of its own colour, and that is the only light in the system that spreads: off panes, plates, buttons and text never glow. The bloom switches on and off with the pane in 120ms. Daylight prints panes flat.",
+        "body": "In Night, a lit pane casts a short bloom of its own colour, and that is the only light in the system that spreads: off panes, plates, buttons and text never glow. The bloom switches on and off with the pane in 120ms. Daylight and Workbench print panes flat.",
         "section": "elevation"
       }
     ],
     "dos": [
-      "**Do** keep an agent family's hue on at idle: its panes at 84%, its name, the header band and the open row; lit panes always show the state colour with its bloom (The Identity Rule).",
-      "**Do** show state only with a lit pane: Electric Blue for agent work, Cantaloupe for the operator and work waiting on the operator, Signal Red for failure, Pane Off when done (The Light Temperature Rule).",
-      "**Do** switch panes and hover fills in 120ms with `cubic-bezier(0.2, 0, 0, 1)` and let reduced motion make them instant (The Switch Rule).",
-      "**Do** warm the composer to Operator Plate and light its gutter pane while the operator is in it, on focus or with text typed, so the turn being written matches the turns already sent (The Window Rule).",
-      "**Do** let a new turn land with one 200ms rise and fade on the switch ease; the transcript has no other entrance.",
-      "**Do** build raised surfaces as plates: Panel for the room, Plate inside it, each with the 1px edge light and no drawn border; in Daylight the token prints a hairline (The Edge Light Rule, The Frame Rule).",
-      "**Do** keep every list row, tool row, panel header and the status bar on the 1.867rem row unit (The One Row Rule).",
-      "**Do** reserve Geist for the wordmark and agent or speaker names (The Names Rule).",
-      "**Do** hold agent prose to the 72em reading measure and let code, tables and charts take the column.",
-      "**Do** set timestamps, counts, durations, models and code in Atkinson Hyperlegible Mono with tabular numerals.",
-      "**Do** keep corners between 1px and 4px; 6px is only for the floating command palette shell.",
-      "**Do** make Send the one warm control on a screen: Cantaloupe fill, Midnight label, 3px radius.",
-      "**Do** give every pane without adjacent text an accessible label (Running, Waiting on you, Failed, Idle).",
-      "**Do** let light travel: stagger a state's arrival by region (fleet pane, chat header, agents column, transcript gutter, 70ms apart) and never by element; lights go out together.",
-      "**Do** move chrome on the arrive ease (`cubic-bezier(0.16, 1, 0.3, 1)`, 180ms to 260ms) and switch views with a view transition; no bounce, no elastic curves.",
-      "**Do** treat the side-column editors as operator windows: Plate at rest, Operator Plate with a lit status-line pane while the operator types, never a focus ring (The Window Rule).",
-      "**Do** let a cron row's pane carry the job's light: blue in flight, red while an enabled job stands broken, off otherwise; a skipped run stays quiet.",
-      "**Do** keep the Settings drawer a flat Panel plate with the edge light and no blur; rows separate by hairlines, selects sit flat on Raised, and the switch thumb is a pane that lights Cantaloupe when on.",
-      "**Do** keep the Tasks board flat: lanes separated by hairlines, tasks as rows on Plate with the edge light, priority and run state as words; the pane is the only coloured element besides a lit word."
+      "Do show state only with a lit pane, in both worlds: blue for agent work, Cantaloupe for the operator and work waiting on the operator, red for failure, Pane Off when done (The Light Temperature Rule).",
+      "Do keep an agent family's hue on at idle: its panes at 84%, its name, the header band and the open row; lit panes always show the state colour (The Identity Rule).",
+      "Do switch panes and hover fills in 120ms with `cubic-bezier(0.2, 0, 0, 1)` and let reduced motion make them instant (The Switch Rule).",
+      "Do warm the composer to the operator plate and light its gutter pane while the operator is in it, on focus or with text typed, so the turn being written matches the turns already sent (The Window Rule).",
+      "Do treat the side-column editors as operator windows: Plate at rest, the operator plate with a lit status-line pane while the operator types, never a focus ring (The Window Rule).",
+      "Do let a cron row's pane carry the job's light: blue in flight, red while an enabled job stands broken, off otherwise; a skipped run stays quiet.",
+      "Do let a new turn land with one 200ms rise and fade on the switch ease; the transcript has no other entrance.",
+      "Do let light travel: stagger a state's arrival by region (fleet pane, chat header, agents column, transcript gutter, 70ms apart) and never by element; lights go out together.",
+      "Do move chrome on the arrive ease (`cubic-bezier(0.16, 1, 0.3, 1)`, 180ms to 260ms) and switch views with a view transition; no bounce, no elastic curves.",
+      "Do build raised surfaces from the plate token so each world draws its own edge: the 1px edge light in Night, a printed hairline in Daylight, a ruled cell in Workbench (The Edge Light Rule, The Printed Rule, The Frame Rule).",
+      "Do give floating chrome the menu or dialog shadow token rather than a fixed shadow, so Workbench can print it (The Printed Rule).",
+      "Do keep every list row, tool row, panel header and the status bar on the 1.867rem row unit (The One Row Rule).",
+      "Do reserve the display face (Geist in Night light, Plex Serif 600 in Workbench) for the wordmark and agent or speaker names (The Names Rule).",
+      "Do set Quattro body and control text at -0.025em in Workbench and keep code, measures and names at normal tracking (The Tight Hand Rule).",
+      "Do hold agent prose to the 72em reading measure and let code, tables and charts take the column.",
+      "Do set timestamps, counts, durations, models and code in the world's mono (Atkinson Hyperlegible Mono or IBM Plex Mono) with tabular numerals.",
+      "Do keep corners between 1px and 4px; 6px is only for the floating command palette shell, and the Workbench room sheet is 2px.",
+      "Do make Send the one warm control on a screen: Cantaloupe fill, dark label, 3px radius; in Workbench it carries the 2px pressed lower edge.",
+      "Do pin the Workbench room sheet and login window with the four diamond corner nodes, and nothing else.",
+      "Do use Workbench's lifted cobalt and the 3:1 field edges on Workbench surfaces (The Lifted Cobalt Rule).",
+      "Do give every pane without adjacent text an accessible label (Running, Waiting on you, Failed, Idle)."
     ],
     "donts": [
-      "**Don't** colour anything that is not reporting agent work, operator ownership, an error, a link, code syntax or an agent family's identity; no decorative accents or coloured side rails.",
-      "**Don't** pulse, breathe or animate a shadow; the only glow is a lit pane's bloom (The Bloom Rule) and the only blinking element is the streaming cursor pane, which stops under reduced motion.",
-      "**Don't** add scanlines, HUD chrome, letterspaced uppercase labels, eyebrows or kickers above headings; labels are sentence case.",
-      "**Don't** use glass, blur or decorative gradients; depth is tonal value plus the edge light, the room's ambient light is the one gradient, the bloom is the one zero-offset shadow, and only floating surfaces cast an offset shadow.",
-      "**Don't** draw a border around a plate; borders belong to inputs, outline buttons and hairline dividers.",
-      "**Don't** replace a pane with a dot, a circle, a badge or a glyph icon, and never make colour the only signal.",
-      "**Don't** use Geist for headings, labels or buttons, or a system display face anywhere.",
-      "**Don't** round panels or shell surfaces beyond 4px, or bring back the retired look's rounded panels and amber accents.",
-      "**Don't** put pills, dots or badges on a task card for priority, status or run state; the pane and a word carry it."
+      "Don't colour anything that is not reporting agent work, operator ownership, an error, a link, code syntax or an agent family's identity; no decorative accents or coloured side rails.",
+      "Don't pulse, breathe or animate a shadow; in Night the only glow is a lit pane's bloom (The Bloom Rule), Workbench has none, and the only blinking element is the streaming cursor pane, which stops under reduced motion.",
+      "Don't add scanlines, HUD chrome, letterspaced uppercase labels, eyebrows or kickers above headings in either world; Workbench's landing-page eyebrows stay on the landing page.",
+      "Don't use glass, blur or decorative gradients; the room light (Night) and the cool wash (Workbench) are the only gradients, the bloom is the only zero-offset shadow, and only floating surfaces cast an offset shadow.",
+      "Don't draw a border around a Night light plate; there, borders belong to inputs, outline buttons and hairline dividers.",
+      "Don't carry one world's material into the other: no edge light, bloom, room light or blur in Workbench, and no printed offset, grain, corner nodes or Plex faces in Night light.",
+      "Don't let a Workbench print grow past 6px or 6%, soften it into a blur, or put it on a surface that rests (the composer, the login window, a task card at rest).",
+      "Don't replace a pane with a dot, a circle, a badge or a glyph icon, and never make colour the only signal.",
+      "Don't use the display face for headings, labels or buttons, or a system display face anywhere.",
+      "Don't round panels or shell surfaces beyond 4px, or bring back the retired look's rounded panels and amber accents."
     ]
   }
 }

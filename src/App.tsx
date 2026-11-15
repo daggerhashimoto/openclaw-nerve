@@ -985,7 +985,7 @@ export default function App({ onLogout }: AppProps) {
        * Small flat notices under the top bar; the pane carries the state, the text names it.
        */}
       {connectionState === 'reconnecting' && !gatewayRestarting && (
-        <div className="fixed left-1/2 top-14 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-center gap-2 rounded-[3px] border border-border bg-popover px-3 py-1.5 text-[0.867rem] text-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
+        <div className="fixed left-1/2 top-14 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-center gap-2 rounded-[3px] border border-border bg-popover px-3 py-1.5 text-[0.867rem] text-foreground nerve-menu-shadow">
           <Pane state="error" />
           <span className="min-w-0 text-left leading-5">
             Signal lost. Reconnecting{reconnectAttempt > 1 ? `, attempt ${reconnectAttempt}` : ''}.
@@ -994,7 +994,7 @@ export default function App({ onLogout }: AppProps) {
       )}
 
       {gatewayRestarting && (
-        <div className="fixed left-1/2 top-14 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-center gap-2 rounded-[3px] border border-border bg-popover px-3 py-1.5 text-[0.867rem] text-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
+        <div className="fixed left-1/2 top-14 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-center gap-2 rounded-[3px] border border-border bg-popover px-3 py-1.5 text-[0.867rem] text-foreground nerve-menu-shadow">
           <Pane state="live" />
           <span className="min-w-0 text-left leading-5">Gateway restarting…</span>
         </div>
@@ -1004,7 +1004,7 @@ export default function App({ onLogout }: AppProps) {
         <button
           type="button"
           onClick={dismissNotice}
-          className="fixed left-1/2 top-14 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 cursor-pointer items-center gap-2 rounded-[3px] border border-border bg-popover px-3 py-1.5 text-[0.867rem] text-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)] transition-colors duration-[120ms] hover:bg-raised"
+          className="fixed left-1/2 top-14 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 cursor-pointer items-center gap-2 rounded-[3px] border border-border bg-popover px-3 py-1.5 text-[0.867rem] text-foreground nerve-menu-shadow transition-colors duration-[120ms] hover:bg-raised"
         >
           <Pane state={gatewayRestartNotice.ok ? 'off' : 'error'} />
           <span className="min-w-0 text-left leading-5">{gatewayRestartNotice.message}</span>
@@ -1099,7 +1099,7 @@ export default function App({ onLogout }: AppProps) {
               aria-label="Close file explorer"
             />
             <div className={`nerve-mobile-drawer pointer-events-none fixed inset-0 z-40 hidden pb-[var(--row-unit)] max-[900px]:flex ${isMobileTopBarHidden ? 'pt-0' : 'pt-[2.933rem] max-[639px]:pt-[89px] max-[371px]:pt-[81px]'}`}>
-              <div className="pointer-events-auto h-full w-[min(86vw,320px)] max-w-full border-r border-border bg-card shadow-[0_12px_32px_rgba(0,0,0,0.32)] animate-in slide-in-from-left-4 duration-200">
+              <div className="pointer-events-auto h-full w-[min(86vw,320px)] max-w-full border-r border-border bg-card nerve-menu-shadow animate-in slide-in-from-left-4 duration-200">
                 <PanelErrorBoundary name="File Explorer">
                   <FileTreePanel
                     workspaceAgentId={workspaceAgentId}

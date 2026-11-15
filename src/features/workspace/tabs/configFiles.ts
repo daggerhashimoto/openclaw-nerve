@@ -56,4 +56,4 @@ export const CONFIG_SELECT_TRIGGER_CLASS =
   'min-h-11 w-full justify-between rounded-[3px] border-transparent bg-transparent px-2 py-1 text-[0.867rem] font-medium text-foreground sm:min-h-[var(--row-unit)] sm:px-2 sm:py-0 sm:text-[0.867rem]';
 
 export const CONFIG_SELECT_MENU_CLASS =
-  'rounded-[3px] border-border bg-popover py-1 shadow-[0_12px_32px_rgba(0,0,0,0.32)]';
+  'rounded-[3px] border-border bg-popover py-1 nerve-menu-shadow';

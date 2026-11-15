@@ -422,7 +422,7 @@ export function TopBar({
         role="region"
         aria-label={visiblePanel ? `${visiblePanel} panel` : undefined}
         hidden={!visiblePanel}
-        className={`absolute right-2 mt-1 overflow-hidden rounded-[3px] border border-border bg-popover shadow-[0_12px_32px_rgba(0,0,0,0.32)] ${panelBoxClass} ${panelHeightClass}`}
+        className={`absolute right-2 mt-1 overflow-hidden rounded-[3px] border border-border bg-popover nerve-menu-shadow ${panelBoxClass} ${panelHeightClass}`}
         style={{ top: "100%" }}
       >
         <div className={panelContentClass}>

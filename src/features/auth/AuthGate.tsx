@@ -12,15 +12,17 @@ import { ChatProvider } from '@/contexts/ChatContext';
 import { LoginPage } from './LoginPage';
 import { useAuth } from './useAuth';
 import { Pane } from '@/components/ui/Pane';
+import NerveLogo from '@/components/NerveLogo';
 
 export function AuthGate() {
   const { state, error, login, logout } = useAuth();
 
   if (state === 'loading') {
-    // The sign with its pane off: the building before the lights come on
+    // The sign with its pane off: the building before the lights come on, the mark firing while it loads
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-background" aria-busy="true" aria-label="Loading">
         <span className="nerve-wordmark">
+          <NerveLogo size={24} />
           <span>Nerve</span>
           <Pane state="off" className="nerve-brand-pane" />
         </span>

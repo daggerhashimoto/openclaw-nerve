@@ -36,7 +36,6 @@ import { ResizablePanels } from '@/components/ResizablePanels';
 import { Pane } from '@/components/ui/Pane';
 import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
-import { useLiveFavicon } from '@/hooks/useLiveFavicon';
 import { fleetActivity, fleetCounts, sessionPaneState } from '@/lib/paneState';
 import { shadeFor, useAgentHues } from '@/lib/agentColors';
 import { getRootAgentId, isSubagentSessionKey } from '@/features/sessions/sessionKeys';
@@ -118,7 +117,7 @@ export default function App({ onLogout }: AppProps) {
     showResetConfirm, confirmReset, cancelReset,
   } = useChat();
 
-  // The whole fleet in one pane: drives the brand pane in the top bar and the tab icon.
+  // The whole fleet in one pane: drives the brand pane and the animated logo in the top bar.
   const shellActivity = useMemo(
     () => fleetActivity({ sessions, busyState, unreadSessions, agentStatus, generating: isGenerating }),
     [sessions, busyState, unreadSessions, agentStatus, isGenerating],
@@ -127,7 +126,6 @@ export default function App({ onLogout }: AppProps) {
     () => fleetCounts({ sessions, busyState, unreadSessions, agentStatus, generating: isGenerating }),
     [sessions, busyState, unreadSessions, agentStatus, isGenerating],
   );
-  useLiveFavicon(shellActivity);
 
   // Identity hue of the open session's agent family, for the chat header and transcript panes.
   const currentRootAgentId = useMemo(() => getRootAgentId(currentSession), [currentSession]);

@@ -19,6 +19,7 @@ import {
 import type { ViewMode } from "@/features/command-palette/commands";
 import type { AgentLogEntry, EventEntry, TokenData } from "@/types";
 import { Pane } from "@/components/ui/Pane";
+import NerveLogo from "./NerveLogo";
 import { fleetWords, type FleetCounts, type PaneState } from "@/lib/paneState";
 
 const AgentLog = lazy(() =>
@@ -256,6 +257,8 @@ export function TopBar({
     <div className="relative z-40 shrink-0">
       <header className="topbar-mobile-compact flex min-h-[2.933rem] flex-wrap items-center gap-x-1.5 border-b border-border bg-background pl-4 pr-2 max-[371px]:pl-3 max-[371px]:pr-1 sm:h-[2.933rem] sm:flex-nowrap">
         <span className="nerve-wordmark mr-2 shrink-0">
+          {/* The mark fires while any agent works and rests otherwise */}
+          <NerveLogo size={24} static={activity !== "live"} />
           <span>Nerve</span>
           {/* The fleet in one pane: blue while any agent works, cantaloupe when work waits on you */}
           <Pane

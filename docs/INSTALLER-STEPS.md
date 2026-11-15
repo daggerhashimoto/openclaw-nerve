@@ -332,21 +332,28 @@ Determines service user/home by:
 2. `getent` home lookup (if via sudo)
 3. fallback heuristic: infer user from `openclaw` binary path under `/home/<user>/...`
 
-### 5A.3 Root vs non-root behavior
-- If root:
-  - installs service file directly
-  - `daemon-reload`, `enable`, and (if `.env` exists) `start`
-  - if `.env` missing: enables but does not start
-- If non-root:
-  - prints exact sudo commands to install/start manually
-  - leaves temp service file path in instructions
+### 5A.3 Root access
+Installing the unit needs root:
+
+- If root: runs the commands directly
+- If non-root with passwordless sudo: uses `sudo -n` and says so before it does
+- If non-root, interactive: asks for the sudo password once (`sudo -v`), then uses `sudo -n`
+- Otherwise (no sudo, wrong password, or non-interactive without passwordless sudo):
+  - saves the unit to `~/.nerve/nerve.service`, which survives a reboot
+  - prints the exact commands to install, enable and restart it
+  - leaves an existing unit and the service it runs untouched
+
+With root access it writes the unit with `install -m 0644`, then runs `daemon-reload`, `enable`, and (if `.env` exists) `restart`. If `.env` is missing it enables the unit but does not start it.
 
 ### 5A.4 When service install is triggered
-- Existing service: stop + update
+Only when systemd is the running init system (`/run/systemd/system` exists). A `systemctl` binary alone, as in some containers and WSL setups, is treated as no systemd.
+
+- Existing service: rewritten and restarted in place (never stopped first)
 - Interactive new install: asks user (default yes)
-- Non-interactive:
-  - if root: installs automatically
-  - if non-root: generates instructions/files
+- Non-interactive: installs (root access as in 5A.3)
+
+### 5A.5 Linux without systemd
+Prints `cd <INSTALL_DIR> && npm start` as the way to start Nerve.
 
 ## 5B) macOS/launchd path
 
@@ -374,7 +381,7 @@ Attempts:
 1. `launchctl bootstrap gui/<uid> ...`
 2. fallback `launchctl load ...`
 
-If both fail, leaves plist and prints manual load command.
+If both fail, leaves the plist and prints the manual load command as a next step.
 
 ### 5B.4 When launchd install is triggered
 - Existing plist: update/reload
@@ -385,8 +392,14 @@ If both fail, leaves plist and prints manual load command.
 
 ## 6) Final Output and Exit Codes
 
-### 6.1 Completion UI
-Prints “Done” and a final success box with URL.
+### 6.1 Health check
+When systemd or launchd started Nerve, the installer polls `http://<HOST>:<PORT>/health` from `.env` (wildcard hosts are probed on loopback, like the updater does) once a second, for up to 20 tries or 30 seconds.
+
+### 6.2 Completion UI
+Prints “Done”, then one of:
+
+- Nerve answered `/health`: the success box with the URL, plus restart/log commands
+- Otherwise: a headline that says what happened (not started yet, service failed to start, started but not responding, or updated but not restarted), the log command when a service exists, the exact commands to start it, and the URL to open once it runs
 
 URL logic:
 
@@ -394,12 +407,11 @@ URL logic:
 - If `HOST=0.0.0.0`, tries to show a detected LAN IP URL
 - Otherwise shows `http://localhost:<port>`
 
-Also prints restart/log commands based on platform/service manager.
-
-### 6.2 Exit semantics
-- `exit 0`: fully configured install (`.env` present)
+### 6.3 Exit semantics
+- `exit 0`: Nerve answered its health check
+- `exit 0`: installed and configured, but no service was set up (systemd not running, or the user declined the service); the printed `npm start` command starts it
 - `exit 0`: dry-run completed successfully
-- `exit 2`: partial success (installed, but `.env` missing or unusable)
+- `exit 2`: partial success: installed, but `.env` is missing or unusable, or Nerve is not running because the service could not be installed (no root access), failed to start, or did not answer its health check
 - `exit 1`: hard failure in prerequisite/build/etc.
 
 ---
@@ -412,6 +424,7 @@ Also prints restart/log commands based on platform/service manager.
 4. Install deps + build
 5. Fetch optional voice prerequisites (model + ffmpeg)
 6. Configure `.env` (wizard or auto-generation)
-7. Configure service (launchd/systemd)
-8. Print final URL and operational commands
-9. Exit with readiness-aware status code
+7. Configure and start the service (launchd/systemd)
+8. Check that Nerve answers `/health`
+9. Print the URL and operational commands, or what to run to start Nerve
+10. Exit with readiness-aware status code

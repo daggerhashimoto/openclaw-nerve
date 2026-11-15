@@ -1221,4 +1221,43 @@ describe('SessionContext', () => {
     expect(screen.getByText('Chat error')).toHaveClass('text-destructive');
     expect(screen.getByLabelText('Failed')).toHaveAttribute('data-state', 'error');
   });
+
+  it('drops the granular statuses held across a reconnect so the refreshed snapshot decides', async () => {
+    const view = render(
+      <SessionProvider>
+        <SessionStatusProbe />
+      </SessionProvider>,
+    );
+
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith('sessions.list', { limit: 1000 });
+    });
+
+    act(() => {
+      subscribedHandler?.({ type: 'event', event: 'chat', payload: { sessionKey: 'agent:reviewer:main', state: 'started' } });
+    });
+    expect(screen.getByTestId('reviewer-status')).toHaveTextContent('THINKING');
+
+    // The gateway drops; the status is kept while we are away
+    act(() => {
+      connectionStateValue = 'reconnecting';
+      view.rerender(
+        <SessionProvider>
+          <SessionStatusProbe />
+        </SessionProvider>,
+      );
+    });
+    expect(screen.getByTestId('reviewer-status')).toHaveTextContent('THINKING');
+
+    // Back online: whatever happened in the gap is unknown, so the retained status goes
+    act(() => {
+      connectionStateValue = 'connected';
+      view.rerender(
+        <SessionProvider>
+          <SessionStatusProbe />
+        </SessionProvider>,
+      );
+    });
+    expect(screen.getByTestId('reviewer-status')).toHaveTextContent('NONE');
+  });
 });

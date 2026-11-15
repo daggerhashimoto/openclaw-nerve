@@ -52,44 +52,47 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
           Sign in to your agents.
         </p>
 
-        <form
-          onSubmit={handleSubmit}
-          className="nerve-window-frame nerve-login-window mt-6 overflow-hidden rounded-[4px]"
-        >
-          <div className="nerve-window">
-            <label htmlFor="nerve-password" className="sr-only">Password</label>
-            <input
-              ref={inputRef}
-              id="nerve-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              autoComplete="current-password"
-              disabled={submitting}
-              spellCheck={false}
-              className="block w-full border-0 bg-transparent px-4 pb-2 pt-4 text-[1.067rem] text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
-            />
-            <div className="flex items-center gap-3 px-3 pb-3 pt-1">
-              <span className="flex min-w-0 items-center gap-2 text-[0.8rem] text-muted-foreground">
-                <Pane state="off" size="sm" className="nerve-window-pane" />
-                <span className="truncate">{submitting ? 'Signing in' : 'Waiting on you'}</span>
-              </span>
-              <span className="ml-auto hidden items-center gap-1.5 text-[0.8rem] text-muted-foreground sm:flex">
-                <kbd className="cockpit-kbd">Enter</kbd>
-                <span>sign in</span>
-              </span>
-              <Button
-                type="submit"
-                disabled={!canSubmit}
-                className="send-btn ml-auto sm:ml-0"
-              >
-                Sign in
-                <ArrowRight size={14} aria-hidden="true" />
-              </Button>
+        {/* The sheet holds the window so a theme can pin its corners without the window's clip cutting them */}
+        <div className="nerve-login-sheet relative mt-6">
+          <form
+            onSubmit={handleSubmit}
+            className="nerve-window-frame nerve-login-window overflow-hidden rounded-[4px]"
+          >
+            <div className="nerve-window">
+              <label htmlFor="nerve-password" className="sr-only">Password</label>
+              <input
+                ref={inputRef}
+                id="nerve-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                autoComplete="current-password"
+                disabled={submitting}
+                spellCheck={false}
+                className="block w-full border-0 bg-transparent px-4 pb-2 pt-4 text-[1.067rem] text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
+              />
+              <div className="flex items-center gap-3 px-3 pb-3 pt-1">
+                <span className="flex min-w-0 items-center gap-2 text-[0.8rem] text-muted-foreground">
+                  <Pane state="off" size="sm" className="nerve-window-pane" />
+                  <span className="truncate">{submitting ? 'Signing in' : 'Waiting on you'}</span>
+                </span>
+                <span className="ml-auto hidden items-center gap-1.5 text-[0.8rem] text-muted-foreground sm:flex">
+                  <kbd className="cockpit-kbd">Enter</kbd>
+                  <span>sign in</span>
+                </span>
+                <Button
+                  type="submit"
+                  disabled={!canSubmit}
+                  className="send-btn ml-auto sm:ml-0"
+                >
+                  Sign in
+                  <ArrowRight size={14} aria-hidden="true" />
+                </Button>
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+        </div>
 
         <div aria-live="polite" aria-atomic="true" className="min-h-[1.867rem]">
           {error && (

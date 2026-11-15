@@ -177,7 +177,7 @@ function MemoryItemInner({ memory, onDelete, onEdit, isExpanded, onToggleExpand,
             </button>
 
             {actionsOpen && (
-              <div className="absolute right-0 top-full z-20 mt-1 flex items-center gap-0.5 rounded-[3px] border border-border bg-popover p-0.5 shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
+              <div className="absolute right-0 top-full z-20 mt-1 flex items-center gap-0.5 rounded-[3px] border border-border bg-popover p-0.5 nerve-menu-shadow">
                 {isEditable && (
                   <button
                     onClick={handleEditFromMenu}

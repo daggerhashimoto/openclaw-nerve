@@ -1492,7 +1492,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 Do NOT add a `value={state}` prop without also passing a
                 setValue callback to useTabCompletion. */}
             {isSlashMenuOpen && (
-              <div className="absolute inset-x-0 bottom-full z-20 mb-1 overflow-hidden rounded-[3px] border border-border bg-popover shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
+              <div className="absolute inset-x-0 bottom-full z-20 mb-1 overflow-hidden rounded-[3px] border border-border bg-popover nerve-menu-shadow">
                 <div ref={slashMenuRef} role="listbox" aria-label="Slash commands" className="max-h-64 overflow-y-auto py-1">
                   {[...groupedSlashSuggestions.entries()].map(([category, commands], groupIndex) => (
                     <div key={category} className="mb-1 last:mb-0">

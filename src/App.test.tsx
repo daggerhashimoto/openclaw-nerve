@@ -289,15 +289,18 @@ vi.mock('@/components/TopBar', () => ({
   TopBar: ({
     showKanbanView,
     viewMode,
+    onSettings,
   }: {
     showKanbanView?: boolean;
     viewMode?: string;
+    onSettings?: () => void;
   }) => {
     topBarRenderSnapshots.push({ showKanbanView, viewMode } as { showKanbanView?: boolean; viewMode?: string });
     return (
       <div>
         <div data-testid="topbar-show-kanban">{String(showKanbanView ?? true)}</div>
         <div data-testid="topbar-view-mode">{viewMode ?? 'chat'}</div>
+        <button type="button" onClick={() => onSettings?.()}>Open settings</button>
       </div>
     );
   },
@@ -346,7 +349,11 @@ vi.mock('@/features/sessions/SpawnAgentDialog', () => ({
 }));
 
 vi.mock('@/features/settings/SettingsDrawer', () => ({
-  SettingsDrawer: () => null,
+  SettingsDrawer: ({ open, onClose }: { open: boolean; onClose: () => void }) => (open ? (
+    <div role="dialog" aria-modal="true" aria-label="Settings">
+      <button type="button" onClick={onClose}>Close settings</button>
+    </div>
+  ) : null),
 }));
 
 vi.mock('@/features/command-palette/CommandPalette', () => ({
@@ -842,12 +849,44 @@ describe('App workspace switch guard', () => {
   });
 });
 
+function mockViewport(compact: boolean) {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: compact && query === '(max-width: 900px)',
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
+/** A deliberate horizontal touch drag that starts inside the 24px edge strip and crosses the open threshold. */
+async function swipeFromLeftEdge(target: Element, pointerId: number) {
+  await act(async () => {
+    fireEvent.pointerDown(target, { pointerType: 'touch', pointerId, clientX: 8, clientY: 120 });
+    fireEvent.pointerMove(target, { pointerType: 'touch', pointerId, clientX: 92, clientY: 126 });
+    fireEvent.pointerUp(target, { pointerType: 'touch', pointerId, clientX: 92, clientY: 126 });
+  });
+}
+
+/** The mocked file tree renders one of two test ids once the drawer is open, so a closed drawer shows neither. */
+function expectFileBrowserDrawerClosed() {
+  expect(screen.queryByTestId('file-tree-panel')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('file-tree-panel-disabled')).not.toBeInTheDocument();
+}
+
 describe('App kanban visibility gating', () => {
   beforeEach(() => {
     localStorage.clear();
     settingsContext.kanbanVisible = true;
     settingsContext.commandPaletteButtonVisible = true;
     topBarRenderSnapshots.length = 0;
+    mockViewport(false);
   });
 
   it('passes the kanban visibility flag through to the top bar', () => {
@@ -900,6 +939,177 @@ describe('App kanban visibility gating', () => {
     fireEvent.click(screen.getByTestId('chatbox-command-trigger'));
 
     expect(screen.getByTestId('command-palette-state')).toHaveTextContent('open');
+  });
+
+  it('opens the compact file browser from a left-edge touch swipe', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === '(max-width: 900px)',
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    render(<App />);
+
+    expect(screen.queryByTestId('file-tree-panel')).not.toBeInTheDocument();
+
+    const swipeZone = screen.getByTestId('app-shell');
+    await act(async () => {
+      fireEvent.pointerDown(swipeZone, {
+        pointerType: 'touch',
+        pointerId: 11,
+        clientX: 8,
+        clientY: 120,
+      });
+      fireEvent.pointerMove(swipeZone, {
+        pointerType: 'touch',
+        pointerId: 11,
+        clientX: 92,
+        clientY: 126,
+      });
+    });
+
+    expect(await screen.findByTestId('file-tree-panel')).toBeInTheDocument();
+  });
+
+  it('does not open the compact file browser when a left-edge touch gesture turns into a vertical move', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === '(max-width: 900px)',
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    render(<App />);
+    await act(async () => {});
+
+    const swipeZone = screen.getByTestId('app-shell');
+    await act(async () => {
+      fireEvent.pointerDown(swipeZone, {
+        pointerType: 'touch',
+        pointerId: 12,
+        clientX: 10,
+        clientY: 100,
+      });
+      fireEvent.pointerMove(swipeZone, {
+        pointerType: 'touch',
+        pointerId: 12,
+        clientX: 24,
+        clientY: 154,
+      });
+      fireEvent.pointerUp(swipeZone, {
+        pointerType: 'touch',
+        pointerId: 12,
+        clientX: 24,
+        clientY: 154,
+      });
+    });
+
+    expectFileBrowserDrawerClosed();
+  });
+
+  it('keeps a plain tap in the left-edge strip working: the control under the finger gets its click and the drawer stays closed', async () => {
+    mockViewport(true);
+
+    // jsdom has no pointer capture. Record who asks for it, and apply the Pointer Events rule that the
+    // click ending a tap is dispatched to the capturing element when there is one.
+    const captures: Element[] = [];
+    const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+    const hadCapture = 'setPointerCapture' in proto;
+    const hadRelease = 'releasePointerCapture' in proto;
+    Object.defineProperty(proto, 'setPointerCapture', {
+      configurable: true,
+      writable: true,
+      value(this: Element) { captures.push(this); },
+    });
+    Object.defineProperty(proto, 'releasePointerCapture', {
+      configurable: true,
+      writable: true,
+      value() { /* nothing to release in the model */ },
+    });
+
+    try {
+      render(<App />);
+      await act(async () => {});
+
+      const control = screen.getByTestId('chatbox-command-trigger');
+      expect(await screen.findByTestId('command-palette-state')).toHaveTextContent('closed');
+
+      await act(async () => {
+        fireEvent.pointerDown(control, { pointerType: 'touch', pointerId: 21, clientX: 8, clientY: 200 });
+        fireEvent.pointerUp(control, { pointerType: 'touch', pointerId: 21, clientX: 8, clientY: 200 });
+      });
+      fireEvent.click(captures.at(-1) ?? control);
+
+      expect(captures).toEqual([]);
+      expect(screen.getByTestId('command-palette-state')).toHaveTextContent('open');
+      expectFileBrowserDrawerClosed();
+    } finally {
+      if (!hadCapture) delete proto.setPointerCapture;
+      if (!hadRelease) delete proto.releasePointerCapture;
+    }
+  });
+
+  it('does not open a file browser from an edge swipe on a non-compact layout', async () => {
+    mockViewport(false);
+    localStorage.setItem('nerve-file-tree-collapsed', 'true');
+
+    render(<App />);
+    await act(async () => {});
+
+    await swipeFromLeftEdge(screen.getByTestId('app-shell'), 31);
+
+    // On desktop the collapsed state is persisted, so opening it would flip this key.
+    expect(localStorage.getItem('nerve-file-tree-collapsed')).toBe('true');
+  });
+
+  it('does not open the compact file browser while the command palette is open', async () => {
+    mockViewport(true);
+
+    render(<App />);
+    await act(async () => {});
+
+    expect(await screen.findByTestId('command-palette-state')).toHaveTextContent('closed');
+    fireEvent.click(screen.getByTestId('chatbox-command-trigger'));
+    expect(screen.getByTestId('command-palette-state')).toHaveTextContent('open');
+
+    await swipeFromLeftEdge(screen.getByTestId('app-shell'), 32);
+
+    expectFileBrowserDrawerClosed();
+  });
+
+  it('does not open the compact file browser behind the settings drawer, and swipes again once it is closed', async () => {
+    mockViewport(true);
+
+    render(<App />);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }));
+    const dialog = screen.getByRole('dialog', { name: 'Settings' });
+
+    // The drawer sits inside the app shell, so its events reach the shell too.
+    await swipeFromLeftEdge(dialog, 33);
+    expectFileBrowserDrawerClosed();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close settings' }));
+    expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
+
+    await swipeFromLeftEdge(screen.getByTestId('app-shell'), 34);
+    expect(await screen.findByTestId('file-tree-panel')).toBeInTheDocument();
   });
 
   it('hides the chatbox command trigger when the appearance toggle is disabled', () => {

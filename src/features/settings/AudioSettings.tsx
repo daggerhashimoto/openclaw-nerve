@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, useId } from 'react';
 import { Volume2, VolumeX, Mic, MicOff, Download, AlertTriangle, KeyRound, Globe } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { InlineSelect } from '@/components/ui/InlineSelect';
@@ -51,7 +51,7 @@ const EDGE_ENGLISH_VOICE_OPTIONS: EdgeVoiceOption[] = [
 const INLINE_SELECT_TRIGGER_CLASS =
   'min-h-11 w-full justify-between rounded-[3px] border-transparent bg-raised px-2 py-1 text-left text-[0.867rem] font-sans text-foreground sm:min-h-[var(--row-unit)] sm:py-0 sm:text-[0.867rem] sm:w-auto';
 const INLINE_SELECT_MENU_CLASS =
-  'rounded-[3px] border-border bg-popover py-1 shadow-[0_12px_32px_rgba(0,0,0,0.32)]';
+  'rounded-[3px] border-border bg-popover py-1 nerve-menu-shadow';
 
 function getEdgeVoiceOptions(
   lang: string,
@@ -205,6 +205,8 @@ type AudioSettingsSection = 'all' | 'input' | 'output';
 interface AudioSettingsProps {
   soundEnabled: boolean;
   onToggleSound: () => void;
+  uiSoundVolume: number;
+  onUiSoundVolumeChange: (volume: number) => void;
   ttsProvider: TTSProvider;
   ttsModel: string;
   onTtsProviderChange: (provider: TTSProvider) => void;
@@ -434,6 +436,8 @@ const PROVIDER_MODELS: Record<TTSProvider, { value: string; label: string }[]> =
 export function AudioSettings({
   soundEnabled,
   onToggleSound,
+  uiSoundVolume,
+  onUiSoundVolumeChange,
   ttsProvider,
   ttsModel,
   onTtsProviderChange,
@@ -463,6 +467,9 @@ export function AudioSettings({
       ? 'Shape the speaking voice, model, and playback behavior for replies and announcements.'
       : '';
   const { config, saved, updateField } = useTTSConfig();
+  const uiSoundVolumeId = useId();
+  const uiSoundVolumeHintId = `${uiSoundVolumeId}-hint`;
+  const uiSoundPercent = Math.round(uiSoundVolume * 100);
   const models = ttsProvider === 'openai'
     ? PROVIDER_MODELS.openai.map((option) => option.value ? option : {
         ...option,
@@ -723,6 +730,41 @@ export function AudioSettings({
             onCheckedChange={onToggleSound}
             aria-label="Toggle sound effects"
           />
+        </div>
+      )}
+
+      {/* UI sound volume: scales every UI sound, never TTS */}
+      {showOutput && (
+        <div className="settings-row items-start justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            {uiSoundPercent > 0 ? (
+              <Volume2 size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+            ) : (
+              <VolumeX size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+            )}
+            <div className="flex min-w-0 flex-col">
+              <label htmlFor={uiSoundVolumeId} className="text-[0.867rem] font-medium text-foreground">UI sound volume</label>
+              <span id={uiSoundVolumeHintId} className="text-[0.8rem] text-muted-foreground">Wake, send, and cancel chimes and the completion ping. TTS is unaffected.</span>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <input
+              id={uiSoundVolumeId}
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={uiSoundPercent}
+              aria-valuetext={`${uiSoundPercent}%`}
+              aria-describedby={uiSoundVolumeHintId}
+              data-off={uiSoundPercent === 0 || undefined}
+              onChange={(event) => onUiSoundVolumeChange(Number(event.target.value) / 100)}
+              className="settings-range"
+            />
+            <span aria-hidden="true" className="w-[4ch] text-right font-mono tabular text-[0.8rem] text-muted-foreground">
+              {uiSoundPercent}%
+            </span>
+          </div>
         </div>
       )}
 

@@ -19,6 +19,8 @@ interface SettingsDrawerProps {
   // Audio settings
   soundEnabled: boolean;
   onToggleSound: () => void;
+  uiSoundVolume: number;
+  onUiSoundVolumeChange: (volume: number) => void;
   ttsProvider: TTSProvider;
   ttsModel: string;
   onTtsProviderChange: (provider: TTSProvider) => void;
@@ -78,6 +80,8 @@ export function SettingsDrawer({
   connectionState,
   soundEnabled,
   onToggleSound,
+  uiSoundVolume,
+  onUiSoundVolumeChange,
   ttsProvider,
   ttsModel,
   onTtsProviderChange,
@@ -227,6 +231,8 @@ export function SettingsDrawer({
               section="all"
               soundEnabled={soundEnabled}
               onToggleSound={onToggleSound}
+              uiSoundVolume={uiSoundVolume}
+              onUiSoundVolumeChange={onUiSoundVolumeChange}
               ttsProvider={ttsProvider}
               ttsModel={ttsModel}
               onTtsProviderChange={onTtsProviderChange}

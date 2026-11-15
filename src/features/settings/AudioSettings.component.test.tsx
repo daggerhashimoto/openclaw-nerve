@@ -49,6 +49,8 @@ vi.mock('@/components/ui/InlineSelect', () => ({
 const baseProps = {
   soundEnabled: true,
   onToggleSound: vi.fn(),
+  uiSoundVolume: 1,
+  onUiSoundVolumeChange: vi.fn(),
   ttsProvider: 'edge' as const,
   ttsModel: 'tts-1',
   onTtsProviderChange: vi.fn(),
@@ -233,6 +235,65 @@ describe('AudioSettings', () => {
       expect(screen.getByRole('option', { name: /Nova —/ })).toBeInTheDocument();
       fireEvent.change(screen.getByLabelText('OpenAI Voice'), { target: { value: 'nova' } });
       expect(updateField).toHaveBeenCalledWith('openai', 'voice', 'nova');
+    });
+  });
+
+  describe('UI sound volume', () => {
+    it('changes UI sound volume independently from the sound effects toggle', async () => {
+      const onUiSoundVolumeChange = vi.fn();
+      const onToggleSound = vi.fn();
+      render(
+        <AudioSettings
+          {...baseProps}
+          section="output"
+          uiSoundVolume={0.4}
+          onUiSoundVolumeChange={onUiSoundVolumeChange}
+          onToggleSound={onToggleSound}
+        />,
+      );
+
+      const slider = await screen.findByRole('slider', { name: 'UI sound volume' });
+      expect(slider).toHaveValue('40');
+
+      fireEvent.change(slider, { target: { value: '25' } });
+      expect(onUiSoundVolumeChange).toHaveBeenCalledWith(0.25);
+      expect(onToggleSound).not.toHaveBeenCalled();
+    });
+
+    it('is a native range in 5% steps with its value shown and announced', async () => {
+      render(<AudioSettings {...baseProps} section="output" uiSoundVolume={0.4} />);
+
+      const slider = await screen.findByRole('slider', { name: 'UI sound volume' });
+      expect(slider).toHaveAttribute('type', 'range');
+      expect(slider).toHaveAttribute('min', '0');
+      expect(slider).toHaveAttribute('max', '100');
+      expect(slider).toHaveAttribute('step', '5');
+      expect(slider).toHaveAttribute('aria-valuetext', '40%');
+      expect(slider).toHaveAccessibleDescription(/completion ping/i);
+      expect(screen.getByText('40%')).toBeInTheDocument();
+    });
+
+    it('reads 0% at volume 0', async () => {
+      render(<AudioSettings {...baseProps} section="output" uiSoundVolume={0} />);
+
+      const slider = await screen.findByRole('slider', { name: 'UI sound volume' });
+      expect(slider).toHaveValue('0');
+      expect(slider).toHaveAttribute('aria-valuetext', '0%');
+      expect(screen.getByText('0%')).toBeInTheDocument();
+    });
+
+    it('leaves the sound effects toggle as it was', async () => {
+      render(<AudioSettings {...baseProps} section="output" />);
+
+      expect(await screen.findByRole('switch', { name: 'Toggle sound effects' })).toBeInTheDocument();
+      expect(screen.getByText('Sound effects')).toBeInTheDocument();
+      expect(screen.queryByText(/spoken replies/i)).not.toBeInTheDocument();
+    });
+
+    it('is not part of the input section', () => {
+      render(<AudioSettings {...baseProps} section="input" />);
+
+      expect(screen.queryByRole('slider', { name: 'UI sound volume' })).not.toBeInTheDocument();
     });
   });
 });

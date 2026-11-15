@@ -272,7 +272,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
               <Settings2 size={14} />
             </button>
             {actionsOpen && (
-              <div className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-[3px] border border-border bg-popover py-1 shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
+              <div className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-[3px] border border-border bg-popover py-1 nerve-menu-shadow">
                 <button
                   type="button"
                   onClick={() => { setActionsOpen(false); void handleRun(); }}

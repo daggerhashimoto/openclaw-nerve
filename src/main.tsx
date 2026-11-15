@@ -11,6 +11,11 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { AuthGate } from '@/features/auth'
+import { applyTheme, loadStoredTheme } from '@/lib/themes'
+
+// Apply the stored theme before anything renders: the login page sits outside
+// SettingsProvider, and the first frame should already be in the operator's theme.
+applyTheme(loadStoredTheme())
 
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>

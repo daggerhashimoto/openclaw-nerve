@@ -125,7 +125,7 @@ export function AddMemoryDialog({ open, onOpenChange, onAdd, sections = [], isLo
 
               {/* Dropdown list */}
               {sectionDropdownOpen && filteredSections.length > 0 && (
-                <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-[3px] border border-border bg-popover py-1 shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
+                <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-[3px] border border-border bg-popover py-1 nerve-menu-shadow">
                   {filteredSections.map((s) => (
                     <button
                       key={s}

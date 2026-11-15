@@ -215,7 +215,7 @@ export function InlineSelect({
       aria-label={ariaLabel}
       style={inline ? undefined : menuStyle}
       className={cn(
-        'max-h-48 overflow-auto rounded-[3px] border border-border bg-popover text-foreground shadow-[0_12px_32px_rgba(0,0,0,0.32)]',
+        'max-h-48 overflow-auto rounded-[3px] border border-border bg-popover text-foreground nerve-menu-shadow',
         inline && 'absolute left-0 min-w-full z-50',
         inline && dropUp ? 'bottom-full mb-1' : inline ? 'top-full mt-1' : '',
         menuClassName,

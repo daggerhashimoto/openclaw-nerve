@@ -79,11 +79,11 @@ describe('AppearanceSettings', () => {
     expect(screen.getByRole('switch', { name: /performance mode/i })).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('offers Night and Daylight and no style control', () => {
+  it('offers the four current themes and no style control', () => {
     render(<AppearanceSettings />);
 
     expect(screen.queryByRole('button', { name: 'Select style' })).toBeNull();
-    expect(openOptions('Select theme')).toEqual(['Night', 'Daylight']);
+    expect(openOptions('Select theme')).toEqual(['Night', 'Daylight', 'Workbench Night', 'Workbench Paper']);
   });
 
   it('switches the theme through the Theme control', () => {

@@ -169,7 +169,7 @@ export function TabbedContentArea({
         {visibleSaveToast && (
           <div
             role="status"
-            className="absolute bottom-4 left-1/2 z-20 flex min-h-9 -translate-x-1/2 items-center gap-2 rounded-[3px] border border-border bg-popover py-1 pl-3 pr-1 text-[0.867rem] shadow-[0_12px_32px_rgba(0,0,0,0.32)] animate-fade-in"
+            className="absolute bottom-4 left-1/2 z-20 flex min-h-9 -translate-x-1/2 items-center gap-2 rounded-[3px] border border-border bg-popover py-1 pl-3 pr-1 text-[0.867rem] nerve-menu-shadow animate-fade-in"
           >
             <AlertTriangle size={14} className="shrink-0 text-destructive" aria-hidden="true" />
             <span className="text-foreground">File changed externally.</span>

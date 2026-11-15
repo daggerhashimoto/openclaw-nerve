@@ -159,7 +159,7 @@ export const KanbanHeader = memo(function KanbanHeader({
             </button>
 
             {showInbox && (
-              <div className="absolute right-0 top-full z-50 mt-1 w-[min(380px,calc(100vw-1.067rem))] overflow-hidden rounded-[3px] border border-border bg-popover shadow-[0_12px_32px_rgba(0,0,0,0.32)]">
+              <div className="absolute right-0 top-full z-50 mt-1 w-[min(380px,calc(100vw-1.067rem))] overflow-hidden rounded-[3px] border border-border bg-popover nerve-menu-shadow">
                 <div className="flex min-h-[var(--row-unit)] items-center gap-2 border-b border-border px-3 text-[0.867rem] font-medium text-foreground">
                   <span>Agent proposals</span>
                   {proposalsWaiting && (

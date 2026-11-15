@@ -87,7 +87,7 @@ export function ConfirmDialog({
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         aria-describedby="confirm-dialog-message"
-        className="fixed top-1/2 left-1/2 z-50 min-w-[320px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-[3px] border border-border bg-popover p-5 shadow-[0_12px_32px_rgba(0,0,0,0.32)]"
+        className="fixed top-1/2 left-1/2 z-50 min-w-[320px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-[3px] border border-border bg-popover p-5 nerve-menu-shadow"
       >
         <div className="mb-5">
           <h3 id="confirm-dialog-title" className="text-[1rem] font-semibold text-foreground">{title}</h3>

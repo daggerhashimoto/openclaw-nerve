@@ -147,12 +147,12 @@ describe('filterCommands with merged static + session commands', () => {
 });
 
 describe('createCommands appearance', () => {
-  it('offers Night and Daylight and no other themes', () => {
+  it('offers the four current themes and no retired ones', () => {
     const labels = createCommands(noopActions())
       .filter((c) => c.id.startsWith('theme-'))
       .map((c) => c.label);
 
-    expect(labels).toEqual(['Theme: Night', 'Theme: Daylight']);
+    expect(labels).toEqual(['Theme: Night', 'Theme: Daylight', 'Theme: Workbench Night', 'Theme: Workbench Paper']);
   });
 
   it('offers no style commands', () => {

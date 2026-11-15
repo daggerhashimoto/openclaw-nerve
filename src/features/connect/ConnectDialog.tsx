@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Pane } from '@/components/ui/Pane';
+import NerveLogo from '@/components/NerveLogo';
 import { areGatewayUrlsEquivalent } from '@/lib/gatewayUrls';
 
 interface ConnectDialogProps {
@@ -66,6 +67,7 @@ export function ConnectDialog({
           <DialogHeader className="gap-2 text-left">
             {/* The sign with its pane lit cantaloupe: Nerve is waiting on you */}
             <span className="nerve-wordmark">
+              <NerveLogo size={24} static />
               <span>Nerve</span>
               <Pane state="operator" className="nerve-brand-pane" label="Waiting on you" />
             </span>

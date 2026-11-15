@@ -1,171 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="148 148 104 104" width="400" height="400">
-  <defs>
-    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-    </filter>
-    <filter id="glow-lg" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur stdDeviation="8" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-    </filter>
-    <filter id="glow-xl" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur stdDeviation="12" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
-
-  <style>
-    @keyframes pulse-center {
-      0%, 100% { opacity: 0.4; r: 14; }
-      25% { opacity: 1; r: 18; }
-      50% { opacity: 0.6; r: 15; }
-    }
-    @keyframes pulse-center-core {
-      0%, 100% { opacity: 0.3; }
-      25% { opacity: 0.9; }
-      50% { opacity: 0.4; }
-    }
-    @keyframes pulse-node {
-      0%, 100% { opacity: 0.3; r: 9; }
-      50% { opacity: 0.85; r: 12; }
-    }
-    @keyframes pulse-node-core {
-      0%, 100% { opacity: 0.15; }
-      50% { opacity: 0.7; }
-    }
-    @keyframes spoke-pulse {
-      0%, 100% { opacity: 0.15; stroke-width: 2; }
-      50% { opacity: 0.5; stroke-width: 3; }
-    }
-    @keyframes ring-pulse {
-      0%, 100% { opacity: 0.12; stroke-width: 1.5; }
-      50% { opacity: 0.4; stroke-width: 2.5; }
-    }
-    @keyframes ripple {
-      0% { r: 14; opacity: 0.6; stroke-width: 3; }
-      100% { r: 50; opacity: 0; stroke-width: 0.5; }
-    }
-
-    /* Single particle: center → top → clockwise around hex → fade → 2.5s wait */
-    @keyframes travel-clockwise {
-      0%   { offset-distance: 0%; opacity: 0; }
-      2%   { opacity: 1; }
-      40%  { offset-distance: 100%; opacity: 1; }
-      43%  { opacity: 0; }
-      100% { opacity: 0; }
-    }
-
-    .center-glow { animation: pulse-center 2.8s ease-in-out infinite; }
-    .center-core { animation: pulse-center-core 2.8s ease-in-out infinite; }
-    .node-glow { animation: pulse-node 2.8s ease-in-out infinite; }
-    .node-core { animation: pulse-node-core 2.8s ease-in-out infinite; }
-    .spoke { animation: spoke-pulse 2.8s ease-in-out infinite; }
-    .ring { animation: ring-pulse 2.8s ease-in-out infinite; }
-    .ripple-center { animation: ripple 2.8s ease-out infinite; }
-
-    .n0 .node-glow, .n0 .node-core { animation-delay: 0s; }
-    .n1 .node-glow, .n1 .node-core { animation-delay: 0.47s; }
-    .n2 .node-glow, .n2 .node-core { animation-delay: 0.93s; }
-    .n3 .node-glow, .n3 .node-core { animation-delay: 1.4s; }
-    .n4 .node-glow, .n4 .node-core { animation-delay: 1.87s; }
-    .n5 .node-glow, .n5 .node-core { animation-delay: 2.33s; }
-
-    .s0 { animation-delay: 0s; }
-    .s1 { animation-delay: 0.47s; }
-    .s2 { animation-delay: 0.93s; }
-    .s3 { animation-delay: 1.4s; }
-    .s4 { animation-delay: 1.87s; }
-    .s5 { animation-delay: 2.33s; }
-
-    .r0 { animation-delay: 0.2s; }
-    .r1 { animation-delay: 0.67s; }
-    .r2 { animation-delay: 1.13s; }
-    .r3 { animation-delay: 1.6s; }
-    .r4 { animation-delay: 2.07s; }
-    .r5 { animation-delay: 2.53s; }
-
-    .particle {
-      filter: url(#glow-lg);
-      offset-path: path('M200,200 L200,180 L217,190 L217,210 L200,220 L183,210 L183,190 L200,180');
-      animation: travel-clockwise 4.3s ease-in-out infinite;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      * { animation: none !important; }
-    }
-  </style>
-
-  <!-- Background dim spokes -->
-  <line x1="200" y1="200" x2="200" y2="180" stroke="#301C0E" stroke-width="2" stroke-linecap="round"/>
-  <line x1="200" y1="200" x2="217" y2="190" stroke="#301C0E" stroke-width="2" stroke-linecap="round"/>
-  <line x1="200" y1="200" x2="217" y2="210" stroke="#301C0E" stroke-width="2" stroke-linecap="round"/>
-  <line x1="200" y1="200" x2="200" y2="220" stroke="#301C0E" stroke-width="2" stroke-linecap="round"/>
-  <line x1="200" y1="200" x2="183" y2="210" stroke="#301C0E" stroke-width="2" stroke-linecap="round"/>
-  <line x1="200" y1="200" x2="183" y2="190" stroke="#301C0E" stroke-width="2" stroke-linecap="round"/>
-
-  <!-- Background dim hex ring -->
-  <polygon points="200,180 217,190 217,210 200,220 183,210 183,190" fill="none" stroke="#301C0E" stroke-width="1.5" stroke-linejoin="round"/>
-
-  <!-- Glow spokes -->
-  <line x1="200" y1="200" x2="200" y2="180" stroke="#FF8C32" stroke-linecap="round" filter="url(#glow)" class="spoke s0"/>
-  <line x1="200" y1="200" x2="217" y2="190" stroke="#FF8C32" stroke-linecap="round" filter="url(#glow)" class="spoke s1"/>
-  <line x1="200" y1="200" x2="217" y2="210" stroke="#FF8C32" stroke-linecap="round" filter="url(#glow)" class="spoke s2"/>
-  <line x1="200" y1="200" x2="200" y2="220" stroke="#FF8C32" stroke-linecap="round" filter="url(#glow)" class="spoke s3"/>
-  <line x1="200" y1="200" x2="183" y2="210" stroke="#FF8C32" stroke-linecap="round" filter="url(#glow)" class="spoke s4"/>
-  <line x1="200" y1="200" x2="183" y2="190" stroke="#FF8C32" stroke-linecap="round" filter="url(#glow)" class="spoke s5"/>
-
-  <!-- Glow hex ring segments -->
-  <line x1="200" y1="180" x2="217" y2="190" stroke="#FF8C32" stroke-linecap="round" filter="url(#glow)" class="ring r0"/>
-  <line x1="217" y1="190" x2="217" y2="210" stroke="#FF8C32" stroke-linecap="round" filter="url(#glow)" class="ring r1"/>
-  <line x1="217" y1="210" x2="200" y2="220" stroke="#FF8C32" stroke-linecap="round" filter="url(#glow)" class="ring r2"/>
-  <line x1="200" y1="220" x2="183" y2="210" stroke="#FF8C32" stroke-linecap="round" filter="url(#glow)" class="ring r3"/>
-  <line x1="183" y1="210" x2="183" y2="190" stroke="#FF8C32" stroke-linecap="round" filter="url(#glow)" class="ring r4"/>
-  <line x1="183" y1="190" x2="200" y2="180" stroke="#FF8C32" stroke-linecap="round" filter="url(#glow)" class="ring r5"/>
-
-  <!-- Single traveling particle: center → top → clockwise -->
-  <circle r="4" fill="#FF8C32" class="particle"/>
-
-  <!-- Center ripple -->
-  <circle cx="200" cy="200" fill="none" stroke="#FF8C32" class="ripple-center"/>
-
-  <!-- Center node -->
-  <circle cx="200" cy="200" r="14" fill="#FF8C32" filter="url(#glow-xl)" class="center-glow"/>
-  <circle cx="200" cy="200" r="7" fill="#FFDCB4" class="center-core"/>
-
-  <!-- Background dim dots -->
-  <circle cx="200" cy="180" r="9" fill="#301C0E"/>
-  <circle cx="217" cy="190" r="9" fill="#301C0E"/>
-  <circle cx="217" cy="210" r="9" fill="#301C0E"/>
-  <circle cx="200" cy="220" r="9" fill="#301C0E"/>
-  <circle cx="183" cy="210" r="9" fill="#301C0E"/>
-  <circle cx="183" cy="190" r="9" fill="#301C0E"/>
-
-  <!-- Outer nodes -->
-  <g class="n0">
-    <circle cx="200" cy="180" r="9" fill="#FF8C32" filter="url(#glow-lg)" class="node-glow"/>
-    <circle cx="200" cy="180" r="4.5" fill="#FFDCB4" class="node-core"/>
-  </g>
-  <g class="n1">
-    <circle cx="217" cy="190" r="9" fill="#FF8C32" filter="url(#glow-lg)" class="node-glow"/>
-    <circle cx="217" cy="190" r="4.5" fill="#FFDCB4" class="node-core"/>
-  </g>
-  <g class="n2">
-    <circle cx="217" cy="210" r="9" fill="#FF8C32" filter="url(#glow-lg)" class="node-glow"/>
-    <circle cx="217" cy="210" r="4.5" fill="#FFDCB4" class="node-core"/>
-  </g>
-  <g class="n3">
-    <circle cx="200" cy="220" r="9" fill="#FF8C32" filter="url(#glow-lg)" class="node-glow"/>
-    <circle cx="200" cy="220" r="4.5" fill="#FFDCB4" class="node-core"/>
-  </g>
-  <g class="n4">
-    <circle cx="183" cy="210" r="9" fill="#FF8C32" filter="url(#glow-lg)" class="node-glow"/>
-    <circle cx="183" cy="210" r="4.5" fill="#FFDCB4" class="node-core"/>
-  </g>
-  <g class="n5">
-    <circle cx="183" cy="190" r="9" fill="#FF8C32" filter="url(#glow-lg)" class="node-glow"/>
-    <circle cx="183" cy="190" r="4.5" fill="#FFDCB4" class="node-core"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="5.5 5.5 53 53">
+  <style>.sig,.fire{opacity:0;animation:2.4s ease-in-out infinite}.sig{animation-name:sig}.fire{animation-name:fire}.hub{animation:hub 2.4s ease-in-out infinite;transform-origin:32px 32px}@keyframes sig{0%,100%{opacity:0}12%{opacity:.85}30%{opacity:0}}@keyframes fire{0%,100%{opacity:0}14%{opacity:.9}36%{opacity:0}}@keyframes hub{0%,100%{opacity:.75}50%{opacity:1}}@media (prefers-reduced-motion:reduce){.sig,.fire{animation:none;opacity:0}.hub{animation:none}}</style>
+  <line x1="32" y1="22.9" x2="32" y2="18.7" stroke="#FF8C32" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="39.88" y1="27.45" x2="43.52" y2="25.35" stroke="#FF8C32" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="39.88" y1="36.55" x2="43.52" y2="38.65" stroke="#FF8C32" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="32" y1="41.1" x2="32" y2="45.3" stroke="#FF8C32" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="24.12" y1="36.55" x2="20.48" y2="38.65" stroke="#FF8C32" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="24.12" y1="27.45" x2="20.48" y2="25.35" stroke="#FF8C32" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="37.8" y1="15.35" x2="43.52" y2="18.65" stroke="#FF8C32" stroke-width="1.3" stroke-linecap="round" opacity="1"/>
+  <line x1="49.32" y1="28.7" x2="49.32" y2="35.3" stroke="#FF8C32" stroke-width="1.3" stroke-linecap="round" opacity="1"/>
+  <line x1="43.52" y1="45.35" x2="37.8" y2="48.65" stroke="#FF8C32" stroke-width="1.3" stroke-linecap="round" opacity="1"/>
+  <line x1="26.2" y1="48.65" x2="20.48" y2="45.35" stroke="#FF8C32" stroke-width="1.3" stroke-linecap="round" opacity="1"/>
+  <line x1="14.68" y1="35.3" x2="14.68" y2="28.7" stroke="#FF8C32" stroke-width="1.3" stroke-linecap="round" opacity="1"/>
+  <line x1="20.48" y1="18.65" x2="26.2" y2="15.35" stroke="#FF8C32" stroke-width="1.3" stroke-linecap="round" opacity="1"/>
+  <circle cx="32" cy="12" r="4.6" fill="#FF8C32"/>
+  <circle cx="32" cy="12" r="2.07" fill="#FFDCB4"/>
+  <circle cx="49.32" cy="22" r="4.6" fill="#FF8C32"/>
+  <circle cx="49.32" cy="22" r="2.07" fill="#FFDCB4"/>
+  <circle cx="49.32" cy="42" r="4.6" fill="#FF8C32"/>
+  <circle cx="49.32" cy="42" r="2.07" fill="#FFDCB4"/>
+  <circle cx="32" cy="52" r="4.6" fill="#FF8C32"/>
+  <circle cx="32" cy="52" r="2.07" fill="#FFDCB4"/>
+  <circle cx="14.68" cy="42" r="4.6" fill="#FF8C32"/>
+  <circle cx="14.68" cy="42" r="2.07" fill="#FFDCB4"/>
+  <circle cx="14.68" cy="22" r="4.6" fill="#FF8C32"/>
+  <circle cx="14.68" cy="22" r="2.07" fill="#FFDCB4"/>
+  <circle cx="32" cy="32" r="7" fill="#FF8C32"/>
+  <circle cx="32" cy="32" r="3.22" fill="#FFDCB4"/>
+  <line class="sig" style="animation-delay:0.0s" x1="32" y1="22.9" x2="32" y2="18.7" stroke="#FFF1E2" stroke-width="2.4" stroke-linecap="round"/>
+  <circle class="fire" style="animation-delay:0.18s" cx="32" cy="12" r="2.85" fill="#FFF1E2"/>
+  <line class="sig" style="animation-delay:0.4s" x1="39.88" y1="27.45" x2="43.52" y2="25.35" stroke="#FFF1E2" stroke-width="2.4" stroke-linecap="round"/>
+  <circle class="fire" style="animation-delay:0.58s" cx="49.32" cy="22" r="2.85" fill="#FFF1E2"/>
+  <line class="sig" style="animation-delay:0.8s" x1="39.88" y1="36.55" x2="43.52" y2="38.65" stroke="#FFF1E2" stroke-width="2.4" stroke-linecap="round"/>
+  <circle class="fire" style="animation-delay:0.98s" cx="49.32" cy="42" r="2.85" fill="#FFF1E2"/>
+  <line class="sig" style="animation-delay:1.2s" x1="32" y1="41.1" x2="32" y2="45.3" stroke="#FFF1E2" stroke-width="2.4" stroke-linecap="round"/>
+  <circle class="fire" style="animation-delay:1.38s" cx="32" cy="52" r="2.85" fill="#FFF1E2"/>
+  <line class="sig" style="animation-delay:1.6s" x1="24.12" y1="36.55" x2="20.48" y2="38.65" stroke="#FFF1E2" stroke-width="2.4" stroke-linecap="round"/>
+  <circle class="fire" style="animation-delay:1.78s" cx="14.68" cy="42" r="2.85" fill="#FFF1E2"/>
+  <line class="sig" style="animation-delay:2.0s" x1="24.12" y1="27.45" x2="20.48" y2="25.35" stroke="#FFF1E2" stroke-width="2.4" stroke-linecap="round"/>
+  <circle class="fire" style="animation-delay:2.18s" cx="14.68" cy="22" r="2.85" fill="#FFF1E2"/>
+  <circle class="hub" cx="32" cy="32" r="3.22" fill="#FFF1E2"/>
 </svg>

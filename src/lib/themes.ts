@@ -18,7 +18,6 @@
 // 2026-11-02; stored values from either era resolve in resolveThemeName().
 
 import { loadWorkbenchFonts } from './fonts';
-import { refreshFavicon } from './favicon';
 
 export type ThemeName = 'nerve-dark' | 'nerve-light' | 'workbench-night' | 'workbench-paper';
 
@@ -374,8 +373,6 @@ export function applyTheme(themeName: ThemeName): void {
   root.dataset.world = theme.world;
   // Workbench's faces load only when a Workbench theme is in use
   if (theme.world === 'workbench') loadWorkbenchFonts();
-  // The tab icon is drawn in the world's colours
-  refreshFavicon();
   root.style.colorScheme = theme.scheme;
 
   // Apply highlight.js theme (vendored locally to avoid CDN dependency)

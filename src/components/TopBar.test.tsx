@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TopBar } from './TopBar';
 
 vi.mock('./NerveLogo', () => ({
-  default: () => <div data-testid="nerve-logo" />,
+  default: ({ static: still }: { static?: boolean }) => <div data-testid="nerve-logo" data-still={String(Boolean(still))} />,
 }));
 
 function renderTopBar(props: Partial<React.ComponentProps<typeof TopBar>> = {}) {
@@ -40,6 +40,18 @@ describe('TopBar', () => {
     const pane = container.querySelector('.nerve-brand-pane');
     expect(pane).toHaveAttribute('data-state', 'off');
     expect(pane).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('fires the Nerve mark only while agents work', () => {
+    const { unmount } = renderTopBar({ activity: 'live' });
+    expect(screen.getByTestId('nerve-logo')).toHaveAttribute('data-still', 'false');
+    unmount();
+
+    for (const activity of ['off', 'operator', 'error'] as const) {
+      const view = renderTopBar({ activity });
+      expect(screen.getByTestId('nerve-logo')).toHaveAttribute('data-still', 'true');
+      view.unmount();
+    }
   });
 
   it('shows the tasks view toggle by default', () => {

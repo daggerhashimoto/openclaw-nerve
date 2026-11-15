@@ -808,6 +808,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // A reconnect may have missed lifecycle events, so the granular statuses held across the gap
+  // are suspect: a retained DONE could hide a run that started while we were away, and a retained
+  // THINKING could keep a pane lit for a run that ended. Drop them all and let the refreshed
+  // session snapshot decide until new events arrive.
+  const wasConnectedRef = useRef(false);
+  useEffect(() => {
+    if (connectionState !== 'connected') return;
+    if (wasConnectedRef.current) {
+      for (const key of Object.keys(doneTimeoutsRef.current)) {
+        clearTimeout(doneTimeoutsRef.current[key]);
+      }
+      doneTimeoutsRef.current = {};
+      setAgentStatus({});
+    }
+    wasConnectedRef.current = true;
+  }, [connectionState]);
+
   // Poll sessions when connected (reduced to 30s - WebSocket events provide real-time updates)
   useEffect(() => {
     if (connectionState !== 'connected') return;

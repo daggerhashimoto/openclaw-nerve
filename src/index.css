@@ -849,15 +849,74 @@ html[data-theme="light"] .plate-operator {
 /* The room: the transcript's ground carries one ambient light from above, a cool lift that
    fades into Midnight by mid-height so the composer floats in the darkest part of the room. */
 .nerve-room {
-  background-color: var(--color-card);
+  /* Transparent over the room plate (the same Panel ground) so the live horizon can rise under the text */
+  background-color: transparent;
   background-image: radial-gradient(
     120% 70% at 50% 0%,
-    color-mix(in srgb, var(--color-live) 8%, var(--color-card)) 0%,
-    var(--color-card) 60%
+    color-mix(in srgb, var(--color-live) 8%, transparent) 0%,
+    transparent 60%
   );
 }
 html[data-theme="light"] .nerve-room {
   background-image: none;
+}
+
+/* The live horizon (src/features/chat/LiveHorizon.tsx): while the open session works, a faint
+   segmented equalizer rises from the floor of the room behind the composer, under the transcript
+   text. Bars step between heights (no easing) on slow 5.5-8.5s cycles, so it reads as a meter, not
+   a pulse. It sits at z-index -1 inside the room plate's own stacking context (.isolate on the plate),
+   above the plate's ground and below everything in the room. Lights on with the room's 210ms delay. */
+.nerve-horizon {
+  --horizon-segment: 14px;
+  --horizon-on: 0.2;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  height: calc(var(--horizon-segment) * 12);
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: 0 0 4px 4px;
+  opacity: 0;
+  animation: nerve-horizon-on var(--switch-duration) var(--switch-ease) 210ms forwards;
+  -webkit-mask-image:
+    linear-gradient(to top, #000 40%, transparent 100%),
+    repeating-linear-gradient(to top, #000 0 10px, transparent 10px var(--horizon-segment));
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to top, #000 40%, transparent 100%),
+    repeating-linear-gradient(to top, #000 0 10px, transparent 10px var(--horizon-segment));
+  mask-composite: intersect;
+}
+@keyframes nerve-horizon-on {
+  to { opacity: var(--horizon-on); }
+}
+.nerve-horizon-bar {
+  position: absolute;
+  bottom: 0;
+  width: 10px;
+  height: 100%;
+  margin-left: -5px;
+  background: linear-gradient(to top, var(--color-live), var(--color-live-text));
+  transform-origin: 50% 100%;
+  transform: scaleY(0.25);
+  animation-timing-function: steps(1, end);
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+/* Heights in twelfths of the horizon, one segment each. a-c run tall (the sides), d-f short. */
+@keyframes nerve-horizon-a { 0%,100% { transform: scaleY(.4167) } 10% { transform: scaleY(.75) } 20% { transform: scaleY(.5833) } 30% { transform: scaleY(.9167) } 40% { transform: scaleY(.6667) } 50% { transform: scaleY(1) } 60% { transform: scaleY(.5) } 70% { transform: scaleY(.8333) } 80% { transform: scaleY(.4167) } 90% { transform: scaleY(.75) } }
+@keyframes nerve-horizon-b { 0%,100% { transform: scaleY(.6667) } 10% { transform: scaleY(.4167) } 20% { transform: scaleY(.8333) } 30% { transform: scaleY(.5833) } 40% { transform: scaleY(.9167) } 50% { transform: scaleY(.5) } 60% { transform: scaleY(.75) } 70% { transform: scaleY(.6667) } 80% { transform: scaleY(1) } 90% { transform: scaleY(.4167) } }
+@keyframes nerve-horizon-c { 0%,100% { transform: scaleY(.75) } 10% { transform: scaleY(.9167) } 20% { transform: scaleY(.5) } 30% { transform: scaleY(1) } 40% { transform: scaleY(.6667) } 50% { transform: scaleY(.4167) } 60% { transform: scaleY(.8333) } 70% { transform: scaleY(.3333) } 80% { transform: scaleY(.75) } 90% { transform: scaleY(.5833) } }
+@keyframes nerve-horizon-d { 0%,100% { transform: scaleY(.0833) } 10% { transform: scaleY(.25) } 20% { transform: scaleY(.1667) } 30% { transform: scaleY(.4167) } 40% { transform: scaleY(.1667) } 50% { transform: scaleY(.5) } 60% { transform: scaleY(.1667) } 70% { transform: scaleY(.3333) } 80% { transform: scaleY(.0833) } 90% { transform: scaleY(.25) } }
+@keyframes nerve-horizon-e { 0%,100% { transform: scaleY(.25) } 10% { transform: scaleY(.0833) } 20% { transform: scaleY(.3333) } 30% { transform: scaleY(.1667) } 40% { transform: scaleY(.4167) } 50% { transform: scaleY(.25) } 60% { transform: scaleY(.5833) } 70% { transform: scaleY(.1667) } 80% { transform: scaleY(.3333) } 90% { transform: scaleY(.0833) } }
+@keyframes nerve-horizon-f { 0%,100% { transform: scaleY(.1667) } 10% { transform: scaleY(.3333) } 20% { transform: scaleY(.25) } 30% { transform: scaleY(.3333) } 40% { transform: scaleY(.0833) } 50% { transform: scaleY(.4167) } 60% { transform: scaleY(.3333) } 70% { transform: scaleY(.1667) } 80% { transform: scaleY(.5) } 90% { transform: scaleY(.25) } }
+html[data-theme="light"] .nerve-horizon {
+  --horizon-on: 0.14;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nerve-horizon { display: none; }
 }
 
 /* Panel header chrome: one row unit, sentence case */

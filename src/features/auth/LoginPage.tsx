@@ -1,7 +1,7 @@
 /**
  * LoginPage: the operator's first window.
  *
- * The sign over Midnight with the brand pane lit cantaloupe (Nerve is waiting on
+ * The sign (the mark, the wordmark) over Midnight with the brand pane lit cantaloupe (Nerve is waiting on
  * you), one window for the password that warms while you type in it, and a red
  * pane on the line that reports a failed attempt. Enter submits; the input is
  * focused on mount.
@@ -11,6 +11,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Pane } from '@/components/ui/Pane';
+import NerveLogo from '@/components/NerveLogo';
 
 interface LoginPageProps {
   onLogin: (password: string) => Promise<void>;
@@ -43,6 +44,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
     <div className="nerve-login flex min-h-screen items-center justify-center bg-background px-5 py-10">
       <div className="w-full max-w-[26rem]">
         <span className="nerve-wordmark">
+          <NerveLogo size={32} static />
           <span>Nerve</span>
           <Pane state="operator" className="nerve-brand-pane" label="Waiting on you" />
         </span>

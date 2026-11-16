@@ -235,9 +235,38 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     heartbeatRuns,
   ]);
 
+  // ─── History refresh ──────────────────────────────────────────────────────
+  // Reconcile the transcript from history shortly after entries may have been
+  // committed (tool results, interim replies, rows the gateway reports). Bursts
+  // collapse into one read. A read waits for a full history load still out, and
+  // only the latest read started may apply: an older answer that comes back
+  // last would otherwise replace a newer transcript and drop committed rows.
+  const historyLoadRef = useRef<Promise<void> | null>(null);
+  const historyRefreshSeqRef = useRef(0);
+  const scheduleHistoryRefresh = useCallback(() => {
+    if (historyRefreshRef.current) clearTimeout(historyRefreshRef.current);
+    const capturedSession = currentSessionRef.current;
+    const capturedGeneration = getGeneration();
+    historyRefreshRef.current = setTimeout(async () => {
+      historyRefreshRef.current = null;
+      try {
+        await historyLoadRef.current;
+        const seq = ++historyRefreshSeqRef.current;
+        const recovered = await loadChatHistory({ rpc, sessionKey: capturedSession, limit: 100 });
+        if (seq !== historyRefreshSeqRef.current) return;
+        if (capturedSession !== currentSessionRef.current) return;
+        if (capturedGeneration !== getGeneration()) return;
+        if (recovered.length > 0) {
+          const merged = mergeRecoveredTail(getAllMessages(), recovered);
+          applyMessageWindow(merged, false);
+        }
+      } catch { /* best-effort */ }
+    }, 300);
+  }, [rpc, getGeneration, getAllMessages, applyMessageWindow]);
+
   useEffect(() => {
     if (connectionState !== 'connected' || !currentSession) return;
-    loadHistory(currentSession);
+    historyLoadRef.current = loadHistory(currentSession);
   }, [connectionState, currentSession, loadHistory]);
 
   // ─── Subscribe to the open session ────────────────────────────────────────
@@ -248,13 +277,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (connectionState !== 'connected' || !currentSession) return;
     const key = currentSession;
-    rpc('sessions.messages.subscribe', { key }).catch((err) => {
-      console.debug('[ChatContext] sessions.messages.subscribe failed:', err);
-    });
+    let current = true;
+    rpc('sessions.messages.subscribe', { key })
+      .then((res) => {
+        // A row committed after the first history read took its snapshot but
+        // before the subscription took effect arrives by neither path; read
+        // history once more now that later rows will be reported.
+        if (current && (res as { subscribed?: unknown } | null)?.subscribed !== false) scheduleHistoryRefresh();
+      })
+      .catch((err) => {
+        console.debug('[ChatContext] sessions.messages.subscribe failed:', err);
+      });
     return () => {
+      current = false;
       rpc('sessions.messages.unsubscribe', { key }).catch(() => { /* gone with the connection */ });
     };
-  }, [connectionState, currentSession, rpc]);
+  }, [connectionState, currentSession, rpc, scheduleHistoryRefresh]);
 
   // ─── Periodic history poll for sub-agent sessions ─────────────────────────
   const isSubagentSession = currentSession ? isSubagentSessionKey(currentSession) : false;
@@ -318,25 +356,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // ─── Subscribe to streaming events ────────────────────────────────────────
   useEffect(() => {
-    // Reconcile the transcript from history shortly after entries may have been
-    // committed (tool results, interim replies). Bursts collapse into one fetch.
-    const scheduleHistoryRefresh = () => {
-      if (historyRefreshRef.current) clearTimeout(historyRefreshRef.current);
-      const capturedSession = currentSessionRef.current;
-      const capturedGeneration = getGeneration();
-      historyRefreshRef.current = setTimeout(async () => {
-        historyRefreshRef.current = null;
-        try {
-          const recovered = await loadChatHistory({ rpc, sessionKey: capturedSession, limit: 100 });
-          if (capturedSession !== currentSessionRef.current) return;
-          if (capturedGeneration !== getGeneration()) return;
-          if (recovered.length > 0) {
-            const merged = mergeRecoveredTail(getAllMessages(), recovered);
-            applyMessageWindow(merged, false);
-          }
-        } catch { /* best-effort */ }
-      }, 300);
-    };
     const flushHeartbeatRows = () => {
       if (!heartbeatRowsPendingRef.current) return;
       heartbeatRowsPendingRef.current = false;
@@ -688,8 +707,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     resetPlayedSounds,
     handleFinalTTS,
     subscribe,
-    rpc,
     heartbeatRuns,
+    scheduleHistoryRefresh,
   ]);
 
   // ─── Send message ─────────────────────────────────────────────────────────

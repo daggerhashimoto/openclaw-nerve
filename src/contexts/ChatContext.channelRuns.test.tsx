@@ -46,14 +46,30 @@ describe('ChatContext with runs started outside Nerve (#334)', () => {
   const pingMock = vi.fn();
   const speakMock = vi.fn();
 
-  async function setup(history: unknown[], openSession = TELEGRAM) {
+  /**
+   * Render the provider on a connected gateway. By default this waits for the
+   * first history read and the one that follows the subscription, so tests
+   * count reads from a quiet start. `holdFirstHistory` keeps the first read
+   * out (it answers with the transcript as it stood when it was sent) until
+   * `releaseFirstHistory` is called.
+   */
+  async function setup(history: unknown[], openSession = TELEGRAM, { holdFirstHistory = false } = {}) {
     let handler: ((msg: GatewayEvent) => void) | null = null;
     const gateway = { connectionState: 'connected' as ConnectionState, currentSession: openSession };
+    let releaseFirst: (() => void) | null = null;
+    let reads = 0;
     const rpcMock = vi.fn<(method: string, params?: Record<string, unknown>) => Promise<unknown>>(async (method) => {
-      if (method === 'chat.history') return { messages: [...history] };
+      if (method === 'chat.history') {
+        const snapshot = { messages: [...history] };
+        reads += 1;
+        if (holdFirstHistory && reads === 1) return new Promise((resolve) => { releaseFirst = () => resolve(snapshot); });
+        return snapshot;
+      }
       if (method === 'chat.send') return { runId: RUN, status: 'started' };
+      if (method === 'sessions.messages.subscribe') return { subscribed: true, key: gateway.currentSession, agentId: 'main' };
       return {};
     });
+    const calls = (method: string) => rpcMock.mock.calls.filter(([m]) => m === method);
 
     vi.doMock('./GatewayContext', () => ({
       useGateway: () => ({
@@ -93,7 +109,13 @@ describe('ChatContext with runs started outside Nerve (#334)', () => {
     const view = render(tree());
 
     await waitFor(() => expect(handler).not.toBeNull());
-    await waitFor(() => expect(chat?.historyLoaded).toBe(true));
+    if (!holdFirstHistory) {
+      await waitFor(() => expect(chat?.historyLoaded).toBe(true));
+      await waitFor(() => expect(calls('chat.history')).toHaveLength(2));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    }
 
     const emit = (event: string, payload: Record<string, unknown>, seq?: number) => {
       act(() => {
@@ -104,12 +126,15 @@ describe('ChatContext with runs started outside Nerve (#334)', () => {
       Object.assign(gateway, next);
       view.rerender(tree());
     };
-    const calls = (method: string) => rpcMock.mock.calls.filter(([m]) => m === method);
     const settle = () => act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 400));
     });
+    const releaseFirstHistory = () => act(async () => {
+      releaseFirst!();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
 
-    return { emit, rerenderWith, calls, settle, getChat: () => chat! };
+    return { emit, rerenderWith, calls, settle, releaseFirstHistory, getChat: () => chat! };
   }
 
   // Agent frames for a hidden run carry the session snapshot (buildSessionEventSnapshot).
@@ -148,6 +173,23 @@ describe('ChatContext with runs started outside Nerve (#334)', () => {
     rerenderWith({ connectionState: 'connected' });
     await waitFor(() => expect(calls('sessions.messages.subscribe')).toHaveLength(3));
     expect(calls('sessions.messages.subscribe').at(-1)).toEqual(['sessions.messages.subscribe', { key: OTHER }]);
+  });
+
+  it('reads history again once subscribed, after the first read is in', async () => {
+    const history: unknown[] = [earlier];
+    const { getChat, calls, settle, releaseFirstHistory } = await setup(history, TELEGRAM, { holdFirstHistory: true });
+
+    // A row committed after the first read took its snapshot, before the
+    // subscription took effect: no session.message reports it.
+    history.push(inbound);
+    await waitFor(() => expect(calls('sessions.messages.subscribe')).toHaveLength(1));
+    await settle();
+    // The read that follows the subscription waits for the first one, which answers last.
+    expect(calls('chat.history')).toHaveLength(1);
+    await releaseFirstHistory();
+
+    await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Hi from Telegram']));
+    expect(calls('chat.history')).toHaveLength(2);
   });
 
   it('shows a channel run live: the inbound message, the indicator, the stream and the reply once', async () => {

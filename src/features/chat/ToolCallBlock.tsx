@@ -61,7 +61,8 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
           />
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="border-t border-border px-2.5 py-2 font-mono text-[0.8rem]">
+          {/* The diff or file preview first, then the result: a failed edit shows its error */}
+          <div className="space-y-2 border-t border-border px-2.5 py-2 font-mono text-[0.8rem]">
             {editBlocks.length > 0 ? (
               <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading diff</div>}>
                 <div className="space-y-2">
@@ -78,14 +79,13 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
                   ))}
                 </div>
               </Suspense>
-            ) : msg.toolResult !== undefined ? (
-              <ToolResultText text={msg.toolResult} />
-            ) : (
+            ) : msg.toolResult === undefined ? (
               <div
                 className="max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words text-muted-foreground [overflow-wrap:anywhere] [&_code]:font-mono [&_p]:m-0"
                 dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
               />
-            )}
+            ) : null}
+            {msg.toolResult !== undefined && <ToolResultText text={msg.toolResult} />}
           </div>
         </CollapsibleContent>
       </Collapsible>

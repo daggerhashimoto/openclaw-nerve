@@ -44,6 +44,9 @@ beforeAll(async () => {
   // MessageBubble lazy-loads the real markdown renderer. Load it once up front so a
   // busy full-suite run does not outlast the default findBy timeout on first render.
   await import('@/features/markdown/MarkdownRenderer');
+  // Diff and file previews are lazy too.
+  await import('./DiffView');
+  await import('./FileContentView');
 });
 
 const T0 = Date.parse('2026-11-16T10:00:00Z');
@@ -206,6 +209,49 @@ describe('tool results from history', () => {
     expect(container.querySelector('.tool-result')).toBeNull();
     expect(container.textContent).not.toContain('top-level output');
     expect(container.textContent).not.toContain('block output');
+  });
+});
+
+describe('tool results next to diffs and file previews', () => {
+  const editCall = (id: string, seq: number, result: string) =>
+    nestedTool(id, seq, 'edit', { path: 'src/a.ts', oldText: 'const a = 1;', newText: 'const a = 2;' }, [{ type: 'text', text: result }]);
+  const writeCall = (id: string, seq: number, result: string) =>
+    nestedTool(id, seq, 'write', { path: 'src/b.ts', content: 'export const b = 1;' }, [{ type: 'text', text: result }]);
+
+  it('shows a failed edit as its diff followed by the error', async () => {
+    const { container } = render(panel(processChatMessages([prompt, editCall('n-1', 2, 'Error: file not found: src/a.ts')])));
+
+    fireEvent.click(toolRow(/editing\s*src\/a\.ts/));
+
+    await waitFor(() => expect(container.querySelector('.diff-container')).not.toBeNull());
+    expect(shownResult(container).textContent).toBe('Error: file not found: src/a.ts');
+  });
+
+  it('shows a write as its file preview followed by the result', async () => {
+    const { container } = render(panel(processChatMessages([prompt, writeCall('n-1', 2, 'Wrote 19 bytes')])));
+
+    fireEvent.click(toolRow(/writing\s*src\/b\.ts/));
+
+    await waitFor(() => expect(container.querySelector('.file-content-container')).not.toBeNull());
+    expect(shownResult(container).textContent).toBe('Wrote 19 bytes');
+  });
+
+  it('does the same for edits and writes inside a tool group', async () => {
+    const exec = entry('a-1', 1, {
+      role: 'assistant',
+      content: [{ type: 'toolCall', id: 'exec-1', name: 'exec', arguments: { command: 'ls' } }],
+    });
+    const raw = [prompt, exec, editCall('n-1', 2, 'Error: file not found: src/a.ts'), writeCall('n-2', 3, 'Wrote 19 bytes')];
+    const { container } = render(panel(processChatMessages(raw)));
+
+    fireEvent.click(screen.getByRole('button', { name: /Used 3 tools/ }));
+    // An edit entry starts open on its diff
+    await waitFor(() => expect(container.querySelector('.diff-container')).not.toBeNull());
+    fireEvent.click(toolRow(/writing\s*src\/b\.ts/));
+    await waitFor(() => expect(container.querySelector('.file-content-container')).not.toBeNull());
+
+    const results = [...container.querySelectorAll('.tool-result')].map((el) => el.textContent);
+    expect(results).toEqual(['Error: file not found: src/a.ts', 'Wrote 19 bytes']);
   });
 });
 

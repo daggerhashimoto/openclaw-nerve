@@ -45,7 +45,8 @@ function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
         <ToolRowContent state="off" text={entry.preview} expandable expanded={expanded} />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="border-t border-border px-2.5 py-2 font-mono text-[0.8rem]">
+        {/* The diff or file preview first, then the result: a failed edit shows its error */}
+        <div className="space-y-2 border-t border-border px-2.5 py-2 font-mono text-[0.8rem]">
           {editBlocks.length > 0 ? (
             <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading diff</div>}>
               <div className="space-y-2">
@@ -62,9 +63,8 @@ function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
                 ))}
               </div>
             </Suspense>
-          ) : (
-            <ToolResultText text={entry.result ?? ''} />
-          )}
+          ) : null}
+          {entry.result !== undefined && <ToolResultText text={entry.result} />}
         </div>
       </CollapsibleContent>
     </Collapsible>

@@ -38,7 +38,7 @@ import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { fleetActivity, fleetCounts, sessionPaneState } from '@/lib/paneState';
 import { shadeFor, useAgentHues } from '@/lib/agentColors';
-import { getRootAgentId, isSubagentSessionKey } from '@/features/sessions/sessionKeys';
+import { getChatRoomNames, getRootAgentId, isSubagentSessionKey } from '@/features/sessions/sessionKeys';
 import { createCommands, createSessionCommands } from '@/features/command-palette/commands';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
@@ -128,8 +128,15 @@ export default function App({ onLogout }: AppProps) {
     [sessions, busyState, unreadSessions, agentStatus, isGenerating, currentSession],
   );
 
+  // Who speaks in the open room and what the session is called when that is not the agent
+  // (a Telegram peer, a Discord channel, a cron job). The rule lives in getChatRoomNames.
+  const chatRoomNames = useMemo(
+    () => getChatRoomNames(currentSession, sessions, agentName),
+    [currentSession, sessions, agentName],
+  );
+
   // Identity hue of the open session's agent family, for the chat header and transcript panes.
-  const currentRootAgentId = useMemo(() => getRootAgentId(currentSession), [currentSession]);
+  const currentRootAgentId = chatRoomNames.agentId;
   const currentRootIds = useMemo(() => (currentRootAgentId ? [currentRootAgentId] : []), [currentRootAgentId]);
   const { hueFor } = useAgentHues(currentRootIds);
   const currentAgentHue = currentRootAgentId
@@ -610,12 +617,6 @@ export default function App({ onLogout }: AppProps) {
     return sessions.find(s => getSessionKey(s) === currentSession);
   }, [sessions, currentSession]);
 
-  // Get display name for current session (agent name for main, label for subagents)
-  const currentSessionDisplayName = useMemo(() => {
-    if (currentSessionData) return getSessionDisplayLabel(currentSessionData, agentName);
-    return agentName;
-  }, [currentSessionData, agentName]);
-
   const contextTokens = currentSessionData?.totalTokens ?? 0;
   const contextLimit = currentSessionData?.contextTokens || getContextLimit(model);
 
@@ -857,7 +858,8 @@ export default function App({ onLogout }: AppProps) {
             onReset={handleReset}
             searchOpen={searchOpen}
             onSearchClose={closeSearch}
-            agentName={currentSessionDisplayName}
+            agentName={chatRoomNames.agentName}
+            sessionName={chatRoomNames.sessionName}
             agentHue={currentAgentHue}
             loadMore={loadMore}
             hasMore={hasMore}

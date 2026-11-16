@@ -289,14 +289,15 @@ describe('tool results from live events', () => {
     expect(shownResult(container).textContent).toBe('streamed body');
   });
 
-  it('streams a message carrying a tool result without sentinels or markup from the result', async () => {
+  /** Stream one assistant message whose only tool block is a result with this text, and render the preview. */
+  async function streamResult(text: string) {
     const delta = extractStreamDelta({
       state: 'delta',
       message: {
         role: 'assistant',
         content: [
-          { type: 'toolResult', content: [{ type: 'text', text: 'see <b>raw</b> & <img src=x onerror="alert(1)">' }] },
-          { type: 'text', text: 'Reading done' },
+          { type: 'toolResult', content: [{ type: 'text', text }] },
+          { type: 'text', text: 'Reading **done**' },
         ],
       },
     });
@@ -307,10 +308,31 @@ describe('tool results from live events', () => {
     act(() => result.current.scheduleStreamingUpdate(RUN, delta?.cleaned ?? ''));
     await waitFor(() => expect(result.current.stream.html).not.toBe(''));
 
-    const { container } = render(<StreamingMessage html={result.current.stream.html} elapsedMs={0} />);
-    expect(container.textContent).toContain('see <b>raw</b> & <img src=x onerror="alert(1)">');
-    expect(container.textContent).toContain('Reading done');
-    expect(container.querySelector('.msg-body b, .msg-body img')).toBeNull();
+    return render(<StreamingMessage html={result.current.stream.html} elapsedMs={0} />).container;
+  }
+
+  it('streams a tool result verbatim: no bold, code, links or HTML from inside it', async () => {
+    const text = 'see **bold** and `code` at [label](https://example.com/x) <b>raw</b> & <img src=x onerror="alert(1)">';
+    const container = await streamResult(text);
+
+    // The block keeps the line break before its closing fence, as renderMarkdown always has
+    const block = container.querySelector('.msg-body pre code');
+    expect(block?.textContent).toBe(text + '\n');
+    expect(container.querySelector('.msg-body pre :is(strong, em, a, b, img, code code)')).toBeNull();
+    // Markdown outside the result still renders
+    expect(container.querySelector('.msg-body > strong:last-of-type')?.textContent).toBe('done');
     expect(container.textContent).not.toMatch(LEAK);
+  });
+
+  it('streams a result that contains a fence inside its longer fence, with no stray backticks', async () => {
+    const text = 'before\n```js\nconst x = **1**;\n```\nafter';
+    const container = await streamResult(text);
+
+    const blocks = container.querySelectorAll('.msg-body pre');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].querySelector('code')?.textContent).toBe(text + '\n');
+    const outside = (container.querySelector('.msg-body')?.textContent ?? '').replace(blocks[0].textContent ?? '', '');
+    expect(outside).not.toContain('`');
+    expect(container.querySelector('.msg-body pre strong')).toBeNull();
   });
 });

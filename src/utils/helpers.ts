@@ -29,12 +29,24 @@ function setMarkdownCache(key: string, value: string): void {
 }
 
 /**
+ * A fenced code block: a run of three or more backticks and an optional
+ * language, closed by a run at least as long. A shorter run inside, such as a
+ * triple fence in a tool result fenced with four, is part of the code.
+ */
+const FENCED_BLOCK = /(?<!`)(`{3,})(\w*)\n([\s\S]*?)(?<!`)\1`*/g;
+const INLINE_CODE = /`([^`]+)`/g;
+/** A set-aside code span. Escaped text has no `<` (esc turns it into &lt;), so this cannot collide. */
+const SET_ASIDE = /<(\d+)>/g;
+
+/**
  * Lightweight regex-based markdown renderer for streaming and tool results.
  *
  * Supports fenced code blocks, inline code, bold, italic, links, and unordered
- * lists. Rich syntax highlighting lives in lazy-rendered markdown and diff
- * components so chat runtime projection does not pull highlight.js into the
- * initial bundle. Results are cached (LRU, max 200).
+ * lists. Code is set aside before the other substitutions, so what is inside it
+ * (a streamed tool result, for one) stays verbatim. Rich syntax highlighting
+ * lives in lazy-rendered markdown and diff components so chat runtime
+ * projection does not pull highlight.js into the initial bundle. Results are
+ * cached (LRU, max 200).
  */
 export function renderMarkdown(text: string): string {
   if (!text) return '';
@@ -42,20 +54,21 @@ export function renderMarkdown(text: string): string {
   const cached = getMarkdownCache(cacheKey);
   if (cached) return cached;
 
+  const code: string[] = [];
+  const setAside = (html: string) => `<${code.push(html) - 1}>`;
+
   let s = esc(text);
-  s = s.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+  s = s.replace(FENCED_BLOCK, (_, _fence, lang, body) => {
     const langLabel = lang ? `<span class="code-lang">${esc(lang)}</span>` : '';
-    return `<pre class="hljs">${langLabel}<code>${code}</code></pre>`;
+    return setAside(`<pre class="hljs">${langLabel}<code>${body}</code></pre>`);
   });
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(INLINE_CODE, (_, body: string) => setAside(`<code>${body.replace(/\n/g, '<br>')}</code>`));
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
-  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)<]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   s = s.replace(/^[-*] (.+)$/gm, '• $1');
   s = s.replace(/\n/g, '<br>');
-  s = s.replace(/<pre class="hljs">([\s\S]*?)<\/code><\/pre>/g, (_, inner) =>
-    '<pre class="hljs">' + inner.replace(/<br>/g, '\n') + '</code></pre>'
-  );
+  s = s.replace(SET_ASIDE, (_, index: string) => code[Number(index)] ?? '');
 
   setMarkdownCache(cacheKey, s);
   return s;

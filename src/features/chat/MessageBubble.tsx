@@ -227,7 +227,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           ) : (
             <div className="min-w-0 flex-1 text-foreground msg-body-intermediate">
               <Suspense fallback={<span className="text-[0.8rem] text-muted-foreground">Loading</span>}>
-                <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
+                <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} embedGoogleMaps onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
               </Suspense>
             </div>
           )}
@@ -274,7 +274,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
   const body = displayContent && (
     <div className={`msg-body text-foreground ${isUser ? 'block w-full min-w-0 max-w-full text-left' : ''}`}>
       <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading</div>}>
-        <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
+        <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} embedGoogleMaps onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
       </Suspense>
     </div>
   );

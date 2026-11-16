@@ -51,6 +51,15 @@ describe('systemNotice', () => {
     expect(container.textContent).toContain('Send error: Disconnected');
   });
 
+  it('shows markdown in an error message literally, so an image or link in it is never fetched or followed', async () => {
+    const text = 'Send error: ![x](https://example.invalid/pixel.png) see [docs](https://example.invalid) **now**';
+    const { container } = renderNotice(text, false);
+    expect(await screen.findByText(text, undefined, { timeout: 5000 })).toBeInTheDocument();
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('a')).toBeNull();
+    expect(container.querySelector('strong')).toBeNull();
+  });
+
   it('shows markup in an error message as text, never as elements', async () => {
     const { container } = renderNotice('Send error: <b>boom</b>', false);
     expect(await screen.findByText('Send error: <b>boom</b>', undefined, { timeout: 5000 })).toBeInTheDocument();

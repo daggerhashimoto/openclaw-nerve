@@ -107,11 +107,12 @@ export function generateMsgId(): string {
 
 /**
  * A system row raised in the browser (a failed send, reset or history read; a
- * session reset). The bubble renders rawText, so the text lives there; html
- * carries the same text escaped, since an error message can contain markup.
+ * session reset). The bubble renders rawText, so the text lives there, as plain
+ * text: an error message can carry markdown or markup that must never render
+ * (an image in it would be fetched). html carries the same text escaped.
  */
 export function systemNotice(text: string): ChatMsg {
-  return { msgId: generateMsgId(), role: 'system', html: esc(text), rawText: text, timestamp: new Date() };
+  return { msgId: generateMsgId(), role: 'system', html: esc(text), rawText: text, plainText: true, timestamp: new Date() };
 }
 
 export interface ChatMsg {
@@ -128,6 +129,8 @@ export interface ChatMsg {
   uploadAttachments?: UploadAttachmentDescriptor[];
   /** Optimistic: message is being sent, not yet confirmed */
   pending?: boolean;
+  /** Show rawText as plain text, not markdown (local notices quoting an error message) */
+  plainText?: boolean;
   /** Optimistic: message send failed */
   failed?: boolean;
   /** Temporary ID for optimistic updates; also the idempotency key chat.send carried */

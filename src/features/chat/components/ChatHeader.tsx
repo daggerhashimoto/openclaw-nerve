@@ -10,8 +10,10 @@ interface ChatHeaderProps {
   onReset?: () => void;
   onAbort: () => void;
   isGenerating: boolean;
-  /** Current session or agent display name, shown at the head of the row. */
+  /** The open session's agent, set as the nameplate at the head of the row. */
   agentName?: string;
+  /** The session's own name when it is not the agent's (a channel peer or room, a cron job); secondary text after the nameplate. */
+  sessionName?: string;
   /** Identity hue of the agent family; shows in the run-state pane while idle. */
   agentHue?: string;
   /** What the agent is doing while it generates. */
@@ -52,6 +54,7 @@ export function ChatHeader({
   onAbort,
   isGenerating,
   agentName = 'Agent',
+  sessionName,
   agentHue,
   processingStage = null,
   currentToolDescription = null,
@@ -129,6 +132,17 @@ export function ChatHeader({
           <span className={`nerve-nameplate min-w-0 max-w-[7rem] shrink truncate @max-[40rem]:shrink-[0.25] text-foreground sm:max-w-[16rem] ${agentHue ? 'name-hued' : ''}`} style={nameHueStyle(agentHue)} title={agentName}>
             {agentName}
           </span>
+          {/* Which session of the agent is open, when the session has a name of its own. Secondary
+              text in the reading face: it names a room, not a speaker, and gives up width first. */}
+          {sessionName && (
+            <span
+              className="min-w-0 max-w-[6rem] shrink-[3] truncate text-[0.8rem] text-muted-foreground sm:max-w-[14rem]"
+              title={sessionName}
+              data-testid="chat-session-name"
+            >
+              {sessionName}
+            </span>
+          )}
 
           <InlineSelect
             value={selectedModel}

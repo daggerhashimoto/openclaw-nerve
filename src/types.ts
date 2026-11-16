@@ -110,8 +110,12 @@ export interface TokenEntry {
   errorCount?: number;
 }
 
-/** Possible roles for chat messages */
-export type ChatMessageRole = 'user' | 'assistant' | 'tool' | 'toolResult' | 'system';
+/**
+ * Possible roles for chat messages. `custom` is an entry an OpenClaw extension
+ * recorded (see `customType`), such as `openclaw.nested-tool.v1`: one tool a
+ * code-mode exec script ran, its call and result as content blocks.
+ */
+export type ChatMessageRole = 'user' | 'assistant' | 'tool' | 'toolResult' | 'system' | 'custom';
 
 /** Discriminated content block types */
 export type ContentBlockType = 'text' | 'tool_use' | 'toolCall' | 'tool_result' | 'toolResult' | 'image' | 'thinking';
@@ -120,6 +124,8 @@ export type ContentBlockType = 'text' | 'tool_use' | 'toolCall' | 'tool_result' 
 export interface ChatMessage {
   role: ChatMessageRole;
   content: string | ContentBlock[];
+  /** On a `custom` entry: what recorded it, e.g. `openclaw.nested-tool.v1`. */
+  customType?: string;
   /** On a tool result: the tool that produced it. */
   toolName?: string;
   /** On a tool result: the id of the call it answers. */

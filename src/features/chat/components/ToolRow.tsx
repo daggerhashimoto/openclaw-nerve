@@ -38,6 +38,18 @@ interface ToolRowContentProps {
 }
 
 /**
+ * A tool's result under its open row, as plain text: React renders it as a text
+ * node, so markdown and angle brackets in the result are shown, never interpreted.
+ */
+export function ToolResultText({ text }: { text: string }) {
+  return (
+    <pre className="tool-result m-0 max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words font-mono text-[0.8rem] text-muted-foreground [overflow-wrap:anywhere]">
+      {text.trim() ? text : '(empty result)'}
+    </pre>
+  );
+}
+
+/**
  * The inside of a tool row: pane, verb, arguments, measure.
  * Wrap it in a button (expandable rows) or a div (plain rows) using toolRowClass.
  */

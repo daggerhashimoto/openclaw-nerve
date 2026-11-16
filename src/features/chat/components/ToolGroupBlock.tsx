@@ -5,7 +5,7 @@ import { Pane } from '@/components/ui/Pane';
 import { cn } from '@/lib/utils';
 import { extractEditBlocks, extractWriteBlocks } from '../edit-blocks';
 import type { ChatMsg, ToolGroupEntry } from '../types';
-import { ToolRowContent, toolRowButtonClass, toolRowClass } from './ToolRow';
+import { ToolResultText, ToolRowContent, toolRowButtonClass, toolRowClass } from './ToolRow';
 
 const DiffView = lazy(() => import('../DiffView').then((module) => ({ default: module.DiffView })));
 const FileContentView = lazy(() =>
@@ -26,11 +26,11 @@ const entryIndentClass = 'pl-6';
 function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
   const editBlocks = useMemo(() => extractEditBlocks(entry.rawText), [entry.rawText]);
   const writeBlocks = useMemo(() => extractWriteBlocks(entry.rawText), [entry.rawText]);
-  // A diff is the point of opening the group, so an edit entry starts open; file previews stay folded
+  // A diff is the point of opening the group, so an edit entry starts open; file previews and results stay folded
   const [expanded, setExpanded] = useState(() => editBlocks.length > 0);
-  const hasExpandableContent = editBlocks.length > 0 || writeBlocks.length > 0;
+  const hasExpandableContent = editBlocks.length > 0 || writeBlocks.length > 0 || entry.result !== undefined;
 
-  // Only edit (diff view) and write (file view) entries are expandable
+  // Entries with a diff, a file view or a result open; the rest are plain rows
   if (!hasExpandableContent) {
     return (
       <div className={cn(toolRowClass, entryIndentClass)}>
@@ -54,7 +54,7 @@ function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
                 ))}
               </div>
             </Suspense>
-          ) : (
+          ) : writeBlocks.length > 0 ? (
             <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading file preview</div>}>
               <div className="space-y-2">
                 {writeBlocks.map((block, i) => (
@@ -62,6 +62,8 @@ function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
                 ))}
               </div>
             </Suspense>
+          ) : (
+            <ToolResultText text={entry.result ?? ''} />
           )}
         </div>
       </CollapsibleContent>

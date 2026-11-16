@@ -5,7 +5,7 @@ import { sanitizeHtml } from '@/lib/sanitize';
 import { decodeHtmlEntities } from '@/lib/formatting';
 import { escapeRegex } from '@/lib/constants';
 import { extractEditBlocks, extractWriteBlocks } from './edit-blocks';
-import { ToolRowContent, toolRowButtonClass, toolRowClass } from './components/ToolRow';
+import { ToolResultText, ToolRowContent, toolRowButtonClass, toolRowClass } from './components/ToolRow';
 import type { ChatMsg } from './types';
 
 const DiffView = lazy(() => import('./DiffView').then((module) => ({ default: module.DiffView })));
@@ -78,6 +78,8 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
                   ))}
                 </div>
               </Suspense>
+            ) : msg.toolResult !== undefined ? (
+              <ToolResultText text={msg.toolResult} />
             ) : (
               <div
                 className="max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words text-muted-foreground [overflow-wrap:anywhere] [&_code]:font-mono [&_p]:m-0"
@@ -99,6 +101,7 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
 export const ToolCallBlock = memo(ToolCallBlockInner, (prev, next) => {
   if (prev.msg.rawText !== next.msg.rawText) return false;
   if (prev.msg.html !== next.msg.html) return false;
+  if (prev.msg.toolResult !== next.msg.toolResult) return false;
   if (prev.isCollapsed !== next.isCollapsed) return false;
   if (prev.searchQuery !== next.searchQuery) return false;
   return true;

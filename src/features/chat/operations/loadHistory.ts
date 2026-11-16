@@ -7,7 +7,14 @@
 import { generateMsgId } from '@/features/chat/types';
 import type { ChatMsg, ChatMsgRole, ToolGroupEntry, UploadAttachmentDescriptor } from '@/features/chat/types';
 import type { ChatMessage, ContentBlock, ChatHistoryResponse } from '@/types';
-import { extractText, describeToolUse, renderMarkdown, renderToolResults } from '@/utils/helpers';
+import {
+  extractText,
+  describeToolUse,
+  renderMarkdown,
+  isToolCallBlock,
+  isToolResultBlock,
+  toolResultText,
+} from '@/utils/helpers';
 import { decodeHtmlEntities } from '@/lib/formatting';
 import { extractTTSMarkers } from '@/features/tts/useTTS';
 import { extractChartMarkers } from '@/features/charts/extractCharts';
@@ -382,16 +389,59 @@ function splitSystemEvents(text: string): Array<{ role: 'event' | 'user'; text: 
   return segments;
 }
 
+// ─── Tool blocks ───────────────────────────────────────────────────────────────
+
+/** A tool call block as a tool row: what the call does, with its arguments kept for diffs and file views. */
+function toolCallRow(block: ContentBlock, timestamp: Date): ChatMsg {
+  const rawArgs = block.input || block.arguments || {};
+  const args: Record<string, unknown> = typeof rawArgs === 'string'
+    ? (() => { try { return JSON.parse(rawArgs); } catch { return { value: rawArgs }; } })()
+    : rawArgs;
+  const desc = describeToolUse(block.name || 'unknown', args) || block.name || 'unknown';
+  return {
+    role: 'tool',
+    html: renderMarkdown(desc),
+    rawText: `**tool:** \`${block.name}\`\n\`\`\`json\n${JSON.stringify(args, null, 2)}\n\`\`\``,
+    timestamp,
+    streaming: false,
+  };
+}
+
+/**
+ * Add a tool call or tool result block to one message's rows. A result goes on
+ * the call it answers: the call its toolCallId names, or else the call just
+ * before it. A result with no call in the message is a raw result row, which
+ * groupToolMessages treats like any other tool result.
+ */
+function appendToolBlock(rows: ChatMsg[], calls: Map<string, ChatMsg>, block: ContentBlock, timestamp: Date): void {
+  if (isToolCallBlock(block)) {
+    const row = toolCallRow(block, timestamp);
+    if (block.id) calls.set(block.id, row);
+    rows.push(row);
+    return;
+  }
+
+  const text = toolResultText(block);
+  const previous = rows[rows.length - 1];
+  const named = block.toolCallId ? calls.get(block.toolCallId) : undefined;
+  const call = named ?? (previous?.role === 'tool' ? previous : undefined);
+  if (call && call.toolResult === undefined) {
+    call.toolResult = text;
+    return;
+  }
+  rows.push({ role: 'toolResult', html: renderMarkdown(text), rawText: text, timestamp, streaming: false });
+}
+
 export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: string } = {}): ChatMsg[] {
   const ts = m.timestamp || m.createdAt || m.ts || null;
   const parsedTimestamp = ts ? new Date(ts as string | number) : null;
   const hasPersistedTimestamp = Boolean(parsedTimestamp && Number.isFinite(parsedTimestamp.getTime()));
   const timestamp = hasPersistedTimestamp ? parsedTimestamp as Date : new Date();
 
-  // Only interleave for assistant messages with array content containing tool_use
+  // Interleave assistant messages with array content containing tool calls, results or thinking
   if (m.role === 'assistant' && Array.isArray(m.content)) {
     const hasTools = (m.content as ContentBlock[]).some(
-      b => b.type === 'tool_use' || b.type === 'toolCall',
+      b => isToolCallBlock(b) || isToolResultBlock(b),
     );
     const hasThinking = (m.content as ContentBlock[]).some(
       b => b.type === 'thinking',
@@ -399,6 +449,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
 
     if (hasTools || hasThinking) {
       const result: ChatMsg[] = [];
+      const calls = new Map<string, ChatMsg>();
       let textBuffer = '';
       const contentImages = extractImageBlocks(m.content as ContentBlock[]);
 
@@ -412,7 +463,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
         if (cleaned.trim() || extractedImages.length > 0) {
           result.push({
             role: 'assistant',
-            html: renderToolResults(renderMarkdown(cleaned)),
+            html: renderMarkdown(cleaned),
             rawText: cleaned,
             timestamp,
             streaming: false,
@@ -438,20 +489,9 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
           }
         } else if (block.type === 'text' && block.text) {
           textBuffer += (textBuffer ? '\n' : '') + block.text;
-        } else if (block.type === 'tool_use' || block.type === 'toolCall') {
+        } else if (isToolCallBlock(block) || isToolResultBlock(block)) {
           flushText();
-          const rawArgs = block.input || block.arguments || {};
-          const args: Record<string, unknown> = typeof rawArgs === 'string'
-            ? (() => { try { return JSON.parse(rawArgs); } catch { return { value: rawArgs }; } })()
-            : rawArgs;
-          const desc = describeToolUse(block.name || 'unknown', args) || block.name || 'unknown';
-          result.push({
-            role: 'tool',
-            html: renderMarkdown(desc),
-            rawText: `**tool:** \`${block.name}\`\n\`\`\`json\n${JSON.stringify(args, null, 2)}\n\`\`\``,
-            timestamp,
-            streaming: false,
-          });
+          appendToolBlock(result, calls, block, timestamp);
         }
       }
       flushText(); // Final text block
@@ -483,7 +523,23 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
     }
   }
 
-  // Normal message (no tool calls, or non-assistant)
+  // Tool blocks in any other entry are tool rows as well: an OpenClaw nested tool
+  // entry (role `custom`) holds a call and its result, and an Anthropic-style user
+  // turn can carry results. The rest of the entry is read as a normal message.
+  if (m.role !== 'assistant' && Array.isArray(m.content)) {
+    const blocks = m.content as ContentBlock[];
+    const isToolBlock = (b: ContentBlock) => isToolCallBlock(b) || isToolResultBlock(b);
+    if (blocks.some(isToolBlock)) {
+      const toolRows: ChatMsg[] = [];
+      const calls = new Map<string, ChatMsg>();
+      for (const block of blocks.filter(isToolBlock)) appendToolBlock(toolRows, calls, block, timestamp);
+      const rest = blocks.filter((b) => !isToolBlock(b));
+      const restIsShown = rest.some((b) => (b.type === 'text' && Boolean(b.text?.trim())) || b.type === 'image');
+      return restIsShown ? [...toolRows, ...splitToolCallMessage({ ...m, content: rest }, options)] : toolRows;
+    }
+  }
+
+  // Normal message (no tool blocks)
   let rawText = extractText(m);
   if (m.role === 'assistant') {
     rawText = stripInternalRuntimeContext(rawText);
@@ -518,7 +574,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
         const { cleaned: chartCleaned, charts } = extractChartMarkers(ttsStripped);
         return {
           role: seg.role as ChatMsgRole,
-          html: renderToolResults(renderMarkdown(chartCleaned)),
+          html: renderMarkdown(chartCleaned),
           rawText: chartCleaned,
           timestamp,
           streaming: false,
@@ -550,7 +606,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
 
   return [{
     role: m.role as ChatMsgRole,
-    html: renderToolResults(renderMarkdown(text)),
+    html: renderMarkdown(text),
     rawText: text,
     timestamp,
     streaming: false,
@@ -602,7 +658,12 @@ export function groupToolMessages(msgs: ChatMsg[]): ChatMsg[] {
     } else if (filtered.length > 1) {
       const entries: ToolGroupEntry[] = filtered.map(t => {
         const plainPreview = decodeHtmlEntities(t.html.replace(/<[^>]*>/g, '').trim());
-        return { html: t.html, rawText: t.rawText, preview: plainPreview || t.rawText.slice(0, 80) };
+        return {
+          html: t.html,
+          rawText: t.rawText,
+          preview: plainPreview || t.rawText.slice(0, 80),
+          ...(t.toolResult !== undefined ? { result: t.toolResult } : {}),
+        };
       });
       grouped.push({
         role: 'tool',

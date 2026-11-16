@@ -242,9 +242,102 @@ describe('splitToolCallMessage', () => {
     expect(result[1].role).toBe('user');
     expect(result[1].rawText).toBe('Hello there\n\nSecond paragraph');
   });
+
+  describe('tool result blocks', () => {
+    // eslint-disable-next-line no-control-regex -- the old sentinels were NUL characters; this looks for them
+    const LEAK = /TOOLRESULT|\u0000|\uFFFD/;
+    /** No row carries a sentinel, a NUL or a replacement character. */
+    const expectNoSentinels = (rows: ChatMsg[]) => {
+      for (const row of rows) {
+        expect(row.rawText).not.toMatch(LEAK);
+        expect(row.html).not.toMatch(LEAK);
+      }
+    };
+
+    it('makes a nested tool entry (OpenClaw custom row) one tool row that holds its result', () => {
+      const msg = {
+        role: 'custom',
+        customType: 'openclaw.nested-tool.v1',
+        content: [
+          { type: 'toolCall', id: 'call-1', name: 'read', arguments: { path: 'memory/2026-11-15.md', optional: true } },
+          { type: 'toolResult', toolCallId: 'call-1', content: [{ type: 'text', text: 'Optional file not found: memory/2026-11-15.md.' }] },
+        ],
+      } as unknown as ChatMessage;
+
+      const result = splitToolCallMessage(msg);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].role).toBe('tool');
+      expect(result[0].html).toBe('reading memory/2026-11-15.md');
+      expect(result[0].rawText.startsWith('**tool:** `read`')).toBe(true);
+      expect(result[0].toolResult).toBe('Optional file not found: memory/2026-11-15.md.');
+      expectNoSentinels(result);
+    });
+
+    it('pairs results with their calls by id inside an assistant message', () => {
+      const msg: ChatMessage = {
+        role: 'assistant',
+        content: [
+          { type: 'toolCall', id: 'a', name: 'read', arguments: { path: 'a.md' } },
+          { type: 'toolCall', id: 'b', name: 'read', arguments: { path: 'b.md' } },
+          { type: 'toolResult', toolCallId: 'b', content: 'B body' },
+          { type: 'toolResult', toolCallId: 'a', content: 'A body' },
+          { type: 'text', text: 'Both read.' },
+        ],
+      };
+
+      const result = splitToolCallMessage(msg);
+
+      expect(result.map((row) => [row.role, row.toolResult])).toEqual([
+        ['tool', 'A body'],
+        ['tool', 'B body'],
+        ['assistant', undefined],
+      ]);
+      expectNoSentinels(result);
+    });
+
+    it('keeps a result with no call as a raw result row, and the message text as its own row', () => {
+      const msg: ChatMessage = {
+        role: 'user',
+        content: [
+          { type: 'tool_result', content: 'file body' },
+          { type: 'text', text: 'Carry on' },
+        ],
+      };
+
+      const result = splitToolCallMessage(msg);
+
+      expect(result.map((row) => [row.role, row.rawText])).toEqual([
+        ['toolResult', 'file body'],
+        ['user', 'Carry on'],
+      ]);
+      expectNoSentinels(result);
+    });
+
+    it('keeps an empty result as an empty string', () => {
+      const msg = {
+        role: 'custom',
+        content: [
+          { type: 'toolCall', id: 'c', name: 'exec', arguments: { command: 'true' } },
+          { type: 'toolResult', toolCallId: 'c', content: [] },
+        ],
+      } as unknown as ChatMessage;
+
+      expect(splitToolCallMessage(msg)[0].toolResult).toBe('');
+    });
+  });
 });
 
 describe('groupToolMessages', () => {
+  it('carries each call result into its group entry', () => {
+    const msgs: ChatMsg[] = [
+      { role: 'tool', html: 'reading a.md', rawText: '**tool:** `read`\n```json\n{}\n```', timestamp: new Date(), toolResult: 'A body' },
+      { role: 'tool', html: 'reading b.md', rawText: '**tool:** `read`\n```json\n{}\n```', timestamp: new Date() },
+    ];
+    const result = groupToolMessages(msgs);
+    expect(result[0].toolGroup?.map((entry) => entry.result)).toEqual(['A body', undefined]);
+  });
+
   it('returns non-tool messages unchanged', () => {
     const msgs: ChatMsg[] = [
       { role: 'user', html: '', rawText: 'hi', timestamp: new Date() },

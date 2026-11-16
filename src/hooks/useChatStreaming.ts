@@ -5,7 +5,7 @@
  * processing stage indicators, activity log, and thinking duration tracking.
  */
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { renderMarkdown, renderToolResults } from '@/utils/helpers';
+import { renderMarkdown } from '@/utils/helpers';
 import {
   buildActivityLogEntry,
   markToolCompleted,
@@ -61,7 +61,7 @@ export function useChatStreaming() {
     const flush = streamFlushRef.current;
     clearScheduledStreamFlush();
 
-    const html = renderToolResults(renderMarkdown(flush.text));
+    const html = renderMarkdown(flush.text);
     setStream(prev => ({
       ...prev,
       html,

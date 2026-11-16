@@ -94,6 +94,8 @@ export interface ToolGroupEntry {
   rawText: string;
   /** Human-friendly description from describeToolUse() */
   preview: string;
+  /** The call's result as plain text, when its transcript entry carried it (see ChatMsg.toolResult) */
+  result?: string;
 }
 
 import type { ChartData } from '@/features/charts/extractCharts';
@@ -128,6 +130,12 @@ export interface ChatMsg {
   terminalRunId?: string;
   /** Grouped tool calls: when set, this is a grouped tool bubble */
   toolGroup?: ToolGroupEntry[];
+  /**
+   * On a tool call row: the call's result as plain text, when the same transcript
+   * entry carried it (an OpenClaw nested tool entry holds both). Shown as text,
+   * never parsed as markdown or HTML; an empty string is an empty result.
+   */
+  toolResult?: string;
   /** Intermediate assistant message (narration between tool calls, not the final answer) */
   intermediate?: boolean;
   /** Extracted chart data for inline rendering */

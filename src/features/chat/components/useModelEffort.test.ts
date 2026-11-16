@@ -345,6 +345,104 @@ describe('useModelEffort', () => {
     expect(rpc).toHaveBeenCalledWith('sessions.patch', { key: 'agent:main:main', thinkingLevel: null });
     expect(updateSession).toHaveBeenCalledWith('agent:main:main', { thinkingLevel: undefined });
   });
+
+  describe('readable inherited effort label', () => {
+    const TELEGRAM_SESSION = 'agent:main:telegram:direct:424242';
+
+    function useTelegramSession(row: Record<string, unknown>, gatewayThinking = '--', updateSession = vi.fn()) {
+      mockUseGateway.mockReturnValue({
+        rpc: vi.fn().mockResolvedValue({ ok: true }),
+        connectionState: 'connected',
+        model: 'zai/glm-4.7',
+        thinking: gatewayThinking,
+      });
+      mockUseSessionContext.mockReturnValue({
+        currentSession: TELEGRAM_SESSION,
+        sessions: [{ key: TELEGRAM_SESSION, model: 'zai/glm-4.7', ...row }],
+        updateSession,
+      });
+    }
+
+    it('shows "Default" on the button and in the list when nothing says what the default resolves to', async () => {
+      // A direct session with no override, a gateway status without a thinking level, no
+      // thinking on the row and no transcript to read one from.
+      useTelegramSession({});
+
+      const { result } = renderHook(() => useModelEffort());
+
+      await waitFor(() => {
+        expect(result.current.selectedModel).toBe('primary');
+      });
+
+      expect(result.current.selectedEffort).toBe('thinkingDefault');
+      expect(result.current.selectedEffortLabel).toBe('Default');
+      expect(result.current.effortOptions[0]).toEqual({ value: 'thinkingDefault', label: 'Default' });
+      expect(result.current.selectedEffortLabel).toBe(result.current.effortOptions[0].label);
+      for (const option of result.current.effortOptions) {
+        expect(option.label).not.toContain('thinkingDefault');
+      }
+    });
+
+    it('names the level the gateway reports as the session default on the row', async () => {
+      useTelegramSession({ thinkingDefault: 'xhigh' });
+
+      const { result } = renderHook(() => useModelEffort());
+
+      await waitFor(() => {
+        expect(result.current.selectedEffortLabel).toBe('xhigh');
+      });
+
+      expect(result.current.selectedEffort).toBe('thinkingDefault');
+      expect(result.current.effortOptions[0]).toEqual({ value: 'thinkingDefault', label: 'xhigh (default)' });
+    });
+
+    it('does not read a row level equal to its own default as an override of the gateway default', async () => {
+      useTelegramSession({ thinking: 'xhigh', thinkingDefault: 'xhigh' }, 'medium');
+
+      const { result } = renderHook(() => useModelEffort());
+
+      await waitFor(() => {
+        expect(result.current.selectedEffortLabel).toBe('xhigh');
+      });
+
+      expect(result.current.selectedEffort).toBe('thinkingDefault');
+      expect(result.current.effortOptions[0]).toEqual({ value: 'thinkingDefault', label: 'xhigh (default)' });
+    });
+
+    it('shows an explicit level as that level, whatever the default is', async () => {
+      useTelegramSession({ thinkingLevel: 'low', thinkingDefault: 'xhigh' });
+
+      const { result } = renderHook(() => useModelEffort());
+
+      await waitFor(() => {
+        expect(result.current.selectedEffort).toBe('low');
+      });
+
+      expect(result.current.selectedEffortLabel).toBe('low');
+      expect(result.current.effortOptions[0]).toEqual({ value: 'thinkingDefault', label: 'xhigh (default)' });
+    });
+
+    it('goes back to the readable label when an explicit level is switched back to inherited', async () => {
+      const updateSession = vi.fn();
+      useTelegramSession({ thinkingLevel: 'high' }, '--', updateSession);
+
+      const { result } = renderHook(() => useModelEffort());
+
+      await waitFor(() => {
+        expect(result.current.selectedEffort).toBe('high');
+      });
+      expect(result.current.selectedEffortLabel).toBe('high');
+
+      await act(async () => {
+        await result.current.handleEffortChange('thinkingDefault');
+      });
+
+      expect(result.current.selectedEffort).toBe('thinkingDefault');
+      expect(result.current.selectedEffortLabel).toBe('Default');
+      expect(result.current.selectedEffortLabel).toBe(result.current.effortOptions[0].label);
+      expect(result.current.selectedEffortLabel).not.toContain('thinkingDefault');
+    });
+  });
 });
 
 describe('buildModelCatalogUiError', () => {

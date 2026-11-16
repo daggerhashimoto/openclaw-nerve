@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { forwardRef, useImperativeHandle, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
+import { AGENT_HUES, resetAgentHues, shadeFor } from '@/lib/agentColors';
 
 type SaveResult = { ok: boolean; conflict?: boolean };
 type SaveAllResult = { ok: boolean; failedPath?: string; conflict?: boolean };
@@ -319,15 +320,28 @@ vi.mock('@/features/chat/ChatPanel', () => ({
     onOpenBeadId?: (target: { beadId: string; workspaceAgentId?: string }) => void;
     showCommandPaletteButton?: boolean;
     onOpenCommandPalette?: () => void;
+    agentName?: string;
+    sessionName?: string;
+    agentHue?: string;
   }, ref) => {
     useImperativeHandle(ref, () => ({
       focusInput: vi.fn(),
       addWorkspacePath: addWorkspacePathSpy,
     }));
 
-    return props.showCommandPaletteButton
-      ? <button type="button" data-testid="chatbox-command-trigger" aria-label="Open command palette" onClick={() => props.onOpenCommandPalette?.()}>Open Commands From Composer</button>
-      : null;
+    return (
+      <>
+        <div
+          data-testid="chat-room-names"
+          data-agent-name={props.agentName ?? ''}
+          data-session-name={props.sessionName ?? ''}
+          data-agent-hue={props.agentHue ?? ''}
+        />
+        {props.showCommandPaletteButton
+          ? <button type="button" data-testid="chatbox-command-trigger" aria-label="Open command palette" onClick={() => props.onOpenCommandPalette?.()}>Open Commands From Composer</button>
+          : null}
+      </>
+    );
   }),
 }));
 
@@ -1119,5 +1133,94 @@ describe('App kanban visibility gating', () => {
 
     expect(screen.queryByTestId('chatbox-command-trigger')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('button', { name: /open command palette/i })).toHaveLength(0);
+  });
+});
+
+describe('App names the agent, not the session, in the open room', () => {
+  const TELEGRAM_DM = 'agent:main:telegram:direct:469914749';
+  const DISCORD_CHANNEL = 'agent:ops:discord:channel:1488657713385701408';
+  const harnessSessions = sessionContext.sessions;
+  const harnessAgentName = sessionContext.agentName;
+  const harnessCurrentSession = sessionContext.currentSession;
+
+  beforeEach(() => {
+    localStorage.clear();
+    resetAgentHues();
+    settingsContext.kanbanVisible = true;
+    settingsContext.commandPaletteButtonVisible = true;
+    mockViewport(false);
+    sessionContext.agentName = 'Jen';
+    sessionContext.sessions = [
+      { key: 'agent:main:main' },
+      { key: TELEGRAM_DM, label: 'Shaun (@shaunfi) id:469914749', displayName: 'Shaun (@shaunfi) id:469914749' },
+      { key: 'agent:main:subagent:abc', label: 'Release notes' },
+      { key: 'agent:ops:main', identityName: 'Varys' },
+      { key: DISCORD_CHANNEL, displayName: '#releases' },
+    ] as typeof harnessSessions;
+  });
+
+  afterEach(() => {
+    sessionContext.sessions = harnessSessions;
+    sessionContext.agentName = harnessAgentName;
+    sessionContext.currentSession = harnessCurrentSession;
+    resetAgentHues();
+  });
+
+  function roomNames() {
+    const el = screen.getByTestId('chat-room-names');
+    return {
+      agentName: el.getAttribute('data-agent-name'),
+      sessionName: el.getAttribute('data-session-name'),
+      agentHue: el.getAttribute('data-agent-hue'),
+    };
+  }
+
+  it('keeps the main room named and hued as its agent', () => {
+    sessionContext.currentSession = 'agent:main:main';
+
+    render(<App />);
+
+    expect(roomNames()).toEqual({ agentName: 'Jen (main)', sessionName: '', agentHue: AGENT_HUES[0].hex });
+  });
+
+  it('gives a Telegram direct session to the main agent, in the family hue, with the peer as the session name', () => {
+    sessionContext.currentSession = TELEGRAM_DM;
+
+    render(<App />);
+
+    expect(roomNames()).toEqual({
+      agentName: 'Jen (main)',
+      sessionName: 'Shaun (@shaunfi) id:469914749',
+      agentHue: AGENT_HUES[0].hex,
+    });
+  });
+
+  it('gives a Discord channel session to its agent family, in that family\'s hue', () => {
+    sessionContext.currentSession = 'agent:ops:main';
+    const { unmount } = render(<App />);
+    const opsRoot = roomNames();
+    unmount();
+
+    sessionContext.currentSession = DISCORD_CHANNEL;
+    render(<App />);
+
+    expect(roomNames()).toEqual({
+      agentName: 'Varys (ops)',
+      sessionName: '#releases',
+      agentHue: opsRoot.agentHue,
+    });
+    expect(opsRoot.agentHue).toMatch(/^#[0-9A-F]{6}$/i);
+  });
+
+  it('keeps a subagent room named by the subagent, in the lighter family shade', () => {
+    sessionContext.currentSession = 'agent:main:subagent:abc';
+
+    render(<App />);
+
+    expect(roomNames()).toEqual({
+      agentName: 'Release notes',
+      sessionName: '',
+      agentHue: shadeFor(AGENT_HUES[0].hex, 1),
+    });
   });
 });

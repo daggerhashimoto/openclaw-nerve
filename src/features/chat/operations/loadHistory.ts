@@ -7,8 +7,15 @@
 import { generateMsgId } from '@/features/chat/types';
 import type { ChatMsg, ChatMsgRole, ToolGroupEntry, UploadAttachmentDescriptor } from '@/features/chat/types';
 import type { ChatMessage, ContentBlock, ChatHistoryResponse } from '@/types';
-import { extractText, describeToolUse, renderMarkdown, renderToolResults } from '@/utils/helpers';
-import { decodeHtmlEntities } from '@/lib/formatting';
+import {
+  extractText,
+  describeToolUse,
+  renderMarkdown,
+  isToolCallBlock,
+  isToolResultBlock,
+  toolResultText,
+} from '@/utils/helpers';
+import { decodeHtmlEntities, esc } from '@/lib/formatting';
 import { extractTTSMarkers } from '@/features/tts/useTTS';
 import { extractChartMarkers } from '@/features/charts/extractCharts';
 import { extractEditBlocks, extractWriteBlocks } from '@/features/chat/edit-blocks';
@@ -382,16 +389,92 @@ function splitSystemEvents(text: string): Array<{ role: 'event' | 'user'; text: 
   return segments;
 }
 
+// ─── Tool blocks ───────────────────────────────────────────────────────────────
+
+/** A tool call block as a tool row: what the call does, with its arguments kept for diffs and file views. */
+function toolCallRow(block: ContentBlock, timestamp: Date): ChatMsg {
+  const rawArgs = block.input || block.arguments || {};
+  const args: Record<string, unknown> = typeof rawArgs === 'string'
+    ? (() => { try { return JSON.parse(rawArgs); } catch { return { value: rawArgs }; } })()
+    : rawArgs;
+  const desc = describeToolUse(block.name || 'unknown', args) || block.name || 'unknown';
+  return {
+    role: 'tool',
+    html: renderMarkdown(desc),
+    rawText: `**tool:** \`${block.name}\`\n\`\`\`json\n${JSON.stringify(args, null, 2)}\n\`\`\``,
+    timestamp,
+    streaming: false,
+  };
+}
+
+/** The row line for a result that has no call beside it: the tool, when known, and the start of the result. */
+function resultRowDescription(block: ContentBlock, text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  const preview = flat.length > 80 ? flat.slice(0, 80) + '\u2026' : flat;
+  const label = block.toolName ? `${block.toolName} result` : 'tool result';
+  return preview ? `${label}: ${preview}` : label;
+}
+
+/**
+ * Add a tool call or tool result block to one entry's rows. A result goes on
+ * the call it answers: the call its toolCallId names, or else the call just
+ * before it.
+ *
+ * A result with no call in the entry is a row of its own. Inside another entry
+ * (a nested tool entry, a user turn, an assistant message) it carries the result
+ * as toolResult, so it stays in the transcript and opens to its text like a
+ * call's result. An entry that is itself a tool result (role toolResult or tool)
+ * gives a raw result row with no toolResult, which groupToolMessages hides
+ * unless it holds edits or writes, as it hides top-level toolResult entries.
+ */
+function appendToolBlock(
+  rows: ChatMsg[],
+  calls: Map<string, ChatMsg>,
+  block: ContentBlock,
+  timestamp: Date,
+  options: { keepUnansweredResults: boolean },
+): void {
+  if (isToolCallBlock(block)) {
+    const row = toolCallRow(block, timestamp);
+    if (block.id) calls.set(block.id, row);
+    rows.push(row);
+    return;
+  }
+
+  const text = toolResultText(block);
+  const previous = rows[rows.length - 1];
+  const named = block.toolCallId ? calls.get(block.toolCallId) : undefined;
+  // Only a call row: a text run of a tool-role entry is a tool row too
+  const previousCall = previous?.role === 'tool' && previous.rawText.startsWith('**tool:**') ? previous : undefined;
+  const call = named ?? previousCall;
+  if (call && call.toolResult === undefined) {
+    call.toolResult = text;
+    return;
+  }
+  if (options.keepUnansweredResults) {
+    rows.push({
+      role: 'toolResult',
+      html: esc(resultRowDescription(block, text)),
+      rawText: text,
+      timestamp,
+      streaming: false,
+      toolResult: text,
+    });
+    return;
+  }
+  rows.push({ role: 'toolResult', html: renderMarkdown(text), rawText: text, timestamp, streaming: false });
+}
+
 export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: string } = {}): ChatMsg[] {
   const ts = m.timestamp || m.createdAt || m.ts || null;
   const parsedTimestamp = ts ? new Date(ts as string | number) : null;
   const hasPersistedTimestamp = Boolean(parsedTimestamp && Number.isFinite(parsedTimestamp.getTime()));
   const timestamp = hasPersistedTimestamp ? parsedTimestamp as Date : new Date();
 
-  // Only interleave for assistant messages with array content containing tool_use
+  // Interleave assistant messages with array content containing tool calls, results or thinking
   if (m.role === 'assistant' && Array.isArray(m.content)) {
     const hasTools = (m.content as ContentBlock[]).some(
-      b => b.type === 'tool_use' || b.type === 'toolCall',
+      b => isToolCallBlock(b) || isToolResultBlock(b),
     );
     const hasThinking = (m.content as ContentBlock[]).some(
       b => b.type === 'thinking',
@@ -399,6 +482,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
 
     if (hasTools || hasThinking) {
       const result: ChatMsg[] = [];
+      const calls = new Map<string, ChatMsg>();
       let textBuffer = '';
       const contentImages = extractImageBlocks(m.content as ContentBlock[]);
 
@@ -412,7 +496,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
         if (cleaned.trim() || extractedImages.length > 0) {
           result.push({
             role: 'assistant',
-            html: renderToolResults(renderMarkdown(cleaned)),
+            html: renderMarkdown(cleaned),
             rawText: cleaned,
             timestamp,
             streaming: false,
@@ -438,20 +522,9 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
           }
         } else if (block.type === 'text' && block.text) {
           textBuffer += (textBuffer ? '\n' : '') + block.text;
-        } else if (block.type === 'tool_use' || block.type === 'toolCall') {
+        } else if (isToolCallBlock(block) || isToolResultBlock(block)) {
           flushText();
-          const rawArgs = block.input || block.arguments || {};
-          const args: Record<string, unknown> = typeof rawArgs === 'string'
-            ? (() => { try { return JSON.parse(rawArgs); } catch { return { value: rawArgs }; } })()
-            : rawArgs;
-          const desc = describeToolUse(block.name || 'unknown', args) || block.name || 'unknown';
-          result.push({
-            role: 'tool',
-            html: renderMarkdown(desc),
-            rawText: `**tool:** \`${block.name}\`\n\`\`\`json\n${JSON.stringify(args, null, 2)}\n\`\`\``,
-            timestamp,
-            streaming: false,
-          });
+          appendToolBlock(result, calls, block, timestamp, { keepUnansweredResults: true });
         }
       }
       flushText(); // Final text block
@@ -483,7 +556,38 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
     }
   }
 
-  // Normal message (no tool calls, or non-assistant)
+  // Tool blocks in any other entry are tool rows as well: an OpenClaw nested tool
+  // entry (role `custom`) holds a call and its result, and an Anthropic-style user
+  // turn can carry results. The blocks are read in recorded order, as the assistant
+  // path reads them: each run of other blocks between tool blocks is read as a
+  // normal message of the entry's own role, and runs stay separate rows.
+  if (m.role !== 'assistant' && Array.isArray(m.content)) {
+    const blocks = m.content as ContentBlock[];
+    const isToolBlock = (b: ContentBlock) => isToolCallBlock(b) || isToolResultBlock(b);
+    if (blocks.some(isToolBlock)) {
+      const rows: ChatMsg[] = [];
+      const calls = new Map<string, ChatMsg>();
+      const keepUnansweredResults = m.role !== 'toolResult' && m.role !== 'tool';
+      let run: ContentBlock[] = [];
+      const flushRun = () => {
+        const shown = run.some((b) => (b.type === 'text' && Boolean(b.text?.trim())) || b.type === 'image');
+        if (shown) rows.push(...splitToolCallMessage({ ...m, content: run }, options));
+        run = [];
+      };
+      for (const block of blocks) {
+        if (!isToolBlock(block)) {
+          run.push(block);
+          continue;
+        }
+        flushRun();
+        appendToolBlock(rows, calls, block, timestamp, { keepUnansweredResults });
+      }
+      flushRun();
+      return rows;
+    }
+  }
+
+  // Normal message (no tool blocks)
   let rawText = extractText(m);
   if (m.role === 'assistant') {
     rawText = stripInternalRuntimeContext(rawText);
@@ -518,7 +622,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
         const { cleaned: chartCleaned, charts } = extractChartMarkers(ttsStripped);
         return {
           role: seg.role as ChatMsgRole,
-          html: renderToolResults(renderMarkdown(chartCleaned)),
+          html: renderMarkdown(chartCleaned),
           rawText: chartCleaned,
           timestamp,
           streaming: false,
@@ -550,7 +654,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
 
   return [{
     role: m.role as ChatMsgRole,
-    html: renderToolResults(renderMarkdown(text)),
+    html: renderMarkdown(text),
     rawText: text,
     timestamp,
     streaming: false,
@@ -576,12 +680,13 @@ export function groupToolMessages(msgs: ChatMsg[]): ChatMsg[] {
     if (toolBuffer.length === 0) return;
 
     // Filter out raw tool result messages that don't contain edit/write content.
-    // Tool_use entries have rawText starting with "**tool:**"; everything else is a raw result.
-    // Only keep raw results if they contain edit blocks (diffs) or write blocks (file views).
+    // Tool_use entries have rawText starting with "**tool:**"; a result that arrived inside
+    // another entry carries toolResult (see appendToolBlock). Both stay. Everything else is a
+    // raw result, kept only if it contains edit blocks (diffs) or write blocks (file views).
     const filtered: ChatMsg[] = [];
     for (const t of toolBuffer) {
       const isToolUse = t.rawText.startsWith('**tool:**');
-      if (isToolUse) {
+      if (isToolUse || t.toolResult !== undefined) {
         filtered.push(t);
       } else {
         // Raw result: only keep if it has edit/write content worth displaying
@@ -602,7 +707,12 @@ export function groupToolMessages(msgs: ChatMsg[]): ChatMsg[] {
     } else if (filtered.length > 1) {
       const entries: ToolGroupEntry[] = filtered.map(t => {
         const plainPreview = decodeHtmlEntities(t.html.replace(/<[^>]*>/g, '').trim());
-        return { html: t.html, rawText: t.rawText, preview: plainPreview || t.rawText.slice(0, 80) };
+        return {
+          html: t.html,
+          rawText: t.rawText,
+          preview: plainPreview || t.rawText.slice(0, 80),
+          ...(t.toolResult !== undefined ? { result: t.toolResult } : {}),
+        };
       });
       grouped.push({
         role: 'tool',

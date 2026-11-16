@@ -53,6 +53,34 @@ describe('ChatHeader', () => {
     expect(screen.getByText('Jen (main)')).toBeInTheDocument();
     expect(screen.getByText('GPT-4')).toBeInTheDocument();
     expect(screen.getByText('Balanced')).toBeInTheDocument();
+    // A main room is named by its agent alone.
+    expect(screen.queryByTestId('chat-session-name')).not.toBeInTheDocument();
+  });
+
+  it('sets the agent as the nameplate and names a channel session beside it as secondary text', () => {
+    vi.mocked(useModelEffort).mockReturnValue(defaultMockHook);
+
+    render(
+      <ChatHeader
+        onReset={mockOnReset}
+        onAbort={mockOnAbort}
+        isGenerating={false}
+        agentName="Jen (main)"
+        sessionName="Shaun (@shaunfi) id:469914749"
+        agentHue="#FFA567"
+      />
+    );
+
+    const nameplate = screen.getByText('Jen (main)');
+    expect(nameplate).toHaveClass('nerve-nameplate', 'name-hued');
+
+    const sessionName = screen.getByTestId('chat-session-name');
+    expect(sessionName).toHaveTextContent('Shaun (@shaunfi) id:469914749');
+    expect(sessionName).toHaveAttribute('title', 'Shaun (@shaunfi) id:469914749');
+    // The session's name is not a speaker: no display face, no family hue.
+    expect(sessionName).not.toHaveClass('nerve-nameplate');
+    expect(sessionName).not.toHaveClass('name-hued');
+    expect(sessionName).toHaveClass('text-muted-foreground');
   });
 
   it('reads idle with a dark pane when the agent is not generating', () => {
@@ -257,6 +285,31 @@ describe('ChatHeader', () => {
 
     expect(screen.getByRole('button', { name: 'Effort' })).toHaveTextContent('medium');
     expect(screen.getByRole('button', { name: 'Effort' })).not.toHaveTextContent('medium (default)');
+  });
+
+  it('reads the inherited effort as "Default", never as its raw selector value', () => {
+    const mockUseModelEffort = vi.mocked(useModelEffort);
+    mockUseModelEffort.mockReturnValue({
+      ...defaultMockHook,
+      selectedEffort: 'thinkingDefault',
+      selectedEffortLabel: 'Default',
+      effortOptions: [
+        { value: 'thinkingDefault', label: 'Default' },
+        { value: 'medium', label: 'medium' },
+      ],
+    });
+
+    render(
+      <ChatHeader
+        onReset={mockOnReset}
+        onAbort={mockOnAbort}
+        isGenerating={false}
+      />
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Effort' });
+    expect(trigger).toHaveTextContent('Default');
+    expect(trigger).not.toHaveTextContent('thinkingDefault');
   });
 
   it('shows abort button when generating', () => {

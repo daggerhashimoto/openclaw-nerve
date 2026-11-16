@@ -18,7 +18,7 @@ import { createContext, useContext, useCallback, useRef, useEffect, useState, us
 import { useGateway } from './GatewayContext';
 import { useSessionContext } from './SessionContext';
 import { useSettings } from './SettingsContext';
-import { getSessionKey, type GatewayEvent } from '@/types';
+import { getSessionKey, type ChatEventPayload, type GatewayEvent } from '@/types';
 import {
   getRootAgentSessionKey,
   isRootChildSession,
@@ -30,6 +30,7 @@ import {
   processChatMessages,
   buildUserMessage,
   sendChatMessage,
+  classifyCommittedRow,
   classifyStreamEvent,
   extractStreamDelta,
   extractFinalMessage,
@@ -46,6 +47,7 @@ import {
   resolveRunId,
   createFallbackRunId,
   updateHighestSeq,
+  HeartbeatRuns,
 } from '@/features/chat/operations';
 import { generateMsgId } from '@/features/chat/types';
 import type { ImageAttachment, ChatMsg, OutgoingUploadPayload } from '@/features/chat/types';
@@ -131,6 +133,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const activeRunIdRef = useRef<string | null>(null);
   const lastGatewaySeqRef = useRef<number | null>(null);
   const historyRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Heartbeats on the open session never show as a run; rows one commits wait until it is over.
+  const [heartbeatRuns] = useState(() => new HeartbeatRuns());
+  const heartbeatRowsPendingRef = useRef(false);
 
   // ─── Compose hooks ────────────────────────────────────────────────────────
   const msgHook = useChatMessages({ rpc, currentSessionRef });
@@ -192,6 +197,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     runsRef.current.clear();
     activeRunIdRef.current = null;
     lastGatewaySeqRef.current = null;
+    heartbeatRuns.settle();
+    heartbeatRowsPendingRef.current = false;
     if (historyRefreshRef.current) {
       clearTimeout(historyRefreshRef.current);
       historyRefreshRef.current = null;
@@ -209,6 +216,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         triggerRecovery('reconnect');
       }
       clearDisconnectState();
+      // A heartbeat's end may have been missed while away; history is read again on connect.
+      heartbeatRuns.settle();
+      heartbeatRowsPendingRef.current = false;
     }
 
     if (connectionState === 'reconnecting' && prevConnection === 'connected') {
@@ -222,12 +232,67 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     triggerRecovery,
     clearDisconnectState,
     captureDisconnectState,
+    heartbeatRuns,
   ]);
+
+  // ─── History refresh ──────────────────────────────────────────────────────
+  // Reconcile the transcript from history shortly after entries may have been
+  // committed (tool results, interim replies, rows the gateway reports). Bursts
+  // collapse into one read. A read waits for a full history load still out, and
+  // only the latest read started may apply: an older answer that comes back
+  // last would otherwise replace a newer transcript and drop committed rows.
+  const historyLoadRef = useRef<Promise<void> | null>(null);
+  const historyRefreshSeqRef = useRef(0);
+  const scheduleHistoryRefresh = useCallback(() => {
+    if (historyRefreshRef.current) clearTimeout(historyRefreshRef.current);
+    const capturedSession = currentSessionRef.current;
+    const capturedGeneration = getGeneration();
+    historyRefreshRef.current = setTimeout(async () => {
+      historyRefreshRef.current = null;
+      try {
+        await historyLoadRef.current;
+        const seq = ++historyRefreshSeqRef.current;
+        const recovered = await loadChatHistory({ rpc, sessionKey: capturedSession, limit: 100 });
+        if (seq !== historyRefreshSeqRef.current) return;
+        if (capturedSession !== currentSessionRef.current) return;
+        if (capturedGeneration !== getGeneration()) return;
+        if (recovered.length > 0) {
+          const merged = mergeRecoveredTail(getAllMessages(), recovered);
+          applyMessageWindow(merged, false);
+        }
+      } catch { /* best-effort */ }
+    }, 300);
+  }, [rpc, getGeneration, getAllMessages, applyMessageWindow]);
 
   useEffect(() => {
     if (connectionState !== 'connected' || !currentSession) return;
-    loadHistory(currentSession);
+    historyLoadRef.current = loadHistory(currentSession);
   }, [connectionState, currentSession, loadHistory]);
+
+  // ─── Subscribe to the open session ────────────────────────────────────────
+  // The gateway sends a run started outside the Control UI (a Telegram or
+  // Discord message, a heartbeat) only to connections subscribed to its
+  // session, along with the rows it commits (`session.message`). A new
+  // connection starts with no subscriptions, so subscribe on every connect.
+  useEffect(() => {
+    if (connectionState !== 'connected' || !currentSession) return;
+    const key = currentSession;
+    let current = true;
+    rpc('sessions.messages.subscribe', { key })
+      .then((res) => {
+        // A row committed after the first history read took its snapshot but
+        // before the subscription took effect arrives by neither path; read
+        // history once more now that later rows will be reported.
+        if (current && (res as { subscribed?: unknown } | null)?.subscribed !== false) scheduleHistoryRefresh();
+      })
+      .catch((err) => {
+        console.debug('[ChatContext] sessions.messages.subscribe failed:', err);
+      });
+    return () => {
+      current = false;
+      rpc('sessions.messages.unsubscribe', { key }).catch(() => { /* gone with the connection */ });
+    };
+  }, [connectionState, currentSession, rpc, scheduleHistoryRefresh]);
 
   // ─── Periodic history poll for sub-agent sessions ─────────────────────────
   const isSubagentSession = currentSession ? isSubagentSessionKey(currentSession) : false;
@@ -291,24 +356,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // ─── Subscribe to streaming events ────────────────────────────────────────
   useEffect(() => {
-    // Reconcile the transcript from history shortly after entries may have been
-    // committed (tool results, interim replies). Bursts collapse into one fetch.
-    const scheduleHistoryRefresh = () => {
-      if (historyRefreshRef.current) clearTimeout(historyRefreshRef.current);
-      const capturedSession = currentSessionRef.current;
-      const capturedGeneration = getGeneration();
-      historyRefreshRef.current = setTimeout(async () => {
-        historyRefreshRef.current = null;
-        try {
-          const recovered = await loadChatHistory({ rpc, sessionKey: capturedSession, limit: 100 });
-          if (capturedSession !== currentSessionRef.current) return;
-          if (capturedGeneration !== getGeneration()) return;
-          if (recovered.length > 0) {
-            const merged = mergeRecoveredTail(getAllMessages(), recovered);
-            applyMessageWindow(merged, false);
-          }
-        } catch { /* best-effort */ }
-      }, 300);
+    const flushHeartbeatRows = () => {
+      if (!heartbeatRowsPendingRef.current) return;
+      heartbeatRowsPendingRef.current = false;
+      scheduleHistoryRefresh();
     };
 
     return subscribe((msg: GatewayEvent) => {
@@ -322,10 +373,45 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       // Track gateway frame sequence. The counter is per connection and covers
       // every event frame, so it must advance before filtering by type or session.
       if (typeof msg.seq === 'number') {
-        if (hasSeqGap(lastGatewaySeqRef.current, msg.seq) && (isGeneratingRef.current || Boolean(activeRunIdRef.current))) {
+        const gap = hasSeqGap(lastGatewaySeqRef.current, msg.seq);
+        if (gap && (isGeneratingRef.current || Boolean(activeRunIdRef.current))) {
           triggerRecoveryOnce('frame-gap');
         }
+        // The lost frames may hold a heartbeat's end; stop holding its rows back.
+        if (gap && heartbeatRuns.running(currentSessionRef.current)) {
+          heartbeatRuns.settle();
+          flushHeartbeatRows();
+        }
         lastGatewaySeqRef.current = updateHighestSeq(lastGatewaySeqRef.current, msg.seq);
+      }
+
+      const committed = classifyCommittedRow(msg);
+      if (committed) {
+        if (committed.sessionKey !== currentSessionRef.current) return;
+        if (heartbeatRuns.running(committed.sessionKey)) {
+          heartbeatRowsPendingRef.current = true;
+          return;
+        }
+        // Rows of a run on screen are reconciled by its final; a new prompt
+        // (an inbound channel message) shows as soon as it is committed.
+        const runOnScreen = isGeneratingRef.current || activeRunIdRef.current !== null;
+        if (!runOnScreen || committed.role === 'user') scheduleHistoryRefresh();
+        return;
+      }
+
+      // Heartbeats stay quiet: no run on screen, indicator, ping, speech or recovery.
+      // A reply one commits is brought in from history once it is over.
+      const heartbeat = heartbeatRuns.observe(msg);
+      if (heartbeat) {
+        const sk = currentSessionRef.current;
+        if (heartbeat.ended && heartbeat.sessionKey === sk && !heartbeatRuns.running(sk)) {
+          const cp = (msg.payload || {}) as ChatEventPayload;
+          if (msg.event === 'chat' && cp.state === 'final' && extractFinalMessages(cp).length > 0) {
+            heartbeatRowsPendingRef.current = true;
+          }
+          flushHeartbeatRows();
+        }
+        return;
       }
 
       const classified = classifyStreamEvent(msg);
@@ -622,7 +708,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     resetPlayedSounds,
     handleFinalTTS,
     subscribe,
-    rpc,
+    heartbeatRuns,
+    scheduleHistoryRefresh,
   ]);
 
   // ─── Send message ─────────────────────────────────────────────────────────

@@ -161,6 +161,37 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     await waitFor(() => expect(historyCalls()).toBeGreaterThan(0));
   });
 
+  it('keeps the newer transcript when an older history refresh answers last', async () => {
+    const { emit, getChat, rpcMock } = await setup();
+    const base = rpcMock.getMockImplementation()!;
+    const reads: Array<(value: unknown) => void> = [];
+    rpcMock.mockImplementation((method: string) => (
+      method === 'chat.history' ? new Promise((resolve) => { reads.push(resolve); }) : base(method)
+    ));
+    const prompt = { role: 'user', content: 'Check the disk', timestamp: NOW, __openclaw: { id: 'e1' } };
+    const interim = { role: 'assistant', content: [{ type: 'text', text: 'Checking it now.' }], timestamp: NOW + 1_000, __openclaw: { id: 'e2', runId: RUN } };
+    const toolResult = (toolCallId: string) => ({ sessionKey: SESSION, runId: RUN, stream: 'tool', data: { phase: 'result', name: 'exec', toolCallId } });
+
+    emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }));
+    // Two tool results in one turn: the second refresh starts while the first read is still out.
+    emit('agent', toolResult('t1'));
+    await waitFor(() => expect(reads).toHaveLength(1));
+    emit('agent', toolResult('t2'));
+    await waitFor(() => expect(reads).toHaveLength(2));
+
+    await act(async () => {
+      reads[1]({ messages: [prompt, interim] });
+    });
+    await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toEqual(['Check the disk', 'Checking it now.']));
+
+    // The first read, taken before the interim reply was committed, answers last.
+    await act(async () => {
+      reads[0]({ messages: [prompt] });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Check the disk', 'Checking it now.']);
+  });
+
   it('names a web search in the activity log once its result says what was searched', async () => {
     const { emit, getChat } = await setup();
     const tool = (data: Record<string, unknown>) => ({ sessionKey: SESSION, runId: RUN, stream: 'tool', data });

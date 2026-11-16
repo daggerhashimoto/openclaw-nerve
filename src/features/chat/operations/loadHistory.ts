@@ -444,7 +444,9 @@ function appendToolBlock(
   const text = toolResultText(block);
   const previous = rows[rows.length - 1];
   const named = block.toolCallId ? calls.get(block.toolCallId) : undefined;
-  const call = named ?? (previous?.role === 'tool' ? previous : undefined);
+  // Only a call row: a text run of a tool-role entry is a tool row too
+  const previousCall = previous?.role === 'tool' && previous.rawText.startsWith('**tool:**') ? previous : undefined;
+  const call = named ?? previousCall;
   if (call && call.toolResult === undefined) {
     call.toolResult = text;
     return;
@@ -556,20 +558,32 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
 
   // Tool blocks in any other entry are tool rows as well: an OpenClaw nested tool
   // entry (role `custom`) holds a call and its result, and an Anthropic-style user
-  // turn can carry results. The rest of the entry is read as a normal message.
+  // turn can carry results. The blocks are read in recorded order, as the assistant
+  // path reads them: each run of other blocks between tool blocks is read as a
+  // normal message of the entry's own role, and runs stay separate rows.
   if (m.role !== 'assistant' && Array.isArray(m.content)) {
     const blocks = m.content as ContentBlock[];
     const isToolBlock = (b: ContentBlock) => isToolCallBlock(b) || isToolResultBlock(b);
     if (blocks.some(isToolBlock)) {
-      const toolRows: ChatMsg[] = [];
+      const rows: ChatMsg[] = [];
       const calls = new Map<string, ChatMsg>();
       const keepUnansweredResults = m.role !== 'toolResult' && m.role !== 'tool';
-      for (const block of blocks.filter(isToolBlock)) {
-        appendToolBlock(toolRows, calls, block, timestamp, { keepUnansweredResults });
+      let run: ContentBlock[] = [];
+      const flushRun = () => {
+        const shown = run.some((b) => (b.type === 'text' && Boolean(b.text?.trim())) || b.type === 'image');
+        if (shown) rows.push(...splitToolCallMessage({ ...m, content: run }, options));
+        run = [];
+      };
+      for (const block of blocks) {
+        if (!isToolBlock(block)) {
+          run.push(block);
+          continue;
+        }
+        flushRun();
+        appendToolBlock(rows, calls, block, timestamp, { keepUnansweredResults });
       }
-      const rest = blocks.filter((b) => !isToolBlock(b));
-      const restIsShown = rest.some((b) => (b.type === 'text' && Boolean(b.text?.trim())) || b.type === 'image');
-      return restIsShown ? [...toolRows, ...splitToolCallMessage({ ...m, content: rest }, options)] : toolRows;
+      flushRun();
+      return rows;
     }
   }
 

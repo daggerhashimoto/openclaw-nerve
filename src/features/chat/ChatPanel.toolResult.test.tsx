@@ -255,6 +255,27 @@ describe('tool results next to diffs and file previews', () => {
   });
 });
 
+describe('tool results in transcript order', () => {
+  it('keeps text, results and more text of an entry in the order they were recorded', async () => {
+    const mixed = entry('u-2', 3, {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Before the result' },
+        { type: 'tool_result', content: 'file body' },
+        { type: 'text', text: 'After the result' },
+      ],
+    });
+    render(panel(processChatMessages([prompt, mixed])));
+
+    const before = await screen.findByText('Before the result', undefined, { timeout: 5000 });
+    const after = await screen.findByText('After the result', undefined, { timeout: 5000 });
+    const result = toolRow(/tool result\s*file body/);
+
+    expect(before.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(result.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
 describe('tool results from live events', () => {
   it('shows a nested tool row that arrives with a chat final', () => {
     const payload: ChatEventPayload = {

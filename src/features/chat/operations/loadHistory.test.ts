@@ -331,6 +331,64 @@ describe('splitToolCallMessage', () => {
       expect(result.map((row) => [row.role, row.rawText, row.toolResult])).toEqual([['toolResult', 'block output', undefined]]);
     });
 
+    it('keeps the recorded order of text and tool blocks in a user entry, each text run its own row', () => {
+      const msg: ChatMessage = {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'before' },
+          { type: 'tool_result', content: 'file body' },
+          { type: 'text', text: 'after' },
+        ],
+      };
+
+      const result = splitToolCallMessage(msg);
+
+      expect(result.map((row) => [row.role, row.toolResult ?? row.rawText])).toEqual([
+        ['user', 'before'],
+        ['toolResult', 'file body'],
+        ['user', 'after'],
+      ]);
+    });
+
+    it('keeps the order in a custom entry, text runs keeping the entry role and results finding their call by id', () => {
+      const msg = {
+        role: 'custom',
+        content: [
+          { type: 'text', text: 'intro' },
+          { type: 'toolCall', id: 'c-1', name: 'read', arguments: { path: 'a.md' } },
+          { type: 'text', text: 'between' },
+          { type: 'toolResult', toolCallId: 'c-1', content: 'A body' },
+          { type: 'text', text: 'outro' },
+        ],
+      } as unknown as ChatMessage;
+
+      const result = splitToolCallMessage(msg);
+
+      expect(result.map((row) => [row.role, row.toolResult ?? row.rawText])).toEqual([
+        ['custom', 'intro'],
+        ['tool', 'A body'],
+        ['custom', 'between'],
+        ['custom', 'outro'],
+      ]);
+    });
+
+    it('pairs a result without an id only with a call just before it, not with a text row', () => {
+      const msg: ChatMessage = {
+        role: 'tool',
+        content: [
+          { type: 'text', text: 'note' },
+          { type: 'tool_result', content: 'out' },
+        ],
+      };
+
+      const result = splitToolCallMessage(msg);
+
+      expect(result.map((row) => [row.role, row.rawText, row.toolResult])).toEqual([
+        ['tool', 'note', undefined],
+        ['toolResult', 'out', undefined],
+      ]);
+    });
+
     it('keeps an empty result as an empty string', () => {
       const msg = {
         role: 'custom',

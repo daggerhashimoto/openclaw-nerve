@@ -328,8 +328,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return descendants;
   }, []);
 
-  const listAuthoritativeSessions = useCallback(async () => {
-    if (connectionState !== 'connected') return sessionsRef.current;
+  // Null when the gateway could not be asked, so a refresh can tell a failure from an answer.
+  const fetchAuthoritativeSessions = useCallback(async (): Promise<Session[] | null> => {
+    if (connectionState !== 'connected') return null;
     try {
       const [res, hiddenCronSessions] = await Promise.all([
         rpc('sessions.list', { limit: FULL_SESSIONS_LIMIT }) as Promise<SessionsListResponse>,
@@ -362,9 +363,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       );
     } catch (err) {
       console.debug('[SessionContext] Failed to fetch authoritative session list:', err);
-      return sessionsRef.current;
+      return null;
     }
   }, [connectionState, fetchHiddenCronSessions, mergeSessionLists, rpc]);
+
+  // Spawn and delete fall back to the list on screen when the gateway cannot be asked.
+  const listAuthoritativeSessions = useCallback(
+    async () => (await fetchAuthoritativeSessions()) ?? sessionsRef.current,
+    [fetchAuthoritativeSessions],
+  );
 
   const setGranularStatus = useCallback((sessionKey: string, state: GranularAgentState) => {
     if (!sessionKey) return;
@@ -573,8 +580,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (connectionState !== 'connected') return;
     const refreshId = ++refreshStartedRef.current;
     try {
-      const newSessions = await listAuthoritativeSessions();
-      if (refreshId <= refreshLandedRef.current) return;
+      const newSessions = await fetchAuthoritativeSessions();
+      if (!newSessions || refreshId <= refreshLandedRef.current) return;
       refreshLandedRef.current = refreshId;
       const nextCurrentSession = pickDefaultSessionKey(newSessions, currentSessionRef.current);
       
@@ -618,7 +625,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } finally {
       setSessionsLoading(false);
     }
-  }, [connectionState, listAuthoritativeSessions, setCurrentSession]);
+  }, [connectionState, fetchAuthoritativeSessions, setCurrentSession]);
 
   const refreshSessionsRef = useRef(refreshSessions);
   useEffect(() => {

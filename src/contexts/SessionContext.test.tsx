@@ -680,6 +680,50 @@ describe('SessionContext', () => {
     });
   });
 
+  it('lets an older refresh land when a newer one failed to reach the gateway', async () => {
+    let listed = [
+      { sessionKey: 'agent:main:main', label: 'Main' },
+      { sessionKey: 'agent:main:subagent:worker', label: 'Worker' },
+    ];
+    let nextFullList: 'answer' | 'hold' | 'fail' = 'answer';
+    let releaseHeldList = () => {};
+    rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method !== 'sessions.list') return {};
+      if (params?.spawnedBy) return { sessions: [] };
+      const mode = nextFullList;
+      nextFullList = 'answer';
+      if (mode === 'fail') throw new Error('gateway timeout');
+      const answer = { sessions: listed };
+      if (mode === 'hold') await new Promise<void>((resolve) => { releaseHeldList = resolve; });
+      return answer;
+    });
+
+    render(
+      <SessionProvider>
+        <SessionRefreshProbe />
+        <SessionLabels />
+      </SessionProvider>,
+    );
+    await screen.findByText('Worker');
+
+    listed = [{ sessionKey: 'agent:main:main', label: 'Main' }];
+    nextFullList = 'hold';
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+    });
+    nextFullList = 'fail';
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      releaseHeldList();
+    });
+
+    // The only answer the gateway gave since the worker went away must reach the list.
+    await waitFor(() => expect(screen.queryByText('Worker')).not.toBeInTheDocument());
+  });
+
   it('applies only the newest of two overlapping refreshes when the older one answers last', async () => {
     let listed = [
       { sessionKey: 'agent:main:main', label: 'Main' },

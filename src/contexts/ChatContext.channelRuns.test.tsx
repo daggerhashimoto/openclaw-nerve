@@ -394,5 +394,29 @@ describe('ChatContext with runs started outside Nerve (#334)', () => {
       await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Disk usage is at 91%.']));
       expectQuiet(getChat());
     });
+
+    it('holds back a heartbeat\'s rows again after leaving the session and coming back mid-heartbeat', async () => {
+      const history: unknown[] = [earlier];
+      const { emit, getChat, calls, settle, rerenderWith } = await setup(history, OTHER);
+
+      emit('agent', heartbeatAgent('lifecycle', { phase: 'start', startedAt: NOW }));
+      rerenderWith({ currentSession: TELEGRAM });
+      await settle();
+      rerenderWith({ currentSession: OTHER });
+      await settle();
+      const loads = calls('chat.history').length;
+
+      // The heartbeat goes on; its next frame shows it is still under way.
+      emit('agent', heartbeatAgent('item', { kind: 'tool', phase: 'start', name: 'read', toolCallId: 'hb-tc-2' }));
+      history.push(alert);
+      emit('session.message', committed(alert, { sessionKey: OTHER, runId: HEARTBEAT }));
+      await settle();
+      expect(calls('chat.history').length).toBe(loads);
+      expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier']);
+
+      emit('agent', heartbeatAgent('lifecycle', { phase: 'end', startedAt: NOW, endedAt: NOW + 5_100 }));
+      await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'Disk usage is at 91%.']));
+      expectQuiet(getChat());
+    });
   });
 });

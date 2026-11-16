@@ -52,6 +52,25 @@ describe('HeartbeatRuns', () => {
     expect(runs.observe(frame('chat', { runId: 'hb', sessionKey: MAIN, state: 'final' }))).not.toBeNull();
   });
 
+  it('takes a known heartbeat as under way again from a later frame that does not end it', () => {
+    const runs = new HeartbeatRuns();
+    runs.observe(lifecycle('hb', 'start', true));
+    runs.settle();
+
+    runs.observe(frame('agent', { runId: 'hb', sessionKey: MAIN, stream: 'item', data: { kind: 'tool', phase: 'start' }, isHeartbeat: true }));
+    expect(runs.running(MAIN)).toBe(true);
+    runs.observe(lifecycle('hb', 'end', true));
+    expect(runs.running(MAIN)).toBe(false);
+
+    // Joined after the start frame: the first frame seen still marks the heartbeat under way.
+    runs.observe(frame('agent', { runId: 'hb-2', sessionKey: MAIN, stream: 'thinking', data: {}, isHeartbeat: true }));
+    expect(runs.running(MAIN)).toBe(true);
+    // A chat frame alone does not, since a last delta can follow the lifecycle end.
+    runs.observe(lifecycle('hb-2', 'end', true));
+    runs.observe(frame('chat', { runId: 'hb-2', sessionKey: MAIN, state: 'delta' }));
+    expect(runs.running(MAIN)).toBe(false);
+  });
+
   it('remembers a bounded number of runs', () => {
     const runs = new HeartbeatRuns(2);
     for (const id of ['a', 'b', 'c']) {

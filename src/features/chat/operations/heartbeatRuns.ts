@@ -53,8 +53,11 @@ export class HeartbeatRuns {
     let ended: boolean;
     if (event.event === 'agent') {
       const phase = payload.stream === 'lifecycle' ? payload.data?.phase : undefined;
-      if (phase === 'start') this.underWay.set(runId, sessionKey);
       ended = phase === 'end' || phase === 'error';
+      // Any agent frame short of the end shows the run under way, also after a
+      // settle or when its start frame was missed. A chat frame does not: the
+      // last delta can follow the lifecycle end.
+      if (!ended) this.underWay.set(runId, sessionKey);
     } else {
       ended = typeof payload.state === 'string' && TERMINAL_CHAT_STATES.has(payload.state);
     }

@@ -427,6 +427,27 @@ describe('processChatMessages', () => {
     });
   });
 
+  describe('the reply that ends a run', () => {
+    it('keeps the run id on the reply the gateway recorded as the run\'s terminal one', () => {
+      const result = processChatMessages([
+        { role: 'user', content: 'Check it', __openclaw: { id: 'u-1', runId: 'run-1' } },
+        { role: 'assistant', content: 'Looking.', __openclaw: { id: 'a-1', runId: 'run-1' } },
+        {
+          role: 'assistant',
+          content: [{ type: 'thinking', thinking: 'Done checking.' }, { type: 'text', text: 'All good.' }],
+          __openclaw: { id: 'a-2', runId: 'run-1', runTerminal: true },
+        },
+      ]);
+
+      expect(result.map((m) => [m.rawText, m.terminalRunId])).toEqual([
+        ['Check it', undefined],
+        ['Looking.', undefined],
+        ['Done checking.', undefined],
+        ['All good.', 'run-1'],
+      ]);
+    });
+  });
+
   it('runs the full pipeline: filter → split → group → tag', () => {
     const msgs: ChatMessage[] = [
       { role: 'user', content: 'Hello' },

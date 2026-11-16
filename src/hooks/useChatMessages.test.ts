@@ -133,6 +133,97 @@ describe('mergeFinalMessages', () => {
 
     expect(texts(result)).toEqual(['Question', 'Done.', LATER_ROW, 'Done.']);
   });
+
+  describe('a live final and the reply history recorded as its run\'s terminal one', () => {
+    /** A reply as chat.history yields it, recorded by run `runId`; `terminal` marks the run's last reply. */
+    function runReply(text: string, id: string, ts: number, runId: string, terminal = true): ChatMsg {
+      const [row] = processChatMessages([{
+        role: 'assistant',
+        content: text,
+        timestamp: ts,
+        __openclaw: { id, runId, ...(terminal ? { runTerminal: true } : {}) },
+      }]);
+      return row;
+    }
+
+    it('keeps one copy when the final arrives after the next prompt is on screen', () => {
+      // A history read showed the reply, the operator sent the next prompt, then the final came.
+      const existing = [
+        historyRow('user', 'Audit task 10', 'e1', T),
+        runReply('Task 10 audit is verified complete.', 'e2', T + 18_000, 'run-1'),
+        historyRow('user', 'Thanks, next one', 'e3', T + 25_000),
+      ];
+
+      const result = mergeFinalMessages(existing, [liveRow('Task 10 audit is verified complete.', T + 26_000)], 'run-1');
+
+      expect(result).toEqual(existing);
+    });
+
+    it('keeps one copy when the final arrives minutes after the reply was recorded', () => {
+      // A compaction ran between the reply and the end of the run, so the final is 85s late.
+      const existing = [
+        historyRow('user', 'Audit task 10', 'e1', T),
+        runReply('Task 10 audit is verified complete.', 'e2', T + 18_000, 'run-1'),
+      ];
+
+      const result = mergeFinalMessages(existing, [liveRow('Task 10 audit is verified complete.', T + 103_000)], 'run-1');
+
+      expect(result).toEqual(existing);
+    });
+
+    it('keeps the history copy, with the image only history has', () => {
+      const [withImage] = processChatMessages([{
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'Here it is.' },
+          { type: 'image', url: '/api/chat/media/outgoing/s/1/full', alt: 'image.png' },
+        ],
+        timestamp: T + 1000,
+        __openclaw: { id: 'e2', runId: 'run-1', runTerminal: true },
+      }]);
+      const existing = [historyRow('user', 'Make an image', 'e1', T), withImage, historyRow('user', 'Nice', 'e3', T + 5000)];
+
+      const result = mergeFinalMessages(existing, [liveRow('Here it is.', T + 6000)], 'run-1');
+
+      expect(result).toEqual(existing);
+    });
+
+    it('keeps the same reply from another run as a second row', () => {
+      const existing = [
+        historyRow('user', 'First request', 'e1', T),
+        runReply('Done.', 'e2', T + 1000, 'run-1'),
+        historyRow('user', 'Second request', 'e3', T + 3000),
+      ];
+
+      const result = mergeFinalMessages(existing, [liveRow('Done.', T + 5000)], 'run-2');
+
+      expect(texts(result)).toEqual(['First request', 'Done.', 'Second request', 'Done.']);
+    });
+
+    it('does not take an interim reply of the run for its final', () => {
+      const existing = [
+        historyRow('user', 'Write about clouds', 'e1', T),
+        runReply('Clouds form.', 'e2', T + 1000, 'run-1', false),
+        historyRow('user', 'And rain?', 'e3', T + 3000),
+      ];
+
+      const result = mergeFinalMessages(existing, [liveRow('Clouds form.', T + 5000)], 'run-1');
+
+      expect(texts(result)).toEqual(['Write about clouds', 'Clouds form.', 'And rain?', 'Clouds form.']);
+    });
+
+    it('does not take the run\'s final reply for a final with other text', () => {
+      const existing = [
+        historyRow('user', 'Write about clouds', 'e1', T),
+        runReply('Rain falls.', 'e2', T + 1000, 'run-1'),
+        historyRow('user', 'And snow?', 'e3', T + 3000),
+      ];
+
+      const result = mergeFinalMessages(existing, [liveRow('Clouds form.', T + 5000)], 'run-1');
+
+      expect(texts(result)).toEqual(['Write about clouds', 'Rain falls.', 'And snow?', 'Clouds form.']);
+    });
+  });
 });
 
 describe('isLikelyDuplicateMessage', () => {

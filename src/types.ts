@@ -145,6 +145,8 @@ export interface ChatMessage {
     idempotencyKey?: string;
     /** Agent run that produced the message; changes when a new turn starts. */
     runId?: string;
+    /** Set on the reply that ended its run: the one the run's live final delivered. */
+    runTerminal?: boolean;
     /** Set on the first visible message after the gateway hid a turn's prompt (heartbeat polls). */
     turnBoundary?: boolean;
     /** The transcript entry's own id; the same on every chat.history read. */

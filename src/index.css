@@ -1376,49 +1376,6 @@ html[data-theme="light"] .nerve-horizon {
   min-width: 0;
 }
 
-/* Tool result collapsible */
-.tool-result-details {
-  margin: 8px 0;
-  background: var(--color-muted);
-  border: 1px solid var(--color-border);
-  border-radius: 3px;
-  padding: 0;
-  overflow: hidden;
-}
-.tool-result-details summary {
-  cursor: pointer;
-  color: var(--color-muted-foreground);
-  font-size: 0.8rem;
-  font-family: var(--font-mono);
-  user-select: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-height: var(--row-unit);
-  padding: 4px 10px;
-  background: transparent;
-  transition:
-    background-color var(--switch-duration) var(--switch-ease),
-    color var(--switch-duration) var(--switch-ease);
-}
-.tool-result-details summary:hover {
-  color: var(--color-foreground);
-  background: var(--color-raised);
-}
-.tool-result-details[open] summary {
-  margin-bottom: 0;
-  border-bottom: 1px solid var(--color-border);
-}
-.tool-result-body {
-  font-size: 0.8rem;
-  font-family: var(--font-mono);
-  opacity: 0.85;
-  padding: 8px 10px;
-  max-height: 300px;
-  overflow-y: auto;
-  background: color-mix(in srgb, var(--color-background) 90%, transparent);
-}
-
 /* Streaming cursor: a small live pane that switches on and off while the agent writes.
    It ends the last block's text line; bare text bodies fall back to the body itself. */
 .streaming .msg-body > :last-child::after,
@@ -2076,7 +2033,7 @@ html[data-world="workbench"][data-theme="light"] {
   html[data-world="workbench"] body {
     letter-spacing: -0.025em;
   }
-  html[data-world="workbench"] :is(code, pre, kbd, samp, .font-mono, .cockpit-code, .cockpit-kbd, .code-diff-view, .diff-header, .file-content-header, .code-lang, .nerve-divider, .nerve-fleet-words, .tool-result-body, .cm-editor) {
+  html[data-world="workbench"] :is(code, pre, kbd, samp, .font-mono, .cockpit-code, .cockpit-kbd, .code-diff-view, .diff-header, .file-content-header, .code-lang, .nerve-divider, .nerve-fleet-words, .cm-editor) {
     letter-spacing: normal;
   }
 }

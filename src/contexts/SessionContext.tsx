@@ -34,7 +34,7 @@ const SESSIONS_SPAWNED_LIMIT = 500;
 // column, the fleet pane and the session info panel read has to be here (run state included).
 const DIFFED_SESSION_FIELDS = [
   'state', 'agentState', 'status', 'busy', 'processing', 'updatedAt',
-  'totalTokens', 'inputTokens', 'outputTokens', 'contextTokens', 'model', 'thinking', 'thinkingLevel',
+  'totalTokens', 'inputTokens', 'outputTokens', 'contextTokens', 'model', 'thinking', 'thinkingLevel', 'thinkingDefault',
   'label', 'displayName', 'channel', 'parentSessionKey', 'parentId',
 ] as const satisfies readonly (keyof Session)[];
 

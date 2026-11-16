@@ -273,9 +273,14 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
 
   const body = displayContent && (
     <div className={`msg-body text-foreground ${isUser ? 'block w-full min-w-0 max-w-full text-left' : ''}`}>
-      <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading</div>}>
-        <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
-      </Suspense>
+      {msg.plainText ? (
+        // A local notice quoting an error message: shown as written, never parsed as markdown.
+        <p className="m-0 whitespace-pre-wrap break-words">{displayContent}</p>
+      ) : (
+        <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading</div>}>
+          <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
+        </Suspense>
+      )}
     </div>
   );
 
@@ -443,6 +448,7 @@ export const MessageBubble = memo(MessageBubbleInner, (prev, next) => {
   
   // System notification fields
   if (prev.msg.isSystemNotification !== next.msg.isSystemNotification) return false;
+  if (prev.msg.plainText !== next.msg.plainText) return false;
   if (prev.msg.systemLabel !== next.msg.systemLabel) return false;
   
   // Thinking state

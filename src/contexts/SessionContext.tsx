@@ -30,6 +30,14 @@ const FULL_SESSIONS_LIMIT = 1000;
 const MAIN_SESSION_KEY = 'agent:main:main';
 const SESSIONS_SPAWNED_LIMIT = 500;
 
+// A refresh keeps a row's old object unless one of these differs, so every field the agents
+// column, the fleet pane and the session info panel read has to be here (run state included).
+const DIFFED_SESSION_FIELDS = [
+  'state', 'agentState', 'status', 'busy', 'processing', 'updatedAt',
+  'totalTokens', 'inputTokens', 'outputTokens', 'contextTokens', 'model', 'thinking', 'thinkingLevel',
+  'label', 'displayName', 'channel', 'parentSessionKey', 'parentId',
+] as const satisfies readonly (keyof Session)[];
+
 export type SubagentCleanupMode = 'keep' | 'delete';
 
 export interface SpawnSessionOpts {
@@ -86,6 +94,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const terminalPingSeenRef = useRef<Map<string, number>>(new Map());
   const doneTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const delayedRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Refreshes overlap (events, the poll, spawn and delete all start one). Each takes a number when it
+  // starts; one that answers after a later refresh has landed is an older snapshot and is dropped, and
+  // one that started before a delete landed leaves the deleted rows out (key -> refreshes started by then).
+  const deletedBeforeRefreshRef = useRef(new Map<string, number>());
+  const refreshStartedRef = useRef(0);
+  const refreshLandedRef = useRef(0);
   const [heartbeatRuns] = useState(() => new HeartbeatRuns());
 
   // Derive busyState from agentStatus for backward compatibility. A failed run is over, not busy.
@@ -318,8 +332,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return descendants;
   }, []);
 
-  const listAuthoritativeSessions = useCallback(async () => {
-    if (connectionState !== 'connected') return sessionsRef.current;
+  // Null when the gateway could not be asked, so a refresh can tell a failure from an answer.
+  const fetchAuthoritativeSessions = useCallback(async (): Promise<Session[] | null> => {
+    if (connectionState !== 'connected') return null;
     try {
       const [res, hiddenCronSessions] = await Promise.all([
         rpc('sessions.list', { limit: FULL_SESSIONS_LIMIT }) as Promise<SessionsListResponse>,
@@ -352,9 +367,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       );
     } catch (err) {
       console.debug('[SessionContext] Failed to fetch authoritative session list:', err);
-      return sessionsRef.current;
+      return null;
     }
   }, [connectionState, fetchHiddenCronSessions, mergeSessionLists, rpc]);
+
+  // Spawn and delete fall back to the list on screen when the gateway cannot be asked.
+  const listAuthoritativeSessions = useCallback(
+    async () => (await fetchAuthoritativeSessions()) ?? sessionsRef.current,
+    [fetchAuthoritativeSessions],
+  );
 
   const setGranularStatus = useCallback((sessionKey: string, state: GranularAgentState) => {
     if (!sessionKey) return;
@@ -561,8 +582,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const refreshSessions = useCallback(async () => {
     if (connectionState !== 'connected') return;
+    const refreshId = ++refreshStartedRef.current;
     try {
-      const newSessions = await listAuthoritativeSessions();
+      const answer = await fetchAuthoritativeSessions();
+      if (!answer || refreshId <= refreshLandedRef.current) return;
+      refreshLandedRef.current = refreshId;
+      const deletedBefore = deletedBeforeRefreshRef.current;
+      const newSessions = answer.filter((session) => refreshId > (deletedBefore.get(getSessionKey(session)) ?? 0));
+      for (const [key, startedBy] of deletedBefore) {
+        if (startedBy <= refreshId) deletedBefore.delete(key);
+      }
       const nextCurrentSession = pickDefaultSessionKey(newSessions, currentSessionRef.current);
       
       // Smart diffing: preserve object references for unchanged sessions.
@@ -585,19 +614,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             return newSession;
           }
           
-          // Compare relevant fields to detect changes
-          const changed = (
-            existing.state !== newSession.state ||
-            existing.totalTokens !== newSession.totalTokens ||
-            existing.contextTokens !== newSession.contextTokens ||
-            existing.model !== newSession.model ||
-            existing.thinking !== newSession.thinking ||
-            existing.thinkingLevel !== newSession.thinkingLevel ||
-            existing.label !== newSession.label ||
-            existing.displayName !== newSession.displayName ||
-            existing.parentSessionKey !== newSession.parentSessionKey ||
-            existing.parentId !== newSession.parentId
-          );
+          const changed = DIFFED_SESSION_FIELDS.some((field) => existing[field] !== newSession[field]);
           
           if (changed) {
             hasChanges = true;
@@ -617,7 +634,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } finally {
       setSessionsLoading(false);
     }
-  }, [connectionState, listAuthoritativeSessions, setCurrentSession]);
+  }, [connectionState, fetchAuthoritativeSessions, setCurrentSession]);
 
   const refreshSessionsRef = useRef(refreshSessions);
   useEffect(() => {
@@ -874,6 +891,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } finally {
       // Mirror what the gateway actually deleted, also when a later delete in the tree failed.
       if (deletedKeys.length > 0) {
+        // A refresh still in flight may hold a snapshot from before these deletes and would bring the rows back.
+        for (const key of deletedKeys) deletedBeforeRefreshRef.current.set(key, refreshStartedRef.current);
         const shouldReplaceCurrent = deletedKeys.includes(currentSessionRef.current);
         const remaining = sessionsRef.current.filter(s => !deletedKeys.includes(getSessionKey(s)));
         setSessions(prev => prev.filter(s => !deletedKeys.includes(getSessionKey(s))));

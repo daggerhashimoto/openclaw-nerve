@@ -219,4 +219,48 @@ describe('getChatRoomNames', () => {
   it('keeps a session outside any agent family named by its own row', () => {
     expect(getChatRoomNames('custom-key', [session('custom-key', { label: 'Side room' })], 'Jen')).toEqual({ agentId: null, agentName: 'Side room' });
   });
+
+  it('follows an explicit parent to the agent family when the key carries no agent', () => {
+    const withParents = [
+      ...sessions,
+      session('custom-direct-key', { label: 'Alice', parentSessionKey: 'agent:main:main' }),
+      session('custom-ops-key', { label: 'Bob', parentId: 'agent:ops:main' }),
+      session('custom-stale-key', { label: 'Carol', parentSessionKey: 'stale-parent-key', parentId: ' agent:main:main ' }),
+      session('custom-ghost-key', { label: 'Dana', parentSessionKey: 'agent:ghost:main' }),
+    ];
+
+    expect(getChatRoomNames('custom-direct-key', withParents, 'Jen')).toEqual({ agentId: 'main', agentName: 'Jen (main)', sessionName: 'Alice' });
+    expect(getChatRoomNames('custom-ops-key', withParents, 'Jen')).toEqual({ agentId: 'ops', agentName: 'Varys (ops)', sessionName: 'Bob' });
+    // A stale parentSessionKey falls through to parentId, as the sidebar tree does.
+    expect(getChatRoomNames('custom-stale-key', withParents, 'Jen')).toEqual({ agentId: 'main', agentName: 'Jen (main)', sessionName: 'Carol' });
+    // The parent names its agent even when that agent's root row is not loaded.
+    expect(getChatRoomNames('custom-ghost-key', withParents, 'Jen')).toEqual({ agentId: 'ghost', agentName: 'ghost', sessionName: 'Dana' });
+  });
+
+  it('follows a two-level explicit parent chain to the agent family', () => {
+    const chain = [
+      ...sessions,
+      session('custom-parent', { label: 'Alice', parentSessionKey: 'agent:ops:discord:channel:1488657713385701408' }),
+      session('custom-child', { label: 'Alice follow-up', parentId: 'custom-parent' }),
+    ];
+
+    expect(getChatRoomNames('custom-child', chain, 'Jen')).toEqual({ agentId: 'ops', agentName: 'Varys (ops)', sessionName: 'Alice follow-up' });
+  });
+
+  it('stops on a parent cycle and keeps the session named by its own row', () => {
+    const cycle = [
+      session('loop-a', { label: 'Loop A', parentSessionKey: 'loop-b' }),
+      session('loop-b', { label: 'Loop B', parentId: 'loop-a' }),
+      session('loop-self', { label: 'Loop self', parentSessionKey: 'loop-self' }),
+    ];
+
+    expect(getChatRoomNames('loop-a', cycle, 'Jen')).toEqual({ agentId: null, agentName: 'Loop A' });
+    expect(getChatRoomNames('loop-self', cycle, 'Jen')).toEqual({ agentId: null, agentName: 'Loop self' });
+  });
+
+  it('lets an agent-scoped key name its family over an explicit parent from another agent', () => {
+    const crossSpawn = [...sessions, session('agent:ops:subagent:x', { label: 'Ops helper', parentSessionKey: 'agent:main:main' })];
+
+    expect(getChatRoomNames('agent:ops:subagent:x', crossSpawn, 'Jen')).toEqual({ agentId: 'ops', agentName: 'Ops helper' });
+  });
 });

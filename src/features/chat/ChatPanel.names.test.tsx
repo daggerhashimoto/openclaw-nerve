@@ -48,6 +48,8 @@ const sessions: Session[] = [
   { key: 'agent:main:subagent:abc', label: 'Release notes' },
   { key: 'agent:ops:main', identityName: 'Varys' },
   { key: DISCORD_CHANNEL, displayName: '#releases' },
+  // A nonstandard key the gateway places under an agent through explicit parent metadata.
+  { sessionKey: 'custom-direct-key', label: 'Alice', parentSessionKey: 'agent:main:main' },
 ];
 
 const transcript = processChatMessages([
@@ -104,6 +106,17 @@ describe('ChatPanel names the agent, not the session', () => {
       agent: ['Varys (ops)'],
       nameplate: 'Varys (ops)',
       session: '#releases',
+    });
+  });
+
+  it('gives a nonstandard session placed under an agent by its parent to that agent', () => {
+    const { container } = openRoom('custom-direct-key');
+
+    expect(speakers(container)).toEqual({
+      operator: 'You',
+      agent: ['Jen (main)'],
+      nameplate: 'Jen (main)',
+      session: 'Alice',
     });
   });
 

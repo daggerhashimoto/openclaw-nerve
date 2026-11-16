@@ -233,4 +233,20 @@ describe('search reveals its match inside folded rows', () => {
     await waitFor(() => expect(container.textContent).toContain('needle india'));
     expect(container.textContent).not.toContain('needle hotel');
   });
+
+  it('still lets the operator open and fold a notification strip by hand, with no search running', () => {
+    const { container } = render(
+      <ChatPanel messages={[prompt, strip]} onSend={vi.fn()} onAbort={vi.fn()} isGenerating={false} stream={{ html: '', text: '' } as never} historyLoaded />,
+    );
+    const button = screen.getByRole('button', { name: /cleanup: completed/ });
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(button);
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    expect(container.textContent).toContain('needle echo');
+
+    fireEvent.click(button);
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(container.textContent).not.toContain('needle echo');
+  });
 });

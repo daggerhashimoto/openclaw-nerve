@@ -51,24 +51,41 @@ function currentTurnStart(msgs: ChatMsg[]): number {
   return 0;
 }
 
-export function mergeFinalMessages(existing: ChatMsg[], incoming: ChatMsg[]): ChatMsg[] {
+/**
+ * Index of the reply history recorded as the last one of run `runId` when its text
+ * is the live final's, or -1. The gateway marks one such reply per run, so it is
+ * this final wherever it sits and however far apart their times are: a compaction
+ * can hold the final back for minutes, and a prompt sent meanwhile starts a new
+ * turn. The history copy can also carry an attachment the final lacks.
+ */
+function runTerminalCopy(msgs: ChatMsg[], live: ChatMsg, runId: string | undefined, claimed: Set<ChatMsg>): number {
+  if (!runId || live.role !== 'assistant' || live.isThinking) return -1;
+  const text = normalizeComparableText(live.rawText);
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].terminalRunId === runId && !claimed.has(msgs[i]) && normalizeComparableText(msgs[i].rawText) === text) return i;
+  }
+  return -1;
+}
+
+/**
+ * Merge the rows of a live final into the transcript. `runId` is the run the final
+ * frame names, when it names one.
+ */
+export function mergeFinalMessages(existing: ChatMsg[], incoming: ChatMsg[], runId?: string): ChatMsg[] {
   if (incoming.length === 0) return existing;
   const merged = [...existing];
   // Rows that already took an incoming row's place, so one row never stands in for two.
   const claimed = new Set<ChatMsg>();
 
   for (const msg of incoming) {
-    // A history read can show the reply before its live final arrives, and by then
-    // other rows can follow it (a tool result, a system line), so the whole turn
-    // is searched, not just the last row. A live final carries no transcript id, so
-    // the match is by content and time (isLikelyDuplicateMessage).
+    let match = runTerminalCopy(merged, msg, runId, claimed);
+    // Otherwise a history read can show the reply before its live final arrives, and
+    // by then other rows can follow it (a tool result, a system line), so the whole
+    // turn is searched, not just the last row. A live final carries no transcript id,
+    // so the match is by content and time (isLikelyDuplicateMessage).
     const turnStart = currentTurnStart(merged);
-    let match = -1;
-    for (let i = merged.length - 1; i >= turnStart; i--) {
-      if (!claimed.has(merged[i]) && isLikelyDuplicateMessage(merged[i], msg)) {
-        match = i;
-        break;
-      }
+    for (let i = merged.length - 1; match < 0 && i >= turnStart; i--) {
+      if (!claimed.has(merged[i]) && isLikelyDuplicateMessage(merged[i], msg)) match = i;
     }
     if (match >= 0) {
       // The history copy stays: it has the transcript id and whatever history adds to it.

@@ -722,7 +722,7 @@ export function processChatMessages(messages: ChatMessage[], options: { sessionK
   const tagged = splitIntoTurns(withSearchQueries(messages)).flatMap((turn) => {
     const chatMsgs: ChatMsg[] = turn
       .filter(filterMessage)
-      .flatMap((message) => withSendKey(withSourceIds(splitToolCallMessage(message, options), message), message));
+      .flatMap((message) => withRunTerminal(withSendKey(withSourceIds(splitToolCallMessage(message, options), message), message), message));
     return tagIntermediateMessages(groupToolMessages(chatMsgs));
   });
 
@@ -800,6 +800,16 @@ function withSendKey(parts: ChatMsg[], source: ChatMessage): ChatMsg[] {
   const key = source.idempotencyKey ?? source.__openclaw?.idempotencyKey;
   if (source.role !== 'user' || !key) return parts;
   return parts.map((part) => (part.role === 'user' ? { ...part, idempotencyKey: key } : part));
+}
+
+/**
+ * The reply that ended its run keeps the run's id, so the run's live final can
+ * tell it is this reply (mergeFinalMessages). The gateway marks one reply per run.
+ */
+function withRunTerminal(parts: ChatMsg[], source: ChatMessage): ChatMsg[] {
+  const runId = source.__openclaw?.runId;
+  if (source.role !== 'assistant' || source.__openclaw?.runTerminal !== true || !runId) return parts;
+  return parts.map((part) => (part.role === 'assistant' && !part.isThinking ? { ...part, terminalRunId: runId } : part));
 }
 
 /**

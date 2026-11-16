@@ -514,7 +514,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const finalMessages = processChatMessages(extractFinalMessages(cp));
 
         if (finalMessages.length > 0) {
-          const merged = mergeFinalMessages(getAllMessages(), finalMessages);
+          // The run id from the frame itself, not a fallback: history records the reply under it.
+          const merged = mergeFinalMessages(getAllMessages(), finalMessages, classified.runId);
           const thinkingDuration = getThinkingDuration(runId);
           const withDuration = thinkingDuration
             ? patchThinkingDuration(merged, thinkingDuration)

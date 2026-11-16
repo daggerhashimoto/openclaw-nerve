@@ -13,6 +13,7 @@ import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { getSessionKey } from '@/types';
 import { getSessionType } from '@/features/sessions/sessionTree';
+import { inheritedModelLabels } from '@/lib/inheritedModel';
 
 /**
  * Duration (ms) after an optimistic model/effort change during which we ignore
@@ -145,6 +146,8 @@ export interface UseModelEffortReturn {
   modelOptions: { value: string; label: string }[];
   effortOptions: { value: string; label: string }[];
   selectedModel: string;
+  /** What the model button shows. The inherited option reads as the primary model's own label. */
+  selectedModelLabel: string;
   selectedEffort: string;
   selectedEffortLabel: string;
   handleModelChange: (next: string) => Promise<void>;
@@ -188,10 +191,11 @@ export function useModelEffort(): UseModelEffortReturn {
     () => buildSelectableModelList(gatewayModels, rawCurrentSessionModel || model),
     [gatewayModels, rawCurrentSessionModel, model],
   );
-  const primaryModelId = useMemo(
-    () => gatewayModels?.find((entry) => entry.role === 'primary')?.id || null,
+  const primaryModel = useMemo(
+    () => gatewayModels?.find((entry) => entry.role === 'primary') ?? null,
     [gatewayModels],
   );
+  const primaryModelId = primaryModel?.id || null;
   const [selectedEffort, setSelectedEffort] = useState<EffortSelection>(() => {
     try {
       const saved = localStorage.getItem(getEffortKey(currentSession)) as EffortSelection | null;
@@ -585,10 +589,20 @@ export function useModelEffort(): UseModelEffortReturn {
     }
   }, [controlsDisabled, selectedEffort, rpc, currentSession, updateSession]);
 
+  // The button and the list's inherited option name the same model: the primary's own label when
+  // the catalog says which it is, else the plain word. The raw value `primary` is never shown.
+  const inheritedModel = useMemo(() => inheritedModelLabels(primaryModel?.label), [primaryModel]);
+
   const modelOptions = useMemo(() => {
     const configured = modelOptionsList.map((m) => ({ value: m.id, label: m.label }));
-    return [{ value: INHERITED_MODEL_VALUE, label: INHERITED_MODEL_VALUE }, ...configured];
-  }, [modelOptionsList]);
+    return [{ value: INHERITED_MODEL_VALUE, label: inheritedModel.option }, ...configured];
+  }, [modelOptionsList, inheritedModel]);
+
+  // A value no option matches (before the session's model is known) reads as the first option,
+  // the inherited one, as the select itself does.
+  const selectedModelLabel = selectedModel === INHERITED_MODEL_VALUE
+    ? inheritedModel.button
+    : modelOptions.find((option) => option.value === selectedModel)?.label ?? inheritedModel.button;
 
   const effortOptions = useMemo(
     () => [
@@ -607,6 +621,7 @@ export function useModelEffort(): UseModelEffortReturn {
     modelOptions,
     effortOptions,
     selectedModel,
+    selectedModelLabel,
     selectedEffort,
     selectedEffortLabel,
     handleModelChange,

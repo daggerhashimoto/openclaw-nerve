@@ -38,9 +38,12 @@ vi.mock('./components/useModelEffort', () => ({
   }),
 }));
 
-beforeAll(() => {
+beforeAll(async () => {
   // jsdom has no layout; the panel scrolls its list into view.
   Element.prototype.scrollIntoView = vi.fn();
+  // MessageBubble lazy-loads the real markdown renderer. Load it once up front so a
+  // busy full-suite run does not outlast the default findBy timeout on first render.
+  await import('@/features/markdown/MarkdownRenderer');
 });
 
 const T0 = Date.parse('2026-11-16T10:00:00Z');
@@ -169,7 +172,7 @@ describe('tool results from history', () => {
     });
     const { container } = render(panel(processChatMessages([prompt, mixed])));
 
-    expect(await screen.findByText('Carry on')).toBeInTheDocument();
+    expect(await screen.findByText('Carry on', undefined, { timeout: 5000 })).toBeInTheDocument();
     expect(container.textContent).not.toMatch(LEAK);
   });
 });

@@ -34,6 +34,8 @@ function getEffortKey(sessionKey?: string | null) {
 
 const INHERITED_MODEL_VALUE = 'primary';
 const INHERITED_EFFORT_VALUE = 'thinkingDefault';
+/** What the inherited effort reads as when the gateway has not said which level the default resolves to. */
+const INHERITED_EFFORT_FALLBACK_LABEL = 'Default';
 
 type EffortLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'adaptive';
 type EffortSelection = typeof INHERITED_EFFORT_VALUE | EffortLevel;
@@ -218,6 +220,13 @@ export function useModelEffort(): UseModelEffortReturn {
     return resolveModelId(raw, modelOptionsList);
   }, [sessions, currentSession, modelOptionsList, resolvedSessionModels, primaryModelId]);
 
+  // What the gateway says this session's unset thinking level resolves to (the session row's
+  // thinkingDefault). Null when the row does not carry it.
+  const rowThinkingDefault = useMemo(() => {
+    const s = sessions.find(sess => getSessionKey(sess) === currentSession);
+    return normalizeEffortLevel(s?.thinkingDefault);
+  }, [sessions, currentSession]);
+
   // Resolve current session's thinking level.
   // Prefer explicit overrides. If no explicit override exists, surface
   // the inherited default selector state (thinkingDefault).
@@ -230,24 +239,29 @@ export function useModelEffort(): UseModelEffortReturn {
     }
 
     const effective = normalizeEffortLevel(s?.thinking);
-    const inheritedDefault = normalizeEffortLevel(thinking);
+    const inheritedDefault = rowThinkingDefault ?? normalizeEffortLevel(thinking);
     if (effective && inheritedDefault && effective !== inheritedDefault) {
       return effective;
     }
 
     return null;
-  }, [sessions, currentSession, thinking]);
+  }, [sessions, currentSession, thinking, rowThinkingDefault]);
 
-  const inheritedEffortLabel = useMemo<EffortSelection>(() => {
+  // The level the inherited option stands for: the row's own default, else what the transcript or
+  // the row reports as effective, else the gateway-wide default. Null when none of them is known.
+  const inheritedEffortLevel = useMemo<EffortLevel | null>(() => {
     const s = sessions.find(sess => getSessionKey(sess) === currentSession);
-    return resolvedSessionThinking[currentSession]
+    return rowThinkingDefault
+      || resolvedSessionThinking[currentSession]
       || normalizeEffortLevel(s?.thinking)
       || normalizeEffortLevel(thinking)
-      || INHERITED_EFFORT_VALUE;
-  }, [sessions, currentSession, thinking, resolvedSessionThinking]);
+      || null;
+  }, [sessions, currentSession, thinking, resolvedSessionThinking, rowThinkingDefault]);
 
+  // The button and the list's inherited option both say the same thing: the resolved level when
+  // it is known, else the plain word. The raw selector value is never shown.
   const selectedEffortLabel = selectedEffort === INHERITED_EFFORT_VALUE
-    ? inheritedEffortLabel
+    ? inheritedEffortLevel ?? INHERITED_EFFORT_FALLBACK_LABEL
     : selectedEffort;
 
   // Sync model dropdown when switching sessions (setState-during-render pattern)
@@ -580,13 +594,13 @@ export function useModelEffort(): UseModelEffortReturn {
     () => [
       {
         value: INHERITED_EFFORT_VALUE,
-        label: inheritedEffortLabel === INHERITED_EFFORT_VALUE
-          ? 'default'
-          : `${inheritedEffortLabel} (default)`,
+        label: inheritedEffortLevel
+          ? `${inheritedEffortLevel} (default)`
+          : INHERITED_EFFORT_FALLBACK_LABEL,
       },
       ...EFFORT_OPTIONS.map((lvl) => ({ value: lvl, label: lvl })),
     ],
-    [inheritedEffortLabel],
+    [inheritedEffortLevel],
   );
 
   return {

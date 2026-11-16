@@ -27,6 +27,8 @@ export interface Session {
   model?: string;
   thinking?: string;
   thinkingLevel?: string;
+  /** The level the gateway says an unset thinkingLevel resolves to for this session. */
+  thinkingDefault?: string;
   totalTokens?: number;
   contextTokens?: number;
   parentSessionKey?: string; // from gateway API (newer session row shape)

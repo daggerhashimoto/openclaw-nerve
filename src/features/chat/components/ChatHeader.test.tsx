@@ -259,6 +259,31 @@ describe('ChatHeader', () => {
     expect(screen.getByRole('button', { name: 'Effort' })).not.toHaveTextContent('medium (default)');
   });
 
+  it('reads the inherited effort as "Default", never as its raw selector value', () => {
+    const mockUseModelEffort = vi.mocked(useModelEffort);
+    mockUseModelEffort.mockReturnValue({
+      ...defaultMockHook,
+      selectedEffort: 'thinkingDefault',
+      selectedEffortLabel: 'Default',
+      effortOptions: [
+        { value: 'thinkingDefault', label: 'Default' },
+        { value: 'medium', label: 'medium' },
+      ],
+    });
+
+    render(
+      <ChatHeader
+        onReset={mockOnReset}
+        onAbort={mockOnAbort}
+        isGenerating={false}
+      />
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Effort' });
+    expect(trigger).toHaveTextContent('Default');
+    expect(trigger).not.toHaveTextContent('thinkingDefault');
+  });
+
   it('shows abort button when generating', () => {
     const mockUseModelEffort = vi.mocked(useModelEffort);
     mockUseModelEffort.mockReturnValue(defaultMockHook);

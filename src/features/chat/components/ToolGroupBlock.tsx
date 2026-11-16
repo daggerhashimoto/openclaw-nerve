@@ -5,7 +5,7 @@ import { Pane } from '@/components/ui/Pane';
 import { cn } from '@/lib/utils';
 import { extractEditBlocks, extractWriteBlocks } from '../edit-blocks';
 import type { ChatMsg, ToolGroupEntry } from '../types';
-import { ToolRowContent, toolRowButtonClass, toolRowClass } from './ToolRow';
+import { ToolResultText, ToolRowContent, toolRowButtonClass, toolRowClass, toolRowMatchClass } from './ToolRow';
 
 const DiffView = lazy(() => import('../DiffView').then((module) => ({ default: module.DiffView })));
 const FileContentView = lazy(() =>
@@ -17,20 +17,23 @@ interface ToolGroupBlockProps {
   index: number;
   isCollapsed: boolean;
   onToggleCollapse: (idx: number) => void;
+  searchQuery?: string;
+  /** This group is the current search match. */
+  isCurrentMatch?: boolean;
 }
 
 /** Entry rows sit one step in from the group row so the pane column reads as a tree. */
 const entryIndentClass = 'pl-6';
 
 /** A single expandable tool entry within the group */
-function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
+function ToolEntryRow({ entry, searchQuery }: { entry: ToolGroupEntry; searchQuery?: string }) {
   const editBlocks = useMemo(() => extractEditBlocks(entry.rawText), [entry.rawText]);
   const writeBlocks = useMemo(() => extractWriteBlocks(entry.rawText), [entry.rawText]);
-  // A diff is the point of opening the group, so an edit entry starts open; file previews stay folded
+  // A diff is the point of opening the group, so an edit entry starts open; file previews and results stay folded
   const [expanded, setExpanded] = useState(() => editBlocks.length > 0);
-  const hasExpandableContent = editBlocks.length > 0 || writeBlocks.length > 0;
+  const hasExpandableContent = editBlocks.length > 0 || writeBlocks.length > 0 || entry.result !== undefined;
 
-  // Only edit (diff view) and write (file view) entries are expandable
+  // Entries with a diff, a file view or a result open; the rest are plain rows
   if (!hasExpandableContent) {
     return (
       <div className={cn(toolRowClass, entryIndentClass)}>
@@ -45,7 +48,8 @@ function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
         <ToolRowContent state="off" text={entry.preview} expandable expanded={expanded} />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="border-t border-border px-2.5 py-2 font-mono text-[0.8rem]">
+        {/* The diff or file preview first, then the result: a failed edit shows its error */}
+        <div className="space-y-2 border-t border-border px-2.5 py-2 font-mono text-[0.8rem]">
           {editBlocks.length > 0 ? (
             <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading diff</div>}>
               <div className="space-y-2">
@@ -54,7 +58,7 @@ function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
                 ))}
               </div>
             </Suspense>
-          ) : (
+          ) : writeBlocks.length > 0 ? (
             <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading file preview</div>}>
               <div className="space-y-2">
                 {writeBlocks.map((block, i) => (
@@ -62,21 +66,22 @@ function ToolEntryRow({ entry }: { entry: ToolGroupEntry }) {
                 ))}
               </div>
             </Suspense>
-          )}
+          ) : null}
+          {entry.result !== undefined && <ToolResultText text={entry.result} searchQuery={searchQuery} />}
         </div>
       </CollapsibleContent>
     </Collapsible>
   );
 }
 
-function ToolGroupBlockInner({ msg, index, isCollapsed, onToggleCollapse }: ToolGroupBlockProps) {
+function ToolGroupBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQuery, isCurrentMatch }: ToolGroupBlockProps) {
   const timeStr = msg.timestamp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   const entries = msg.toolGroup || [];
   const count = entries.length;
   const summary = entries.map((entry) => entry.preview).join(', ');
 
   return (
-    <div className="msg msg-tool relative max-w-full break-words">
+    <div className={cn('msg msg-tool relative max-w-full break-words', isCurrentMatch && toolRowMatchClass)}>
       <Collapsible open={!isCollapsed} onOpenChange={() => onToggleCollapse(index)}>
         <CollapsibleTrigger className={cn(toolRowClass, toolRowButtonClass)}>
           <Pane state="off" size="sm" />
@@ -92,7 +97,7 @@ function ToolGroupBlockInner({ msg, index, isCollapsed, onToggleCollapse }: Tool
         <CollapsibleContent>
           <div className="divide-y divide-border border-t border-border">
             {entries.map((entry, i) => (
-              <ToolEntryRow key={entry.preview + '-' + i} entry={entry} />
+              <ToolEntryRow key={entry.preview + '-' + i} entry={entry} searchQuery={searchQuery} />
             ))}
           </div>
         </CollapsibleContent>
@@ -105,5 +110,7 @@ function ToolGroupBlockInner({ msg, index, isCollapsed, onToggleCollapse }: Tool
 export const ToolGroupBlock = memo(ToolGroupBlockInner, (prev, next) => {
   if (prev.msg !== next.msg) return false;
   if (prev.isCollapsed !== next.isCollapsed) return false;
+  if (prev.searchQuery !== next.searchQuery) return false;
+  if (prev.isCurrentMatch !== next.isCurrentMatch) return false;
   return true;
 });

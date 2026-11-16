@@ -5,7 +5,7 @@
  */
 import { generateMsgId } from '@/features/chat/types';
 import type { ChatMsg, ImageAttachment, OutgoingUploadPayload, UploadAttachmentDescriptor } from '@/features/chat/types';
-import { renderMarkdown, renderToolResults } from '@/utils/helpers';
+import { renderMarkdown } from '@/utils/helpers';
 
 // ─── Voice → TTS prompt hint ───────────────────────────────────────────────────
 const VOICE_PREFIX = '[voice] ';
@@ -83,7 +83,7 @@ export function buildUserMessage(params: {
   const msg: ChatMsg = {
     msgId: generateMsgId(),
     role: 'user',
-    html: renderToolResults(renderMarkdown(text)),
+    html: renderMarkdown(text),
     rawText: text,
     timestamp: new Date(),
     images: images?.map(i => ({

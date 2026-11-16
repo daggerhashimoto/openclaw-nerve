@@ -6,7 +6,7 @@
  */
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { isUnsentPrompt, keepUnsentMessages, loadChatHistory, transcriptRowId } from '@/features/chat/operations';
-import { generateMsgId } from '@/features/chat/types';
+import { generateMsgId, systemNotice } from '@/features/chat/types';
 import type { ChatMsg } from '@/features/chat/types';
 
 // ─── Constants ──────────────────────────────────────────────────────────────────
@@ -192,9 +192,7 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
       const errMsg = e instanceof Error ? e.message : String(e);
       allMessagesRef.current = [];
       setHasMore(false);
-      setMessages(prev => [...prev, {
-        msgId: generateMsgId(), role: 'system' as const, html: 'Failed to load history: ' + errMsg, rawText: '', timestamp: new Date(),
-      }]);
+      setMessages(prev => [...prev, systemNotice(`Failed to load history: ${errMsg}`)]);
     } finally {
       if (isCurrent()) setHistoryLoaded(true);
     }

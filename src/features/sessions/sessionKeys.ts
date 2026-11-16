@@ -188,6 +188,45 @@ export function getSessionDisplayLabel(session: Session, agentName = 'Agent'): s
   return sessionKey.split(':').pop() || sessionKey;
 }
 
+/** Any gateway key scoped to an agent (`agent:<id>:...`) belongs to that agent's family. */
+const AGENT_SCOPED_RE = /^agent:([^:]+):.+$/;
+
+export interface ChatRoomNames {
+  /** The agent family the open session belongs to, if any; its hue colours the room. */
+  agentId: string | null;
+  /** Who speaks for the agent: the name on its replies and the header nameplate. */
+  agentName: string;
+  /** The session's own name, set only when it names someone or something other than the agent. */
+  sessionName?: string;
+}
+
+/**
+ * The names an open chat room shows: who the agent's replies belong to, and what the session is
+ * called when that is not the agent.
+ *
+ * A root agent session (`agent:<id>:main`) and a subagent session are named after the agent that
+ * runs them, so their own label is the speaker and there is no separate session name. Every other
+ * session under an agent (a direct or channel conversation from Telegram, Discord and the like, a
+ * group, topic or thread, a cron job or one of its runs) is a conversation that agent holds: its
+ * label names the peer, the room or the job, never the agent. Its replies belong to the agent
+ * family, named as the family's root row names it, and its label becomes the session name.
+ */
+export function getChatRoomNames(sessionKey: string, sessions: Session[], mainAgentName = 'Agent'): ChatRoomNames {
+  const session = sessions.find((candidate) => getSessionKey(candidate) === sessionKey);
+  const ownLabel = session ? getSessionDisplayLabel(session, mainAgentName) : undefined;
+  const agentId = getRootAgentId(sessionKey) ?? sessionKey.match(AGENT_SCOPED_RE)?.[1] ?? null;
+
+  if (!agentId || isTopLevelAgentSessionKey(sessionKey) || isSubagentSessionKey(sessionKey)) {
+    return { agentId, agentName: ownLabel ?? mainAgentName };
+  }
+
+  const rootKey = `agent:${agentId}:main`;
+  const root = sessions.find((candidate) => getSessionKey(candidate) === rootKey) ?? { sessionKey: rootKey };
+  const names: ChatRoomNames = { agentId, agentName: getSessionDisplayLabel(root, mainAgentName) };
+  if (ownLabel) names.sessionName = ownLabel;
+  return names;
+}
+
 export function pickDefaultSessionKey(sessions: Session[], preferredKey?: string): string {
   if (preferredKey && sessions.some((session) => getSessionKey(session) === preferredKey)) {
     return preferredKey;

@@ -5,6 +5,7 @@ import {
   buildAgentRootSessionKey,
   extractIdentityName,
   getAgentRegistrationName,
+  getChatRoomNames,
   getRootAgentId,
   getRootAgentSessionKey,
   getSessionDisplayLabel,
@@ -136,5 +137,86 @@ describe('sessionKeys', () => {
       parentId: ' agent:main:main ',
     });
     expect(resolveParentSessionKey(child, knownKeys)).toBe('agent:main:main');
+  });
+});
+
+describe('getChatRoomNames', () => {
+  const telegramDm = 'agent:main:telegram:direct:469914749';
+  const discordChannel = 'agent:ops:discord:channel:1488657713385701408';
+  const sessions = [
+    session('agent:main:main'),
+    session(telegramDm, { label: 'Shaun (@shaunfi) id:469914749', displayName: 'Shaun (@shaunfi) id:469914749' }),
+    session('agent:main:subagent:abc', { label: 'Release notes' }),
+    session('agent:main:cron:daily', { label: 'Morning brief' }),
+    session('agent:main:cron:daily:run:r1', { displayName: 'Morning brief run' }),
+    session('agent:main:telegram:group:-1001234:topic:7', { displayName: 'Family chat' }),
+    session('agent:ops:main', { identityName: 'Varys' }),
+    session(discordChannel, { displayName: '#releases' }),
+    session(`${discordChannel}:thread:789`, { displayName: 'Release thread' }),
+  ];
+
+  it('names the main room after the agent and shows no separate session name', () => {
+    expect(getChatRoomNames('agent:main:main', sessions, 'Jen')).toEqual({ agentId: 'main', agentName: 'Jen (main)' });
+  });
+
+  it('gives a Telegram direct session to the agent and keeps the peer as the session name', () => {
+    expect(getChatRoomNames(telegramDm, sessions, 'Jen')).toEqual({
+      agentId: 'main',
+      agentName: 'Jen (main)',
+      sessionName: 'Shaun (@shaunfi) id:469914749',
+    });
+  });
+
+  it('gives a Discord channel and its threads to the agent family, named as its root row', () => {
+    expect(getChatRoomNames(discordChannel, sessions, 'Jen')).toEqual({
+      agentId: 'ops',
+      agentName: 'Varys (ops)',
+      sessionName: '#releases',
+    });
+    expect(getChatRoomNames(`${discordChannel}:thread:789`, sessions, 'Jen')).toEqual({
+      agentId: 'ops',
+      agentName: 'Varys (ops)',
+      sessionName: 'Release thread',
+    });
+  });
+
+  it('gives group topics and cron jobs to the agent that runs them', () => {
+    expect(getChatRoomNames('agent:main:telegram:group:-1001234:topic:7', sessions, 'Jen')).toEqual({
+      agentId: 'main',
+      agentName: 'Jen (main)',
+      sessionName: 'Family chat',
+    });
+    expect(getChatRoomNames('agent:main:cron:daily', sessions, 'Jen')).toEqual({
+      agentId: 'main',
+      agentName: 'Jen (main)',
+      sessionName: 'Morning brief',
+    });
+    expect(getChatRoomNames('agent:main:cron:daily:run:r1', sessions, 'Jen')).toEqual({
+      agentId: 'main',
+      agentName: 'Jen (main)',
+      sessionName: 'Morning brief run',
+    });
+  });
+
+  it('keeps root agents and subagents named after themselves', () => {
+    expect(getChatRoomNames('agent:ops:main', sessions, 'Jen')).toEqual({ agentId: 'ops', agentName: 'Varys (ops)' });
+    expect(getChatRoomNames('agent:main:subagent:abc', sessions, 'Jen')).toEqual({ agentId: 'main', agentName: 'Release notes' });
+  });
+
+  it('names the family from the session key when its root row is not loaded', () => {
+    expect(getChatRoomNames('agent:ghost:discord:channel:1', [session('agent:ghost:discord:channel:1', { displayName: '#ghosts' })], 'Jen')).toEqual({
+      agentId: 'ghost',
+      agentName: 'ghost',
+      sessionName: '#ghosts',
+    });
+    expect(getChatRoomNames(telegramDm, [], 'Jen')).toEqual({ agentId: 'main', agentName: 'Jen (main)' });
+  });
+
+  it('falls back to the agent name before the open session row has loaded', () => {
+    expect(getChatRoomNames('agent:main:main', [], 'Jen')).toEqual({ agentId: 'main', agentName: 'Jen' });
+  });
+
+  it('keeps a session outside any agent family named by its own row', () => {
+    expect(getChatRoomNames('custom-key', [session('custom-key', { label: 'Side room' })], 'Jen')).toEqual({ agentId: null, agentName: 'Side room' });
   });
 });

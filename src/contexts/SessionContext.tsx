@@ -94,7 +94,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const doneTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const delayedRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Refreshes overlap (events, the poll, spawn and delete all start one). Each takes a number when it
-  // starts; one that answers after a later refresh or a delete has landed is an older snapshot and is dropped.
+  // starts; one that answers after a later refresh has landed is an older snapshot and is dropped, and
+  // one that started before a delete landed leaves the deleted rows out (key -> refreshes started by then).
+  const deletedBeforeRefreshRef = useRef(new Map<string, number>());
   const refreshStartedRef = useRef(0);
   const refreshLandedRef = useRef(0);
 
@@ -580,9 +582,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (connectionState !== 'connected') return;
     const refreshId = ++refreshStartedRef.current;
     try {
-      const newSessions = await fetchAuthoritativeSessions();
-      if (!newSessions || refreshId <= refreshLandedRef.current) return;
+      const answer = await fetchAuthoritativeSessions();
+      if (!answer || refreshId <= refreshLandedRef.current) return;
       refreshLandedRef.current = refreshId;
+      const deletedBefore = deletedBeforeRefreshRef.current;
+      const newSessions = answer.filter((session) => refreshId > (deletedBefore.get(getSessionKey(session)) ?? 0));
+      for (const [key, startedBy] of deletedBefore) {
+        if (startedBy <= refreshId) deletedBefore.delete(key);
+      }
       const nextCurrentSession = pickDefaultSessionKey(newSessions, currentSessionRef.current);
       
       // Smart diffing: preserve object references for unchanged sessions.
@@ -880,7 +887,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // Mirror what the gateway actually deleted, also when a later delete in the tree failed.
       if (deletedKeys.length > 0) {
         // A refresh still in flight may hold a snapshot from before these deletes and would bring the rows back.
-        refreshLandedRef.current = refreshStartedRef.current;
+        for (const key of deletedKeys) deletedBeforeRefreshRef.current.set(key, refreshStartedRef.current);
         const shouldReplaceCurrent = deletedKeys.includes(currentSessionRef.current);
         const remaining = sessionsRef.current.filter(s => !deletedKeys.includes(getSessionKey(s)));
         setSessions(prev => prev.filter(s => !deletedKeys.includes(getSessionKey(s))));

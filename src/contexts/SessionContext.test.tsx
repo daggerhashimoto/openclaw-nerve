@@ -678,6 +678,72 @@ describe('SessionContext', () => {
       expect(onError).not.toHaveBeenCalled();
       expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main']);
     });
+
+    it('keeps a subagent spawned while a delete lands in the list it switches to', async () => {
+      installDeleteGateway([
+        { sessionKey: 'agent:main:main', label: 'Main' },
+        { sessionKey: 'agent:ops:main', label: 'Ops' },
+        { sessionKey: 'agent:ops:subagent:worker', label: 'Worker' },
+      ], () => null);
+      const freshKey = 'agent:ops:subagent:fresh';
+      // Once the spawn route answers, the gateway lists the new child; the refresh spawnSession
+      // starts next is held, its answer taken before the delete, until after the delete has landed.
+      const gateway = rpcMock.getMockImplementation()!;
+      let spawned = false;
+      let holdNextFullList = false;
+      let releaseHeldList = () => {};
+      rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+        const answer = await gateway(method, params) as { sessions?: Array<Record<string, unknown>> };
+        if (method !== 'sessions.list' || params?.spawnedBy) return answer;
+        const listedNow = { sessions: spawned ? [...(answer.sessions ?? []), { sessionKey: freshKey, label: 'Fresh' }] : answer.sessions };
+        if (holdNextFullList) {
+          holdNextFullList = false;
+          await new Promise<void>((resolve) => { releaseHeldList = resolve; });
+        }
+        return listedNow;
+      });
+      const baseFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (!url.includes('/api/sessions/spawn-subagent')) return baseFetch(input, init);
+        spawned = true;
+        holdNextFullList = true;
+        return Promise.resolve(jsonResponse({ ok: true, sessionKey: freshKey, mode: 'direct' }));
+      }) as typeof fetch;
+      function SpawnProbe() {
+        const { spawnSession } = useSessionContext();
+        return (
+          <button
+            data-testid="spawn"
+            onClick={() => { void spawnSession({ kind: 'subagent', task: 'go', parentSessionKey: 'agent:ops:main' }); }}
+          />
+        );
+      }
+      const onError = vi.fn();
+
+      render(
+        <SessionProvider>
+          <SpawnProbe />
+          <DeleteProbe target="agent:ops:subagent:worker" onError={onError} />
+        </SessionProvider>,
+      );
+      await screen.findByText('agent:ops:subagent:worker');
+
+      await act(async () => {
+        screen.getByTestId('spawn').click();
+      });
+      await act(async () => {
+        screen.getByTestId('delete').click();
+      });
+      await waitFor(() => expect(listedKeys()).not.toContain('agent:ops:subagent:worker'));
+      await act(async () => {
+        releaseHeldList();
+      });
+
+      await waitFor(() => expect(screen.getByTestId('current-session')).toHaveTextContent(freshKey));
+      await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main', freshKey]));
+      expect(onError).not.toHaveBeenCalled();
+    });
   });
 
   it('lets an older refresh land when a newer one failed to reach the gateway', async () => {

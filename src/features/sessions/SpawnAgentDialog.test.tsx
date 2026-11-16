@@ -109,13 +109,58 @@ describe('SpawnAgentDialog', () => {
     fireEvent.click(screen.getByText('New agent'));
 
     const modelSelect = await screen.findByRole('button', { name: 'Select model' });
-    expect(modelSelect).toHaveTextContent('primary');
+    expect(modelSelect).toHaveTextContent('Primary');
 
     fireEvent.click(modelSelect);
-    expect(await screen.findByRole('option', { name: 'primary' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'Primary' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'qwen-local' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'claude-sonnet-4-5' })).toBeNull();
     expect(screen.queryByRole('option', { name: 'gpt-5.4' })).toBeNull();
+  });
+
+  it('names the primary model on the button and in the list when the catalog says which it is', async () => {
+    globalThis.fetch = vi.fn(() => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({
+        models: [
+          { id: 'openai-codex/gpt-6-luna', label: 'gpt-6-luna', role: 'primary' },
+          { id: 'ollama/qwen2.5:7b-instruct-q5_K_M', alias: 'qwen-local', label: 'qwen-local', role: 'fallback' },
+        ],
+        error: null,
+        source: 'config',
+      }),
+    } as Response)) as typeof fetch;
+
+    const onSpawn = vi.fn(async () => {});
+    renderDialog(onSpawn);
+    fireEvent.click(screen.getByText('New agent'));
+
+    const modelSelect = await screen.findByRole('button', { name: 'Select model' });
+    await waitFor(() => {
+      expect(modelSelect).toHaveTextContent('gpt-6-luna');
+    });
+    expect(modelSelect).not.toHaveTextContent('primary');
+    expect(modelSelect).not.toHaveTextContent('Primary');
+
+    fireEvent.click(modelSelect);
+    expect(await screen.findByRole('option', { name: 'gpt-6-luna (primary)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'gpt-6-luna' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'primary' })).toBeNull();
+
+    // Choosing the explicit entry names it; choosing the inherited one still omits the model.
+    fireEvent.pointerDown(screen.getByRole('option', { name: 'qwen-local' }));
+    expect(screen.getByRole('button', { name: 'Select model' })).toHaveTextContent('qwen-local');
+    fireEvent.click(screen.getByRole('button', { name: 'Select model' }));
+    fireEvent.pointerDown(await screen.findByRole('option', { name: 'gpt-6-luna (primary)' }));
+    expect(screen.getByRole('button', { name: 'Select model' })).toHaveTextContent('gpt-6-luna');
+
+    fireEvent.change(screen.getByPlaceholderText('e.g. reviewer'), { target: { value: 'research' } });
+    fireEvent.change(screen.getByPlaceholderText('What should this new agent start working on?'), { target: { value: 'test task' } });
+    fireEvent.click(screen.getByText('Create agent'));
+
+    await waitFor(() => {
+      expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({ model: undefined }));
+    });
   });
 
   it('disables launch and shows an error when no configured models are available', async () => {
@@ -147,7 +192,7 @@ describe('SpawnAgentDialog', () => {
 
     fireEvent.click(screen.getByText('New agent'));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Select model' })).toHaveTextContent('primary');
+      expect(screen.getByRole('button', { name: 'Select model' })).toHaveTextContent('Primary');
       expect(screen.getByRole('button', { name: 'Select thinking level' })).toHaveTextContent('Default');
     });
     fireEvent.change(screen.getByPlaceholderText('e.g. reviewer'), { target: { value: 'research' } });
@@ -171,7 +216,7 @@ describe('SpawnAgentDialog', () => {
 
     fireEvent.click(screen.getByText('New agent'));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Select model' })).toHaveTextContent('primary');
+      expect(screen.getByRole('button', { name: 'Select model' })).toHaveTextContent('Primary');
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Select thinking level' }));
@@ -201,7 +246,7 @@ describe('SpawnAgentDialog', () => {
 
     fireEvent.click(screen.getByText('New agent'));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Select model' })).toHaveTextContent('primary');
+      expect(screen.getByRole('button', { name: 'Select model' })).toHaveTextContent('Primary');
     });
     fireEvent.change(screen.getByPlaceholderText('e.g. reviewer'), { target: { value: 'research' } });
     fireEvent.change(screen.getByPlaceholderText('What should this new agent start working on?'), { target: { value: 'test task' } });

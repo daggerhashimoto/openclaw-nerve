@@ -68,6 +68,7 @@ export function ChatHeader({
     modelOptions,
     effortOptions,
     selectedModel,
+    selectedModelLabel,
     selectedEffort,
     selectedEffortLabel,
     handleModelChange,
@@ -152,6 +153,7 @@ export function ChatHeader({
             title={controlsDisabled ? 'Connect to gateway to change model' : uiError || undefined}
             triggerClassName={`max-w-[110px] sm:max-w-[180px] ${selectTriggerClass}`}
             menuClassName="min-w-[180px] sm:min-w-[220px]"
+            displayLabel={modelOptions.length > 0 ? selectedModelLabel : undefined}
             options={visibleModelOptions}
           />
           <InlineSelect

@@ -24,6 +24,7 @@ const defaultMockHook = {
     { value: 'balanced', label: 'Balanced' },
   ],
   selectedModel: 'gpt-4',
+  selectedModelLabel: 'GPT-4',
   selectedEffort: 'balanced',
   selectedEffortLabel: 'Balanced',
   handleModelChange: vi.fn(),
@@ -310,6 +311,53 @@ describe('ChatHeader', () => {
     const trigger = screen.getByRole('button', { name: 'Effort' });
     expect(trigger).toHaveTextContent('Default');
     expect(trigger).not.toHaveTextContent('thinkingDefault');
+  });
+
+  it('names the primary model on the model button and in the list, never the bare word primary', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
+    vi.mocked(useModelEffort).mockReturnValue({
+      ...defaultMockHook,
+      selectedModel: 'primary',
+      selectedModelLabel: 'gpt-6-luna',
+      modelOptions: [
+        { value: 'primary', label: 'gpt-6-luna (primary)' },
+        { value: 'openai-codex/gpt-6-luna', label: 'gpt-6-luna' },
+      ],
+    });
+
+    render(
+      <ChatHeader
+        onReset={mockOnReset}
+        onAbort={mockOnAbort}
+        isGenerating={false}
+      />
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Model' });
+    expect(trigger).toHaveTextContent('gpt-6-luna');
+    expect(trigger).not.toHaveTextContent('primary');
+
+    fireEvent.click(trigger);
+    expect(await screen.findByRole('option', { name: 'gpt-6-luna (primary)' })).toBeInTheDocument();
+  });
+
+  it('reads "Primary" on the model button when the primary model is not known', () => {
+    vi.mocked(useModelEffort).mockReturnValue({
+      ...defaultMockHook,
+      selectedModel: 'primary',
+      selectedModelLabel: 'Primary',
+      modelOptions: [{ value: 'primary', label: 'Primary' }],
+    });
+
+    render(
+      <ChatHeader
+        onReset={mockOnReset}
+        onAbort={mockOnAbort}
+        isGenerating={false}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Model' })).toHaveTextContent('Primary');
   });
 
   it('shows abort button when generating', () => {

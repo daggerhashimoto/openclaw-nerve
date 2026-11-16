@@ -1,14 +1,17 @@
 import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import { SearchHighlight } from './components/SearchHighlight';
 
 interface MemoriesSectionProps {
   memories: string;
   isCollapsed: boolean;
   onToggle: () => void;
+  /** Chat search query, marked in the memories when they are open. */
+  searchQuery?: string;
 }
 
 /** Collapsible section showing memories referenced in a message. */
-export function MemoriesSection({ memories, isCollapsed, onToggle }: MemoriesSectionProps) {
+export function MemoriesSection({ memories, isCollapsed, onToggle, searchQuery }: MemoriesSectionProps) {
   return (
     <div className="w-full">
       <Collapsible open={!isCollapsed} onOpenChange={onToggle}>
@@ -21,7 +24,7 @@ export function MemoriesSection({ memories, isCollapsed, onToggle }: MemoriesSec
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mb-1 max-h-[200px] overflow-y-auto whitespace-pre-wrap rounded-[3px] border border-border bg-card px-3 py-2 text-[0.8rem] leading-relaxed text-foreground">
-            {memories}
+            <SearchHighlight text={memories} query={searchQuery} />
           </div>
         </CollapsibleContent>
       </Collapsible>

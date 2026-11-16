@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { extractEditBlocks, extractWriteBlocks } from '../edit-blocks';
 import type { ChatMsg, ToolGroupEntry } from '../types';
 import { ToolResultText, ToolRowContent, toolRowButtonClass, toolRowClass, toolRowMatchClass } from './ToolRow';
+import { SearchHighlight } from './SearchHighlight';
 
 const DiffView = lazy(() => import('../DiffView').then((module) => ({ default: module.DiffView })));
 const FileContentView = lazy(() =>
@@ -26,26 +27,45 @@ interface ToolGroupBlockProps {
 const entryIndentClass = 'pl-6';
 
 /** A single expandable tool entry within the group */
-function ToolEntryRow({ entry, searchQuery }: { entry: ToolGroupEntry; searchQuery?: string }) {
+function ToolEntryRow({ entry, searchQuery, isCurrentMatch }: { entry: ToolGroupEntry; searchQuery?: string; isCurrentMatch?: boolean }) {
   const editBlocks = useMemo(() => extractEditBlocks(entry.rawText), [entry.rawText]);
   const writeBlocks = useMemo(() => extractWriteBlocks(entry.rawText), [entry.rawText]);
   // A diff is the point of opening the group, so an edit entry starts open; file previews and results stay folded
   const [expanded, setExpanded] = useState(() => editBlocks.length > 0);
+
+  // Search reveal (#412): while the group is the current match, an entry whose result holds the
+  // query opens, and folds back when the match moves on. Toggling it meanwhile makes it the operator's.
+  const query = searchQuery?.trim() ? searchQuery.toLowerCase() : '';
+  const revealFor = isCurrentMatch && query && entry.result?.toLowerCase().includes(query) ? query : null;
+  const [handedOver, setHandedOver] = useState<{ reveal: string | null; done: boolean }>({ reveal: null, done: false });
+  if (handedOver.reveal !== revealFor) setHandedOver({ reveal: revealFor, done: false });
+  const revealed = revealFor !== null && !(handedOver.reveal === revealFor && handedOver.done);
+  const open = revealed || expanded;
+  const onOpenChange = (next: boolean) => {
+    if (revealed) setHandedOver({ reveal: revealFor, done: true });
+    setExpanded(next);
+  };
   const hasExpandableContent = editBlocks.length > 0 || writeBlocks.length > 0 || entry.result !== undefined;
 
   // Entries with a diff, a file view or a result open; the rest are plain rows
   if (!hasExpandableContent) {
     return (
       <div className={cn(toolRowClass, entryIndentClass)}>
-        <ToolRowContent state="off" text={entry.preview} />
+        <ToolRowContent state="off" text={entry.preview} renderText={(text) => <SearchHighlight text={text} query={searchQuery} />} />
       </div>
     );
   }
 
   return (
-    <Collapsible open={expanded} onOpenChange={setExpanded}>
+    <Collapsible open={open} onOpenChange={onOpenChange}>
       <CollapsibleTrigger className={cn(toolRowClass, toolRowButtonClass, entryIndentClass)}>
-        <ToolRowContent state="off" text={entry.preview} expandable expanded={expanded} />
+        <ToolRowContent
+          state="off"
+          text={entry.preview}
+          expandable
+          expanded={open}
+          renderText={(text) => <SearchHighlight text={text} query={searchQuery} />}
+        />
       </CollapsibleTrigger>
       <CollapsibleContent>
         {/* The diff or file preview first, then the result: a failed edit shows its error */}
@@ -97,7 +117,7 @@ function ToolGroupBlockInner({ msg, index, isCollapsed, onToggleCollapse, search
         <CollapsibleContent>
           <div className="divide-y divide-border border-t border-border">
             {entries.map((entry, i) => (
-              <ToolEntryRow key={entry.preview + '-' + i} entry={entry} searchQuery={searchQuery} />
+              <ToolEntryRow key={entry.preview + '-' + i} entry={entry} searchQuery={searchQuery} isCurrentMatch={isCurrentMatch} />
             ))}
           </div>
         </CollapsibleContent>

@@ -1,8 +1,8 @@
-import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle, type ReactNode } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState, useCallback, forwardRef, useImperativeHandle, type ReactNode } from 'react';
 import type { ProcessingStage, ActivityLogEntry, ChatStreamState } from '@/contexts/ChatContext';
 import { ToolCallBlock } from './ToolCallBlock';
 import { MessageBubble } from './MessageBubble';
-import { dayKey, dayLabel } from './utils';
+import { dayKey, dayLabel, extractMemories } from './utils';
 
 /** A hairline across the transcript with a word on it: a day, or the way to older messages */
 function TranscriptDivider({ label }: { label: string }) {
@@ -80,9 +80,21 @@ export interface ChatPanelHandle {
   addWorkspacePath: (path: string, kind: 'file' | 'directory', agentId?: string) => Promise<void>;
 }
 
-/** Thinking, tool calls and system lines start folded; replies start open. */
+/** Thinking, tool calls, system lines and notification strips start folded; replies start open. */
 function isCollapsedByDefault(msg: ChatMsg): boolean {
-  return Boolean(msg.isThinking) || isMessageCollapsible(msg);
+  return Boolean(msg.isThinking) || Boolean(msg.isSystemNotification) || isMessageCollapsible(msg);
+}
+
+/** The key a row's open or folded state is kept under. */
+function collapseKeyOf(msg: ChatMsg | undefined, index: number): string | number {
+  return msg?.msgId || msg?.tempId || index;
+}
+
+/** Whether a turn's referenced memories hold the search query. */
+function memoriesHold(msg: ChatMsg, query: string): boolean {
+  if (msg.role !== 'user' || !query.trim()) return false;
+  const { memories } = extractMemories(msg.rawText);
+  return Boolean(memories && memories.toLowerCase().includes(query.toLowerCase()));
 }
 
 /** Main chat panel with message list, infinite scroll, search, and input bar. */
@@ -174,6 +186,29 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   // Message search
   const search = useMessageSearch(messages);
 
+  // Search reveal (#412): the current match's row opens while it is the current match,
+  // with its referenced memories when they hold the query (a tool group opens its own
+  // matching entries). Nothing is written to `collapsed`, so moving to another match or
+  // ending the search folds back what search opened, and what the operator opened or
+  // folded by hand stays as they left it. Toggling a revealed row hands it to the operator.
+  const matchIndex = search.currentMatch?.messageIndex;
+  const matchMsg = matchIndex !== undefined ? messages[matchIndex] : undefined;
+  const matchKey = matchIndex !== undefined ? collapseKeyOf(matchMsg, matchIndex) : null;
+  const revealToken = matchKey !== null ? JSON.stringify([search.query, search.currentMatchIndex, matchKey]) : null;
+  const [handedOver, setHandedOver] = useState<{ token: string | null; keys: Array<string | number> }>({ token: null, keys: [] });
+  // A new current match starts with nothing handed over
+  if (handedOver.token !== revealToken) setHandedOver({ token: revealToken, keys: [] });
+  const revealed = new Set<string | number>();
+  if (matchKey !== null && matchMsg) {
+    revealed.add(matchKey);
+    if (memoriesHold(matchMsg, search.query)) revealed.add(`mem-${matchKey}`);
+  }
+  if (handedOver.token === revealToken) handedOver.keys.forEach((key) => revealed.delete(key));
+  // Row components skip re-renders on new callbacks, so the toggles read the reveal from here
+  const revealedRef = useRef(revealed);
+  useLayoutEffect(() => { revealedRef.current = revealed; });
+  const handOver = (key: string | number) => setHandedOver((prev) => ({ token: prev.token, keys: [...prev.keys, key] }));
+
   // Sync external search state with internal
   // We intentionally only react to searchOpen changes to avoid infinite loops
   useEffect(() => {
@@ -204,24 +239,20 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
 
   // NOTE: Cmd+F and Escape are now handled globally in App.tsx via useKeyboardShortcuts
 
-  // Scroll to current match when it changes
+  // Scroll to the current match when it changes (its row is already open, see the search reveal)
   useEffect(() => {
-    if (search.currentMatch) {
-      const msgElement = messageRefs.current.get(search.currentMatch.messageIndex);
-      if (msgElement && scrollRef.current) {
-        // Expand the message if it's collapsed
-        const msgIndex = search.currentMatch.messageIndex;
-        const searchMsg = messages[msgIndex];
-        const searchCollapseKey = searchMsg?.msgId || searchMsg?.tempId || msgIndex;
-        if (collapsed[searchCollapseKey]) {
-          setCollapsed(prev => ({ ...prev, [searchCollapseKey]: false }));
-        }
-        // Scroll to the message
-        msgElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setAutoScroll(false);
-      }
-    }
-  }, [search.currentMatch, search.currentMatchIndex, collapsed, messages]);
+    if (revealToken === null || matchIndex === undefined) return;
+    const row = messageRefs.current.get(matchIndex);
+    if (!row || !scrollRef.current) return;
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setAutoScroll(false);
+    // Then the marked text itself once the opened row has rendered: it can sit in a
+    // result or memories box that scrolls on its own
+    const frame = requestAnimationFrame(() => {
+      row.querySelector('mark.search-highlight')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [revealToken, matchIndex]);
 
   // Track unread messages when scrolled up
   useEffect(() => {
@@ -266,12 +297,23 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   const toggleCollapse = (idx: number) => {
     // Resolve to stable msgId so collapse state survives list reordering.
     const msg = messages[idx];
-    const key = msg?.msgId || msg?.tempId || idx;
+    const key = collapseKeyOf(msg, idx);
+    if (revealedRef.current.has(key)) {
+      // Open for search: the click folds it, and it is the operator's from now on
+      handOver(key);
+      setCollapsed(prev => ({ ...prev, [key]: true }));
+      return;
+    }
     // Flip what is on screen: a tool group or thinking block starts folded, so the first click opens it.
     setCollapsed(prev => ({ ...prev, [key]: !(prev[key] ?? (msg ? isCollapsedByDefault(msg) : false)) }));
   };
 
   const toggleMemory = (key: string) => {
+    if (revealedRef.current.has(key)) {
+      handOver(key);
+      setCollapsed(prev => ({ ...prev, [key]: true }));
+      return;
+    }
     setCollapsed(prev => ({ ...prev, [key]: !(prev[key] ?? true) }));
   };
 
@@ -281,10 +323,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   const isToolMessage = (msg: ChatMsg) => msg.role === 'tool' || msg.role === 'toolResult';
 
   const renderMessage = (msg: ChatMsg, i: number) => {
-    const collapseKey = msg.msgId || msg.tempId || i;
-    const isCollapsed = collapsed[collapseKey] ?? isCollapsedByDefault(msg);
+    const collapseKey = collapseKeyOf(msg, i);
+    const isCollapsed = revealed.has(collapseKey) ? false : (collapsed[collapseKey] ?? isCollapsedByDefault(msg));
     const memoryKey = `mem-${collapseKey}`;
-    const isMemoryCollapsed = collapsed[memoryKey] ?? true;
+    const isMemoryCollapsed = revealed.has(memoryKey) ? false : (collapsed[memoryKey] ?? true);
     const isCurrentMatch = search.currentMatch?.messageIndex === i;
     const stableKey = msg.msgId || msg.tempId || `${msg.role}-${msg.timestamp.getTime()}-${i}`;
 

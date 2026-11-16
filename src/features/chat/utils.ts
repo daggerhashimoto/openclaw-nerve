@@ -81,3 +81,17 @@ export function splitToolDescription(text: string): { verb: string; args: string
   if (space === -1) return { verb: trimmed, args: '' };
   return { verb: trimmed.slice(0, space), args: trimmed.slice(space + 1) };
 }
+
+/**
+ * Split the memories an operator turn references (a `<relevant-memories>` block)
+ * from the rest of its text: the bubble shows them in their own folded section.
+ */
+export function extractMemories(rawText: string): { memories: string | null; content: string } {
+  const match = rawText.match(/<relevant-memories>([\s\S]*?)<\/relevant-memories>\s*/);
+  if (match) {
+    const memories = match[1].trim();
+    const content = rawText.replace(match[0], '').trim();
+    return { memories, content };
+  }
+  return { memories: null, content: rawText };
+}

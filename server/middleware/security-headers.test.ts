@@ -31,6 +31,7 @@ describe('securityHeaders middleware', () => {
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain("script-src 'self'");
     expect(csp).toContain("frame-ancestors 'self'");
+    expect(csp).toMatch(/frame-src [^;]*https:\/\/www\.google\.com/);
   });
 
   it('sets X-Frame-Options to SAMEORIGIN', async () => {

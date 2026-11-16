@@ -73,6 +73,7 @@ Charts, diffs, previews, syntax-highlighted code, structured tool rendering, and
 > - **Watch cron runs as separate sessions** instead of treating automation like a black box
 > - **Delegate work onto a kanban board** and review what came back
 > - **Ask for a chart** and get a real chart, not a code block pretending to be one
+> - **View Google Maps inline** when a chat message contains a standalone link from Google Maps’ *Share → Embed a map* option (use the iframe’s `src` URL). Regular Maps links stay clickable; they cannot be framed directly.
 > - **Track token usage, costs, and context pressure** while long tasks run
 > - **Inspect subagent activity** without losing the main thread
 > - **Switch between per-agent workspaces and memory** without losing context

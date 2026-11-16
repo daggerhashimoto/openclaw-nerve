@@ -69,6 +69,28 @@ describe('MarkdownRenderer', () => {
     expect(link?.getAttribute('href')).toBe('https://example.com');
   });
 
+  it('embeds a standalone Google Maps share embed in chat while preserving its link', () => {
+    const url = 'https://www.google.com/maps/embed?pb=%21example';
+    render(<MarkdownRenderer content={`[View map](${url})`} embedGoogleMaps />);
+
+    expect(screen.getByRole('link', { name: 'View map' })).toHaveAttribute('href', url);
+    expect(screen.getByTitle('Google Maps')).toHaveAttribute('src', url);
+  });
+
+  it('does not embed ordinary Maps links, lookalike hosts, or inline links', () => {
+    const { rerender } = render(<MarkdownRenderer content="[Map](https://www.google.com/maps/place/London)" embedGoogleMaps />);
+    expect(screen.queryByTitle('Google Maps')).not.toBeInTheDocument();
+
+    rerender(<MarkdownRenderer content="[Map](https://www.google.com.evil.test/maps/embed?pb=x)" embedGoogleMaps />);
+    expect(screen.queryByTitle('Google Maps')).not.toBeInTheDocument();
+
+    rerender(<MarkdownRenderer content="See [Map](https://www.google.com/maps/embed?pb=x) nearby" embedGoogleMaps />);
+    expect(screen.queryByTitle('Google Maps')).not.toBeInTheDocument();
+
+    rerender(<MarkdownRenderer content="[Map](https://www.google.com/maps/embed?pb=x)" />);
+    expect(screen.queryByTitle('Google Maps')).not.toBeInTheDocument();
+  });
+
   it('linkifies configured inline /workspace paths', () => {
     const onOpenWorkspacePath = vi.fn();
     render(

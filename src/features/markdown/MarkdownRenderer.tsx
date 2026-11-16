@@ -73,10 +73,14 @@ interface MarkdownRendererProps {
   pathLinkAliases?: Record<string, string>;
   onOpenBeadId?: (target: BeadLinkTarget) => void | Promise<void>;
   workspaceAgentId?: string;
+  /** Render Google's share-generated map embeds in chat messages. */
+  embedGoogleMaps?: boolean;
 }
 
 interface MarkdownAstNode {
   type?: string;
+  tagName?: string;
+  properties?: { href?: unknown };
   value?: string;
   alt?: string;
   children?: MarkdownAstNode[];
@@ -96,6 +100,23 @@ type HeadingProps = React.HTMLAttributes<HTMLHeadingElement> & MarkdownNodeProps
 type ParagraphProps = React.HTMLAttributes<HTMLParagraphElement> & MarkdownNodeProps & {
   children?: React.ReactNode;
 };
+
+function getGoogleMapsEmbedUrl(node?: MarkdownAstNode): string | null {
+  // Only a standalone link, never arbitrary HTML or a normal Maps page.
+  const children = node?.children;
+  if (children?.length !== 1 || children[0].tagName !== 'a') return null;
+  const href = children[0].properties?.href;
+  if (typeof href !== 'string') return null;
+
+  try {
+    const url = new URL(href);
+    if (url.protocol !== 'https:' || url.hostname !== 'www.google.com' || url.pathname !== '/maps/embed') return null;
+    if (!url.searchParams.get('pb')) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
 
 type ListItemProps = React.LiHTMLAttributes<HTMLLIElement> & MarkdownNodeProps & {
   children?: React.ReactNode;
@@ -360,6 +381,7 @@ export function MarkdownRenderer({
   pathLinkAliases,
   onOpenBeadId,
   workspaceAgentId,
+  embedGoogleMaps = false,
 }: MarkdownRendererProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -432,7 +454,21 @@ export function MarkdownRenderer({
       h5: createHeading('h5'),
       h6: createHeading('h6'),
       p: ({ children, node, ...props }: ParagraphProps) => {
-        void node;
+        const mapUrl = embedGoogleMaps ? getGoogleMapsEmbedUrl(node as MarkdownAstNode) : null;
+        if (mapUrl) {
+          return (
+            <div className="google-map-embed">
+              <p {...props}>{processChildren(children, childOptions)}</p>
+              <iframe
+                src={mapUrl}
+                title="Google Maps"
+                loading="lazy"
+                referrerPolicy="strict-origin-when-cross-origin"
+                allowFullScreen
+              />
+            </div>
+          );
+        }
         return <p {...props}>{processChildren(children, childOptions)}</p>;
       },
       li: ({ children, node, ...props }: ListItemProps) => {
@@ -588,6 +624,7 @@ export function MarkdownRenderer({
     };
   }, [
     childOptions,
+    embedGoogleMaps,
     currentDocumentPath,
     onOpenBeadId,
     onOpenWorkspacePath,

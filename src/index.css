@@ -1435,6 +1435,14 @@ html[data-theme="light"] .nerve-horizon {
 .markdown-content a.markdown-link:hover {
   text-decoration-color: var(--color-operator);
 }
+.markdown-content .google-map-embed {
+  @apply my-3 w-full max-w-[680px];
+}
+.markdown-content .google-map-embed iframe {
+  @apply w-full rounded-lg border border-border;
+  aspect-ratio: 4 / 3;
+  min-height: 240px;
+}
 .markdown-content p {
   @apply my-2;
 }

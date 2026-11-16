@@ -299,6 +299,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
               index={i}
               isCollapsed={isCollapsed}
               onToggleCollapse={toggleCollapse}
+              searchQuery={search.query}
+              isCurrentMatch={isCurrentMatch}
             />
           ) : (
             // Single tool call
@@ -307,6 +309,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
               index={i}
               isCollapsed={isCollapsed}
               onToggleCollapse={toggleCollapse}
+              searchQuery={search.query}
+              isCurrentMatch={isCurrentMatch}
             />
           )}
         </div>

@@ -81,7 +81,7 @@ const nestedRead = (id: string, seq: number, path: string, text: string) =>
 const prompt = entry('u-1', 0, { role: 'user', content: 'hi' });
 const notFound = nestedRead('n-1', 2, 'memory/2026-11-15.md', 'Optional file not found: memory/2026-11-15.md.');
 
-function panel(messages: ChatMsg[]) {
+function panel(messages: ChatMsg[], options: { searchOpen?: boolean } = {}) {
   return (
     <ChatPanel
       messages={messages}
@@ -90,6 +90,7 @@ function panel(messages: ChatMsg[]) {
       isGenerating={false}
       stream={{ html: '', text: '' } as never}
       historyLoaded
+      searchOpen={options.searchOpen}
     />
   );
 }
@@ -273,6 +274,42 @@ describe('tool results in transcript order', () => {
 
     expect(before.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(result.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe('searching tool results', () => {
+  /** The search bar, with a query typed in. */
+  function searchFor(query: string) {
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search messages' }), { target: { value: query } });
+  }
+
+  it('finds a nested tool row by its result, marks the row and highlights the match once it is open', () => {
+    const { container } = render(panel(processChatMessages([prompt, notFound]), { searchOpen: true }));
+
+    searchFor('not found');
+
+    expect(screen.getByText('1 / 1')).toBeInTheDocument();
+    const row = container.querySelector('.msg-tool');
+    expect(row?.className).toContain('ring-operator/60');
+    fireEvent.click(toolRow(/reading\s*memory\/2026-11-15\.md/));
+    expect(shownResult(container).querySelector('mark.search-highlight')?.textContent).toBe('not found');
+  });
+
+  it('finds a tool group by the result of one of its entries', () => {
+    const exec = entry('a-1', 1, {
+      role: 'assistant',
+      content: [{ type: 'toolCall', id: 'exec-1', name: 'exec', arguments: { command: 'cat a' } }],
+    });
+    const raw = [prompt, exec, nestedRead('n-1', 2, 'notes.md', 'the needle is here'), notFound];
+    const { container } = render(panel(processChatMessages(raw), { searchOpen: true }));
+
+    searchFor('needle');
+
+    expect(screen.getByText('1 / 1')).toBeInTheDocument();
+    expect(container.querySelector('.msg-tool')?.className).toContain('ring-operator/60');
+    fireEvent.click(screen.getByRole('button', { name: /Used 3 tools/ }));
+    fireEvent.click(toolRow(/reading\s*notes\.md/));
+    expect(shownResult(container).querySelector('mark.search-highlight')?.textContent).toBe('needle');
   });
 });
 

@@ -1,11 +1,10 @@
-import React, { lazy, Suspense, useMemo, memo } from 'react';
+import { lazy, Suspense, useMemo, memo } from 'react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { decodeHtmlEntities } from '@/lib/formatting';
-import { escapeRegex } from '@/lib/constants';
 import { extractEditBlocks, extractWriteBlocks } from './edit-blocks';
-import { ToolResultText, ToolRowContent, toolRowButtonClass, toolRowClass } from './components/ToolRow';
+import { SearchHighlight, ToolResultText, ToolRowContent, toolRowButtonClass, toolRowClass, toolRowMatchClass } from './components/ToolRow';
 import type { ChatMsg } from './types';
 
 const DiffView = lazy(() => import('./DiffView').then((module) => ({ default: module.DiffView })));
@@ -19,25 +18,11 @@ interface ToolCallBlockProps {
   isCollapsed: boolean;
   onToggleCollapse: (idx: number) => void;
   searchQuery?: string;
+  /** This row is the current search match. */
+  isCurrentMatch?: boolean;
 }
 
-// Highlight search terms in text
-function highlightText(text: string, query?: string): React.ReactNode {
-  if (!query?.trim()) return text;
-  
-  const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
-  const parts = text.split(regex);
-  
-  // split() with a capture group alternates: non-match, match, non-match, ...
-  // Odd indices are always the captured matches
-  return parts.map((part, i) => 
-    i % 2 === 1 ? (
-      <mark key={i} className="search-highlight">{part}</mark>
-    ) : part
-  );
-}
-
-function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQuery }: ToolCallBlockProps) {
+function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQuery, isCurrentMatch }: ToolCallBlockProps) {
   const timeStr = msg.timestamp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   // Use html (description from describeToolUse) for preview, fall back to rawText
   const htmlText = msg.html.replace(/<[^>]*>/g, '').trim();
@@ -48,7 +33,7 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
   const sanitizedHtml = useMemo(() => sanitizeHtml(msg.html), [msg.html]);
 
   return (
-    <div className="msg msg-tool relative max-w-full break-words">
+    <div className={cn('msg msg-tool relative max-w-full break-words', isCurrentMatch && toolRowMatchClass)}>
       <Collapsible open={!isCollapsed} onOpenChange={() => onToggleCollapse(index)}>
         <CollapsibleTrigger className={cn(toolRowClass, toolRowButtonClass)}>
           <ToolRowContent
@@ -57,7 +42,7 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
             meta={timeStr}
             expandable
             expanded={!isCollapsed}
-            renderText={(text) => highlightText(text, searchQuery)}
+            renderText={(text) => <SearchHighlight text={text} query={searchQuery} />}
           />
         </CollapsibleTrigger>
         <CollapsibleContent>
@@ -85,7 +70,7 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
                 dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
               />
             ) : null}
-            {msg.toolResult !== undefined && <ToolResultText text={msg.toolResult} />}
+            {msg.toolResult !== undefined && <ToolResultText text={msg.toolResult} searchQuery={searchQuery} />}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -104,5 +89,6 @@ export const ToolCallBlock = memo(ToolCallBlockInner, (prev, next) => {
   if (prev.msg.toolResult !== next.msg.toolResult) return false;
   if (prev.isCollapsed !== next.isCollapsed) return false;
   if (prev.searchQuery !== next.searchQuery) return false;
+  if (prev.isCurrentMatch !== next.isCurrentMatch) return false;
   return true;
 });

@@ -40,6 +40,20 @@ export interface UseMessageSearchReturn {
   clear: () => void;
 }
 
+/**
+ * The text a search looks in: the message text, and the results a tool row
+ * holds (its own, or its group entries'). A result is kept apart from rawText,
+ * which stays the call for copy, diffs and file previews.
+ */
+function searchableTexts(msg: ChatMsg): string[] {
+  const texts = [msg.rawText];
+  if (msg.toolResult !== undefined) texts.push(msg.toolResult);
+  for (const entry of msg.toolGroup ?? []) {
+    if (entry.result !== undefined) texts.push(entry.result);
+  }
+  return texts;
+}
+
 /** Hook providing full-text search across chat messages with match navigation. */
 export function useMessageSearch(messages: ChatMsg[]): UseMessageSearchReturn {
   const [query, setQueryState] = useState('');
@@ -54,7 +68,7 @@ export function useMessageSearch(messages: ChatMsg[]): UseMessageSearchReturn {
     const results: MessageMatch[] = [];
     
     messages.forEach((msg, index) => {
-      if (msg.rawText.toLowerCase().includes(q)) {
+      if (searchableTexts(msg).some((text) => text.toLowerCase().includes(q))) {
         results.push({ messageIndex: index, message: msg });
       }
     });

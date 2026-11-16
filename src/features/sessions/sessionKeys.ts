@@ -188,6 +188,74 @@ export function getSessionDisplayLabel(session: Session, agentName = 'Agent'): s
   return sessionKey.split(':').pop() || sessionKey;
 }
 
+/** Any gateway key scoped to an agent (`agent:<id>:...`) belongs to that agent's family. */
+const AGENT_SCOPED_RE = /^agent:([^:]+):.+$/;
+
+function getKeyAgentId(sessionKey: string): string | null {
+  return getRootAgentId(sessionKey) ?? sessionKey.match(AGENT_SCOPED_RE)?.[1] ?? null;
+}
+
+/**
+ * The agent family a session belongs to. An agent-scoped key names it outright. A nonstandard key
+ * follows its explicit parent (`parentSessionKey`, then `parentId`) the way the sidebar tree places
+ * the row: the first candidate that names an agent or is a loaded session, up to a session whose
+ * key names its agent. A parent cycle names no family.
+ */
+function resolveAgentFamilyId(sessionKey: string, sessions: Session[]): string | null {
+  const byKey = new Map(sessions.map((candidate) => [getSessionKey(candidate), candidate]));
+  const visited = new Set<string>();
+  let key: string | undefined = sessionKey;
+
+  while (key && !visited.has(key)) {
+    const agentId = getKeyAgentId(key);
+    if (agentId) return agentId;
+    visited.add(key);
+    const session = byKey.get(key);
+    key = session
+      ? getExplicitParentCandidates(session).find((parent) => getKeyAgentId(parent) !== null || byKey.has(parent))
+      : undefined;
+  }
+
+  return null;
+}
+
+export interface ChatRoomNames {
+  /** The agent family the open session belongs to, if any; its hue colours the room. */
+  agentId: string | null;
+  /** Who speaks for the agent: the name on its replies and the header nameplate. */
+  agentName: string;
+  /** The session's own name, set only when it names someone or something other than the agent. */
+  sessionName?: string;
+}
+
+/**
+ * The names an open chat room shows: who the agent's replies belong to, and what the session is
+ * called when that is not the agent.
+ *
+ * A root agent session (`agent:<id>:main`) and a subagent session are named after the agent that
+ * runs them, so their own label is the speaker and there is no separate session name. Every other
+ * session under an agent (a direct or channel conversation from Telegram, Discord and the like, a
+ * group, topic or thread, a cron job or one of its runs) is a conversation that agent holds: its
+ * label names the peer, the room or the job, never the agent. Its replies belong to the agent
+ * family, named as the family's root row names it, and its label becomes the session name. A
+ * session whose key names no agent belongs to the family its explicit parent chain leads to.
+ */
+export function getChatRoomNames(sessionKey: string, sessions: Session[], mainAgentName = 'Agent'): ChatRoomNames {
+  const session = sessions.find((candidate) => getSessionKey(candidate) === sessionKey);
+  const ownLabel = session ? getSessionDisplayLabel(session, mainAgentName) : undefined;
+  const agentId = resolveAgentFamilyId(sessionKey, sessions);
+
+  if (!agentId || isTopLevelAgentSessionKey(sessionKey) || isSubagentSessionKey(sessionKey)) {
+    return { agentId, agentName: ownLabel ?? mainAgentName };
+  }
+
+  const rootKey = `agent:${agentId}:main`;
+  const root = sessions.find((candidate) => getSessionKey(candidate) === rootKey) ?? { sessionKey: rootKey };
+  const names: ChatRoomNames = { agentId, agentName: getSessionDisplayLabel(root, mainAgentName) };
+  if (ownLabel) names.sessionName = ownLabel;
+  return names;
+}
+
 export function pickDefaultSessionKey(sessions: Session[], preferredKey?: string): string {
   if (preferredKey && sessions.some((session) => getSessionKey(session) === preferredKey)) {
     return preferredKey;

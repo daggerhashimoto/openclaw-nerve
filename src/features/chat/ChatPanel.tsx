@@ -39,8 +39,10 @@ interface ChatPanelProps {
   onSearchClose?: () => void;
   /** HTML id for skip-to-content link */
   id?: string;
-  /** Agent display name */
+  /** Who speaks for the agent: the name on its replies and the header nameplate. */
   agentName?: string;
+  /** The open session's own name when it is not the agent's (a channel peer or room, a cron job). */
+  sessionName?: string;
   /** Identity hue of the agent family; tints idle panes in the header and transcript. */
   agentHue?: string;
   /** Load more (older) messages: returns true if still more available */
@@ -89,7 +91,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   onSend, onAbort, isGenerating, stream,
   processingStage,
   lastEventTimestamp = 0, currentToolDescription = null, activityLog = [],
-  onWakeWordState, onReset, searchOpen, onSearchClose, id, agentName = 'Agent', agentHue,
+  onWakeWordState, onReset, searchOpen, onSearchClose, id, agentName = 'Agent', sessionName, agentHue,
   loadMore, hasMore = false, historyLoaded = false, performanceMode = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
   onToggleMobileTopBar, isMobileTopBarHidden = false,
   onOpenWorkspacePath,
@@ -387,6 +389,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         onAbort={onAbort}
         isGenerating={isGenerating}
         agentName={agentName}
+        sessionName={sessionName}
         agentHue={agentHue}
         processingStage={processingStage}
         currentToolDescription={currentToolDescription}

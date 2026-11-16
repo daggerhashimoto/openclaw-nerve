@@ -625,6 +625,254 @@ describe('SessionContext', () => {
       expect(onError).not.toHaveBeenCalled();
       expect(deleteCalls()).toEqual(['agent:ops:cron:nightly:run:r1', 'agent:ops:cron:nightly']);
     });
+
+    it('keeps a deleted session gone when a refresh that started before the delete lands after it', async () => {
+      installDeleteGateway([
+        { sessionKey: 'agent:main:main', label: 'Main' },
+        { sessionKey: 'agent:ops:main', label: 'Ops' },
+        { sessionKey: 'agent:ops:subagent:worker', label: 'Worker' },
+      ], () => null);
+      // Hold one full sessions.list answer, taken before the delete, until after the delete has landed.
+      const gateway = rpcMock.getMockImplementation()!;
+      let holdNextFullList = false;
+      let releaseHeldList = () => {};
+      rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+        const answer = await gateway(method, params);
+        if (method === 'sessions.list' && !params?.spawnedBy && holdNextFullList) {
+          holdNextFullList = false;
+          await new Promise<void>((resolve) => { releaseHeldList = resolve; });
+        }
+        return answer;
+      });
+      const onError = vi.fn();
+
+      render(
+        <SessionProvider>
+          <SessionRefreshProbe />
+          <DeleteProbe target="agent:ops:subagent:worker" onError={onError} />
+        </SessionProvider>,
+      );
+      await screen.findByText('agent:ops:subagent:worker');
+
+      holdNextFullList = true;
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click();
+      });
+      await act(async () => {
+        screen.getByTestId('delete').click();
+      });
+      await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main']));
+
+      const spawnedByCallsBefore = rpcMock.mock.calls.filter(([method, params]) => method === 'sessions.list' && params?.spawnedBy).length;
+      await act(async () => {
+        releaseHeldList();
+      });
+      // The held refresh has finished once it has asked for both roots' children.
+      await waitFor(() => {
+        expect(rpcMock.mock.calls.filter(([method, params]) => method === 'sessions.list' && params?.spawnedBy)).toHaveLength(spawnedByCallsBefore + 2);
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main']);
+    });
+
+    it('keeps a subagent spawned while a delete lands in the list it switches to', async () => {
+      installDeleteGateway([
+        { sessionKey: 'agent:main:main', label: 'Main' },
+        { sessionKey: 'agent:ops:main', label: 'Ops' },
+        { sessionKey: 'agent:ops:subagent:worker', label: 'Worker' },
+      ], () => null);
+      const freshKey = 'agent:ops:subagent:fresh';
+      // Once the spawn route answers, the gateway lists the new child; the refresh spawnSession
+      // starts next is held, its answer taken before the delete, until after the delete has landed.
+      const gateway = rpcMock.getMockImplementation()!;
+      let spawned = false;
+      let holdNextFullList = false;
+      let releaseHeldList = () => {};
+      rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+        const answer = await gateway(method, params) as { sessions?: Array<Record<string, unknown>> };
+        if (method !== 'sessions.list' || params?.spawnedBy) return answer;
+        const listedNow = { sessions: spawned ? [...(answer.sessions ?? []), { sessionKey: freshKey, label: 'Fresh' }] : answer.sessions };
+        if (holdNextFullList) {
+          holdNextFullList = false;
+          await new Promise<void>((resolve) => { releaseHeldList = resolve; });
+        }
+        return listedNow;
+      });
+      const baseFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (!url.includes('/api/sessions/spawn-subagent')) return baseFetch(input, init);
+        spawned = true;
+        holdNextFullList = true;
+        return Promise.resolve(jsonResponse({ ok: true, sessionKey: freshKey, mode: 'direct' }));
+      }) as typeof fetch;
+      function SpawnProbe() {
+        const { spawnSession } = useSessionContext();
+        return (
+          <button
+            data-testid="spawn"
+            onClick={() => { void spawnSession({ kind: 'subagent', task: 'go', parentSessionKey: 'agent:ops:main' }); }}
+          />
+        );
+      }
+      const onError = vi.fn();
+
+      render(
+        <SessionProvider>
+          <SpawnProbe />
+          <DeleteProbe target="agent:ops:subagent:worker" onError={onError} />
+        </SessionProvider>,
+      );
+      await screen.findByText('agent:ops:subagent:worker');
+
+      await act(async () => {
+        screen.getByTestId('spawn').click();
+      });
+      await act(async () => {
+        screen.getByTestId('delete').click();
+      });
+      await waitFor(() => expect(listedKeys()).not.toContain('agent:ops:subagent:worker'));
+      await act(async () => {
+        releaseHeldList();
+      });
+
+      await waitFor(() => expect(screen.getByTestId('current-session')).toHaveTextContent(freshKey));
+      await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main', freshKey]));
+      expect(onError).not.toHaveBeenCalled();
+    });
+  });
+
+  it('lets an older refresh land when a newer one failed to reach the gateway', async () => {
+    let listed = [
+      { sessionKey: 'agent:main:main', label: 'Main' },
+      { sessionKey: 'agent:main:subagent:worker', label: 'Worker' },
+    ];
+    let nextFullList: 'answer' | 'hold' | 'fail' = 'answer';
+    let releaseHeldList = () => {};
+    rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method !== 'sessions.list') return {};
+      if (params?.spawnedBy) return { sessions: [] };
+      const mode = nextFullList;
+      nextFullList = 'answer';
+      if (mode === 'fail') throw new Error('gateway timeout');
+      const answer = { sessions: listed };
+      if (mode === 'hold') await new Promise<void>((resolve) => { releaseHeldList = resolve; });
+      return answer;
+    });
+
+    render(
+      <SessionProvider>
+        <SessionRefreshProbe />
+        <SessionLabels />
+      </SessionProvider>,
+    );
+    await screen.findByText('Worker');
+
+    listed = [{ sessionKey: 'agent:main:main', label: 'Main' }];
+    nextFullList = 'hold';
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+    });
+    nextFullList = 'fail';
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      releaseHeldList();
+    });
+
+    // The only answer the gateway gave since the worker went away must reach the list.
+    await waitFor(() => expect(screen.queryByText('Worker')).not.toBeInTheDocument());
+  });
+
+  it('applies only the newest of two overlapping refreshes when the older one answers last', async () => {
+    let listed = [
+      { sessionKey: 'agent:main:main', label: 'Main' },
+      { sessionKey: 'agent:main:subagent:worker', label: 'Worker' },
+    ];
+    let holdNextFullList = false;
+    let releaseHeldList = () => {};
+    rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method !== 'sessions.list') return {};
+      if (params?.spawnedBy) return { sessions: [] };
+      const answer = { sessions: listed };
+      if (holdNextFullList) {
+        holdNextFullList = false;
+        await new Promise<void>((resolve) => { releaseHeldList = resolve; });
+      }
+      return answer;
+    });
+
+    render(
+      <SessionProvider>
+        <SessionRefreshProbe />
+        <SessionLabels />
+      </SessionProvider>,
+    );
+    await screen.findByText('Worker');
+
+    holdNextFullList = true;
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+    });
+    listed = [{ sessionKey: 'agent:main:main', label: 'Main' }];
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+    });
+    await waitFor(() => expect(screen.queryByText('Worker')).not.toBeInTheDocument());
+
+    await act(async () => {
+      releaseHeldList();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.queryByText('Worker')).not.toBeInTheDocument();
+  });
+
+  it('carries a status or updatedAt change into a listed row even when nothing else changed', async () => {
+    let worker = { status: 'running', updatedAt: 1_000 };
+    rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method !== 'sessions.list') return {};
+      if (params?.spawnedBy) return { sessions: [] };
+      return {
+        sessions: [
+          { sessionKey: 'agent:main:main', label: 'Main' },
+          { sessionKey: 'agent:main:subagent:worker', label: 'Worker', totalTokens: 1_200, ...worker },
+        ],
+      };
+    });
+
+    function WorkerRow() {
+      const { sessions } = useSessionContext();
+      const row = sessions.find((session) => getSessionKey(session) === 'agent:main:subagent:worker');
+      return <div data-testid="worker-row">{row ? `${row.status}@${row.updatedAt}` : 'none'}</div>;
+    }
+
+    render(
+      <SessionProvider>
+        <SessionRefreshProbe />
+        <WorkerRow />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('worker-row')).toHaveTextContent('running@1000'));
+
+    // The run failed before it spent a token: only the status moved.
+    worker = { status: 'failed', updatedAt: 1_000 };
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+    });
+    await waitFor(() => expect(screen.getByTestId('worker-row')).toHaveTextContent('failed@1000'));
+
+    worker = { status: 'failed', updatedAt: 2_000 };
+    await act(async () => {
+      screen.getByTestId('refresh-sessions').click();
+    });
+    await waitFor(() => expect(screen.getByTestId('worker-row')).toHaveTextContent('failed@2000'));
   });
 
   it('uses the full gateway session list for sidebar refreshes so older agent chats stay visible', async () => {

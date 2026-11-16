@@ -15,7 +15,7 @@ import {
   isToolResultBlock,
   toolResultText,
 } from '@/utils/helpers';
-import { decodeHtmlEntities } from '@/lib/formatting';
+import { decodeHtmlEntities, esc } from '@/lib/formatting';
 import { extractTTSMarkers } from '@/features/tts/useTTS';
 import { extractChartMarkers } from '@/features/charts/extractCharts';
 import { extractEditBlocks, extractWriteBlocks } from '@/features/chat/edit-blocks';
@@ -407,13 +407,33 @@ function toolCallRow(block: ContentBlock, timestamp: Date): ChatMsg {
   };
 }
 
+/** The row line for a result that has no call beside it: the tool, when known, and the start of the result. */
+function resultRowDescription(block: ContentBlock, text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  const preview = flat.length > 80 ? flat.slice(0, 80) + '\u2026' : flat;
+  const label = block.toolName ? `${block.toolName} result` : 'tool result';
+  return preview ? `${label}: ${preview}` : label;
+}
+
 /**
- * Add a tool call or tool result block to one message's rows. A result goes on
+ * Add a tool call or tool result block to one entry's rows. A result goes on
  * the call it answers: the call its toolCallId names, or else the call just
- * before it. A result with no call in the message is a raw result row, which
- * groupToolMessages treats like any other tool result.
+ * before it.
+ *
+ * A result with no call in the entry is a row of its own. Inside another entry
+ * (a nested tool entry, a user turn, an assistant message) it carries the result
+ * as toolResult, so it stays in the transcript and opens to its text like a
+ * call's result. An entry that is itself a tool result (role toolResult or tool)
+ * gives a raw result row with no toolResult, which groupToolMessages hides
+ * unless it holds edits or writes, as it hides top-level toolResult entries.
  */
-function appendToolBlock(rows: ChatMsg[], calls: Map<string, ChatMsg>, block: ContentBlock, timestamp: Date): void {
+function appendToolBlock(
+  rows: ChatMsg[],
+  calls: Map<string, ChatMsg>,
+  block: ContentBlock,
+  timestamp: Date,
+  options: { keepUnansweredResults: boolean },
+): void {
   if (isToolCallBlock(block)) {
     const row = toolCallRow(block, timestamp);
     if (block.id) calls.set(block.id, row);
@@ -427,6 +447,17 @@ function appendToolBlock(rows: ChatMsg[], calls: Map<string, ChatMsg>, block: Co
   const call = named ?? (previous?.role === 'tool' ? previous : undefined);
   if (call && call.toolResult === undefined) {
     call.toolResult = text;
+    return;
+  }
+  if (options.keepUnansweredResults) {
+    rows.push({
+      role: 'toolResult',
+      html: esc(resultRowDescription(block, text)),
+      rawText: text,
+      timestamp,
+      streaming: false,
+      toolResult: text,
+    });
     return;
   }
   rows.push({ role: 'toolResult', html: renderMarkdown(text), rawText: text, timestamp, streaming: false });
@@ -491,7 +522,7 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
           textBuffer += (textBuffer ? '\n' : '') + block.text;
         } else if (isToolCallBlock(block) || isToolResultBlock(block)) {
           flushText();
-          appendToolBlock(result, calls, block, timestamp);
+          appendToolBlock(result, calls, block, timestamp, { keepUnansweredResults: true });
         }
       }
       flushText(); // Final text block
@@ -532,7 +563,10 @@ export function splitToolCallMessage(m: ChatMessage, options: { sessionKey?: str
     if (blocks.some(isToolBlock)) {
       const toolRows: ChatMsg[] = [];
       const calls = new Map<string, ChatMsg>();
-      for (const block of blocks.filter(isToolBlock)) appendToolBlock(toolRows, calls, block, timestamp);
+      const keepUnansweredResults = m.role !== 'toolResult' && m.role !== 'tool';
+      for (const block of blocks.filter(isToolBlock)) {
+        appendToolBlock(toolRows, calls, block, timestamp, { keepUnansweredResults });
+      }
       const rest = blocks.filter((b) => !isToolBlock(b));
       const restIsShown = rest.some((b) => (b.type === 'text' && Boolean(b.text?.trim())) || b.type === 'image');
       return restIsShown ? [...toolRows, ...splitToolCallMessage({ ...m, content: rest }, options)] : toolRows;
@@ -632,12 +666,13 @@ export function groupToolMessages(msgs: ChatMsg[]): ChatMsg[] {
     if (toolBuffer.length === 0) return;
 
     // Filter out raw tool result messages that don't contain edit/write content.
-    // Tool_use entries have rawText starting with "**tool:**"; everything else is a raw result.
-    // Only keep raw results if they contain edit blocks (diffs) or write blocks (file views).
+    // Tool_use entries have rawText starting with "**tool:**"; a result that arrived inside
+    // another entry carries toolResult (see appendToolBlock). Both stay. Everything else is a
+    // raw result, kept only if it contains edit blocks (diffs) or write blocks (file views).
     const filtered: ChatMsg[] = [];
     for (const t of toolBuffer) {
       const isToolUse = t.rawText.startsWith('**tool:**');
-      if (isToolUse) {
+      if (isToolUse || t.toolResult !== undefined) {
         filtered.push(t);
       } else {
         // Raw result: only keep if it has edit/write content worth displaying

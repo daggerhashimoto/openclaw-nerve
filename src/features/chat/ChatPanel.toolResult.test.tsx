@@ -13,7 +13,7 @@ import { render, screen, fireEvent, renderHook, act, waitFor } from '@testing-li
 import { forwardRef } from 'react';
 import type { ChatMessage, ChatEventPayload, ContentBlock } from '@/types';
 import { useChatStreaming } from '@/hooks/useChatStreaming';
-import { processChatMessages } from './operations/loadHistory';
+import { groupToolMessages, processChatMessages, splitToolCallMessage } from './operations/loadHistory';
 import { extractFinalMessages, extractStreamDelta } from './operations/streamEventHandler';
 import { StreamingMessage } from './components/StreamingMessage';
 import { ChatPanel } from './ChatPanel';
@@ -162,7 +162,7 @@ describe('tool results from history', () => {
     expect(container.textContent).not.toMatch(LEAK);
   });
 
-  it('keeps the text of a message that also carries a tool result block, without sentinels', async () => {
+  it('keeps both the result and the text of a user entry that carries an unanswered tool result', async () => {
     const mixed = entry('u-2', 3, {
       role: 'user',
       content: [
@@ -170,10 +170,42 @@ describe('tool results from history', () => {
         { type: 'text', text: 'Carry on' },
       ],
     });
-    const { container } = render(panel(processChatMessages([prompt, mixed])));
+    // The split rows, through grouping, as processChatMessages would hand them to the panel
+    const { container } = render(panel(groupToolMessages(splitToolCallMessage(mixed))));
 
     expect(await screen.findByText('Carry on', undefined, { timeout: 5000 })).toBeInTheDocument();
+    fireEvent.click(toolRow(/tool result\s*file body/));
+    expect(shownResult(container).textContent).toBe('file body');
     expect(container.textContent).not.toMatch(LEAK);
+  });
+
+  it('shows a nested entry whose result has no call in it as a result row of that tool', () => {
+    const orphan = entry('n-9', 2, {
+      role: 'custom',
+      customType: 'openclaw.nested-tool.v1',
+      content: [{ type: 'toolResult', toolCallId: 'elsewhere', toolName: 'read', content: [{ type: 'text', text: 'late body' }] }],
+    });
+    const { container } = render(panel(processChatMessages([prompt, orphan])));
+
+    fireEvent.click(toolRow(/read result\s*late body/));
+
+    expect(shownResult(container).textContent).toBe('late body');
+  });
+
+  it('still hides tool result entries of their own, as before', () => {
+    const call = entry('a-1', 1, {
+      role: 'assistant',
+      content: [{ type: 'toolCall', id: 'exec-1', name: 'exec', arguments: { command: 'ls' } }],
+    });
+    const plain = entry('r-1', 2, { role: 'toolResult', toolCallId: 'exec-1', toolName: 'exec', content: [{ type: 'text', text: 'top-level output' }] });
+    const blocks = entry('r-2', 3, { role: 'toolResult', content: [{ type: 'tool_result', content: 'block output' }] });
+    const { container } = render(panel(processChatMessages([prompt, call, plain, blocks])));
+
+    fireEvent.click(toolRow(/exec\s*ls/));
+
+    expect(container.querySelector('.tool-result')).toBeNull();
+    expect(container.textContent).not.toContain('top-level output');
+    expect(container.textContent).not.toContain('block output');
   });
 });
 
@@ -190,6 +222,25 @@ describe('tool results from live events', () => {
 
     expect(shownResult(container).textContent).toBe('Optional file not found: memory/2026-11-15.md.');
     expect(container.textContent).not.toMatch(LEAK);
+  });
+
+  it('keeps an unanswered result of a final reply visible once the final is processed', () => {
+    const payload: ChatEventPayload = {
+      state: 'final',
+      runId: RUN,
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'toolResult', content: [{ type: 'text', text: 'streamed body' }] },
+          { type: 'text', text: 'Reading done' },
+        ],
+      },
+    };
+    const { container } = render(panel(processChatMessages(extractFinalMessages(payload))));
+
+    fireEvent.click(toolRow(/tool result\s*streamed body/));
+
+    expect(shownResult(container).textContent).toBe('streamed body');
   });
 
   it('streams a message carrying a tool result without sentinels or markup from the result', async () => {

@@ -296,7 +296,7 @@ describe('splitToolCallMessage', () => {
       expectNoSentinels(result);
     });
 
-    it('keeps a result with no call as a raw result row, and the message text as its own row', () => {
+    it('makes a result with no call in its entry a result row of its own, next to the entry text', () => {
       const msg: ChatMessage = {
         role: 'user',
         content: [
@@ -307,11 +307,28 @@ describe('splitToolCallMessage', () => {
 
       const result = splitToolCallMessage(msg);
 
-      expect(result.map((row) => [row.role, row.rawText])).toEqual([
-        ['toolResult', 'file body'],
-        ['user', 'Carry on'],
+      expect(result.map((row) => [row.role, row.html, row.toolResult])).toEqual([
+        ['toolResult', 'tool result: file body', 'file body'],
+        ['user', 'Carry on', undefined],
       ]);
       expectNoSentinels(result);
+    });
+
+    it('names the tool on a result row when the result block says which tool', () => {
+      const msg = {
+        role: 'custom',
+        content: [{ type: 'toolResult', toolCallId: 'elsewhere', toolName: 'read', content: 'late body' }],
+      } as unknown as ChatMessage;
+
+      expect(splitToolCallMessage(msg)[0].html).toBe('read result: late body');
+    });
+
+    it('leaves the result of an entry that is itself a tool result a raw result row', () => {
+      const msg: ChatMessage = { role: 'toolResult', content: [{ type: 'tool_result', content: 'block output' }] };
+
+      const result = splitToolCallMessage(msg);
+
+      expect(result.map((row) => [row.role, row.rawText, row.toolResult])).toEqual([['toolResult', 'block output', undefined]]);
     });
 
     it('keeps an empty result as an empty string', () => {
@@ -329,6 +346,21 @@ describe('splitToolCallMessage', () => {
 });
 
 describe('groupToolMessages', () => {
+  it('keeps a result row that came from inside an entry, and drops a tool result entry of its own', () => {
+    const embedded = splitToolCallMessage({
+      role: 'user',
+      content: [{ type: 'tool_result', content: 'file body' }, { type: 'text', text: 'Carry on' }],
+    });
+    const topLevel = splitToolCallMessage({ role: 'toolResult', content: [{ type: 'text', text: 'top-level output' }] });
+
+    const result = groupToolMessages([...topLevel, ...embedded]);
+
+    expect(result.map((row) => [row.role, row.toolResult ?? row.rawText])).toEqual([
+      ['toolResult', 'file body'],
+      ['user', 'Carry on'],
+    ]);
+  });
+
   it('carries each call result into its group entry', () => {
     const msgs: ChatMsg[] = [
       { role: 'tool', html: 'reading a.md', rawText: '**tool:** `read`\n```json\n{}\n```', timestamp: new Date(), toolResult: 'A body' },

@@ -170,6 +170,8 @@ export interface ContentBlock {
   input?: Record<string, unknown>;
   id?: string;
   toolCallId?: string;
+  /** On a tool result block: the tool that produced it (OpenClaw nested tool entries say so). */
+  toolName?: string;
   arguments?: string | Record<string, unknown>;
   content?: string | ContentBlock[];
   /** Image content block fields (from gateway) */

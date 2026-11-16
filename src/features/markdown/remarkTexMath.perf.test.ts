@@ -3,8 +3,10 @@
  * Parse-time regression guard for remarkTexMath. The markdown renderer re-parses
  * a message on every streaming update, so a message full of unclosed math
  * delimiters must stay linear. Each shape parses in well under a second on a
- * developer machine; the 3 second budget leaves room for slow CI runners while
- * still catching a return to quadratic scanning (which took minutes).
+ * developer machine. The budget is wide on purpose: a 3 second budget failed once
+ * at 3032 ms while the whole suite ran in parallel, and a return to quadratic
+ * scanning took 28 to 38 seconds on these inputs, so 10 seconds still catches it
+ * several times over.
  */
 import { describe, expect, it } from 'vitest';
 import { unified } from 'unified';
@@ -13,7 +15,7 @@ import remarkGfm from 'remark-gfm';
 import type { Nodes, Root } from 'mdast';
 import { remarkTexMath } from './remarkTexMath';
 
-const BUDGET_MS = 3000;
+const BUDGET_MS = 10_000;
 
 const processor = unified().use(remarkParse).use(remarkGfm).use(remarkTexMath);
 

@@ -97,11 +97,21 @@ export interface ToolGroupEntry {
 }
 
 import type { ChartData } from '@/features/charts/extractCharts';
+import { esc } from '@/lib/formatting';
 
 let _msgIdCounter = 0;
 /** Generate a stable, unique ID for a ChatMsg (monotonic counter + timestamp). */
 export function generateMsgId(): string {
   return `m-${Date.now()}-${++_msgIdCounter}`;
+}
+
+/**
+ * A system row raised in the browser (a failed send, reset or history read; a
+ * session reset). The bubble renders rawText, so the text lives there; html
+ * carries the same text escaped, since an error message can contain markup.
+ */
+export function systemNotice(text: string): ChatMsg {
+  return { msgId: generateMsgId(), role: 'system', html: esc(text), rawText: text, timestamp: new Date() };
 }
 
 export interface ChatMsg {

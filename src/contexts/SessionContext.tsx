@@ -5,6 +5,7 @@ import { useSettings } from './SettingsContext';
 import { getSessionKey, type Session, type AgentLogEntry, type EventEntry, type GatewayEvent, type EventPayload, type AgentEventPayload, type ChatEventPayload, type ContentBlock, type SessionsListResponse, type ChatHistoryResponse, type ChatMessage, type GranularAgentState } from '@/types';
 import { playPing } from '@/features/voice/audio-feedback';
 import { describeToolUse } from '@/utils/helpers';
+import { HeartbeatRuns } from '@/features/chat/operations/heartbeatRuns';
 import { buildSessionTree } from '@/features/sessions/sessionTree';
 import { getSessionDeleteRefusal } from '@/features/sessions/sessionDeletion';
 import {
@@ -99,6 +100,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const deletedBeforeRefreshRef = useRef(new Map<string, number>());
   const refreshStartedRef = useRef(0);
   const refreshLandedRef = useRef(0);
+  const [heartbeatRuns] = useState(() => new HeartbeatRuns());
 
   // Derive busyState from agentStatus for backward compatibility. A failed run is over, not busy.
   const busyState = useMemo(() => {
@@ -696,6 +698,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
       addEvent(msg);
 
+      // A heartbeat is not work to show: it leaves the session dark and the agent log alone.
+      if (heartbeatRuns.observe(msg)) return;
+
       // Session granular status tracking + state sync from agent/chat events
       if ((evt === 'agent' || evt === 'chat') && p.sessionKey) {
         const sk = p.sessionKey;
@@ -811,7 +816,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       unsub();
     };
-  }, [subscribe, addEvent, setGranularStatus, markSessionUnread, pingSession, feedAgentLog, updateSessionFromEvent, extractSessionUpdates, refreshSessions, scheduleDelayedRefresh]);
+  }, [subscribe, addEvent, setGranularStatus, markSessionUnread, pingSession, feedAgentLog, updateSessionFromEvent, extractSessionUpdates, refreshSessions, scheduleDelayedRefresh, heartbeatRuns]);
 
   useEffect(() => {
     return () => {

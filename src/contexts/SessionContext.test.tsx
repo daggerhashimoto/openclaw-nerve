@@ -4,6 +4,7 @@ import { SessionProvider, useSessionContext } from './SessionContext';
 import { getSessionKey, type GatewayEvent } from '@/types';
 import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
 import { EventLog } from '@/features/activity/EventLog';
+import { sessionPaneState } from '@/lib/paneState';
 
 const mockUseGateway = vi.fn();
 const mockUseSettings = vi.fn();
@@ -1631,6 +1632,44 @@ describe('SessionContext', () => {
     });
     expect(screen.getByText('Chat error')).toHaveClass('text-destructive');
     expect(screen.getByLabelText('Failed')).toHaveAttribute('data-state', 'error');
+  });
+
+  it('keeps the main session dark while a heartbeat runs on it', async () => {
+    const MAIN = 'agent:main:main';
+    function MainPaneProbe() {
+      const { agentStatus, busyState } = useSessionContext();
+      const pane = sessionPaneState({ sessionKey: MAIN }, { busyState, agentStatus });
+      return <div data-testid="main-pane">{`${agentStatus[MAIN]?.status ?? 'NONE'} ${String(Boolean(busyState[MAIN]))} ${pane}`}</div>;
+    }
+    render(
+      <SessionProvider>
+        <MainPaneProbe />
+      </SessionProvider>,
+    );
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith('sessions.list', { limit: 1000 });
+    });
+    const emit = (event: string, payload: Record<string, unknown>) => {
+      act(() => {
+        subscribedHandler?.({ type: 'event', event, payload });
+      });
+    };
+
+    // Agent frames of a heartbeat carry isHeartbeat; its chat frames only share the run id.
+    const heartbeat = { sessionKey: MAIN, agentId: 'main', runId: 'run-hb', isHeartbeat: true };
+    emit('agent', { ...heartbeat, stream: 'lifecycle', data: { phase: 'start' } });
+    expect(screen.getByTestId('main-pane')).toHaveTextContent('NONE false off');
+    emit('agent', { ...heartbeat, stream: 'item', data: { kind: 'tool', phase: 'start', name: 'read' } });
+    emit('chat', { sessionKey: MAIN, runId: 'run-hb', state: 'delta', deltaText: 'Disk' });
+    expect(screen.getByTestId('main-pane')).toHaveTextContent('NONE false off');
+    emit('agent', { ...heartbeat, stream: 'lifecycle', data: { phase: 'end' } });
+    emit('chat', { sessionKey: MAIN, runId: 'run-hb', state: 'final' });
+    expect(screen.getByTestId('main-pane')).toHaveTextContent('NONE false off');
+    expect(playPingMock).not.toHaveBeenCalled();
+
+    // Any other run on the session lights it as before.
+    emit('agent', { sessionKey: MAIN, agentId: 'main', runId: 'run-tg', isHeartbeat: false, stream: 'lifecycle', data: { phase: 'start' } });
+    expect(screen.getByTestId('main-pane')).toHaveTextContent('THINKING true live');
   });
 
   it('drops the granular statuses held across a reconnect so the refreshed snapshot decides', async () => {

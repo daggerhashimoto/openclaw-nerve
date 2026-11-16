@@ -11,6 +11,7 @@ export {
 export { buildUserMessage, sendChatMessage } from './sendMessage';
 export type { ChatSendAck, ChatSendStatus } from './sendMessage';
 export {
+  classifyCommittedRow,
   classifyStreamEvent,
   extractStreamDelta,
   extractFinalMessage,
@@ -22,8 +23,10 @@ export {
   deriveProcessingStage,
   isActiveAgentState,
 } from './streamEventHandler';
-export type { ClassifiedEvent, StreamEventType, FinalMessageData } from './streamEventHandler';
+export type { ClassifiedEvent, CommittedRow, StreamEventType, FinalMessageData } from './streamEventHandler';
 export { isUnsentPrompt, keepUnsentMessages, mergeRecoveredTail } from './mergeRecoveredTail';
+export { HeartbeatRuns } from './heartbeatRuns';
+export type { HeartbeatFrame } from './heartbeatRuns';
 export {
   createFallbackRunId,
   getOrCreateRunState,

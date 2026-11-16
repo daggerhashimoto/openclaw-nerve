@@ -283,7 +283,7 @@ describe('searching tool results', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Search messages' }), { target: { value: query } });
   }
 
-  it('finds a nested tool row by its result, marks the row and highlights the match once it is open', () => {
+  it('finds a nested tool row by its result, marks the row and opens it on the highlighted match', () => {
     const { container } = render(panel(processChatMessages([prompt, notFound]), { searchOpen: true }));
 
     searchFor('not found');
@@ -291,7 +291,8 @@ describe('searching tool results', () => {
     expect(screen.getByText('1 / 1')).toBeInTheDocument();
     const row = container.querySelector('.msg-tool');
     expect(row?.className).toContain('ring-operator/60');
-    fireEvent.click(toolRow(/reading\s*memory\/2026-11-15\.md/));
+    // The current match opens its row (#412)
+    expect(toolRow(/reading\s*memory\/2026-11-15\.md/)).toHaveAttribute('aria-expanded', 'true');
     expect(shownResult(container).querySelector('mark.search-highlight')?.textContent).toBe('not found');
   });
 
@@ -307,8 +308,9 @@ describe('searching tool results', () => {
 
     expect(screen.getByText('1 / 1')).toBeInTheDocument();
     expect(container.querySelector('.msg-tool')?.className).toContain('ring-operator/60');
-    fireEvent.click(screen.getByRole('button', { name: /Used 3 tools/ }));
-    fireEvent.click(toolRow(/reading\s*notes\.md/));
+    // The current match opens the group and the entry whose result holds it (#412)
+    expect(screen.getByRole('button', { name: /Used 3 tools/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(toolRow(/reading\s*notes\.md/)).toHaveAttribute('aria-expanded', 'true');
     expect(shownResult(container).querySelector('mark.search-highlight')?.textContent).toBe('needle');
   });
 });

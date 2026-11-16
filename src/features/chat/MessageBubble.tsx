@@ -6,6 +6,8 @@ import type { PaneState } from '@/lib/paneState';
 import { MemoriesSection } from './MemoriesSection';
 import { ImageLightbox } from './ImageLightbox';
 import { isMessageCollapsible } from './types';
+import { extractMemories } from './utils';
+import { SearchHighlight } from './components/SearchHighlight';
 import { decodeHtmlEntities } from '@/lib/formatting';
 import type { ChatMsg } from './types';
 import type { BeadLinkTarget } from '@/features/beads';
@@ -13,17 +15,6 @@ import type { BeadLinkTarget } from '@/features/beads';
 // Lazy-load markdown renderer (includes highlight.js)
 const MarkdownRenderer = lazy(() => import('@/features/markdown/MarkdownRenderer').then(m => ({ default: m.MarkdownRenderer })));
 const InlineChart = lazy(() => import('@/features/charts/InlineChart'));
-
-// Extract relevant-memories section from user messages
-function extractMemories(rawText: string): { memories: string | null; content: string } {
-  const match = rawText.match(/<relevant-memories>([\s\S]*?)<\/relevant-memories>\s*/);
-  if (match) {
-    const memories = match[1].trim();
-    const content = rawText.replace(match[0], '').trim();
-    return { memories, content };
-  }
-  return { memories: null, content: rawText };
-}
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
@@ -80,7 +71,6 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
   const timeStr = msg.timestamp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   const isCollapsible = isMessageCollapsible(msg);
   const [copied, setCopied] = useState(false);
-  const [sysExpanded, setSysExpanded] = useState(false);
 
   // useCallback must be called unconditionally (before any early returns)
   const handleCopy = useCallback(async (e: React.MouseEvent) => {
@@ -94,14 +84,16 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
     }
   }, [msg.rawText]);
 
-  // System notification strip (subagent/cron completions): collapsible, not a full message
+  // System notification strip (subagent/cron completions): collapsible, not a full message.
+  // It starts folded (ChatPanel's isCollapsedByDefault), and search opens it like any row.
   if (msg.isSystemNotification) {
     const failed = Boolean(msg.systemLabel?.includes('failed') || msg.systemLabel?.includes('timed out'));
+    const sysExpanded = !isCollapsed;
     return (
       <div className="group relative">
         <button
           type="button"
-          onClick={() => setSysExpanded(!sysExpanded)}
+          onClick={() => onToggleCollapse(index)}
           aria-expanded={sysExpanded}
           className={`${headerRowClass} w-full cursor-pointer rounded-sm border-0 bg-transparent text-left text-[0.8rem] text-muted-foreground transition-colors duration-[120ms] hover:text-foreground`}
         >
@@ -114,7 +106,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
         </button>
         {sysExpanded && (
           <div className="mb-2 max-h-[300px] overflow-y-auto rounded-[3px] border border-border bg-card px-3 py-2">
-            <pre className="whitespace-pre-wrap font-mono text-[0.8rem] leading-relaxed text-muted-foreground">{msg.rawText}</pre>
+            <pre className="whitespace-pre-wrap font-mono text-[0.8rem] leading-relaxed text-muted-foreground"><SearchHighlight text={msg.rawText} query={searchQuery} /></pre>
           </div>
         )}
       </div>
@@ -275,7 +267,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
     <div className={`msg-body text-foreground ${isUser ? 'block w-full min-w-0 max-w-full text-left' : ''}`}>
       {msg.plainText ? (
         // A local notice quoting an error message: shown as written, never parsed as markdown.
-        <p className="m-0 whitespace-pre-wrap break-words">{displayContent}</p>
+        <p className="m-0 whitespace-pre-wrap break-words"><SearchHighlight text={displayContent} query={searchQuery} /></p>
       ) : (
         <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading</div>}>
           <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
@@ -364,6 +356,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           {memories && (
             <MemoriesSection
               memories={memories}
+              searchQuery={searchQuery}
               isCollapsed={isMemoryCollapsed}
               onToggle={() => onToggleMemory(memoryCollapsedKey)}
             />

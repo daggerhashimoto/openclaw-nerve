@@ -4,7 +4,8 @@ import { cn } from '@/lib/utils';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { decodeHtmlEntities } from '@/lib/formatting';
 import { extractEditBlocks, extractWriteBlocks } from './edit-blocks';
-import { SearchHighlight, ToolResultText, ToolRowContent, toolRowButtonClass, toolRowClass, toolRowMatchClass } from './components/ToolRow';
+import { ToolResultText, ToolRowContent, toolRowButtonClass, toolRowClass, toolRowMatchClass } from './components/ToolRow';
+import { SearchHighlight } from './components/SearchHighlight';
 import type { ChatMsg } from './types';
 
 const DiffView = lazy(() => import('./DiffView').then((module) => ({ default: module.DiffView })));

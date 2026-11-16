@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Pane } from '@/components/ui/Pane';
 import type { PaneState } from '@/lib/paneState';
 import { cn } from '@/lib/utils';
-import { escapeRegex } from '@/lib/constants';
+import { SearchHighlight } from './SearchHighlight';
 import { splitToolDescription } from '../utils';
 
 /** Shared geometry for one tool row: a 28px line of mono text. */
@@ -22,26 +22,6 @@ export const toolStackClass = 'tool-stack divide-y divide-border';
  * drawn inside the row because the tool stack clips what falls outside it.
  */
 export const toolRowMatchClass = 'ring-1 ring-inset ring-operator/60';
-
-/** Text with the search terms marked, as message bodies mark them. */
-export function SearchHighlight({ text, query }: { text: string; query?: string }) {
-  if (!query?.trim()) return <>{text}</>;
-
-  const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
-  const parts = text.split(regex);
-
-  // split() with a capture group alternates: non-match, match, non-match, ...
-  // Odd indices are always the captured matches
-  return (
-    <>
-      {parts.map((part, i) =>
-        i % 2 === 1 ? (
-          <mark key={i} className="search-highlight">{part}</mark>
-        ) : part
-      )}
-    </>
-  );
-}
 
 const TOOL_PANE_LABEL: Record<PaneState, string | undefined> = {
   live: 'Running',

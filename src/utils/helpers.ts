@@ -29,12 +29,24 @@ function setMarkdownCache(key: string, value: string): void {
 }
 
 /**
+ * A fenced code block: a run of three or more backticks and an optional
+ * language, closed by a run at least as long. A shorter run inside, such as a
+ * triple fence in a tool result fenced with four, is part of the code.
+ */
+const FENCED_BLOCK = /(?<!`)(`{3,})(\w*)\n([\s\S]*?)(?<!`)\1`*/g;
+const INLINE_CODE = /`([^`]+)`/g;
+/** A set-aside code span. Escaped text has no `<` (esc turns it into &lt;), so this cannot collide. */
+const SET_ASIDE = /<(\d+)>/g;
+
+/**
  * Lightweight regex-based markdown renderer for streaming and tool results.
  *
  * Supports fenced code blocks, inline code, bold, italic, links, and unordered
- * lists. Rich syntax highlighting lives in lazy-rendered markdown and diff
- * components so chat runtime projection does not pull highlight.js into the
- * initial bundle. Results are cached (LRU, max 200).
+ * lists. Code is set aside before the other substitutions, so what is inside it
+ * (a streamed tool result, for one) stays verbatim. Rich syntax highlighting
+ * lives in lazy-rendered markdown and diff components so chat runtime
+ * projection does not pull highlight.js into the initial bundle. Results are
+ * cached (LRU, max 200).
  */
 export function renderMarkdown(text: string): string {
   if (!text) return '';
@@ -42,39 +54,60 @@ export function renderMarkdown(text: string): string {
   const cached = getMarkdownCache(cacheKey);
   if (cached) return cached;
 
+  const code: string[] = [];
+  const setAside = (html: string) => `<${code.push(html) - 1}>`;
+
   let s = esc(text);
-  s = s.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+  s = s.replace(FENCED_BLOCK, (_, _fence, lang, body) => {
     const langLabel = lang ? `<span class="code-lang">${esc(lang)}</span>` : '';
-    return `<pre class="hljs">${langLabel}<code>${code}</code></pre>`;
+    return setAside(`<pre class="hljs">${langLabel}<code>${body}</code></pre>`);
   });
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(INLINE_CODE, (_, body: string) => setAside(`<code>${body.replace(/\n/g, '<br>')}</code>`));
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
-  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)<]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   s = s.replace(/^[-*] (.+)$/gm, '• $1');
   s = s.replace(/\n/g, '<br>');
-  s = s.replace(/<pre class="hljs">([\s\S]*?)<\/code><\/pre>/g, (_, inner) =>
-    '<pre class="hljs">' + inner.replace(/<br>/g, '\n') + '</code></pre>'
-  );
+  s = s.replace(SET_ASIDE, (_, index: string) => code[Number(index)] ?? '');
 
   setMarkdownCache(cacheKey, s);
   return s;
 }
 
-/** Replace tool-result sentinel markers with collapsible `<details>` elements. */
-export function renderToolResults(html: string): string {
-  // eslint-disable-next-line no-control-regex
-  return html.replace(/\x00TOOLRESULT_START\x00([\s\S]*?)\x00TOOLRESULT_END\x00/g, (_, content) => {
-    const plain = content.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim();
-    const preview = plain.slice(0, 80).replace(/\n/g, ' ') + (plain.length > 80 ? '…' : '');
-    // Use Unicode wrench instead of inline SVG — SVG is stripped by DOMPurify's FORBID_TAGS
-    return `<details class="tool-result-details"><summary>🔧 result — ${esc(preview)}</summary><div class="tool-result-body">${content}</div></details>`;
-  });
+/** A content block that calls a tool (`toolCall` from OpenClaw, `tool_use` from Anthropic-style transcripts). */
+export function isToolCallBlock(block: ContentBlock): boolean {
+  return block.type === 'toolCall' || block.type === 'tool_use';
+}
+
+/** A content block that carries a tool's result (`toolResult` or `tool_result`). */
+export function isToolResultBlock(block: ContentBlock): boolean {
+  return block.type === 'toolResult' || block.type === 'tool_result';
+}
+
+/** The plain text of a tool result block: its text, its text blocks joined, or its structured value as JSON. */
+export function toolResultText(block: ContentBlock): string {
+  const { content } = block;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.filter((part) => part.type === 'text').map((part) => part.text || '').join('\n');
+  }
+  if (content === undefined || content === null) return block.text ?? '';
+  return JSON.stringify(content);
+}
+
+/** A tool result as a fenced block whose fence is longer than any backtick run inside it, so it stays verbatim. */
+function fencedToolResult(text: string): string {
+  const longestRun = (text.match(/`+/g) ?? []).reduce((longest, run) => Math.max(longest, run.length), 0);
+  const fence = '`'.repeat(Math.max(3, longestRun + 1));
+  return `**tool result:**\n${fence}\n${text || '(empty result)'}\n${fence}`;
 }
 
 /**
- * Extract displayable text from a chat message, including tool call/result blocks.
- * Tool results are wrapped in sentinel markers for later rendering by {@link renderToolResults}.
+ * Extract the text of a chat message, including tool call/result blocks.
+ *
+ * The transcript shows tool blocks as tool rows (splitToolCallMessage); this
+ * text serves filters, the streaming preview, speech and copy, so a tool result
+ * is a fenced block and never a marker a renderer has to find again.
  */
 export function extractText(msg: { role: string; content: string | ContentBlock[]; text?: string }): string {
   if (typeof msg.content === 'string') return msg.content;
@@ -82,14 +115,11 @@ export function extractText(msg: { role: string; content: string | ContentBlock[
     const parts: string[] = [];
     for (const block of msg.content) {
       if (block.type === 'text' && block.text) parts.push(block.text);
-      else if (block.type === 'tool_use' || block.type === 'toolCall') {
+      else if (isToolCallBlock(block)) {
         const toolInput = block.input || block.arguments;
         parts.push(`**tool:** \`${block.name}\`\n\`\`\`json\n${JSON.stringify(toolInput, null, 2)}\n\`\`\``);
-      } else if (block.type === 'tool_result' || block.type === 'toolResult') {
-        const inner = typeof block.content === 'string' ? block.content
-          : Array.isArray(block.content) ? (block.content as ContentBlock[]).filter(x => x.type === 'text').map(x => x.text || '').join('\n')
-          : JSON.stringify(block.content);
-        parts.push(`\x00TOOLRESULT_START\x00${inner || '(empty result)'}\x00TOOLRESULT_END\x00`);
+      } else if (isToolResultBlock(block)) {
+        parts.push(fencedToolResult(toolResultText(block)));
       }
     }
     return parts.join('\n');

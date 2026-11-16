@@ -1,11 +1,11 @@
-import React, { lazy, Suspense, useMemo, memo } from 'react';
+import { lazy, Suspense, useMemo, memo } from 'react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { decodeHtmlEntities } from '@/lib/formatting';
-import { escapeRegex } from '@/lib/constants';
 import { extractEditBlocks, extractWriteBlocks } from './edit-blocks';
-import { ToolRowContent, toolRowButtonClass, toolRowClass } from './components/ToolRow';
+import { ToolResultText, ToolRowContent, toolRowButtonClass, toolRowClass, toolRowMatchClass } from './components/ToolRow';
+import { SearchHighlight } from './components/SearchHighlight';
 import type { ChatMsg } from './types';
 
 const DiffView = lazy(() => import('./DiffView').then((module) => ({ default: module.DiffView })));
@@ -19,25 +19,11 @@ interface ToolCallBlockProps {
   isCollapsed: boolean;
   onToggleCollapse: (idx: number) => void;
   searchQuery?: string;
+  /** This row is the current search match. */
+  isCurrentMatch?: boolean;
 }
 
-// Highlight search terms in text
-function highlightText(text: string, query?: string): React.ReactNode {
-  if (!query?.trim()) return text;
-  
-  const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
-  const parts = text.split(regex);
-  
-  // split() with a capture group alternates: non-match, match, non-match, ...
-  // Odd indices are always the captured matches
-  return parts.map((part, i) => 
-    i % 2 === 1 ? (
-      <mark key={i} className="search-highlight">{part}</mark>
-    ) : part
-  );
-}
-
-function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQuery }: ToolCallBlockProps) {
+function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQuery, isCurrentMatch }: ToolCallBlockProps) {
   const timeStr = msg.timestamp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   // Use html (description from describeToolUse) for preview, fall back to rawText
   const htmlText = msg.html.replace(/<[^>]*>/g, '').trim();
@@ -48,7 +34,7 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
   const sanitizedHtml = useMemo(() => sanitizeHtml(msg.html), [msg.html]);
 
   return (
-    <div className="msg msg-tool relative max-w-full break-words">
+    <div className={cn('msg msg-tool relative max-w-full break-words', isCurrentMatch && toolRowMatchClass)}>
       <Collapsible open={!isCollapsed} onOpenChange={() => onToggleCollapse(index)}>
         <CollapsibleTrigger className={cn(toolRowClass, toolRowButtonClass)}>
           <ToolRowContent
@@ -57,11 +43,12 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
             meta={timeStr}
             expandable
             expanded={!isCollapsed}
-            renderText={(text) => highlightText(text, searchQuery)}
+            renderText={(text) => <SearchHighlight text={text} query={searchQuery} />}
           />
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="border-t border-border px-2.5 py-2 font-mono text-[0.8rem]">
+          {/* The diff or file preview first, then the result: a failed edit shows its error */}
+          <div className="space-y-2 border-t border-border px-2.5 py-2 font-mono text-[0.8rem]">
             {editBlocks.length > 0 ? (
               <Suspense fallback={<div className="text-[0.8rem] text-muted-foreground">Loading diff</div>}>
                 <div className="space-y-2">
@@ -78,12 +65,13 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
                   ))}
                 </div>
               </Suspense>
-            ) : (
+            ) : msg.toolResult === undefined ? (
               <div
                 className="max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words text-muted-foreground [overflow-wrap:anywhere] [&_code]:font-mono [&_p]:m-0"
                 dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
               />
-            )}
+            ) : null}
+            {msg.toolResult !== undefined && <ToolResultText text={msg.toolResult} searchQuery={searchQuery} />}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -99,7 +87,9 @@ function ToolCallBlockInner({ msg, index, isCollapsed, onToggleCollapse, searchQ
 export const ToolCallBlock = memo(ToolCallBlockInner, (prev, next) => {
   if (prev.msg.rawText !== next.msg.rawText) return false;
   if (prev.msg.html !== next.msg.html) return false;
+  if (prev.msg.toolResult !== next.msg.toolResult) return false;
   if (prev.isCollapsed !== next.isCollapsed) return false;
   if (prev.searchQuery !== next.searchQuery) return false;
+  if (prev.isCurrentMatch !== next.isCurrentMatch) return false;
   return true;
 });

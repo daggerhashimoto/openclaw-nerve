@@ -15,6 +15,7 @@ import { InlineSelect } from '@/components/ui/InlineSelect';
 import type { InlineSelectOption } from '@/components/ui/InlineSelect';
 import { useSessionContext, type SpawnSessionOpts, type SubagentCleanupMode } from '@/contexts/SessionContext';
 import { getSessionKey } from '@/types';
+import { inheritedModelLabels } from '@/lib/inheritedModel';
 import {
   getRootAgentSessionKey,
   getSessionDisplayLabel,
@@ -46,9 +47,9 @@ const CHOICE_POINTS = 'grid list-disc gap-x-4 gap-y-0.5 pl-4 text-[0.8rem] text-
 const SELECT_TRIGGER = 'w-full min-h-11 justify-between rounded-[3px] border-input bg-background px-2.5 py-1.5 font-sans text-[0.867rem] text-foreground sm:min-h-[2.133rem] sm:px-2.5 sm:py-0 sm:text-[0.867rem]';
 const SELECT_MENU = 'p-1';
 
-type ModelEntry = { id: string; alias?: string };
+type ModelEntry = { id: string; alias?: string; role?: string };
 type ModelCatalogResponse = {
-  models?: Array<{ id: string; label?: string; alias?: string }>;
+  models?: Array<{ id: string; label?: string; alias?: string; role?: string }>;
   error?: string | null;
 };
 type SpawnMode = 'root' | 'subagent' | null;
@@ -104,7 +105,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
         const data = await res.json() as ModelCatalogResponse;
         if (cancelled) return;
         const models = Array.isArray(data.models)
-          ? data.models.map((entry) => ({ id: entry.id, alias: entry.alias || entry.label }))
+          ? data.models.map((entry) => ({ id: entry.id, alias: entry.alias || entry.label, role: entry.role }))
           : [];
         setFetchedModels(models);
         setModelLoadError(typeof data.error === 'string' ? data.error : '');
@@ -116,16 +117,23 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
     return () => { cancelled = true; };
   }, [open]);
 
+  // The inherited option names the primary model when the catalog says which it is, as the chat
+  // header does: its own label on the closed select, "<label> (primary)" in the list.
+  const inheritedModel = useMemo(() => {
+    const primary = fetchedModels.find((entry) => entry.role === 'primary');
+    return inheritedModelLabels(primary ? primary.alias || deriveAlias(primary.id) : null);
+  }, [fetchedModels]);
+
   const modelOptions = useMemo<InlineSelectOption[]>(() => {
     if (fetchedModels.length === 0) return [];
     return [
-      { value: INHERITED_MODEL_VALUE, label: INHERITED_MODEL_VALUE },
+      { value: INHERITED_MODEL_VALUE, label: inheritedModel.option },
       ...fetchedModels.map((entry) => ({
         value: entry.id,
         label: entry.alias || deriveAlias(entry.id),
       })),
     ];
-  }, [fetchedModels]);
+  }, [fetchedModels, inheritedModel]);
 
   const visibleModelOptions = useMemo<InlineSelectOption[]>(() => {
     if (modelOptions.length > 0) return modelOptions;
@@ -453,6 +461,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                     value={model}
                     onChange={setModel}
                     options={visibleModelOptions}
+                    displayLabel={(model || defaultModelId) === INHERITED_MODEL_VALUE ? inheritedModel.button : undefined}
                     ariaLabel="Select model"
                     disabled={spawning || modelOptions.length === 0}
                     triggerClassName={SELECT_TRIGGER}

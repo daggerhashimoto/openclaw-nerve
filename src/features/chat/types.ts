@@ -94,14 +94,27 @@ export interface ToolGroupEntry {
   rawText: string;
   /** Human-friendly description from describeToolUse() */
   preview: string;
+  /** The call's result as plain text, when its transcript entry carried it (see ChatMsg.toolResult) */
+  result?: string;
 }
 
 import type { ChartData } from '@/features/charts/extractCharts';
+import { esc } from '@/lib/formatting';
 
 let _msgIdCounter = 0;
 /** Generate a stable, unique ID for a ChatMsg (monotonic counter + timestamp). */
 export function generateMsgId(): string {
   return `m-${Date.now()}-${++_msgIdCounter}`;
+}
+
+/**
+ * A system row raised in the browser (a failed send, reset or history read; a
+ * session reset). The bubble renders rawText, so the text lives there, as plain
+ * text: an error message can carry markdown or markup that must never render
+ * (an image in it would be fetched). html carries the same text escaped.
+ */
+export function systemNotice(text: string): ChatMsg {
+  return { msgId: generateMsgId(), role: 'system', html: esc(text), rawText: text, plainText: true, timestamp: new Date() };
 }
 
 export interface ChatMsg {
@@ -118,6 +131,8 @@ export interface ChatMsg {
   uploadAttachments?: UploadAttachmentDescriptor[];
   /** Optimistic: message is being sent, not yet confirmed */
   pending?: boolean;
+  /** Show rawText as plain text, not markdown (local notices quoting an error message) */
+  plainText?: boolean;
   /** Optimistic: message send failed */
   failed?: boolean;
   /** Temporary ID for optimistic updates; also the idempotency key chat.send carried */
@@ -128,6 +143,12 @@ export interface ChatMsg {
   terminalRunId?: string;
   /** Grouped tool calls: when set, this is a grouped tool bubble */
   toolGroup?: ToolGroupEntry[];
+  /**
+   * On a tool call row: the call's result as plain text, when the same transcript
+   * entry carried it (an OpenClaw nested tool entry holds both). Shown as text,
+   * never parsed as markdown or HTML; an empty string is an empty result.
+   */
+  toolResult?: string;
   /** Intermediate assistant message (narration between tool calls, not the final answer) */
   intermediate?: boolean;
   /** Extracted chart data for inline rendering */

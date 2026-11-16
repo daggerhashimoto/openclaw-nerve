@@ -49,7 +49,7 @@ import {
   updateHighestSeq,
   HeartbeatRuns,
 } from '@/features/chat/operations';
-import { generateMsgId } from '@/features/chat/types';
+import { systemNotice } from '@/features/chat/types';
 import type { ImageAttachment, ChatMsg, OutgoingUploadPayload } from '@/features/chat/types';
 import type { RecoveryReason, RunState } from '@/features/chat/operations';
 
@@ -759,13 +759,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       msgHook.setAllMessages(prev => prev.map(failMsg));
       msgHook.setMessages((prev: ChatMsg[]) => prev.map(failMsg));
 
-      const errMsgBubble: ChatMsg = {
-        msgId: generateMsgId(),
-        role: 'system',
-        html: 'Send error: ' + errMsg,
-        rawText: '',
-        timestamp: new Date(),
-      };
+      const errMsgBubble = systemNotice(`Send error: ${errMsg}`);
       msgHook.setAllMessages(prev => [...prev, errMsgBubble]);
       msgHook.setMessages((prev: ChatMsg[]) => [...prev, errMsgBubble]);
       setIsGenerating(false);
@@ -789,24 +783,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setShowResetConfirm(false);
     try {
       await rpc('sessions.reset', { key: currentSessionRef.current });
-      const msg: ChatMsg = {
-        msgId: generateMsgId(),
-        role: 'system',
-        html: '⚙️ Session reset. Starting fresh.',
-        rawText: '',
-        timestamp: new Date(),
-      };
+      const msg = systemNotice('Session reset. Starting fresh.');
       msgHook.setAllMessages([msg]);
       msgHook.applyMessageWindow([msg], true);
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      const msg: ChatMsg = {
-        msgId: generateMsgId(),
-        role: 'system',
-        html: `⚙️ Reset failed: ${errMsg}`,
-        rawText: '',
-        timestamp: new Date(),
-      };
+      const msg = systemNotice(`Reset failed: ${errMsg}`);
       msgHook.setAllMessages(prev => [...prev, msg]);
       msgHook.setMessages((prev: ChatMsg[]) => [...prev, msg]);
     }

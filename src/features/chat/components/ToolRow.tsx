@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Pane } from '@/components/ui/Pane';
 import type { PaneState } from '@/lib/paneState';
 import { cn } from '@/lib/utils';
+import { SearchHighlight } from './SearchHighlight';
 import { splitToolDescription } from '../utils';
 
 /** Shared geometry for one tool row: a 28px line of mono text. */
@@ -15,6 +16,12 @@ export const toolRowButtonClass =
 
 /** One plate that holds consecutive tool rows, separated by hairlines (see .tool-stack in index.css). */
 export const toolStackClass = 'tool-stack divide-y divide-border';
+
+/**
+ * The current search match on a tool row: the operator's ring that marks a matching message,
+ * drawn inside the row because the tool stack clips what falls outside it.
+ */
+export const toolRowMatchClass = 'ring-1 ring-inset ring-operator/60';
 
 const TOOL_PANE_LABEL: Record<PaneState, string | undefined> = {
   live: 'Running',
@@ -35,6 +42,18 @@ interface ToolRowContentProps {
   expanded?: boolean;
   /** Optional transform for the visible text (search highlighting). */
   renderText?: (text: string) => ReactNode;
+}
+
+/**
+ * A tool's result under its open row, as plain text: React renders it as a text
+ * node, so markdown and angle brackets in the result are shown, never interpreted.
+ */
+export function ToolResultText({ text, searchQuery }: { text: string; searchQuery?: string }) {
+  return (
+    <pre className="tool-result m-0 max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words font-mono text-[0.8rem] text-muted-foreground [overflow-wrap:anywhere]">
+      {text.trim() ? <SearchHighlight text={text} query={searchQuery} /> : '(empty result)'}
+    </pre>
+  );
 }
 
 /**

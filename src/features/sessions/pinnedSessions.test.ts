@@ -155,6 +155,51 @@ describe('pin store', () => {
     expect(loadPinnedSessions()).toEqual(['agent:ops:subagent:other-tab', 'agent:ops:subagent:here']);
   });
 
+  it('keeps a pin another tab wrote before its storage event arrives', () => {
+    const { result } = renderHook(() => usePinnedSessions());
+    expect(result.current.pinnedKeys.size).toBe(0);
+
+    // The other tab has written, but its storage event is still queued
+    localStorage.setItem(PINNED_SESSIONS_STORAGE_KEY, JSON.stringify(['agent:ops:subagent:other-tab']));
+    act(() => result.current.togglePin('agent:ops:main'));
+
+    expect(loadPinnedSessions()).toEqual(['agent:ops:subagent:other-tab', 'agent:ops:main']);
+    expect([...result.current.pinnedKeys]).toEqual(['agent:ops:subagent:other-tab', 'agent:ops:main']);
+  });
+
+  it('pins what this page shows as unpinned even when another tab pinned it first', () => {
+    const { result } = renderHook(() => usePinnedSessions());
+    localStorage.setItem(PINNED_SESSIONS_STORAGE_KEY, JSON.stringify(['agent:ops:main']));
+
+    act(() => result.current.togglePin('agent:ops:main'));
+
+    expect(loadPinnedSessions()).toEqual(['agent:ops:main']);
+    expect([...result.current.pinnedKeys]).toEqual(['agent:ops:main']);
+  });
+
+  it('unpins deleted sessions from the latest stored pins', () => {
+    togglePinnedSessionKey('agent:ops:main');
+    // Another tab pinned a session this page has not heard about yet
+    localStorage.setItem(PINNED_SESSIONS_STORAGE_KEY, JSON.stringify(['agent:ops:main', 'agent:ops:subagent:other-tab']));
+
+    unpinSessions(['agent:ops:main']);
+
+    expect(loadPinnedSessions()).toEqual(['agent:ops:subagent:other-tab']);
+  });
+
+  it('builds on the in-memory pins after a write failed, not on the stale stored copy', () => {
+    togglePinnedSessionKey('agent:ops:main');
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
+    });
+    togglePinnedSessionKey('agent:ops:subagent:worker');
+    setItem.mockRestore();
+
+    togglePinnedSessionKey('agent:ops:subagent:helper');
+
+    expect(loadPinnedSessions()).toEqual(['agent:ops:main', 'agent:ops:subagent:worker', 'agent:ops:subagent:helper']);
+  });
+
   it('ignores storage events for other keys', () => {
     const { result } = renderHook(() => usePinnedSessions());
     act(() => result.current.togglePin('agent:ops:main'));

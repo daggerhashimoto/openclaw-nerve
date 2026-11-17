@@ -50,13 +50,15 @@ export function loadPinnedSessions(storage: ReadableStorage | undefined = browse
   }
 }
 
-/** Write the pinned session keys; a storage that is full or disabled is ignored. */
-export function savePinnedSessions(keys: readonly string[], storage: WritableStorage | undefined = browserStorage()): void {
-  if (!storage) return;
+/** Write the pinned session keys; a storage that is full or disabled is ignored. True when the write landed. */
+export function savePinnedSessions(keys: readonly string[], storage: WritableStorage | undefined = browserStorage()): boolean {
+  if (!storage) return false;
   try {
     storage.setItem(PINNED_SESSIONS_STORAGE_KEY, JSON.stringify(keys));
+    return true;
   } catch {
     // Storage may be full or disabled; the pins still hold in memory for this page.
+    return false;
   }
 }
 
@@ -84,6 +86,8 @@ export function pinnedFirst<T>(items: readonly T[], isPinned: (item: T) => boole
 // One store for the page, so both agents columns and the delete path share it.
 // Storage is read on first use rather than at import, since the tree builder imports this module.
 let pins: readonly string[] | null = null;
+// False once a write failed: storage then lags this page, and the in-memory copy is the truth
+let storageHoldsPins = true;
 let followingOtherTabs = false;
 const listeners = new Set<() => void>();
 
@@ -100,9 +104,27 @@ function getPins(): readonly string[] {
   return pins;
 }
 
+/**
+ * The pins a change should start from. Another tab may have written storage after this
+ * page read it and before its storage event arrives (events are queued tasks), so a
+ * change starts from the stored copy whenever storage is readable and holds this page's
+ * last write; otherwise from the in-memory copy.
+ */
+function latestPins(): readonly string[] {
+  const current = getPins();
+  if (!storageHoldsPins) return current;
+  const storage = browserStorage();
+  if (!storage) return current;
+  try {
+    return parsePinnedSessions(storage.getItem(PINNED_SESSIONS_STORAGE_KEY));
+  } catch {
+    return current;
+  }
+}
+
 function commit(next: readonly string[]): void {
   pins = next;
-  savePinnedSessions(next);
+  storageHoldsPins = savePinnedSessions(next);
   listeners.forEach((listener) => listener());
 }
 
@@ -122,12 +144,17 @@ function subscribe(listener: () => void): () => void {
 
 /** Pin or unpin one session. */
 export function togglePinnedSessionKey(sessionKey: string): void {
-  commit(togglePinnedSession(getPins(), sessionKey));
+  // The operator acts on what this page shows, so the intent comes from the in-memory copy and
+  // is applied to the latest stored one: a session another tab already pinned stays pinned.
+  const pin = !getPins().includes(sessionKey);
+  const latest = latestPins();
+  const isPinned = latest.includes(sessionKey);
+  commit(pin === isPinned ? latest : togglePinnedSession(latest, sessionKey));
 }
 
 /** Forget the pins of sessions Nerve deleted. Keys that were not pinned change nothing. */
 export function unpinSessions(sessionKeys: readonly string[]): void {
-  const current = getPins();
+  const current = latestPins();
   const next = removePinnedSessions(current, sessionKeys);
   if (next !== current) commit(next);
 }
@@ -135,6 +162,7 @@ export function unpinSessions(sessionKeys: readonly string[]): void {
 /** Test hook: drop the in-memory copy, so the next read comes from storage as on a page load. */
 export function resetPinnedSessionsCache(): void {
   pins = null;
+  storageHoldsPins = true;
 }
 
 /** The pinned session keys, kept in step with storage, and the toggle the row action calls. */

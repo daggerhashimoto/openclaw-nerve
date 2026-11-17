@@ -1,5 +1,5 @@
 import { createRef } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { InputBar, type InputBarHandle, resetInputBarComposerSnapshotForTests } from './InputBar';
 import { compressImage } from './image-compress';
@@ -20,15 +20,38 @@ vi.mock('./image-compress', () => ({
   })),
 }));
 
-vi.mock('@/features/voice/useVoiceInput', () => ({
-  useVoiceInput: () => ({
-    voiceState: 'idle',
+type MockVoiceState = 'idle' | 'listening' | 'recording' | 'transcribing';
+
+const { voiceMock, settingsMock, resetVoiceAndSettingsMocks } = vi.hoisted(() => {
+  const voiceMock = {
+    voiceState: 'idle' as MockVoiceState,
     interimTranscript: '',
-    wakeWordEnabled: false,
-    toggleWakeWord: vi.fn(),
-    error: null,
-    clearError: vi.fn(),
-  }),
+    error: null as string | null,
+    onTranscription: null as ((text: string) => void) | null,
+  };
+  const settingsMock = { liveTranscriptionPreview: false };
+  const resetVoiceAndSettingsMocks = () => {
+    voiceMock.voiceState = 'idle';
+    voiceMock.interimTranscript = '';
+    voiceMock.error = null;
+    voiceMock.onTranscription = null;
+    settingsMock.liveTranscriptionPreview = false;
+  };
+  return { voiceMock, settingsMock, resetVoiceAndSettingsMocks };
+});
+
+vi.mock('@/features/voice/useVoiceInput', () => ({
+  useVoiceInput: (onTranscription: (text: string) => void) => {
+    voiceMock.onTranscription = onTranscription;
+    return {
+      voiceState: voiceMock.voiceState,
+      interimTranscript: voiceMock.interimTranscript,
+      wakeWordEnabled: false,
+      toggleWakeWord: vi.fn(),
+      error: voiceMock.error,
+      clearError: vi.fn(),
+    };
+  },
 }));
 
 vi.mock('@/hooks/useTabCompletion', () => ({
@@ -61,7 +84,7 @@ vi.mock('@/contexts/SessionContext', () => ({
 
 vi.mock('@/contexts/SettingsContext', () => ({
   useSettings: () => ({
-    liveTranscriptionPreview: false,
+    liveTranscriptionPreview: settingsMock.liveTranscriptionPreview,
     sttInputMode: 'browser',
     sttProvider: 'browser',
   }),
@@ -90,6 +113,7 @@ describe('InputBar', () => {
 
   beforeEach(() => {
     resetInputBarComposerSnapshotForTests();
+    resetVoiceAndSettingsMocks();
 
     uploadConfigResponse = {
       twoModeEnabled: true,
@@ -215,6 +239,7 @@ describe('InputBar', () => {
     global.cancelAnimationFrame = originalCancelAnimationFrame;
     global.URL.createObjectURL = originalCreateObjectUrl;
     global.URL.revokeObjectURL = originalRevokeObjectUrl;
+    resetVoiceAndSettingsMocks();
     vi.restoreAllMocks();
   });
 
@@ -796,6 +821,238 @@ describe('InputBar', () => {
     expect(screen.getByText('Upload')).toBeInTheDocument();
   });
 
+  describe('voice input keeps the typed draft', () => {
+    type VoicePatch = Partial<Pick<typeof voiceMock, 'voiceState' | 'interimTranscript' | 'error'>>;
+
+    function renderComposer(onSend = vi.fn()) {
+      // A fresh element on every rerender, so InputBar re-runs and reads the new mock state.
+      const composer = () => <InputBar onSend={onSend} isGenerating={false} />;
+      const view = render(composer());
+      const textarea = view.getByLabelText('Message input') as HTMLTextAreaElement;
+      const setVoice = (patch: VoicePatch) => {
+        Object.assign(voiceMock, patch);
+        view.rerender(composer());
+      };
+      return { ...view, onSend, textarea, setVoice };
+    }
+
+    function typeDraft(textarea: HTMLTextAreaElement, value: string) {
+      fireEvent.input(textarea, { target: { value } });
+    }
+
+    async function flushPendingSends() {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+
+    afterEach(() => {
+      mockUseInputHistory.mockReset();
+    });
+
+    it('keeps the draft in the textarea and shows the live preview in its own element while recording', () => {
+      settingsMock.liveTranscriptionPreview = true;
+      const { textarea, setVoice } = renderComposer();
+      typeDraft(textarea, 'my typed draft');
+
+      setVoice({ voiceState: 'recording', interimTranscript: '' });
+      expect(textarea.value).toBe('my typed draft');
+      expect(document.querySelector('[aria-live="polite"]')).toBeNull();
+
+      setVoice({ interimTranscript: 'hello from the mic' });
+      expect(textarea.value).toBe('my typed draft');
+      expect(textarea.style.fontStyle).toBe('');
+      expect(textarea.style.opacity).toBe('');
+
+      const preview = screen.getByText('hello from the mic');
+      expect(preview).not.toBe(textarea);
+      expect(preview).toHaveAttribute('aria-live', 'polite');
+      expect(textarea.nextElementSibling).toBe(preview);
+
+      setVoice({ voiceState: 'transcribing' });
+      expect(screen.queryByText('hello from the mic')).not.toBeInTheDocument();
+      expect(textarea.value).toBe('my typed draft');
+    });
+
+    it('renders no preview element when live preview is off', () => {
+      const { textarea, setVoice } = renderComposer();
+      typeDraft(textarea, 'my typed draft');
+
+      setVoice({ voiceState: 'recording', interimTranscript: 'hello from the mic' });
+
+      expect(screen.queryByText('hello from the mic')).not.toBeInTheDocument();
+      expect(document.querySelector('[aria-live="polite"]')).toBeNull();
+      expect(textarea.value).toBe('my typed draft');
+    });
+
+    it.each([
+      ['on', true],
+      ['off', false],
+    ])('sends a transcription as its own [voice] message and keeps the draft and attachments (preview %s)', async (_label, preview) => {
+      settingsMock.liveTranscriptionPreview = preview;
+      const addToHistory = vi.fn();
+      mockUseInputHistory.mockReturnValue({
+        addToHistory,
+        isNavigating: vi.fn(() => false),
+        reset: vi.fn(),
+        navigateUp: vi.fn(() => null),
+        navigateDown: vi.fn(() => null),
+      } as ReturnType<typeof useInputHistory>);
+
+      const onSend = vi.fn();
+      const { textarea, setVoice, unmount } = renderComposer(onSend);
+      typeDraft(textarea, 'half-written thought');
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      await waitFor(() => {
+        expect(fileInput.accept).toBe('*/*');
+      });
+      fireEvent.change(fileInput, {
+        target: { files: [new File([new Uint8Array(10_000)], 'keep-me.png', { type: 'image/png' })] },
+      });
+      await screen.findByText('keep-me.png');
+
+      setVoice({ voiceState: 'recording', interimTranscript: 'turn on the lights' });
+      setVoice({ voiceState: 'transcribing', interimTranscript: '' });
+      // The hook delivers the transcription while it is still transcribing.
+      act(() => {
+        voiceMock.onTranscription?.('turn on the lights');
+      });
+      setVoice({ voiceState: 'idle' });
+      await flushPendingSends();
+
+      expect(onSend).toHaveBeenCalledTimes(1);
+      expect(onSend.mock.calls[0]).toEqual(['[voice] turn on the lights']);
+      expect(addToHistory).not.toHaveBeenCalled();
+      expect(textarea.value).toBe('half-written thought');
+      expect(textarea.readOnly).toBe(false);
+      expect(screen.getByText('keep-me.png')).toBeInTheDocument();
+
+      // The persisted composer snapshot still holds the draft and the attachment.
+      unmount();
+      render(<InputBar onSend={onSend} isGenerating={false} />);
+      expect(screen.getByLabelText('Message input')).toHaveValue('half-written thought');
+      expect(screen.getByText('keep-me.png')).toBeInTheDocument();
+
+      // And they are still the composer's next message.
+      fireEvent.click(screen.getByLabelText('Send message'));
+      await waitFor(() => {
+        expect(onSend).toHaveBeenCalledTimes(2);
+      });
+      expect(onSend.mock.calls[1][0]).toBe('half-written thought');
+      expect(onSend.mock.calls[1][2].descriptors[0]).toMatchObject({ name: 'keep-me.png' });
+      expect(addToHistory).toHaveBeenCalledWith('half-written thought');
+    });
+
+    it.each([
+      ['on', true],
+      ['off', false],
+    ])('keeps the draft when a recording is cancelled (preview %s)', async (_label, preview) => {
+      settingsMock.liveTranscriptionPreview = preview;
+      const { textarea, setVoice, onSend, unmount } = renderComposer();
+      typeDraft(textarea, 'do not lose me');
+
+      setVoice({ voiceState: 'recording', interimTranscript: 'actually forget it' });
+      expect(textarea.value).toBe('do not lose me');
+
+      setVoice({ voiceState: 'idle', interimTranscript: '' });
+      await flushPendingSends();
+
+      expect(onSend).not.toHaveBeenCalled();
+      expect(textarea.value).toBe('do not lose me');
+      expect(textarea.readOnly).toBe(false);
+      expect(screen.queryByText('actually forget it')).not.toBeInTheDocument();
+
+      unmount();
+      render(<InputBar onSend={vi.fn()} isGenerating={false} />);
+      expect(screen.getByLabelText('Message input')).toHaveValue('do not lose me');
+    });
+
+    it('keeps the draft when transcription fails', async () => {
+      settingsMock.liveTranscriptionPreview = true;
+      const { textarea, setVoice, onSend } = renderComposer();
+      typeDraft(textarea, 'draft survives a failure');
+
+      setVoice({ voiceState: 'recording', interimTranscript: 'something' });
+      setVoice({ voiceState: 'transcribing', interimTranscript: '' });
+      setVoice({ voiceState: 'idle', error: 'Transcription failed: boom' });
+      await flushPendingSends();
+
+      expect(screen.getByRole('alert')).toHaveTextContent('Transcription failed: boom');
+      expect(onSend).not.toHaveBeenCalled();
+      expect(textarea.value).toBe('draft survives a failure');
+      expect(textarea.readOnly).toBe(false);
+    });
+
+    it.each([
+      ['recording', 'idle'],
+      ['transcribing', 'idle'],
+      ['recording', 'listening'],
+    ] as const)('locks the draft while %s and unlocks it once voice is %s', async (busyState, restState) => {
+      const { textarea, setVoice, onSend } = renderComposer();
+      typeDraft(textarea, 'locked draft');
+
+      setVoice({ voiceState: busyState });
+      const sendButton = screen.getByLabelText('Send message');
+      expect(textarea.readOnly).toBe(true);
+      expect(sendButton).toBeDisabled();
+
+      // fireEvent returns false when the handler called preventDefault.
+      expect(fireEvent.keyDown(textarea, { key: 'Enter' })).toBe(false);
+      fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true });
+      fireEvent.click(sendButton);
+      await flushPendingSends();
+
+      expect(onSend).not.toHaveBeenCalled();
+      expect(textarea.value).toBe('locked draft');
+
+      setVoice({ voiceState: restState });
+      expect(textarea.readOnly).toBe(false);
+      expect(sendButton).not.toBeDisabled();
+
+      typeDraft(textarea, 'locked draft, edited');
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      await waitFor(() => {
+        expect(onSend).toHaveBeenCalledTimes(1);
+      });
+      expect(onSend.mock.calls[0][0]).toBe('locked draft, edited');
+    });
+
+    it('hides the slash menu and leaves a slash draft untouched while voice is busy', () => {
+      const { textarea, setVoice } = renderComposer();
+      typeDraft(textarea, '/mo');
+      expect(screen.getByRole('listbox', { name: 'Slash commands' })).toBeInTheDocument();
+
+      setVoice({ voiceState: 'recording' });
+      expect(screen.queryByRole('listbox', { name: 'Slash commands' })).not.toBeInTheDocument();
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      fireEvent.keyDown(textarea, { key: 'Tab' });
+      expect(textarea.value).toBe('/mo');
+
+      setVoice({ voiceState: 'idle' });
+      expect(screen.getByRole('listbox', { name: 'Slash commands' })).toBeInTheDocument();
+      expect(textarea.value).toBe('/mo');
+    });
+
+    it('keeps focus and the caret in place across the read-only lock', () => {
+      const { textarea, setVoice } = renderComposer();
+      typeDraft(textarea, 'caret stays here');
+      textarea.focus();
+      textarea.setSelectionRange(5, 5);
+
+      setVoice({ voiceState: 'recording' });
+      expect(screen.getByLabelText('Message input')).toBe(textarea);
+      expect(document.activeElement).toBe(textarea);
+      expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([5, 5]);
+
+      setVoice({ voiceState: 'transcribing' });
+      setVoice({ voiceState: 'idle' });
+      expect(document.activeElement).toBe(textarea);
+      expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([5, 5]);
+      expect(textarea.readOnly).toBe(false);
+      expect(textarea.value).toBe('caret stays here');
+    });
+  });
 });
 
 describe('InputBar ArrowUp behavior', () => {

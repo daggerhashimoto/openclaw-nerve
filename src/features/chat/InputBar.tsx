@@ -679,56 +679,26 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   const effectiveSttInputMode = sttProvider === 'openai' ? 'local' : sttInputMode;
 
+  // Voice never writes into the textarea: the box only ever holds the typed draft.
+  // A finished transcription goes out as its own message straight through onSend
+  // (not handleSend, which reads the draft and staged attachments), so the draft,
+  // attachments, history and slash state stay exactly as the user left them.
   const { voiceState, interimTranscript, wakeWordEnabled, toggleWakeWord, error: voiceError, clearError: clearVoiceError } = useVoiceInput((text) => {
-    const input = inputRef.current;
-    if (input) {
-      input.value = '';
-      input.style.height = 'auto';
-      input.style.fontStyle = '';
-      input.style.opacity = '';
-      syncSlashStateFromInput(input);
-    }
-    setDraftText('');
-    onSend('[voice] ' + text);
+    void onSend('[voice] ' + text);
   }, agentName, voiceLang, voicePhrasesVersion, effectiveSttInputMode);
 
-  // Live transcription preview: write interim transcript to textarea during recording
+  // While voice records or transcribes, the draft is locked: read-only, and
+  // neither Enter nor Send can send it.
+  const isVoiceBusy = voiceState === 'recording' || voiceState === 'transcribing';
+  const showSlashMenu = isSlashMenuOpen && !isVoiceBusy;
+  const voicePreviewText = liveTranscriptionPreview && voiceState === 'recording' ? interimTranscript : '';
+
+  // Keep the newest words of a long live preview in view once its height cap is reached.
+  const voicePreviewRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!inputRef.current) return;
-
-    if (!liveTranscriptionPreview) {
-      // Ensure temporary preview styling is removed when feature is disabled.
-      inputRef.current.style.fontStyle = '';
-      inputRef.current.style.opacity = '';
-      return;
-    }
-
-    if (voiceState === 'recording') {
-      if (interimTranscript) {
-        inputRef.current.value = interimTranscript;
-        inputRef.current.style.fontStyle = 'italic';
-        inputRef.current.style.opacity = '0.5';
-        inputRef.current.style.height = 'auto';
-        inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + 'px';
-        syncSlashStateFromInput(inputRef.current);
-      } else {
-        inputRef.current.value = '';
-        inputRef.current.style.height = 'auto';
-        syncSlashStateFromInput(inputRef.current);
-      }
-    } else {
-      // Clear provisional styling when not recording
-      const hadVoicePreviewStyling =
-        inputRef.current.style.fontStyle === 'italic' || inputRef.current.style.opacity === '0.5';
-      inputRef.current.style.fontStyle = '';
-      inputRef.current.style.opacity = '';
-      if (voiceState === 'transcribing' || hadVoicePreviewStyling) {
-        inputRef.current.value = '';
-        inputRef.current.style.height = 'auto';
-        syncSlashStateFromInput(inputRef.current);
-      }
-    }
-  }, [interimTranscript, liveTranscriptionPreview, voiceState, syncSlashStateFromInput]);
+    const preview = voicePreviewRef.current;
+    if (preview) preview.scrollTop = preview.scrollHeight;
+  }, [voicePreviewText]);
 
   const processFiles = useCallback(async (files: FileList | File[]) => {
     const selected = Array.from(files);
@@ -1158,6 +1128,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   ]);
 
   const handleSend = useCallback(async () => {
+    // The draft is locked while voice records or transcribes; a voice send goes
+    // straight to onSend and never through here.
+    if (isVoiceBusy) return;
     const text = inputRef.current?.value.trim();
     if (!text && stagedAttachments.length === 0) {
       // Shake on empty send attempt
@@ -1245,6 +1218,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       setIsPreparingInline(false);
     }
   }, [
+    isVoiceBusy,
     stagedAttachments,
     uploadConfig,
     inputHistory,
@@ -1274,6 +1248,15 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     // fire keydown for Enter/Escape/etc.  Let the IME handle them – acting
     // on these events causes ghost messages (issue #65).
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+
+    // Locked while voice records or transcribes: Enter must not send the draft,
+    // and the slash menu, tab completion and history recall must not rewrite it.
+    // Everything else (caret keys, copy) stays native, and the left-Shift voice
+    // shortcuts are window listeners, so nothing here stops them.
+    if (isVoiceBusy) {
+      if (e.key === 'Enter') e.preventDefault();
+      return;
+    }
 
     // Slash command menu keyboard handling
     if (isSlashMenuOpen) {
@@ -1491,7 +1474,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 set input.value directly, which is safe without a `value` prop.
                 Do NOT add a `value={state}` prop without also passing a
                 setValue callback to useTabCompletion. */}
-            {isSlashMenuOpen && (
+            {showSlashMenu && (
               <div className="absolute inset-x-0 bottom-full z-20 mb-1 overflow-hidden rounded-[3px] border border-border bg-popover nerve-menu-shadow">
                 <div ref={slashMenuRef} role="listbox" aria-label="Slash commands" className="max-h-64 overflow-y-auto py-1">
                   {[...groupedSlashSuggestions.entries()].map(([category, commands], groupIndex) => (
@@ -1536,9 +1519,20 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               onSelect={e => syncSlashStateFromInput(e.currentTarget)}
               placeholder={`Message ${agentName}`}
               aria-label="Message input"
+              readOnly={isVoiceBusy}
               rows={1}
               className="block max-h-[160px] min-h-[42px] w-full resize-none border-none bg-transparent px-3 pb-1 pt-2.5 text-[1rem] leading-normal text-foreground outline-none placeholder:text-muted-foreground"
             />
+            {/* Live transcription preview: its own line under the draft, never written into the textarea */}
+            {voicePreviewText && (
+              <div
+                ref={voicePreviewRef}
+                aria-live="polite"
+                className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words px-3 pb-1 text-[0.867rem] italic leading-normal text-muted-foreground"
+              >
+                {voicePreviewText}
+              </div>
+            )}
             {/* Toolbar: quiet tools on the left, hint and Send on the right */}
             <div className="flex flex-wrap items-center gap-1 px-1 pb-1">
               <button
@@ -1599,10 +1593,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               <button
                 type="button"
                 onClick={() => { void handleSend(); }}
-                disabled={isGenerating || isPreparingInline}
+                disabled={isGenerating || isPreparingInline || isVoiceBusy}
                 aria-label={isGenerating ? 'Generating response...' : (isPreparingInline ? 'Preparing attachments...' : 'Send message')}
                 aria-busy={isGenerating || isPreparingInline}
-                className={`send-btn ml-auto inline-flex min-h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-[3px] border-none bg-primary px-3.5 text-[0.867rem] font-semibold text-primary-foreground transition-[filter] duration-[120ms] sm:ml-0 sm:min-h-8 ${isGenerating || isPreparingInline ? 'cursor-not-allowed opacity-50' : 'hover:brightness-110'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
+                className={`send-btn ml-auto inline-flex min-h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-[3px] border-none bg-primary px-3.5 text-[0.867rem] font-semibold text-primary-foreground transition-[filter] duration-[120ms] sm:ml-0 sm:min-h-8 ${isGenerating || isPreparingInline || isVoiceBusy ? 'cursor-not-allowed opacity-50' : 'hover:brightness-110'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
               >
                 Send
                 {isPreparingInline ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ArrowUp size={14} aria-hidden="true" />}

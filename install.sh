@@ -223,6 +223,107 @@ shell_quote() {
   printf '%q' "$1"
 }
 
+# ── Escaping for the service files ───────────────────────────────────
+# Paths reach the systemd unit and the launchd plist through these helpers.
+# They loop over the characters rather than use ${var//x/y}: bash 5.2 reads &
+# in that replacement as the matched text, and quotes and backslashes in it
+# behave differently in bash 3.2 (macOS /bin/bash).
+
+# Double every %. systemd reads % as a specifier in User=, Group=,
+# WorkingDirectory=, Environment= and ExecStart=, and %% as a literal %
+# (systemd.unit(5), "Specifiers").
+systemd_escape_specifiers() {
+  local s="$1" out="" c i
+  for (( i = 0; i < ${#s}; i++ )); do
+    c="${s:i:1}"
+    if [[ "$c" == "%" ]]; then out+="%%"; else out+="$c"; fi
+  done
+  printf '%s' "$out"
+}
+
+# One item of a setting that systemd unquotes, such as Environment= or
+# ExecStart= (systemd.syntax(7), "Quoting"). An item made only of letters,
+# digits and _./:@+,=- stays as it is; anything else is double-quoted, with
+# backslashes and double quotes escaped. Control characters are refused before
+# this is called (systemd_unit_problem).
+systemd_quote() {
+  local s="$1" out="" c i
+  case "$s" in
+    *[![:alnum:]_./:@+,=-]* | '') ;;
+    *) printf '%s' "$s"; return 0 ;;
+  esac
+  for (( i = 0; i < ${#s}; i++ )); do
+    c="${s:i:1}"
+    case "$c" in
+      '\' | '"') out+="\\${c}" ;;
+      *) out+="$c" ;;
+    esac
+  done
+  printf '"%s"' "$out"
+}
+
+# An Environment= assignment (systemd.exec(5)): quoted as a whole, with
+# specifiers escaped. $ needs nothing, since Environment= does not expand it.
+systemd_env() {
+  systemd_quote "$1=$(systemd_escape_specifiers "$2")"
+}
+
+# Why the systemd unit cannot hold these paths, or nothing when it can. The
+# helpers above escape every other character.
+#   ExecStart= executable: control characters, quotes and backslashes, which
+#     systemd refuses even when escaped (systemd.service(5), "Command lines";
+#     string_is_safe() in config_parse_exec()), and *, ? and [ since systemd 262.
+#     Also $: systemd runs the path unexpanded but expands $ in argv[0], which
+#     is the same path.
+#   WorkingDirectory=: line breaks, trailing whitespace and a trailing
+#     backslash. The value is used as written, so a line break ends it, the
+#     parser strips the whitespace and the backslash joins the next line.
+#   Environment=: control characters (systemd.exec(5): "non-printable
+#     characters are currently rejected").
+systemd_unit_problem() {
+  local node_bin="$1" working_dir="$2" home="$3"
+  case "$node_bin" in
+    *[[:cntrl:]]* | *\"* | *\'* | *\\* | *\** | *\?* | *\[* | *'$'*)
+      echo "the Node.js path ${node_bin} contains a control character, a quote, a backslash, *, ?, [ or \$, which systemd cannot run as written"
+      return 0 ;;
+  esac
+  case "$working_dir" in
+    *$'\n'* | *$'\r'* | *' ' | *$'\t' | *\\)
+      echo "the install directory ${working_dir} contains a line break or ends with whitespace or a backslash, which WorkingDirectory= cannot hold"
+      return 0 ;;
+  esac
+  case "$home" in
+    *[[:cntrl:]]*)
+      echo "the home directory ${home} contains a control character, which Environment= does not accept"
+      return 0 ;;
+  esac
+}
+
+# Text for a <string> element of the launchd plist: the characters XML gives a
+# meaning to are escaped (XML 1.0, section 2.4), and line breaks become
+# character references, since a parser turns a literal CR into LF (section
+# 2.11). Fails on the control characters XML 1.0 cannot hold at all, which is
+# every one but tab, LF, CR and DEL (section 2.2).
+xml_escape() {
+  local s="$1" out="" c i
+  for (( i = 0; i < ${#s}; i++ )); do
+    c="${s:i:1}"
+    case "$c" in
+      '&') out+='&amp;' ;;
+      '<') out+='&lt;' ;;
+      '>') out+='&gt;' ;;
+      '"') out+='&quot;' ;;
+      "'") out+='&apos;' ;;
+      $'\n') out+='&#10;' ;;
+      $'\r') out+='&#13;' ;;
+      $'\t' | $'\177') out+="$c" ;;
+      [[:cntrl:]]) return 1 ;;
+      *) out+="$c" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
 # Poll a /health URL once a second, for up to 20 tries or 30 seconds. Each try
 # allows 5 seconds because /health itself waits up to 3 seconds on its gateway probe.
 wait_for_nerve() {
@@ -1142,6 +1243,20 @@ setup_systemd() {
     fi
   fi
 
+  # Refuse the few characters a unit cannot hold before anything is written, so
+  # an existing unit, and the service it runs, are left as they are.
+  local unit_problem
+  unit_problem=$(systemd_unit_problem "$node_bin" "$working_dir" "$install_home")
+  if [[ -n "$unit_problem" ]]; then
+    warn "Not installing the systemd service: ${unit_problem}"
+    SERVICE_INCOMPLETE=true
+    if [[ -f "$service_file" ]]; then
+      NOT_RUNNING_HEADLINE="Nerve was updated, but nerve.service was not restarted."
+    fi
+    START_STEPS=("cd $(shell_quote "$working_dir") && npm start")
+    return 0
+  fi
+
   local tmp_service
   tmp_service=$(mktemp /tmp/nerve.service.XXXXXX)
   TEMP_FILES+=("$tmp_service")
@@ -1153,16 +1268,16 @@ After=network.target
 
 [Service]
 Type=simple
-User=${install_user}
-Group=${install_user}
-WorkingDirectory=${working_dir}
-ExecStart=${node_bin} server-dist/index.js
+User=$(systemd_escape_specifiers "$install_user")
+Group=$(systemd_escape_specifiers "$install_user")
+WorkingDirectory=$(systemd_escape_specifiers "$working_dir")
+ExecStart=$(systemd_quote "$(systemd_escape_specifiers "$node_bin")") server-dist/index.js
 # .env is deliberately not loaded by systemd: the server loads it from
 # WorkingDirectory with dotenv, as it does under launchd. systemd parses .env
 # differently, and its values would win because dotenv never overrides them.
 Environment=NODE_ENV=production
-Environment=HOME=${install_home}
-Environment=PATH=${node_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=$(systemd_env HOME "$install_home")
+Environment=$(systemd_env PATH "${node_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 Restart=on-failure
 RestartSec=5
 
@@ -1239,13 +1354,35 @@ setup_launchd() {
   local working_dir="$INSTALL_DIR"
   local plist_dir="${HOME}/Library/LaunchAgents"
   local plist_file="${plist_dir}/com.nerve.server.plist"
+  local start_script="${working_dir}/start.sh"
+
+  # Escape the plist's paths before anything is written, so a path it cannot
+  # hold leaves the agent's files as they are.
+  local xml_start xml_dir xml_path xml_log
+  if ! xml_start=$(xml_escape "$start_script") || ! xml_dir=$(xml_escape "$working_dir") \
+      || ! xml_path=$(xml_escape "$(dirname "${node_bin}"):/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin") \
+      || ! xml_log=$(xml_escape "${working_dir}/nerve.log"); then
+    warn "Not installing the launchd service: ${working_dir} or ${node_bin} contains a control character a property list cannot hold"
+    SERVICE_INCOMPLETE=true
+    if [[ -f "$plist_file" ]]; then
+      NOT_RUNNING_HEADLINE="Nerve was updated, but the launchd service was not restarted."
+    fi
+    START_STEPS=("cd $(shell_quote "$working_dir") && npm start")
+    return 0
+  fi
+
+  # Stop the agent being replaced only now, so a refused path leaves it running.
+  local uid
+  uid=$(id -u)
+  if [[ -f "$plist_file" ]]; then
+    launchctl bootout "gui/${uid}/com.nerve.server" 2>/dev/null || launchctl stop com.nerve.server 2>/dev/null || true
+  fi
 
   mkdir -p "$plist_dir"
 
   # Create a wrapper script that launches the built server from the install dir.
   # server/lib/config.ts loads .env at runtime, so the wrapper should not source it
   # directly (raw .env values are dotenv-compatible but not necessarily shell-safe).
-  local start_script="${working_dir}/start.sh"
   # The plist sets PATH in EnvironmentVariables, but the wrapper also needs
   # to find node if run manually. Bake the current node path as a fallback.
   local node_dir_escaped
@@ -1270,30 +1407,28 @@ STARTEOF
   <string>com.nerve.server</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${start_script}</string>
+    <string>${xml_start}</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>${working_dir}</string>
+  <string>${xml_dir}</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>$(dirname "${node_bin}"):/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <string>${xml_path}</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>${working_dir}/nerve.log</string>
+  <string>${xml_log}</string>
   <key>StandardErrorPath</key>
-  <string>${working_dir}/nerve.log</string>
+  <string>${xml_log}</string>
 </dict>
 </plist>
 EOF
 
   # launchctl bootstrap (modern) with fallback to load (legacy)
-  local uid
-  uid=$(id -u)
   if launchctl bootstrap "gui/${uid}" "$plist_file" 2>/dev/null; then
     ok "launchd service installed and started"
     info "Nerve will start automatically on login"
@@ -1333,8 +1468,6 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
     echo ""
     if [[ -f "$plist_check" ]]; then
       info "Updating existing launchd service..."
-      uid=$(id -u)
-      launchctl bootout "gui/${uid}/com.nerve.server" 2>/dev/null || launchctl stop com.nerve.server 2>/dev/null || true
       setup_launchd
     elif [[ "$INTERACTIVE" == "true" ]]; then
       printf "  ${RAIL}  ${YELLOW}?${NC} Install as a launchd service (starts on login)? (Y/n) "

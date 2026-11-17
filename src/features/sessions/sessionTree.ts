@@ -1,6 +1,7 @@
 import type { Session } from '@/types';
 import { getSessionKey } from '@/types';
 import { getExplicitParentCandidates, getRootAgentSessionKey, getSessionType, isTopLevelAgentSessionKey, resolveParentSessionKey } from './sessionKeys';
+import { pinnedFirst } from './pinnedSessions';
 
 export interface TreeNode {
   session: Session;
@@ -9,6 +10,11 @@ export interface TreeNode {
   depth: number;
   children: TreeNode[];
   isExpanded: boolean;
+}
+
+export interface SessionTreeOptions {
+  /** Session keys the operator pinned: each goes first among its siblings, the tree otherwise unchanged. */
+  pinnedKeys?: ReadonlySet<string>;
 }
 
 export { getSessionType } from './sessionKeys';
@@ -71,6 +77,7 @@ function filterAgentSidebarSessions(
 function buildTreeNodes(
   renderSessions: Session[],
   parentMap: Map<string, string | null>,
+  pinnedKeys?: ReadonlySet<string>,
 ): TreeNode[] {
   if (renderSessions.length === 0) return [];
 
@@ -122,7 +129,12 @@ function buildTreeNodes(
       return labelA.localeCompare(labelB);
     });
 
-    return sorted.map((session) => {
+    // Pinned siblings lead, each group in the order above; a pinned root goes above main too.
+    const ordered = pinnedKeys && pinnedKeys.size > 0
+      ? pinnedFirst(sorted, (session) => pinnedKeys.has(getSessionKey(session)))
+      : sorted;
+
+    return ordered.map((session) => {
       const sessionKey = getSessionKey(session);
       return {
         session,
@@ -147,16 +159,16 @@ function buildTreeNodes(
  *
  * Returns an array of root-level TreeNodes (usually just one).
  */
-export function buildSessionTree(sessions: Session[]): TreeNode[] {
+export function buildSessionTree(sessions: Session[], options: SessionTreeOptions = {}): TreeNode[] {
   const parentMap = buildParentMap(sessions);
-  return buildTreeNodes(sessions, parentMap);
+  return buildTreeNodes(sessions, parentMap, options.pinnedKeys);
 }
 
 /** Build the AGENTS sidebar tree, limited to real agent roots and their descendants. */
-export function buildAgentSidebarTree(sessions: Session[]): TreeNode[] {
+export function buildAgentSidebarTree(sessions: Session[], options: SessionTreeOptions = {}): TreeNode[] {
   const parentMap = buildParentMap(sessions);
   const eligibleSessions = filterAgentSidebarSessions(sessions, parentMap);
-  return buildTreeNodes(eligibleSessions, parentMap);
+  return buildTreeNodes(eligibleSessions, parentMap, options.pinnedKeys);
 }
 
 /** Flatten a tree into an ordered list, respecting collapsed state. */

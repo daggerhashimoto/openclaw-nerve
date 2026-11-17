@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import { SessionProvider, useSessionContext } from './SessionContext';
 import { getSessionKey, type GatewayEvent } from '@/types';
 import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
 import { EventLog } from '@/features/activity/EventLog';
 import { sessionPaneState } from '@/lib/paneState';
+import { PINNED_SESSIONS_STORAGE_KEY, resetPinnedSessionsCache } from '@/features/sessions/pinnedSessions';
 
 const mockUseGateway = vi.fn();
 const mockUseSettings = vi.fn();
@@ -604,6 +605,47 @@ describe('SessionContext', () => {
       expect(deleteCalls()).toEqual(['agent:ops:subagent:helper-a', 'agent:ops:subagent:helper-b']);
       expect(listedKeys()).toEqual(['agent:main:main', 'agent:ops:main', 'agent:ops:subagent:lead', 'agent:ops:subagent:helper-b']);
       expect(screen.getByTestId('current-session')).toHaveTextContent('agent:main:main');
+    });
+
+    it('drops the pins of exactly the sessions it deleted, also when a later delete in the tree fails', async () => {
+      installDeleteGateway([
+        { sessionKey: 'agent:main:main', label: 'Main' },
+        { sessionKey: 'agent:ops:main', label: 'Ops' },
+        { sessionKey: 'agent:ops:subagent:lead', label: 'Lead' },
+        { sessionKey: 'agent:ops:subagent:helper-a', label: 'Helper A', parentSessionKey: 'agent:ops:subagent:lead' },
+        { sessionKey: 'agent:ops:subagent:helper-b', label: 'Helper B', parentSessionKey: 'agent:ops:subagent:lead' },
+      ], (key) => (key === 'agent:ops:subagent:helper-b' ? `Session ${key} is still active; try again.` : null));
+      // Pinned: the target, both children, a session outside the tree, and one the list does not show right now
+      localStorage.setItem(PINNED_SESSIONS_STORAGE_KEY, JSON.stringify([
+        'agent:ops:subagent:lead',
+        'agent:ops:subagent:helper-a',
+        'agent:ops:subagent:helper-b',
+        'agent:ops:main',
+        'agent:ops:subagent:away',
+      ]));
+      resetPinnedSessionsCache();
+      onTestFinished(() => {
+        localStorage.removeItem(PINNED_SESSIONS_STORAGE_KEY);
+        resetPinnedSessionsCache();
+      });
+      const onError = vi.fn();
+
+      render(<SessionProvider><DeleteProbe target="agent:ops:subagent:lead" onError={onError} /></SessionProvider>);
+      await screen.findByText('agent:ops:subagent:helper-a');
+
+      await act(async () => {
+        screen.getByTestId('delete').click();
+      });
+
+      await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+      expect(deleteCalls()).toEqual(['agent:ops:subagent:helper-a', 'agent:ops:subagent:helper-b']);
+      // Only helper A was deleted; the refused child and the target it protected keep their pins
+      expect(JSON.parse(localStorage.getItem(PINNED_SESSIONS_STORAGE_KEY) ?? '[]')).toEqual([
+        'agent:ops:subagent:lead',
+        'agent:ops:subagent:helper-b',
+        'agent:ops:main',
+        'agent:ops:subagent:away',
+      ]);
     });
 
     it('deletes children before the target and removes the whole tree when every delete succeeds', async () => {

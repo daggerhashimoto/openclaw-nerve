@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { spawn, spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import {
   chmodSync,
   existsSync,
@@ -43,6 +44,7 @@ const SUITE_STARTED_AT = Date.now();
 const RUN_TIMEOUT_MS = 60_000;
 const TEST_TIMEOUT_MS = RUN_TIMEOUT_MS + 15_000;
 const SUCCESS_BANNER = 'Open Nerve in your browser';
+const OLD_PLIST = '<plist version="1.0"><dict><key>Label</key><string>com.nerve.server</string></dict></plist>\n';
 
 const REAL_TOOLS = [
   'awk', 'bash', 'cat', 'chmod', 'cp', 'cut', 'dirname', 'env', 'false', 'grep', 'head',
@@ -56,6 +58,8 @@ interface Scenario {
   /** running: systemctl exists and systemd is PID 1. not-running: only the binary exists. */
   systemd?: 'running' | 'not-running' | 'absent';
   existingUnit?: boolean;
+  /** A launchd agent plist from an earlier install. */
+  existingPlist?: boolean;
   sudo?: 'nopasswd' | 'denied';
   apt?: 'ok' | 'fail';
   ffmpeg?: boolean;
@@ -73,6 +77,10 @@ interface Scenario {
   args?: string[];
   /** Put spaces in HOME, the install directory and the unit file path. */
   spacedPaths?: boolean;
+  /** Characters added to the throwaway root, so HOME, the install directory and the unit file path hold them. */
+  pathChars?: string;
+  /** A directory under the throwaway root holding the node the installer finds first on PATH. */
+  nodeDir?: string;
   /** false: OpenClaw has no gateway token, so the installer cannot write .env. */
   gatewayToken?: boolean;
 }
@@ -85,6 +93,8 @@ interface InstallRun {
   installDir: string;
   unitFile: string;
   installedUnit: string | null;
+  /** The node the installer finds on PATH. */
+  nodeBin: string;
 }
 
 const STUBS: Record<string, string> = {
@@ -220,9 +230,11 @@ function installerScript(unitFile: string, systemdRunDir: string): string {
       throw new Error(`install.sh must define exactly one line: ${line}`);
     }
   }
+  // Single quotes keep bash from expanding a $ in the test's own paths.
+  const shellWord = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
   const script = source
-    .replace(UNIT_FILE_LINE, () => `SYSTEMD_UNIT_FILE="${unitFile}"`)
-    .replace(RUN_DIR_LINE, () => `SYSTEMD_RUN_DIR="${systemdRunDir}"`);
+    .replace(UNIT_FILE_LINE, () => `SYSTEMD_UNIT_FILE=${shellWord(unitFile)}`)
+    .replace(RUN_DIR_LINE, () => `SYSTEMD_RUN_DIR=${shellWord(systemdRunDir)}`);
   // Any other literal use of these paths would reach the real host.
   for (const hostPath of [HOST_UNIT_FILE, HOST_SYSTEMD_RUN_DIR]) {
     if (script.includes(hostPath)) {
@@ -237,6 +249,7 @@ async function install(scenario: Scenario = {}): Promise<InstallRun> {
     platform: 'Linux',
     systemd: 'running',
     existingUnit: false,
+    existingPlist: false,
     sudo: 'nopasswd',
     apt: 'ok',
     ffmpeg: true,
@@ -250,12 +263,15 @@ async function install(scenario: Scenario = {}): Promise<InstallRun> {
     env: undefined,
     args: [],
     spacedPaths: false,
+    pathChars: '',
+    nodeDir: undefined,
     gatewayToken: true,
     ...scenario,
   } satisfies Scenario;
 
   const tools = toolbox();
-  const root = mkdtempSync(path.join(os.tmpdir(), s.spacedPaths ? 'nerve install sh ' : 'nerve-install-sh-'));
+  const prefix = (s.spacedPaths ? 'nerve install sh ' : 'nerve-install-sh-') + (s.pathChars ? `${s.pathChars}-` : '');
+  const root = mkdtempSync(path.join(os.tmpdir(), prefix));
   tempRoots.push(root);
   const home = path.join(root, 'home');
   const installDir = path.join(root, s.spacedPaths ? 'My Nerve' : 'nerve');
@@ -276,6 +292,10 @@ async function install(scenario: Scenario = {}): Promise<InstallRun> {
   }
   if (s.systemd === 'running') mkdirSync(systemdRunDir);
   if (s.existingUnit) writeFileSync(unitFile, '[Service]\nExecStart=/old/node\n');
+  if (s.existingPlist) {
+    mkdirSync(path.join(home, 'Library', 'LaunchAgents'), { recursive: true });
+    writeFileSync(path.join(home, 'Library', 'LaunchAgents', 'com.nerve.server.plist'), OLD_PLIST);
+  }
   if (s.env !== undefined) {
     mkdirSync(installDir);
     writeFileSync(path.join(installDir, '.env'), s.env);
@@ -290,6 +310,14 @@ async function install(scenario: Scenario = {}): Promise<InstallRun> {
   }
   if (s.ffmpeg) present.add('ffmpeg');
   const pathDirs = [tools.common, ...OPTIONAL_STUBS.filter((name) => present.has(name)).map((name) => tools.optional[name]), tools.sysbin];
+  let nodeBin = path.join(tools.common, 'node');
+  if (s.nodeDir !== undefined) {
+    const nodeDir = path.join(root, s.nodeDir);
+    mkdirSync(nodeDir);
+    nodeBin = path.join(nodeDir, 'node');
+    symlinkSync(process.execPath, nodeBin);
+    pathDirs.unshift(nodeDir);
+  }
 
   const env: NodeJS.ProcessEnv = {
     HOME: home,
@@ -352,6 +380,7 @@ async function install(scenario: Scenario = {}): Promise<InstallRun> {
     installDir,
     unitFile,
     installedUnit: existsSync(unitFile) ? readFileSync(unitFile, 'utf8') : null,
+    nodeBin,
   };
 }
 
@@ -421,6 +450,236 @@ function runInstallerHelper(content: string | null, ...command: string[]): strin
 }
 
 const installerEnvValue = (content: string | null, key: string) => runInstallerHelper(content, 'env_file_value', key);
+
+/**
+ * Runs `command`, a call to one of install.sh's escaping helpers that reads
+ * "$value", once per value under `locale`, with the helper definitions from the
+ * script. Returns what each call printed, or null where the helper failed.
+ */
+function runEscaper(command: string, values: string[], locale = 'C'): Array<string | null> {
+  const source = readFileSync(INSTALLER, 'utf8');
+  const names = [
+    'systemd_escape_specifiers', 'systemd_quote', 'systemd_env', 'systemd_unit_problem', 'xml_escape',
+  ];
+  const definitions = names.map((name) => {
+    const definition = new RegExp(`^${name}\\(\\) \\{\\n[\\s\\S]*?\\n\\}\\n`, 'm').exec(source)?.[0];
+    if (!definition) throw new Error(`install.sh lacks ${name}()`);
+    return definition;
+  });
+  // Each result ends in NUL, which no bash string can hold: + and the output, or ! for a refusal.
+  const loop = `for value in "$@"; do if out=$(${command}); then printf '+%s\\0' "$out"; else printf '!\\0'; fi; done`;
+  const result = spawnSync(
+    path.join(toolbox().sysbin, 'bash'),
+    ['-c', `set -euo pipefail\n${definitions.join('\n')}\n${loop}`, 'install-escapers', ...values],
+    { encoding: 'utf8', env: { PATH: toolbox().sysbin, LC_ALL: locale } },
+  );
+  if (result.status !== 0) throw new Error(`${command} failed: ${result.stderr}`);
+  const outputs = result.stdout.split('\0').slice(0, -1);
+  if (outputs.length !== values.length) throw new Error(`${command} printed ${outputs.length} results for ${values.length} values`);
+  return outputs.map((out) => (out.startsWith('+') ? out.slice(1) : null));
+}
+
+/** systemd's WHITESPACE (src/fundamental/string-util.h). */
+const SYSTEMD_WHITESPACE = ' \t\n\r';
+const isSystemdSpace = (char: string | undefined) => char !== undefined && SYSTEMD_WHITESPACE.includes(char);
+
+function systemdStrip(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && isSystemdSpace(text[start])) start++;
+  while (end > start && isSystemdSpace(text[end - 1])) end--;
+  return text.slice(start, end);
+}
+
+/**
+ * The assignments in a unit file, read the way config_parse() reads them
+ * (src/shared/conf-parser.c): a line ends at LF or CR, a line whose first
+ * non-blank character is # or ; is a comment, and keys and values are
+ * stripped. A line ending in an unescaped backslash would be joined with the
+ * next one, which the installer never means, so it fails here.
+ */
+function unitAssignments(unit: string): Array<{ key: string; value: string }> {
+  const assignments: Array<{ key: string; value: string }> = [];
+  for (const line of unit.split(/\r\n|\r|\n/)) {
+    if (/^[ \t]*[#;]/.test(line)) continue;
+    let escaped = false;
+    for (const char of line) escaped = !escaped && char === '\\';
+    if (escaped) throw new Error(`systemd would join this unit line with the next: ${line}`);
+    const stripped = systemdStrip(line);
+    if (!stripped || stripped.startsWith('[')) continue;
+    const equals = stripped.indexOf('=');
+    if (equals <= 0) throw new Error(`systemd cannot read this unit line: ${stripped}`);
+    assignments.push({ key: systemdStrip(stripped.slice(0, equals)), value: systemdStrip(stripped.slice(equals + 1)) });
+  }
+  return assignments;
+}
+
+/** The C escapes of systemd.syntax(7), "Quoting", without the numeric ones, which the installer never writes. */
+const SYSTEMD_ESCAPES = new Map(Object.entries({
+  a: '\u0007', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', '\\': '\\', '"': '"', "'": "'", s: ' ',
+}));
+
+/**
+ * Splits a value into items as systemd.syntax(7), "Quoting", describes it
+ * (extract_first_word() with EXTRACT_UNQUOTE and EXTRACT_CUNESCAPE). Follows
+ * the man page where it is stricter than the code: a quote may only open an
+ * item, and a closing quote must end it.
+ */
+function systemdItems(value: string): string[] {
+  const items: string[] = [];
+  let i = 0;
+  for (;;) {
+    while (isSystemdSpace(value[i])) i++;
+    if (i >= value.length) return items;
+    const start = i;
+    let item = '';
+    let quote = '';
+    for (; i < value.length && (quote || !isSystemdSpace(value[i])); i++) {
+      const char = value[i];
+      if (char === '\\') {
+        const unescaped = SYSTEMD_ESCAPES.get(value[i + 1] ?? '');
+        if (unescaped === undefined) throw new Error(`systemd rejects the escape \\${value[i + 1] ?? ''} in: ${value}`);
+        item += unescaped;
+        i++;
+      } else if (quote) {
+        if (char !== quote) {
+          item += char;
+          continue;
+        }
+        quote = '';
+        if (i + 1 < value.length && !isSystemdSpace(value[i + 1])) throw new Error(`A closing quote must end the item in: ${value}`);
+      } else if (char === '"' || char === "'") {
+        if (i !== start) throw new Error(`A quote may only open an item in: ${value}`);
+        quote = char;
+      } else {
+        item += char;
+      }
+    }
+    if (quote) throw new Error(`Unterminated quote in: ${value}`);
+    items.push(item);
+  }
+}
+
+/** Resolves specifiers (systemd.unit(5), "Specifiers"): %% is a literal %, and any other % would be replaced. */
+function resolveSpecifiers(text: string): string {
+  return text.replace(/%([\s\S]?)/g, (match, next: string) => {
+    if (next === '%') return '%';
+    throw new Error(`systemd would resolve ${match} as a specifier in: ${text}`);
+  });
+}
+
+interface SystemdService {
+  user: string;
+  group: string;
+  workingDirectory: string;
+  environment: Record<string, string>;
+  /** The file systemd executes, which is also argv[0]. */
+  executable: string;
+  argv: string[];
+}
+
+/**
+ * What systemd would run for the unit, decoded per directive the way
+ * src/core/load-fragment.c does it: User= and Group= (config_parse_user_group_compat)
+ * and WorkingDirectory= resolve specifiers in the value as written; Environment=
+ * (config_parse_environ) unquotes, then resolves specifiers in each item;
+ * ExecStart= (config_parse_exec) unquotes, resolves specifiers in each item and
+ * checks the executable with string_is_safe(). Throws where systemd would
+ * reject the unit or change a value, including any $ in argv, which
+ * replace_env_argv() expands before the exec.
+ */
+function parseSystemdService(unit: string): SystemdService {
+  const settings = new Map<string, string[]>();
+  for (const { key, value } of unitAssignments(unit)) settings.set(key, [...(settings.get(key) ?? []), value]);
+  const only = (key: string): string => {
+    const values = settings.get(key) ?? [];
+    if (values.length !== 1) throw new Error(`Expected one ${key}= line, found ${values.length}`);
+    return values[0];
+  };
+
+  const environment: Record<string, string> = {};
+  for (const value of settings.get('Environment') ?? []) {
+    for (const item of systemdItems(value)) {
+      const assignment = resolveSpecifiers(item);
+      const equals = assignment.indexOf('=');
+      if (equals <= 0 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(assignment.slice(0, equals))) {
+        throw new Error(`systemd ignores the assignment ${assignment}`);
+      }
+      environment[assignment.slice(0, equals)] = assignment.slice(equals + 1);
+    }
+  }
+
+  const [executable, ...args] = systemdItems(only('ExecStart')).map(resolveSpecifiers);
+  // string_is_safe() without flags: no control characters, quotes or backslashes, and since systemd 262 no globs.
+  // An absolute path also rules out the executable prefixes such as - and @.
+  // eslint-disable-next-line no-control-regex
+  if (!executable?.startsWith('/') || /[\u0000-\u001f\u007f"'\\*?[]/.test(executable)) {
+    throw new Error(`systemd refuses the executable path ${executable}`);
+  }
+  const argv = [executable, ...args];
+  if (argv.some((word) => word.includes('$'))) throw new Error(`systemd would expand $ in ExecStart= ${argv.join(' ')}`);
+
+  const workingDirectory = resolveSpecifiers(only('WorkingDirectory'));
+  if (!workingDirectory.startsWith('/')) throw new Error(`WorkingDirectory= is not absolute: ${workingDirectory}`);
+  return {
+    user: resolveSpecifiers(only('User')),
+    group: resolveSpecifiers(only('Group')),
+    workingDirectory,
+    environment,
+    executable,
+    argv,
+  };
+}
+
+/** The few DOM members the plist reader uses; jsdom is loaded at runtime because it ships no types. */
+interface XmlElement {
+  tagName: string;
+  textContent: string | null;
+  children: ArrayLike<XmlElement>;
+}
+interface XmlDocument {
+  documentElement: XmlElement;
+  getElementsByTagName(name: string): ArrayLike<XmlElement>;
+}
+type DomParser = new () => { parseFromString(text: string, type: string): XmlDocument };
+const loadCommonJs = createRequire(import.meta.url);
+const { JSDOM } = loadCommonJs('jsdom') as { JSDOM: new () => { window: { DOMParser: DomParser } } };
+
+/** Parses XML with jsdom's conforming parser, and throws where it reports an error. */
+function parseXml(xml: string): XmlDocument {
+  const doc = new (new JSDOM().window.DOMParser)().parseFromString(xml, 'application/xml');
+  const error = doc.getElementsByTagName('parsererror')[0];
+  if (error) throw new Error(`Not well-formed XML: ${error.textContent}`);
+  return doc;
+}
+
+type PlistValue = string | boolean | PlistValue[] | { [key: string]: PlistValue };
+
+/** The value of a launchd property list, for the element types the installer writes. */
+function plistValue(element: XmlElement): PlistValue {
+  const children = Array.from(element.children);
+  switch (element.tagName) {
+    case 'string': return element.textContent ?? '';
+    case 'true': return true;
+    case 'false': return false;
+    case 'array': return children.map(plistValue);
+    case 'dict': {
+      const dict: { [key: string]: PlistValue } = {};
+      for (let i = 0; i < children.length; i += 2) {
+        if (children[i].tagName !== 'key' || !children[i + 1]) throw new Error('A plist dict must alternate keys and values');
+        dict[children[i].textContent ?? ''] = plistValue(children[i + 1]);
+      }
+      return dict;
+    }
+    default: throw new Error(`Unexpected plist element <${element.tagName}>`);
+  }
+}
+
+function parsePlist(xml: string): PlistValue {
+  const plist = parseXml(xml).documentElement;
+  if (plist.tagName !== 'plist' || plist.children.length !== 1) throw new Error('Expected one value inside <plist>');
+  return plistValue(plist.children[0]);
+}
 
 afterAll(() => {
   if (process.env.KEEP_ROOTS) { console.log("ROOTS", tempRoots.join(" ")); return; }
@@ -753,6 +1012,168 @@ describe.skipIf(isRoot).concurrent('install.sh', () => {
       const [load] = printedSteps(notLoaded);
       expect(runPrinted(load, 'launchctl() { printf "%s\\n" "$@"; }')).toBe(`load\n${plist}\n`);
       expect(existsSync(plist)).toBe(true);
+    }, TEST_TIMEOUT_MS);
+  });
+
+  describe('the systemd unit and launchd plist keep paths exactly as they are', () => {
+    const servicePath = (run: InstallRun) => `${path.dirname(run.nodeBin)}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
+    /** What systemd should run: every path exactly as it is on disk. */
+    const expectedService = (run: InstallRun): SystemdService => ({
+      user: USERNAME,
+      group: USERNAME,
+      workingDirectory: run.installDir,
+      environment: { NODE_ENV: 'production', HOME: run.home, PATH: servicePath(run) },
+      executable: run.nodeBin,
+      argv: [run.nodeBin, 'server-dist/index.js'],
+    });
+
+    it('writes the same unit as before for ordinary paths', async ({ expect }) => {
+      const run = await install();
+
+      expect(run.code).toBe(0);
+      expect(run.installedUnit).toBe([
+        '[Unit]',
+        'Description=Nerve - OpenClaw Web UI',
+        'After=network.target',
+        '',
+        '[Service]',
+        'Type=simple',
+        `User=${USERNAME}`,
+        `Group=${USERNAME}`,
+        `WorkingDirectory=${run.installDir}`,
+        `ExecStart=${run.nodeBin} server-dist/index.js`,
+        '# .env is deliberately not loaded by systemd: the server loads it from',
+        '# WorkingDirectory with dotenv, as it does under launchd. systemd parses .env',
+        '# differently, and its values would win because dotenv never overrides them.',
+        'Environment=NODE_ENV=production',
+        `Environment=HOME=${run.home}`,
+        `Environment=PATH=${servicePath(run)}`,
+        'Restart=on-failure',
+        'RestartSec=5',
+        '',
+        '[Install]',
+        'WantedBy=multi-user.target',
+        '',
+      ].join('\n'));
+      expect(parseSystemdService(run.installedUnit ?? '')).toEqual(expectedService(run));
+    }, TEST_TIMEOUT_MS);
+
+    it('keeps spaces and % in every path, so systemd neither splits them nor resolves specifiers', async ({ expect }) => {
+      const run = await install({ spacedPaths: true, pathChars: '%h', nodeDir: 'node %n' });
+
+      expect(run.code).toBe(0);
+      expect(run.home).toMatch(/ .*%h/);
+      expect(run.nodeBin).toMatch(/ .*%h.*%n/);
+      expect(parseSystemdService(run.installedUnit ?? '')).toEqual(expectedService(run));
+    }, TEST_TIMEOUT_MS);
+
+    it('refuses a Node.js path with $, and leaves the existing unit alone', async ({ expect }) => {
+      // systemd would run the path as written but expand the $ in argv[0].
+      const run = await install({ nodeDir: 'node${HOME}bin', existingUnit: true });
+
+      expect(run.code).toBe(2);
+      expect(systemctlCalls(run)).toEqual([]);
+      expect(run.installedUnit).toBe('[Service]\nExecStart=/old/node\n');
+      expect(run.output).toContain(`Not installing the systemd service: the Node.js path ${run.nodeBin} contains`);
+      expect(run.output).toContain('Nerve was updated, but nerve.service was not restarted.');
+      expect(printedSteps(run)).toEqual([`cd ${run.installDir} && npm start`]);
+    }, TEST_TIMEOUT_MS);
+
+    it('escapes & and < in the launchd plist, and replaces the old agent', async ({ expect }) => {
+      const run = await install({ platform: 'Darwin', existingPlist: true, pathChars: '&<>', nodeDir: 'node&<bin' });
+      const plist = path.join(run.home, 'Library', 'LaunchAgents', 'com.nerve.server.plist');
+
+      expect(run.code).toBe(0);
+      expect(run.installDir).toContain('&<>');
+      expect(run.calls.filter((call) => call.startsWith('launchctl ')).map((call) => call.split(' ')[1]))
+        .toEqual(['bootout', 'bootstrap']);
+      expect(parsePlist(readFileSync(plist, 'utf8'))).toEqual({
+        Label: 'com.nerve.server',
+        ProgramArguments: [path.join(run.installDir, 'start.sh')],
+        WorkingDirectory: run.installDir,
+        EnvironmentVariables: { PATH: `${path.dirname(run.nodeBin)}:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin` },
+        RunAtLoad: true,
+        KeepAlive: true,
+        StandardOutPath: path.join(run.installDir, 'nerve.log'),
+        StandardErrorPath: path.join(run.installDir, 'nerve.log'),
+      });
+    }, TEST_TIMEOUT_MS);
+
+    it('refuses a path the plist cannot hold, and leaves a running agent and its files alone', async ({ expect }) => {
+      const run = await install({ platform: 'Darwin', existingPlist: true, nodeDir: 'node\u0001bin' });
+
+      expect(run.code).toBe(2);
+      expect(run.calls.filter((call) => call.startsWith('launchctl '))).toEqual([]);
+      expect(readFileSync(path.join(run.home, 'Library', 'LaunchAgents', 'com.nerve.server.plist'), 'utf8')).toBe(OLD_PLIST);
+      expect(existsSync(path.join(run.installDir, 'start.sh'))).toBe(false);
+      expect(run.output).toContain(`Not installing the launchd service: ${run.installDir} or ${run.nodeBin} contains a control character`);
+      expect(run.output).toContain('Nerve was updated, but the launchd service was not restarted.');
+      expect(printedSteps(run)).toEqual([`cd ${run.installDir} && npm start`]);
+    }, TEST_TIMEOUT_MS);
+
+    it('escapes values so systemd and XML parsers read them back unchanged', ({ expect }) => {
+      const values = [
+        '', 'plain/path', 'two words', 'tab\there', 'a"b', "a'b", 'back\\slash', 'ends in \\', '\\"', '\\n',
+        '100%', '%h%%', '$HOME', '${HOME}', '$$', 'a$', '&amp;', 'a&b<c>d', ']]>', '#;=', '@-:+!|', 'é ü 中',
+      ];
+      for (const locale of ['C', 'en_US.UTF-8']) {
+        const decode = (command: string, read: (out: string) => unknown) =>
+          runEscaper(command, values, locale).map((out) => (out === null ? null : read(out)));
+        expect(decode('systemd_quote "$value"', systemdItems)).toEqual(values.map((value) => [value]));
+        expect(decode('systemd_env KEY "$value"', (out) => systemdItems(out).map(resolveSpecifiers)))
+          .toEqual(values.map((value) => [`KEY=${value}`]));
+        expect(decode('systemd_escape_specifiers "$value"', resolveSpecifiers)).toEqual(values);
+        expect(decode('xml_escape "$value"', (out) => parseXml(`<string>${out}</string>`).documentElement.textContent))
+          .toEqual(values);
+      }
+    }, TEST_TIMEOUT_MS);
+
+    it('writes line breaks into the plist and refuses control characters XML cannot hold', ({ expect }) => {
+      const values = ['line\nbreak\n', 'carriage\rreturn', 'tab\t', 'delete\u007f', 'bell\u0007', 'escape\u001b'];
+      const read = runEscaper('xml_escape "$value"', values)
+        .map((out) => (out === null ? null : parseXml(`<string>${out}</string>`).documentElement.textContent));
+
+      expect(read).toEqual([...values.slice(0, 4), null, null]);
+    }, TEST_TIMEOUT_MS);
+
+    it('refuses only the paths a systemd unit cannot hold', ({ expect }) => {
+      // systemd_unit_problem prints a reason for a refused path and nothing otherwise.
+      const refused = (command: string, cases: Record<string, boolean>) => {
+        const values = Object.keys(cases);
+        const reasons = runEscaper(command, values);
+        return { actual: Object.fromEntries(values.map((value, i) => [value, reasons[i] !== ''])), expected: cases };
+      };
+      const node = refused('systemd_unit_problem "$value" /srv/nerve /home/u', {
+        '/opt/node/bin/node': false,
+        '/opt/my node/100%/a&b]/node': false,
+        '/opt/"q"/node': true,
+        "/opt/it's/node": true,
+        '/opt/back\\slash/node': true,
+        '/opt/*/node': true,
+        '/opt/?/node': true,
+        '/opt/[x/node': true,
+        '/opt/pay$roll/node': true,
+        '/opt/tab\t/node': true,
+      });
+      const dir = refused('systemd_unit_problem /usr/bin/node "$value" /home/u', {
+        '/srv/my nerve': false,
+        '/srv/tab\tinside': false,
+        '/srv/back\\slash/x': false,
+        '/srv/"q" & \'q\'': false,
+        '/srv/nerve ': true,
+        '/srv/nerve\t': true,
+        '/srv/nerve\\': true,
+        '/srv/line\nbreak': true,
+        '/srv/carriage\rreturn': true,
+      });
+      const home = refused('systemd_unit_problem /usr/bin/node /srv/nerve "$value"', {
+        '/home/my user': false,
+        '/home/"q"\\ ': false,
+        '/home/tab\there': true,
+        '/home/line\nbreak': true,
+      });
+
+      for (const { actual, expected } of [node, dir, home]) expect(actual).toEqual(expected);
     }, TEST_TIMEOUT_MS);
   });
 

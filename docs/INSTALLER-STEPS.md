@@ -277,6 +277,8 @@ Non-interactive Tailscale behavior:
 
 After `.env` is written, the setup wizard detects and applies pending OpenClaw gateway config changes. This uses a detection layer (`detectNeededConfigChanges`) that checks what needs changing without applying, then presents all changes as a bundled consent prompt.
 
+When `GATEWAY_URL` points at another host, setup skips detection, patching, and the restart, and prints the changes to make on the gateway host instead.
+
 #### Possible changes detected:
 1. **Device scopes** — bootstraps `~/.openclaw/devices/paired.json` with full operator scopes if missing or incomplete
 2. **Pre-pair Nerve device** — registers Nerve's Ed25519 identity in `paired.json` so it can connect without manual `openclaw devices approve`

@@ -272,7 +272,7 @@ export function patchGatewayAllowedOrigins(origin: string): GatewayPatchResult {
   }
 }
 
-const REQUIRED_HTTP_TOOLS = ['cron', 'gateway', 'sessions_spawn'] as const;
+export const REQUIRED_HTTP_TOOLS = ['cron', 'gateway', 'sessions_spawn'] as const;
 
 // Must match the connect metadata sent by Nerve's browser WS client
 // (src/hooks/useWebSocket.ts) to avoid OpenClaw 2026.2.26+ metadata-repair prompts.

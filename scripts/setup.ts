@@ -36,7 +36,9 @@ import {
   type EnvConfig,
 } from './lib/env-writer.js';
 import { generateSelfSignedCert } from './lib/cert-gen.js';
-import { detectGatewayConfig, getEnvGatewayToken, chooseSetupGatewayToken, restartGateway, approvePendingNerveDevice, detectNeededConfigChanges, type ConfigChange } from './lib/gateway-detect.js';
+import { detectGatewayConfig, getEnvGatewayToken, chooseSetupGatewayToken } from './lib/gateway-detect.js';
+import { classifyGatewayUrl, readLocalMachine } from './lib/gateway-locality.js';
+import { detectedTokenNotice, detectedTokenPrompt, manualTokenHint, runGatewayConfigStep } from './lib/gateway-config-step.js';
 import { applyAccessPlanToConfig, buildAccessPlan, type InstallerAccessProfile } from './lib/access-plan.js';
 import { getTailscaleState, type TailscaleState } from './lib/tailscale.js';
 import { detectAgentDisplayNameDefault } from './lib/agent-name-default.js';
@@ -96,56 +98,6 @@ function isLoopback(host: string): boolean {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolveTimer => setTimeout(resolveTimer, ms));
-}
-
-/**
- * Apply a list of config changes, restart gateway if needed, and optionally approve pending devices.
- * Shared between interactive and defaults flows to avoid duplication.
- */
-async function applyConfigChanges(changes: ConfigChange[]): Promise<void> {
-  let needsRestart = false;
-  let deviceScopeFixFailed = false;
-  let shouldApprovePending = false;
-
-  for (const change of changes) {
-    if (change.id === 'pre-pair' && deviceScopeFixFailed) {
-      warn('Skipping pre-pair because device scope fix failed');
-      continue;
-    }
-
-    const result = change.apply();
-    if (result.ok) {
-      success(result.message);
-      if (result.needsRestart) needsRestart = true;
-      if (change.id === 'device-scopes' || change.id === 'pre-pair') {
-        shouldApprovePending = true;
-      }
-    } else {
-      warn(result.message);
-      if (change.id === 'device-scopes') {
-        deviceScopeFixFailed = true;
-      }
-    }
-  }
-
-  if (needsRestart) {
-    dim('Restarting gateway to apply changes...');
-    const restart = restartGateway();
-    if (restart.ok) {
-      await new Promise(r => setTimeout(r, 3000));
-      if (shouldApprovePending) {
-        const approved = approvePendingNerveDevice();
-        if (approved.ok && approved.approved > 0) {
-          success(approved.message);
-        } else if (!approved.ok) {
-          warn(approved.message);
-        }
-      }
-      success('Gateway configuration updated');
-    } else {
-      warn(restart.message);
-    }
-  }
 }
 
 // ── Ctrl+C handler ───────────────────────────────────────────────────
@@ -365,13 +317,17 @@ async function collectInteractive(
     },
   });
 
+  // A gateway on another machine is configured there, not through this machine's ~/.openclaw
+  const gatewayLocation = classifyGatewayUrl(config.GATEWAY_URL, readLocalMachine([prereqs.tailscale.dnsName]));
+  const isRemoteGateway = gatewayLocation.locality === 'remote';
+
   // If we have an auto-detected token, offer to use it
   if (defaultToken && !existing.GATEWAY_TOKEN) {
-    const tokenLabel = tokenChoice.source === 'env' ? 'environment token' : 'detected token';
+    const tokenPrompt = detectedTokenPrompt({ source: tokenChoice.source, token: defaultToken, location: gatewayLocation });
     const useDetected = await confirm({
     theme: promptTheme,
-      message: `Use ${tokenLabel} (${defaultToken})?`,
-      default: true,
+      message: tokenPrompt.message,
+      default: tokenPrompt.default,
     });
     if (useDetected) {
       config.GATEWAY_TOKEN = defaultToken;
@@ -405,11 +361,8 @@ async function collectInteractive(
       });
     }
   } else {
-    if (detected.tokenIsSecretRef) {
-      dim('gateway.auth.token is stored as a secret reference, so setup cannot read it.');
-      dim('Look for the plain value in ~/.openclaw/.env or wherever your gateway service sets it.');
-    } else {
-      dim('Find your token in ~/.openclaw/openclaw.json or run: openclaw gateway status');
+    for (const line of manualTokenHint(gatewayLocation, detected.tokenIsSecretRef)) {
+      dim(line);
     }
     config.GATEWAY_TOKEN = await password({
     theme: promptTheme,
@@ -430,7 +383,9 @@ async function collectInteractive(
     console.log(`\x1b[32m✓\x1b[0m ${gwTest.message}`);
   } else {
     console.log(`\x1b[31m✗\x1b[0m ${gwTest.message}`);
-    dim('  Start it with: openclaw gateway start');
+    dim(isRemoteGateway
+      ? `  Start it on ${gatewayLocation.host} with: openclaw gateway start`
+      : '  Start it with: openclaw gateway start');
     console.log('\n  Setup could not verify your gateway token. Fix the gateway or token, then re-run setup.\n');
     process.exit(1);
   }
@@ -744,45 +699,13 @@ async function collectInteractive(
 
   // ── Gateway config updates ─────────────────────────────────────────
 
-  const neededChanges = detectNeededConfigChanges({
+  await runGatewayConfigStep({
+    location: gatewayLocation,
     allowedOrigins: accessPlan.gatewayAllowedOrigins,
     gatewayToken: config.GATEWAY_TOKEN,
+    port,
+    confirm: (message) => confirm({ theme: promptTheme, message, default: true }),
   });
-
-  if (neededChanges.length > 0) {
-    console.log('');
-    warn('Nerve needs to update your OpenClaw gateway config.');
-    dim('OpenClaw config files will be updated.');
-    console.log('');
-    dim('The following changes are needed:');
-    neededChanges.forEach((change, i) => {
-      dim(`  ${i + 1}. ${change.description}`);
-    });
-    console.log('');
-
-    const applyChanges = await confirm({
-      theme: promptTheme,
-      message: 'Apply these changes?',
-      default: true,
-    });
-
-    if (applyChanges) {
-      await applyConfigChanges(neededChanges);
-    } else {
-      warn('Skipped gateway config changes. Some features may not work:');
-      for (const change of neededChanges) {
-        if (change.id === 'device-scopes') {
-          dim('  • Device scopes: manually fix scopes in ~/.openclaw/devices/paired.json');
-        } else if (change.id === 'pre-pair') {
-          dim('  • Pre-pair: run `openclaw devices approve` after starting Nerve');
-        } else if (change.id === 'tools-allow') {
-          dim('  • HTTP tools: add "cron", "gateway", and "sessions_spawn" to gateway.tools.allow in ~/.openclaw/openclaw.json');
-        } else if (change.id.startsWith('allowed-origins')) {
-          dim('  • Origins: add the required origin(s) to gateway.controlUi.allowedOrigins in ~/.openclaw/openclaw.json');
-        }
-      }
-    }
-  }
 
   // ── 4/6: Authentication ───────────────────────────────────────────
 
@@ -1137,6 +1060,12 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
     }
   }
 
+  // A gateway on another machine is configured there, not through this machine's ~/.openclaw
+  const gatewayLocation = classifyGatewayUrl(
+    config.GATEWAY_URL || DEFAULTS.GATEWAY_URL,
+    readLocalMachine([prereqs.tailscale.dnsName]),
+  );
+
   // Try to auto-detect gateway token
   if (!config.GATEWAY_TOKEN) {
     const detected = detectGatewayConfig();
@@ -1148,7 +1077,9 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
 
     if (tokenChoice.token) {
       config.GATEWAY_TOKEN = tokenChoice.token;
-      success(`Auto-detected gateway token${tokenChoice.source === 'env' ? ' from environment' : ''}`);
+      const notice = detectedTokenNotice(tokenChoice.source, gatewayLocation);
+      if (notice.level === 'warn') warn(notice.message);
+      else success(notice.message);
     } else {
       fail('GATEWAY_TOKEN is required but could not be auto-detected');
       if (detected.tokenIsSecretRef) {
@@ -1241,14 +1172,12 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
     printDeploymentGuides();
   }
 
-  const changes = detectNeededConfigChanges({
+  await runGatewayConfigStep({
+    location: gatewayLocation,
     allowedOrigins: config.ALLOWED_ORIGINS?.split(',').map(origin => origin.trim()).filter(Boolean),
     gatewayToken: config.GATEWAY_TOKEN,
+    port: config.PORT,
   });
-
-  if (changes.length > 0) {
-    await applyConfigChanges(changes);
-  }
 
   if (followUpSteps.length > 0) {
     console.log('');

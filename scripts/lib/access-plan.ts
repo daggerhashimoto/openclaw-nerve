@@ -30,7 +30,7 @@ function dedupe(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.map(value => value?.trim()).filter((value): value is string => Boolean(value)))];
 }
 
-function isLoopback(host: string | null | undefined): boolean {
+export function isLoopback(host: string | null | undefined): boolean {
   if (!host) return true;
   // Node's URL.hostname returns bracketed IPv6 literals (e.g. "[::1]"); strip
   // the brackets before comparing. Also accept any 127.0.0.0/8 IPv4 loopback

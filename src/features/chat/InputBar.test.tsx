@@ -984,9 +984,23 @@ describe('InputBar', () => {
       expect(textarea.readOnly).toBe(false);
     });
 
+    it('leaves the draft editable and sendable while transcribing, so a stalled transcription cannot hold it', async () => {
+      const { textarea, setVoice, onSend } = renderComposer();
+      typeDraft(textarea, 'typed while transcribing');
+
+      setVoice({ voiceState: 'transcribing' });
+      expect(textarea.readOnly).toBe(false);
+      expect(screen.getByLabelText('Send message')).not.toBeDisabled();
+
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      await waitFor(() => {
+        expect(onSend).toHaveBeenCalledTimes(1);
+      });
+      expect(onSend.mock.calls[0][0]).toBe('typed while transcribing');
+    });
+
     it.each([
       ['recording', 'idle'],
-      ['transcribing', 'idle'],
       ['recording', 'listening'],
     ] as const)('locks the draft while %s and unlocks it once voice is %s', async (busyState, restState) => {
       const { textarea, setVoice, onSend } = renderComposer();
@@ -1018,7 +1032,50 @@ describe('InputBar', () => {
       expect(onSend.mock.calls[0][0]).toBe('locked draft, edited');
     });
 
-    it('hides the slash menu and leaves a slash draft untouched while voice is busy', () => {
+    it('scrolls the selected slash command back into view when the menu returns after recording', async () => {
+      // jsdom has no layout: give every listbox and option a box, and every element a scroll offset
+      const scrollTops = new WeakMap<Element, number>();
+      const box = (top: number, height: number) => ({
+        x: 0, y: top, top, left: 0, bottom: top + height, right: 240, width: 240, height, toJSON: () => {},
+      } as DOMRect);
+      const spies = [
+        vi.spyOn(Element.prototype, 'scrollTop', 'get').mockImplementation(function (this: Element) {
+          return scrollTops.get(this) ?? 0;
+        }),
+        vi.spyOn(Element.prototype, 'scrollTop', 'set').mockImplementation(function (this: Element, value: number) {
+          scrollTops.set(this, value);
+        }),
+        vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+          const role = this.getAttribute('role');
+          if (role === 'listbox') return box(0, 64);
+          const menu = role === 'option' ? this.closest('[role="listbox"]') : null;
+          if (!menu) return box(0, 0);
+          const index = [...menu.querySelectorAll('[role="option"]')].indexOf(this);
+          return box(index * 32 - menu.scrollTop, 32);
+        }),
+      ];
+      try {
+        const { textarea, setVoice } = renderComposer();
+        typeDraft(textarea, '/');
+        await screen.findByRole('listbox', { name: 'Slash commands' });
+        fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+        fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+        await waitFor(() => expect(screen.getAllByRole('option')[2]).toHaveAttribute('aria-selected', 'true'));
+        expect(screen.getByRole('listbox', { name: 'Slash commands' }).scrollTop).toBe(32);
+
+        setVoice({ voiceState: 'recording' });
+        expect(screen.queryByRole('listbox', { name: 'Slash commands' })).not.toBeInTheDocument();
+        setVoice({ voiceState: 'idle' });
+
+        const returned = screen.getByRole('listbox', { name: 'Slash commands' });
+        expect(screen.getAllByRole('option')[2]).toHaveAttribute('aria-selected', 'true');
+        expect(returned.scrollTop).toBe(32);
+      } finally {
+        spies.forEach((spy) => spy.mockRestore());
+      }
+    });
+
+    it('hides the slash menu and leaves a slash draft untouched while recording', () => {
       const { textarea, setVoice } = renderComposer();
       typeDraft(textarea, '/mo');
       expect(screen.getByRole('listbox', { name: 'Slash commands' })).toBeInTheDocument();

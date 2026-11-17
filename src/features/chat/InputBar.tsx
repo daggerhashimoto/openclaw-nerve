@@ -467,22 +467,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     slashOptionRefs.current.length = slashSuggestions.length;
   }, [slashSuggestions.length]);
 
-  useEffect(() => {
-    if (!isSlashMenuOpen) return;
-
-    const menu = slashMenuRef.current;
-    const option = slashOptionRefs.current[selectedSlashIndex];
-    if (!menu || !option) return;
-
-    const menuRect = menu.getBoundingClientRect();
-    const optionRect = option.getBoundingClientRect();
-
-    if (optionRect.top < menuRect.top) {
-      menu.scrollTop -= menuRect.top - optionRect.top;
-    } else if (optionRect.bottom > menuRect.bottom) {
-      menu.scrollTop += optionRect.bottom - menuRect.bottom;
-    }
-  }, [isSlashMenuOpen, selectedSlashIndex, slashSuggestions.length]);
 
   const resizeInput = useCallback(() => {
     const input = inputRef.current;
@@ -687,11 +671,30 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     void onSend('[voice] ' + text);
   }, agentName, voiceLang, voicePhrasesVersion, effectiveSttInputMode);
 
-  // While voice records or transcribes, the draft is locked: read-only, and
-  // neither Enter nor Send can send it.
-  const isVoiceBusy = voiceState === 'recording' || voiceState === 'transcribing';
-  const showSlashMenu = isSlashMenuOpen && !isVoiceBusy;
-  const voicePreviewText = liveTranscriptionPreview && voiceState === 'recording' ? interimTranscript : '';
+  // While voice records, the draft is locked: read-only, and neither Enter nor Send
+  // can send it. Transcribing leaves it free: the voice message goes out on its own
+  // and never touches the draft, and a stalled transcription must not hold it.
+  const isRecording = voiceState === 'recording';
+  const showSlashMenu = isSlashMenuOpen && !isRecording;
+  const voicePreviewText = liveTranscriptionPreview && isRecording ? interimTranscript : '';
+
+  // Keep the selected slash command in view, also when the menu comes back after recording
+  useEffect(() => {
+    if (!showSlashMenu) return;
+
+    const menu = slashMenuRef.current;
+    const option = slashOptionRefs.current[selectedSlashIndex];
+    if (!menu || !option) return;
+
+    const menuRect = menu.getBoundingClientRect();
+    const optionRect = option.getBoundingClientRect();
+
+    if (optionRect.top < menuRect.top) {
+      menu.scrollTop -= menuRect.top - optionRect.top;
+    } else if (optionRect.bottom > menuRect.bottom) {
+      menu.scrollTop += optionRect.bottom - menuRect.bottom;
+    }
+  }, [showSlashMenu, selectedSlashIndex, slashSuggestions.length]);
 
   // Keep the newest words of a long live preview in view once its height cap is reached.
   const voicePreviewRef = useRef<HTMLDivElement>(null);
@@ -1128,9 +1131,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   ]);
 
   const handleSend = useCallback(async () => {
-    // The draft is locked while voice records or transcribes; a voice send goes
+    // The draft is locked while voice records; a voice send goes
     // straight to onSend and never through here.
-    if (isVoiceBusy) return;
+    if (isRecording) return;
     const text = inputRef.current?.value.trim();
     if (!text && stagedAttachments.length === 0) {
       // Shake on empty send attempt
@@ -1218,7 +1221,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       setIsPreparingInline(false);
     }
   }, [
-    isVoiceBusy,
+    isRecording,
     stagedAttachments,
     uploadConfig,
     inputHistory,
@@ -1249,11 +1252,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     // on these events causes ghost messages (issue #65).
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
 
-    // Locked while voice records or transcribes: Enter must not send the draft,
+    // Locked while voice records: Enter must not send the draft,
     // and the slash menu, tab completion and history recall must not rewrite it.
     // Everything else (caret keys, copy) stays native, and the left-Shift voice
     // shortcuts are window listeners, so nothing here stops them.
-    if (isVoiceBusy) {
+    if (isRecording) {
       if (e.key === 'Enter') e.preventDefault();
       return;
     }
@@ -1519,7 +1522,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               onSelect={e => syncSlashStateFromInput(e.currentTarget)}
               placeholder={`Message ${agentName}`}
               aria-label="Message input"
-              readOnly={isVoiceBusy}
+              readOnly={isRecording}
               rows={1}
               className="block max-h-[160px] min-h-[42px] w-full resize-none border-none bg-transparent px-3 pb-1 pt-2.5 text-[1rem] leading-normal text-foreground outline-none placeholder:text-muted-foreground"
             />
@@ -1593,10 +1596,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               <button
                 type="button"
                 onClick={() => { void handleSend(); }}
-                disabled={isGenerating || isPreparingInline || isVoiceBusy}
+                disabled={isGenerating || isPreparingInline || isRecording}
                 aria-label={isGenerating ? 'Generating response...' : (isPreparingInline ? 'Preparing attachments...' : 'Send message')}
                 aria-busy={isGenerating || isPreparingInline}
-                className={`send-btn ml-auto inline-flex min-h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-[3px] border-none bg-primary px-3.5 text-[0.867rem] font-semibold text-primary-foreground transition-[filter] duration-[120ms] sm:ml-0 sm:min-h-8 ${isGenerating || isPreparingInline || isVoiceBusy ? 'cursor-not-allowed opacity-50' : 'hover:brightness-110'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
+                className={`send-btn ml-auto inline-flex min-h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-[3px] border-none bg-primary px-3.5 text-[0.867rem] font-semibold text-primary-foreground transition-[filter] duration-[120ms] sm:ml-0 sm:min-h-8 ${isGenerating || isPreparingInline || isRecording ? 'cursor-not-allowed opacity-50' : 'hover:brightness-110'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
               >
                 Send
                 {isPreparingInline ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ArrowUp size={14} aria-hidden="true" />}

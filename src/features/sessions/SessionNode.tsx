@@ -219,7 +219,7 @@ export const SessionNode = memo(function SessionNode({
     </div>
   );
 
-  const pinLabel = isPinned ? 'Unpin' : 'Pin';
+  const pinLabel = isPinned ? 'Unpin session' : 'Pin session';
 
   const colorButton = hasColorAction && (
     <button

@@ -75,20 +75,20 @@ describe('SessionList pins', () => {
     expect(rowOrder()).toEqual(ORIGINAL_ORDER);
     expect(screen.queryByRole('img', { name: 'Pinned' })).toBeNull();
 
-    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Pin' }));
+    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Pin session' }));
 
     expect(rowOrder()).toEqual(['Fleet lead', 'Alpha', 'Ops', 'Chisel', 'Anvil', 'Bellows']);
     expect(isMarkedPinned('Chisel')).toBe(true);
     expect(within(rowFor('Chisel')).getByTitle('Pinned')).toBeInTheDocument();
     expect(isMarkedPinned('Anvil')).toBe(false);
-    expect(within(rowFor('Chisel')).getByRole('button', { name: 'Unpin' })).toBeInTheDocument();
+    expect(within(rowFor('Chisel')).getByRole('button', { name: 'Unpin session' })).toBeInTheDocument();
     expect(storedPins()).toEqual(['agent:ops:subagent:chisel']);
   });
 
   it('moves a pinned root above the other roots, main included, with its children still under it', () => {
     renderSessionList();
 
-    fireEvent.click(within(rowFor('Ops')).getByRole('button', { name: 'Pin' }));
+    fireEvent.click(within(rowFor('Ops')).getByRole('button', { name: 'Pin session' }));
 
     expect(rowOrder()).toEqual(['Ops', 'Anvil', 'Bellows', 'Chisel', 'Fleet lead', 'Alpha']);
     expect(isMarkedPinned('Ops')).toBe(true);
@@ -96,12 +96,12 @@ describe('SessionList pins', () => {
 
   it('restores the original order when the pin is taken off', () => {
     renderSessionList();
-    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Pin' }));
-    fireEvent.click(within(rowFor('Alpha')).getByRole('button', { name: 'Pin' }));
+    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Pin session' }));
+    fireEvent.click(within(rowFor('Alpha')).getByRole('button', { name: 'Pin session' }));
     expect(rowOrder()).toEqual(['Alpha', 'Fleet lead', 'Ops', 'Chisel', 'Anvil', 'Bellows']);
 
-    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Unpin' }));
-    fireEvent.click(within(rowFor('Alpha')).getByRole('button', { name: 'Unpin' }));
+    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Unpin session' }));
+    fireEvent.click(within(rowFor('Alpha')).getByRole('button', { name: 'Unpin session' }));
 
     expect(rowOrder()).toEqual(ORIGINAL_ORDER);
     expect(screen.queryByRole('img', { name: 'Pinned' })).toBeNull();
@@ -110,7 +110,7 @@ describe('SessionList pins', () => {
 
   it('keeps pins across a remount, read back from localStorage', () => {
     const { unmount } = renderSessionList();
-    fireEvent.click(within(rowFor('Bellows')).getByRole('button', { name: 'Pin' }));
+    fireEvent.click(within(rowFor('Bellows')).getByRole('button', { name: 'Pin session' }));
     unmount();
 
     // Forget the page's copy, as a reload would, so the next mount has only storage to go on
@@ -133,7 +133,7 @@ describe('SessionList pins', () => {
 
   it('keeps a pinned session pinned through a rename, since the rename keeps its key', () => {
     const { rerender } = renderSessionList();
-    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Pin' }));
+    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Pin session' }));
 
     const renamed = SESSIONS.map((session) => (session === CHISEL ? { ...session, label: 'Zebra' } : session));
     rerender(
@@ -156,14 +156,14 @@ describe('SessionList pins', () => {
     renderSessionList(SESSIONS, { compact: true });
 
     fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Session actions' }));
-    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Pin' }));
+    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Pin session' }));
 
     expect(rowOrder()).toEqual(['Fleet lead', 'Alpha', 'Ops', 'Chisel', 'Anvil', 'Bellows']);
     expect(isMarkedPinned('Chisel')).toBe(true);
-    expect(within(rowFor('Chisel')).queryByRole('button', { name: 'Unpin' })).toBeNull();
+    expect(within(rowFor('Chisel')).queryByRole('button', { name: 'Unpin session' })).toBeNull();
 
     fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Session actions' }));
-    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Unpin' }));
+    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Unpin session' }));
 
     expect(rowOrder()).toEqual(ORIGINAL_ORDER);
   });
@@ -215,8 +215,8 @@ describe('SessionList pins and Nerve delete', () => {
     render(<SessionProvider><ConnectedSessionList /></SessionProvider>);
     await screen.findByText('Chisel');
 
-    fireEvent.click(within(rowFor('Ops')).getByRole('button', { name: 'Pin' }));
-    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Pin' }));
+    fireEvent.click(within(rowFor('Ops')).getByRole('button', { name: 'Pin session' }));
+    fireEvent.click(within(rowFor('Chisel')).getByRole('button', { name: 'Pin session' }));
     expect(storedPins()).toEqual(['agent:ops:main', 'agent:ops:subagent:chisel']);
 
     fireEvent.click(within(rowFor('Chisel')).getByTitle('Delete session'));

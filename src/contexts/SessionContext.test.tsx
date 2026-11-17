@@ -1768,22 +1768,33 @@ describe('SessionContext', () => {
 
     const fullListCalls = () => rpcMock.mock.calls.filter(([method, params]) => method === 'sessions.list' && !params?.spawnedBy).length;
 
-    it('stops asking once the server reports there is no sessions.json, as on current OpenClaw', async () => {
+    it('pauses asking after the server reports no sessions.json, as on current OpenClaw, and checks again later', async () => {
       const hiddenCalls = installHiddenAnswer({ ok: true, sessions: [], storeMissing: true, remoteWorkspace: true });
+      const realNow = Date.now.bind(Date);
+      let offsetMs = 0;
+      const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + offsetMs);
+      onTestFinished(() => nowSpy.mockRestore());
+      const refresh = async () => {
+        const before = fullListCalls();
+        await act(async () => {
+          screen.getByTestId('refresh-sessions').click();
+        });
+        await waitFor(() => expect(fullListCalls()).toBeGreaterThan(before));
+      };
 
       render(<SessionProvider><SessionLabels /><SessionRefreshProbe /></SessionProvider>);
       await screen.findByText('Cron: Daily Digest');
       expect(hiddenCalls()).toBe(1);
 
-      const before = fullListCalls();
-      await act(async () => {
-        screen.getByTestId('refresh-sessions').click();
-      });
-      await waitFor(() => expect(fullListCalls()).toBeGreaterThan(before));
-
+      await refresh();
       expect(hiddenCalls()).toBe(1);
       // The gateway's own list still carries the cron session
       expect(screen.getByText('Cron: Daily Digest')).toBeInTheDocument();
+
+      // An older gateway may create the file later, so the pause runs out
+      offsetMs = 5 * 60_000 + 1;
+      await refresh();
+      expect(hiddenCalls()).toBe(2);
     });
 
     it('keeps asking and merges its cron sessions when the file exists, as on older gateways', async () => {

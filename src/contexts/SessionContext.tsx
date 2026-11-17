@@ -30,6 +30,8 @@ const TERMINAL_PING_DEDUP_MS = 5_000;
 const FULL_SESSIONS_LIMIT = 1000;
 const MAIN_SESSION_KEY = 'agent:main:main';
 const SESSIONS_SPAWNED_LIMIT = 500;
+/** How long a reported missing sessions.json holds before the hidden cron list is asked again. */
+const HIDDEN_STORE_RECHECK_MS = 5 * 60_000;
 
 // A refresh keeps a row's old object unless one of these differs, so every field the agents
 // column, the fleet pane and the session info panel read has to be here (run state included).
@@ -145,10 +147,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   // Cron sessions read from the gateway's sessions.json, for older gateways that leave them out
   // of sessions.list. Current OpenClaw writes no such file and lists cron sessions itself; once
-  // the server reports the file missing, this page stops asking.
-  const hiddenStoreMissingRef = useRef(false);
+  // the server reports the file missing, this page asks again only every few minutes, in case an
+  // older gateway creates the file later.
+  const hiddenStoreMissingAtRef = useRef<number | null>(null);
   const fetchHiddenCronSessions = useCallback(async (activeMinutes: number, limit: number): Promise<Session[]> => {
-    if (hiddenStoreMissingRef.current) return [];
+    const missingAt = hiddenStoreMissingAtRef.current;
+    if (missingAt !== null && Date.now() - missingAt < HIDDEN_STORE_RECHECK_MS) return [];
     try {
       const params = new URLSearchParams({
         activeMinutes: String(activeMinutes),
@@ -157,7 +161,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`/api/sessions/hidden?${params.toString()}`);
       if (!res.ok) return [];
       const data = await res.json() as { ok?: boolean; sessions?: Session[]; storeMissing?: boolean };
-      if (data.storeMissing) hiddenStoreMissingRef.current = true;
+      hiddenStoreMissingAtRef.current = data.storeMissing ? Date.now() : null;
       return Array.isArray(data.sessions) ? data.sessions : [];
     } catch {
       return [];

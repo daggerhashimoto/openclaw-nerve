@@ -143,7 +143,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     markSessionRead(key);
   }, [markSessionRead]);
 
+  // Cron sessions read from the gateway's sessions.json, for older gateways that leave them out
+  // of sessions.list. Current OpenClaw writes no such file and lists cron sessions itself; once
+  // the server reports the file missing, this page stops asking.
+  const hiddenStoreMissingRef = useRef(false);
   const fetchHiddenCronSessions = useCallback(async (activeMinutes: number, limit: number): Promise<Session[]> => {
+    if (hiddenStoreMissingRef.current) return [];
     try {
       const params = new URLSearchParams({
         activeMinutes: String(activeMinutes),
@@ -151,7 +156,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       });
       const res = await fetch(`/api/sessions/hidden?${params.toString()}`);
       if (!res.ok) return [];
-      const data = await res.json() as { ok?: boolean; sessions?: Session[] };
+      const data = await res.json() as { ok?: boolean; sessions?: Session[]; storeMissing?: boolean };
+      if (data.storeMissing) hiddenStoreMissingRef.current = true;
       return Array.isArray(data.sessions) ? data.sessions : [];
     } catch {
       return [];

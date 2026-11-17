@@ -1752,4 +1752,56 @@ describe('SessionContext', () => {
     });
     expect(screen.getByTestId('reviewer-status')).toHaveTextContent('NONE');
   });
+
+  describe('cron sessions from sessions.json', () => {
+    function installHiddenAnswer(answer: unknown) {
+      const fetchMock = vi.fn((input: string | URL | Request) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.includes('/api/server-info')) return Promise.resolve(jsonResponse({ agentName: 'Jen' }));
+        if (url.includes('/api/agentlog')) return Promise.resolve(jsonResponse([]));
+        if (url.includes('/api/sessions/hidden')) return Promise.resolve(jsonResponse(answer));
+        return Promise.resolve(jsonResponse({}));
+      });
+      globalThis.fetch = fetchMock as typeof fetch;
+      return () => fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/sessions/hidden')).length;
+    }
+
+    const fullListCalls = () => rpcMock.mock.calls.filter(([method, params]) => method === 'sessions.list' && !params?.spawnedBy).length;
+
+    it('stops asking once the server reports there is no sessions.json, as on current OpenClaw', async () => {
+      const hiddenCalls = installHiddenAnswer({ ok: true, sessions: [], storeMissing: true, remoteWorkspace: true });
+
+      render(<SessionProvider><SessionLabels /><SessionRefreshProbe /></SessionProvider>);
+      await screen.findByText('Cron: Daily Digest');
+      expect(hiddenCalls()).toBe(1);
+
+      const before = fullListCalls();
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click();
+      });
+      await waitFor(() => expect(fullListCalls()).toBeGreaterThan(before));
+
+      expect(hiddenCalls()).toBe(1);
+      // The gateway's own list still carries the cron session
+      expect(screen.getByText('Cron: Daily Digest')).toBeInTheDocument();
+    });
+
+    it('keeps asking and merges its cron sessions when the file exists, as on older gateways', async () => {
+      const hiddenCalls = installHiddenAnswer({
+        ok: true,
+        sessions: [{ sessionKey: 'agent:main:cron:nightly', label: 'Cron: Nightly' }],
+      });
+
+      render(<SessionProvider><SessionLabels /><SessionRefreshProbe /></SessionProvider>);
+      await screen.findByText('Cron: Nightly');
+
+      const before = hiddenCalls();
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click();
+      });
+
+      await waitFor(() => expect(hiddenCalls()).toBe(before + 1));
+      expect(screen.getByText('Cron: Nightly')).toBeInTheDocument();
+    });
+  });
 });

@@ -1016,7 +1016,7 @@ Returns hidden cron-like sessions from `sessions.json`, sorted by recent activit
 }
 ```
 
-If the backing `sessions.json` file is unavailable, the endpoint returns `{ "ok": true, "sessions": [] }`. In remote-workspace cases it may also include `remoteWorkspace: true`.
+This reads the gateway's `sessions.json`, for older gateways that leave cron sessions out of `sessions.list`. Current OpenClaw keeps sessions in a database, writes no such file and lists cron sessions itself. When the file does not exist (that case, or a remote gateway) the endpoint returns `{ "ok": true, "sessions": [], "storeMissing": true, "remoteWorkspace": true }` without logging, and the UI stops asking for the rest of the page's life. Any other read or parse failure returns `{ "ok": true, "sessions": [] }`.
 
 ### `GET /api/sessions/:id/model`
 

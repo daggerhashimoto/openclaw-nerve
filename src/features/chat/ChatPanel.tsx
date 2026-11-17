@@ -85,6 +85,9 @@ function isCollapsedByDefault(msg: ChatMsg): boolean {
   return Boolean(msg.isThinking) || Boolean(msg.isSystemNotification) || isMessageCollapsible(msg);
 }
 
+/** How long the search waits for a match's highlight to render (a lazy body) before it stops watching. */
+const SEARCH_MARK_WAIT_MS = 2000;
+
 /** The key a row's open or folded state is kept under. */
 function collapseKeyOf(msg: ChatMsg | undefined, index: number): string | number {
   return msg?.msgId || msg?.tempId || index;
@@ -246,12 +249,26 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     if (!row || !scrollRef.current) return;
     row.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setAutoScroll(false);
-    // Then the marked text itself once the opened row has rendered: it can sit in a
-    // result or memories box that scrolls on its own
-    const frame = requestAnimationFrame(() => {
-      row.querySelector('mark.search-highlight')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
-    return () => cancelAnimationFrame(frame);
+    // Then the marked text itself, once: it can sit in a result or memories box that
+    // scrolls on its own, and a body drawn by the lazy markdown renderer shows only its
+    // fallback until the chunk loads. Watch the row until the mark appears, for a while.
+    // (The observer and frame callbacks run after this effect returns, so `frame` and `giveUp` are set by then.)
+    const scrollToMark = () => {
+      const mark = row.querySelector('mark.search-highlight');
+      if (!mark) return;
+      stop();
+      mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    const observer = new MutationObserver(scrollToMark);
+    const stop = () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      clearTimeout(giveUp);
+    };
+    observer.observe(row, { childList: true, subtree: true });
+    const frame = requestAnimationFrame(scrollToMark);
+    const giveUp = setTimeout(stop, SEARCH_MARK_WAIT_MS);
+    return stop;
   }, [revealToken, matchIndex]);
 
   // Track unread messages when scrolled up

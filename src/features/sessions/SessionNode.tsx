@@ -7,7 +7,7 @@ import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { Pane } from '@/components/ui/Pane';
 import { paneStateFor, paneStateLabel } from '@/lib/paneState';
 import { getSessionPaneState, getStatusBadgeText } from './statusUtils';
-import { ChevronRight, ChevronDown, EllipsisVertical, Palette, PenLine, Square, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, EllipsisVertical, Palette, PenLine, Pin, PinOff, Square, Trash2 } from 'lucide-react';
 import { SessionInfoPanel } from './SessionInfoPanel';
 import { AGENT_HUES } from '@/lib/agentColors';
 
@@ -28,6 +28,8 @@ interface SessionNodeProps {
   isCron: boolean;
   isCronRun: boolean;
   isUnread: boolean;
+  /** The operator pinned this row to the top of its siblings (pinnedSessions.ts). */
+  isPinned?: boolean;
   isRenaming: boolean;
   renameValue: string;
   /** Why the gateway refused the last rename of this row; set only on the row being renamed. */
@@ -43,6 +45,7 @@ interface SessionNodeProps {
   onToggleExpand: (key: string) => void;
   onDelete?: (key: string, label: string) => void;
   onStartRename?: (key: string, label: string) => void;
+  onTogglePin?: (key: string) => void;
   onAbort?: (key: string) => void;
   onRenameChange: (value: string) => void;
   onRenameCommit: () => void;
@@ -69,6 +72,7 @@ function arePropsEqual(prev: SessionNodeProps, next: SessionNodeProps): boolean 
     prev.isCron === next.isCron &&
     prev.isCronRun === next.isCronRun &&
     prev.isUnread === next.isUnread &&
+    prev.isPinned === next.isPinned &&
     prev.isRenaming === next.isRenaming &&
     prev.renameValue === next.renameValue &&
     prev.renameError === next.renameError &&
@@ -78,6 +82,7 @@ function arePropsEqual(prev: SessionNodeProps, next: SessionNodeProps): boolean 
     prev.compact === next.compact &&
     // Rename and Delete are offered by handler presence, so a handler coming or going must re-render
     Boolean(prev.onStartRename) === Boolean(next.onStartRename) &&
+    Boolean(prev.onTogglePin) === Boolean(next.onTogglePin) &&
     Boolean(prev.onDelete) === Boolean(next.onDelete)
   );
 }
@@ -96,6 +101,7 @@ export const SessionNode = memo(function SessionNode({
   isCron,
   isCronRun,
   isUnread,
+  isPinned = false,
   isRenaming,
   renameValue,
   renameError,
@@ -108,6 +114,7 @@ export const SessionNode = memo(function SessionNode({
   onToggleExpand,
   onDelete,
   onStartRename,
+  onTogglePin,
   onAbort,
   onRenameChange,
   onRenameCommit,
@@ -139,6 +146,11 @@ export const SessionNode = memo(function SessionNode({
     onAbort?.(sessionKey);
   }, [onAbort, sessionKey]);
 
+  const handlePinClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onTogglePin?.(sessionKey);
+  }, [onTogglePin, sessionKey]);
+
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsRef = useRef<HTMLDivElement>(null);
 
@@ -150,7 +162,9 @@ export const SessionNode = memo(function SessionNode({
   const hasRenameAction = canRename && !isRenaming;
   const hasDeleteAction = canDelete;
   const hasColorAction = Boolean(isRootAgent && agentId && onPickColor);
-  const hasActions = hasAbortAction || hasRenameAction || hasDeleteAction || hasColorAction;
+  // Pins live in this browser, so every row can be pinned.
+  const hasPinAction = Boolean(onTogglePin);
+  const hasActions = hasAbortAction || hasRenameAction || hasDeleteAction || hasColorAction || hasPinAction;
 
   // Agent colour: a strip of the seven identity hues, opened from a root row's actions
   const [hueOpen, setHueOpen] = useState(false);
@@ -205,6 +219,8 @@ export const SessionNode = memo(function SessionNode({
     </div>
   );
 
+  const pinLabel = isPinned ? 'Unpin session' : 'Pin session';
+
   const colorButton = hasColorAction && (
     <button
       type="button"
@@ -240,6 +256,11 @@ export const SessionNode = memo(function SessionNode({
     handleAbortClick(e);
     setActionsOpen(false);
   }, [handleAbortClick]);
+
+  const handlePinFromMenu = useCallback((e: React.MouseEvent) => {
+    handlePinClick(e);
+    setActionsOpen(false);
+  }, [handlePinClick]);
 
   const handleRenameFromMenu = useCallback((e: React.MouseEvent) => {
     handleRenameClick(e);
@@ -368,6 +389,12 @@ export const SessionNode = memo(function SessionNode({
                   {metaText}
                 </span>
               )}
+              {/* A pinned row says so quietly after its meta: muted, no colour, nothing moves */}
+              {isPinned && (
+                <span role="img" aria-label="Pinned" title="Pinned" className="flex shrink-0 self-center text-muted-foreground">
+                  <Pin size={11} aria-hidden="true" />
+                </span>
+              )}
             </span>
           </SessionInfoPanel>
         )}
@@ -409,6 +436,17 @@ export const SessionNode = memo(function SessionNode({
                   </button>
                 )}
                 {colorButton}
+                {hasPinAction && (
+                  <button
+                    type="button"
+                    onClick={handlePinFromMenu}
+                    title={pinLabel}
+                    aria-label={pinLabel}
+                    className={GHOST_ACTION}
+                  >
+                    {isPinned ? <PinOff size={14} aria-hidden="true" /> : <Pin size={14} aria-hidden="true" />}
+                  </button>
+                )}
                 {hasRenameAction && (
                   <button
                     type="button"
@@ -462,6 +500,17 @@ export const SessionNode = memo(function SessionNode({
             </button>
           )}
           {colorButton}
+          {hasPinAction && (
+            <button
+              type="button"
+              onClick={handlePinClick}
+              title={pinLabel}
+              aria-label={pinLabel}
+              className={GHOST_ACTION}
+            >
+              {isPinned ? <PinOff size={14} aria-hidden="true" /> : <Pin size={14} aria-hidden="true" />}
+            </button>
+          )}
           {hasRenameAction && (
             <button
               type="button"

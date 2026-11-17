@@ -8,6 +8,7 @@ import { describeToolUse } from '@/utils/helpers';
 import { HeartbeatRuns } from '@/features/chat/operations/heartbeatRuns';
 import { buildSessionTree } from '@/features/sessions/sessionTree';
 import { getSessionDeleteRefusal } from '@/features/sessions/sessionDeletion';
+import { unpinSessions } from '@/features/sessions/pinnedSessions';
 import {
   buildAgentRootSessionKey,
   extractIdentityName,
@@ -896,6 +897,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const shouldReplaceCurrent = deletedKeys.includes(currentSessionRef.current);
         const remaining = sessionsRef.current.filter(s => !deletedKeys.includes(getSessionKey(s)));
         setSessions(prev => prev.filter(s => !deletedKeys.includes(getSessionKey(s))));
+        // A deleted session's pin goes with it; pins of sessions merely missing from a refresh stay.
+        unpinSessions(deletedKeys);
         if (unreadSessionKeysRef.current.size > 0) {
           const next = new Set(unreadSessionKeysRef.current);
           for (const key of deletedKeys) next.delete(key);

@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { AlertTriangle, Plus, RefreshCw } from 'lucide-react';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
 import { isUndeletableSessionKey } from './sessionDeletion';
+import { usePinnedSessions } from './pinnedSessions';
 
 interface SessionListProps {
   sessions: Session[];
@@ -89,6 +90,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
   const renameRef = useRef<{ key: string; original: string; refused: string | null; saving: boolean } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [expandedState, setExpandedState] = useState<Record<string, boolean>>({});
+  const { pinnedKeys, togglePin } = usePinnedSessions();
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget || !onDelete) return;
@@ -195,8 +197,8 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
     });
   }, [sessions]);
 
-  // Build tree and flatten for rendering
-  const tree = useMemo(() => buildAgentSidebarTree(sessions), [sessions]);
+  // Build tree and flatten for rendering; pinned rows lead their siblings
+  const tree = useMemo(() => buildAgentSidebarTree(sessions, { pinnedKeys }), [sessions, pinnedKeys]);
   const flatNodes = useMemo(() => flattenTree(tree, expandedState), [tree, expandedState]);
 
   // One identity hue per agent family, assigned on first sight and remembered; children take lighter shades.
@@ -295,6 +297,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
               isCron={isCron}
               isCronRun={isCronRun}
               isUnread={unreadSessions?.[sessionKey] ?? false}
+              isPinned={pinnedKeys.has(sessionKey)}
               isRenaming={renamingKey === sessionKey}
               renameValue={renameValue}
               renameError={renamingKey === sessionKey ? renameError : null}
@@ -307,6 +310,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
               onToggleExpand={handleToggleExpand}
               onDelete={onDelete && !isUndeletableSessionKey(sessionKey) ? handleSetDeleteTarget : undefined}
               onStartRename={onRename ? startRename : undefined}
+              onTogglePin={togglePin}
               onAbort={onAbort}
               onRenameChange={handleRenameChange}
               onRenameCommit={commitRename}

@@ -20,6 +20,22 @@ export interface GatewayLocation {
   locality: GatewayLocality;
   /** The URL host, lowercased and without IPv6 brackets. Null when the URL could not be used. */
   host: string | null;
+  /**
+   * Why a URL that reaches this machine still counts as remote (locateGateway):
+   * `no-local-openclaw`: this machine runs no OpenClaw, so the gateway answering
+   * here is forwarded from elsewhere (an SSH tunnel, a container port);
+   * `override`: NERVE_GATEWAY_LOCATION=remote said so.
+   */
+  forwarded?: 'no-local-openclaw' | 'override';
+}
+
+/** Environment variable that overrides the URL check, for what a URL cannot show (an SSH tunnel, a DNS alias). */
+export const GATEWAY_LOCATION_ENV = 'NERVE_GATEWAY_LOCATION';
+
+/** `local` or `remote` from NERVE_GATEWAY_LOCATION; anything else is no override. */
+export function readGatewayLocationOverride(env: NodeJS.ProcessEnv = process.env): 'local' | 'remote' | null {
+  const value = env[GATEWAY_LOCATION_ENV]?.trim().toLowerCase();
+  return value === 'local' || value === 'remote' ? value : null;
 }
 
 export interface LocalMachine {
@@ -145,4 +161,36 @@ export function classifyGatewayUrl(
   if (!host) return unknown;
 
   return { locality: isThisMachine(host, machine) ? 'local' : 'remote', host };
+}
+
+/**
+ * Where setup should treat the gateway as running. The URL decides, with two
+ * exceptions for what it cannot show:
+ * - NERVE_GATEWAY_LOCATION wins, for an SSH tunnel on a machine that also runs
+ *   OpenClaw, or a DNS alias of this machine.
+ * - A URL that reaches this machine counts as remote when this machine runs no
+ *   OpenClaw: the gateway answering here is forwarded from elsewhere, and
+ *   there is nothing here to patch.
+ * An unusable URL stays `unknown` either way.
+ */
+export function locateGateway(
+  url: string | null | undefined,
+  opts: { machine?: LocalMachine; override: 'local' | 'remote' | null; hasLocalOpenClaw: boolean },
+): GatewayLocation {
+  const location = classifyGatewayUrl(url, opts.machine);
+  if (location.locality === 'unknown') return location;
+  if (opts.override) {
+    return opts.override === 'remote' && location.locality === 'local'
+      ? { ...location, locality: 'remote', forwarded: 'override' }
+      : { ...location, locality: opts.override };
+  }
+  if (location.locality === 'local' && !opts.hasLocalOpenClaw) {
+    return { ...location, locality: 'remote', forwarded: 'no-local-openclaw' };
+  }
+  return location;
+}
+
+/** How setup names the gateway's host in its hints: a forwarded gateway's URL host is this machine. */
+export function gatewayHostLabel(location: GatewayLocation): string {
+  return location.forwarded ? 'the gateway host' : location.host ?? 'the gateway host';
 }

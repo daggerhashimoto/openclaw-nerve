@@ -36,8 +36,8 @@ import {
   type EnvConfig,
 } from './lib/env-writer.js';
 import { generateSelfSignedCert } from './lib/cert-gen.js';
-import { detectGatewayConfig, getEnvGatewayToken, chooseSetupGatewayToken } from './lib/gateway-detect.js';
-import { classifyGatewayUrl, readLocalMachine } from './lib/gateway-locality.js';
+import { detectGatewayConfig, getEnvGatewayToken, chooseSetupGatewayToken, hasLocalOpenClaw } from './lib/gateway-detect.js';
+import { gatewayHostLabel, locateGateway, readGatewayLocationOverride, readLocalMachine } from './lib/gateway-locality.js';
 import { detectedTokenNotice, detectedTokenPrompt, manualTokenHint, runGatewayConfigStep } from './lib/gateway-config-step.js';
 import { applyAccessPlanToConfig, buildAccessPlan, type InstallerAccessProfile } from './lib/access-plan.js';
 import { getTailscaleState, type TailscaleState } from './lib/tailscale.js';
@@ -318,7 +318,11 @@ async function collectInteractive(
   });
 
   // A gateway on another machine is configured there, not through this machine's ~/.openclaw
-  const gatewayLocation = classifyGatewayUrl(config.GATEWAY_URL, readLocalMachine([prereqs.tailscale.dnsName]));
+  const gatewayLocation = locateGateway(config.GATEWAY_URL, {
+    machine: readLocalMachine([prereqs.tailscale.dnsName]),
+    override: readGatewayLocationOverride(),
+    hasLocalOpenClaw: hasLocalOpenClaw(),
+  });
   const isRemoteGateway = gatewayLocation.locality === 'remote';
 
   // If we have an auto-detected token, offer to use it
@@ -384,7 +388,7 @@ async function collectInteractive(
   } else {
     console.log(`\x1b[31m✗\x1b[0m ${gwTest.message}`);
     dim(isRemoteGateway
-      ? `  Start it on ${gatewayLocation.host} with: openclaw gateway start`
+      ? `  Start it on ${gatewayHostLabel(gatewayLocation)} with: openclaw gateway start`
       : '  Start it with: openclaw gateway start');
     console.log('\n  Setup could not verify your gateway token. Fix the gateway or token, then re-run setup.\n');
     process.exit(1);
@@ -1061,10 +1065,11 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
   }
 
   // A gateway on another machine is configured there, not through this machine's ~/.openclaw
-  const gatewayLocation = classifyGatewayUrl(
-    config.GATEWAY_URL || DEFAULTS.GATEWAY_URL,
-    readLocalMachine([prereqs.tailscale.dnsName]),
-  );
+  const gatewayLocation = locateGateway(config.GATEWAY_URL || DEFAULTS.GATEWAY_URL, {
+    machine: readLocalMachine([prereqs.tailscale.dnsName]),
+    override: readGatewayLocationOverride(),
+    hasLocalOpenClaw: hasLocalOpenClaw(),
+  });
 
   // Try to auto-detect gateway token
   if (!config.GATEWAY_TOKEN) {

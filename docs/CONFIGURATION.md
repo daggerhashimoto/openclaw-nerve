@@ -33,7 +33,7 @@ Tests the connection before proceeding. If the gateway is unreachable, setup sto
 - Adds `cron`, `gateway`, and `sessions_spawn` to `gateway.tools.allow` when they are missing
 - Restarts the gateway to apply changes
 
-These changes go through this machine's `~/.openclaw`, so setup skips them when `GATEWAY_URL` points at another machine (anything other than loopback, one of this machine's addresses, or its hostname). It leaves that gateway's config alone and prints the origins, tools, restart, and device approval to set up on the gateway host instead.
+These changes go through this machine's `~/.openclaw`, so setup skips them when `GATEWAY_URL` points at another machine (anything other than loopback, one of this machine's addresses, or its hostname). It leaves that gateway's config alone and prints the origins, tools, restart, and device approval to set up on the gateway host instead. A loopback URL counts as another machine too when this machine runs no OpenClaw, as with an SSH tunnel or a container port. For a tunnel on a machine that also runs OpenClaw, run setup with `NERVE_GATEWAY_LOCATION=remote` (or `local` for a DNS alias of this machine).
 
 #### 2. Agent Identity
 

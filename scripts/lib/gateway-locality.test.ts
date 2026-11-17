@@ -1,6 +1,6 @@
 import os from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { classifyGatewayUrl, readLocalMachine, type LocalMachine } from './gateway-locality.js';
+import { classifyGatewayUrl, gatewayHostLabel, locateGateway, readGatewayLocationOverride, readLocalMachine, type LocalMachine } from './gateway-locality.js';
 
 const EXAMPLE_TS_DNS = 'example-node.tail0000.ts.net';
 const EXAMPLE_TS_IPV6 = 'fd7a:115c:a1e0::42';
@@ -109,5 +109,63 @@ describe('classifyGatewayUrl', () => {
     expect(classifyGatewayUrl('http://vps-host:18789', local).locality).toBe('local');
     expect(classifyGatewayUrl(`https://${EXAMPLE_TS_DNS}`, local).locality).toBe('local');
     expect(classifyGatewayUrl('http://203.0.113.7:18789', local).locality).toBe('remote');
+  });
+});
+
+describe('locateGateway', () => {
+  it('keeps the URL verdict when this machine runs OpenClaw and nothing overrides it', () => {
+    expect(locateGateway('ws://127.0.0.1:18789', { machine, override: null, hasLocalOpenClaw: true }))
+      .toEqual({ locality: 'local', host: '127.0.0.1' });
+    expect(locateGateway('wss://gw.example.com', { machine, override: null, hasLocalOpenClaw: true }))
+      .toEqual({ locality: 'remote', host: 'gw.example.com' });
+  });
+
+  it('treats a gateway at this machine as forwarded when this machine runs no OpenClaw (an SSH tunnel, a container)', () => {
+    expect(locateGateway('ws://127.0.0.1:28789', { machine, override: null, hasLocalOpenClaw: false }))
+      .toEqual({ locality: 'remote', host: '127.0.0.1', forwarded: 'no-local-openclaw' });
+    expect(locateGateway('http://192.168.1.20:18789', { machine, override: null, hasLocalOpenClaw: false }))
+      .toEqual({ locality: 'remote', host: '192.168.1.20', forwarded: 'no-local-openclaw' });
+    // A gateway already on another machine is not forwarded
+    expect(locateGateway('wss://gw.example.com', { machine, override: null, hasLocalOpenClaw: false }))
+      .toEqual({ locality: 'remote', host: 'gw.example.com' });
+  });
+
+  it('lets NERVE_GATEWAY_LOCATION override the URL in both directions', () => {
+    // An SSH tunnel on a machine that also runs OpenClaw
+    expect(locateGateway('ws://127.0.0.1:28789', { machine, override: 'remote', hasLocalOpenClaw: true }))
+      .toEqual({ locality: 'remote', host: '127.0.0.1', forwarded: 'override' });
+    expect(locateGateway('wss://gw.example.com', { machine, override: 'remote', hasLocalOpenClaw: true }))
+      .toEqual({ locality: 'remote', host: 'gw.example.com' });
+    // A DNS alias of this machine
+    expect(locateGateway('wss://alias.example.com', { machine, override: 'local', hasLocalOpenClaw: true }))
+      .toEqual({ locality: 'local', host: 'alias.example.com' });
+    expect(locateGateway('ws://127.0.0.1:18789', { machine, override: 'local', hasLocalOpenClaw: false }))
+      .toEqual({ locality: 'local', host: '127.0.0.1' });
+  });
+
+  it('leaves an unusable URL unknown whatever the override says', () => {
+    expect(locateGateway('not a url', { machine, override: 'remote', hasLocalOpenClaw: false }))
+      .toEqual({ locality: 'unknown', host: null });
+  });
+});
+
+describe('readGatewayLocationOverride', () => {
+  it.each([
+    ['remote', 'remote'],
+    [' Remote ', 'remote'],
+    ['LOCAL', 'local'],
+    ['', null],
+    ['tunnel', null],
+    [undefined, null],
+  ])('reads %j as %j', (value, expected) => {
+    expect(readGatewayLocationOverride(value === undefined ? {} : { NERVE_GATEWAY_LOCATION: value })).toBe(expected);
+  });
+});
+
+describe('gatewayHostLabel', () => {
+  it('names the URL host, except for a forwarded gateway, whose URL host is this machine', () => {
+    expect(gatewayHostLabel({ locality: 'remote', host: 'gw.example.com' })).toBe('gw.example.com');
+    expect(gatewayHostLabel({ locality: 'remote', host: '127.0.0.1', forwarded: 'no-local-openclaw' })).toBe('the gateway host');
+    expect(gatewayHostLabel({ locality: 'remote', host: '127.0.0.1', forwarded: 'override' })).toBe('the gateway host');
   });
 });

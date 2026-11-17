@@ -161,6 +161,34 @@ describe('gateway config step', () => {
       ]);
     });
 
+    it.each([
+      [
+        'no-local-openclaw',
+        'This machine runs no OpenClaw, so the gateway at 127.0.0.1 is forwarded from elsewhere (an SSH tunnel or a container) and setup did not change any OpenClaw config.',
+      ],
+      [
+        'override',
+        "NERVE_GATEWAY_LOCATION=remote is set, so setup did not change this machine's OpenClaw config.",
+      ],
+    ] as const)('a forwarded gateway (%s): writes nothing, restarts nothing, and says where the steps go', async (forwarded, headline) => {
+      const { mod, execSyncMock } = await importStep();
+      const before = snapshotTree(tempHome);
+
+      await mod.runGatewayConfigStep({
+        location: { locality: 'remote', host: '127.0.0.1', forwarded },
+        allowedOrigins: [],
+        gatewayToken: 'remote-token',
+        port: '3080',
+      });
+
+      expect(snapshotTree(tempHome)).toEqual(before);
+      expect(execSyncMock).not.toHaveBeenCalled();
+      expect(output.slice(0, 3)).toEqual(['', headline, 'Make these changes where the gateway runs:']);
+      expect(mod.manualTokenHint({ locality: 'remote', host: '127.0.0.1', forwarded }, false)).toEqual([
+        'Find the token on the gateway host in ~/.openclaw/openclaw.json, or run there: openclaw gateway status',
+      ]);
+    });
+
     it('lists the loopback origins when Nerve itself stays on localhost', async () => {
       const { mod } = await importStep();
 

@@ -78,7 +78,7 @@ When prompted:
 - set **Gateway token** from the remote host
 - keep access mode as **localhost** unless you intentionally want LAN / Tailscale access to the Nerve UI itself
 
-Because the gateway URL points at another machine, setup does not touch any OpenClaw config. It prints what to change on the gateway host instead: the origins and tool allowlist from steps 4 and 6 below, a gateway restart, and approving Nerve's device.
+Because the gateway URL points at another machine, setup does not touch any OpenClaw config. It prints what to change on the gateway host instead: the origins and tool allowlist from steps 4 and 6 below, a gateway restart, and approving Nerve's device. Through an SSH tunnel, `GATEWAY_URL` is a loopback address; setup still treats it as remote when this machine runs no OpenClaw, and on a machine that does, run it as `NERVE_GATEWAY_LOCATION=remote npm run setup`.
 
 ### 3. Allow the remote gateway host in the WS proxy
 

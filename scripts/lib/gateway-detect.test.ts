@@ -913,3 +913,45 @@ describe('gateway detection and repair', () => {
     expect(changes.map(change => change.id)).not.toContain('pre-pair');
   });
 });
+
+describe('hasLocalOpenClaw', () => {
+  const originalEnv = { ...process.env };
+  let tempHome = '';
+
+  beforeEach(() => {
+    tempHome = mkdtempSync(path.join(os.tmpdir(), 'nerve-local-openclaw-'));
+    process.env.HOME = tempHome;
+    delete process.env.OPENCLAW_CONFIG_PATH;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    if (tempHome) rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it('is false when the OpenClaw home holds none of the files a local patch needs', async () => {
+    mkdirSync(path.join(tempHome, '.openclaw', 'workspace'), { recursive: true });
+    const { mod } = await importGatewayDetect();
+    expect(mod.hasLocalOpenClaw()).toBe(false);
+  });
+
+  it.each([
+    ['the config file', 'openclaw.json'],
+    ['the gateway identity', path.join('identity', 'device.json')],
+    ['the paired devices', path.join('devices', 'paired.json')],
+  ])('is true when %s exists', async (_label, file) => {
+    mkdirSync(path.dirname(path.join(tempHome, '.openclaw', file)), { recursive: true });
+    writeFileSync(path.join(tempHome, '.openclaw', file), '{}');
+    const { mod } = await importGatewayDetect();
+    expect(mod.hasLocalOpenClaw()).toBe(true);
+  });
+
+  it('looks in the home OPENCLAW_CONFIG_PATH points at', async () => {
+    const customHome = path.join(tempHome, 'custom');
+    mkdirSync(path.join(customHome, 'identity'), { recursive: true });
+    writeFileSync(path.join(customHome, 'identity', 'device.json'), '{}');
+    process.env.OPENCLAW_CONFIG_PATH = path.join(customHome, 'openclaw.json');
+    const { mod } = await importGatewayDetect();
+    expect(mod.hasLocalOpenClaw()).toBe(true);
+  });
+});

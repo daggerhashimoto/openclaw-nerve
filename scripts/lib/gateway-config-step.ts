@@ -15,7 +15,7 @@ import {
   type ConfigChange,
   type GatewayTokenSource,
 } from './gateway-detect.js';
-import type { GatewayLocation } from './gateway-locality.js';
+import { gatewayHostLabel, type GatewayLocation } from './gateway-locality.js';
 
 type Wait = (ms: number) => Promise<void>;
 
@@ -79,10 +79,32 @@ export function remoteGatewaySteps(origins: string[]): string[] {
   ];
 }
 
-export function printRemoteGatewaySteps(host: string, origins: string[]): void {
+/** Why setup left the gateway alone, then where the steps go. */
+export function remoteGatewayHeadline(location: GatewayLocation): [string, string] {
+  const host = location.host ?? 'the gateway';
+  if (location.forwarded === 'no-local-openclaw') {
+    return [
+      `This machine runs no OpenClaw, so the gateway at ${host} is forwarded from elsewhere (an SSH tunnel or a container) and setup did not change any OpenClaw config.`,
+      'Make these changes where the gateway runs:',
+    ];
+  }
+  if (location.forwarded === 'override') {
+    return [
+      `NERVE_GATEWAY_LOCATION=remote is set, so setup did not change this machine's OpenClaw config.`,
+      'Make these changes where the gateway runs:',
+    ];
+  }
+  return [
+    `The gateway at ${host} is on another machine, so setup did not change any OpenClaw config.`,
+    `Make these changes on ${host}:`,
+  ];
+}
+
+export function printRemoteGatewaySteps(location: GatewayLocation, origins: string[]): void {
+  const [headline, where] = remoteGatewayHeadline(location);
   console.log('');
-  warn(`The gateway at ${host} is on another machine, so setup did not change any OpenClaw config.`);
-  dim(`Make these changes on ${host}:`);
+  warn(headline);
+  dim(where);
   for (const step of remoteGatewaySteps(origins)) {
     dim(`  • ${step}`);
   }
@@ -127,7 +149,7 @@ export function detectedTokenNotice(
 /** Where to find the token by hand when setup could not detect one. */
 export function manualTokenHint(location: GatewayLocation, tokenIsSecretRef: boolean | undefined): string[] {
   if (location.locality === 'remote') {
-    return [`Find the token on ${location.host} in ~/.openclaw/openclaw.json, or run there: openclaw gateway status`];
+    return [`Find the token on ${gatewayHostLabel(location)} in ~/.openclaw/openclaw.json, or run there: openclaw gateway status`];
   }
   if (tokenIsSecretRef) {
     return [
@@ -212,7 +234,7 @@ export interface GatewayConfigStepOptions {
  */
 export async function runGatewayConfigStep(opts: GatewayConfigStepOptions): Promise<void> {
   if (opts.location.locality === 'remote' && opts.location.host) {
-    printRemoteGatewaySteps(opts.location.host, remoteGatewayOrigins(opts.allowedOrigins, opts.port));
+    printRemoteGatewaySteps(opts.location, remoteGatewayOrigins(opts.allowedOrigins, opts.port));
     return;
   }
 

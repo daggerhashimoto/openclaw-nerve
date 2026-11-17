@@ -36,6 +36,19 @@ function resolveOpenClawHome(): string {
   return configPath !== DEFAULT_OPENCLAW_CONFIG ? dirname(configPath) : DEFAULT_OPENCLAW_HOME;
 }
 
+/**
+ * True when this machine runs OpenClaw: its config file, the gateway's own
+ * identity or its paired-devices file exists in the OpenClaw home. Every local
+ * patch needs one of the three, so without them there is nothing here for
+ * setup to change.
+ */
+export function hasLocalOpenClaw(): boolean {
+  const home = resolveOpenClawHome();
+  return existsSync(resolveOpenClawConfigPath())
+    || existsSync(join(home, 'identity', 'device.json'))
+    || existsSync(join(home, 'devices', 'paired.json'));
+}
+
 interface OpenClawConfig {
   gateway?: {
     port?: number;

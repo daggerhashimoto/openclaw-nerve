@@ -1839,6 +1839,39 @@ describe('SessionContext', () => {
       expect(screen.getByText('Cron: Nightly')).toBeInTheDocument();
     });
 
+    it('keeps asking on every refresh when a file it has read before goes missing', async () => {
+      const nightly = { ok: true, sessions: [{ sessionKey: 'agent:main:cron:nightly', label: 'Cron: Nightly' }] };
+      const answers = [nightly, { ok: true, sessions: [], storeMissing: true, remoteWorkspace: true }, nightly];
+      let hiddenCount = 0;
+      globalThis.fetch = vi.fn((input: string | URL | Request) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.includes('/api/server-info')) return Promise.resolve(jsonResponse({ agentName: 'Jen' }));
+        if (url.includes('/api/agentlog')) return Promise.resolve(jsonResponse([]));
+        if (url.includes('/api/sessions/hidden')) {
+          const answer = answers[Math.min(hiddenCount, answers.length - 1)];
+          hiddenCount += 1;
+          return Promise.resolve(jsonResponse(answer));
+        }
+        return Promise.resolve(jsonResponse({}));
+      }) as typeof fetch;
+
+      render(<SessionProvider><SessionLabels /><SessionRefreshProbe /></SessionProvider>);
+      await screen.findByText('Cron: Nightly');
+
+      // The gateway is rewriting the file: this refresh finds it missing
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click();
+      });
+      await waitFor(() => expect(hiddenCount).toBe(2));
+
+      // No pause: the next refresh asks again and the cron row is back
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click();
+      });
+      await waitFor(() => expect(hiddenCount).toBe(3));
+      expect(await screen.findByText('Cron: Nightly')).toBeInTheDocument();
+    });
+
     it('keeps asking and merges its cron sessions when the file exists, as on older gateways', async () => {
       const hiddenCalls = installHiddenAnswer({
         ok: true,

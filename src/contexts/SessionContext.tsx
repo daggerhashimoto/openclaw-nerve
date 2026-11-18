@@ -146,10 +146,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [markSessionRead]);
 
   // Cron sessions read from the gateway's sessions.json, for older gateways that leave them out
-  // of sessions.list. Current OpenClaw writes no such file and lists cron sessions itself; once
-  // the server reports the file missing, this page asks again only every few minutes, in case an
-  // older gateway creates the file later.
+  // of sessions.list. Current OpenClaw writes no such file and lists cron sessions itself; when
+  // the server reports the file missing and this page has never found it, it asks again only
+  // every few minutes, in case an older gateway creates the file later. A file it has read
+  // before is only briefly missing (an older gateway rewriting it), so that keeps being asked
+  // on every refresh.
   const hiddenStoreMissingAtRef = useRef<number | null>(null);
+  const hiddenStoreSeenRef = useRef(false);
   // Only the newest answer may start or end the pause: an older "missing" landing after a newer
   // "found" must not hide the file's cron sessions for five minutes.
   const hiddenRequestSeqRef = useRef(0);
@@ -165,7 +168,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`/api/sessions/hidden?${params.toString()}`);
       if (!res.ok) return [];
       const data = await res.json() as { ok?: boolean; sessions?: Session[]; storeMissing?: boolean };
-      if (seq === hiddenRequestSeqRef.current) hiddenStoreMissingAtRef.current = data.storeMissing ? Date.now() : null;
+      if (!data.storeMissing) hiddenStoreSeenRef.current = true;
+      if (seq === hiddenRequestSeqRef.current) {
+        hiddenStoreMissingAtRef.current = data.storeMissing && !hiddenStoreSeenRef.current ? Date.now() : null;
+      }
       return Array.isArray(data.sessions) ? data.sessions : [];
     } catch {
       return [];

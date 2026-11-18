@@ -2448,6 +2448,21 @@ describe('POST /api/kanban/tasks/:id/complete — marker parsing', () => {
 // ── POST /api/kanban/tasks/:id/complete (run key integrity) ─────────
 
 describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
+  /**
+   * The run poller first looks 3 seconds after its launch, which can finish in the background
+   * after execute answers. Step simulated time a second per check, with a short real wait
+   * between checks for the poll's store writes, until the run has settled. The old 3.2-second
+   * real sleep left little of the 5-second test budget on a slow CI machine.
+   */
+  async function runFirstPoll(app: Hono, taskId: string): Promise<void> {
+    await vi.waitFor(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+      const res = await app.request('/api/kanban/tasks');
+      const { items } = await res.json() as { items: KanbanTask[] };
+      expect(items.find((item) => item.id === taskId)?.run?.status).not.toBe('running');
+    }, { timeout: 3_000, interval: 20 });
+  }
+
   async function setupRunningTask(app: Hono): Promise<KanbanTask> {
     const task = await createTask(app, { status: 'todo' });
     const execRes = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
@@ -2498,6 +2513,7 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
   });
 
   it('polls the exact child session returned by fallback launch without relying on label discovery', async () => {
+    vi.useFakeTimers();
     const childSessionKey = 'agent:reviewer:subagent:exact-child';
 
     vi.doMock('../lib/kanban-subagent-fallback.js', () => ({
@@ -2544,7 +2560,7 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
     const execRes = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
     expect(execRes.status).toBe(200);
 
-    await new Promise((resolve) => setTimeout(resolve, 3_200));
+    await runFirstPoll(app, task.id);
 
     const tasksRes = await app.request('/api/kanban/tasks');
     const tasks = await tasksRes.json() as { items: KanbanTask[] };
@@ -2566,6 +2582,7 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
   });
 
   it('polls the spawned child session via gateway RPC and completes when session reports done status', async () => {
+    vi.useFakeTimers();
     let runKey = '';
     const childSessionKey = 'agent:reviewer:subagent:test-child';
 
@@ -2614,8 +2631,7 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
 
     expect(runKey).toBeTruthy();
 
-    // Wait for poller to detect completion
-    await new Promise((resolve) => setTimeout(resolve, 3_200));
+    await runFirstPoll(app, task.id);
 
     const sessionListCalls = (gatewayRpcMock as ReturnType<typeof vi.fn>).mock.calls.filter(
       (call) => call[0] === 'sessions.list'
@@ -2645,6 +2661,7 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
   });
 
   it('treats terminal failed child sessions as errors even when they are idle', async () => {
+    vi.useFakeTimers();
     let runKey = '';
     const childSessionKey = 'agent:reviewer:subagent:failed-child';
 
@@ -2688,7 +2705,7 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
     const running = await execRes.json() as KanbanTask;
     runKey = running.run!.sessionKey;
 
-    await new Promise((resolve) => setTimeout(resolve, 3_200));
+    await runFirstPoll(app, task.id);
 
     expect(gatewayRpcMock).not.toHaveBeenCalledWith('sessions.get', {
       key: childSessionKey,

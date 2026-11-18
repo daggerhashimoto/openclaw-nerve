@@ -1770,9 +1770,9 @@ describe('SessionContext', () => {
 
     it('pauses asking after the server reports no sessions.json, as on current OpenClaw, and checks again later', async () => {
       const hiddenCalls = installHiddenAnswer({ ok: true, sessions: [], storeMissing: true, remoteWorkspace: true });
-      const realNow = Date.now.bind(Date);
+      const realNow = performance.now.bind(performance);
       let offsetMs = 0;
-      const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + offsetMs);
+      const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => realNow() + offsetMs);
       onTestFinished(() => nowSpy.mockRestore());
       const refresh = async () => {
         const before = fullListCalls();

@@ -160,7 +160,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // Once any answer has found the file, nothing pauses: that answer may have landed after a
     // newer "missing" one had already started the pause.
     const missingAt = hiddenStoreMissingAtRef.current;
-    if (!hiddenStoreSeenRef.current && missingAt !== null && Date.now() - missingAt < HIDDEN_STORE_RECHECK_MS) return [];
+    // A monotonic clock, so a system clock change cannot stretch the pause
+    if (!hiddenStoreSeenRef.current && missingAt !== null && performance.now() - missingAt < HIDDEN_STORE_RECHECK_MS) return [];
     const seq = ++hiddenRequestSeqRef.current;
     try {
       const params = new URLSearchParams({
@@ -172,7 +173,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const data = await res.json() as { ok?: boolean; sessions?: Session[]; storeMissing?: boolean };
       if (!data.storeMissing) hiddenStoreSeenRef.current = true;
       if (seq === hiddenRequestSeqRef.current) {
-        hiddenStoreMissingAtRef.current = data.storeMissing && !hiddenStoreSeenRef.current ? Date.now() : null;
+        hiddenStoreMissingAtRef.current = data.storeMissing && !hiddenStoreSeenRef.current ? performance.now() : null;
       }
       return Array.isArray(data.sessions) ? data.sessions : [];
     } catch {

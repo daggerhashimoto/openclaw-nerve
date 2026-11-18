@@ -1752,4 +1752,181 @@ describe('SessionContext', () => {
     });
     expect(screen.getByTestId('reviewer-status')).toHaveTextContent('NONE');
   });
+
+  describe('cron sessions from sessions.json', () => {
+    function installHiddenAnswer(answer: unknown) {
+      const fetchMock = vi.fn((input: string | URL | Request) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.includes('/api/server-info')) return Promise.resolve(jsonResponse({ agentName: 'Jen' }));
+        if (url.includes('/api/agentlog')) return Promise.resolve(jsonResponse([]));
+        if (url.includes('/api/sessions/hidden')) return Promise.resolve(jsonResponse(answer));
+        return Promise.resolve(jsonResponse({}));
+      });
+      globalThis.fetch = fetchMock as typeof fetch;
+      return () => fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/sessions/hidden')).length;
+    }
+
+    const fullListCalls = () => rpcMock.mock.calls.filter(([method, params]) => method === 'sessions.list' && !params?.spawnedBy).length;
+
+    it('pauses asking after the server reports no sessions.json, as on current OpenClaw, and checks again later', async () => {
+      const hiddenCalls = installHiddenAnswer({ ok: true, sessions: [], storeMissing: true, remoteWorkspace: true });
+      const realNow = performance.now.bind(performance);
+      let offsetMs = 0;
+      const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => realNow() + offsetMs);
+      onTestFinished(() => nowSpy.mockRestore());
+      const refresh = async () => {
+        const before = fullListCalls();
+        await act(async () => {
+          screen.getByTestId('refresh-sessions').click();
+        });
+        await waitFor(() => expect(fullListCalls()).toBeGreaterThan(before));
+      };
+
+      render(<SessionProvider><SessionLabels /><SessionRefreshProbe /></SessionProvider>);
+      await screen.findByText('Cron: Daily Digest');
+      expect(hiddenCalls()).toBe(1);
+
+      await refresh();
+      expect(hiddenCalls()).toBe(1);
+      // The gateway's own list still carries the cron session
+      expect(screen.getByText('Cron: Daily Digest')).toBeInTheDocument();
+
+      // An older gateway may create the file later, so the pause runs out
+      offsetMs = 5 * 60_000 + 1;
+      await refresh();
+      expect(hiddenCalls()).toBe(2);
+    });
+
+    it('lets only the newest answer start the pause, so a late missing answer cannot hide cron rows', async () => {
+      const nightly = { ok: true, sessions: [{ sessionKey: 'agent:main:cron:nightly', label: 'Cron: Nightly' }] };
+      let releaseLateMissing = () => {};
+      let hiddenCount = 0;
+      globalThis.fetch = vi.fn((input: string | URL | Request) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.includes('/api/server-info')) return Promise.resolve(jsonResponse({ agentName: 'Jen' }));
+        if (url.includes('/api/agentlog')) return Promise.resolve(jsonResponse([]));
+        if (url.includes('/api/sessions/hidden')) {
+          hiddenCount += 1;
+          // The second request (refresh A) answers "missing" only after refresh B found the file
+          if (hiddenCount === 2) {
+            return new Promise<Response>((resolve) => {
+              releaseLateMissing = () => resolve(jsonResponse({ ok: true, sessions: [], storeMissing: true }));
+            });
+          }
+          return Promise.resolve(jsonResponse(nightly));
+        }
+        return Promise.resolve(jsonResponse({}));
+      }) as typeof fetch;
+
+      render(<SessionProvider><SessionLabels /><SessionRefreshProbe /></SessionProvider>);
+      await screen.findByText('Cron: Nightly');
+
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click(); // A: held
+      });
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click(); // B: finds the file
+      });
+      await waitFor(() => expect(hiddenCount).toBe(3));
+      await act(async () => {
+        releaseLateMissing();
+      });
+
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click(); // C: must still ask
+      });
+      await waitFor(() => expect(hiddenCount).toBe(4));
+      expect(screen.getByText('Cron: Nightly')).toBeInTheDocument();
+    });
+
+    it('keeps asking on every refresh when a file it has read before goes missing', async () => {
+      const nightly = { ok: true, sessions: [{ sessionKey: 'agent:main:cron:nightly', label: 'Cron: Nightly' }] };
+      const answers = [nightly, { ok: true, sessions: [], storeMissing: true, remoteWorkspace: true }, nightly];
+      let hiddenCount = 0;
+      globalThis.fetch = vi.fn((input: string | URL | Request) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.includes('/api/server-info')) return Promise.resolve(jsonResponse({ agentName: 'Jen' }));
+        if (url.includes('/api/agentlog')) return Promise.resolve(jsonResponse([]));
+        if (url.includes('/api/sessions/hidden')) {
+          const answer = answers[Math.min(hiddenCount, answers.length - 1)];
+          hiddenCount += 1;
+          return Promise.resolve(jsonResponse(answer));
+        }
+        return Promise.resolve(jsonResponse({}));
+      }) as typeof fetch;
+
+      render(<SessionProvider><SessionLabels /><SessionRefreshProbe /></SessionProvider>);
+      await screen.findByText('Cron: Nightly');
+
+      // The gateway is rewriting the file: this refresh finds it missing
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click();
+      });
+      await waitFor(() => expect(hiddenCount).toBe(2));
+
+      // No pause: the next refresh asks again and the cron row is back
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click();
+      });
+      await waitFor(() => expect(hiddenCount).toBe(3));
+      expect(await screen.findByText('Cron: Nightly')).toBeInTheDocument();
+    });
+
+    it('lifts the pause when an older answer that found the file lands after a newer missing one', async () => {
+      const nightly = { ok: true, sessions: [{ sessionKey: 'agent:main:cron:nightly', label: 'Cron: Nightly' }] };
+      let releaseLateFound = () => {};
+      let hiddenCount = 0;
+      globalThis.fetch = vi.fn((input: string | URL | Request) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.includes('/api/server-info')) return Promise.resolve(jsonResponse({ agentName: 'Jen' }));
+        if (url.includes('/api/agentlog')) return Promise.resolve(jsonResponse([]));
+        if (url.includes('/api/sessions/hidden')) {
+          hiddenCount += 1;
+          // The first request (mount) finds the file only after the second one reported it missing
+          if (hiddenCount === 1) {
+            return new Promise<Response>((resolve) => {
+              releaseLateFound = () => resolve(jsonResponse(nightly));
+            });
+          }
+          if (hiddenCount === 2) return Promise.resolve(jsonResponse({ ok: true, sessions: [], storeMissing: true }));
+          return Promise.resolve(jsonResponse(nightly));
+        }
+        return Promise.resolve(jsonResponse({}));
+      }) as typeof fetch;
+
+      render(<SessionProvider><SessionLabels /><SessionRefreshProbe /></SessionProvider>);
+      await waitFor(() => expect(hiddenCount).toBe(1));
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click(); // reports missing and starts the pause
+      });
+      await waitFor(() => expect(hiddenCount).toBe(2));
+      await act(async () => {
+        releaseLateFound();
+      });
+
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click(); // must ask despite the pause
+      });
+      await waitFor(() => expect(hiddenCount).toBe(3));
+      expect(await screen.findByText('Cron: Nightly')).toBeInTheDocument();
+    });
+
+    it('keeps asking and merges its cron sessions when the file exists, as on older gateways', async () => {
+      const hiddenCalls = installHiddenAnswer({
+        ok: true,
+        sessions: [{ sessionKey: 'agent:main:cron:nightly', label: 'Cron: Nightly' }],
+      });
+
+      render(<SessionProvider><SessionLabels /><SessionRefreshProbe /></SessionProvider>);
+      await screen.findByText('Cron: Nightly');
+
+      const before = hiddenCalls();
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click();
+      });
+
+      await waitFor(() => expect(hiddenCalls()).toBe(before + 1));
+      expect(screen.getByText('Cron: Nightly')).toBeInTheDocument();
+    });
+  });
 });

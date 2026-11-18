@@ -278,10 +278,14 @@ app.get('/api/sessions/hidden', rateLimitGeneral, async (c) => {
 
     return c.json({ ok: true, sessions });
   } catch (err) {
-    const errCode = (err as NodeJS.ErrnoException).code;
-    const isRemote = errCode === 'ENOENT';
+    // No sessions.json is the normal case, not a failure: current OpenClaw keeps sessions in a
+    // database and already lists cron sessions in sessions.list (as does a remote gateway, whose
+    // store is not on this machine). storeMissing tells the client to stop asking.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return c.json({ ok: true, sessions: [], storeMissing: true, remoteWorkspace: true });
+    }
     console.debug('[sessions] hidden list failed:', (err as Error).message);
-    return c.json({ ok: true, sessions: [], ...(isRemote ? { remoteWorkspace: true } : {}) });
+    return c.json({ ok: true, sessions: [] });
   }
 });
 

@@ -11,6 +11,24 @@ let tmpDir: string;
 type GatewayToolMock = (tool: string, args?: Record<string, unknown>) => Promise<unknown>;
 type GatewayRpcMock = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
 
+// Captured before any test fakes timers, so waitInRealTime can wait without moving simulated time
+const realSetTimeout = globalThis.setTimeout;
+
+/** Retry a check every 20 ms of real time, for up to 3 seconds, without advancing simulated time. */
+async function waitInRealTime(check: () => void | Promise<void>): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    try {
+      await check();
+      return;
+    } catch (err) {
+      lastError = err;
+    }
+    await new Promise((resolve) => realSetTimeout(resolve, 20));
+  }
+  throw lastError;
+}
+
 function buildMockRootSessionKey(label: string): string {
   const normalized = label
     .toLowerCase()
@@ -2449,18 +2467,17 @@ describe('POST /api/kanban/tasks/:id/complete — marker parsing', () => {
 
 describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
   /**
-   * The run poller first looks 3 seconds after its launch, which can finish in the background
-   * after execute answers. Step simulated time a second per check, with a short real wait
-   * between checks for the poll's store writes, until the run has settled. The old 3.2-second
-   * real sleep left little of the 5-second test budget on a slow CI machine.
+   * Run the poller's first check under simulated time, then wait in real time for what the test
+   * asserts. The poller first looks 3 seconds after it is scheduled, and the fallback launch can
+   * schedule it in the background after execute answers, so this waits for the timer first.
+   * Simulated time stops at that first check and never reaches the next one 5 seconds later:
+   * a first check that fails, with only a retry succeeding, still fails the test, as with the
+   * old 3.2-second real sleep, which left little of the 5-second budget on a slow CI machine.
    */
-  async function runFirstPoll(app: Hono, taskId: string): Promise<void> {
-    await vi.waitFor(async () => {
-      await vi.advanceTimersByTimeAsync(1_000);
-      const res = await app.request('/api/kanban/tasks');
-      const { items } = await res.json() as { items: KanbanTask[] };
-      expect(items.find((item) => item.id === taskId)?.run?.status).not.toBe('running');
-    }, { timeout: 3_000, interval: 20 });
+  async function runFirstPoll(settled: () => void | Promise<void>): Promise<void> {
+    await waitInRealTime(() => expect(vi.getTimerCount()).toBeGreaterThan(0));
+    await vi.advanceTimersByTimeAsync(3_000);
+    await waitInRealTime(settled);
   }
 
   async function setupRunningTask(app: Hono): Promise<KanbanTask> {
@@ -2560,7 +2577,9 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
     const execRes = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
     expect(execRes.status).toBe(200);
 
-    await runFirstPoll(app, task.id);
+    await runFirstPoll(() => {
+      expect(gatewayRpcMock).toHaveBeenCalledWith('sessions.send', expect.objectContaining({ key: 'agent:reviewer:main' }));
+    });
 
     const tasksRes = await app.request('/api/kanban/tasks');
     const tasks = await tasksRes.json() as { items: KanbanTask[] };
@@ -2631,7 +2650,11 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
 
     expect(runKey).toBeTruthy();
 
-    await runFirstPoll(app, task.id);
+    await runFirstPoll(async () => {
+      const res = await app.request('/api/kanban/proposals');
+      const { proposals } = await res.json() as { proposals: Array<{ payload: Record<string, unknown> }> };
+      expect(proposals.some((proposal) => proposal.payload.title === 'proposal from child session')).toBe(true);
+    });
 
     const sessionListCalls = (gatewayRpcMock as ReturnType<typeof vi.fn>).mock.calls.filter(
       (call) => call[0] === 'sessions.list'
@@ -2705,7 +2728,9 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
     const running = await execRes.json() as KanbanTask;
     runKey = running.run!.sessionKey;
 
-    await runFirstPoll(app, task.id);
+    await runFirstPoll(() => {
+      expect(gatewayRpcMock).toHaveBeenCalledWith('sessions.send', expect.objectContaining({ key: 'agent:reviewer:main' }));
+    });
 
     expect(gatewayRpcMock).not.toHaveBeenCalledWith('sessions.get', {
       key: childSessionKey,

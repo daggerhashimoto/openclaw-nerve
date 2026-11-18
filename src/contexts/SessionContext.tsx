@@ -150,9 +150,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // the server reports the file missing, this page asks again only every few minutes, in case an
   // older gateway creates the file later.
   const hiddenStoreMissingAtRef = useRef<number | null>(null);
+  // Only the newest answer may start or end the pause: an older "missing" landing after a newer
+  // "found" must not hide the file's cron sessions for five minutes.
+  const hiddenRequestSeqRef = useRef(0);
   const fetchHiddenCronSessions = useCallback(async (activeMinutes: number, limit: number): Promise<Session[]> => {
     const missingAt = hiddenStoreMissingAtRef.current;
     if (missingAt !== null && Date.now() - missingAt < HIDDEN_STORE_RECHECK_MS) return [];
+    const seq = ++hiddenRequestSeqRef.current;
     try {
       const params = new URLSearchParams({
         activeMinutes: String(activeMinutes),
@@ -161,7 +165,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`/api/sessions/hidden?${params.toString()}`);
       if (!res.ok) return [];
       const data = await res.json() as { ok?: boolean; sessions?: Session[]; storeMissing?: boolean };
-      hiddenStoreMissingAtRef.current = data.storeMissing ? Date.now() : null;
+      if (seq === hiddenRequestSeqRef.current) hiddenStoreMissingAtRef.current = data.storeMissing ? Date.now() : null;
       return Array.isArray(data.sessions) ? data.sessions : [];
     } catch {
       return [];

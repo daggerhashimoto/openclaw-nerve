@@ -1872,6 +1872,45 @@ describe('SessionContext', () => {
       expect(await screen.findByText('Cron: Nightly')).toBeInTheDocument();
     });
 
+    it('lifts the pause when an older answer that found the file lands after a newer missing one', async () => {
+      const nightly = { ok: true, sessions: [{ sessionKey: 'agent:main:cron:nightly', label: 'Cron: Nightly' }] };
+      let releaseLateFound = () => {};
+      let hiddenCount = 0;
+      globalThis.fetch = vi.fn((input: string | URL | Request) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.includes('/api/server-info')) return Promise.resolve(jsonResponse({ agentName: 'Jen' }));
+        if (url.includes('/api/agentlog')) return Promise.resolve(jsonResponse([]));
+        if (url.includes('/api/sessions/hidden')) {
+          hiddenCount += 1;
+          // The first request (mount) finds the file only after the second one reported it missing
+          if (hiddenCount === 1) {
+            return new Promise<Response>((resolve) => {
+              releaseLateFound = () => resolve(jsonResponse(nightly));
+            });
+          }
+          if (hiddenCount === 2) return Promise.resolve(jsonResponse({ ok: true, sessions: [], storeMissing: true }));
+          return Promise.resolve(jsonResponse(nightly));
+        }
+        return Promise.resolve(jsonResponse({}));
+      }) as typeof fetch;
+
+      render(<SessionProvider><SessionLabels /><SessionRefreshProbe /></SessionProvider>);
+      await waitFor(() => expect(hiddenCount).toBe(1));
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click(); // reports missing and starts the pause
+      });
+      await waitFor(() => expect(hiddenCount).toBe(2));
+      await act(async () => {
+        releaseLateFound();
+      });
+
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click(); // must ask despite the pause
+      });
+      await waitFor(() => expect(hiddenCount).toBe(3));
+      expect(await screen.findByText('Cron: Nightly')).toBeInTheDocument();
+    });
+
     it('keeps asking and merges its cron sessions when the file exists, as on older gateways', async () => {
       const hiddenCalls = installHiddenAnswer({
         ok: true,

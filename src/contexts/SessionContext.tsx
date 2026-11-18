@@ -157,8 +157,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // "found" must not hide the file's cron sessions for five minutes.
   const hiddenRequestSeqRef = useRef(0);
   const fetchHiddenCronSessions = useCallback(async (activeMinutes: number, limit: number): Promise<Session[]> => {
+    // Once any answer has found the file, nothing pauses: that answer may have landed after a
+    // newer "missing" one had already started the pause.
     const missingAt = hiddenStoreMissingAtRef.current;
-    if (missingAt !== null && Date.now() - missingAt < HIDDEN_STORE_RECHECK_MS) return [];
+    if (!hiddenStoreSeenRef.current && missingAt !== null && Date.now() - missingAt < HIDDEN_STORE_RECHECK_MS) return [];
     const seq = ++hiddenRequestSeqRef.current;
     try {
       const params = new URLSearchParams({

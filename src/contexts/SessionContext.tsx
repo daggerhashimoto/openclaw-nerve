@@ -30,6 +30,8 @@ const TERMINAL_PING_DEDUP_MS = 5_000;
 const FULL_SESSIONS_LIMIT = 1000;
 const MAIN_SESSION_KEY = 'agent:main:main';
 const SESSIONS_SPAWNED_LIMIT = 500;
+/** How long a reported missing sessions.json holds before the hidden cron list is asked again. */
+const HIDDEN_STORE_RECHECK_MS = 5 * 60_000;
 
 // A refresh keeps a row's old object unless one of these differs, so every field the agents
 // column, the fleet pane and the session info panel read has to be here (run state included).
@@ -143,7 +145,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     markSessionRead(key);
   }, [markSessionRead]);
 
+  // Cron sessions read from the gateway's sessions.json, for older gateways that leave them out
+  // of sessions.list. Current OpenClaw writes no such file and lists cron sessions itself; when
+  // the server reports the file missing and this page has never found it, it asks again only
+  // every few minutes, in case an older gateway creates the file later. A file it has read
+  // before is only briefly missing (an older gateway rewriting it), so that keeps being asked
+  // on every refresh.
+  const hiddenStoreMissingAtRef = useRef<number | null>(null);
+  const hiddenStoreSeenRef = useRef(false);
+  // Only the newest answer may start or end the pause: an older "missing" landing after a newer
+  // "found" must not hide the file's cron sessions for five minutes.
+  const hiddenRequestSeqRef = useRef(0);
   const fetchHiddenCronSessions = useCallback(async (activeMinutes: number, limit: number): Promise<Session[]> => {
+    // Once any answer has found the file, nothing pauses: that answer may have landed after a
+    // newer "missing" one had already started the pause.
+    const missingAt = hiddenStoreMissingAtRef.current;
+    // A monotonic clock, so a system clock change cannot stretch the pause
+    if (!hiddenStoreSeenRef.current && missingAt !== null && performance.now() - missingAt < HIDDEN_STORE_RECHECK_MS) return [];
+    const seq = ++hiddenRequestSeqRef.current;
     try {
       const params = new URLSearchParams({
         activeMinutes: String(activeMinutes),
@@ -151,7 +170,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       });
       const res = await fetch(`/api/sessions/hidden?${params.toString()}`);
       if (!res.ok) return [];
-      const data = await res.json() as { ok?: boolean; sessions?: Session[] };
+      const data = await res.json() as { ok?: boolean; sessions?: Session[]; storeMissing?: boolean };
+      if (!data.storeMissing) hiddenStoreSeenRef.current = true;
+      if (seq === hiddenRequestSeqRef.current) {
+        hiddenStoreMissingAtRef.current = data.storeMissing && !hiddenStoreSeenRef.current ? performance.now() : null;
+      }
       return Array.isArray(data.sessions) ? data.sessions : [];
     } catch {
       return [];

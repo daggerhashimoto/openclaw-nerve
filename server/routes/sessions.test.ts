@@ -209,6 +209,47 @@ describe('sessions routes', () => {
 
   // ── POST /api/sessions/spawn-subagent ────────────────────────────
 
+  describe('GET /api/sessions/hidden', () => {
+    it('reports a missing sessions.json without logging, as on current OpenClaw', async () => {
+      const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+      const app = await buildApp();
+
+      const res = await app.request('/api/sessions/hidden');
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, sessions: [], storeMissing: true, remoteWorkspace: true });
+      expect(debug).not.toHaveBeenCalled();
+    });
+
+    it('lists recent cron sessions from sessions.json, as on older gateways', async () => {
+      const app = await buildApp();
+      const now = Date.now();
+      await fs.writeFile(path.join(tmpDir, 'sessions.json'), JSON.stringify({
+        'agent:main:main': { sessionId: 'main-id', updatedAt: now },
+        'agent:main:cron:daily': { sessionId: 'cron-id', label: 'daily', updatedAt: now },
+        'agent:main:cron:old': { sessionId: 'old-id', updatedAt: now - 3 * 24 * 60 * 60_000 },
+      }));
+
+      const res = await app.request('/api/sessions/hidden');
+      const json = await res.json() as { ok: boolean; sessions: Array<{ key: string; parentId: string | null }>; storeMissing?: boolean };
+
+      expect(json.ok).toBe(true);
+      expect(json.storeMissing).toBeUndefined();
+      expect(json.sessions.map((s) => [s.key, s.parentId])).toEqual([['agent:main:cron:daily', 'agent:main:main']]);
+    });
+
+    it('logs and answers empty, without storeMissing, when sessions.json cannot be parsed', async () => {
+      const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+      const app = await buildApp();
+      await fs.writeFile(path.join(tmpDir, 'sessions.json'), '{ not json');
+
+      const res = await app.request('/api/sessions/hidden');
+
+      expect(await res.json()).toEqual({ ok: true, sessions: [] });
+      expect(debug).toHaveBeenCalledWith('[sessions] hidden list failed:', expect.any(String));
+    });
+  });
+
   it('rejects missing body with 400', async () => {
     const app = await buildApp();
     const res = await app.request('/api/sessions/spawn-subagent', {

@@ -8,10 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Highlights
 
-**Nerve has one look now: Night light.** The interface reads like a building at night. Every agent is a room and every room has a pane: electric blue while the agent works, cantaloupe while work waits on you, red when a run failed, and otherwise the agent family's own colour so you can tell whose room it is at a glance. The operator's surfaces (your turns, the composer, the editors, the login) sit on a warm plate; everything the agent does sits cool. Two themes, Night and Daylight. The fourteen community themes are retired; a saved theme resolves to Night or Daylight by scheme (PR #391).
+**Nerve has a new look.** The interface reads like a building at night. Every agent is a room and every room has a pane: electric blue while the agent works, cantaloupe while work waits on you, red when a run failed, and otherwise the agent family's own colour so you can tell whose room it is at a glance. The operator's surfaces (your turns, the composer, the editors, the login) sit on a warm plate; everything the agent does sits cool. It comes in two families, each dark and light: Workbench (Night and Paper, the default) and Night light (Night and Daylight). The fourteen community themes are retired: a saved light theme opens as Daylight and any other as Workbench Night (PR #391, PR #394).
+
+**Crons work on OpenClaw 2026.9 again.** The Crons tab now talks to the gateway's `cron.*` RPC methods, so the "Tool not available" error from the 1.5.4 known issues is gone. Listing and editing jobs no longer depends on `gateway.tools.allow` (PR #390).
+
+**The transcript keeps up with what really happened.** Runs started from Telegram, Discord or a heartbeat show live on the open session. Replies no longer vanish, repeat or get replaced when history reloads after a reconnect. Internal control turns stay out of the chat, and tool results render as results (PR #374, PR #389, PR #400, PR #403, PR #405, PR #408).
+
+**Setup and the installer are safer to run.** Setup no longer patches or restarts a local OpenClaw when the gateway lives on another host, an SSH tunnel or a container; it prints the steps to run on the gateway host instead. The installer starts the service, checks that Nerve answers, and says so plainly when it does not (PR #393, PR #416, PR #419, PR #420).
 
 ### Added
-- Night and Daylight themes with a per-agent identity colour you can pick from a session row (PR #391)
+- Workbench Night and Workbench Paper themes alongside Night and Daylight, with a per-agent identity colour you can pick from a session row (PR #391, PR #394)
+- Pin sessions to the top of the agents column; pins are kept per browser (PR #418)
+- Rename and delete for every session kind the gateway allows, including channel, direct, thread and ACP sessions (PR #401)
+- LaTeX math in chat with KaTeX, inline `$...$` and block `$$...$$` (PR #356)
+- Inline maps for standalone Google Maps "Embed a map" links (PR #406)
+- The command palette jumps to agents, subagents and cron sessions by name (PR #358)
+- A UI sound volume for the wake, send and cancel chimes and the completion ping; text-to-speech is unaffected (PR #399)
+- An edge swipe opens the file browser drawer on compact layouts (PR #398)
+- A performance mode that stills the logo, slows the clock ticks and pauses decorative animation (PR #387)
 - Day dividers in the transcript, an empty-room note, and tool rows that say what the tool did (PR #391)
 - Diffs for Codex `apply_patch` edits, including deletions and renames (PR #391)
 - Images the agent delivers with its reply, proxied from the gateway (PR #391)
@@ -19,11 +33,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A live horizon behind the composer while the session works, off in performance mode (PR #391)
 - The refreshed Nerve mark in the app and the browser tab (PR #391)
 - Usage, Agent log and Events panels rebuilt in the new idiom, with per-provider rate limits (PR #391)
+- `NERVE_GATEWAY_LOCATION=local|remote` overrides setup's guess about where the gateway runs (PR #420)
 
 ### Changed
 - The Tasks board, the workspace column (Memory, Crons, Config), the Settings drawer, the login page and every dialog follow the new system; `DESIGN.md` is its source of truth (PR #391)
 - The fleet pane, favicon and counts treat a failed run as failed rather than busy, and a reconnect clears statuses that may be stale (PR #391)
 - The chat header fits an iPhone SE while the agent works (PR #391)
+- Crons use the gateway's `cron.*` RPC methods; only manual runs of isolated agent-turn jobs still go through `sessions_spawn` on `/tools/invoke` (PR #390)
+- Setup classifies `GATEWAY_URL` as local or remote. For a remote gateway it leaves this machine's OpenClaw config alone and prints the changes to make on the gateway host. A loopback URL counts as remote when this machine runs no OpenClaw (PR #419, PR #420)
+- Non-root installs install and start the service through sudo, the installer waits for `/health` before it reports success, and it exits 2 with next steps when Nerve is not running (PR #393)
+- Voice input no longer writes into the composer; the live transcription preview shows under your draft and the draft is kept (PR #417)
+- The model picker names the model behind the primary option, and the effort picker shows a readable label for the inherited level (PR #409, PR #413)
+- Markdown, the code editor, diff and preview highlighting and the Kanban quick view load on demand, cutting the initial bundle from 962 kB to 373 kB (PR #387)
+- The WebSocket relay and the event stream bound what they buffer per client and close a client that falls too far behind (PR #387)
+- File tree listings are paged, so very large directories load in parts instead of all at once (PR #357)
+
+### Fixed
+- The Crons tab loads and saves jobs on OpenClaw 2026.9 (PR #390)
+- Final replies are kept when a hidden heartbeat turn follows them (PR #389)
+- Internal control turns (`NO_REPLY`, `HEARTBEAT_OK`, compaction and memory-flush status rows) no longer show as chat bubbles (PR #374)
+- History recovery after a reconnect anchors on transcript ids, so it no longer replaces or repeats the transcript, and messages that were not sent yet are kept (PR #400)
+- A live final that arrives late no longer shows the reply twice (PR #403, fixes #376)
+- A deleted session no longer comes back from an older refresh, and session rows carry the run status (PR #404)
+- Runs started outside Nerve show their replies and the working state on the open session without a refresh (PR #405)
+- Replies in channel and direct sessions are labelled with the agent's name, not the other person's (PR #407)
+- Tool calls run from code-mode exec scripts render as tool results instead of leaking their internal markers (PR #408)
+- Send errors, reset results and failed history reads show their text (PR #410)
+- Chat search opens collapsed rows and waits for lazily rendered text so the match is visible (PR #414, PR #415)
+- Deleting a root agent row the gateway refuses to delete no longer wipes its child sessions first (PR #392)
+- The hidden-session list stops looking for a `sessions.json` that current OpenClaw no longer writes, which logged an error every 30 seconds (PR #421)
+- The installer escapes paths in the generated systemd unit and launchd plist, and refuses the few paths they cannot hold before touching a running service (PR #416, fixes #396)
+- Valid workspace files are no longer rejected on macOS, where the temp directory sits behind a symlink (PR #388)
+- A failed asset request is no longer cached by the browser for a year (PR #388)
+- A background session that finishes plays one completion ping, not two (PR #388)
+- The wake-word listener starts on load when it is enabled and allowed (PR #387)
 
 ### Removed
 - The Classic skin and the fourteen community themes (PR #391)

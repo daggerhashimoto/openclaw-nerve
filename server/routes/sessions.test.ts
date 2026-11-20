@@ -220,10 +220,10 @@ describe('sessions routes', () => {
       source: 'sqlite', rawSeq: 7, messageId: 'msg-7', messageSeq: 7, contentIndex: 1,
     })).toString('base64url')}`;
 
-    function mediaUrl(params: { artifactId?: string; imageIndex?: number } = {}) {
+    function mediaUrl(params: { artifactId?: string; imageIndex?: number; timestamp?: number } = {}) {
       const query = new URLSearchParams({
         sessionKey,
-        timestamp: String(timestamp),
+        timestamp: String(params.timestamp ?? timestamp),
         imageIndex: String(params.imageIndex ?? 0),
       });
       if (params.artifactId !== undefined) query.set('artifactId', params.artifactId);
@@ -347,6 +347,16 @@ describe('sessions routes', () => {
       expect(((await res.json()) as Record<string, unknown>).ok).toBe(false);
       expect(warn).not.toHaveBeenCalled();
       expect(gatewayRpcCallMock).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 when no transcript message has that timestamp', async () => {
+      await writeLegacyTranscript({ type: 'image', mimeType: 'image/png', data: Buffer.from('x').toString('base64') });
+      const app = await buildApp();
+
+      const res = await app.request(mediaUrl({ timestamp: timestamp + 1 }));
+
+      expect(res.status).toBe(404);
+      expect(((await res.json()) as Record<string, unknown>).ok).toBe(false);
     });
 
     it('answers 404 when the transcript message has no image at that index', async () => {

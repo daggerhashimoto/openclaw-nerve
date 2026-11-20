@@ -1,5 +1,5 @@
 ---
-name: Feature Request
+name: Feature request
 about: Got an idea? We're listening.
 title: "[Feature] "
 labels: enhancement
@@ -10,14 +10,14 @@ assignees: ""
 
 <!-- What use case or pain point does this address? -->
 
-## Proposed Solution
+## Proposed solution
 
-<!-- How should it work? Be as specific as you like — UI mockups, API shapes, and user flows all help. -->
+<!-- How should it work? Be as specific as you like: UI mockups, API shapes, and user flows all help. -->
 
-## Alternatives Considered
+## Alternatives considered
 
 <!-- Any other approaches you've thought about, and why you prefer the proposed solution. -->
 
-## Additional Context
+## Additional context
 
 <!-- Screenshots, links, related issues, or anything else that's relevant. -->

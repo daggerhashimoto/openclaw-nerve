@@ -71,6 +71,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 - The Classic skin and the fourteen community themes (PR #391)
 
+### Documentation
+- Every doc under `docs/`, `CONTRIBUTING.md` and the Kanban skill checked against the current code: every API route documented, every environment variable the server reads covered, and the install, deployment, Tailscale and troubleshooting guides matched to today's installer and setup
+
 ## [1.5.4] - 2026-10-06
 
 ### Highlights

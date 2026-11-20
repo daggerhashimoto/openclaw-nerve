@@ -310,7 +310,7 @@ REPLICATE_BASE_URL=https://api.replicate.com/v1
 | `CODEX_DIR` | `.codex` | Codex CLI directory, relative to your home directory. Nerve reads `auth.json` and `sessions/` from it for the Codex usage limits display. |
 | `BD_BIN` | auto-detected | Path to the Beads `bd` binary used to show bead details. Without it, Nerve checks `~/.local/bin`, `~/.npm-global/bin`, `~/.volta/bin` and `~/.bun/bin`, then falls back to `bd` on `PATH`. |
 | `NERVE_DATA_DIR` | `~/.nerve` | Where Nerve keeps its device identity (`device-identity.json`) and Kanban data (`kanban/`). Setup reads (or creates) the device identity here when pre-pairing. Model files, voice phrases and updater state stay under `~/.nerve` regardless. |
-| `NERVE_WORKSPACE_REMOTE` | `false` | Set to `true` to treat agent workspaces as remote: file, memory and config panels go through gateway RPC instead of the local disk, file watching is off, and binary previews and file mutations (rename, move, trash) are unavailable. Without it, Nerve treats a workspace as remote when its directory does not exist locally. |
+| `NERVE_WORKSPACE_REMOTE` | `false` | Set to `true` to treat agent workspaces as remote: the file and config panels go through gateway RPC instead of the local disk, the Memory panel shows a "Sandboxed workspace" notice instead of its list (manage memories on the gateway host), file watching is off, and binary previews and file mutations (rename, move, trash) are unavailable. Without it, Nerve treats a workspace as remote when its directory does not exist locally. |
 
 ### File paths
 

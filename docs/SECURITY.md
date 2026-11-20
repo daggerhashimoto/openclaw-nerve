@@ -1,208 +1,211 @@
 # Security
 
-Nerve is designed as a **local-first** web UI for an AI agent. Its security model assumes the server runs on a trusted machine and is accessed by its owner. It is **not** designed for multi-tenant or public-internet deployment without an additional reverse proxy and authentication layer.
+Nerve is a **local-first** web cockpit for an AI agent. Its security model assumes the server runs on a trusted machine and is used by its owner. It is **not** built for multi-tenant use or for direct exposure to the public internet. Anyone who can use Nerve acts as the operator: they can read and write workspace files and memory, change agent config, save API keys, and run agents.
 
 ---
 
-## Table of Contents
+## Contents
 
-- [Threat Model](#threat-model)
-- [Authentication & Access Control](#authentication--access-control)
-- [CORS Policy](#cors-policy)
-- [Security Headers](#security-headers)
-- [Rate Limiting](#rate-limiting)
-- [Input Validation](#input-validation)
-- [File Serving Security](#file-serving-security)
-- [WebSocket Proxy Security](#websocket-proxy-security)
-- [Body Size Limits](#body-size-limits)
-- [Path Traversal Prevention](#path-traversal-prevention)
-- [TLS / HTTPS](#tls--https)
-- [Token & Secret Handling](#token--secret-handling)
-- [Client-Side Security](#client-side-security)
-- [Configuration File Security](#configuration-file-security)
-- [Reporting Vulnerabilities](#reporting-vulnerabilities)
+- [Threat model](#threat-model)
+- [Authentication and access control](#authentication-and-access-control)
+- [CORS policy](#cors-policy)
+- [Security headers](#security-headers)
+- [Rate limiting](#rate-limiting)
+- [Input validation](#input-validation)
+- [File serving](#file-serving)
+- [Gateway media](#gateway-media)
+- [Embedded content](#embedded-content)
+- [WebSocket proxy security](#websocket-proxy-security)
+- [Body size limits](#body-size-limits)
+- [Path traversal prevention](#path-traversal-prevention)
+- [TLS and HTTPS](#tls-and-https)
+- [Token and secret handling](#token-and-secret-handling)
+- [Client-side security](#client-side-security)
+- [Configuration file security](#configuration-file-security)
+- [Reporting vulnerabilities](#reporting-vulnerabilities)
 
 ---
 
-## Threat Model
+## Threat model
 
-### In Scope
+### In scope
 
 | Threat | Mitigation |
 |--------|------------|
-| **Cross-site request forgery (CSRF)** | CORS allowlist restricts cross-origin requests. Only explicitly configured origins are allowed. |
-| **Cross-site scripting (XSS)** | CSP `script-src 'self'` blocks inline/injected scripts (exception: `s3.tradingview.com` for chart widgets). HTML content is sanitised with DOMPurify on the client. |
-| **Clickjacking** | `X-Frame-Options: DENY` and CSP `frame-ancestors 'none'` prevent embedding in iframes. |
-| **Network sniffing** | Optional HTTPS with HSTS (`max-age=31536000; includeSubDomains`). |
-| **Abuse / resource exhaustion** | Per-IP rate limiting on all API endpoints. Global body size limits. Rate limit store capped at 10,000 entries. |
-| **Directory traversal** | Resolved absolute paths checked against strict prefix allowlists. Symlinks resolved and re-checked. |
-| **Symlink escape** | `/api/files` resolves symlinks via `fs.realpathSync()` and re-validates the real path against allowed prefixes. |
-| **Gateway token exfiltration** | Token is never sent to the client; it is injected server-side specifically for trusted (local/authenticated) connections. |
-| **Spoofed client IPs** | Rate limiter uses the real TCP socket address. `X-Forwarded-For` only trusted from configured `TRUSTED_PROXIES`. |
-| **MIME sniffing** | `X-Content-Type-Options: nosniff` on all responses. |
-| **CSP directive injection** | `CSP_CONNECT_EXTRA` is sanitised: semicolons and newlines stripped, only `http(s)://` and `ws(s)://` schemes accepted. |
-| **Malformed CORS origins** | `ALLOWED_ORIGINS` entries are normalised via `new URL()`. Malformed entries and `"null"` origins are silently rejected. |
+| **Cross-site requests (CSRF)** | Cross-origin requests that need a CORS preflight (JSON bodies, `PUT`, `PATCH`, `DELETE`) are allowed only from listed origins. With auth on, the session cookie is `SameSite=Strict`, so browsers do not send it on cross-site requests. |
+| **Cross-site scripting (XSS)** | CSP `script-src 'self' https://s3.tradingview.com` with no inline scripts. Markdown renders without raw HTML, and every place that injects HTML runs it through DOMPurify. KaTeX runs with `trust: false`. |
+| **Clickjacking** | `X-Frame-Options: SAMEORIGIN` and CSP `frame-ancestors 'self'`: only Nerve itself can frame its pages (the PDF viewer does). |
+| **Network sniffing** | Optional HTTPS. `Strict-Transport-Security` when `NODE_ENV=production`. |
+| **Abuse and resource exhaustion** | Per-client rate limits on most API routes, a global request body limit, and a 10,000-entry cap on the rate limit store. |
+| **Directory traversal** | Paths are resolved and checked against a prefix allowlist or the workspace root. |
+| **Symlink escape** | `/api/files`, the file browser and upload references resolve the real path and check it again. |
+| **Gateway token exfiltration** | The token never reaches the browser. The server injects it only for trusted clients and only toward hosts in `WS_ALLOWED_HOSTS`, and fetches gateway media for trusted clients only. |
+| **Spoofed client IPs** | The rate limiter uses the TCP socket address and honours `X-Forwarded-For` only from `TRUSTED_PROXIES`. |
+| **MIME sniffing** | `X-Content-Type-Options: nosniff` on every response. |
+| **Active content in served files** | `/api/files` forces SVG downloads; `/api/chat-media` passes only raster images. |
+| **CSP directive injection** | `CSP_CONNECT_EXTRA` is sanitised: semicolons and newlines are stripped, and only `http(s)://` and `ws(s)://` sources are kept. |
+| **Malformed CORS origins** | `ALLOWED_ORIGINS` entries are normalised with `new URL()`. Malformed entries and `null` are ignored. |
 
-### Out of Scope
+### Out of scope
 
-- **Multi-user authentication** — Nerve supports single-user password authentication. Multi-user accounts with roles are not yet implemented.
-- **End-to-end encryption** — TLS covers transport; at-rest encryption of memory files or session data is not provided.
-- **DDoS protection** — The in-memory rate limiter handles casual abuse but is not designed for sustained attacks. Use a reverse proxy (nginx, Cloudflare) for production exposure.
+- **Multiple users.** Auth is one shared password (or the gateway token). There are no accounts or roles.
+- **Encryption at rest.** TLS covers transport only. Memory files, transcripts and `.env` are stored as plain files.
+- **DDoS protection.** The in-memory rate limiter handles casual abuse, not sustained attacks. Put a reverse proxy in front for anything exposed.
 
 ---
 
-## Authentication & Access Control
+## Authentication and access control
 
-Nerve includes a built-in session-cookie-based authentication layer that can be enabled via the `NERVE_AUTH` environment variable.
+Nerve has an optional session-cookie login, enabled with `NERVE_AUTH=true`.
 
-### When Auth is Disabled (default for localhost)
+### When auth is disabled (default)
 
-Security is enforced through network-level controls:
+Every endpoint is open to anyone who can reach the port. Protection comes from the network:
 
-1. **Localhost binding** — The server binds to `127.0.0.1` by default. Only local processes can connect.
-2. **CORS allowlist** — Browsers enforce the Origin check. Only configured origins receive CORS headers.
-3. **Gateway token isolation** — The sensitive `GATEWAY_TOKEN` is never sent to the browser. Instead, Nerve injects it server-side into the WebSocket connection upgrade for trusted clients.
-4. **Client config persistence** — The frontend stores the gateway URL and optional manual token in `localStorage` as `oc-config`. Trusted official-gateway flows usually keep the token empty because server-side injection handles auth.
+1. **Loopback binding.** The server binds to `127.0.0.1` by default, so only local processes can connect. On a shared machine, other local users count as local too.
+2. **Refusal to start.** With `HOST=0.0.0.0` and auth off, the server exits unless `NERVE_ALLOW_INSECURE=true`. Other non-loopback bind addresses only log a warning.
+3. **CORS and Origin checks.** Browsers enforce CORS, and WebSocket upgrades from unlisted origins are refused.
+4. **Gateway token isolation.** `GATEWAY_TOKEN` is never sent to the browser. The WebSocket proxy injects it for trusted clients (see [Token injection](#token-injection)).
+5. **Client config.** The browser keeps the gateway URL and any manually entered token in `localStorage` as `oc-config`. With server-side injection the token stays empty.
 
-### When Auth is Enabled
+### When auth is enabled
 
-All API endpoints (except `/api/auth/*` and `/health`) require a valid session cookie. WebSocket upgrade requests are also checked.
+Every `/api/*` route needs a valid session cookie except `/api/auth/login`, `/api/auth/logout`, `/api/auth/status` and `/api/version`. `/health`, static files and the login page load without one. WebSocket upgrades to `/ws` need the cookie too and are refused with `401` without it.
 
 **How it works:**
 
-1. User submits a password via `POST /api/auth/login`
-2. The server verifies the password against a stored scrypt hash (or accepts the gateway token as a fallback)
-3. On success, a signed `HttpOnly` session cookie is set
-4. All subsequent requests include the cookie automatically
-5. The session token is a stateless HMAC-SHA256 signed payload containing only an expiry timestamp
+1. The user submits a password to `POST /api/auth/login` (5 requests per minute per client).
+2. The server checks it against the scrypt hash in `NERVE_PASSWORD_HASH`. Only when no hash is set does it accept `GATEWAY_TOKEN` instead, compared in constant time.
+3. On success it sets a signed session cookie.
+4. The session token is a stateless payload holding the issue and expiry times, signed with HMAC-SHA256.
 
-**Session cookie security:**
+**Session cookie:**
 
 | Property | Value | Purpose |
 |----------|-------|---------|
-| `HttpOnly` | `true` | Not accessible via JavaScript (XSS-proof) |
-| `SameSite` | `Strict` | Not sent on cross-origin requests (CSRF-proof) |
-| `Secure` | auto | Only sent over HTTPS when HTTPS is active |
-| Signed | HMAC-SHA256 | Tamper-proof — requires `NERVE_SESSION_SECRET` |
-| Cookie name | `nerve_session_{PORT}` | Port-suffixed to avoid collisions across instances |
+| `HttpOnly` | `true` | Not readable from JavaScript |
+| `SameSite` | `Strict` | Not sent on cross-site requests |
+| `Secure` | when the request arrived over HTTPS | Not sent over plain HTTP once set over HTTPS. Behind a TLS-terminating proxy that talks HTTP to Nerve, the flag is not set. |
+| Signature | HMAC-SHA256 with `NERVE_SESSION_SECRET` | Tamper-proof. Without a configured secret, a random one is generated at each start and old cookies stop working. |
+| Name | `nerve_session_<PORT>` | Port suffix avoids collisions between instances |
+| Lifetime | `NERVE_SESSION_TTL` (30 days) | Expired tokens are rejected |
 
-**Password storage:**
+**Password storage:** scrypt with a 32-byte random salt and a 64-byte derived key, stored as `salt:key` in hex. Verification uses a constant-time comparison. Passwords are not stored in plain text or logged.
 
-- Passwords are hashed with scrypt (32-byte random salt, 64-byte derived key)
-- Timing-safe comparison prevents timing attacks
-- Passwords are never stored in plaintext or logged
+### Recommendations for network access
 
-**Gateway token fallback:**
+When Nerve is reachable from other machines:
 
-Users who haven't set a dedicated password can authenticate using their existing `GATEWAY_TOKEN`. This provides zero-config authentication when upgrading to network access.
-
-### Recommendations for Network Access
-
-When exposing Nerve to a network (`HOST=0.0.0.0`):
-- **Enable authentication** — the setup wizard prompts for this automatically
-- Using a VPN (Tailscale, WireGuard) adds an additional layer of security
-- Placing Nerve behind a reverse proxy with HTTPS is recommended for production
-- The gateway token can serve as an immediate fallback password
+- **Enable authentication.** The setup wizard prompts for it when the access mode binds `0.0.0.0`. Tailscale Serve and Custom binds to a specific address skip that prompt, so set it up yourself if other people can reach the tailnet or network.
+- A VPN (Tailscale, WireGuard) adds a layer in front of the password.
+- Put a reverse proxy with HTTPS in front for anything wider.
+- A reverse proxy on the same host must set `X-Forwarded-For` (or `X-Real-IP`) to the real client address, replacing any value the client sent. Nerve treats a loopback connection as the first address in that header; without the header, every proxied client looks local and, with auth off, gets the gateway token injected.
 
 ---
 
-## CORS Policy
+## CORS policy
 
-CORS is enforced on all requests via Hono's CORS middleware.
+CORS applies to every request through Hono's CORS middleware.
 
-**Default allowed origins** (auto-configured):
-- `http://localhost:{PORT}`
-- `https://localhost:{SSL_PORT}`
-- `http://127.0.0.1:{PORT}`
-- `https://127.0.0.1:{SSL_PORT}`
+**Allowed origins:**
 
-**Additional origins** via `ALLOWED_ORIGINS` env var (comma-separated). Each entry is normalised through the `URL` constructor:
+- Any origin whose host is `localhost`, `127.0.0.1` or `::1`, on any port and scheme
+- Each origin in `ALLOWED_ORIGINS` (comma-separated, normalised with `new URL()`):
 
 ```bash
-ALLOWED_ORIGINS=http://100.64.0.5:3080,https://my-server.tailnet.ts.net:3443
+ALLOWED_ORIGINS=http://100.64.0.5:3080,https://your-host.tailnet-name.ts.net
 ```
 
-**Allowed methods:** `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`  
-**Allowed headers:** `Content-Type`, `Authorization`  
-**Credentials:** Enabled (`credentials: true`)
+**Allowed methods:** `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`
+**Allowed headers:** `Content-Type`, `Authorization`
+**Credentials:** allowed
 
-Requests with no `Origin` header (same-origin, non-browser) are allowed through.
+Requests without an `Origin` header (same-origin navigations and non-browser clients) get no CORS headers and are processed normally. The same origin list guards WebSocket upgrades, where a missing `Origin` is accepted only when `HOST` is a loopback address.
 
 ---
 
-## Security Headers
+## Security headers
 
-Applied to **every response** via the `securityHeaders` middleware:
+The `securityHeaders` middleware sets these on every response:
 
 | Header | Value | Purpose |
 |--------|-------|---------|
-| `Content-Security-Policy` | See below | Defense-in-depth against XSS |
-| `X-Frame-Options` | `DENY` | Prevent clickjacking |
-| `X-Content-Type-Options` | `nosniff` | Prevent MIME type sniffing |
-| `X-XSS-Protection` | `1; mode=block` | Legacy XSS filter for older browsers |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Enforce HTTPS for 1 year |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | Control referrer leakage |
-| `Cache-Control` | `no-store` | Default for all responses (overridden by cache middleware for assets) |
+| `Content-Security-Policy` | See below | Defence in depth against XSS |
+| `X-Frame-Options` | `SAMEORIGIN` | Only Nerve can frame its pages |
+| `X-Content-Type-Options` | `nosniff` | No MIME sniffing |
+| `X-XSS-Protection` | `1; mode=block` | Legacy XSS filter for old browsers |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Only when `NODE_ENV=production` (the installer's services set it) |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Limits referrer leakage |
+| `Cache-Control` | varies | `no-cache` for `/api/*` and `/health`; `public, max-age=31536000, immutable` for hashed build assets; `public, max-age=0, must-revalidate` for other static files; `no-store` for static error responses and anything else without a value |
 
 ### Content Security Policy
 
-> **Implementation note:** CSP directives are built lazily on first request (not at module import time) to avoid race conditions with `dotenv/config` load order. The computed directives are then cached for the lifetime of the process.
+The directives are built on the first request, after `.env` has loaded, and cached for the life of the process.
 
 ```
 default-src 'self';
 script-src 'self' https://s3.tradingview.com;
 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-font-src 'self' https://fonts.gstatic.com;
+font-src 'self' https://fonts.gstatic.com data:;
 connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:* https://localhost:*
             ws://127.0.0.1:* wss://127.0.0.1:* http://127.0.0.1:* https://127.0.0.1:*
             [CSP_CONNECT_EXTRA];
 img-src 'self' data: blob:;
 media-src 'self' blob:;
-frame-src https://s3.tradingview.com https://www.tradingview.com
-          https://www.tradingview-widget.com https://s.tradingview.com;
-frame-ancestors 'none';
+frame-src 'self' https://s3.tradingview.com https://www.tradingview.com
+          https://www.tradingview-widget.com https://s.tradingview.com https://www.google.com;
+frame-ancestors 'self';
 base-uri 'self';
 form-action 'self'
 ```
 
-**TradingView domains:** The `script-src` and `frame-src` entries for TradingView are required for the inline `tv` chart type, which uses TradingView's official widget embed script. The script injects iframes from multiple TradingView subdomains.
+What the external sources are for:
 
-The `connect-src` directive can be extended via `CSP_CONNECT_EXTRA` (space-separated). Input is sanitised:
-- Semicolons (`;`) and newlines (`\r`, `\n`) are stripped to prevent directive injection
-- Only entries matching `http://`, `https://`, `ws://`, or `wss://` schemes are accepted
+- **TradingView** (`script-src`, `frame-src`): the inline `tv` chart type loads TradingView's widget script, which injects frames from several TradingView hosts.
+- **Google Fonts** (`style-src`, `font-src`): the UI fonts load from Google Fonts.
+- **`https://www.google.com`** (`frame-src`): inline Google Maps embeds (see [Embedded content](#embedded-content)).
+- **`'self'` in `frame-src`**: the file browser's PDF viewer frames `/api/files/raw`.
+
+`img-src` allows no remote hosts, so remote images do not load directly; gateway-hosted chat images go through `/api/chat-media`.
+
+`connect-src` can be extended with `CSP_CONNECT_EXTRA` (space-separated). Semicolons, `\r` and `\n` are stripped, and only entries starting with `http://`, `https://`, `ws://` or `wss://` are kept.
 
 ---
 
-## Rate Limiting
+## Rate limiting
 
-In-memory sliding window rate limiter applied to all `/api/*` routes.
+An in-memory sliding-window limiter, attached per route.
 
 ### Presets
 
-| Preset | Limit | Window | Applied To |
+| Preset | Limit | Window | Applied to |
 |--------|-------|--------|------------|
+| Auth | 5 requests | 60 seconds | `POST /api/auth/login` |
+| Restart | 3 requests | 60 seconds | `POST /api/gateway/restart` |
 | TTS | 10 requests | 60 seconds | `POST /api/tts` |
 | Transcribe | 30 requests | 60 seconds | `POST /api/transcribe` |
-| General | 60 requests | 60 seconds | All other `/api/*` routes |
+| General | 60 requests | 60 seconds | Most other API routes |
 
-### Implementation Details
+Routes without a limiter: `/health`, `GET /api/files`, the file browser routes (`/api/files/tree`, `read`, `write`, `rename`, `move`, `trash`, `restore`, `raw`, `resolve`), the `/api/events` stream, `GET /api/agentlog`, `/api/auth/logout`, `/api/auth/status`, `/api/transcribe/config`, `/api/voice-phrases/*`, `/api/codex-limits` and `/api/claude-code-limits`.
 
-- **Per-client, per-path** — Each unique `clientIP:path` combination gets its own sliding window.
-- **Client identification** — Uses the real TCP socket address from `getConnInfo()`. **Not** spoofable via request headers.
-- **Trusted proxies** — `X-Forwarded-For` and `X-Real-IP` are only honoured when the direct connection comes from an IP in `TRUSTED_PROXIES` (default: loopback addresses only). Extend via `TRUSTED_PROXIES` env var.
-- **Store cap** — The rate limit store is capped at **10,000 entries** to prevent memory amplification from spoofed IPs (when behind a trusted proxy). When full, the oldest entry is evicted.
-- **Cleanup** — Expired timestamps are purged every 5 minutes.
+### Implementation details
 
-### Response Headers
+- **Per client and path.** Each `clientIP:path` pair has its own window.
+- **Client identification.** The TCP socket address from `getConnInfo()`, not request headers.
+- **Trusted proxies.** `X-Forwarded-For` (first entry) or `X-Real-IP` is used only when the socket address is in `TRUSTED_PROXIES` (default: loopback addresses).
+- **Store cap.** At most 10,000 entries; when full, the oldest is evicted. This bounds memory when a trusted proxy forwards many distinct addresses.
+- **Cleanup.** Expired timestamps are purged every 5 minutes.
 
-Every response includes:
+### Response headers
+
+Rate-limited routes return:
 
 ```
 X-RateLimit-Limit: 60
 X-RateLimit-Remaining: 57
 ```
 
-When rate-limited (HTTP 429):
+When the limit is hit (HTTP 429, body `Too many requests. Please try again later.`):
 
 ```
 Retry-After: 42
@@ -213,199 +216,244 @@ X-RateLimit-Reset: 1708100060
 
 ---
 
-## Input Validation
+## Input validation
 
-All POST/PUT endpoints validate request bodies with [Zod](https://zod.dev/) schemas:
+Most mutating endpoints validate bodies with [Zod](https://zod.dev/) schemas; a few use hand-written checks.
 
-| Endpoint | Validated Fields |
-|----------|-----------------|
-| `POST /api/tts` | `text` (1–5000 chars, non-empty), `provider` (enum), `voice`, `model` |
-| `PUT /api/tts/config` | Strict key allowlist per section, string values only, max 2000 chars |
-| `POST /api/transcribe` | File presence, size (≤12 MB), MIME type allowlist |
-| `POST /api/agentlog` | Optional typed fields (`ts`, `type`, `message`, `level`, `data`) |
-| `POST /api/memories` | `text` (1–10000 chars), `section` (≤200), `category` (enum), `importance` (0–1) |
-| `PUT /api/memories/section` | `title` (1–200), `content` (≤50000), `date` (YYYY-MM-DD regex) |
-| `DELETE /api/memories` | `query` (1–1000), `type` (enum), `date` (YYYY-MM-DD regex) |
-| `PUT /api/workspace/:key` | `content` (string, ≤100 KB), `key` checked against strict allowlist |
+| Endpoint | Checks |
+|----------|--------|
+| `POST /api/tts` | `text` 1 to 5000 chars and not blank, `provider` one of `openai`, `replicate`, `qwen`, `edge`, `xiaomi`, optional `voice` and `model` (Zod) |
+| `PUT /api/tts/config` | Known sections and keys only, string values, each at most 2000 chars (hand-written) |
+| `POST /api/transcribe` | File present, at most 12 MB, MIME type on the audio allowlist when the browser sends one |
+| `POST /api/agentlog` | Optional typed fields `ts`, `type`, `message`, `level`, `icon`, `text`, `data` (Zod) |
+| `POST /api/memories` | `text` 1 to 10000 chars, `section` at most 200, `category` enum, `importance` 0 to 1 (Zod) |
+| `PUT /api/memories/section` | `title` 1 to 200, `content` at most 50000, `date` at most 100 (Zod) |
+| `DELETE /api/memories` | `query` 1 to 1000, `type` one of `section`, `item`, `daily`, `date` at most 100 (Zod) |
+| Memory `date` values | Must match `^[a-zA-Z0-9._-]+$` and contain no `..`, since they become file names |
+| `PUT /api/workspace/:key` | `key` on a fixed allowlist, `content` a string of at most 100,000 chars (hand-written) |
+| `POST /api/crons`, `PATCH /api/crons/:id` | Zod schemas; the old flat fields (`prompt`, `model`, `thinkingLevel`, `channel`, `notify`) are rejected |
+| `/api/kanban/*` | Zod schemas; status keys must be lowercase kebab case |
 
-Validation errors return **HTTP 400** with the first Zod issue message as plain text or JSON.
+Validation errors return **HTTP 400**, as plain text or JSON depending on the route.
 
 ---
 
-## File Serving Security
+## File serving
 
-The `GET /api/files` endpoint serves local image files with multiple layers of protection:
+### `GET /api/files` (local images)
 
-### 1. MIME Type Allowlist
+Serves local image files referenced in chat, with several checks.
 
-Only image files are served:
+**1. MIME type allowlist.** Only images:
 
-| Extension | MIME Type |
+| Extension | MIME type |
 |-----------|-----------|
 | `.png` | `image/png` |
 | `.jpg`, `.jpeg` | `image/jpeg` |
 | `.gif` | `image/gif` |
 | `.webp` | `image/webp` |
-| `.svg` | `image/svg+xml` |
+| `.svg` | `image/svg+xml` (sent with `Content-Disposition: attachment`, so it downloads instead of rendering) |
 | `.avif` | `image/avif` |
 
-Non-image file types return **403 Not an allowed file type**.
+Other types return **403 Not an allowed file type**.
 
-### 2. Directory Prefix Allowlist
-
-Files are only served from these directories:
+**2. Directory prefix allowlist.** Files are served only from:
 
 | Prefix | Source |
 |--------|--------|
 | `/tmp` | Hardcoded |
-| `~/.openclaw` | Derived from `os.homedir()` |
+| `~/.openclaw` | From `os.homedir()` |
 | `MEMORY_DIR` | From configuration |
 
-The request path is resolved to an absolute path via `path.resolve()`, blocking `..` traversal. The resolved path must start with one of the allowed prefixes (with a path separator check to prevent `/tmp-evil` matching `/tmp`).
+The real paths of these prefixes are allowed too (for example `/private/tmp` on macOS). A leading `~` in the request is expanded to the home directory, then the path is resolved with `path.resolve()`, which removes `..`. The result must lie inside a prefix, checked with `path.relative()` so `/tmp-evil` does not match `/tmp`. Otherwise: **403 Access denied**.
 
-### 3. Symlink Traversal Protection
+**3. Symlink check.** The file's real path (`fs.promises.realpath()`) is checked against the same prefixes, so a symlink inside `/tmp` or `~/.openclaw` cannot point elsewhere. A failure returns **403 Access denied**.
 
-After the prefix check passes, the file's **real path** is resolved via `fs.realpathSync()`. The real path is then re-checked against the same prefix allowlist. This prevents:
+### File browser (`/api/files/tree`, `read`, `write`, `rename`, `move`, `trash`, `restore`, `raw`, `resolve`)
 
-- Symlinks inside `/tmp` pointing to `/etc/passwd`
-- Symlinks inside `~/.openclaw` pointing outside the allowed tree
+- Paths are relative to the agent's workspace root, or to `FILE_BROWSER_ROOT` for every agent when that is set.
+- Paths that start with `..` or are absolute are rejected. `/api/files/resolve` also accepts `/workspace/...` and absolute paths under the workspace root, and converts them to relative paths first.
+- Every path segment is checked against the exclusions: `node_modules`, `.git`, `dist`, `build`, `server-dist`, `certs`, `.env` and `.env.*`, `agent-log.json`, and `*.log`. **With `FILE_BROWSER_ROOT` set, there are no exclusions**, so `.env` files and other secrets under that root can be read and edited.
+- The resolved path must stay inside the root, and its real path must stay inside the root's real path. For new files, the nearest existing parent is checked.
+- Text reads and writes are capped at 1 MB. `raw` serves images (including SVG, inline) up to 10 MB and PDFs up to 50 MB.
+- When the workspace is remote, `resolve` returns 501, `raw` returns 404, and the mutation routes return 501.
 
-If the real path falls outside allowed prefixes → **403 Access denied**.
+### Upload references (`POST /api/upload-reference/resolve`)
 
-### 4. Path Canonicalisation
+- **Workspace paths (JSON body):** each path goes through the same workspace checks as the file browser. The real path must be a file inside the workspace root.
+- **Browser uploads (multipart):** each file is written to the staging directory (`<workspace>/.temp/nerve-uploads/YYYY/MM/DD/`, or `NERVE_UPLOAD_STAGING_TEMP_DIR`) under a sanitised name with a random suffix. The staging path must be inside the main workspace root. The request is bound by the global body limit.
 
-The `~` prefix in input paths is expanded to `os.homedir()` before resolution, preventing home directory confusion.
+The response includes absolute server paths, which the client sends to the agent as file references.
 
 ---
 
-## WebSocket Proxy Security
+## Gateway media
 
-The WebSocket proxy (connecting the frontend to the OpenClaw gateway) restricts target hostnames:
+### `GET /api/chat-media`
 
-**Default allowed hosts:** `localhost`, `127.0.0.1`, `::1`
+Proxies images the gateway hosts for chat replies. Those URLs need the gateway token, which the browser never holds.
 
-**Extend via** `WS_ALLOWED_HOSTS` env var (comma-separated):
+- Only paths of the form `/api/chat/media/outgoing/<session>/<id>/<variant>` are accepted, and the path is rejected if URL parsing changes it (encoded dot segments, query, fragment).
+- The server needs `GATEWAY_TOKEN` (otherwise 503) and uses it only for trusted clients, by the same rule as [token injection](#token-injection). Other clients get 403.
+- Redirects are not followed, and the fetch times out after 30 seconds.
+- Only `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `image/avif` pass through, with `nosniff`. Anything else returns 502.
+
+### `GET /api/sessions/media`
+
+Reads an image block from the main agent's local transcript. The client sends a session key, a message timestamp and an image index; the server maps the key to a transcript through `SESSIONS_DIR/sessions.json`, so no client path reaches the file system. The image is returned inline with the MIME type recorded in the transcript. Without a `sessions.json` (current OpenClaw keeps sessions in a database), the route returns 500 `Failed to load media`.
+
+---
+
+## Embedded content
+
+- **Google Maps.** A chat message paragraph that consists only of a link to `https://www.google.com/maps/embed?pb=...` renders as a lazy-loaded iframe with `referrerpolicy="strict-origin-when-cross-origin"`. No other URL shape is framed. Rendering such a message contacts Google.
+- **TradingView.** The `tv` chart type loads TradingView's widget script and frames.
+- **KaTeX.** Math renders in the browser with `trust: false` (no `\href` or other commands that create links or HTML), `maxSize: 100` and `maxExpand: 1000` to bound output and macro expansion. It loads nothing remote.
+- **Fonts.** UI fonts load from Google Fonts.
+
+---
+
+## WebSocket proxy security
+
+The browser reaches the gateway through Nerve's WebSocket proxy at `/ws?target=<gateway URL>`.
+
+**On upgrade:**
+
+- The `Origin` must be allowed (see [CORS policy](#cors-policy)); otherwise **403 Origin not allowed**.
+- With auth on, the session cookie must be valid; otherwise **401 Authentication required**.
+
+**Target check.** The target must use `ws:` or `wss:` and its hostname must be in the allowlist; otherwise the socket closes with code `1008` and reason `Target not allowed`.
+
+**Default allowed hosts:** `localhost`, `127.0.0.1`, `::1`. Extend with `WS_ALLOWED_HOSTS` (comma-separated):
 
 ```bash
-WS_ALLOWED_HOSTS=my-server.tailnet.ts.net,100.64.0.5
+WS_ALLOWED_HOSTS=your-host.tailnet-name.ts.net,100.64.0.5
 ```
 
-This prevents the proxy from being used to connect to arbitrary external hosts.
+This stops the proxy from being used to reach arbitrary hosts.
 
-### Token Injection
+**Buffering.** Until the gateway connection is open, the proxy buffers at most 100 messages or 1 MB; beyond that it closes with `1008 Too many pending messages`. Backlogs on an open connection close it with `1013`.
 
-Nerve performs **server-side token injection** to provide a zero-config connection experience for local and authenticated users without exposing the `GATEWAY_TOKEN` to the browser storage. Trusted-proxy configuration only affects how Nerve interprets forwarded client IPs, for example for loopback detection and rate limiting. It does not grant authentication by itself.
+### Token injection
 
-**Injection Logic:**
-1. `GET /api/connect-defaults` returns the official gateway WebSocket URL, `token: null`, and a `serverSideAuth` flag.
-2. The WebSocket proxy only injects `GATEWAY_TOKEN` when all of these are true:
-   - a gateway token is configured on the server
-   - the request is trusted (`loopback` access or an authenticated session)
-   - the WebSocket upgrade `Origin` is allowed
-3. For the official gateway URL, the browser connects with an empty token when `serverSideAuth=true`.
-4. Custom gateway URLs or untrusted contexts still require manual token entry in the connect dialog.
+Nerve injects `GATEWAY_TOKEN` on the server so the browser never stores it.
 
-This keeps the managed gateway token on the server while still allowing explicit manual credentials for unsupported or custom connection paths.
+1. `GET /api/connect-defaults` returns the gateway WebSocket URL derived from `GATEWAY_URL`, `token: null`, and `serverSideAuth`, which says whether this client is trusted.
+2. The proxy adds `GATEWAY_TOKEN` to the connect request when all of these hold:
+   - a gateway token is configured
+   - the browser's connect request carries no token of its own
+   - the client is trusted: auth is on (so the upgrade carried a valid cookie), or the client address is loopback
+   - the upgrade passed the Origin and target checks
+3. For the official gateway URL with `serverSideAuth=true`, the browser connects with an empty token.
+4. Custom gateway URLs and untrusted clients need the token entered in the connect dialog.
 
-### Device Identity & Gateway Scopes
+**Client address.** When the socket is loopback, the proxy uses the first `X-Forwarded-For` address (or `X-Real-IP`) as the client. `TRUSTED_PROXIES` does not apply here. See the reverse proxy note under [Recommendations for network access](#recommendations-for-network-access).
 
-OpenClaw 2026.2.19+ requires a signed device identity (Ed25519 keypair) for WebSocket connections to receive `operator.read` / `operator.write` scopes. Plain token authentication alone grants zero scopes.
+**Any allowed host can receive the token.** Injection does not check that the target is `GATEWAY_URL`. A trusted client can send the token to any host in `WS_ALLOWED_HOSTS`, so list only gateways you trust.
 
-Nerve generates a persistent device identity on first start (stored at `~/.nerve/device-identity.json`) and injects it into the connect handshake. The gateway always stays on loopback (`127.0.0.1`) — Nerve proxies all external connections through its WS proxy.
+### Device identity and gateway scopes
 
-**Normal setup path:** the setup wizard now pre-pairs Nerve's device identity while it is configuring the gateway, so a fresh install usually does **not** require a manual `openclaw devices approve` step.
+OpenClaw grants `operator.read` and `operator.write` scopes only to connections that present a signed device identity (Ed25519). Token authentication alone gets no scopes.
 
-**Manual approval is fallback / recovery guidance:**
+Nerve creates a persistent identity on first start in `${NERVE_DATA_DIR:-~/.nerve}/device-identity.json` (file mode `600`, directory `700`) and signs each connect handshake with it, both for proxied browser connections and for the server's own gateway RPC connection.
 
-1. Start Nerve and open the UI in a browser
-2. If the device is still pending, list requests: `openclaw devices list`
-3. Approve the Nerve device: `openclaw devices approve <requestId>`
+**Normal setup:** for a gateway on the same machine, the setup wizard pre-pairs this identity, so a fresh install needs no manual approval. For a remote gateway, setup prints the approval steps instead.
 
-If the device is rejected (for example after a gateway reset), the proxy falls back to token-only auth. The connection succeeds but with reduced scopes, and chat or tool calls may fail with "missing scope" errors until the device is approved again.
+**Manual approval (fallback and recovery):**
 
-**Architecture:** `Browser (remote) → Nerve (0.0.0.0:3080) → WS proxy → Gateway (127.0.0.1:18789)`. The gateway never needs to bind to LAN or be directly network-accessible.
+1. Start Nerve and open it in a browser.
+2. On the gateway host, list requests: `openclaw devices list`
+3. Approve Nerve's request: `openclaw devices approve <requestId>`
+
+If the gateway rejects the device (`device token mismatch`, `device signature invalid`, `unknown device` or `pairing required`), the proxy retries once without the device identity. That connection succeeds with reduced scopes, and chat or tool calls can fail with missing-scope errors until the device is approved again.
+
+**Layout:** `Browser -> Nerve (WS proxy) -> Gateway`. When the gateway runs on the same machine, it can stay bound to loopback; browsers never connect to it directly.
 
 ---
 
-## Body Size Limits
+## Body size limits
 
-| Scope | Limit | Enforced By |
+| Scope | Limit | Enforced by |
 |-------|-------|-------------|
-| Global (`/api/*`) | ~13 MB (12 MB + 1 MB overhead) | Hono `bodyLimit` middleware |
-| TTS text | 5,000 characters | Zod schema |
-| Transcription file | 12 MB | Application check |
-| Agent log entry | 64 KB | Config constant |
-| Workspace file write | 100 KB | Application check |
-| Memory text | 10,000 characters | Zod schema |
-| Memory section content | 50,000 characters | Zod schema |
-| TTS config field | 2,000 characters | Application check |
+| Every `/api/*` request | About 13 MB (12 MB + 1 MB) | Hono `bodyLimit`; the HTTPS server applies the same cap to every request |
+| Transcription upload | 12 MB | Route check (413) |
+| TTS text | 5,000 characters | Zod |
+| TTS config value | 2,000 characters | Route check |
+| Memory text | 10,000 characters | Zod |
+| Memory section content | 50,000 characters | Zod |
+| Workspace file (`PUT /api/workspace/:key`) | 100,000 characters | Route check |
+| File browser read and write | 1 MB | Route check |
+| File browser `raw` | 10 MB (images), 50 MB (PDF) | Route check |
 
-Exceeding the global body limit returns **413 Request body too large**.
+Exceeding the global limit returns **413 Request body too large**.
 
 ---
 
-## Path Traversal Prevention
-
-Multiple layers prevent directory traversal attacks:
+## Path traversal prevention
 
 | Route | Mechanism |
 |-------|-----------|
-| `/api/files` | `path.resolve()` + prefix allowlist + symlink resolution + re-check |
-| `/api/memories` (date params) | Regex validation: `/^\d{4}-\d{2}-\d{2}$/` — prevents injection in file paths |
-| `/api/workspace/:key` | Strict key→filename allowlist (`soul`→`SOUL.md`, etc.) — no user-controlled paths |
+| `/api/files` | `path.resolve()`, prefix allowlist, real path re-check |
+| `/api/files/*` (file browser), `/api/upload-reference/resolve` | Relative paths only, exclusion check per segment, must stay inside the workspace root, real path re-check |
+| `/api/memories` (`date`) | `^[a-zA-Z0-9._-]+$` and no `..` |
+| `/api/workspace/:key` | Fixed key to file map (`soul` to `SOUL.md`, `tools`, `identity`, `user`, `agents`, `heartbeat`, `chatPathLinks` to `CHAT_PATH_LINKS.json`); no user-supplied paths |
+| `/api/chat-media` | One accepted gateway path shape, re-checked after URL parsing |
+| `/api/sessions/media` | No client path; session key to transcript through `sessions.json` |
 
 ---
 
-## TLS / HTTPS
+## TLS and HTTPS
 
-Nerve automatically starts an HTTPS server alongside HTTP when certificates are present:
+Nerve starts an HTTPS server on `SSL_PORT` next to HTTP when both files exist:
 
 ```
 certs/cert.pem    # X.509 certificate
-certs/key.pem     # RSA/EC private key
+certs/key.pem     # Private key
 ```
 
-HSTS is always sent (`max-age=31536000; includeSubDomains`), even over HTTP. Browsers that have previously visited over HTTPS will refuse HTTP connections for 1 year.
+`Strict-Transport-Security` (`max-age=31536000; includeSubDomains`) is sent only when `NODE_ENV=production`, which the installer's systemd unit and launchd wrapper set. It is then sent on HTTP responses too, but browsers act on it only when it arrives over HTTPS. After that, a browser upgrades every request to that hostname, on any port, to HTTPS for a year.
 
-> **Microphone access** requires a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts). On `localhost` HTTP works, but network access requires HTTPS.
+> **Microphone access** needs a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts). `localhost` works over HTTP; other addresses need HTTPS.
 
 ---
 
-## Token & Secret Handling
+## Token and secret handling
 
 | Secret | Storage | Exposure |
 |--------|---------|----------|
-| `GATEWAY_TOKEN` | `.env` file (chmod 600) | Used server-side for trusted official-gateway connections. `/api/connect-defaults` returns `token: null`. Never logged. |
-| `OPENAI_API_KEY` | `.env` file | Used server-side only. Never sent to clients. |
-| `REPLICATE_API_TOKEN` | `.env` file | Used server-side only. Never sent to clients. |
-| Gateway URL + optional manual token | `localStorage` (`oc-config`) | Used for reconnects. Trusted official-gateway flows usually keep the token empty; manually entered custom-gateway tokens persist until cleared. |
+| `GATEWAY_TOKEN` | `.env` | Server side only: proxy injection for trusted clients, the server's own gateway RPC and HTTP tool calls, and `/api/chat-media` fetches. `/api/connect-defaults` returns `token: null`. The setup wizard shows it in its prompts so you can check it. |
+| `OPENAI_API_KEY`, `REPLICATE_API_TOKEN`, `MIMO_API_KEY` | `.env` | Server side only. `GET /api/keys` reports only whether each is set. `PUT /api/keys` (Settings, Audio) writes them to `.env`. |
+| `NERVE_PASSWORD_HASH`, `NERVE_SESSION_SECRET` | `.env` | Server side only |
+| Device identity private key | `${NERVE_DATA_DIR:-~/.nerve}/device-identity.json` (mode `600`) | Server side only |
+| Gateway URL and optional manual token | Browser `localStorage` (`oc-config`) | Used for reconnects. With server-side injection the token is empty; a manually entered token stays until cleared. |
 
-The setup wizard applies `chmod 600` to `.env` and backup files, restricting read access to the file owner.
+The setup wizard sets `.env` and its backups to mode `600`. Keys saved from Settings update `.env` in place without changing its mode.
 
 ---
 
-## Client-Side Security
+## Client-side security
 
 | Measure | Details |
 |---------|---------|
-| **DOMPurify** | All rendered HTML (agent messages, markdown) passes through DOMPurify with a strict tag/attribute allowlist |
-| **Local storage** | Connection preferences are stored in `localStorage` as `oc-config`. The official managed gateway path can keep the token empty; manually entered custom tokens may persist until cleared |
-| **CSP enforcement** | `script-src 'self' https://s3.tradingview.com` blocks inline scripts and limits external scripts to TradingView chart widgets only |
-| **No eval** | No use of `eval()`, `Function()`, or `innerHTML` with unsanitised content |
+| **Markdown** | Rendered with `react-markdown` without raw HTML |
+| **DOMPurify** | Every HTML injection (code highlighting, diffs, file previews, tool call output, streaming text) goes through `sanitizeHtml()`: a tag and attribute allowlist, with `script`, `style`, `iframe`, `object`, `embed`, `form`, `input`, `svg` and `math` forbidden |
+| **CSP** | `script-src 'self' https://s3.tradingview.com` blocks inline scripts and limits external scripts to the TradingView widget |
+| **No eval** | No `eval()`, `new Function()` or direct `innerHTML` assignment |
+| **Local storage** | Connection preferences in `oc-config`; with server-side injection the token stays empty |
 
 ---
 
-## Configuration File Security
+## Configuration file security
 
 The setup wizard:
 
-1. Writes `.env` atomically (via temp file + rename)
-2. Applies `chmod 600` to `.env` and backup files
-3. Cleans up `.env.tmp` on interruption (Ctrl+C handler)
-4. Backs up existing `.env` before overwriting (`.env.backup` or `.env.backup.YYYY-MM-DD`)
+1. Writes `.env` through `.env.tmp` and a rename
+2. Sets `.env` and backups to mode `600`
+3. Removes a leftover `.env.tmp` on start and on Ctrl+C
+4. Backs up an existing `.env` to `.env.backup` (or `.env.backup.YYYY-MM-DD`) before overwriting
 
 ---
 
-## Reporting Vulnerabilities
+## Reporting vulnerabilities
 
-If you find a security issue, please open a GitHub issue or contact the maintainers directly. Do not disclose vulnerabilities publicly before they are addressed.
+If you find a security issue, open a GitHub issue or contact the maintainers directly. Do not disclose it publicly before it is fixed.

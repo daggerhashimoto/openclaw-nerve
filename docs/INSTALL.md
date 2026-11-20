@@ -210,6 +210,7 @@ Keep it small and explicit.
 3. Confirm the intended gateway is reachable.
 4. Confirm `.env` points at that gateway. `npm run setup -- --check` validates `.env` and tests the gateway token.
 5. If auth is enabled or network access was requested, confirm the login surface or the protected-access behavior.
+6. Confirm Nerve can make its own gateway calls, which needs its device paired. `curl -s http://127.0.0.1:3080/api/crons` should return `{"ok":true,...}` (with auth on, log in first and send the session cookie). The `/health` and `--check` steps above pass even while the device waits for approval. A `502` here usually means it is waiting: run `openclaw devices list` on the gateway host and approve Nerve's request with `openclaw devices approve <requestId>`, asking the user first if the gateway is not local.
 
 ```bash
 openclaw gateway status

@@ -11,6 +11,8 @@ curl -c /tmp/nerve.cookies -X POST "$NERVE_URL/api/auth/login" \
   -H 'Content-Type: application/json' -d '{ "password": "<password>" }'
 ```
 
+The examples below leave the cookie out. With auth on, add `-b /tmp/nerve.cookies` to every `curl`.
+
 **Rate limit:** every Kanban route allows 60 requests per minute per client and path. Over the limit you get `429` with a plain-text body.
 
 ---

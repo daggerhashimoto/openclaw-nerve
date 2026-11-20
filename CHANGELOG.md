@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 **The transcript keeps up with what really happened.** Runs started from Telegram, Discord or a heartbeat show live on the open session. Replies no longer vanish, repeat or get replaced when history reloads after a reconnect. Internal control turns stay out of the chat, and tool results render as results (PR #374, PR #389, PR #400, PR #403, PR #405, PR #408).
 
-**Setup and the installer are safer to run.** Setup no longer patches or restarts a local OpenClaw when the gateway lives on another host, an SSH tunnel or a container; it prints the steps to run on the gateway host instead. The installer starts the service, checks that Nerve answers, and says so plainly when it does not (PR #393, PR #416, PR #419, PR #420).
+**Setup and the installer are safer to run.** Setup no longer patches or restarts a local OpenClaw when the gateway lives on another host or in a container, or is reached through an SSH tunnel from a machine that runs no OpenClaw; it prints the steps to run on the gateway host instead. When this machine also runs OpenClaw, set `NERVE_GATEWAY_LOCATION=remote` for a tunneled gateway. The installer starts the service, checks that Nerve answers, and says so plainly when it does not (PR #393, PR #416, PR #419, PR #420).
 
 ### Added
 - Workbench Night and Workbench Paper themes alongside Night and Daylight, with a per-agent identity colour you can pick from a session row (PR #391, PR #394)

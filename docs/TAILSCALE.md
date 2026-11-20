@@ -52,7 +52,7 @@ npm run setup
 
 Choose **Via Tailscale tailnet IP** or **Via Tailscale Serve**. For Serve, setup offers to run `tailscale serve --bg http://127.0.0.1:3080` for you. Setup then writes `HOST`, `ALLOWED_ORIGINS` and `CSP_CONNECT_EXTRA` as listed under each option below, plus `WS_ALLOWED_HOSTS` for the tailnet IP. If the gateway is on this machine, it also adds the origin to the gateway config and restarts the gateway, after asking.
 
-Authentication differs by mode. Setup asks for a password (or turns authentication on with the gateway token as the password) only when Nerve binds to `0.0.0.0`, which is the tailnet-IP case. Serve keeps Nerve on `127.0.0.1`, so setup does not ask. For an install that was localhost-only, add `NERVE_AUTH=true` to `.env` yourself. Setup keeps it on later runs.
+Authentication differs by mode. Setup asks for a password (or turns authentication on with the gateway token as the password) only when Nerve binds to `0.0.0.0`, which is the tailnet-IP case. Serve keeps Nerve on `127.0.0.1`, so setup does not ask. For an install that was localhost-only, add `NERVE_AUTH=true` to `.env` and restart Nerve before you start Serve or run setup with it, so tailnet clients never reach Nerve with authentication off. Setup keeps it on later runs.
 
 Non-interactive, with Serve already running (`tailscale serve --bg http://127.0.0.1:3080`):
 
@@ -101,7 +101,7 @@ Notes:
 - `HOST=0.0.0.0` is required for direct tailnet-IP access.
 - `NERVE_AUTH=true` is required with `HOST=0.0.0.0`: Nerve refuses to start without authentication unless `NERVE_ALLOW_INSECURE=true` is set. If no password hash is configured, the gateway token works as the password.
 - `ALLOWED_ORIGINS` must match what you type in the browser. If you use the MagicDNS name instead of the IP, use `http://your-host.tailnet-name.ts.net:3080` here, in the CSP line, and in the gateway list.
-- The WebSocket proxy forwards only to loopback and the hosts in `WS_ALLOWED_HOSTS`, checked against the gateway URL's host. Setup adds the tailnet IP; it matters only if `GATEWAY_URL` uses that address.
+- The WebSocket proxy forwards only to loopback and the hosts in `WS_ALLOWED_HOSTS`, checked against the gateway URL's host. Setup adds the tailnet IP; it matters only if `GATEWAY_URL` uses that address. If `WS_ALLOWED_HOSTS` already lists hosts, such as a remote gateway, keep them and add the tailnet IP after a comma.
 - If `ALLOWED_ORIGINS` or `CSP_CONNECT_EXTRA` already hold values you still need, append instead of replacing. Nerve's own server-side connection to the gateway presents the first non-loopback entry in `ALLOWED_ORIGINS` (or `NERVE_PUBLIC_ORIGIN` if set), so that origin must be in the gateway's list too.
 
 ### 3. Allow the origin on the gateway
@@ -298,7 +298,7 @@ When switching to **Tailnet IP**:
 - set `HOST=0.0.0.0`
 - replace `ALLOWED_ORIGINS` with the IP origin
 - replace `CSP_CONNECT_EXTRA` with the IP origin and its `ws://` form
-- set `WS_ALLOWED_HOSTS=<tailscale-ip>`
+- add `<tailscale-ip>` to `WS_ALLOWED_HOSTS`, keeping any hosts already listed
 
 ## Common failures
 

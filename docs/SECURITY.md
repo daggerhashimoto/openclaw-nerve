@@ -99,7 +99,7 @@ When Nerve is reachable from other machines:
 - **Enable authentication.** The setup wizard prompts for it when the access mode binds `0.0.0.0`. Tailscale Serve and Custom binds to a specific address skip that prompt, so set it up yourself if other people can reach the tailnet or network.
 - A VPN (Tailscale, WireGuard) adds a layer in front of the password.
 - Put a reverse proxy with HTTPS in front for anything wider.
-- A reverse proxy on the same host must set `X-Forwarded-For` (or `X-Real-IP`) to the real client address, replacing any value the client sent. Without that header, every proxied client looks local and, with auth off, gets the gateway token injected.
+- A reverse proxy on the same host must set `X-Forwarded-For` to the real client address, replacing any value the client sent. Setting only `X-Real-IP` is not enough, because Nerve reads `X-Forwarded-For` first. Without that header, every proxied client looks local and, with auth off, gets the gateway token injected.
 
 ---
 
@@ -456,4 +456,4 @@ The setup wizard:
 
 ## Reporting vulnerabilities
 
-If you find a security issue, open a GitHub issue or contact the maintainers directly. Do not disclose it publicly before it is fixed.
+If you find a security issue, do not open a public GitHub issue. Contact the maintainers privately, for example by direct message on the [Nerve Discord](https://discord.gg/Sh9ZGtctva), and give them time to ship a fix before you disclose it.

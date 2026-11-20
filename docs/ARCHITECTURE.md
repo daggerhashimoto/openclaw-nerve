@@ -78,6 +78,8 @@ When the workspace directory is not on the Nerve host (`server/lib/workspace-det
 | Memory | `MEMORY.md` plus daily files under `memory/` | `MEMORY.md` only |
 | Skills | `openclaw skills list --json` scoped to the agent's workspace | No gateway fallback |
 
+One exception: `PUT /api/files/write` goes by `NERVE_WORKSPACE_REMOTE` alone, so a first save can create a new local workspace. With a remote workspace and that variable unset, a save writes a new file on the Nerve host and leaves the remote file unchanged. Set `NERVE_WORKSPACE_REMOTE=true` when the workspace lives on the gateway host.
+
 ## Frontend
 
 React 19, TypeScript, Vite 7 and Tailwind CSS v4. The `@/` import alias maps to `src/`.

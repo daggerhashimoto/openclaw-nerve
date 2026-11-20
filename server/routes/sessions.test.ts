@@ -8,11 +8,13 @@ import os from 'node:os';
 describe('sessions routes', () => {
   let tmpDir: string;
   let spawnSubagentMock: ReturnType<typeof vi.fn>;
+  let gatewayRpcCallMock: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.resetModules();
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-test-'));
     spawnSubagentMock = vi.fn();
+    gatewayRpcCallMock = vi.fn();
   });
 
   afterEach(async () => {
@@ -38,6 +40,9 @@ describe('sessions routes', () => {
     }));
     vi.doMock('../lib/subagent-spawn.js', () => ({
       spawnSubagent: spawnSubagentMock,
+    }));
+    vi.doMock('../lib/gateway-rpc.js', () => ({
+      gatewayRpcCall: gatewayRpcCallMock,
     }));
 
     const mod = await import('./sessions.js');
@@ -205,6 +210,167 @@ describe('sessions routes', () => {
     expect(res.status).toBe(404);
     const json = (await res.json()) as Record<string, unknown>;
     expect(json.ok).toBe(false);
+  });
+
+  describe('GET /api/sessions/media', () => {
+    const sessionKey = 'agent:main:main';
+    const timestamp = 1775131617235;
+    // The id chat.history puts on an omitted image block: a prefix and a base64url reference.
+    const artifactId = `artifact_transcript_image_${Buffer.from(JSON.stringify({
+      source: 'sqlite', rawSeq: 7, messageId: 'msg-7', messageSeq: 7, contentIndex: 1,
+    })).toString('base64url')}`;
+
+    function mediaUrl(params: { artifactId?: string; imageIndex?: number } = {}) {
+      const query = new URLSearchParams({
+        sessionKey,
+        timestamp: String(timestamp),
+        imageIndex: String(params.imageIndex ?? 0),
+      });
+      if (params.artifactId !== undefined) query.set('artifactId', params.artifactId);
+      return `/api/sessions/media?${query.toString()}`;
+    }
+
+    function artifactDownload(mimeType: string, bytes = 'hello-image') {
+      return {
+        artifact: { id: artifactId, type: 'image', title: 'Image', mimeType, sessionKey, source: 'session-transcript' },
+        encoding: 'base64',
+        data: Buffer.from(bytes).toString('base64'),
+      };
+    }
+
+    async function writeLegacyTranscript(imageBlock: Record<string, unknown>) {
+      const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+      await fs.writeFile(path.join(tmpDir, 'sessions.json'), JSON.stringify({ [sessionKey]: { sessionId } }));
+      await fs.writeFile(path.join(tmpDir, `${sessionId}.jsonl`), JSON.stringify({
+        type: 'message',
+        message: { timestamp, content: [{ type: 'text', text: 'testing' }, imageBlock] },
+      }));
+    }
+
+    it('downloads the image from the gateway by its artifact id, with no sessions.json, as on current OpenClaw', async () => {
+      gatewayRpcCallMock.mockResolvedValueOnce(artifactDownload('image/png'));
+      const app = await buildApp();
+
+      const res = await app.request(mediaUrl({ artifactId }));
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('image/png');
+      expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(res.headers.get('content-disposition')).toContain(`message-${timestamp}-image-0.png`);
+      expect(Buffer.from(await res.arrayBuffer()).toString('utf-8')).toBe('hello-image');
+      expect(gatewayRpcCallMock).toHaveBeenCalledWith('artifacts.download', { sessionKey, artifactId }, expect.any(Number));
+    });
+
+    it('serves the gateway type lower-cased and without parameters', async () => {
+      gatewayRpcCallMock.mockResolvedValueOnce(artifactDownload('Image/JPEG; charset=binary'));
+      const app = await buildApp();
+
+      const res = await app.request(mediaUrl({ artifactId }));
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('image/jpeg');
+      expect(res.headers.get('content-disposition')).toContain(`message-${timestamp}-image-0.jpg`);
+    });
+
+    it.each(['image/svg+xml', 'text/html', 'application/octet-stream'])(
+      'refuses a gateway artifact of type %s',
+      async (mimeType) => {
+        gatewayRpcCallMock.mockResolvedValueOnce(artifactDownload(mimeType, '<svg onload="alert(1)"/>'));
+        const app = await buildApp();
+
+        const res = await app.request(mediaUrl({ artifactId }));
+
+        expect(res.status).toBe(415);
+        expect(res.headers.get('content-type')).toContain('application/json');
+        expect(((await res.json()) as Record<string, unknown>).ok).toBe(false);
+      },
+    );
+
+    it.each(['artifact not found', 'no session found for artifact query', 'artifact download is unsupported'])(
+      'answers 404 when the gateway says "%s"',
+      async (message) => {
+        gatewayRpcCallMock.mockRejectedValueOnce(new Error(message));
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const app = await buildApp();
+
+        const res = await app.request(mediaUrl({ artifactId }));
+
+        expect(res.status).toBe(404);
+        expect(((await res.json()) as Record<string, unknown>).ok).toBe(false);
+        expect(warn).not.toHaveBeenCalled();
+      },
+    );
+
+    it('answers 404 when the gateway returns no inline bytes', async () => {
+      gatewayRpcCallMock.mockResolvedValueOnce({
+        artifact: { id: artifactId, type: 'image', mimeType: 'image/png' },
+        url: 'https://example.test/image.png',
+      });
+      const app = await buildApp();
+
+      const res = await app.request(mediaUrl({ artifactId }));
+
+      expect(res.status).toBe(404);
+    });
+
+    it('answers 502 when the gateway cannot be reached', async () => {
+      gatewayRpcCallMock.mockRejectedValueOnce(new Error('Gateway connection not ready'));
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const app = await buildApp();
+
+      const res = await app.request(mediaUrl({ artifactId }));
+
+      expect(res.status).toBe(502);
+      expect(((await res.json()) as Record<string, unknown>).ok).toBe(false);
+      expect(warn).toHaveBeenCalledWith('[sessions] gateway media lookup failed:', 'Gateway connection not ready');
+    });
+
+    it.each(['artifact_other_abc', '../../etc/passwd', 'artifact_transcript_image_a.b', `artifact_transcript_image_${'a'.repeat(8192)}`])(
+      'rejects the malformed artifact id %#',
+      async (badId) => {
+        const app = await buildApp();
+
+        const res = await app.request(mediaUrl({ artifactId: badId }));
+
+        expect(res.status).toBe(400);
+        expect(gatewayRpcCallMock).not.toHaveBeenCalled();
+      },
+    );
+
+    it('answers 404 without logging when there is no artifact id and no sessions.json', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const app = await buildApp();
+
+      const res = await app.request(mediaUrl());
+
+      expect(res.status).toBe(404);
+      expect(((await res.json()) as Record<string, unknown>).ok).toBe(false);
+      expect(warn).not.toHaveBeenCalled();
+      expect(gatewayRpcCallMock).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 when the transcript message has no image at that index', async () => {
+      await writeLegacyTranscript({ type: 'image', mimeType: 'image/png', data: Buffer.from('x').toString('base64') });
+      const app = await buildApp();
+
+      const res = await app.request(mediaUrl({ imageIndex: 1 }));
+
+      expect(res.status).toBe(404);
+    });
+
+    it.each([
+      ['image/svg+xml', { type: 'image', mimeType: 'image/svg+xml', data: Buffer.from('<svg/>').toString('base64') }],
+      ['text/html', { type: 'image', source: { type: 'base64', media_type: 'text/html', data: Buffer.from('<p>').toString('base64') } }],
+      ['no type', { type: 'image', data: Buffer.from('x').toString('base64') }],
+    ])('refuses a transcript image recorded as %s', async (_label, imageBlock) => {
+      await writeLegacyTranscript(imageBlock);
+      const app = await buildApp();
+
+      const res = await app.request(mediaUrl());
+
+      expect(res.status).toBe(415);
+      expect(res.headers.get('content-type')).toContain('application/json');
+    });
   });
 
   // ── POST /api/sessions/spawn-subagent ────────────────────────────

@@ -2390,7 +2390,7 @@ Serves an image or PDF from the selected workspace for previews. The response is
 | `.ico` | `image/x-icon` | 10 MB |
 | `.pdf` | `application/pdf` | 50 MB (52,428,800 bytes) |
 
-**Response:** the file bytes, with `Content-Type`, `Content-Length` and `Cache-Control: no-cache`. SVG is served inline (no `Content-Disposition`), unlike `GET /api/files`.
+**Response:** the file bytes, with `Content-Type`, `Content-Length` and `Cache-Control: no-cache`.
 
 For PDFs the response also has `Accept-Ranges: bytes`, and a single `Range` header of the form `bytes=<start>-<end>`, `bytes=<start>-` or `bytes=-<suffix length>` returns `206 Partial Content` with `Content-Range: bytes <start>-<end>/<size>`. An unsatisfiable range returns `416` with an empty body and `Content-Range: bytes */<size>`. `Range` is ignored for other file types, and a malformed `Range` value is ignored (the whole file is returned).
 

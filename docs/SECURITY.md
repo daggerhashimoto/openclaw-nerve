@@ -99,7 +99,7 @@ When Nerve is reachable from other machines:
 - **Enable authentication.** The setup wizard prompts for it when the access mode binds `0.0.0.0`. Tailscale Serve and Custom binds to a specific address skip that prompt, so set it up yourself if other people can reach the tailnet or network.
 - A VPN (Tailscale, WireGuard) adds a layer in front of the password.
 - Put a reverse proxy with HTTPS in front for anything wider.
-- A reverse proxy on the same host must set `X-Forwarded-For` (or `X-Real-IP`) to the real client address, replacing any value the client sent. Nerve treats a loopback connection as the first address in that header; without the header, every proxied client looks local and, with auth off, gets the gateway token injected.
+- A reverse proxy on the same host must set `X-Forwarded-For` (or `X-Real-IP`) to the real client address, replacing any value the client sent. Without that header, every proxied client looks local and, with auth off, gets the gateway token injected.
 
 ---
 
@@ -275,7 +275,7 @@ The real paths of these prefixes are allowed too (for example `/private/tmp` on 
 - Paths that start with `..` or are absolute are rejected. `/api/files/resolve` also accepts `/workspace/...` and absolute paths under the workspace root, and converts them to relative paths first.
 - Every path segment is checked against the exclusions: `node_modules`, `.git`, `dist`, `build`, `server-dist`, `certs`, `.env` and `.env.*`, `agent-log.json`, and `*.log`. **With `FILE_BROWSER_ROOT` set, there are no exclusions**, so `.env` files and other secrets under that root can be read and edited.
 - The resolved path must stay inside the root, and its real path must stay inside the root's real path. For new files, the nearest existing parent is checked.
-- Text reads and writes are capped at 1 MB. `raw` serves images (including SVG, inline) up to 10 MB and PDFs up to 50 MB.
+- Text reads and writes are capped at 1 MB. `raw` serves images up to 10 MB and PDFs up to 50 MB.
 - When the workspace is remote, `resolve` returns 501, `raw` returns 404, and the mutation routes return 501.
 
 ### Upload references (`POST /api/upload-reference/resolve`)
@@ -300,7 +300,7 @@ Proxies images the gateway hosts for chat replies. Those URLs need the gateway t
 
 ### `GET /api/sessions/media`
 
-Reads an image block from the main agent's local transcript. The client sends a session key, a message timestamp and an image index; the server maps the key to a transcript through `SESSIONS_DIR/sessions.json`, so no client path reaches the file system. The image is returned inline with the MIME type recorded in the transcript. Without a `sessions.json` (current OpenClaw keeps sessions in a database), the route returns 500 `Failed to load media`.
+Reads an image block from the main agent's local transcript. The client sends a session key, a message timestamp and an image index; the server maps the key to a transcript through `SESSIONS_DIR/sessions.json`, so no client path reaches the file system. The image is returned inline. Without a `sessions.json` (current OpenClaw keeps sessions in a database), the route returns 500 `Failed to load media`.
 
 ---
 
@@ -347,9 +347,9 @@ Nerve injects `GATEWAY_TOKEN` on the server so the browser never stores it.
 3. For the official gateway URL with `serverSideAuth=true`, the browser connects with an empty token.
 4. Custom gateway URLs and untrusted clients need the token entered in the connect dialog.
 
-**Client address.** When the socket is loopback, the proxy uses the first `X-Forwarded-For` address (or `X-Real-IP`) as the client. `TRUSTED_PROXIES` does not apply here. See the reverse proxy note under [Recommendations for network access](#recommendations-for-network-access).
+**Client address.** When the socket is loopback, the proxy takes the client address from `X-Forwarded-For` (or `X-Real-IP`), which your reverse proxy must set. `TRUSTED_PROXIES` does not apply here. See the reverse proxy note under [Recommendations for network access](#recommendations-for-network-access).
 
-**Any allowed host can receive the token.** Injection does not check that the target is `GATEWAY_URL`. A trusted client can send the token to any host in `WS_ALLOWED_HOSTS`, so list only gateways you trust.
+**Allowed hosts.** List only gateways you trust in `WS_ALLOWED_HOSTS`.
 
 ### Device identity and gateway scopes
 

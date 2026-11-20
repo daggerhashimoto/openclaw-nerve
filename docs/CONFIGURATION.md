@@ -163,7 +163,7 @@ If chat works but crons, Kanban runs or remote workspace panels fail with `origi
 Nerve injects `GATEWAY_TOKEN` on the server side, so the browser never stores it. When the browser opens the WebSocket proxy (`/ws`) and its connect request carries no token, the proxy adds `GATEWAY_TOKEN` if the client is **trusted**:
 
 1. Auth is on (`NERVE_AUTH=true`), so the upgrade already carried a valid session cookie, **or**
-2. The client is on loopback (`127.0.0.1`, `::1` or `::ffff:127.x`). When the socket itself is loopback, Nerve uses the first `X-Forwarded-For` (or `X-Real-IP`) address as the client, so a same-host reverse proxy must set that header for remote clients. `TRUSTED_PROXIES` does not affect this check.
+2. The client is on loopback (`127.0.0.1`, `::1` or `::ffff:127.x`). When the socket itself is loopback, Nerve takes the client address from `X-Forwarded-For` (or `X-Real-IP`), so a same-host reverse proxy must set that header to the real client address. `TRUSTED_PROXIES` does not affect this check.
 
 `GET /api/connect-defaults` tells the browser whether this applies (`serverSideAuth`). If it does, the connect dialog hides the token field for the official gateway URL. Untrusted clients and custom gateway URLs need the token typed in the dialog.
 

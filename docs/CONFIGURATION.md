@@ -457,7 +457,7 @@ With auth on, these calls need the session cookie.
 |-------|------|----------|-------------|
 | `key` | `string` | Yes | Status key in lowercase kebab case (for example `in-progress` or `blocked`), up to 64 chars |
 | `title` | `string` | Yes | Display label, 1 to 100 chars |
-| `wipLimit` | `integer` | No | Work-in-progress limit, 0 or more |
+| `wipLimit` | `integer` | No | Work-in-progress limit, 0 or more. Stored and validated, but not enforced yet |
 | `visible` | `boolean` | Yes | Whether the column shows on the board |
 
 A board must keep the `backlog`, `todo`, `in-progress`, `review` and `done` columns; `cancelled` is optional, and custom keys can be added. A column that tasks or proposals still use cannot be removed.

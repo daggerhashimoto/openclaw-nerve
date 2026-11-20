@@ -1,4 +1,4 @@
-# Code Review Guide
+# Code review guide
 
 Review Nerve as it exists today, not as an imaginary perfect architecture.
 
@@ -10,17 +10,17 @@ Prefer consistency with the surrounding subsystem over introducing a brand-new p
 
 ### TypeScript
 
-- The repo runs TypeScript in strict mode.
-- Most application code is strongly typed.
-- A few internal utilities and tests still use `any`. Do not spread that pattern. If you can tighten a touched area safely, do it.
-- `@ts-ignore` should be rare and justified inline.
+- Every TypeScript project in `config/` is `strict`.
+- Explicit `any` is almost gone: `server/lib/tts-config.ts` and one test file still use it, behind `eslint-disable` comments. Do not spread it. If you can tighten a touched area safely, do it.
+- There is no `@ts-ignore`. `@ts-expect-error` appears only in a few tests, each with a reason. Keep it that way.
 
 ### Frontend structure
 
 - The frontend is organized mostly by feature under `src/features/`.
 - Shared layers live in `src/components/`, `src/contexts/`, `src/hooks/`, and `src/lib/`.
-- Large UI surfaces are often lazy-loaded, especially settings, sessions, workspace, kanban, charts, and file editing.
+- Large UI surfaces are lazy-loaded: settings, the command palette, sessions, workspace, kanban, charts, the markdown renderer, and file editing.
 - Cross-feature imports do exist. Keep them narrow, stable, and free of circular dependencies.
+- [DESIGN.md](../DESIGN.md) is the source of truth for the UI: tokens, the pane state marker, the 28px row unit, motion, and sentence-case copy.
 
 ### React patterns worth preserving
 
@@ -33,9 +33,10 @@ Prefer consistency with the surrounding subsystem over introducing a brand-new p
 
 - Backend routes live in `server/routes/` and are mounted from `server/app.ts`.
 - Shared behavior lives in `server/lib/`, `server/services/`, and `server/middleware/`.
-- Some write endpoints use `zValidator` and Zod today, but not all of them. New write endpoints should validate input. When you touch an older route, tightening validation is a good upgrade if it stays low-risk.
-- File and state mutations that can race are often protected with a mutex.
-- `/api/events` is an SSE endpoint and must not be buffered or compressed.
+- Many write endpoints validate with Zod, either through `zValidator` (agent log, memories, TTS) or `schema.safeParse` (crons, gateway, kanban, sessions). Others still parse by hand. New write endpoints should validate input. When you touch an older route, tightening validation is a good upgrade if it stays low-risk.
+- Rate limiting is per route, not global. Most API routes opt in with a preset from `server/middleware/rate-limit.ts`; the file browser, SSE, voice-phrase and usage-limit routes do not.
+- File and state mutations that can race are usually protected with a mutex (`server/lib/mutex.ts`).
+- `/api/events` is an SSE endpoint and must not be buffered or compressed. `/api/files/raw` is also excluded from compression.
 
 ### Security and config baseline
 
@@ -67,13 +68,14 @@ Prefer consistency with the surrounding subsystem over introducing a brand-new p
 - [ ] Chat, sessions, file-browser, workspace, and kanban changes avoid obvious rerender or subscription churn.
 - [ ] Timers, listeners, sockets, observers, and intervals clean up correctly.
 - [ ] Heavy or optional UI stays lazy-loaded unless there is a clear reason to change that.
+- [ ] UI changes follow DESIGN.md instead of adding one-off colors, spacing, or motion.
 - [ ] Error states, loading states, and mobile behavior still make sense.
 - [ ] Keyboard navigation and focus behavior are preserved for dialogs, drawers, and menus.
 
 ### Backend
 
 - [ ] New route files are mounted in `server/app.ts`.
-- [ ] Auth, CORS, body limits, and rate limiting are preserved or improved.
+- [ ] Auth, CORS, body limits, and rate limiting are preserved or improved. A new route either uses a rate-limit preset or has a reason not to.
 - [ ] Request bodies are validated or parsed narrowly, especially on write endpoints.
 - [ ] Shared gateway helpers are reused instead of duplicating request logic.
 - [ ] File writes remain atomic where concurrent access is possible.

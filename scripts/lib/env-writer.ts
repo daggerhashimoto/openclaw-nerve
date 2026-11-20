@@ -81,11 +81,13 @@ const PRESERVED_HEADER = '# Preserved from your previous .env (not managed by se
 
 /**
  * One assignment, as dotenv 17 reads it (export prefix, `KEY: value`, quoted
- * values that span lines, inline comments). It is the same pattern as
- * env_file_value in install.sh, so a key is a key here exactly when the server
- * sees it as one.
+ * values that span lines, inline comments). It is the pattern env_file_value
+ * uses in install.sh, with one change: the whitespace after the value stops at
+ * the end of the line. dotenv's `\s*` runs on into the next line and its
+ * comment group then swallows a comment there, which would cut it off from the
+ * key it belongs to. The keys and values found are the same.
  */
-const DOTENV_LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
+const DOTENV_LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?[^\S\n]*(?:#.*)?(?:$|$)/mg;
 
 /** The comment lines that sit directly above a key, with no blank line between. */
 function commentRunAbove(gap: string): string[] {
@@ -226,12 +228,25 @@ function readExistingEnv(envPath: string): string {
   }
 }
 
+export interface WriteEnvOptions {
+  /**
+   * Carry over the keys of an existing .env that setup does not manage.
+   * Default true. Pass false to start from nothing ("Start fresh").
+   */
+  preserveUnmanaged?: boolean;
+}
+
 /**
  * Write .env file atomically (write .env.tmp then rename).
- * Keys in an existing .env that setup does not manage are kept as written.
+ * Keys in an existing .env that setup does not manage are kept as written,
+ * unless `preserveUnmanaged` is false.
  */
-export function writeEnvFile(envPath: string, config: EnvConfig): void {
-  const content = generateEnvContent(config, readExistingEnv(envPath));
+export function writeEnvFile(
+  envPath: string,
+  config: EnvConfig,
+  { preserveUnmanaged = true }: WriteEnvOptions = {},
+): void {
+  const content = generateEnvContent(config, preserveUnmanaged ? readExistingEnv(envPath) : '');
   const tmpPath = envPath + '.tmp';
   writeFileSync(tmpPath, content, 'utf-8');
   renameSync(tmpPath, envPath);

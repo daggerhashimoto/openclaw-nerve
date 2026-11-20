@@ -222,6 +222,47 @@ describe('writeEnvFile with an existing .env', () => {
     expect(lineCount(out, '# OpenClaw Gateway')).toBe(1);
   });
 
+  it('carries a one-line comment that follows a managed key to the kept key below it', () => {
+    const out = rewrite(
+      'PORT=3080\n# public endpoint\nNERVE_PUBLIC_ORIGIN=https://nerve.example.com\n',
+    );
+
+    expect(out).toContain('# public endpoint\nNERVE_PUBLIC_ORIGIN=https://nerve.example.com\n');
+    expect(lineCount(out, '# public endpoint')).toBe(1);
+  });
+
+  it('carries every line of a multi-line comment that follows a managed key', () => {
+    const out = rewrite(
+      'GATEWAY_TOKEN="old-token"\n# public endpoint\n# must match the browser address\nNERVE_PUBLIC_ORIGIN=https://nerve.example.com\n',
+    );
+
+    expect(out).toContain(
+      '# public endpoint\n# must match the browser address\nNERVE_PUBLIC_ORIGIN=https://nerve.example.com\n',
+    );
+  });
+
+  it('carries a comment that follows a managed key with an inline comment', () => {
+    const out = rewrite('PORT=3080 # the port\n# why this is here\nFOO=1\n');
+
+    expect(out).toContain('# why this is here\nFOO=1\n');
+    expect(out).not.toContain('# the port');
+  });
+
+  it('does not keep a comment that belongs to a managed key below it', () => {
+    const out = rewrite('FOO=1\n# about the port\nPORT=4000\nBAR=2\n');
+
+    expect(out).toContain('FOO=1\n');
+    expect(out).toContain('BAR=2\n');
+    expect(out).not.toContain('about the port');
+    expect(out).not.toMatch(/FOO=1\n#/);
+  });
+
+  it('keeps a comment that follows a kept key with the key below it, not the key above', () => {
+    const out = rewrite('FIRST=1\n# about second\nSECOND=2\n');
+
+    expect(out).toContain('FIRST=1\n# about second\nSECOND=2\n');
+  });
+
   it('keeps an `export KEY=value` line as written, and lets a managed export be replaced', () => {
     const previous = 'export EXTRA_FLAG=1\nexport PORT=9999\nGATEWAY_TOKEN=old-token\n';
 
@@ -300,6 +341,45 @@ describe('writeEnvFile with an existing .env', () => {
     expect(withoutTimestamp(third)).toBe(withoutTimestamp(first));
     expect(lineCount(third, PRESERVED_HEADER)).toBe(1);
     expect(lineCount(third, '# why')).toBe(1);
+  });
+
+  it('keeps nothing from the old file when asked not to preserve unmanaged keys', () => {
+    writeFileSync(
+      envPath,
+      '# why\nNERVE_PUBLIC_ORIGIN=https://nerve.example.com\nTRUSTED_PROXIES=10.0.0.1\nPORT=1111\nHOST=0.0.0.0\n',
+      'utf-8',
+    );
+
+    writeEnvFile(envPath, BASE_CONFIG, { preserveUnmanaged: false });
+
+    const out = readFileSync(envPath, 'utf-8');
+    const env = parseDotenv(out);
+    expect(env).not.toHaveProperty('NERVE_PUBLIC_ORIGIN');
+    expect(env).not.toHaveProperty('TRUSTED_PROXIES');
+    expect(env).not.toHaveProperty('HOST');
+    expect(env.PORT).toBe('3080');
+    expect(out).not.toContain(PRESERVED_HEADER);
+    expect(out).not.toContain('# why');
+  });
+
+  it('writes the same file with or without the old one when not preserving', () => {
+    writeFileSync(envPath, 'FOO=1\nGATEWAY_TOKEN=old\n', 'utf-8');
+    writeEnvFile(envPath, BASE_CONFIG, { preserveUnmanaged: false });
+    const overOldFile = readFileSync(envPath, 'utf-8');
+    rmSync(envPath);
+    writeEnvFile(envPath, BASE_CONFIG, { preserveUnmanaged: false });
+
+    expect(withoutTimestamp(overOldFile)).toBe(withoutTimestamp(readFileSync(envPath, 'utf-8')));
+  });
+
+  it('preserves by default and when preserveUnmanaged is true', () => {
+    writeFileSync(envPath, 'FOO=1\n', 'utf-8');
+    writeEnvFile(envPath, BASE_CONFIG, { preserveUnmanaged: true });
+    expect(readFileSync(envPath, 'utf-8')).toContain('FOO=1\n');
+
+    writeFileSync(envPath, 'FOO=2\n', 'utf-8');
+    writeEnvFile(envPath, BASE_CONFIG);
+    expect(readFileSync(envPath, 'utf-8')).toContain('FOO=2\n');
   });
 
   it('leaves no .env.tmp behind', () => {

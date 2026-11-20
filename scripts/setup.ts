@@ -229,6 +229,7 @@ async function main(): Promise<void> {
 
   // If .env exists, ask whether to update or start fresh
   // (Skip this when called from install.sh — the installer already asked)
+  let startFresh = false;
   if (hasExisting && existing.GATEWAY_TOKEN && !process.env.NERVE_INSTALLER) {
     const action = await select({
     theme: promptTheme,
@@ -245,6 +246,7 @@ async function main(): Promise<void> {
     }
     if (action === 'fresh') {
       Object.keys(existing).forEach((k) => delete (existing as Record<string, unknown>)[k]);
+      startFresh = true;
     }
   }
 
@@ -256,7 +258,8 @@ async function main(): Promise<void> {
     const backupPath = backupExistingEnv(ENV_PATH);
     info(`Previous config backed up to ${backupPath.replace(PROJECT_ROOT + '/', '')}`);
   }
-  writeEnvFile(ENV_PATH, config);
+  // "Start fresh" also drops the keys setup does not manage; they stay in the backup.
+  writeEnvFile(ENV_PATH, config, { preserveUnmanaged: !startFresh });
 
   console.log('');
   success('Configuration written to .env');

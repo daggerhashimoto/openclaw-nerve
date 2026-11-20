@@ -228,7 +228,7 @@ WS_ALLOWED_HOSTS=mygateway.local
 
 ### Crons, Kanban runs or workspace panels fail with `origin not allowed`
 
-**Symptom:** Chat works, but the Crons tab, Kanban runs, sub-agent spawns, or remote workspace panels (Files, Memory, Config, Skills) fail with `origin not allowed`. The server log shows `[gateway-rpc] Gateway connect rejected: origin not allowed`.
+**Symptom:** Chat works, but the Crons tab, Kanban runs, sub-agent spawns, or remote workspace panels (Files, Config, Skills) fail with `origin not allowed`. The server log shows `[gateway-rpc] Gateway connect rejected: origin not allowed`.
 
 **Cause:** Those features use the server's own WebSocket to the gateway. It sends `NERVE_PUBLIC_ORIGIN` as its `Origin`, or else the first non-loopback `ALLOWED_ORIGINS` entry, or else `http://127.0.0.1:<PORT>`. The gateway must allow that origin.
 

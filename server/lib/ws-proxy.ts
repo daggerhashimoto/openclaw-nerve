@@ -64,10 +64,11 @@ function effectivePort(url: URL): string {
 /**
  * Whether a proxy target is the gateway configured in GATEWAY_URL.
  *
- * Compares host and port only, so the http(s) GATEWAY_URL matches its ws(s)
- * endpoint. localhost, 127.0.0.1 and ::1 count as one host, as they do for
- * the origin allowlist and for the client's official-gateway check
- * (src/lib/gatewayUrls.ts). An unparseable GATEWAY_URL matches nothing.
+ * Compares host, port and TLS use, so the http(s) GATEWAY_URL matches its
+ * ws(s) endpoint. localhost, 127.0.0.1 and ::1 count as one host, as they do
+ * for the origin allowlist and for the client's official-gateway check
+ * (src/lib/gatewayUrls.ts); gatewayRelayUrl then connects such an alias to the
+ * configured host itself. An unparseable GATEWAY_URL matches nothing.
  */
 export function isConfiguredGatewayTarget(targetUrl: URL): boolean {
   let gatewayUrl: URL;
@@ -82,6 +83,22 @@ export function isConfiguredGatewayTarget(targetUrl: URL): boolean {
   return sameHost
     && isSecureScheme(gatewayUrl) === isSecureScheme(targetUrl)
     && effectivePort(gatewayUrl) === effectivePort(targetUrl);
+}
+
+/**
+ * The URL the proxy should open for a target. A target that names the
+ * configured gateway by a loopback alias (localhost for 127.0.0.1, say) is
+ * pinned to the host GATEWAY_URL names, so an injected token only ever reaches
+ * the listener the server's own gateway calls use, never another process on a
+ * different loopback address. Every other target is returned unchanged.
+ */
+export function gatewayRelayUrl(targetUrl: URL): URL {
+  if (!isConfiguredGatewayTarget(targetUrl)) return targetUrl;
+  const gatewayHost = new URL(config.gatewayUrl).hostname;
+  if (gatewayHost === targetUrl.hostname) return targetUrl;
+  const pinned = new URL(targetUrl.toString());
+  pinned.hostname = gatewayHost;
+  return pinned;
 }
 
 /** Active WSS instances — used for graceful shutdown */
@@ -175,7 +192,7 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
     // the token belongs to. Other allowed hosts get the client's own token.
     const injectToken = canInjectGatewayToken(req) && isConfiguredGatewayTarget(targetUrl);
 
-    createGatewayRelay(clientWs, targetUrl, clientOrigin, connId, injectToken);
+    createGatewayRelay(clientWs, gatewayRelayUrl(targetUrl), clientOrigin, connId, injectToken);
   });
 }
 

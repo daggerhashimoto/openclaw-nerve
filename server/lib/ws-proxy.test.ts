@@ -47,7 +47,7 @@ vi.mock('./openclaw-bin.js', () => ({
   resolveOpenclawBin: vi.fn(() => '/usr/bin/echo'),
 }));
 
-import { setupWebSocketProxy, closeAllWebSockets, isConfiguredGatewayTarget, _internals } from './ws-proxy.js';
+import { setupWebSocketProxy, closeAllWebSockets, isConfiguredGatewayTarget, gatewayRelayUrl, _internals } from './ws-proxy.js';
 import { config } from './config.js';
 import { verifySession, parseSessionCookie } from './session.js';
 import { createDeviceBlock } from './device-identity.js';
@@ -846,6 +846,19 @@ describe('isConfiguredGatewayTarget', () => {
     expect(isConfiguredGatewayTarget(new URL('wss://gateway.example/ws'))).toBe(true);
     expect(isConfiguredGatewayTarget(new URL('wss://gateway.example:443/ws'))).toBe(true);
     expect(isConfiguredGatewayTarget(new URL('ws://gateway.example/ws'))).toBe(false);
+  });
+
+  it('pins a loopback alias of GATEWAY_URL to the configured host', () => {
+    mockedGatewayConfig.gatewayUrl = 'http://127.0.0.1:18789';
+    expect(gatewayRelayUrl(new URL('ws://localhost:18789/ws')).toString()).toBe('ws://127.0.0.1:18789/ws');
+    expect(gatewayRelayUrl(new URL('ws://[::1]:18789/ws')).toString()).toBe('ws://127.0.0.1:18789/ws');
+    expect(gatewayRelayUrl(new URL('ws://127.0.0.1:18789/ws')).toString()).toBe('ws://127.0.0.1:18789/ws');
+  });
+
+  it('leaves targets that are not the configured gateway unchanged', () => {
+    mockedGatewayConfig.gatewayUrl = 'http://127.0.0.1:18789';
+    expect(gatewayRelayUrl(new URL('ws://localhost:18790/ws')).toString()).toBe('ws://localhost:18790/ws');
+    expect(gatewayRelayUrl(new URL('ws://gateway.example:18789/ws')).toString()).toBe('ws://gateway.example:18789/ws');
   });
 
   it('requires the transport security GATEWAY_URL uses', () => {

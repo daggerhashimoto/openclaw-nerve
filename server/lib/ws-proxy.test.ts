@@ -848,6 +848,18 @@ describe('isConfiguredGatewayTarget', () => {
     expect(isConfiguredGatewayTarget(new URL('ws://gateway.example/ws'))).toBe(false);
   });
 
+  it('requires the transport security GATEWAY_URL uses', () => {
+    mockedGatewayConfig.gatewayUrl = 'https://gateway.example';
+    expect(isConfiguredGatewayTarget(new URL('ws://gateway.example:443/ws'))).toBe(false);
+
+    mockedGatewayConfig.gatewayUrl = 'wss://gateway.example:8443';
+    expect(isConfiguredGatewayTarget(new URL('wss://gateway.example:8443/ws'))).toBe(true);
+    expect(isConfiguredGatewayTarget(new URL('ws://gateway.example:8443/ws'))).toBe(false);
+
+    mockedGatewayConfig.gatewayUrl = 'http://127.0.0.1:18789';
+    expect(isConfiguredGatewayTarget(new URL('wss://127.0.0.1:18789/ws'))).toBe(false);
+  });
+
   it('rejects another host or another port', () => {
     mockedGatewayConfig.gatewayUrl = 'http://127.0.0.1:18789';
     expect(isConfiguredGatewayTarget(new URL('ws://127.0.0.1:18790/ws'))).toBe(false);

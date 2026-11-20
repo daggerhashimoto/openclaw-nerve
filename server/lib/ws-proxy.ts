@@ -50,10 +50,15 @@ function gatewayCall(method: string, params: Record<string, unknown>): Promise<u
   return gatewayRpcCall(method, params);
 }
 
+/** Whether a ws(s) or http(s) URL uses TLS. */
+function isSecureScheme(url: URL): boolean {
+  return url.protocol === 'wss:' || url.protocol === 'https:';
+}
+
 /** Port a ws(s) or http(s) URL connects to, filling in the scheme default. */
 function effectivePort(url: URL): string {
   if (url.port) return url.port;
-  return url.protocol === 'wss:' || url.protocol === 'https:' ? '443' : '80';
+  return isSecureScheme(url) ? '443' : '80';
 }
 
 /**
@@ -73,7 +78,10 @@ export function isConfiguredGatewayTarget(targetUrl: URL): boolean {
   }
   const sameHost = gatewayUrl.hostname === targetUrl.hostname
     || (isLocalHost(gatewayUrl.hostname) && isLocalHost(targetUrl.hostname));
-  return sameHost && effectivePort(gatewayUrl) === effectivePort(targetUrl);
+  // The token must not leave over plain ws:// when GATEWAY_URL uses TLS.
+  return sameHost
+    && isSecureScheme(gatewayUrl) === isSecureScheme(targetUrl)
+    && effectivePort(gatewayUrl) === effectivePort(targetUrl);
 }
 
 /** Active WSS instances — used for graceful shutdown */

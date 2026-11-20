@@ -24,7 +24,7 @@ import { verifySession, parseSessionCookie } from './session.js';
 import { createDeviceBlock, getDeviceIdentity } from './device-identity.js';
 import { gatewayRpcCall } from './gateway-rpc.js';
 import { canInjectGatewayToken } from './trust-utils.js';
-import { isAllowedOrigin } from './origin-utils.js';
+import { isAllowedOrigin, isLocalHost } from './origin-utils.js';
 import { BoundedWebSocketSender } from './ws-backpressure.js';
 
 /** @internal — exported for test overrides */
@@ -48,6 +48,57 @@ const CONTROL_UI_CLIENT_ID = 'openclaw-control-ui';
  */
 function gatewayCall(method: string, params: Record<string, unknown>): Promise<unknown> {
   return gatewayRpcCall(method, params);
+}
+
+/** Whether a ws(s) or http(s) URL uses TLS. */
+function isSecureScheme(url: URL): boolean {
+  return url.protocol === 'wss:' || url.protocol === 'https:';
+}
+
+/** Port a ws(s) or http(s) URL connects to, filling in the scheme default. */
+function effectivePort(url: URL): string {
+  if (url.port) return url.port;
+  return isSecureScheme(url) ? '443' : '80';
+}
+
+/**
+ * Whether a proxy target is the gateway configured in GATEWAY_URL.
+ *
+ * Compares host, port and TLS use, so the http(s) GATEWAY_URL matches its
+ * ws(s) endpoint. localhost, 127.0.0.1 and ::1 count as one host, as they do
+ * for the origin allowlist and for the client's official-gateway check
+ * (src/lib/gatewayUrls.ts); gatewayRelayUrl then connects such an alias to the
+ * configured host itself. An unparseable GATEWAY_URL matches nothing.
+ */
+export function isConfiguredGatewayTarget(targetUrl: URL): boolean {
+  let gatewayUrl: URL;
+  try {
+    gatewayUrl = new URL(config.gatewayUrl);
+  } catch {
+    return false;
+  }
+  const sameHost = gatewayUrl.hostname === targetUrl.hostname
+    || (isLocalHost(gatewayUrl.hostname) && isLocalHost(targetUrl.hostname));
+  // The token must not leave over plain ws:// when GATEWAY_URL uses TLS.
+  return sameHost
+    && isSecureScheme(gatewayUrl) === isSecureScheme(targetUrl)
+    && effectivePort(gatewayUrl) === effectivePort(targetUrl);
+}
+
+/**
+ * The URL the proxy should open for a target. A target that names the
+ * configured gateway by a loopback alias (localhost for 127.0.0.1, say) is
+ * pinned to the host GATEWAY_URL names, so an injected token only ever reaches
+ * the listener the server's own gateway calls use, never another process on a
+ * different loopback address. Every other target is returned unchanged.
+ */
+export function gatewayRelayUrl(targetUrl: URL): URL {
+  if (!isConfiguredGatewayTarget(targetUrl)) return targetUrl;
+  const gatewayHost = new URL(config.gatewayUrl).hostname;
+  if (gatewayHost === targetUrl.hostname) return targetUrl;
+  const pinned = new URL(targetUrl.toString());
+  pinned.hostname = gatewayHost;
+  return pinned;
 }
 
 /** Active WSS instances — used for graceful shutdown */
@@ -136,11 +187,12 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
     const clientOrigin = (Array.isArray(req.headers.origin) ? req.headers.origin[0] : req.headers.origin)
       || `${scheme}://${req.headers.host}`;
 
-    // Determine if the client is trusted enough for token injection.
-    // canInjectGatewayToken accounts for both auth state and loopback detection (proxy-aware).
-    const isTrusted = canInjectGatewayToken(req);
+    // Inject GATEWAY_TOKEN only for a trusted client (canInjectGatewayToken covers
+    // auth state and proxy-aware loopback detection) and only toward the gateway
+    // the token belongs to. Other allowed hosts get the client's own token.
+    const injectToken = canInjectGatewayToken(req) && isConfiguredGatewayTarget(targetUrl);
 
-    createGatewayRelay(clientWs, targetUrl, clientOrigin, connId, isTrusted);
+    createGatewayRelay(clientWs, gatewayRelayUrl(targetUrl), clientOrigin, connId, injectToken);
   });
 }
 
@@ -161,7 +213,7 @@ function createGatewayRelay(
   targetUrl: URL,
   clientOrigin: string,
   connId: string,
-  isTrusted: boolean,
+  injectToken: boolean,
 ): void {
   const tag = `[ws-proxy:${connId}]`;
   const connStartTime = Date.now();
@@ -273,7 +325,7 @@ function createGatewayRelay(
 
     let modified = savedConnectMsg;
     // Inject gateway token proxy-side for trusted clients if not provided by browser
-    if (isTrusted && config.gatewayToken && !(modified.params as ConnectParams)?.auth?.token) {
+    if (injectToken && config.gatewayToken && !(modified.params as ConnectParams)?.auth?.token) {
       modified = {
         ...modified,
         params: {

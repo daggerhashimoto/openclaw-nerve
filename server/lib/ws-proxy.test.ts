@@ -15,6 +15,7 @@ vi.mock('./config.js', () => {
       sslPort: 3443,
       sessionSecret: 'test-secret',
       gatewayToken: 'test-token',
+      gatewayUrl: 'http://127.0.0.1:18789',
     },
     WS_ALLOWED_HOSTS,
     SESSION_COOKIE_NAME: 'nerve_session_3080',
@@ -46,13 +47,13 @@ vi.mock('./openclaw-bin.js', () => ({
   resolveOpenclawBin: vi.fn(() => '/usr/bin/echo'),
 }));
 
-import { setupWebSocketProxy, closeAllWebSockets, _internals } from './ws-proxy.js';
+import { setupWebSocketProxy, closeAllWebSockets, isConfiguredGatewayTarget, gatewayRelayUrl, _internals } from './ws-proxy.js';
 import { config } from './config.js';
 import { verifySession, parseSessionCookie } from './session.js';
 import { createDeviceBlock } from './device-identity.js';
 import { createServer as createHttpServer } from 'node:http';
 
-const mockedConfig = config as { auth: boolean; sessionSecret: string };
+const mockedConfig = config as { auth: boolean; sessionSecret: string; gatewayUrl: string };
 const mockedVerifySession = verifySession as ReturnType<typeof vi.fn>;
 const mockedParseSessionCookie = parseSessionCookie as ReturnType<typeof vi.fn>;
 
@@ -109,6 +110,7 @@ describe('ws-proxy', () => {
 
   beforeEach(async () => {
     mockedConfig.auth = false;
+    mockedConfig.gatewayUrl = mockGw.httpUrl;
     mockedVerifySession.mockReset();
     mockedParseSessionCookie.mockReset();
     mockGw.clearReceived();
@@ -735,6 +737,152 @@ describe('ws-proxy', () => {
 
       ws.close();
     });
+  });
+
+  describe('gateway token target', () => {
+    let frameCounter = 0;
+
+    /** Connect as a trusted loopback client and return the connect params the gateway received. */
+    async function forwardedConnectParams(target: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+      mockGw.clearReceived();
+      const id = `c-target-${++frameCounter}`;
+      const ws = new WebSocket(`ws://127.0.0.1:${proxyPort}/ws?target=${encodeURIComponent(target)}`);
+      try {
+        await new Promise<void>((resolve) => ws.on('open', resolve));
+        const response = new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('timeout waiting for connect response')), 5000);
+          ws.on('message', (data) => {
+            try {
+              const msg = JSON.parse(data.toString());
+              if (msg.type === 'res' && msg.id === id) {
+                clearTimeout(timer);
+                resolve();
+              }
+            } catch { /* ignore */ }
+          });
+        });
+        ws.send(JSON.stringify({ type: 'req', method: 'connect', id, params }));
+        await response;
+
+        const connectMsg = mockGw.received.find((m) => {
+          const d = m.data as Record<string, unknown>;
+          return d.type === 'req' && d.method === 'connect';
+        });
+        expect(connectMsg).toBeTruthy();
+        return (connectMsg!.data as Record<string, unknown>).params as Record<string, unknown>;
+      } finally {
+        ws.close();
+      }
+    }
+
+    function authOf(params: Record<string, unknown>): Record<string, unknown> {
+      return (params.auth as Record<string, unknown> | undefined) ?? {};
+    }
+
+    it('injects the gateway token when the target is GATEWAY_URL', async () => {
+      const params = await forwardedConnectParams(mockGw.url + '/ws', { client: { id: 'nerve-ui' } });
+      expect(authOf(params).token).toBe('test-token');
+    });
+
+    it('injects the gateway token when the target names GATEWAY_URL by a loopback alias', async () => {
+      mockedConfig.gatewayUrl = `http://localhost:${mockGw.port}`;
+      const params = await forwardedConnectParams(mockGw.url + '/ws', { client: { id: 'nerve-ui' } });
+      expect(authOf(params).token).toBe('test-token');
+    });
+
+    it('does not inject the gateway token toward another allowed host', async () => {
+      // 127.0.0.1 is in WS_ALLOWED_HOSTS, but GATEWAY_URL names a different host
+      mockedConfig.gatewayUrl = `http://gateway.example:${mockGw.port}`;
+      const params = await forwardedConnectParams(mockGw.url + '/ws', { client: { id: 'nerve-ui' } });
+      expect(authOf(params).token).toBeUndefined();
+    });
+
+    it('does not inject the gateway token toward an allowed host on another port', async () => {
+      mockedConfig.gatewayUrl = `http://127.0.0.1:${mockGw.port + 1}`;
+      const params = await forwardedConnectParams(mockGw.url + '/ws', { auth: { token: '' }, client: { id: 'nerve-ui' } });
+      expect(authOf(params).token).toBe('');
+    });
+
+    it('forwards the client token unchanged toward another allowed host', async () => {
+      mockedConfig.gatewayUrl = `http://gateway.example:${mockGw.port}`;
+      const params = await forwardedConnectParams(mockGw.url + '/ws', {
+        auth: { token: 'client-token' },
+        client: { id: 'nerve-ui' },
+      });
+      expect(authOf(params).token).toBe('client-token');
+    });
+  });
+});
+
+describe('isConfiguredGatewayTarget', () => {
+  const mockedGatewayConfig = config as { gatewayUrl: string };
+  let originalGatewayUrl: string;
+
+  beforeEach(() => {
+    originalGatewayUrl = mockedGatewayConfig.gatewayUrl;
+  });
+
+  afterEach(() => {
+    mockedGatewayConfig.gatewayUrl = originalGatewayUrl;
+  });
+
+  it('matches the ws endpoint of an http GATEWAY_URL on the same host and port', () => {
+    mockedGatewayConfig.gatewayUrl = 'http://127.0.0.1:18789';
+    expect(isConfiguredGatewayTarget(new URL('ws://127.0.0.1:18789/ws'))).toBe(true);
+    expect(isConfiguredGatewayTarget(new URL('ws://127.0.0.1:18789'))).toBe(true);
+  });
+
+  it('treats localhost, 127.0.0.1 and ::1 as the same host', () => {
+    mockedGatewayConfig.gatewayUrl = 'http://127.0.0.1:18789';
+    expect(isConfiguredGatewayTarget(new URL('ws://localhost:18789/ws'))).toBe(true);
+    expect(isConfiguredGatewayTarget(new URL('ws://[::1]:18789/ws'))).toBe(true);
+
+    mockedGatewayConfig.gatewayUrl = 'http://localhost:18789';
+    expect(isConfiguredGatewayTarget(new URL('ws://127.0.0.1:18789/ws'))).toBe(true);
+  });
+
+  it('compares default ports by each URL scheme', () => {
+    mockedGatewayConfig.gatewayUrl = 'https://gateway.example';
+    expect(isConfiguredGatewayTarget(new URL('wss://gateway.example/ws'))).toBe(true);
+    expect(isConfiguredGatewayTarget(new URL('wss://gateway.example:443/ws'))).toBe(true);
+    expect(isConfiguredGatewayTarget(new URL('ws://gateway.example/ws'))).toBe(false);
+  });
+
+  it('pins a loopback alias of GATEWAY_URL to the configured host', () => {
+    mockedGatewayConfig.gatewayUrl = 'http://127.0.0.1:18789';
+    expect(gatewayRelayUrl(new URL('ws://localhost:18789/ws')).toString()).toBe('ws://127.0.0.1:18789/ws');
+    expect(gatewayRelayUrl(new URL('ws://[::1]:18789/ws')).toString()).toBe('ws://127.0.0.1:18789/ws');
+    expect(gatewayRelayUrl(new URL('ws://127.0.0.1:18789/ws')).toString()).toBe('ws://127.0.0.1:18789/ws');
+  });
+
+  it('leaves targets that are not the configured gateway unchanged', () => {
+    mockedGatewayConfig.gatewayUrl = 'http://127.0.0.1:18789';
+    expect(gatewayRelayUrl(new URL('ws://localhost:18790/ws')).toString()).toBe('ws://localhost:18790/ws');
+    expect(gatewayRelayUrl(new URL('ws://gateway.example:18789/ws')).toString()).toBe('ws://gateway.example:18789/ws');
+  });
+
+  it('requires the transport security GATEWAY_URL uses', () => {
+    mockedGatewayConfig.gatewayUrl = 'https://gateway.example';
+    expect(isConfiguredGatewayTarget(new URL('ws://gateway.example:443/ws'))).toBe(false);
+
+    mockedGatewayConfig.gatewayUrl = 'wss://gateway.example:8443';
+    expect(isConfiguredGatewayTarget(new URL('wss://gateway.example:8443/ws'))).toBe(true);
+    expect(isConfiguredGatewayTarget(new URL('ws://gateway.example:8443/ws'))).toBe(false);
+
+    mockedGatewayConfig.gatewayUrl = 'http://127.0.0.1:18789';
+    expect(isConfiguredGatewayTarget(new URL('wss://127.0.0.1:18789/ws'))).toBe(false);
+  });
+
+  it('rejects another host or another port', () => {
+    mockedGatewayConfig.gatewayUrl = 'http://127.0.0.1:18789';
+    expect(isConfiguredGatewayTarget(new URL('ws://127.0.0.1:18790/ws'))).toBe(false);
+    expect(isConfiguredGatewayTarget(new URL('ws://gateway.example:18789/ws'))).toBe(false);
+    expect(isConfiguredGatewayTarget(new URL('ws://127.0.0.2:18789/ws'))).toBe(false);
+  });
+
+  it('rejects every target when GATEWAY_URL does not parse', () => {
+    mockedGatewayConfig.gatewayUrl = 'not a url';
+    expect(isConfiguredGatewayTarget(new URL('ws://127.0.0.1:18789/ws'))).toBe(false);
   });
 });
 

@@ -76,6 +76,18 @@ describe('securityHeaders middleware', () => {
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=3600');
   });
 
+  it('preserves a Content-Security-Policy set by the route', async () => {
+    const { securityHeaders } = await import('./security-headers.js');
+    const app = new Hono();
+    app.use('*', securityHeaders);
+    app.get('/sandboxed', (c) => {
+      c.header('Content-Security-Policy', "sandbox; default-src 'none'");
+      return c.text('ok');
+    });
+    const res = await app.request('/sandboxed');
+    expect(res.headers.get('Content-Security-Policy')).toBe("sandbox; default-src 'none'");
+  });
+
   it('CSP includes connect-src with websocket origins', async () => {
     const app = await buildApp();
     const res = await app.request('/test');

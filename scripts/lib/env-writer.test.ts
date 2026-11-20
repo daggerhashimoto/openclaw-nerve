@@ -222,6 +222,17 @@ describe('writeEnvFile with an existing .env', () => {
     expect(lineCount(out, '# OpenClaw Gateway')).toBe(1);
   });
 
+  it('writes an empty colon assignment so it cannot swallow the next key', () => {
+    const previous = 'EMPTY: \nNEXT=ok\nexport ALSO_EMPTY:\t\nLAST=1\n';
+    const out = rewrite(previous);
+    const env = parseDotenv(out);
+    expect(env.EMPTY).toBe('');
+    expect(env.NEXT).toBe('ok');
+    expect(env.ALSO_EMPTY).toBe('');
+    expect(env.LAST).toBe('1');
+    expect(env).toMatchObject(parseDotenv(previous));
+  });
+
   it('carries a one-line comment that follows a managed key to the kept key below it', () => {
     const out = rewrite(
       'PORT=3080\n# public endpoint\nNERVE_PUBLIC_ORIGIN=https://nerve.example.com\n',

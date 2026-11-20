@@ -89,6 +89,14 @@ const PRESERVED_HEADER = '# Preserved from your previous .env (not managed by se
  */
 const DOTENV_LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?[^\S\n]*(?:#.*)?(?:$|$)/mg;
 
+/**
+ * `KEY:` followed only by whitespace, once the line is trimmed. dotenv needs
+ * whitespace after the colon, so with the spaces trimmed away it takes the
+ * newline as that whitespace and reads the next line as the value. Rewriting
+ * it as `KEY=` keeps the empty value on its own line.
+ */
+const EMPTY_COLON_ASSIGNMENT = /^((?:export\s+)?[\w.-]+):\s*$/;
+
 /** The comment lines that sit directly above a key, with no blank line between. */
 function commentRunAbove(gap: string): string[] {
   const lines = gap.split('\n');
@@ -120,7 +128,8 @@ export function extractUnmanagedEntries(content: string): string[] {
     const key = match[1];
     if (MANAGED_KEY_SET.has(key)) continue;
     kept.delete(key); // re-insert so the entry sits where its last assignment was
-    kept.set(key, [...commentRunAbove(gap), match[0].trim()].join('\n'));
+    const assignment = match[0].trim().replace(EMPTY_COLON_ASSIGNMENT, '$1=');
+    kept.set(key, [...commentRunAbove(gap), assignment].join('\n'));
   }
   return [...kept.values()];
 }

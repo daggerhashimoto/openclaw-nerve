@@ -25,6 +25,14 @@ cd ~/nerve
 npm run update -- --yes
 ```
 
+On Linux the installer sets Nerve up as a system service (`/etc/systemd/system/nerve.service`), and the updater restarts it without `sudo`. If your user may not restart system services, update without the restart and restart the service yourself once the update succeeds:
+
+```bash
+npm run update -- --yes --no-restart && sudo systemctl restart nerve.service
+```
+
+See [The service restart command fails](#the-service-restart-command-fails-exit-50-or-70) for what happens otherwise.
+
 The updater:
 
 1. Takes the update lock.

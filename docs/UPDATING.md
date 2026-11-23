@@ -213,9 +213,9 @@ Fix the cause above, then run the update again. If the run ended with exit 70 in
 
 ### The service restart command fails (exit 50 or 70)
 
-The restart runs as your user, without `sudo`. If the command itself errors (for example your user may not restart a system-level unit), the updater fails with code 50 and rolls back: it restores and rebuilds the previous version, then restarts it with the same command. That restart usually fails the same way, so the run ends with exit 70. The service was never restarted, so it keeps running the version it ran before the update, and the previous version is back on disk.
+The restart runs as your user, without `sudo`. If the command itself errors (for example your user may not restart a system-level unit), the updater fails with code 50 and rolls back: it restores and rebuilds the previous version, then restarts it with the same command. That restart usually fails the same way, so the run ends with exit 70. If the restart command failed without stopping anything, the service keeps running the version it ran before the update. A restart can also stop the service and then fail to start it, so check the service state (`systemctl status nerve.service`, or `launchctl print gui/$(id -u)/com.nerve.server` on macOS) rather than assuming it is up.
 
-**Fix:** Run the update with `--no-restart`, then restart the service yourself:
+**Fix:** First check which version is checked out (`git -C ~/nerve describe --tags`). If the rollback failed at its checkout step, the tree is still on the new release and a retry stops at "Already up to date", so restore the previous checkout first as in [Build failure after checkout](#build-failure-after-checkout-exit-40). Then run the update with `--no-restart` and restart the service yourself:
 ```bash
 npm run update -- --yes --no-restart
 sudo systemctl restart nerve.service

@@ -52,7 +52,7 @@ npm run setup
 
 Choose **Via Tailscale tailnet IP** or **Via Tailscale Serve**. For Serve, setup offers to run `tailscale serve --bg http://127.0.0.1:3080` for you. Setup then writes `HOST`, `ALLOWED_ORIGINS` and `CSP_CONNECT_EXTRA` as listed under each option below, plus `WS_ALLOWED_HOSTS` for the tailnet IP. If the gateway is on this machine, it also adds the origin to the gateway config and restarts the gateway, after asking.
 
-Authentication differs by mode. Setup asks for a password (or turns authentication on with the gateway token as the password) only when Nerve binds to `0.0.0.0`, which is the tailnet-IP case. Serve keeps Nerve on `127.0.0.1`, so setup does not ask. For an install that was localhost-only, add `NERVE_AUTH=true` to `.env` and restart Nerve before you start Serve or run setup with it, so tailnet clients never reach Nerve with authentication off. Setup keeps it on later runs.
+Authentication differs by mode. Setup asks for a password (or turns authentication on with the gateway token as the password) only when Nerve binds to `0.0.0.0`, which is the tailnet-IP case. Serve keeps Nerve on `127.0.0.1`, so setup does not ask. For an install that was localhost-only, add `NERVE_AUTH=true` to `.env` and restart Nerve before you start Serve or run setup with it, so tailnet clients never reach Nerve with authentication off. Setup keeps it on later runs when you choose **Update existing configuration**. **Start fresh** clears it, and in Serve mode setup does not ask again, so after a Start fresh run check that `.env` still has `NERVE_AUTH=true` before you restart Nerve.
 
 Non-interactive, with Serve already running (`tailscale serve --bg http://127.0.0.1:3080`):
 
@@ -185,6 +185,8 @@ sudo systemctl restart nerve.service
 launchctl kickstart -k gui/$(id -u)/com.nerve.server
 ```
 
+If you run Nerve in the foreground without a service (`npm run prod`), stop it and run `npm run prod` again.
+
 With no password hash configured, the gateway token works as the password.
 
 ### 2. Enable Tailscale Serve
@@ -282,6 +284,8 @@ launchctl kickstart -k gui/$(id -u)/com.nerve.server
 
 openclaw gateway restart
 ```
+
+Without a service, stop the foreground `npm run prod` and start it again.
 
 ### 7. Validate
 

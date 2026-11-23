@@ -169,7 +169,7 @@ npm run prod
 npm run update -- --yes
 ```
 
-Fetches the latest release, rebuilds, restarts, verifies health, and rolls back automatically if the build, restart or health check fails. When a release is out, the status bar shows an **Update** button with the command for your install. More in [Updating](docs/UPDATING.md).
+Fetches the latest release, rebuilds, restarts, verifies health, and tries to roll back if the build, restart or health check fails. If the rollback fails too (exit 70), recover by hand as described in [Updating](docs/UPDATING.md). When a release is out, the status bar shows an **Update** button with the command for your install.
 
 </details>
 

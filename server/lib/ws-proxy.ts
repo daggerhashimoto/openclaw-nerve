@@ -169,7 +169,11 @@ export function setupWebSocketProxy(server: HttpServer | HttpsServer): void {
       return;
     }
 
-    if (!['ws:', 'wss:'].includes(targetUrl.protocol) || !WS_ALLOWED_HOSTS.has(targetUrl.hostname)) {
+    // URL keeps IPv6 hostnames in brackets ([::1]), while the allowlist holds
+    // them bare (::1), so accept either form.
+    const bareHostname = targetUrl.hostname.replace(/^\[(.*)\]$/, '$1');
+    const hostAllowed = WS_ALLOWED_HOSTS.has(targetUrl.hostname) || WS_ALLOWED_HOSTS.has(bareHostname);
+    if (!['ws:', 'wss:'].includes(targetUrl.protocol) || !hostAllowed) {
       console.warn(`${tag} Rejected: target not allowed: ${target}`);
       clientWs.close(1008, 'Target not allowed');
       return;

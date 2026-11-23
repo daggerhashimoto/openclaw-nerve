@@ -23,10 +23,19 @@ function headerText(value: HeaderValue): string {
  * on the left, so only the right-hand entries were written by trusted hops.
  *
  * When every entry is a trusted proxy, or the header is absent, `X-Real-IP`
- * is used: a proxy that sets only `X-Real-IP` passes the client's own
- * `X-Forwarded-For` through untouched. After that comes the left-most
- * `X-Forwarded-For` entry. Returns undefined when neither header names an
- * address.
+ * is used, then the left-most `X-Forwarded-For` entry. Returns undefined when
+ * neither header names an address.
+ *
+ * The proxy must write `X-Forwarded-For` (set or append) for the result to be
+ * the real client. A proxy that sets only `X-Real-IP` and passes the client's
+ * own `X-Forwarded-For` through is not distinguishable from one that appends
+ * to `X-Forwarded-For` and passes a client-sent `X-Real-IP` through, so no
+ * header order is safe for both. `X-Forwarded-For` wins because the common
+ * proxies (nginx `$proxy_add_x_forwarded_for`, Caddy, Tailscale Serve) write
+ * it. Behind an `X-Real-IP`-only proxy a client can therefore pick its own
+ * rate-limit bucket with a non-loopback `X-Forwarded-For` entry. It still
+ * cannot look local: loopback entries count as trusted hops and are skipped,
+ * which leaves the proxy's `X-Real-IP`.
  */
 export function resolveForwardedClientIp(
   forwardedFor: HeaderValue,

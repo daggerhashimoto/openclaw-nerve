@@ -790,6 +790,14 @@ describe('ws-proxy', () => {
       expect(authOf(params).token).toBe('test-token');
     });
 
+    it('accepts the bracketed [::1] alias and relays it to the configured gateway host', async () => {
+      // GATEWAY_URL names 127.0.0.1, so the [::1] target must pass the host
+      // allowlist and then be pinned to 127.0.0.1, where the mock gateway listens.
+      mockedConfig.gatewayUrl = `http://127.0.0.1:${mockGw.port}`;
+      const params = await forwardedConnectParams(`ws://[::1]:${mockGw.port}/ws`, { client: { id: 'nerve-ui' } });
+      expect(authOf(params).token).toBe('test-token');
+    });
+
     it('does not inject the gateway token toward another allowed host', async () => {
       // 127.0.0.1 is in WS_ALLOWED_HOSTS, but GATEWAY_URL names a different host
       mockedConfig.gatewayUrl = `http://gateway.example:${mockGw.port}`;

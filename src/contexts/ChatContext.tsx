@@ -525,6 +525,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       const beginTurn = () => {
         activeRunIdRef.current = runId;
+        // Once a newer turn has begun, a late final of the run that ended is not this turn's.
+        endedRunIdRef.current = null;
         run.startedAt = Date.now();
         run.finalized = false;
         run.turnStarted = true;

@@ -131,6 +131,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // ─── Run state management ─────────────────────────────────────────────────
   const runsRef = useRef<Map<string, RunState>>(new Map());
   const activeRunIdRef = useRef<string | null>(null);
+  // The run whose lifecycle end arrived while it was on screen and not yet finalized.
+  // A 2026.9 gateway sends that end just before the chat final, so the final has to
+  // be recognised as this run's own even though no run is active any more.
+  const endedRunIdRef = useRef<string | null>(null);
   const lastGatewaySeqRef = useRef<number | null>(null);
   const historyRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Heartbeats on the open session never show as a run; rows one commits wait until it is over.
@@ -196,6 +200,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     recoveryHook.resetRecoveryState();
     runsRef.current.clear();
     activeRunIdRef.current = null;
+    endedRunIdRef.current = null;
     lastGatewaySeqRef.current = null;
     heartbeatRuns.settle();
     heartbeatRowsPendingRef.current = false;
@@ -457,6 +462,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           const runFinalized = activeRun ? runsRef.current.get(activeRun)?.finalized : false;
           if (!runFinalized) {
             triggerRecovery('reconnect');
+            endedRunIdRef.current = activeRun;
           }
           activeRunIdRef.current = null;
           return;
@@ -575,9 +581,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        const endedJustBefore = endedRunIdRef.current === runId;
+        if (endedJustBefore) endedRunIdRef.current = null;
         const isActiveRun = activeRunBefore !== null
           ? activeRunBefore === runId
-          : isGeneratingRef.current;
+          : isGeneratingRef.current || endedJustBefore;
 
         run.finalized = true;
         run.status = 'ok';

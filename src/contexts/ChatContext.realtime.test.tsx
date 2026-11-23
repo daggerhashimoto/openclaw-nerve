@@ -62,10 +62,11 @@ describe('ChatContext realtime handling (protocol v4)', () => {
       }),
     }));
 
+    const speakMock = vi.fn();
     vi.doMock('./SettingsContext', () => ({
       useSettings: () => ({
         soundEnabled: false,
-        speak: vi.fn(),
+        speak: speakMock,
       }),
     }));
 
@@ -95,7 +96,7 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     };
     const historyCalls = () => rpcMock.mock.calls.filter(([method]) => method === 'chat.history').length;
 
-    return { emit, historyCalls, getChat: () => chat!, rpcMock };
+    return { emit, historyCalls, getChat: () => chat!, rpcMock, speakMock };
   }
 
   const chat = (payload: Record<string, unknown>) => ({ sessionKey: SESSION, runId: RUN, ...payload });
@@ -509,6 +510,51 @@ describe('ChatContext realtime handling (protocol v4)', () => {
         'Clouds form.',
         'Rain falls.',
       ]);
+    });
+  });
+  describe('speaking a voice reply', () => {
+    const spoken = 'Here is the chart.';
+    const reply = `${spoken}\n\n[tts:${spoken}]`;
+    const lifecycle = (phase: 'start' | 'end', seq: number) => (
+      { sessionKey: SESSION, runId: RUN, seq, stream: 'lifecycle', data: { phase } }
+    );
+
+    it('speaks the reply when its final arrives before the run ends', async () => {
+      const { emit, speakMock } = await setup();
+
+      emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }));
+      emit('agent', lifecycle('start', 2));
+      emit('chat', chat({ state: 'delta', seq: 33, deltaText: spoken, message: textMessage(spoken, NOW) }));
+      emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 3000) }));
+      emit('agent', lifecycle('end', 76));
+
+      expect(speakMock).toHaveBeenCalledTimes(1);
+      expect(speakMock).toHaveBeenCalledWith(spoken);
+    });
+
+    it('stays silent for another run\'s final after the run on screen ended', async () => {
+      const { emit, speakMock } = await setup();
+
+      emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }));
+      emit('agent', lifecycle('start', 2));
+      emit('agent', lifecycle('end', 74));
+      emit('chat', { sessionKey: SESSION, runId: 'run-2', state: 'final', seq: 5, stopReason: 'stop', message: textMessage(reply, NOW + 3000) });
+
+      expect(speakMock).not.toHaveBeenCalled();
+    });
+
+    // A 2026.9 gateway sends the run's lifecycle end just before the chat final.
+    it('speaks the reply when the run ends just before its final arrives', async () => {
+      const { emit, speakMock } = await setup();
+
+      emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }));
+      emit('agent', lifecycle('start', 2));
+      emit('chat', chat({ state: 'delta', seq: 33, deltaText: spoken, message: textMessage(spoken, NOW) }));
+      emit('agent', lifecycle('end', 74));
+      emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 3000) }));
+
+      expect(speakMock).toHaveBeenCalledTimes(1);
+      expect(speakMock).toHaveBeenCalledWith(spoken);
     });
   });
 });

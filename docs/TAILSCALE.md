@@ -167,7 +167,27 @@ Voice input does not work over this plain HTTP address (see Common failures).
 
 This keeps Nerve on localhost and lets Tailscale publish a private HTTPS URL.
 
-### 1. Enable Tailscale Serve
+### 1. Turn on authentication first
+
+Serve makes Nerve reachable from the whole tailnet as soon as it starts, so turn on authentication before you start it. Open `~/nerve/.env`, set:
+
+```bash
+NERVE_AUTH=true
+```
+
+then restart Nerve:
+
+```bash
+# Nerve on Linux (systemd)
+sudo systemctl restart nerve.service
+
+# Nerve on macOS (launchd)
+launchctl kickstart -k gui/$(id -u)/com.nerve.server
+```
+
+With no password hash configured, the gateway token works as the password.
+
+### 2. Enable Tailscale Serve
 
 On the Nerve machine:
 
@@ -175,7 +195,7 @@ On the Nerve machine:
 tailscale serve --bg http://127.0.0.1:3080
 ```
 
-### 2. Find the Serve origin
+### 3. Find the Serve origin
 
 ```bash
 tailscale serve status --json | node -e '
@@ -201,7 +221,7 @@ https://your-host.tailnet-name.ts.net
 
 This guide calls that value `<serve-origin>`, and its hostname without the scheme `<serve-host>`.
 
-### 3. Update Nerve `.env`
+### 4. Update Nerve `.env`
 
 Open `~/nerve/.env` and set:
 
@@ -228,7 +248,7 @@ Notes:
 - Remove a leftover `WS_ALLOWED_HOSTS` entry for the tailnet IP if you are switching to Serve only. It does no harm, but it no longer does anything useful.
 - Keep `NERVE_AUTH=true` even though Serve is private. Serve reaches Nerve from the same machine, and Nerve trusts local clients with the gateway token when authentication is off. With `NERVE_AUTH=true` and no password hash configured, the gateway token works as the password.
 
-### 4. Allow the origin on the gateway
+### 5. Allow the origin on the gateway
 
 Add the same origin to `~/.openclaw/openclaw.json`:
 
@@ -251,7 +271,7 @@ NODE
 
 The same strict-JSON caveat applies as in Option A.
 
-### 5. Restart Nerve and the gateway
+### 6. Restart Nerve and the gateway
 
 ```bash
 # Nerve on Linux (systemd)
@@ -263,7 +283,7 @@ launchctl kickstart -k gui/$(id -u)/com.nerve.server
 openclaw gateway restart
 ```
 
-### 6. Validate
+### 7. Validate
 
 On the Nerve machine:
 

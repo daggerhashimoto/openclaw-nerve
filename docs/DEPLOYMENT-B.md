@@ -49,6 +49,7 @@ If you need the full file browser, Memory, raw previews and file changes, put Ne
 ## Prerequisites
 
 - Node.js 22 or later on the Nerve host
+- The `openclaw` CLI on the Nerve host if you use the installer (`npm install -g openclaw`). `install.sh` checks for it and exits without it, even though the gateway is remote. Without the CLI, use the manual install in step 2
 - An OpenClaw gateway running on the gateway host (it must support connect protocol version 4)
 - A private network path to the gateway host (Tailscale, WireGuard, an SSH tunnel or a private VPC)
 - The gateway token
@@ -98,6 +99,17 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
 cd ~/nerve
 npm run setup
 ```
+
+Without the `openclaw` CLI on the Nerve host, install by hand instead. Setup itself does not need the CLI:
+
+```bash
+git clone https://github.com/daggerhashimoto/openclaw-nerve.git ~/nerve
+cd ~/nerve
+npm ci
+npm run setup
+```
+
+A manual install sets up no service, so start Nerve with `npm run prod` in step 5.
 
 When prompted:
 

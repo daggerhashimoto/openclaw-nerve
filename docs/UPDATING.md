@@ -170,7 +170,7 @@ From 1.5.4, Nerve connects to the OpenClaw gateway with connect protocol v4 only
 
 ### "No published release or semver tags found" (exit 20)
 
-The updater asks the GitHub Releases API for the latest release (10 second timeout), then falls back to the highest semver tag from `git ls-remote --tags origin`, then to local tags. If all three fail, it exits with code 20. The release lookup only works when `origin` is a GitHub URL. Setting `GITHUB_TOKEN` or `GH_TOKEN` avoids anonymous rate limits.
+The updater asks the GitHub Releases API for the latest release (10 second timeout), then falls back to the highest semver tag it can find. It runs `git ls-remote --tags origin` first, but it cannot read that command's output today, so in practice the fallback uses local tags (`git tag -l`); `git fetch --tags origin` makes new tags visible to it. If no release or tag is found, it exits with code 20. The release lookup only works when `origin` is a GitHub URL. Setting `GITHUB_TOKEN` or `GH_TOKEN` avoids anonymous rate limits.
 
 **Fix:** Verify the remote, the tags and release access:
 ```bash
@@ -213,15 +213,14 @@ Fix the cause above, then run the update again. If the run ended with exit 70 in
 
 ### The service restart command fails (exit 50 or 70)
 
-The restart runs as your user, without `sudo`. If the command itself errors (for example your user may not restart a system-level unit), the updater fails with code 50 and rolls back: it restores and rebuilds the previous version, then restarts it with the same command. That restart usually fails the same way, so the run ends with exit 70. If the restart command failed without stopping anything, the service keeps running the version it ran before the update. A restart can also stop the service and then fail to start it, so check the service state (`systemctl status nerve.service`, or `launchctl print gui/$(id -u)/com.nerve.server` on macOS) rather than assuming it is up.
+The restart runs as your user, without `sudo`. If the command itself errors (for example your user may not restart a system-level unit), the updater fails with code 50 and rolls back: it restores and rebuilds the previous version, then restarts it with the same command. That restart usually fails the same way, so the run ends with exit 70. If the restart command failed without stopping anything, the service keeps running the version it ran before the update. A restart can also stop the service and then fail to start it, so check the service state (`systemctl status nerve.service`, `systemctl --user status nerve.service` for a user unit, or `launchctl print gui/$(id -u)/com.nerve.server` on macOS) rather than assuming it is up.
 
-**Fix:** First check which version is checked out (`git -C ~/nerve describe --tags`). If the rollback failed at its checkout step, the tree is still on the new release and a retry stops at "Already up to date", so restore the previous checkout first as in [Build failure after checkout](#build-failure-after-checkout-exit-40). Then run the update with `--no-restart` and restart the service yourself:
+**Fix:** First check which version is checked out: run `git describe --tags` in your Nerve folder (`~/nerve` unless you installed elsewhere). If the rollback failed at its checkout step, the tree is still on the new release and a retry stops at "Already up to date", so restore the previous checkout first as in [Build failure after checkout](#build-failure-after-checkout-exit-40). Then run the update with `--no-restart` and restart the service yourself, only if the update succeeded:
 ```bash
-npm run update -- --yes --no-restart
-sudo systemctl restart nerve.service
+npm run update -- --yes --no-restart && sudo systemctl restart nerve.service
 curl http://127.0.0.1:3080/api/version
 ```
-On macOS, use `launchctl kickstart -k gui/$(id -u)/com.nerve.server`.
+For a systemd user unit, use `systemctl --user restart nerve.service` instead of `sudo systemctl restart nerve.service`. On macOS, use `launchctl kickstart -k gui/$(id -u)/com.nerve.server`. If the update fails, do not restart: fix the failure first, or restore as in [Build failure after checkout](#build-failure-after-checkout-exit-40).
 
 `--rollback` uses the same unprivileged restart, so it can exit 70 for the same reason after restoring and rebuilding the previous version. Restart the service yourself after it.
 
@@ -230,7 +229,7 @@ On macOS, use `launchctl kickstart -k gui/$(id -u)/com.nerve.server`.
 `npm install` or a build step failed on the new version. The updater attempts an automatic rollback. If the rollback also fails (exit 70), restore manually:
 ```bash
 cat ~/.nerve/updater/last-good.json           # Get the snapshot commit ("ref")
-git checkout --force <ref>
-npm install && npm run build && npm run build:server
-sudo systemctl restart nerve.service          # Linux; macOS: launchctl kickstart -k gui/$(id -u)/com.nerve.server
+git checkout --force <ref> && npm install && npm run build && npm run build:server \
+  && sudo systemctl restart nerve.service     # user unit: systemctl --user restart nerve.service; macOS: launchctl kickstart -k gui/$(id -u)/com.nerve.server
 ```
+The `&&` stops at the first failing step, so the service is restarted only after the checkout, install and builds all succeed.

@@ -252,7 +252,7 @@ The access-mode question offers `Via Tailscale tailnet IP` and `Via Tailscale Se
 - Tailscale Serve:
   - Nerve stays on `127.0.0.1`;
   - setup asks whether to run `tailscale serve --bg http://127.0.0.1:<PORT>`;
-  - it reads the resulting `https://<node>.tail<id>.ts.net` origin from `tailscale serve status --json`;
+  - it reads the resulting `https://<node>.tail<id>.ts.net` origin from `tailscale serve status --json`, taking the endpoint whose root forwards to Nerve's port (other Serve endpoints on the machine are ignored);
   - it patches both Nerve and the gateway for that origin;
   - if the origin cannot be confirmed, it asks whether to fall back to tailnet IP or stop.
 

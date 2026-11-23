@@ -128,7 +128,18 @@ export async function orchestrate(options: UpdateOptions, reporter: Reporter): P
 
       if (serviceManager) {
         reporter.verbose(`Detected ${serviceManager.name}`);
-        await serviceManager.restart();
+        try {
+          await serviceManager.restart();
+        } catch (err) {
+          // Tag the failure with its stage so handleFailure rolls back
+          // instead of reporting an unknown stage with the build exit code.
+          const detail = err instanceof Error ? err.message : String(err);
+          throw new UpdateError(
+            `Service restart via ${serviceManager.name} failed: ${detail}`,
+            'restart',
+            EXIT_CODES.RESTART,
+          );
+        }
         // Give the service a moment to stabilize before checking
         await sleep(2000);
         let active = await serviceManager.isActive();

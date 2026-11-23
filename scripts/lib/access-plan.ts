@@ -92,6 +92,36 @@ function emptyPlan(profile: InstallerAccessProfile, bindHost: string): AccessPla
   };
 }
 
+/**
+ * Build the plan for a mode that serves Nerve on a non-loopback host: the http
+ * origin, plus the https origin when an SSL port is set. The server only allows
+ * loopback origins on its own, so every origin a browser will load Nerve from
+ * has to be listed here (ALLOWED_ORIGINS gates the /ws upgrade and CORS) and in
+ * the CSP connect-src extras. The http origin stays first because the server
+ * uses the first non-loopback entry as its own Origin toward the gateway.
+ */
+function hostedPlan(
+  profile: InstallerAccessProfile,
+  bindHost: string,
+  host: string,
+  port: string,
+  sslPort: string | undefined,
+): AccessPlan {
+  const plan = emptyPlan(profile, bindHost);
+  const origin = httpOrigin(host, port);
+  plan.browserOrigins = [origin];
+  plan.gatewayAllowedOrigins = [origin];
+  plan.cspConnectExtra = [origin, websocketOrigin(origin)];
+  plan.wsAllowedHosts = isLoopback(host) ? [] : [host];
+  if (sslPort) {
+    const secureOrigin = httpsOrigin(host, sslPort);
+    plan.browserOrigins = dedupe([...plan.browserOrigins, secureOrigin]);
+    plan.gatewayAllowedOrigins = dedupe([...plan.gatewayAllowedOrigins, secureOrigin]);
+    plan.cspConnectExtra = dedupe([...plan.cspConnectExtra, secureOrigin, websocketOrigin(secureOrigin)]);
+  }
+  return plan;
+}
+
 export function buildAccessPlan(input: BuildAccessPlanInput): AccessPlan {
   const port = input.port;
   const tailscale = input.tailscale;
@@ -107,31 +137,13 @@ export function buildAccessPlan(input: BuildAccessPlanInput): AccessPlan {
         plan.followUpSteps.push('Provide a reachable LAN IP address for network mode.');
         return plan;
       }
-      const origin = httpOrigin(host, port);
-      plan.browserOrigins = [origin];
-      plan.gatewayAllowedOrigins = [origin];
-      plan.cspConnectExtra = [origin, websocketOrigin(origin)];
-      plan.wsAllowedHosts = isLoopback(host) ? [] : [host];
-      return plan;
+      return hostedPlan('network', '0.0.0.0', host, port, input.sslPort);
     }
 
     case 'custom': {
       const host = input.remoteHost?.trim() || '127.0.0.1';
-      const plan = emptyPlan('custom', host);
-      if (!isLoopback(host)) {
-        const origin = httpOrigin(host, port);
-        plan.browserOrigins = [origin];
-        plan.gatewayAllowedOrigins = [origin];
-        plan.cspConnectExtra = [origin, websocketOrigin(origin)];
-        plan.wsAllowedHosts = [host];
-        if (input.sslPort) {
-          const secureOrigin = httpsOrigin(host, input.sslPort);
-          plan.browserOrigins = dedupe([...plan.browserOrigins, secureOrigin]);
-          plan.gatewayAllowedOrigins = dedupe([...plan.gatewayAllowedOrigins, secureOrigin]);
-          plan.cspConnectExtra = dedupe([...plan.cspConnectExtra, secureOrigin, websocketOrigin(secureOrigin)]);
-        }
-      }
-      return plan;
+      if (isLoopback(host)) return emptyPlan('custom', host);
+      return hostedPlan('custom', host, host, port, input.sslPort);
     }
 
     case 'tailscale-ip': {
@@ -141,12 +153,7 @@ export function buildAccessPlan(input: BuildAccessPlanInput): AccessPlan {
         plan.followUpSteps.push('Connect Tailscale and obtain a tailnet IPv4 address, then re-run setup.');
         return plan;
       }
-      const origin = httpOrigin(ip, port);
-      plan.browserOrigins = [origin];
-      plan.gatewayAllowedOrigins = [origin];
-      plan.cspConnectExtra = [origin, websocketOrigin(origin)];
-      plan.wsAllowedHosts = [ip];
-      return plan;
+      return hostedPlan('tailscale-ip', '0.0.0.0', ip, port, input.sslPort);
     }
 
     case 'tailscale-serve': {

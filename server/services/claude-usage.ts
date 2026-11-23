@@ -37,12 +37,18 @@ export interface RawClaudeLimits {
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /** Strip ANSI/OSC/CSI escape sequences and carriage returns from PTY output. */
-function stripAnsi(s: string): string {
+export function stripAnsi(s: string): string {
   return s
     // OSC sequences: ESC ] ... (terminated by BEL or ST)
     // eslint-disable-next-line no-control-regex
     .replace(/\x1B\].*?(?:\x07|\x1B\\)/g, '')
-    // CSI sequences: ESC [ <params> <intermediates> <final byte>
+    // CSI vertical cursor movement (cursor down / cursor position) acts as a line break in Ink TUIs
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1B\[\d*(?:B|;\d*[Hf])/g, '\n')
+    // CSI horizontal cursor movement (cursor forward / horizontal absolute) separates words in Ink TUIs
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1B\[\d*[CG]/g, ' ')
+    // Remaining CSI sequences: ESC [ <params> <intermediates> <final byte>
     // eslint-disable-next-line no-control-regex
     .replace(/\x1B\[[\x30-\x3F]*[\x20-\x2F]*[\x40-\x7E]/g, '')
     // Other two-char escape sequences (e.g. ESC =, ESC >)
@@ -90,10 +96,14 @@ async function pollFor(
   return false;
 }
 
-/** Check if the buffer contains Claude's ready prompt (❯ or >) */
+const TRUST_OPTION_CURSOR_RE =
+  /[❯>]\s*(?:\d+\.\s*)?(?:no,?\s*exit|yes,?\s*(?:i\s*trust|trust\b|proceed))/gi;
+
+/** Check if the buffer contains Claude's ready prompt (❯ or >), ignoring trust menu cursors */
 function hasReadyPrompt(clean: string): boolean {
+  const withoutTrustCursor = clean.replace(TRUST_OPTION_CURSOR_RE, '');
   // Claude shows ❯ (U+276F) or > when ready for input
-  return clean.includes('❯') || /^>\s*$/m.test(clean);
+  return withoutTrustCursor.includes('❯') || /^>\s*$/m.test(withoutTrustCursor);
 }
 
 /** Check if the buffer contains a workspace trust prompt */
@@ -104,6 +114,35 @@ function hasTrustPrompt(clean: string): boolean {
     lower.includes('quick safety check') ||
     lower.includes('accessing workspace')
   );
+}
+
+/** Check if the trust prompt's menu choices have been rendered with a selection cursor */
+function hasTrustPromptChoice(clean: string): boolean {
+  return /[❯>]\s*(?:\d+\.\s*)?(?:no|yes)\b/i.test(clean);
+}
+
+/**
+ * Determine the key sequence needed to select and confirm the "Yes" option
+ * on Claude Code's workspace trust prompt.
+ *
+ * Older Claude Code versions start with the cursor (`❯`) on "Yes, I trust this folder".
+ * Claude Code 2.1.330+ starts with the cursor on "No, exit" above "Yes, I trust this folder".
+ */
+export function getTrustPromptKeys(clean: string): string[] {
+  const noSelected = clean.match(/[❯>]\s*(?:\d+\.\s*)?no\b/i);
+  if (!noSelected) {
+    return ['\r'];
+  }
+  const yesOption = clean.match(/(?:^|\n|\s)(?:[❯>]\s*)?(?:\d+\.\s*)?yes\b/i);
+  if (
+    yesOption &&
+    yesOption.index !== undefined &&
+    noSelected.index !== undefined &&
+    yesOption.index < noSelected.index
+  ) {
+    return ['\x1b[A', '\r'];
+  }
+  return ['\x1b[B', '\r'];
 }
 
 // ── Main ─────────────────────────────────────────────────────────────
@@ -157,23 +196,36 @@ export async function getClaudeUsage(): Promise<RawClaudeLimits> {
       return { available: false, error: 'Timeout waiting for Claude to start' };
     }
 
-    // Step 2: If trust prompt, accept it and wait for ready prompt
+    // Step 2: If trust prompt, select "Yes, I trust this folder" and wait for ready prompt
     if (hasTrustPrompt(stripAnsi(buffer))) {
-      pty.write('\r');
-      const gotReady = await pollFor(getBuffer, hasReadyPrompt, 15_000);
+      if (!hasTrustPromptChoice(stripAnsi(buffer))) {
+        await pollFor(getBuffer, hasTrustPromptChoice, 2_000, 50);
+      }
+      const trustKeys = getTrustPromptKeys(stripAnsi(buffer));
+      const postTrustOffset = buffer.length;
+      for (let i = 0; i < trustKeys.length; i++) {
+        if (i > 0) await sleep(50);
+        pty.write(trustKeys[i]);
+      }
+      const gotReady = await pollFor(
+        () => buffer.slice(postTrustOffset),
+        hasReadyPrompt,
+        15_000,
+      );
       if (!gotReady) {
         return { available: false, error: 'Timeout waiting for Claude after trust prompt' };
       }
     }
 
     // Step 3: Send /usage command
+    const postReadyOffset = buffer.length;
     pty.write('/usage\r');
     await sleep(1000);
     pty.write('\r'); // confirmation Enter
 
     // Step 4: Poll for usage data to appear (max 10s)
     const gotUsage = await pollFor(
-      getBuffer,
+      () => buffer.slice(postReadyOffset),
       (clean) => /\d+%\s*used/i.test(clean) || /hit\s*your\s*limit/i.test(clean),
       10_000,
     );
@@ -184,7 +236,7 @@ export async function getClaudeUsage(): Promise<RawClaudeLimits> {
     }
 
     // Parse the collected output
-    const output = stripAnsi(buffer);
+    const output = stripAnsi(buffer.slice(postReadyOffset));
 
     let sessionUsed: number | null = null;
     let sessionResets: string | null = null;

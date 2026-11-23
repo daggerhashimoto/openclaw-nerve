@@ -24,7 +24,8 @@ const app = new Hono();
 /** `/api/chat/media/outgoing/<encoded session key>/<media id>/<variant>`, nothing else. */
 const CHAT_MEDIA_PATH_RE = /^\/api\/chat\/media\/outgoing\/[A-Za-z0-9%._~-]+\/[A-Za-z0-9_-]+\/[a-z]+$/;
 
-const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
+/** Raster image types Nerve serves from its own origin; never SVG, HTML or anything that can run script. */
+export const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
 
 const FETCH_TIMEOUT_MS = 30_000;
 

@@ -181,6 +181,8 @@ export interface ContentBlock {
   mimeType?: string;   // e.g. "image/jpeg"
   omitted?: boolean;
   bytes?: number;
+  /** On an omitted image from current OpenClaw: the id artifacts.download returns its bytes by. */
+  artifactId?: string;
   /** Anthropic-style image source */
   source?: { type?: string; media_type?: string; data?: string };
   /** Gateway-hosted image (an agent's delivered attachment): a gateway path such as

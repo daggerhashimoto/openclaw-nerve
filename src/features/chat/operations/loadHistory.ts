@@ -111,8 +111,13 @@ function extractLegacyMessageImages(
         extracted.push(gatewayImage);
       } else if (block.omitted && hasTimestamp && options.sessionKey) {
         const extension = imageExtensionFromMimeType(block.mimeType || block.source?.media_type);
+        // Current OpenClaw names the stored image with an artifact id the server downloads it by;
+        // older gateways leave the server to find it in the transcript by timestamp and index.
+        const artifactParam = typeof block.artifactId === 'string' && block.artifactId
+          ? `&artifactId=${encodeURIComponent(block.artifactId)}`
+          : '';
         extracted.push({
-          url: `/api/sessions/media?sessionKey=${encodeURIComponent(options.sessionKey)}&timestamp=${timestampMs}&imageIndex=${imageIndex}`,
+          url: `/api/sessions/media?sessionKey=${encodeURIComponent(options.sessionKey)}&timestamp=${timestampMs}&imageIndex=${imageIndex}${artifactParam}`,
           alt: `message-${timestampMs}-image-${imageIndex}.${extension}`,
         });
       }

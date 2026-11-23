@@ -93,7 +93,7 @@ export function UpdateBadge() {
             </div>
             <div className="space-y-1 text-[0.8rem] text-muted-foreground">
               <p>This will fetch the latest release, rebuild, restart, and verify health.</p>
-              <p>If anything fails, Nerve automatically rolls back to your current version.</p>
+              <p>If the build, restart or health check fails, Nerve rolls back to your current version.</p>
             </div>
             <div>
               <p className="mb-1 text-[0.8rem] text-muted-foreground">Other options:</p>

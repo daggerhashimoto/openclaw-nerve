@@ -160,7 +160,7 @@ If chat works but crons, Kanban runs or remote workspace panels fail with `origi
 
 ### Token injection
 
-Nerve injects `GATEWAY_TOKEN` on the server side, so a trusted browser never receives or stores it. When the browser opens the WebSocket proxy (`/ws`) and its connect request carries no token, the proxy adds `GATEWAY_TOKEN` if the client is **trusted** and the target is the gateway in `GATEWAY_URL` (same host, port and TLS; `localhost`, `127.0.0.1` and `::1` count as one host). A client is trusted when:
+Nerve injects `GATEWAY_TOKEN` on the server side, so the injection never sends it to the browser. The browser has it only if a user types it in, as the login password (when no password hash is set) or in the connect dialog. When the browser opens the WebSocket proxy (`/ws`) and its connect request carries no token, the proxy adds `GATEWAY_TOKEN` if the client is **trusted** and the target is the gateway in `GATEWAY_URL` (same host, port and TLS; `localhost`, `127.0.0.1` and `::1` count as one host). A client is trusted when:
 
 1. Auth is on (`NERVE_AUTH=true`), so the upgrade already carried a valid session cookie, **or**
 2. The client is on loopback (`127.0.0.1`, `::1` or `::ffff:127.x`). When the socket itself is loopback, Nerve reads `X-Forwarded-For` from the right and takes the first address that is not loopback. It falls back to `X-Real-IP` when the header is missing or lists only loopback addresses. A same-host reverse proxy must therefore send the real client address in one of those headers. `TRUSTED_PROXIES` does not affect this check.

@@ -39,7 +39,7 @@ Nerve is a **local-first** web cockpit for an AI agent. Its security model assum
 | **Abuse and resource exhaustion** | Per-client rate limits on most API routes, a global request body limit, and a 10,000-entry cap on the rate limit store. |
 | **Directory traversal** | Paths are resolved and checked against a prefix allowlist or the workspace root. |
 | **Symlink escape** | `/api/files`, the file browser and upload references resolve the real path and check it again. |
-| **Gateway token exfiltration** | The token never reaches the browser. The server injects it only for trusted clients and only toward the gateway named in `GATEWAY_URL`, and fetches gateway media for trusted clients only. |
+| **Gateway token exfiltration** | Server-side injection never sends the token to the browser (a user can still type it in as the login password or in the connect dialog). The server injects it only for trusted clients and only toward the gateway named in `GATEWAY_URL`, and fetches gateway media for trusted clients only. |
 | **Spoofed client IPs** | The rate limiter uses the TCP socket address and honours `X-Forwarded-For` only from `TRUSTED_PROXIES`. |
 | **MIME sniffing** | `X-Content-Type-Options: nosniff` on every response. |
 | **Active content in served files** | `/api/files` forces SVG downloads; `/api/files/raw` sends SVG under a sandboxing Content-Security-Policy; `/api/chat-media` and `/api/sessions/media` pass only raster images. |

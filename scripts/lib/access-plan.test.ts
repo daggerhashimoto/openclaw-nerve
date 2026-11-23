@@ -147,6 +147,117 @@ describe('buildAccessPlan', () => {
   });
 });
 
+describe('buildAccessPlan with several Tailscale Serve endpoints', () => {
+  const serveState = (endpoints: Array<{ origin: string; rootProxy: string | null }>) => ({
+    ...connectedTailscale,
+    serveOrigins: endpoints.map((e) => e.origin),
+    serveEndpoints: endpoints,
+  });
+  const OTHER = `https://${EXAMPLE_TS_DNS}:8443`;
+  const NERVE = `https://${EXAMPLE_TS_DNS}`;
+
+  it('uses the endpoint that proxies to Nerve even when another one is listed first', () => {
+    const plan = buildAccessPlan({
+      profile: 'tailscale-serve',
+      port: '3080',
+      tailscale: serveState([
+        { origin: OTHER, rootProxy: 'http://127.0.0.1:9000' },
+        { origin: NERVE, rootProxy: 'http://127.0.0.1:3080' },
+      ]),
+    });
+    expect(plan.browserOrigins).toEqual([NERVE]);
+    expect(plan.gatewayAllowedOrigins).toEqual([NERVE]);
+    expect(plan.cspConnectExtra).toEqual([NERVE, `wss://${EXAMPLE_TS_DNS}`]);
+  });
+
+  it('keeps working with a single endpoint that proxies to Nerve', () => {
+    const plan = buildAccessPlan({
+      profile: 'tailscale-serve',
+      port: '3080',
+      tailscale: serveState([{ origin: NERVE, rootProxy: 'http://127.0.0.1:3080' }]),
+    });
+    expect(plan.browserOrigins).toEqual([NERVE]);
+    expect(plan.followUpSteps).toEqual([]);
+  });
+
+  it('matches localhost targets and the Nerve HTTPS port', () => {
+    for (const rootProxy of ['http://localhost:3080', 'http://127.0.0.1:3080/', 'https+insecure://localhost:3443']) {
+      const plan = buildAccessPlan({
+        profile: 'tailscale-serve',
+        port: '3080',
+        sslPort: '3443',
+        tailscale: serveState([
+          { origin: OTHER, rootProxy: 'http://127.0.0.1:9000' },
+          { origin: NERVE, rootProxy },
+        ]),
+      });
+      expect(plan.browserOrigins, rootProxy).toEqual([NERVE]);
+    }
+  });
+
+  it('matches the shorthand targets Tailscale accepts: a bare port and host:port', () => {
+    for (const rootProxy of ['3080', 'localhost:3080', '127.0.0.1:3080']) {
+      const plan = buildAccessPlan({
+        profile: 'tailscale-serve',
+        port: '3080',
+        tailscale: serveState([
+          { origin: OTHER, rootProxy: '9000' },
+          { origin: NERVE, rootProxy },
+        ]),
+      });
+      expect(plan.browserOrigins, rootProxy).toEqual([NERVE]);
+    }
+  });
+
+  it('does not take an endpoint that proxies to ::1, since Serve mode binds Nerve to 127.0.0.1', () => {
+    const plan = buildAccessPlan({
+      profile: 'tailscale-serve',
+      port: '3080',
+      tailscale: serveState([
+        { origin: OTHER, rootProxy: 'http://[::1]:3080' },
+        { origin: NERVE, rootProxy: 'http://127.0.0.1:3080' },
+      ]),
+    });
+    expect(plan.browserOrigins).toEqual([NERVE]);
+  });
+
+  it('does not take a port that only starts with Nerve\'s port', () => {
+    const plan = buildAccessPlan({
+      profile: 'tailscale-serve',
+      port: '3080',
+      tailscale: serveState([{ origin: OTHER, rootProxy: 'http://127.0.0.1:30800' }]),
+    });
+    expect(plan.browserOrigins).toEqual([]);
+  });
+
+  it('writes no origin and says why when every endpoint proxies somewhere else', () => {
+    const plan = buildAccessPlan({
+      profile: 'tailscale-serve',
+      port: '3080',
+      tailscale: serveState([
+        { origin: OTHER, rootProxy: 'http://127.0.0.1:9000' },
+        { origin: NERVE, rootProxy: 'http://192.168.1.20:3080' },
+      ]),
+    });
+    expect(plan.browserOrigins).toEqual([]);
+    expect(plan.gatewayAllowedOrigins).toEqual([]);
+    expect(plan.followUpSteps.join(' ')).toContain('no endpoint forwards to http://127.0.0.1:3080');
+    expect(plan.followUpSteps.join(' ')).toContain('tailscale serve --bg http://127.0.0.1:3080');
+  });
+
+  it('falls back to the first endpoint when no endpoint has a readable proxy target', () => {
+    const plan = buildAccessPlan({
+      profile: 'tailscale-serve',
+      port: '3080',
+      tailscale: serveState([
+        { origin: NERVE, rootProxy: null },
+        { origin: OTHER, rootProxy: null },
+      ]),
+    });
+    expect(plan.browserOrigins).toEqual([NERVE]);
+  });
+});
+
 describe('applyAccessPlanToConfig', () => {
   it('maps the access plan back onto env config fields', () => {
     expect(applyAccessPlanToConfig({ PORT: '3080' }, buildAccessPlan({

@@ -1,11 +1,20 @@
 import { execSync } from 'node:child_process';
 
+/** One Tailscale Serve web endpoint: the browser origin and what its root handler proxies to. */
+export interface ServeEndpoint {
+  origin: string;
+  /** The `Proxy` target of the endpoint's root (`/`) handler, or null when it has none. */
+  rootProxy: string | null;
+}
+
 export interface TailscaleState {
   installed: boolean;
   authenticated: boolean;
   ipv4: string | null;
   dnsName: string | null;
   serveOrigins: string[];
+  /** The same endpoints as serveOrigins, with their proxy targets. */
+  serveEndpoints?: ServeEndpoint[];
 }
 
 type ExecLike = (command: string, options?: Record<string, unknown>) => string | Buffer;
@@ -38,30 +47,48 @@ export function normalizeDnsName(value: string | null | undefined): string | nul
   return trimmed.endsWith('.') ? trimmed.slice(0, -1) : trimmed;
 }
 
-export function extractServeOrigins(json: unknown): string[] {
+/** The browser origin for a Serve `Web` key such as `node.tailnet.ts.net:443`. */
+function serveKeyToOrigin(rawKey: string): string | null {
+  const key = rawKey.trim();
+  if (!key) return null;
+
+  const portMatch = key.match(/:(\d+)$/);
+  const port = portMatch?.[1] || null;
+  const hostPart = portMatch ? key.slice(0, -portMatch[0].length) : key;
+  const host = normalizeDnsName(hostPart);
+  if (!host) return null;
+
+  if (port === '80') return `http://${host}`;
+  if (!port || port === '443') return `https://${host}`;
+  return `https://${host}:${port}`;
+}
+
+function rootProxyTarget(entry: unknown): string | null {
+  if (!isRecord(entry) || !isRecord(entry.Handlers)) return null;
+  const root = entry.Handlers['/'];
+  if (!isRecord(root) || typeof root.Proxy !== 'string') return null;
+  return root.Proxy.trim() || null;
+}
+
+/** Each Serve web endpoint once, in listing order, with its root proxy target. */
+export function extractServeEndpoints(json: unknown): ServeEndpoint[] {
   if (!isRecord(json) || !isRecord(json.Web)) return [];
 
-  const origins = new Set<string>();
-  for (const rawKey of Object.keys(json.Web)) {
-    const key = rawKey.trim();
-    if (!key) continue;
-
-    const portMatch = key.match(/:(\d+)$/);
-    const port = portMatch?.[1] || null;
-    const hostPart = portMatch ? key.slice(0, -portMatch[0].length) : key;
-    const host = normalizeDnsName(hostPart);
-    if (!host) continue;
-
-    if (port === '80') {
-      origins.add(`http://${host}`);
-    } else if (!port || port === '443') {
-      origins.add(`https://${host}`);
-    } else {
-      origins.add(`https://${host}:${port}`);
-    }
+  const byOrigin = new Map<string, ServeEndpoint>();
+  for (const [rawKey, entry] of Object.entries(json.Web)) {
+    const origin = serveKeyToOrigin(rawKey);
+    if (!origin) continue;
+    const rootProxy = rootProxyTarget(entry);
+    const existing = byOrigin.get(origin);
+    if (!existing) byOrigin.set(origin, { origin, rootProxy });
+    else if (!existing.rootProxy && rootProxy) existing.rootProxy = rootProxy;
   }
 
-  return [...origins];
+  return [...byOrigin.values()];
+}
+
+export function extractServeOrigins(json: unknown): string[] {
+  return extractServeEndpoints(json).map((endpoint) => endpoint.origin);
 }
 
 export function parseTailscaleStatus(json: unknown): Pick<TailscaleState, 'authenticated' | 'ipv4' | 'dnsName'> {
@@ -94,6 +121,7 @@ export function getTailscaleState(exec: ExecLike = execSync): TailscaleState {
       ipv4: null,
       dnsName: null,
       serveOrigins: [],
+      serveEndpoints: [],
     };
   }
 
@@ -102,7 +130,7 @@ export function getTailscaleState(exec: ExecLike = execSync): TailscaleState {
     ipv4: null,
     dnsName: null,
   };
-  let serveOrigins: string[] = [];
+  let serveEndpoints: ServeEndpoint[] = [];
 
   try {
     const statusJson = parseJson(toText(exec('tailscale status --json 2>/dev/null', { stdio: 'pipe', timeout: 3000 })));
@@ -113,7 +141,7 @@ export function getTailscaleState(exec: ExecLike = execSync): TailscaleState {
 
   try {
     const serveJson = parseJson(toText(exec('tailscale serve status --json 2>/dev/null', { stdio: 'pipe', timeout: 3000 })));
-    serveOrigins = extractServeOrigins(serveJson);
+    serveEndpoints = extractServeEndpoints(serveJson);
   } catch {
     // serve may be inactive or unsupported
   }
@@ -123,6 +151,7 @@ export function getTailscaleState(exec: ExecLike = execSync): TailscaleState {
     authenticated: status.authenticated,
     ipv4: status.ipv4,
     dnsName: status.dnsName,
-    serveOrigins,
+    serveOrigins: serveEndpoints.map((endpoint) => endpoint.origin),
+    serveEndpoints,
   };
 }

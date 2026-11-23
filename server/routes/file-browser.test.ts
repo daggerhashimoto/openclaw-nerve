@@ -1128,5 +1128,49 @@ describe('file-browser routes', () => {
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('image/png');
     });
+
+    /** The route mounted behind the global security headers, as in server/app.ts. */
+    async function buildAppWithSecurityHeaders() {
+      const routes = await buildApp();
+      const { securityHeaders } = await import('../middleware/security-headers.js');
+      const app = new Hono();
+      app.use('*', securityHeaders);
+      app.route('/', routes);
+      return app;
+    }
+
+    it('serves SVG inline with a sandboxed Content-Security-Policy', async () => {
+      await fs.writeFile(path.join(tmpDir, 'diagram.svg'), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+      const app = await buildAppWithSecurityHeaders();
+      const res = await app.request('/api/files/raw?path=diagram.svg');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('image/svg+xml');
+      expect(res.headers.get('Content-Disposition')).toBeNull();
+      const csp = res.headers.get('Content-Security-Policy');
+      expect(csp).toContain('sandbox');
+      expect(csp).toContain("default-src 'none'");
+      expect(csp).not.toContain('script-src');
+    });
+
+    it('leaves other image types on the global Content-Security-Policy', async () => {
+      await fs.writeFile(path.join(tmpDir, 'photo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      const app = await buildAppWithSecurityHeaders();
+      const res = await app.request('/api/files/raw?path=photo.png');
+      expect(res.status).toBe(200);
+      const csp = res.headers.get('Content-Security-Policy');
+      expect(csp).toContain("default-src 'self'");
+      expect(csp).not.toContain('sandbox');
+    });
+
+    it('does not add a route Content-Security-Policy to non-SVG raw files', async () => {
+      await fs.writeFile(path.join(tmpDir, 'photo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      await fs.writeFile(path.join(tmpDir, 'doc.pdf'), '%PDF-1.4\n');
+      const app = await buildApp();
+      for (const file of ['photo.png', 'doc.pdf']) {
+        const res = await app.request(`/api/files/raw?path=${file}`);
+        expect(res.status).toBe(200);
+        expect(res.headers.get('Content-Security-Policy')).toBeNull();
+      }
+    });
   });
 });

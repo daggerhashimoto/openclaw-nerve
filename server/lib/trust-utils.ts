@@ -4,13 +4,15 @@
  */
 
 import { config } from './config.js';
+import { resolveForwardedClientIp } from './forwarded-ip.js';
 
 /** Regular expression to match IPv4 and IPv6 loopback addresses */
 export const LOOPBACK_RE = /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/;
 
 /**
  * Resolve the real client IP, accounting for local reverse proxies (X-Forwarded-For).
- * Only trusts forwarded headers if the direct connection is from a loopback address.
+ * Only trusts forwarded headers if the direct connection is from a loopback address,
+ * and treats loopback hops in the header as trusted proxies (see forwarded-ip.ts).
  */
 export function getRealClientIp(req: { 
   socket: { remoteAddress?: string }; 
@@ -20,10 +22,11 @@ export function getRealClientIp(req: {
   const isDirectLoopback = LOOPBACK_RE.test(directIp);
   
   if (isDirectLoopback) {
-    const forwarded = req.headers['x-forwarded-for'];
-    const realIp = req.headers['x-real-ip'];
-    const headersIp = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0].trim()
-      || (typeof realIp === 'string' ? realIp : undefined);
+    const headersIp = resolveForwardedClientIp(
+      req.headers['x-forwarded-for'],
+      req.headers['x-real-ip'],
+      (ip) => LOOPBACK_RE.test(ip),
+    );
     if (headersIp) return headersIp;
   }
   

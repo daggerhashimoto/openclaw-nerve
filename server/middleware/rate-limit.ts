@@ -11,6 +11,7 @@
 
 import type { Context, Next } from 'hono';
 import { getConnInfo } from '@hono/node-server/conninfo';
+import { resolveForwardedClientIp } from '../lib/forwarded-ip.js';
 
 interface RateLimitEntry {
   timestamps: number[];
@@ -83,17 +84,15 @@ export function getClientId(c: Context): string {
     // getConnInfo may fail in test environments — fall back to 'unknown'
   }
 
-  // Only trust forwarded headers from known proxy IPs
+  // Only trust forwarded headers from known proxy IPs. Walk X-Forwarded-For
+  // from the right past every trusted proxy, falling back to X-Real-IP.
   if (TRUSTED_PROXIES.has(directIp)) {
-    // Prefer X-Forwarded-For (standard), fall back to X-Real-IP (nginx convention)
-    const forwarded = c.req.header('x-forwarded-for');
-    if (forwarded) {
-      return forwarded.split(',')[0].trim();
-    }
-    const realIp = c.req.header('x-real-ip');
-    if (realIp) {
-      return realIp;
-    }
+    const headersIp = resolveForwardedClientIp(
+      c.req.header('x-forwarded-for'),
+      c.req.header('x-real-ip'),
+      (ip) => TRUSTED_PROXIES.has(ip),
+    );
+    if (headersIp) return headersIp;
   }
 
   return directIp;

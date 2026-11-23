@@ -979,6 +979,14 @@ const MIME_TYPES: Record<string, string> = {
   '.pdf': 'application/pdf',
 };
 
+/**
+ * Policy for raw SVG responses. Previews load them through <img>, where the
+ * policy changes nothing. An SVG opened directly is a document, and this keeps
+ * it in a sandbox with no script, allowing only its inline styles and data:
+ * images and fonts.
+ */
+const SVG_CSP = "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:";
+
 /** Check if a file is a supported image. */
 export function isImage(name: string): boolean {
   return IMAGE_EXTENSIONS.has(path.extname(name).toLowerCase());
@@ -1094,6 +1102,10 @@ app.get('/api/files/raw', async (c) => {
       'Content-Length': String(end - start + 1),
       'Cache-Control': 'no-cache',
     };
+
+    if (ext === '.svg') {
+      responseHeaders['Content-Security-Policy'] = SVG_CSP;
+    }
 
     // Add Range headers for partial content responses
     if (ext === '.pdf') {

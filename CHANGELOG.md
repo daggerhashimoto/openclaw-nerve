@@ -47,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Markdown, the code editor, diff and preview highlighting and the Kanban quick view load on demand, cutting the initial bundle from 962 kB to 373 kB (PR #387)
 - The WebSocket relay and the event stream bound what they buffer per client and close a client that falls too far behind (PR #387)
 - File tree listings are paged, so very large directories load in parts instead of all at once (PR #357)
+- With a remote proxy in front of a local one, list both in `TRUSTED_PROXIES`, or every client behind the remote proxy shares one rate-limit bucket (PR #428)
 
 ### Fixed
 - The Crons tab loads and saves jobs on OpenClaw 2026.9 (PR #390)
@@ -62,6 +63,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Chat search opens collapsed rows and waits for lazily rendered text so the match is visible (PR #414, PR #415)
 - Deleting a root agent row the gateway refuses to delete no longer wipes its child sessions first (PR #392)
 - The hidden-session list stops looking for a `sessions.json` that current OpenClaw no longer writes, which logged an error every 30 seconds (PR #421)
+- Older images in a chat's history load again on current OpenClaw: the server downloads omitted images from the gateway by artifact id, and `/api/sessions/media` serves only raster image types (PR #429)
+- Setup allows the `https://` origin in Network and tailnet IP modes when HTTPS is on, so the WebSocket is no longer refused with 403 (PR #424)
+- A rate-limited login says "Too many attempts. Try again in N seconds." instead of "Unable to connect to server" (PR #425)
+- The updater rolls back when the service restart command fails, and the Update dialog says which failures roll back (PR #426)
+- Behind a reverse proxy, the client address is read from the right of `X-Forwarded-For`, the server's gateway token is injected only toward the gateway in `GATEWAY_URL`, and raw SVG files from the file browser carry a sandboxing Content-Security-Policy (PR #428)
+- Setup keeps the `.env` settings it does not manage when it rewrites the file, unless you choose Start fresh (PR #427)
 - The installer escapes paths in the generated systemd unit and launchd plist, and refuses the few paths they cannot hold before touching a running service (PR #416, fixes #396)
 - Valid workspace files are no longer rejected on macOS, where the temp directory sits behind a symlink (PR #388)
 - A failed asset request is no longer cached by the browser for a year (PR #388)

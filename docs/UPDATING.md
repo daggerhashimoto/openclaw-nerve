@@ -223,6 +223,8 @@ curl http://127.0.0.1:3080/api/version
 ```
 On macOS, use `launchctl kickstart -k gui/$(id -u)/com.nerve.server`.
 
+`--rollback` uses the same unprivileged restart, so it can exit 70 for the same reason after restoring and rebuilding the previous version. Restart the service yourself after it.
+
 ### Build failure after checkout (exit 40)
 
 `npm install` or a build step failed on the new version. The updater attempts an automatic rollback. If the rollback also fails (exit 70), restore manually:

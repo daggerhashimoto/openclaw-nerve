@@ -61,7 +61,7 @@ npm run setup
 Recommended choices:
 
 - **Gateway URL** and **Gateway Auth Token (required)**: the default for same host. For split hosts, the remote gateway URL and token.
-- **How will you connect to Nerve?**: **From other devices on my network** (enter the host's IP address; setup also offers HTTPS with a self-signed certificate) or **Custom setup** (HTTP port, bind address, HTTPS).
+- **How will you connect to Nerve?**: **From other devices on my network** (enter the host's IP address; setup also offers HTTPS with a self-signed certificate and allows its origin) or **Custom setup** (HTTP port, bind address, HTTPS).
 - **Set a password for Nerve access?**: yes. Setup asks only when Nerve binds to `0.0.0.0`. Without a password, the gateway token is the login password.
 
 Setup writes `HOST`, `ALLOWED_ORIGINS`, `CSP_CONNECT_EXTRA` and `WS_ALLOWED_HOSTS` for the IP address you give it. It does not know a domain name or a reverse proxy, so step 3 covers that.
@@ -70,7 +70,7 @@ With split hosts, setup does not touch any OpenClaw config. It adds the gateway'
 
 ### 3. Adjust `.env` for how browsers reach Nerve
 
-Make these edits after your last `npm run setup`. Setup rewrites `.env` and keeps only the settings it manages, so it drops `NERVE_PUBLIC_ORIGIN`, `TRUSTED_PROXIES` and `NERVE_WORKSPACE_REMOTE` on every run (the previous file is saved as `.env.backup`).
+Make these edits after your last `npm run setup`. Setup rewrites `HOST`, `ALLOWED_ORIGINS` and `CSP_CONNECT_EXTRA` on every run. It keeps `NERVE_PUBLIC_ORIGIN`, `TRUSTED_PROXIES` and `NERVE_WORKSPACE_REMOTE` as written, unless you choose **Start fresh** (the previous file is saved as `.env.backup`).
 
 For Nerve behind a reverse proxy on the same host, keep Nerve on loopback and list the public origin. Edit the existing lines rather than adding duplicates:
 
@@ -85,7 +85,7 @@ NERVE_PUBLIC_ORIGIN=https://nerve.example.com
 - `ALLOWED_ORIGINS` must include the exact origin the browser uses. Nerve rejects a WebSocket from any other non-loopback origin.
 - Turn `NERVE_AUTH=true` on for any public setup. Setup only offers a password when Nerve binds to `0.0.0.0`; with `NERVE_AUTH=true` and no `NERVE_PASSWORD_HASH`, the gateway token works as the password. Without `NERVE_SESSION_SECRET`, sessions do not survive a restart.
 - `NERVE_PUBLIC_ORIGIN` is the origin Nerve's own server-side gateway connection presents. If you leave it unset, Nerve uses the first non-loopback entry in `ALLOWED_ORIGINS`.
-- If the proxy connects to Nerve from an address other than loopback, add that address to `TRUSTED_PROXIES` so rate limiting sees client addresses. Loopback is trusted by default.
+- If the proxy connects to Nerve from an address other than loopback, add that address to `TRUSTED_PROXIES` so rate limiting sees client addresses. Loopback is trusted by default. With more than one proxy (for example a remote proxy in front of a local one), list every proxy address. Otherwise all clients behind the outer proxy share one rate-limit bucket.
 - Split hosts: also set `NERVE_WORKSPACE_REMOTE=true`, and keep `WS_ALLOWED_HOSTS` (setup writes it) set to the gateway's host.
 
 Restart Nerve after changing `.env`.
@@ -237,7 +237,7 @@ This happens when:
 
 ### Every user is rate limited together
 
-Nerve sees the proxy's address for every request. Add the proxy's address to `TRUSTED_PROXIES` (step 3).
+Nerve sees the proxy's address for every request. Add the proxy's address to `TRUSTED_PROXIES` (step 3), and add every proxy in the chain if there is more than one.
 
 ### Split-host install feels weaker than expected
 

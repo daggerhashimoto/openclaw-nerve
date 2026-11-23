@@ -48,7 +48,7 @@ Decides how browsers reach Nerve and writes `HOST`, `ALLOWED_ORIGINS`, `CSP_CONN
 | **Network (LAN)** | `0.0.0.0` | Reachable from your local network. Prompts for your LAN IPv4 address. |
 | **Custom** | as entered | Manual port and bind address. |
 
-For Network mode, and for Custom mode with a non-loopback bind address, setup offers to generate a self-signed certificate with `openssl` and asks for `SSL_PORT`. Browsers need HTTPS for microphone access away from localhost.
+For Network mode, and for Custom mode with a non-loopback bind address, setup offers to generate a self-signed certificate with `openssl` and asks for `SSL_PORT`. When HTTPS is on, setup also adds the `https://<host>:<SSL_PORT>` origin after the HTTP origin in `ALLOWED_ORIGINS`, `CSP_CONNECT_EXTRA` (with its `wss://` form) and the gateway's allowed origins. Browsers need HTTPS for microphone access away from localhost.
 
 #### Gateway config changes
 
@@ -111,7 +111,7 @@ Setup also copies the bundled agent skills to `~/.openclaw/workspace/skills`.
 
 - Before overwriting, setup copies the existing `.env` to `.env.backup`, or to `.env.backup.YYYY-MM-DD` when `.env.backup` already exists.
 - `.env` is written through `.env.tmp` and a rename, then set to mode `600`, as are the backups. An interrupted run removes `.env.tmp`.
-- Setup writes only the keys it manages: `GATEWAY_URL`, `GATEWAY_TOKEN`, `AGENT_NAME`, `PORT`, `HOST`, `SSL_PORT`, `OPENAI_API_KEY`, `REPLICATE_API_TOKEN`, the `NERVE_AUTH`, `NERVE_PASSWORD_HASH`, `NERVE_SESSION_SECRET` and `NERVE_SESSION_TTL` auth keys, `ALLOWED_ORIGINS`, `CSP_CONNECT_EXTRA`, `WS_ALLOWED_HOSTS`, `MEMORY_PATH`, `MEMORY_DIR`, `SESSIONS_DIR`, `USAGE_FILE` and `FILE_BROWSER_ROOT`. **Any other variable is dropped**, for example `MIMO_API_KEY`, `NERVE_PUBLIC_ORIGIN`, `TRUSTED_PROXIES`, `NERVE_WORKSPACE_REMOTE`, `NERVE_LANGUAGE` or the `NERVE_UPLOAD_*` flags. Add them back from the backup after every setup run.
+- Setup manages these keys: `GATEWAY_URL`, `GATEWAY_TOKEN`, `AGENT_NAME`, `PORT`, `HOST`, `SSL_PORT`, `OPENAI_API_KEY`, `REPLICATE_API_TOKEN`, the `NERVE_AUTH`, `NERVE_PASSWORD_HASH`, `NERVE_SESSION_SECRET` and `NERVE_SESSION_TTL` auth keys, `ALLOWED_ORIGINS`, `CSP_CONNECT_EXTRA`, `WS_ALLOWED_HOSTS`, `MEMORY_PATH`, `MEMORY_DIR`, `SESSIONS_DIR`, `USAGE_FILE` and `FILE_BROWSER_ROOT`. Every run rewrites these. Any other variable is kept as written, for example `MIMO_API_KEY`, `NERVE_PUBLIC_ORIGIN`, `TRUSTED_PROXIES`, `NERVE_WORKSPACE_REMOTE`, `NERVE_LANGUAGE` or the `NERVE_UPLOAD_*` flags. Setup appends them after its own block under `# Preserved from your previous .env (not managed by setup)`, with the comment lines directly above each. A repeated variable keeps its last value, and other comments and blank lines are not carried over. Choose **Start fresh** in the wizard to drop them; they stay in the backup.
 
 ---
 
@@ -160,10 +160,10 @@ If chat works but crons, Kanban runs or remote workspace panels fail with `origi
 
 ### Token injection
 
-Nerve injects `GATEWAY_TOKEN` on the server side, so a trusted browser never receives or stores it. When the browser opens the WebSocket proxy (`/ws`) and its connect request carries no token, the proxy adds `GATEWAY_TOKEN` if the client is **trusted**:
+Nerve injects `GATEWAY_TOKEN` on the server side, so a trusted browser never receives or stores it. When the browser opens the WebSocket proxy (`/ws`) and its connect request carries no token, the proxy adds `GATEWAY_TOKEN` if the client is **trusted** and the target is the gateway in `GATEWAY_URL` (same host, port and TLS; `localhost`, `127.0.0.1` and `::1` count as one host). A client is trusted when:
 
 1. Auth is on (`NERVE_AUTH=true`), so the upgrade already carried a valid session cookie, **or**
-2. The client is on loopback (`127.0.0.1`, `::1` or `::ffff:127.x`). When the socket itself is loopback, Nerve takes the client address from `X-Forwarded-For` (or `X-Real-IP`), so a same-host reverse proxy must set that header to the real client address. `TRUSTED_PROXIES` does not affect this check.
+2. The client is on loopback (`127.0.0.1`, `::1` or `::ffff:127.x`). When the socket itself is loopback, Nerve reads `X-Forwarded-For` from the right and takes the first address that is not loopback. It falls back to `X-Real-IP` when the header is missing or lists only loopback addresses. A same-host reverse proxy must therefore send the real client address in one of those headers. `TRUSTED_PROXIES` does not affect this check.
 
 `GET /api/connect-defaults` tells the browser whether this applies (`serverSideAuth`). If it does, the connect dialog hides the token field for the official gateway URL. Untrusted clients and custom gateway URLs need the token typed in the dialog, and a token entered that way is kept in the browser's `localStorage` (`oc-config`) until it is cleared.
 
@@ -229,8 +229,8 @@ Voice phrase overrides (stop, cancel and wake phrases) are saved to `~/.nerve/vo
 |----------|---------|-------------|
 | `ALLOWED_ORIGINS` | *(none)* | Extra browser origins for CORS and the WebSocket proxy, comma-separated. Each is normalised with `new URL()`; malformed entries and `null` are ignored. Origins on `localhost`, `127.0.0.1` or `::1` (any port) are always allowed. |
 | `CSP_CONNECT_EXTRA` | *(none)* | Extra CSP `connect-src` sources, space-separated. Only `http://`, `https://`, `ws://` and `wss://` entries are kept; semicolons and newlines are stripped. |
-| `WS_ALLOWED_HOSTS` | `localhost,127.0.0.1,::1` | Extra hostnames the WebSocket proxy may connect to, comma-separated. Trusted clients get `GATEWAY_TOKEN` injected for any of these hosts, so list only gateways you trust. |
-| `TRUSTED_PROXIES` | `127.0.0.1,::1,::ffff:127.0.0.1` | Extra proxy IPs whose `X-Forwarded-For` or `X-Real-IP` the rate limiter honours, comma-separated. Used only for rate limiting. |
+| `WS_ALLOWED_HOSTS` | `localhost,127.0.0.1,::1` | Extra hostnames the WebSocket proxy may connect to, comma-separated. Nerve injects `GATEWAY_TOKEN` only when the target is the gateway in `GATEWAY_URL` (same host, port and TLS; `localhost`, `127.0.0.1` and `::1` count as one host). For any other host in this list the browser's own token is used. List only gateways you trust. |
+| `TRUSTED_PROXIES` | `127.0.0.1,::1,::ffff:127.0.0.1` | Extra proxy IPs whose `X-Forwarded-For` or `X-Real-IP` the rate limiter honours, comma-separated. The rate limiter reads `X-Forwarded-For` from the right and takes the first address not listed here, so list every proxy hop. Used only for rate limiting. |
 
 ```bash
 # Tailscale IP example

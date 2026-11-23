@@ -62,7 +62,7 @@ npm run setup -- --defaults --access-mode tailscale-serve
 
 If setup cannot confirm the Serve hostname, it falls back to tailnet IP access, or keeps localhost-only access if Tailscale is not connected, and prints what is left to do. Use `--access-mode tailscale-ip` for the tailnet IP.
 
-Setup rewrites `.env` and keeps only the settings it manages (the previous file is saved as `.env.backup`). If your `.env` holds other settings, such as `NERVE_PUBLIC_ORIGIN`, `TRUSTED_PROXIES` or `NERVE_WORKSPACE_REMOTE`, add them back afterwards.
+Setup rewrites the settings it manages, such as `ALLOWED_ORIGINS` and `CSP_CONNECT_EXTRA`, and keeps the rest as written (the previous file is saved as `.env.backup`). Other settings, such as `NERVE_PUBLIC_ORIGIN`, `TRUSTED_PROXIES` or `NERVE_WORKSPACE_REMOTE`, stay under a `# Preserved from your previous .env (not managed by setup)` heading, unless you choose Start fresh.
 
 The manual steps below make the same changes by hand.
 

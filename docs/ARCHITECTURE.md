@@ -185,7 +185,7 @@ In order, from `server/app.ts`:
 | Error handler | `middleware/error-handler.ts` (`app.onError`) | JSON `{ error }` for `/api/*`, plain text otherwise. Logs stacks outside production |
 | Logger | `hono/logger` | Request logging |
 | CORS | `hono/cors` + `lib/origin-utils.ts` | Allows loopback origins and `ALLOWED_ORIGINS`. Credentials on. Methods GET, POST, PUT, PATCH, DELETE, OPTIONS |
-| Security headers | `middleware/security-headers.ts` | CSP, `X-Frame-Options: SAMEORIGIN`, `nosniff`, referrer policy, HSTS when `NODE_ENV=production`, default `Cache-Control: no-store` |
+| Security headers | `middleware/security-headers.ts` | CSP (a route's own policy is kept, as for raw SVG), `X-Frame-Options: SAMEORIGIN`, `nosniff`, referrer policy, HSTS when `NODE_ENV=production`, default `Cache-Control: no-store` |
 | Body limit | `hono/body-limit` | `/api/*` only, `config.limits.maxBodyBytes`, `413` when exceeded |
 | Auth | `middleware/auth.ts` | With `NERVE_AUTH=true`, requires a valid session cookie on `/api/*`, except the auth endpoints, `/api/version` and `/health`. Static files pass through; the login gate handles them |
 | Compression | `hono/compress` | Skipped for `/api/events` (SSE) and `/api/files/raw` |
@@ -214,7 +214,7 @@ Every route file in `server/routes/` is mounted from `server/app.ts`. See [API.m
 | `version.ts`, `version-check.ts` | `GET /api/version`, `GET /api/version/check` | Running version; newer release check (GitHub release, then semver tag) |
 | `server-info.ts` | `GET /api/server-info` | Server time, timezone, gateway start time, agent name |
 | `gateway.ts` | `GET /api/gateway/models`, `GET /api/gateway/session-info`, `POST /api/gateway/session-patch`, `POST /api/gateway/restart` | Config-backed model catalog, session model and thinking, HTTP model change, gateway restart |
-| `sessions.ts` | `GET /api/sessions/hidden`, `GET /api/sessions/runtime`, `GET /api/sessions/:id/model`, `GET /api/sessions/media`, `POST /api/sessions/spawn-subagent` | Hidden cron sessions, model and thinking read from transcripts, transcript images, and a server-side subagent spawn. `hidden`, `runtime` and `media` look sessions up in the agent's local `sessions.json`, which current OpenClaw (database-backed) and remote gateways do not provide: `hidden` then returns `storeMissing: true`, `runtime` returns `missing: true`, and `media` fails with `500` |
+| `sessions.ts` | `GET /api/sessions/hidden`, `GET /api/sessions/runtime`, `GET /api/sessions/:id/model`, `GET /api/sessions/media`, `POST /api/sessions/spawn-subagent` | Hidden cron sessions, model and thinking read from transcripts, transcript images, and a server-side subagent spawn. `hidden` and `runtime` look sessions up in the agent's local `sessions.json`, which current OpenClaw (database-backed) and remote gateways do not provide: `hidden` then returns `storeMissing: true` and `runtime` returns `missing: true`. `media` downloads an omitted image from the gateway by its artifact id, so it works on current OpenClaw. Only a request without an `artifactId` (older OpenClaw) reads `sessions.json`, and a missing file answers `404` |
 | `chat-media.ts` | `GET /api/chat-media` | Proxies raster images the gateway hosts for chat replies, so the browser never needs the gateway token |
 | `channels.ts` | `GET /api/channels` | Messaging channels configured in OpenClaw |
 | `crons.ts` | `GET`/`POST /api/crons`, `PATCH`/`DELETE /api/crons/:id`, `POST /api/crons/:id/toggle`, `POST /api/crons/:id/run`, `GET /api/crons/:id/runs` | Cron jobs through the gateway's `cron.*` RPC methods. A manual run of an isolated agent-turn job goes through the `sessions_spawn` HTTP tool |
@@ -236,7 +236,7 @@ Every route file in `server/routes/` is mounted from `server/app.ts`. See [API.m
 
 ### How the server reaches the gateway
 
-- `server/lib/gateway-rpc.ts` (`gatewayRpcCall`): one persistent WebSocket to the gateway, signed with Nerve's device identity, negotiating protocol v4. Used for `cron.*`, `sessions.*`, `agents.files.*` (remote workspace fallback) and the Kanban assignee launch path.
+- `server/lib/gateway-rpc.ts` (`gatewayRpcCall`): one persistent WebSocket to the gateway, signed with Nerve's device identity, negotiating protocol v4. Used for `cron.*`, `sessions.*`, `agents.files.*` (remote workspace fallback), `artifacts.download` (omitted history images) and the Kanban assignee launch path.
 - `server/lib/gateway-client.ts` (`invokeGatewayTool`): HTTP `POST /tools/invoke`. Still used for `sessions_spawn` (Kanban runs and manual cron runs), `subagents` and `sessions_history` (Kanban polling), `sessions_list` and `session_status` (`/api/gateway/session-info` and `session-patch`), and `memory_store`.
 
 ### Server modules (`server/lib/`)
@@ -277,7 +277,7 @@ Browser WS → /ws?target=<gateway ws url> → server/lib/ws-proxy.ts → OpenCl
 1. The browser opens `/ws` on the Nerve server (HTTP or HTTPS).
 2. The upgrade is refused with `403` if the `Origin` is not allowed, and with `401` if auth is on and the session cookie is invalid.
 3. The `target` must be a `ws:` or `wss:` URL whose host is in `WS_ALLOWED_HOSTS`, or the socket closes with `1008`.
-4. The proxy opens the upstream socket. It holds the client's `connect` request until the gateway's `connect.challenge` arrives, then signs the nonce with Nerve's Ed25519 device identity and, for trusted clients that sent no token, injects the gateway token. If no challenge arrives within 5 seconds, it sends the request without device identity.
+4. The proxy opens the upstream socket. It holds the client's `connect` request until the gateway's `connect.challenge` arrives, then signs the nonce with Nerve's Ed25519 device identity and, for trusted clients that sent no token and only toward the gateway in `GATEWAY_URL`, injects the gateway token. If no challenge arrives within 5 seconds, it sends the request without device identity.
 5. If the gateway closes with `1008` for a device problem (unknown device, pairing required, token or signature mismatch), the proxy retries once without device identity, with reduced scopes.
 6. After the handshake, frames pass through in both directions. Frames sent before the gateway is ready are buffered (up to 100 frames or 1 MB).
 

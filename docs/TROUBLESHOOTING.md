@@ -33,13 +33,13 @@ Common problems and fixes for Nerve.
 
 If setup guessed wrong, override it: `NERVE_GATEWAY_LOCATION=remote npm run setup` for a tunnel on a machine that also runs OpenClaw, or `NERVE_GATEWAY_LOCATION=local npm run setup` for a DNS alias of this machine. See [Configuration](CONFIGURATION.md#gateway-config-changes).
 
-### Settings disappeared after re-running setup
+### Settings changed or disappeared after re-running setup
 
-**Symptom:** After `npm run setup`, values you added to `.env` by hand are gone, for example `MIMO_API_KEY`, `NERVE_PUBLIC_ORIGIN`, `TRUSTED_PROXIES`, `NERVE_LANGUAGE` or `NERVE_UPLOAD_*`.
+**Symptom:** After `npm run setup`, a value you set by hand in `.env` is gone or different.
 
-**Cause:** Setup rewrites `.env` with only the keys it manages.
+**Cause:** Setup keeps the keys it does not manage, such as `MIMO_API_KEY`, `NERVE_PUBLIC_ORIGIN`, `TRUSTED_PROXIES`, `NERVE_LANGUAGE` or `NERVE_UPLOAD_*`, under a `# Preserved from your previous .env (not managed by setup)` heading. They are dropped when you choose **Start fresh**. Setup rewrites the keys it does manage (listed in [Configuration](CONFIGURATION.md#what-setup-writes)), for example `ALLOWED_ORIGINS` and `CSP_CONNECT_EXTRA`, which follow the access mode you pick. Comments and blank lines are not carried over, except a comment directly above a kept key.
 
-**Fix:** Copy the missing lines back from `.env.backup` (or the dated `.env.backup.YYYY-MM-DD`), then restart Nerve.
+**Fix:** Copy the lines you need back from `.env.backup` (or the dated `.env.backup.YYYY-MM-DD`), then restart Nerve.
 
 ### Port already in use
 
@@ -73,13 +73,21 @@ PORT=3090 npm start
 - Re-run `npm run setup` to set a new password.
 - Or remove `NERVE_PASSWORD_HASH` from `.env`, keep `NERVE_AUTH=true` and a valid `GATEWAY_TOKEN`, restart, and sign in with the gateway token.
 
+### Login page says "Too many attempts"
+
+**Symptom:** After a few sign-in attempts, the login page shows "Too many attempts. Try again in 42 seconds." The number is the wait the server asked for. When the server gives no usable wait, the page says "Too many attempts. Wait a minute and try again."
+
+**Cause:** Login is limited to 5 requests per minute per client.
+
+**Fix:** Wait for the time shown, then sign in again.
+
 ### Login page says "Unable to connect to server"
 
-**Symptom:** After a few sign-in attempts, the login page shows "Unable to connect to server" even though Nerve is running.
+**Symptom:** The login page shows "Unable to connect to server".
 
-**Cause:** Login is limited to 5 requests per minute per client. The rate-limit reply is plain text, which the login page reports as a connection failure.
+**Cause:** The browser could not reach Nerve, or a proxy in front of Nerve answered with a 5xx error. A 4xx reply that is not JSON shows "Login failed" instead.
 
-**Fix:** Wait a minute, then sign in again.
+**Fix:** Check that Nerve is running and reachable at the address in the browser, then check the proxy's error log.
 
 ### Session expired or redirected to login
 
@@ -198,7 +206,7 @@ ALLOWED_ORIGINS=https://nerve.example.com
 CSP_CONNECT_EXTRA=https://nerve.example.com wss://nerve.example.com
 ```
 
-Setup writes these for its Tailscale, Network and Custom access modes, but not for a reverse-proxy domain. In Network mode it also leaves out the `https://<ip>:<SSL_PORT>` origin when you enable HTTPS, so add that one by hand.
+Setup writes these for its Tailscale, Network and Custom access modes, but not for a reverse-proxy domain. When HTTPS is on in Network or Custom mode, setup also adds the `https://<host>:<SSL_PORT>` origin. In Tailscale IP mode it does so only for a non-interactive run (`--defaults --access-mode tailscale-ip`) with `SSL_PORT` already set in `.env`.
 
 ---
 
@@ -606,7 +614,7 @@ Runs that never finish end with `Run timed out (polling limit reached)`.
 **Fix:**
 
 - Wait for the window to pass (see the `Retry-After` and `X-RateLimit-Reset` headers).
-- Behind a reverse proxy on another host, add its IP to `TRUSTED_PROXIES` so clients are told apart by `X-Forwarded-For`; otherwise they all share the proxy's limit.
+- Behind a reverse proxy on another host, add its IP to `TRUSTED_PROXIES` so clients are told apart by `X-Forwarded-For`; otherwise they all share the proxy's limit. With a chain of proxies, list every hop.
 
 ---
 
@@ -771,7 +779,7 @@ Fix the cause, then run the update again. If the run ended with exit 70, see the
 
 ### Rollback failed (exit 70)
 
-**Symptom:** Both the update and the automatic rollback failed.
+**Symptom:** Both the update and the automatic rollback failed. This includes a service restart command that fails both times, for example `systemctl` refusing a restart without `sudo`.
 
 **Fix:** Recover by hand:
 
@@ -779,7 +787,9 @@ Fix the cause, then run the update again. If the run ended with exit 70, see the
 cat ~/.nerve/updater/last-good.json       # note the "ref"
 git checkout --force <ref>
 npm install && npm run build
-# then restart the service as above
+# then restart the service
+sudo systemctl restart nerve.service                        # Linux
+launchctl kickstart -k gui/$(id -u)/com.nerve.server       # macOS
 ```
 
 ---

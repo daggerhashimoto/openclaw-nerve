@@ -130,7 +130,7 @@ npm run prod
 npm run update -- --yes
 ```
 
-Fetches the latest release, rebuilds, restarts, verifies health, and rolls back automatically on failure.
+Fetches the latest release, rebuilds, restarts, verifies health, and rolls back automatically if the build, restart or health check fails.
 
 </details>
 

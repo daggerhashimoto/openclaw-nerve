@@ -39,10 +39,10 @@ Nerve is a **local-first** web cockpit for an AI agent. Its security model assum
 | **Abuse and resource exhaustion** | Per-client rate limits on most API routes, a global request body limit, and a 10,000-entry cap on the rate limit store. |
 | **Directory traversal** | Paths are resolved and checked against a prefix allowlist or the workspace root. |
 | **Symlink escape** | `/api/files`, the file browser and upload references resolve the real path and check it again. |
-| **Gateway token exfiltration** | The token never reaches the browser. The server injects it only for trusted clients and only toward hosts in `WS_ALLOWED_HOSTS`, and fetches gateway media for trusted clients only. |
+| **Gateway token exfiltration** | The token never reaches the browser. The server injects it only for trusted clients and only toward the gateway named in `GATEWAY_URL`, and fetches gateway media for trusted clients only. |
 | **Spoofed client IPs** | The rate limiter uses the TCP socket address and honours `X-Forwarded-For` only from `TRUSTED_PROXIES`. |
 | **MIME sniffing** | `X-Content-Type-Options: nosniff` on every response. |
-| **Active content in served files** | `/api/files` forces SVG downloads; `/api/chat-media` passes only raster images. |
+| **Active content in served files** | `/api/files` forces SVG downloads; `/api/files/raw` sends SVG under a sandboxing Content-Security-Policy; `/api/chat-media` and `/api/sessions/media` pass only raster images. |
 | **CSP directive injection** | `CSP_CONNECT_EXTRA` is sanitised: semicolons and newlines are stripped, and only `http(s)://` and `ws(s)://` sources are kept. |
 | **Malformed CORS origins** | `ALLOWED_ORIGINS` entries are normalised with `new URL()`. Malformed entries and `null` are ignored. |
 
@@ -99,7 +99,7 @@ When Nerve is reachable from other machines:
 - **Enable authentication.** The setup wizard prompts for it when the access mode binds `0.0.0.0`. Tailscale Serve and Custom binds to a specific address skip that prompt, so set it up yourself if other people can reach the tailnet or network.
 - A VPN (Tailscale, WireGuard) adds a layer in front of the password.
 - Put a reverse proxy with HTTPS in front for anything wider.
-- A reverse proxy on the same host must set `X-Forwarded-For` to the real client address, replacing any value the client sent. Setting only `X-Real-IP` is not enough, because Nerve reads `X-Forwarded-For` first. Without that header, every proxied client looks local and, with auth off, gets the gateway token injected.
+- A reverse proxy on the same host must pass the real client address in `X-Forwarded-For`, either by setting it or by appending to the client's value (nginx `$proxy_add_x_forwarded_for`). Nerve reads the header from the right and takes the first address that is not loopback, so entries a client writes on the left do not count. A proxy that sets only `X-Real-IP` also keeps remote clients from looking local, because Nerve uses `X-Real-IP` when `X-Forwarded-For` is missing or lists only loopback addresses. It does not stop a client from choosing its own address with a non-loopback `X-Forwarded-For` entry, which matters for rate limiting. With neither header, every proxied client looks local and, with auth off, gets the gateway token injected.
 
 ---
 
@@ -126,7 +126,7 @@ Requests without an `Origin` header (same-origin navigations and non-browser cli
 
 ## Security headers
 
-The `securityHeaders` middleware sets these on every response:
+The `securityHeaders` middleware sets these on every response, except that a route that sets its own `Content-Security-Policy` keeps it (`GET /api/files/raw` does this for SVG files):
 
 | Header | Value | Purpose |
 |--------|-------|---------|
@@ -192,7 +192,7 @@ Routes without a limiter: `/health`, `GET /api/files`, the file browser routes (
 
 - **Per client and path.** Each `clientIP:path` pair has its own window.
 - **Client identification.** The TCP socket address from `getConnInfo()`, not request headers.
-- **Trusted proxies.** `X-Forwarded-For` (first entry) or `X-Real-IP` is used only when the socket address is in `TRUSTED_PROXIES` (default: loopback addresses).
+- **Trusted proxies.** `X-Forwarded-For` and `X-Real-IP` are used only when the socket address is in `TRUSTED_PROXIES` (default: loopback addresses). `X-Forwarded-For` is read from the right, and the first address not in `TRUSTED_PROXIES` is the client. `X-Real-IP` is used when the header is missing or lists only trusted proxies.
 - **Store cap.** At most 10,000 entries; when full, the oldest is evicted. This bounds memory when a trusted proxy forwards many distinct addresses.
 - **Cleanup.** Expired timestamps are purged every 5 minutes.
 
@@ -275,7 +275,7 @@ The real paths of these prefixes are allowed too (for example `/private/tmp` on 
 - Paths that start with `..` or are absolute are rejected. `/api/files/resolve` also accepts `/workspace/...` and absolute paths under the workspace root, and converts them to relative paths first.
 - Every path segment is checked against the exclusions: `node_modules`, `.git`, `dist`, `build`, `server-dist`, `certs`, `.env` and `.env.*`, `agent-log.json`, and `*.log`. **With `FILE_BROWSER_ROOT` set, there are no exclusions**, so `.env` files and other secrets under that root can be read and edited.
 - The resolved path must stay inside the root, and its real path must stay inside the root's real path. For new files, the nearest existing parent is checked.
-- Text reads and writes are capped at 1 MB. `raw` serves images up to 10 MB and PDFs up to 50 MB.
+- Text reads and writes are capped at 1 MB. `raw` serves images up to 10 MB and PDFs up to 50 MB. SVG responses carry a sandboxing `Content-Security-Policy` (`sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:`).
 - When the workspace is remote, `resolve` returns 501, `raw` returns 404, and the mutation routes return 501.
 
 ### Upload references (`POST /api/upload-reference/resolve`)
@@ -300,7 +300,7 @@ Proxies images the gateway hosts for chat replies. Those URLs need the gateway t
 
 ### `GET /api/sessions/media`
 
-Reads an image block from the main agent's local transcript. The client sends a session key, a message timestamp and an image index; the server maps the key to a transcript through `SESSIONS_DIR/sessions.json`, so no client path reaches the file system. The image is returned inline. Without a `sessions.json` (current OpenClaw keeps sessions in a database), the route returns 500 `Failed to load media`.
+Serves an image that `chat.history` left out of a message. The client sends a session key, a message timestamp and an image index, plus the `artifactId` when current OpenClaw supplied one. With an `artifactId` (form `artifact_transcript_image_<base64url>`, at most 8192 characters), the server downloads the image from the gateway with `artifacts.download`, so no file is read. Without it (older OpenClaw), the server maps the key to a transcript through `SESSIONS_DIR/sessions.json`, so no client path reaches the file system, and a missing `sessions.json` gives 404. Only `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `image/avif` are served, inline and with `nosniff`. Any other recorded type returns 415, and an unreachable gateway returns 502.
 
 ---
 
@@ -343,13 +343,14 @@ Nerve injects `GATEWAY_TOKEN` on the server so the browser never stores it.
    - a gateway token is configured
    - the browser's connect request carries no token of its own
    - the client is trusted: auth is on (so the upgrade carried a valid cookie), or the client address is loopback
+   - the target is the gateway in `GATEWAY_URL`: same host, port and TLS, with `localhost`, `127.0.0.1` and `::1` counting as one host
    - the upgrade passed the Origin and target checks
 3. For the official gateway URL with `serverSideAuth=true`, the browser connects with an empty token.
 4. Custom gateway URLs and untrusted clients need the token entered in the connect dialog.
 
-**Client address.** When the socket is loopback, the proxy takes the client address from `X-Forwarded-For` (or `X-Real-IP`), which your reverse proxy must set. `TRUSTED_PROXIES` does not apply here. See the reverse proxy note under [Recommendations for network access](#recommendations-for-network-access).
+**Client address.** When the socket is loopback, the proxy takes the client address from `X-Forwarded-For`, read from the right past loopback hops, or from `X-Real-IP` when that header is missing or lists only loopback addresses. Your reverse proxy must set one of them. `TRUSTED_PROXIES` does not apply here. See the reverse proxy note under [Recommendations for network access](#recommendations-for-network-access).
 
-**Allowed hosts.** List only gateways you trust in `WS_ALLOWED_HOSTS`.
+**Allowed hosts.** List only gateways you trust in `WS_ALLOWED_HOSTS`. The server's gateway token goes only to the host in `GATEWAY_URL`. Other listed hosts receive only the token the browser supplies.
 
 ### Device identity and gateway scopes
 
@@ -398,7 +399,7 @@ Exceeding the global limit returns **413 Request body too large**.
 | `/api/memories` (`date`) | `^[a-zA-Z0-9._-]+$` and no `..` |
 | `/api/workspace/:key` | Fixed key to file map (`soul` to `SOUL.md`, `tools`, `identity`, `user`, `agents`, `heartbeat`, `chatPathLinks` to `CHAT_PATH_LINKS.json`); no user-supplied paths |
 | `/api/chat-media` | One accepted gateway path shape, re-checked after URL parsing |
-| `/api/sessions/media` | No client path; session key to transcript through `sessions.json` |
+| `/api/sessions/media` | No client path; artifact id checked against the gateway's id shape, or session key to transcript through `sessions.json` |
 
 ---
 

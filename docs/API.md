@@ -255,7 +255,7 @@ Provides the gateway WebSocket URL and trust metadata for the frontend's auto-co
 | `authEnabled` | `boolean` | Whether `NERVE_AUTH` is enabled |
 | `serverSideAuth` | `boolean` | `true` when a gateway token is configured and the request is trusted for injection |
 
-A request is trusted when `NERVE_AUTH` is enabled (the request already passed the session check) or when the client address is loopback. The client address is the socket address, except that `X-Forwarded-For` or `X-Real-IP` is used when the direct connection is itself loopback (a local reverse proxy). A remote client behind such a proxy is therefore judged by the forwarded address and is not trusted, while a loopback hop that adds no forwarded header, such as a local tunnel, counts as loopback access. If `serverSideAuth` is `false`, the connect dialog keeps the token field visible and the user must supply the token.
+A request is trusted when `NERVE_AUTH` is enabled (the request already passed the session check) or when the client address is loopback. The client address is the socket address, except that when the direct connection is itself loopback (a local reverse proxy), it is the first non-loopback entry of `X-Forwarded-For`, read from the right, or `X-Real-IP` when that header is missing or lists only loopback addresses. A remote client behind such a proxy is therefore judged by the forwarded address and is not trusted, while a loopback hop that adds no forwarded header, such as a local tunnel, counts as loopback access. If `serverSideAuth` is `false`, the connect dialog keeps the token field visible and the user must supply the token.
 
 ---
 
@@ -1419,7 +1419,7 @@ If the transcript cannot be found, the endpoint returns 200 with `{ "ok": true, 
 
 ### `GET /api/sessions/media`
 
-Returns an image that was attached to a message in a session transcript. Used by chat history to show images that are not available any other way. The server looks the session up in the main agent's `sessions.json`, opens its transcript, and returns the image block at the given index of the message with the given timestamp.
+Returns an image that chat history left out of a message. On current OpenClaw, `chat.history` puts an `artifactId` on each omitted image, and the server downloads the image from the gateway with `artifacts.download`. Without an `artifactId` (older OpenClaw), the server looks the session up in the main agent's `sessions.json`, opens its transcript, and returns the image block at the given index of the message with the given timestamp.
 
 **Rate limit:** General (60/min)
 
@@ -1427,21 +1427,24 @@ Returns an image that was attached to a message in a session transcript. Used by
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| `sessionKey` | `string` | Yes | Session key present in the store |
+| `sessionKey` | `string` | Yes | Session key. Without `artifactId`, it must be present in `sessions.json` |
 | `timestamp` | `number` | Yes | `timestamp` of the transcript message |
 | `imageIndex` | `integer` | No | Zero-based index among the message's image blocks. Default `0` |
+| `artifactId` | `string` | No | The gateway's id for an omitted image: `artifact_transcript_image_` followed by base64url characters, at most 8192 characters. When present, the image is downloaded from the gateway and `sessions.json` is not read |
 
-**Response:** the raw image bytes, with `Content-Type` from the block's MIME type, `Content-Disposition: inline; filename="message-<timestamp>-image-<index>.<ext>"`. The handler asks for `Cache-Control: private, max-age=3600`, but the global API cache middleware replaces it, so clients receive `Cache-Control: no-cache`.
+**Response:** the raw image bytes, with `Content-Type` set to the recorded MIME type (lower-cased, parameters removed), `X-Content-Type-Options: nosniff`, `Content-Disposition: inline; filename="message-<timestamp>-image-<index>.<ext>"`. Only `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `image/avif` are served. The handler asks for `Cache-Control: private, max-age=3600`, but the global API cache middleware replaces it, so clients receive `Cache-Control: no-cache`.
 
 **Errors:** all bodies have the shape `{ "ok": false, "error": "..." }`.
 
 | Status | `error` | Condition |
 |--------|---------|-----------|
-| 400 | `Invalid media lookup params` | Missing `sessionKey`, non-numeric `timestamp`, or `imageIndex` that is not a non-negative integer |
-| 404 | `Unknown session key` | The key is not in `sessions.json` |
+| 400 | `Invalid media lookup params` | Missing `sessionKey`, non-numeric `timestamp`, `imageIndex` that is not a non-negative integer, or an `artifactId` with the wrong form or more than 8192 characters |
+| 404 | `Unknown session key` | Without `artifactId`: the key is not in `sessions.json`, or `sessions.json` does not exist |
 | 404 | `Transcript not found` | No transcript file for the session |
-| 404 | `Image not found` | No such message, image block, or image data |
-| 500 | `Failed to load media` | `sessions.json` cannot be read, which includes the file not existing. Current OpenClaw keeps sessions in a database and writes no such file, so this route then always returns 500 |
+| 404 | `Image not found` | No such message, image block, or image data, or the gateway has no such artifact |
+| 415 | `Not a supported image type` | The recorded MIME type is not one of the five raster types |
+| 500 | `Failed to load media` | Without `artifactId`: `sessions.json` exists but cannot be read or parsed |
+| 502 | `Gateway unavailable` | With `artifactId`: the gateway could not be reached or failed the `artifacts.download` call |
 
 ### `POST /api/sessions/spawn-subagent`
 
@@ -2390,7 +2393,7 @@ Serves an image or PDF from the selected workspace for previews. The response is
 | `.ico` | `image/x-icon` | 10 MB |
 | `.pdf` | `application/pdf` | 50 MB (52,428,800 bytes) |
 
-**Response:** the file bytes, with `Content-Type`, `Content-Length` and `Cache-Control: no-cache`.
+**Response:** the file bytes, with `Content-Type`, `Content-Length` and `Cache-Control: no-cache`. SVG responses also carry `Content-Security-Policy: sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:`, which replaces the app-wide policy for that response.
 
 For PDFs the response also has `Accept-Ranges: bytes`, and a single `Range` header of the form `bytes=<start>-<end>`, `bytes=<start>-` or `bytes=-<suffix length>` returns `206 Partial Content` with `Content-Range: bytes <start>-<end>/<size>`. A range that cannot be served returns `416` with an empty body and `Content-Range: bytes */<size>`. That includes a range whose `<end>` is at or beyond the file size: Nerve does not clamp the end, so `bytes=0-65535` on a 1,000-byte PDF gets `416` even though it overlaps the file, and `bytes=0-` or `bytes=0-999` is the form to use. It also includes a `<start>` greater than `<end>` and a suffix length of `0`. `Range` is ignored for other file types, and a malformed `Range` value is ignored (the whole file is returned).
 
@@ -3391,7 +3394,7 @@ Each column:
 
 ## WebSocket proxy
 
-Browsers do not talk to the gateway directly. They connect to Nerve at `/ws?target=<gateway-ws-url>` (for example `ws://127.0.0.1:18789/ws`), and Nerve relays the traffic, injecting its device identity and, for trusted clients, the gateway token during the connect handshake (see [Connect defaults](#connect-defaults)).
+Browsers do not talk to the gateway directly. They connect to Nerve at `/ws?target=<gateway-ws-url>` (for example `ws://127.0.0.1:18789/ws`), and Nerve relays the traffic, injecting its device identity and, for trusted clients connecting to the gateway in `GATEWAY_URL`, the gateway token during the connect handshake (see [Connect defaults](#connect-defaults)).
 
 | Check | Failure |
 |-------|---------|
@@ -3460,7 +3463,7 @@ X-RateLimit-Reset: 1708100060
 
 `X-RateLimit-Reset` is in epoch seconds.
 
-**Client identification:** Uses the real TCP socket address (not spoofable headers). `X-Forwarded-For` and `X-Real-IP` are only trusted when the direct connection comes from a trusted proxy (loopback by default; extend via the `TRUSTED_PROXIES` env var).
+**Client identification:** Uses the real TCP socket address (not spoofable headers). `X-Forwarded-For` and `X-Real-IP` are only trusted when the direct connection comes from a trusted proxy (loopback by default; extend via the `TRUSTED_PROXIES` env var). `X-Forwarded-For` is read from the right, and the first address that is not a trusted proxy is the client, with `X-Real-IP` as the fallback.
 
 ---
 

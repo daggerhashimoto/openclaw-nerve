@@ -127,9 +127,9 @@ Charts, diffs, previews, syntax-highlighted code, structured tool rendering, and
 curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/master/install.sh | bash
 ```
 
-> *The installer handles dependencies, clone, build, and then hands off straight into the setup wizard. Guided access modes include localhost, LAN, Tailscale tailnet IP, and Tailscale Serve.*
+> *The installer handles dependencies, clone, build, and then usually hands off straight into the setup wizard. Guided access modes include localhost, LAN, Tailscale tailnet IP, and Tailscale Serve.*
 
-**Requires:** Node.js 22+ and an [OpenClaw](https://github.com/openclaw/openclaw) gateway, on macOS or Linux.
+**Requires:** Node.js 22+, git and the `openclaw` CLI on this machine, plus an [OpenClaw](https://github.com/openclaw/openclaw) gateway, on macOS or Linux. If this machine has no `openclaw` CLI, for example because the gateway runs elsewhere, use the manual install below.
 
 ### Let an agent do it
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   normalizeDnsName,
+  extractServeEndpoints,
   extractServeOrigins,
   parseTailscaleStatus,
   getTailscaleState,
@@ -97,6 +98,62 @@ describe('getTailscaleState', () => {
       ipv4: null,
       dnsName: null,
       serveOrigins: [],
+      serveEndpoints: [],
     });
+  });
+
+  it('keeps each Serve endpoint with the target its root handler proxies to', () => {
+    const exec = (command: string) => {
+      if (command.startsWith('command -v')) return '/usr/bin/tailscale';
+      if (command.startsWith('tailscale status')) return JSON.stringify({ Self: { DNSName: `${EXAMPLE_TS_DNS}.`, TailscaleIPs: ['100.64.0.42'] } });
+      if (command.startsWith('tailscale serve status')) {
+        return JSON.stringify({
+          Web: {
+            [`${EXAMPLE_TS_DNS}:8443`]: { Handlers: { '/': { Proxy: 'http://127.0.0.1:9000' } } },
+            [`${EXAMPLE_TS_DNS}:443`]: { Handlers: { '/': { Proxy: 'http://127.0.0.1:3080' } } },
+          },
+        });
+      }
+      throw new Error(`unexpected command: ${command}`);
+    };
+
+    const state = getTailscaleState(exec as never);
+
+    expect(state.serveOrigins).toEqual([`https://${EXAMPLE_TS_DNS}:8443`, `https://${EXAMPLE_TS_DNS}`]);
+    expect(state.serveEndpoints).toEqual([
+      { origin: `https://${EXAMPLE_TS_DNS}:8443`, rootProxy: 'http://127.0.0.1:9000' },
+      { origin: `https://${EXAMPLE_TS_DNS}`, rootProxy: 'http://127.0.0.1:3080' },
+    ]);
+  });
+});
+
+describe('extractServeEndpoints', () => {
+  it('records the root handler proxy target for each origin', () => {
+    expect(extractServeEndpoints({
+      Web: {
+        [`${EXAMPLE_TS_DNS}:443`]: { Handlers: { '/': { Proxy: 'http://127.0.0.1:3080' } } },
+      },
+    })).toEqual([{ origin: `https://${EXAMPLE_TS_DNS}`, rootProxy: 'http://127.0.0.1:3080' }]);
+  });
+
+  it('records no target when only a sub-path proxies somewhere or there is no root handler', () => {
+    expect(extractServeEndpoints({
+      Web: {
+        [`${EXAMPLE_TS_DNS}:443`]: { Handlers: { '/old': { Proxy: 'http://127.0.0.1:3080' } } },
+        [`${EXAMPLE_TS_DNS}:8443`]: { Handlers: { '/': { Path: '/srv/www' } } },
+      },
+    })).toEqual([
+      { origin: `https://${EXAMPLE_TS_DNS}`, rootProxy: null },
+      { origin: `https://${EXAMPLE_TS_DNS}:8443`, rootProxy: null },
+    ]);
+  });
+
+  it('keeps the proxy target of a duplicate origin that has one', () => {
+    expect(extractServeEndpoints({
+      Web: {
+        [EXAMPLE_TS_DNS]: { Handlers: {} },
+        [`${EXAMPLE_TS_DNS}:443`]: { Handlers: { '/': { Proxy: 'http://127.0.0.1:3080' } } },
+      },
+    })).toEqual([{ origin: `https://${EXAMPLE_TS_DNS}`, rootProxy: 'http://127.0.0.1:3080' }]);
   });
 });

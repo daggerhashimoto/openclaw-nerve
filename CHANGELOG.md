@@ -66,6 +66,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Older images in a chat's history load again on current OpenClaw: the server downloads omitted images from the gateway by artifact id, and `/api/sessions/media` serves only raster image types (PR #429)
 - The Claude Code plan limits in the usage panel load on macOS again: node-pty 1.1.0 installs its `spawn-helper` without the execute bit, and Nerve now sets it before running the Claude CLI (PR #433)
 - When the GitHub release lookup fails, the updater and the version check find the newest release tag on the remote again instead of only local tags (PR #434)
+- In Tailscale Serve mode, setup uses the Serve endpoint that forwards to Nerve instead of the first one listed, so another app served through Tailscale Serve no longer ends up in `ALLOWED_ORIGINS` in place of Nerve's own origin (PR #435)
 - Setup allows the `https://` origin in Network and tailnet IP modes when HTTPS is on, so the WebSocket is no longer refused with 403 (PR #424)
 - A rate-limited login says "Too many attempts. Try again in N seconds." instead of "Unable to connect to server" (PR #425)
 - The updater rolls back when the service restart command fails, and the Update dialog says which failures roll back (PR #426)

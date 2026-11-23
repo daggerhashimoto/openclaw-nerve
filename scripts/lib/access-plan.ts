@@ -26,6 +26,45 @@ export interface BuildAccessPlanInput {
   tailscale?: TailscaleState;
 }
 
+// Serve mode binds Nerve to 127.0.0.1 only, so an endpoint proxying to ::1 would not reach it.
+const NERVE_SERVE_HOSTS = new Set(['127.0.0.1', 'localhost']);
+
+/**
+ * A Serve proxy target as a URL. Tailscale also accepts shorthand targets:
+ * a bare port means http://127.0.0.1:<port>, and host:port means http://host:port.
+ */
+function expandProxyTarget(target: string): string {
+  const value = target.trim();
+  if (/^\d+$/.test(value)) return `http://127.0.0.1:${value}`;
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`;
+}
+
+/** Whether a Serve proxy target is Nerve on this machine: 127.0.0.1 or localhost on Nerve's HTTP or HTTPS port. */
+function proxiesToNerve(target: string | null, ports: string[]): boolean {
+  if (!target) return false;
+  try {
+    const url = new URL(expandProxyTarget(target));
+    const host = url.hostname.replace(/^\[|\]$/g, '');
+    const port = url.port || (url.protocol.startsWith('https') ? '443' : '80');
+    return NERVE_SERVE_HOSTS.has(host) && ports.includes(port);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The Serve origin that reaches Nerve: the endpoint whose root handler
+ * proxies to Nerve's port. When no endpoint has a proxy target we can read,
+ * the first one is used, as before; when they all proxy elsewhere, none is.
+ */
+function nerveServeOrigin(tailscale: TailscaleState | undefined, ports: string[]): string | null {
+  const endpoints = tailscale?.serveEndpoints;
+  if (!endpoints || endpoints.length === 0) return tailscale?.serveOrigins?.[0] || null;
+  const match = endpoints.find((endpoint) => proxiesToNerve(endpoint.rootProxy, ports));
+  if (match) return match.origin;
+  return endpoints.every((endpoint) => endpoint.rootProxy === null) ? endpoints[0].origin : null;
+}
+
 function dedupe(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.map(value => value?.trim()).filter((value): value is string => Boolean(value)))];
 }
@@ -158,9 +197,11 @@ export function buildAccessPlan(input: BuildAccessPlanInput): AccessPlan {
 
     case 'tailscale-serve': {
       const plan = emptyPlan('tailscale-serve', '127.0.0.1');
-      const origin = tailscale?.serveOrigins?.[0] || null;
+      const origin = nerveServeOrigin(tailscale, [port, input.sslPort ?? '']);
       if (!origin) {
+        const servingElsewhere = (tailscale?.serveEndpoints?.length ?? 0) > 0;
         plan.followUpSteps = dedupe([
+          servingElsewhere ? `Tailscale Serve is running, but no endpoint forwards to http://127.0.0.1:${port}.` : null,
           `Run: tailscale serve --bg http://127.0.0.1:${port}`,
           'Confirm Tailscale Serve exposes a usable https://<node>.tail<id>.ts.net origin, then re-run setup.',
         ]);

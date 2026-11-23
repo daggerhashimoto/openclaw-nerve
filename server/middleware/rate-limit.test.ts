@@ -191,3 +191,69 @@ describe('rate-limit middleware', () => {
     expect(typeof rateLimitAuth).toBe('function');
   });
 });
+
+describe('getClientId behind a trusted proxy', () => {
+  const originalTrustedProxies = process.env.TRUSTED_PROXIES;
+
+  afterEach(() => {
+    if (originalTrustedProxies === undefined) delete process.env.TRUSTED_PROXIES;
+    else process.env.TRUSTED_PROXIES = originalTrustedProxies;
+    vi.resetModules();
+  });
+
+  /** Re-import so TRUSTED_PROXIES is read again, then give each request a real socket address. */
+  async function loadRateLimit(trustedProxies?: string) {
+    vi.resetModules();
+    if (trustedProxies === undefined) delete process.env.TRUSTED_PROXIES;
+    else process.env.TRUSTED_PROXIES = trustedProxies;
+    return import('./rate-limit.js');
+  }
+
+  function send(app: Hono, path: string, remoteAddress: string, headers: Record<string, string>) {
+    return app.request(path, { headers }, { incoming: { socket: { remoteAddress } } });
+  }
+
+  async function clientIdFor(remoteAddress: string, headers: Record<string, string>, trustedProxies?: string) {
+    const mod = await loadRateLimit(trustedProxies);
+    const app = new Hono();
+    app.get('/id', (c) => c.text(mod.getClientId(c)));
+    return (await send(app, '/id', remoteAddress, headers)).text();
+  }
+
+  it('uses the address an appending same-host proxy added, not the first entry', async () => {
+    const id = await clientIdFor('127.0.0.1', { 'x-forwarded-for': '127.0.0.1, 203.0.113.5' });
+    expect(id).toBe('203.0.113.5');
+  });
+
+  it('skips every proxy listed in TRUSTED_PROXIES when walking from the right', async () => {
+    const id = await clientIdFor(
+      '127.0.0.1',
+      { 'x-forwarded-for': '198.51.100.7, 203.0.113.5, 10.0.0.5' },
+      '10.0.0.5',
+    );
+    expect(id).toBe('203.0.113.5');
+  });
+
+  it('falls back to X-Real-IP from a trusted proxy', async () => {
+    const id = await clientIdFor('127.0.0.1', { 'x-real-ip': '203.0.113.9' });
+    expect(id).toBe('203.0.113.9');
+  });
+
+  it('ignores forwarding headers from a socket that is not a trusted proxy', async () => {
+    const id = await clientIdFor('192.0.2.10', { 'x-forwarded-for': '203.0.113.5' });
+    expect(id).toBe('192.0.2.10');
+  });
+
+  it('keeps one bucket per client when the client varies its own left-hand entries', async () => {
+    const mod = await loadRateLimit();
+    const app = new Hono();
+    app.use('/limited', mod.rateLimit({ maxRequests: 1, windowMs: 60_000 }));
+    app.get('/limited', (c) => c.text('ok'));
+
+    const first = await send(app, '/limited', '127.0.0.1', { 'x-forwarded-for': '198.51.100.1, 203.0.113.20' });
+    expect(first.status).toBe(200);
+
+    const second = await send(app, '/limited', '127.0.0.1', { 'x-forwarded-for': '198.51.100.2, 203.0.113.20' });
+    expect(second.status).toBe(429);
+  });
+});

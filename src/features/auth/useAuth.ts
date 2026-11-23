@@ -25,6 +25,16 @@ fetch('/api/auth/status')
   .then(data => setAuthSnapshot(!data.authEnabled || data.authenticated ? 'authenticated' : 'login'))
   .catch(() => setAuthSnapshot('authenticated'));
 
+/** Message for a 429 from the auth rate limiter, naming the wait when the server gave one. */
+function rateLimitMessage(retryAfter: string | null): string {
+  // The limiter sends whole seconds; anything else (missing, zero, a date) gets the generic copy.
+  const seconds = retryAfter !== null && /^\d+$/.test(retryAfter.trim()) ? Number(retryAfter) : 0;
+  if (seconds > 0) {
+    return `Too many attempts. Try again in ${seconds} ${seconds === 1 ? 'second' : 'seconds'}.`;
+  }
+  return 'Too many attempts. Wait a minute and try again.';
+}
+
 export function useAuth() {
   const state = useSyncExternalStore(subscribe, getSnapshot);
   const [error, setError] = useState('');
@@ -38,11 +48,20 @@ export function useAuth() {
         body: JSON.stringify({ password }),
         credentials: 'include',
       });
-      const data = await res.json();
-      if (data.ok) {
+      // The rate limiter answers 429 with a plain-text body, so check the status before parsing.
+      if (res.status === 429) {
+        setError(rateLimitMessage(res.headers.get('Retry-After')));
+        return;
+      }
+      // A non-JSON body (a proxy error page, say) must not read as a lost connection
+      // unless it is a 5xx, which is what a gateway that cannot reach Nerve returns.
+      const data = await res.json().catch(() => null);
+      if (data?.ok) {
         setAuthSnapshot('authenticated');
+      } else if (data?.error) {
+        setError(data.error);
       } else {
-        setError(data.error || 'Login failed');
+        setError(res.status >= 500 ? 'Unable to connect to server' : 'Login failed');
       }
     } catch {
       setError('Unable to connect to server');

@@ -8,7 +8,8 @@ function normalizeHost(host: string): string {
   return host.replace(/^\[/, '').replace(/\]$/, '');
 }
 
-function isLocalHost(host: string): boolean {
+/** Whether a hostname is localhost, 127.0.0.1 or ::1 (with or without IPv6 brackets). */
+export function isLocalHost(host: string): boolean {
   const normalized = normalizeHost(host);
   return normalized === '127.0.0.1' || normalized === 'localhost' || normalized === '::1';
 }

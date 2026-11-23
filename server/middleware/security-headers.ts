@@ -69,7 +69,10 @@ export const securityHeaders: MiddlewareHandler = async (c, next) => {
   await next();
 
   // Content Security Policy - defense in depth against XSS
-  c.header('Content-Security-Policy', getCspDirectives());
+  // A route that sets its own policy keeps it (raw SVG responses do).
+  if (!c.res.headers.get('Content-Security-Policy')) {
+    c.header('Content-Security-Policy', getCspDirectives());
+  }
 
   // Prevent clickjacking
   c.header('X-Frame-Options', 'SAMEORIGIN');

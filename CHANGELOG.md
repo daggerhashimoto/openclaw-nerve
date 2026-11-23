@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-23
+
 ### Highlights
 
 **Nerve has a new look.** The interface reads like a building at night. Every agent is a room and every room has a pane: electric blue while the agent works, cantaloupe while work waits on you, red when a run failed, and otherwise the agent family's own colour so you can tell whose room it is at a glance. The operator's surfaces (your turns, the composer, the editors, the login) sit on a warm plate; everything the agent does sits cool. It comes in two families, each dark and light: Workbench (Night and Paper, the default) and Night light (Night and Daylight). The fourteen community themes are retired: a saved light theme opens as Daylight and any other as Workbench Night (PR #391, PR #394).
@@ -81,8 +83,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 - The Classic skin and the fourteen community themes (PR #391)
 
+### Security
+- Dependencies with published advisories are updated within their version ranges: hono 4.13.21 (fixes in the cookie, CORS, body limit, SSE and router code Nerve uses), @hono/node-server 1.19.19, ws 8.23.0, zod 4.6.7, DOMPurify 3.5.0 and Vite 7.3.8
+
 ### Documentation
-- Every doc under `docs/`, `CONTRIBUTING.md` and the Kanban skill checked against the current code: every API route documented, every environment variable the server reads covered, and the install, deployment, Tailscale and troubleshooting guides matched to today's installer and setup
+- Every doc under `docs/`, `CONTRIBUTING.md` and the Kanban skill checked against the current code: every API route documented, every environment variable the server reads covered, and the install, deployment, Tailscale and troubleshooting guides matched to today's installer and setup (PR #423)
+- The README is rewritten for the new look, with fresh desktop and phone screenshots (PR #430)
 
 ## [1.5.4] - 2026-10-06
 

@@ -66,10 +66,9 @@ Terminology: agent, fleet, gateway, session, subagent, cron, workspace, memory, 
 ## Evidence on Hand
 
 - README with feature descriptions and capability table.
-- Product demo video (linked from the README) and `docs/demo.gif`.
-- Three mobile screenshots (linked from the README).
+- README screenshots under `docs/screenshots/`: a desktop hero, four phone screens and a gallery of twelve views.
 - Discord community and a public contributors graph on GitHub.
-- CHANGELOG with release history (current release 1.5.4).
+- CHANGELOG with release history (current release 1.6.0).
 
 Absent, do not fabricate: testimonials, user counts, star counts beyond the live badge, benchmarks, press, or named customers.
 

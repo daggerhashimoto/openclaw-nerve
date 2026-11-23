@@ -43,6 +43,6 @@ paste log here
 
 - **OS:** (e.g. Ubuntu 24.04, macOS 15)
 - **Node:** (e.g. 22.x, from `node --version`)
-- **Nerve version:** (e.g. 1.5.4, shown in the status bar and in Settings, or in `package.json`)
+- **Nerve version:** (e.g. 1.6.0, shown in the status bar and in Settings, or in `package.json`)
 - **OpenClaw version:** (e.g. 2026.9.x, from `openclaw --version`)
 - **Browser:** (e.g. Chrome 132, Firefox 134)

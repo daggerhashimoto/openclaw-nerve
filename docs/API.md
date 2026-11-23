@@ -937,7 +937,7 @@ How the numbers are built:
 
 All memory routes accept an optional `agentId` scope: a query parameter on every route, or a body field on `POST`, `PUT` and `DELETE`. If omitted, Nerve uses `main`. An id is 1 to 64 characters of lowercase letters, digits and hyphens, starting and ending with a letter or digit. Anything else returns 400 with `{ "ok": false, "error": "Invalid agentId" }`.
 
-Files for `main` come from `MEMORY_PATH` and `MEMORY_DIR` (defaults `~/.openclaw/workspace/MEMORY.md` and `~/.openclaw/workspace/memory/`). Other agents use the workspace configured for them in the OpenClaw config. If that workspace is not on the local filesystem (or `NERVE_WORKSPACE_REMOTE=true`), `MEMORY.md` is read and written through the gateway instead. Daily files are always local-only.
+Files for `main` come from `MEMORY_PATH` and `MEMORY_DIR` (defaults `~/.openclaw/workspace/MEMORY.md` and `~/.openclaw/workspace/memory/`). Other agents use the workspace configured for them in the OpenClaw config. If that workspace is not on the local filesystem (or `NERVE_WORKSPACE_REMOTE=true`), `GET /api/memories`, `POST /api/memories`, `PUT /api/memories/section` and `DELETE /api/memories` read and write `MEMORY.md` through the gateway instead. `GET /api/memories/section` always reads the local file, so for a remote workspace it returns 404 `File not found`. Daily files are always local-only.
 
 Error bodies on these routes are JSON `{ "ok": false, "error": "..." }`.
 

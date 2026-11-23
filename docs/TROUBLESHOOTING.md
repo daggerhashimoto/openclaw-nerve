@@ -603,6 +603,25 @@ Runs that never finish end with `Run timed out (polling limit reached)`.
 
 ---
 
+## Usage and limits
+
+### Claude Code limits show "Unavailable"
+
+**Symptom:** In the usage panel, the rate limits under Anthropic say "Unavailable", and `GET /api/claude-code-limits` returns `"available": false` with an `error`.
+
+**Cause:** Nerve reads the limits by running the Claude CLI in a pseudo-terminal through node-pty and parsing its `/usage` output. The `error` says which step failed:
+
+- `posix_spawnp failed.`: node-pty's `spawn-helper` is not executable. node-pty 1.1.0 installs it on macOS without the execute bit. Nerve adds the bit before its first spawn; when it cannot, the server log shows `[pty] node-pty's spawn-helper is not executable and could not be fixed`, followed by the `chmod +x` command to run.
+- `Timeout waiting for Claude to start`: the CLI is not installed for the user that runs Nerve, or it did not reach its prompt. Nerve looks for `~/.local/bin/claude`, `~/.claude/local/claude`, `/usr/local/bin/claude` and `/opt/homebrew/bin/claude`, then `claude` on `PATH`.
+- `No usage data found in Claude output`: the CLI started but `/usage` printed nothing Nerve could read, for example when it is not signed in.
+
+**Fix:**
+
+- For `posix_spawnp failed.`, run the `chmod +x` command from the log.
+- Otherwise install the Claude CLI and sign in by running `claude` once, as the user that runs Nerve on the Nerve host.
+
+An unavailable result is cached for 30 seconds, so the panel updates shortly after.
+
 ## Rate limiting
 
 ### "Too many requests" errors

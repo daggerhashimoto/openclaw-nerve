@@ -178,7 +178,7 @@ From 1.5.4, Nerve connects to the OpenClaw gateway with connect protocol v4 only
 
 ### "No published release or semver tags found" (exit 20)
 
-The updater asks the GitHub Releases API for the latest release (10 second timeout), then falls back to the highest semver tag it can find. It runs `git ls-remote --tags origin` first, but it cannot read that command's output today, so in practice the fallback uses local tags (`git tag -l`); `git fetch --tags origin` makes new tags visible to it. If no release or tag is found, it exits with code 20. The release lookup only works when `origin` is a GitHub URL. Setting `GITHUB_TOKEN` or `GH_TOKEN` avoids anonymous rate limits.
+The updater asks the GitHub Releases API for the latest release (10 second timeout), then falls back to the highest semver tag from `git ls-remote --tags origin`, then to local tags (`git tag -l`). If no release or tag is found, it exits with code 20. The release lookup only works when `origin` is a GitHub URL. Setting `GITHUB_TOKEN` or `GH_TOKEN` avoids anonymous rate limits.
 
 **Fix:** Verify the remote, the tags and release access:
 ```bash

@@ -34,10 +34,16 @@ export function normalizeSemverTag(tag: string | null | undefined): string | nul
   return match ? match[1] : null;
 }
 
+/**
+ * Semver versions from `git tag -l` (one tag per line) or `git ls-remote
+ * --tags` (`<hash>\trefs/tags/<tag>` per line), sorted ascending. The ref is
+ * the last field of a line; peeled `^{}` refs and prereleases are skipped.
+ */
 function parseSemverTags(output: string): string[] {
   const versions: string[] = [];
   for (const line of output.split('\n')) {
-    const match = /^(?:refs\/tags\/)?v?(\d+\.\d+\.\d+)$/.exec(line.trim());
+    const ref = line.trim().split(/\s+/).pop() ?? '';
+    const match = /^(?:refs\/tags\/)?v?(\d+\.\d+\.\d+)$/.exec(ref);
     if (match && !versions.includes(match[1])) {
       versions.push(match[1]);
     }

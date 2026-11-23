@@ -17,6 +17,7 @@ import * as nodePty from 'node-pty';
 import { existsSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ensureSpawnHelperExecutable } from '../lib/pty-spawn-helper.js';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -107,7 +108,16 @@ function hasTrustPrompt(clean: string): boolean {
 
 // ── Main ─────────────────────────────────────────────────────────────
 
+let spawnHelperChecked = false;
+
 export async function getClaudeUsage(): Promise<RawClaudeLimits> {
+  // node-pty 1.1.0 installs its macOS spawn-helper without the execute bit;
+  // without this every spawn below fails with "posix_spawnp failed".
+  if (!spawnHelperChecked) {
+    spawnHelperChecked = true;
+    ensureSpawnHelperExecutable();
+  }
+
   const claudeBin = resolveClaudeBin();
   let pty: nodePty.IPty | null = null;
   let buffer = '';

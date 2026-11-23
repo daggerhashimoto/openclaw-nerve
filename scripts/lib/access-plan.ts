@@ -26,7 +26,8 @@ export interface BuildAccessPlanInput {
   tailscale?: TailscaleState;
 }
 
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+// Serve mode binds Nerve to 127.0.0.1 only, so an endpoint proxying to ::1 would not reach it.
+const NERVE_SERVE_HOSTS = new Set(['127.0.0.1', 'localhost']);
 
 /**
  * A Serve proxy target as a URL. Tailscale also accepts shorthand targets:
@@ -38,14 +39,14 @@ function expandProxyTarget(target: string): string {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`;
 }
 
-/** Whether a Serve proxy target is Nerve on this machine: a loopback host on Nerve's HTTP or HTTPS port. */
+/** Whether a Serve proxy target is Nerve on this machine: 127.0.0.1 or localhost on Nerve's HTTP or HTTPS port. */
 function proxiesToNerve(target: string | null, ports: string[]): boolean {
   if (!target) return false;
   try {
     const url = new URL(expandProxyTarget(target));
     const host = url.hostname.replace(/^\[|\]$/g, '');
     const port = url.port || (url.protocol.startsWith('https') ? '443' : '80');
-    return LOOPBACK_HOSTS.has(host) && ports.includes(port);
+    return NERVE_SERVE_HOSTS.has(host) && ports.includes(port);
   } catch {
     return false;
   }

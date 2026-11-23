@@ -209,6 +209,18 @@ describe('buildAccessPlan with several Tailscale Serve endpoints', () => {
     }
   });
 
+  it('does not take an endpoint that proxies to ::1, since Serve mode binds Nerve to 127.0.0.1', () => {
+    const plan = buildAccessPlan({
+      profile: 'tailscale-serve',
+      port: '3080',
+      tailscale: serveState([
+        { origin: OTHER, rootProxy: 'http://[::1]:3080' },
+        { origin: NERVE, rootProxy: 'http://127.0.0.1:3080' },
+      ]),
+    });
+    expect(plan.browserOrigins).toEqual([NERVE]);
+  });
+
   it('does not take a port that only starts with Nerve\'s port', () => {
     const plan = buildAccessPlan({
       profile: 'tailscale-serve',

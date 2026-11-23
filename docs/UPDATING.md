@@ -174,6 +174,11 @@ What to do:
 
 From 1.5.4, Nerve connects to the OpenClaw gateway with connect protocol v4 only. A gateway that does not speak v4 cannot connect, so update OpenClaw before or together with Nerve.
 
+### 1.6.0, themes and proxy hops
+
+- The Classic skin and the fourteen community themes are gone. A saved light theme opens as Daylight and any other as Workbench Night, so there is nothing to do.
+- The rate limiter now reads `X-Forwarded-For` from the right. Behind more than one reverse proxy, for example a remote proxy in front of a local one, list every proxy address in `TRUSTED_PROXIES`. Otherwise every client behind the outer proxy shares one rate-limit bucket.
+
 ## Troubleshooting
 
 ### "No published release or semver tags found" (exit 20)

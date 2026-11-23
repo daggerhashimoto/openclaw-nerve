@@ -181,7 +181,7 @@ Returns the application name and version from `package.json`. Public: it needs n
 
 ```json
 {
-  "version": "1.5.4",
+  "version": "1.6.0",
   "name": "openclaw-nerve"
 }
 ```
@@ -196,8 +196,8 @@ Compares the running version with the newest published one. The newest version c
 
 ```json
 {
-  "current": "1.5.3",
-  "latest": "1.5.4",
+  "current": "1.5.4",
+  "latest": "1.6.0",
   "source": "release",
   "updateAvailable": true,
   "projectDir": "/path/to/nerve"

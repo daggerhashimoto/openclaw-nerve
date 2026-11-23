@@ -83,6 +83,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 - The Classic skin and the fourteen community themes (PR #391)
 
+### Security
+- Dependencies with published advisories are updated within their version ranges: hono 4.13.21 (fixes in the cookie, CORS, body limit, SSE and router code Nerve uses), @hono/node-server 1.19.19, ws 8.23.0, zod 4.6.7, DOMPurify 3.5.0 and Vite 7.3.8
+
 ### Documentation
 - Every doc under `docs/`, `CONTRIBUTING.md` and the Kanban skill checked against the current code: every API route documented, every environment variable the server reads covered, and the install, deployment, Tailscale and troubleshooting guides matched to today's installer and setup (PR #423)
 - The README is rewritten for the new look, with fresh desktop and phone screenshots (PR #430)

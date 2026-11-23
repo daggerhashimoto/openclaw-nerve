@@ -9,7 +9,7 @@
  * @module
  */
 
-import type { Context, Next } from 'hono';
+import type { Context, MiddlewareHandler, Next } from 'hono';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { resolveForwardedClientIp } from '../lib/forwarded-ip.js';
 
@@ -101,7 +101,7 @@ export function getClientId(c: Context): string {
 /**
  * Create a rate limiting middleware
  */
-export function rateLimit(config: RateLimitConfig) {
+export function rateLimit(config: RateLimitConfig): MiddlewareHandler {
   const { maxRequests, windowMs } = config;
 
   return async (c: Context, next: Next) => {

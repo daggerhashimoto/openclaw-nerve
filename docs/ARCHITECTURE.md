@@ -408,11 +408,11 @@ Each valid marker becomes a proposal, and the markers are stripped from the save
 ### Development
 
 ```bash
-npm run dev                    # Vite on :3080 (VITE_PORT), proxies /api and /ws to :3081
+PORT=3081 npm run dev          # Vite on :3080 (VITE_PORT), proxies /api and /ws to :3081
 PORT=3081 npm run dev:server   # tsx watch server/index.ts
 ```
 
-Vite proxies to `http://localhost:${PORT:-3081}` (the `PORT` of the Vite process). The backend defaults to `:3080`, so set `PORT=3081` for it in this split setup.
+Vite proxies to `http://localhost:${PORT:-3081}` (the `PORT` of the Vite process). The backend defaults to `:3080`, so set `PORT=3081` for both in this split setup; passing it to Vite too keeps the proxy right when the shell already exports `PORT`.
 
 ### Production
 

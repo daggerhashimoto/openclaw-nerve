@@ -390,7 +390,7 @@ The updater keeps its state in `~/.nerve/updater/`. These paths are not configur
 
 ```bash
 PORT=3081 npm run dev:server   # backend
-npm run dev                    # frontend on :3080, proxies to :3081
+PORT=3081 npm run dev          # frontend on :3080, proxies to :3081
 ```
 
 ---

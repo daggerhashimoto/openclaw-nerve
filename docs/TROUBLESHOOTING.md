@@ -711,16 +711,16 @@ npm start              # runs node server-dist/index.js
 
 **Symptom:** API requests fail with 502 in development.
 
-**Cause:** Vite proxies `/api` and `/ws` to `http://localhost:${PORT}`, with `PORT` defaulting to `3081` in `vite.config.ts`. If no backend listens there, every proxied request fails. `npm run dev:server` uses `PORT` from `.env` (usually 3080) unless you set it.
+**Cause:** Vite proxies `/api` and `/ws` to `http://localhost:${PORT}`, with `PORT` defaulting to `3081` in `vite.config.ts`. A `PORT` your shell exports changes that target too. If no backend listens there, every proxied request fails. `npm run dev:server` uses `PORT` from `.env` (usually 3080) unless you set it.
 
-**Fix:** Run both, with the backend on 3081:
+**Fix:** Stop any running `npm run dev` process first, because it keeps port 3080 and its old proxy target. Then run both, with the backend on 3081:
 
 ```bash
 # Terminal 1
 PORT=3081 npm run dev:server   # backend on 3081
 
 # Terminal 2
-npm run dev                    # frontend on 3080, proxies to 3081
+PORT=3081 npm run dev          # frontend on 3080, proxies to 3081
 ```
 
 ### Tests fail with "Cannot find module"

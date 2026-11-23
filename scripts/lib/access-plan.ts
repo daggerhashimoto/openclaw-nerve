@@ -241,3 +241,32 @@ export function applyAccessPlanToConfig(config: EnvConfig, plan: AccessPlan): En
 
   return next;
 }
+
+function hasNonLoopbackOrigin(allowedOrigins: string | null | undefined): boolean {
+  for (const entry of splitCsv(allowedOrigins)) {
+    try {
+      const host = new URL(entry).hostname;
+      if (!isLoopback(host)) return true;
+    } catch {
+      // Ignore malformed origin entries
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether the chosen access mode or configuration exposes Nerve beyond
+ * localhost and therefore requires authentication setup.
+ *
+ * Tailscale Serve keeps HOST=127.0.0.1 while publishing Nerve to the tailnet
+ * over *.ts.net (and forwarding requests from loopback), so it needs
+ * authentication just like a non-loopback bind.
+ */
+export function requiresAuthentication(
+  config: EnvConfig,
+  plan?: Pick<AccessPlan, 'profile'>,
+): boolean {
+  if (plan?.profile === 'tailscale-serve') return true;
+  if (!isLoopback(config.HOST)) return true;
+  return hasNonLoopbackOrigin(config.ALLOWED_ORIGINS);
+}

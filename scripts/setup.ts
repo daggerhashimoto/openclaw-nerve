@@ -39,7 +39,14 @@ import { generateSelfSignedCert } from './lib/cert-gen.js';
 import { detectGatewayConfig, getEnvGatewayToken, chooseSetupGatewayToken, hasLocalOpenClaw } from './lib/gateway-detect.js';
 import { gatewayHostLabel, locateGateway, readGatewayLocationOverride, readLocalMachine } from './lib/gateway-locality.js';
 import { detectedTokenNotice, detectedTokenPrompt, manualTokenHint, runGatewayConfigStep } from './lib/gateway-config-step.js';
-import { applyAccessPlanToConfig, buildAccessPlan, type InstallerAccessProfile } from './lib/access-plan.js';
+import {
+  applyAccessPlanToConfig,
+  buildAccessPlan,
+  isLoopback,
+  requiresAuthentication,
+  type AccessPlan,
+  type InstallerAccessProfile,
+} from './lib/access-plan.js';
 import { getTailscaleState, type TailscaleState } from './lib/tailscale.js';
 import { detectAgentDisplayNameDefault } from './lib/agent-name-default.js';
 import { printDeploymentGuides, shouldPrintDeploymentGuides } from './lib/deployment-guides.js';
@@ -89,11 +96,6 @@ function detectPrimaryIpv4(): string | null {
     }
   }
   return null;
-}
-
-/** Check whether a host string is a loopback address (IPv4, IPv6, or localhost). */
-function isLoopback(host: string): boolean {
-  return !host || host === '127.0.0.1' || host === 'localhost' || host === '::1';
 }
 
 function sleep(ms: number): Promise<void> {
@@ -721,7 +723,7 @@ async function collectInteractive(
     config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
   }
 
-  const isNetworkExposed = config.HOST === '0.0.0.0';
+  const isNetworkExposed = requiresAuthentication(config, accessPlan);
 
   if (isNetworkExposed) {
     section(4, TOTAL_SECTIONS, 'Authentication');
@@ -1027,7 +1029,7 @@ async function runCheck(config: EnvConfig): Promise<void> {
     } else {
       warn('NERVE_SESSION_SECRET not set — will be auto-generated (sessions won\'t survive restarts)');
     }
-  } else if (host === '0.0.0.0') {
+  } else if (requiresAuthentication(config)) {
     warn('Authentication is DISABLED while server is network-exposed');
     dim('Run `npm run setup` to enable authentication');
   } else {
@@ -1104,8 +1106,9 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
   if (!config.PORT) config.PORT = DEFAULTS.PORT;
   if (!config.HOST) config.HOST = DEFAULTS.HOST;
 
+  let accessPlan: AccessPlan | undefined;
   if (requestedAccessMode) {
-    let accessPlan = buildAccessPlan({
+    accessPlan = buildAccessPlan({
       profile: requestedAccessMode as InstallerAccessProfile,
       port: config.PORT,
       sslPort: config.SSL_PORT,
@@ -1145,7 +1148,7 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
   if (!config.NERVE_SESSION_SECRET) {
     config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
   }
-  if (config.HOST === '0.0.0.0' && !config.NERVE_AUTH) {
+  if (requiresAuthentication(config, accessPlan) && !config.NERVE_AUTH) {
     if (config.GATEWAY_TOKEN) {
       config.NERVE_AUTH = 'true';
       success('Authentication auto-enabled (gateway token can be used as password)');

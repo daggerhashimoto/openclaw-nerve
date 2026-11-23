@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAccessPlan, applyAccessPlanToConfig } from './access-plan.js';
+import { buildAccessPlan, applyAccessPlanToConfig, requiresAuthentication } from './access-plan.js';
 
 const EXAMPLE_TS_DNS = 'example-node.tail0000.ts.net';
 const EXAMPLE_TS_IPV4 = '100.64.0.42';
@@ -359,5 +359,65 @@ describe('applyAccessPlanToConfig', () => {
       GATEWAY_URL: 'not-a-url',
     }, localPlan);
     expect(next.WS_ALLOWED_HOSTS).toBeUndefined();
+  });
+});
+
+describe('requiresAuthentication', () => {
+  it('returns false for localhost-only setup', () => {
+    const plan = buildAccessPlan({ profile: 'local', port: '3080' });
+    const config = applyAccessPlanToConfig({ PORT: '3080' }, plan);
+    expect(requiresAuthentication(config, plan)).toBe(false);
+  });
+
+  it('returns false for a custom loopback bind with no external origins', () => {
+    const plan = buildAccessPlan({ profile: 'custom', port: '3080', remoteHost: '127.0.0.1' });
+    const config = applyAccessPlanToConfig({ PORT: '3080' }, plan);
+    expect(requiresAuthentication(config, plan)).toBe(false);
+  });
+
+  it('returns true for tailscale-serve even though HOST stays 127.0.0.1', () => {
+    const plan = buildAccessPlan({
+      profile: 'tailscale-serve',
+      port: '3080',
+      tailscale: connectedTailscale,
+    });
+    const config = applyAccessPlanToConfig({ PORT: '3080' }, plan);
+    expect(config.HOST).toBe('127.0.0.1');
+    expect(requiresAuthentication(config, plan)).toBe(true);
+  });
+
+  it('returns true for tailscale-serve even before a Serve origin is confirmed', () => {
+    const plan = buildAccessPlan({
+      profile: 'tailscale-serve',
+      port: '3080',
+      tailscale: { ...connectedTailscale, serveOrigins: [] },
+    });
+    const config = applyAccessPlanToConfig({ PORT: '3080' }, plan);
+    expect(config.HOST).toBe('127.0.0.1');
+    expect(config.ALLOWED_ORIGINS).toBeUndefined();
+    expect(requiresAuthentication(config, plan)).toBe(true);
+  });
+
+  it('returns true for network, tailscale-ip, and non-loopback custom binds', () => {
+    const networkPlan = buildAccessPlan({ profile: 'network', port: '3080', remoteHost: '192.168.1.20' });
+    expect(requiresAuthentication(applyAccessPlanToConfig({ PORT: '3080' }, networkPlan), networkPlan)).toBe(true);
+
+    const tsIpPlan = buildAccessPlan({ profile: 'tailscale-ip', port: '3080', tailscale: connectedTailscale });
+    expect(requiresAuthentication(applyAccessPlanToConfig({ PORT: '3080' }, tsIpPlan), tsIpPlan)).toBe(true);
+
+    const customPlan = buildAccessPlan({ profile: 'custom', port: '3080', remoteHost: '10.0.0.5' });
+    expect(requiresAuthentication(applyAccessPlanToConfig({ PORT: '3080' }, customPlan), customPlan)).toBe(true);
+  });
+
+  it('returns true without an access plan when ALLOWED_ORIGINS contains a non-loopback origin', () => {
+    expect(requiresAuthentication({
+      HOST: '127.0.0.1',
+      ALLOWED_ORIGINS: `https://${EXAMPLE_TS_DNS}`,
+    })).toBe(true);
+
+    expect(requiresAuthentication({
+      HOST: '127.0.0.1',
+      ALLOWED_ORIGINS: 'http://localhost:3080,http://127.0.0.1:3080',
+    })).toBe(false);
   });
 });

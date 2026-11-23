@@ -927,4 +927,29 @@ describe('loadChatHistory', () => {
       },
     ]);
   });
+
+  it('passes the artifact id current OpenClaw puts on an omitted image to the session media route', async () => {
+    const artifactId = 'artifact_transcript_image_eyJzb3VyY2UiOiJzcWxpdGUifQ';
+    const rpc = vi.fn().mockResolvedValue({
+      messages: [
+        {
+          role: 'user',
+          timestamp: 1775131617235,
+          content: [
+            { type: 'text', text: 'look at this' },
+            { type: 'image', omitted: true, bytes: 8, mimeType: 'image/jpeg', artifactId },
+          ],
+        },
+      ],
+    });
+
+    const result = await loadChatHistory({ rpc, sessionKey: 'agent:main:main' });
+
+    expect(result[0].extractedImages).toEqual([
+      {
+        url: `/api/sessions/media?sessionKey=agent%3Amain%3Amain&timestamp=1775131617235&imageIndex=0&artifactId=${artifactId}`,
+        alt: 'message-1775131617235-image-0.jpg',
+      },
+    ]);
+  });
 });

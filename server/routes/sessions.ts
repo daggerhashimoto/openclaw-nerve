@@ -19,9 +19,36 @@ import { config } from '../lib/config.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 import { spawnSubagent } from '../lib/subagent-spawn.js';
 import { normalizeAgentId } from '../lib/agent-workspace.js';
+import { gatewayRpcCall } from '../lib/gateway-rpc.js';
+import { ALLOWED_IMAGE_TYPES } from './chat-media.js';
 
 const app = new Hono();
 const CRON_SESSION_RE = /^agent:[^:]+:cron:[^:]+(?::run:.+)?$/;
+
+/** The id current OpenClaw puts on an image block chat.history omitted: a prefix and a base64url reference. */
+const TRANSCRIPT_IMAGE_ARTIFACT_RE = /^artifact_transcript_image_[A-Za-z0-9_-]+$/;
+/** The gateway refuses longer ids. */
+const MAX_ARTIFACT_ID_LENGTH = 8192;
+const ARTIFACT_DOWNLOAD_TIMEOUT_MS = 30_000;
+/** Gateway errors that mean the image is gone, not that the gateway failed. */
+const ARTIFACT_MISSING_ERRORS = new Set([
+  'artifact not found',
+  'no session found for artifact query',
+  'artifact download is unsupported',
+]);
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'image/avif': '.avif',
+};
+
+/** Image bytes and the MIME type their source recorded, not yet checked against the allowlist. */
+interface SessionImage {
+  buffer: Buffer;
+  mimeType: string;
+}
 
 interface StoredSessionSummary {
   sessionId?: string;
@@ -149,13 +176,13 @@ async function readImageBlockFromTranscript(
   filePath: string,
   messageTimestamp: number,
   imageIndex: number,
-): Promise<{ buffer: Buffer; mimeType: string; filename: string } | null> {
+): Promise<SessionImage | null> {
   return new Promise((resolve) => {
     const stream = createReadStream(filePath, { encoding: 'utf-8' });
     const rl = createInterface({ input: stream, crlfDelay: Infinity });
     let resolved = false;
 
-    const done = (result: { buffer: Buffer; mimeType: string; filename: string } | null) => {
+    const done = (result: SessionImage | null) => {
       if (resolved) return;
       resolved = true;
       rl.close();
@@ -179,17 +206,10 @@ async function readImageBlockFromTranscript(
         const target = imageBlocks[imageIndex];
         if (!target) return done(null);
         const base64 = target.data || target.source?.data;
-        const mimeType = target.mimeType || target.source?.media_type || 'application/octet-stream';
         if (!base64) return done(null);
-        const ext = mimeType === 'image/jpeg' ? '.jpg'
-          : mimeType === 'image/png' ? '.png'
-          : mimeType === 'image/gif' ? '.gif'
-          : mimeType === 'image/webp' ? '.webp'
-          : '';
         return done({
           buffer: Buffer.from(base64, 'base64'),
-          mimeType,
-          filename: `message-${messageTimestamp}-image-${imageIndex}${ext}`,
+          mimeType: target.mimeType || target.source?.media_type || '',
         });
       } catch {
         // skip malformed lines
@@ -201,36 +221,81 @@ async function readImageBlockFromTranscript(
   });
 }
 
+/** An omitted image from current OpenClaw, by its artifact id; null when the gateway sends no inline bytes. */
+async function downloadTranscriptImageArtifact(sessionKey: string, artifactId: string): Promise<SessionImage | null> {
+  const result = await gatewayRpcCall(
+    'artifacts.download',
+    { sessionKey, artifactId },
+    ARTIFACT_DOWNLOAD_TIMEOUT_MS,
+  ) as { artifact?: { mimeType?: unknown }; encoding?: unknown; data?: unknown } | null;
+  if (result?.encoding !== 'base64' || typeof result.data !== 'string') return null;
+  return {
+    buffer: Buffer.from(result.data, 'base64'),
+    mimeType: typeof result.artifact?.mimeType === 'string' ? result.artifact.mimeType : '',
+  };
+}
+
 app.get('/api/sessions/media', rateLimitGeneral, async (c) => {
   const sessionKey = c.req.query('sessionKey') || '';
   const timestampRaw = c.req.query('timestamp') || '';
   const imageIndexRaw = c.req.query('imageIndex') || '0';
+  const artifactId = c.req.query('artifactId');
   const messageTimestamp = Number(timestampRaw);
   const imageIndex = Number(imageIndexRaw);
 
   if (!sessionKey || !Number.isFinite(messageTimestamp) || !Number.isInteger(imageIndex) || imageIndex < 0) {
     return c.json({ ok: false, error: 'Invalid media lookup params' }, 400);
   }
+  if (artifactId !== undefined
+    && (artifactId.length > MAX_ARTIFACT_ID_LENGTH || !TRANSCRIPT_IMAGE_ARTIFACT_RE.test(artifactId))) {
+    return c.json({ ok: false, error: 'Invalid media lookup params' }, 400);
+  }
 
-  try {
-    const store = await loadSessionStore();
+  let media: SessionImage | null;
+  if (artifactId) {
+    // Current OpenClaw keeps transcripts in a database; the gateway returns the image by its id.
+    try {
+      media = await downloadTranscriptImageArtifact(sessionKey, artifactId);
+    } catch (err) {
+      const message = (err as Error).message;
+      if (ARTIFACT_MISSING_ERRORS.has(message)) return c.json({ ok: false, error: 'Image not found' }, 404);
+      console.warn('[sessions] gateway media lookup failed:', message);
+      return c.json({ ok: false, error: 'Gateway unavailable' }, 502);
+    }
+  } else {
+    // Older OpenClaw: sessions.json maps the key to a JSONL transcript that still holds the bytes.
+    let store: Record<string, StoredSessionSummary | undefined>;
+    try {
+      store = await loadSessionStore();
+    } catch (err) {
+      // No sessions.json is a miss, not a failure: current OpenClaw writes none.
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return c.json({ ok: false, error: 'Unknown session key' }, 404);
+      }
+      console.warn('[sessions] media lookup failed:', (err as Error).message);
+      return c.json({ ok: false, error: 'Failed to load media' }, 500);
+    }
     const sessionId = store[sessionKey]?.sessionId;
     if (!sessionId) return c.json({ ok: false, error: 'Unknown session key' }, 404);
     const transcriptPath = await findTranscript(sessionId);
     if (!transcriptPath) return c.json({ ok: false, error: 'Transcript not found' }, 404);
-    const media = await readImageBlockFromTranscript(transcriptPath, messageTimestamp, imageIndex);
-    if (!media) return c.json({ ok: false, error: 'Image not found' }, 404);
-    return new Response(media.buffer, {
-      headers: {
-        'Content-Type': media.mimeType,
-        'Content-Disposition': `inline; filename="${media.filename}"`,
-        'Cache-Control': 'private, max-age=3600',
-      },
-    });
-  } catch (err) {
-    console.warn('[sessions] media lookup failed:', (err as Error).message);
-    return c.json({ ok: false, error: 'Failed to load media' }, 500);
+    media = await readImageBlockFromTranscript(transcriptPath, messageTimestamp, imageIndex);
   }
+  if (!media) return c.json({ ok: false, error: 'Image not found' }, 404);
+
+  // Only raster images: whatever type a transcript records, Nerve never serves SVG or HTML from its origin.
+  const mimeType = media.mimeType.split(';')[0].trim().toLowerCase();
+  if (!ALLOWED_IMAGE_TYPES.has(mimeType)) {
+    return c.json({ ok: false, error: 'Not a supported image type' }, 415);
+  }
+  return new Response(media.buffer, {
+    headers: {
+      'Content-Type': mimeType,
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition': `inline; filename="message-${messageTimestamp}-image-${imageIndex}${IMAGE_EXTENSIONS[mimeType] ?? ''}"`,
+      'Cache-Control': 'private, max-age=3600',
+    },
+  });
 });
 
 app.get('/api/sessions/hidden', rateLimitGeneral, async (c) => {

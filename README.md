@@ -176,7 +176,7 @@ Fetches the latest release, rebuilds, restarts, verifies health, and tries to ro
 <details><summary><strong>Development</strong></summary>
 
 ```bash
-npm run dev                    # frontend: Vite on :3080, proxies /api and /ws to :3081
+PORT=3081 npm run dev          # frontend: Vite on :3080, proxies /api and /ws to :3081
 PORT=3081 npm run dev:server   # backend, with reload
 npm test -- --run
 npm run lint
@@ -207,7 +207,7 @@ OpenClaw remains the engine. Nerve gives it a cockpit.
 
 Nerve binds to `127.0.0.1` by default, so it stays local unless you choose to expose it.
 
-When you put it on the network, built-in password authentication protects the UI, the API and the WebSocket, and Nerve refuses to listen on `0.0.0.0` with auth off unless you explicitly allow it. Sessions use signed cookies, passwords are stored as hashes, and the gateway token stays on the server.
+Before you put it on the network, turn on the built-in password authentication (`NERVE_AUTH=true`). It protects the UI, the API and the WebSocket. Setup offers it for every mode that listens on `0.0.0.0`, and Nerve refuses to listen on `0.0.0.0` with auth off unless you explicitly allow it. A bind to one specific address with auth off only logs a warning, so enable auth yourself there. Sessions use signed cookies, passwords are stored as hashes, and the gateway token stays on the server.
 
 For the full threat model and hardening details, see **[docs/SECURITY.md](docs/SECURITY.md)**.
 

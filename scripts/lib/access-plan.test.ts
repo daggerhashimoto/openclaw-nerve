@@ -195,6 +195,20 @@ describe('buildAccessPlan with several Tailscale Serve endpoints', () => {
     }
   });
 
+  it('matches the shorthand targets Tailscale accepts: a bare port and host:port', () => {
+    for (const rootProxy of ['3080', 'localhost:3080', '127.0.0.1:3080']) {
+      const plan = buildAccessPlan({
+        profile: 'tailscale-serve',
+        port: '3080',
+        tailscale: serveState([
+          { origin: OTHER, rootProxy: '9000' },
+          { origin: NERVE, rootProxy },
+        ]),
+      });
+      expect(plan.browserOrigins, rootProxy).toEqual([NERVE]);
+    }
+  });
+
   it('does not take a port that only starts with Nerve\'s port', () => {
     const plan = buildAccessPlan({
       profile: 'tailscale-serve',

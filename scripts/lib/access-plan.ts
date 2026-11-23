@@ -28,11 +28,21 @@ export interface BuildAccessPlanInput {
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 
+/**
+ * A Serve proxy target as a URL. Tailscale also accepts shorthand targets:
+ * a bare port means http://127.0.0.1:<port>, and host:port means http://host:port.
+ */
+function expandProxyTarget(target: string): string {
+  const value = target.trim();
+  if (/^\d+$/.test(value)) return `http://127.0.0.1:${value}`;
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`;
+}
+
 /** Whether a Serve proxy target is Nerve on this machine: a loopback host on Nerve's HTTP or HTTPS port. */
 function proxiesToNerve(target: string | null, ports: string[]): boolean {
   if (!target) return false;
   try {
-    const url = new URL(target);
+    const url = new URL(expandProxyTarget(target));
     const host = url.hostname.replace(/^\[|\]$/g, '');
     const port = url.port || (url.protocol.startsWith('https') ? '443' : '80');
     return LOOPBACK_HOSTS.has(host) && ports.includes(port);

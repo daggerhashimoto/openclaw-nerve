@@ -402,16 +402,36 @@ describe('writeEnvFile with an existing .env', () => {
 
 describe('MANAGED_ENV_KEYS', () => {
   it('lists exactly the keys generateEnvContent can write', () => {
-    const everything: Record<string, string> = {};
-    for (const key of MANAGED_ENV_KEYS) everything[key] = `value-of-${key}`;
-    everything.NERVE_AUTH = 'true';
-    everything.GATEWAY_URL = 'http://gateway.example.com:18789';
-    everything.AGENT_NAME = 'Custom';
-    everything.PORT = '4000';
-    everything.HOST = '0.0.0.0';
-    everything.SSL_PORT = '4443';
+    // Spelled out instead of built from MANAGED_ENV_KEYS, so dropping a key
+    // from that list fails here. Required<> makes a new EnvConfig key fail to
+    // compile until it is added below.
+    const everything: Required<EnvConfig> = {
+      GATEWAY_URL: 'http://gateway.example.com:18789',
+      GATEWAY_TOKEN: 'value-of-GATEWAY_TOKEN',
+      AGENT_NAME: 'Custom',
+      PORT: '4000',
+      HOST: '0.0.0.0',
+      SSL_PORT: '4443',
+      OPENAI_API_KEY: 'value-of-OPENAI_API_KEY',
+      REPLICATE_API_TOKEN: 'value-of-REPLICATE_API_TOKEN',
+      ALLOWED_ORIGINS: 'https://nerve.example.com',
+      CSP_CONNECT_EXTRA: 'https://nerve.example.com',
+      WS_ALLOWED_HOSTS: 'gateway.example.com',
+      MEMORY_PATH: '/tmp/memory.md',
+      MEMORY_DIR: '/tmp/memory',
+      SESSIONS_DIR: '/tmp/sessions',
+      USAGE_FILE: '/tmp/usage.json',
+      FILE_BROWSER_ROOT: '/tmp/files',
+      TTS_CACHE_TTL_MS: '1000',
+      TTS_CACHE_MAX: '10',
+      VITE_PORT: '5000',
+      NERVE_AUTH: 'true',
+      NERVE_PASSWORD_HASH: 'value-of-NERVE_PASSWORD_HASH',
+      NERVE_SESSION_SECRET: 'value-of-NERVE_SESSION_SECRET',
+      NERVE_SESSION_TTL: '3600',
+    };
 
-    const written = Object.keys(parseDotenv(generateEnvContent(everything as EnvConfig, '')));
+    const written = Object.keys(parseDotenv(generateEnvContent(everything, '')));
 
     expect(written.sort()).toEqual([...MANAGED_ENV_KEYS].sort());
   });

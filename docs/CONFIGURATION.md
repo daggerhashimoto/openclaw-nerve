@@ -231,6 +231,7 @@ Voice phrase overrides (stop, cancel and wake phrases) are saved to `~/.nerve/vo
 | `CSP_CONNECT_EXTRA` | *(none)* | Extra CSP `connect-src` sources, space-separated. Only `http://`, `https://`, `ws://` and `wss://` entries are kept; semicolons and newlines are stripped. |
 | `WS_ALLOWED_HOSTS` | `localhost,127.0.0.1,::1` | Extra hostnames the WebSocket proxy may connect to, comma-separated. Nerve injects `GATEWAY_TOKEN` only when the target is the gateway in `GATEWAY_URL` (same host, port and TLS; `localhost`, `127.0.0.1` and `::1` count as one host). For any other host in this list the browser's own token is used. List only gateways you trust. |
 | `TRUSTED_PROXIES` | `127.0.0.1,::1,::ffff:127.0.0.1` | Extra proxy IPs whose `X-Forwarded-For` or `X-Real-IP` the rate limiter honours, comma-separated. The rate limiter reads `X-Forwarded-For` from the right and takes the first address not listed here, so list every proxy hop. Used only for rate limiting. |
+| `TRUSTED_PROXY_HEADER` | `x-forwarded-for` | Which forwarding header a trusted proxy owns: `x-forwarded-for` (default; walks `X-Forwarded-For` from the right past trusted hops and falls back to `X-Real-IP`) or `x-real-ip` (reads only `X-Real-IP` and ignores `X-Forwarded-For`, for proxies that set only `X-Real-IP` and pass a client-sent `X-Forwarded-For` through). |
 
 ```bash
 # Tailscale IP example

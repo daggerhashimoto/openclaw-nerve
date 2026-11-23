@@ -99,7 +99,7 @@ When Nerve is reachable from other machines:
 - **Enable authentication.** The setup wizard prompts for it when the access mode binds `0.0.0.0`. Tailscale Serve and Custom binds to a specific address skip that prompt, so set it up yourself if other people can reach the tailnet or network.
 - A VPN (Tailscale, WireGuard) adds a layer in front of the password.
 - Put a reverse proxy with HTTPS in front for anything wider.
-- A reverse proxy on the same host must pass the real client address in `X-Forwarded-For`, either by setting it or by appending to the client's value (nginx `$proxy_add_x_forwarded_for`). Nerve reads the header from the right and takes the first address that is not loopback, so entries a client writes on the left do not count. A proxy that sets only `X-Real-IP` also keeps remote clients from looking local, because Nerve uses `X-Real-IP` when `X-Forwarded-For` is missing or lists only loopback addresses. It does not stop a client from choosing its own address with a non-loopback `X-Forwarded-For` entry, which matters for rate limiting. With neither header, every proxied client looks local and, with auth off, gets the gateway token injected.
+- A reverse proxy on the same host must pass the real client address in `X-Forwarded-For`, either by setting it or by appending to the client's value (nginx `$proxy_add_x_forwarded_for`). Nerve reads the header from the right and takes the first address that is not loopback, so entries a client writes on the left do not count. For a proxy that sets only `X-Real-IP` and passes a client-sent `X-Forwarded-For` through unchanged, set `TRUSTED_PROXY_HEADER=x-real-ip` so Nerve reads only `X-Real-IP` and ignores `X-Forwarded-For` (otherwise a client could pick its own rate-limit bucket with a non-loopback `X-Forwarded-For` entry). With neither header, every proxied client looks local and, with auth off, gets the gateway token injected.
 
 ---
 
@@ -192,7 +192,7 @@ Routes without a limiter: `/health`, `GET /api/files`, the file browser routes (
 
 - **Per client and path.** Each `clientIP:path` pair has its own window.
 - **Client identification.** The TCP socket address from `getConnInfo()`, not request headers.
-- **Trusted proxies.** `X-Forwarded-For` and `X-Real-IP` are used only when the socket address is in `TRUSTED_PROXIES` (default: loopback addresses). `X-Forwarded-For` is read from the right, and the first address not in `TRUSTED_PROXIES` is the client. `X-Real-IP` is used when the header is missing or lists only trusted proxies.
+- **Trusted proxies.** `X-Forwarded-For` and `X-Real-IP` are used only when the socket address is in `TRUSTED_PROXIES` (default: loopback addresses). By default (`TRUSTED_PROXY_HEADER=x-forwarded-for`), `X-Forwarded-For` is read from the right, the first address not in `TRUSTED_PROXIES` is the client, and `X-Real-IP` is used when the header is missing or lists only trusted proxies. With `TRUSTED_PROXY_HEADER=x-real-ip`, only `X-Real-IP` is read and `X-Forwarded-For` is ignored.
 - **Store cap.** At most 10,000 entries; when full, the oldest is evicted. This bounds memory when a trusted proxy forwards many distinct addresses.
 - **Cleanup.** Expired timestamps are purged every 5 minutes.
 

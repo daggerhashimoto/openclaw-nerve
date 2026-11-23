@@ -1,68 +1,682 @@
 # Troubleshooting
 
-Common issues and solutions for Nerve.
+Common problems and fixes for Nerve.
+
+---
+
+## Setup and startup
+
+### Server refuses to start: "HOST=0.0.0.0 with authentication disabled"
+
+**Symptom:** The server exits with `Refusing to start: HOST=0.0.0.0 with authentication disabled.`
+
+**Cause:** Binding to every interface without a password would expose all endpoints to the network.
+
+**Fix:** Pick one:
+
+- Run `npm run setup` and set a password (or accept the gateway token as the password).
+- Bind locally: `HOST=127.0.0.1` in `.env`.
+- Override with `NERVE_ALLOW_INSECURE=true` in `.env`. Not recommended.
+
+### Setup leaves a remote gateway unconfigured
+
+**Symptom:** Setup prints "The gateway at ... is on another machine, so setup did not change any OpenClaw config." (or the same for a tunnelled gateway, or "NERVE_GATEWAY_LOCATION=remote is set, ..."), followed by a list of steps. Afterwards the browser cannot connect, or connects with missing scopes.
+
+**Cause:** Setup only patches a gateway that runs on the same machine. For any other gateway it prints what to change on the gateway host instead. A `GATEWAY_URL` on loopback also counts as remote when this machine runs no OpenClaw, as with an SSH tunnel or a container port.
+
+**Fix:** On the gateway host, do what setup printed:
+
+1. Add the listed origins to `gateway.controlUi.allowedOrigins` in `~/.openclaw/openclaw.json`.
+2. Add `"cron"`, `"gateway"` and `"sessions_spawn"` to `gateway.tools.allow`.
+3. Run `openclaw gateway restart`.
+4. Start Nerve, open it in a browser, then run `openclaw devices list` and `openclaw devices approve <requestId>` for Nerve's request.
+
+If setup guessed wrong, override it: `NERVE_GATEWAY_LOCATION=remote npm run setup` for a tunnel on a machine that also runs OpenClaw, or `NERVE_GATEWAY_LOCATION=local npm run setup` for a DNS alias of this machine. See [Configuration](CONFIGURATION.md#gateway-config-changes).
+
+### Settings changed or disappeared after re-running setup
+
+**Symptom:** After `npm run setup`, a value you set by hand in `.env` is gone or different.
+
+**Cause:** Setup keeps the keys it does not manage, such as `MIMO_API_KEY`, `NERVE_PUBLIC_ORIGIN`, `TRUSTED_PROXIES`, `NERVE_LANGUAGE` or `NERVE_UPLOAD_*`, under a `# Preserved from your previous .env (not managed by setup)` heading. They are dropped when you choose **Start fresh**. Setup rewrites the keys it does manage (listed in [Configuration](CONFIGURATION.md#what-setup-writes)), for example `ALLOWED_ORIGINS` and `CSP_CONNECT_EXTRA`, which follow the access mode you pick. Comments and blank lines are not carried over, except a comment directly above a kept key.
+
+**Fix:** Copy the lines you need back from `.env.backup` (or the dated `.env.backup.YYYY-MM-DD`), then restart Nerve.
+
+### Port already in use
+
+**Symptom:** `Port 3080 is already in use. Is another instance running?`
+
+**Fix:**
+
+```bash
+# Find what is using the port
+lsof -i :3080
+# Stop it, or use another port:
+PORT=3090 npm start
+```
 
 ---
 
 ## Authentication
 
-### Login page won't accept password
+### Login page rejects the password
 
-**Symptom:** Entering the correct password returns "Invalid password".
+**Symptom:** The login page shows "Invalid password".
 
 **Causes:**
-1. The password hash in `.env` doesn't match the password you're entering
-2. You're trying the gateway token but `GATEWAY_TOKEN` isn't set in `.env`
+
+1. The password does not match `NERVE_PASSWORD_HASH`.
+2. You entered the gateway token, but a password hash is set. The gateway token works as the password only while `NERVE_PASSWORD_HASH` is empty.
+3. Neither a password hash nor `GATEWAY_TOKEN` is set. The server logs `NERVE_AUTH is enabled but no password or gateway token is configured.` at startup.
 
 **Fix:**
-- Re-run `npm run setup` to set a new password
-- Or set `NERVE_AUTH=true` with a valid `GATEWAY_TOKEN` — the gateway token works as a fallback password without needing a password hash
 
-### Session expired / redirected to login
+- Re-run `npm run setup` to set a new password.
+- Or remove `NERVE_PASSWORD_HASH` from `.env`, keep `NERVE_AUTH=true` and a valid `GATEWAY_TOKEN`, restart, and sign in with the gateway token.
 
-**Symptom:** You were logged in but got redirected to the login page.
+### Login page says "Too many attempts"
 
-**Cause:** The session cookie expired (default TTL: 30 days) or the `NERVE_SESSION_SECRET` changed (e.g., server restart without a persisted secret).
+**Symptom:** After a few sign-in attempts, the login page shows "Too many attempts. Try again in 42 seconds." The number is the wait the server asked for. When the server gives no usable wait, the page says "Too many attempts. Wait a minute and try again."
+
+**Cause:** Login is limited to 5 requests per minute per client.
+
+**Fix:** Wait for the time shown, then sign in again.
+
+### Login page says "Unable to connect to server"
+
+**Symptom:** The login page shows "Unable to connect to server".
+
+**Cause:** The browser could not reach Nerve, or a proxy in front of Nerve answered with a 5xx error. A 4xx reply that is not JSON shows "Login failed" instead.
+
+**Fix:** Check that Nerve is running and reachable at the address in the browser, then check the proxy's error log.
+
+### Session expired or redirected to login
+
+**Symptom:** You were signed in, then got the login page again.
+
+**Cause:** The session cookie expired (30 days by default, `NERVE_SESSION_TTL`), or `NERVE_SESSION_SECRET` changed. Without a secret in `.env`, the server generates a new one at every start, which signs everyone out.
 
 **Fix:**
-- Log in again with your password
-- If sessions don't survive restarts, ensure `NERVE_SESSION_SECRET` is set in `.env` (the setup wizard generates one). Without it, an ephemeral secret is created on each startup
 
-### API returns 401 but auth is disabled
+- Sign in again.
+- If sessions do not survive restarts, set `NERVE_SESSION_SECRET` in `.env` (setup generates one).
 
-**Symptom:** API calls fail with "Authentication required" even though `NERVE_AUTH` isn't set.
+### API returns 401 but auth seems disabled
 
-**Cause:** Check that `NERVE_AUTH` isn't set to `true` somewhere unexpected (e.g., exported in your shell profile).
+**Symptom:** API calls fail with `Authentication required` although `.env` does not enable auth.
+
+**Cause:** `NERVE_AUTH=true` is set in the environment the server runs in, for example exported in your shell profile. Process environment variables win over `.env`.
 
 **Fix:**
+
 ```bash
-# Check the env var
+# Check both places
 grep NERVE_AUTH .env
-echo $NERVE_AUTH
+echo "$NERVE_AUTH"
 
-# Explicitly disable
-echo "NERVE_AUTH=false" >> .env
+# Remove the shell export, then restart Nerve from that shell
+unset NERVE_AUTH
 ```
 
-### WebSocket connects but immediately closes with 401
+### WebSocket upgrade fails with 401
 
-**Symptom:** Browser console shows WebSocket upgrade failed with 401.
+**Symptom:** The browser console shows the `/ws` upgrade failing with 401.
 
-**Cause:** When auth is enabled, WebSocket upgrade requests are also authenticated via the session cookie. If the cookie is missing or expired, the upgrade is rejected.
+**Cause:** With auth on, WebSocket upgrades need the session cookie. If it is missing or expired, the upgrade is refused.
 
-**Fix:** Refresh the page and log in again. The session cookie is sent automatically with WebSocket upgrade requests.
+**Fix:** Reload the page and sign in again. The browser sends the cookie with the upgrade automatically.
 
 ---
 
-## Build Errors
+## Gateway connection
+
+### "Auth failed: protocol mismatch"
+
+**Symptom:** The connect dialog shows `Auth failed: protocol mismatch`, or the server logs `[gateway-rpc] Gateway connect rejected: protocol mismatch`.
+
+**Cause:** Nerve and the gateway do not share a connect protocol version. Nerve negotiates protocol v4 only, which current OpenClaw gateways require. Nerve 1.5.3 and earlier fail against current gateways this way, and current Nerve fails the same way against a gateway too old for v4. (The text after `Auth failed:` is the gateway's own message.)
+
+**Fix:** Upgrade whichever side is older: Nerve with `npm run update`, or OpenClaw on the gateway host.
+
+### "Auth failed" in the connect dialog
+
+**Symptom:** The "Connect to your OpenClaw gateway" dialog shows `Auth failed: <reason>`. `Auth failed: unknown` means the gateway gave no reason.
+
+**Causes:**
+
+1. Wrong gateway token
+2. Gateway not running
+3. The token in Nerve's `.env` differs from the gateway's
+
+**Fix:**
+
+- Check the gateway is running: `openclaw gateway status`
+- The server uses `GATEWAY_TOKEN`, falling back to `OPENCLAW_GATEWAY_TOKEN`.
+- For trusted clients (loopback, or signed in with auth on) on the official gateway URL, `/api/connect-defaults` returns `serverSideAuth: true`; the dialog hides the token field and Nerve injects the token itself.
+- For a custom gateway URL or an untrusted client, enter the token in the dialog's "Gateway token" field.
+
+### "Signal lost. Reconnecting." notice
+
+**Symptom:** A small notice under the top bar reads "Signal lost. Reconnecting." (later "Signal lost. Reconnecting, attempt N.").
+
+**Cause:** The WebSocket to the gateway dropped. Nerve reconnects automatically, waiting 1 second at first and up to 30 seconds between attempts.
+
+**Diagnosis:**
+
+```bash
+# Gateway health
+curl http://127.0.0.1:18789/health
+
+# Nerve health (includes a gateway probe; no login needed)
+curl http://127.0.0.1:3080/health
+# {"status":"ok","uptime":...,"gateway":"ok"}   or "gateway":"unreachable"
+```
+
+**Fix:**
+
+- If the gateway is unreachable, restart it: `openclaw gateway restart`
+- If it keeps happening, check firewall rules and the network path.
+- If a stale manual token is saved in the browser, remove `localStorage` key `oc-config` (or clear site data) and reload.
+
+### Auto-connect does not happen
+
+**Symptom:** The connect dialog appears although the gateway is running.
+
+**Cause:** On load, the browser fetches `/api/connect-defaults` and auto-connects only when:
+
+- `serverSideAuth` is `true` (the client is trusted and a gateway token is configured)
+- the saved gateway URL is empty or matches the server's gateway URL
+- that first connection succeeds
+
+**Fix:**
+
+- For the managed path, clear the stale browser config (`localStorage` key `oc-config`) and reload.
+- With a custom gateway URL, entering the token is expected.
+- From another machine with auth off, the client is not trusted, so the dialog asks for the token. Enable auth to get server-side injection after sign-in.
+
+### Gateway does not connect from a new hostname
+
+**Symptom:** Opening Nerve through a new hostname, IP or port (a reverse proxy, a tailnet name, the HTTPS port) loads the page, but the gateway never connects. The `/ws` upgrade fails with 403 `Origin not allowed`.
+
+**Cause:** WebSocket upgrades and CORS accept only localhost origins and those in `ALLOWED_ORIGINS`.
+
+**Fix:** Add the exact browser origin to `.env`, plus the WebSocket form to the CSP, then restart:
+
+```bash
+ALLOWED_ORIGINS=https://nerve.example.com
+CSP_CONNECT_EXTRA=https://nerve.example.com wss://nerve.example.com
+```
+
+Setup writes these for its Tailscale, Network and Custom access modes, but not for a reverse-proxy domain. When HTTPS is on in Network or Custom mode, setup also adds the `https://<host>:<SSL_PORT>` origin. In Tailscale IP mode it does so only for a non-interactive run (`--defaults --access-mode tailscale-ip`) with `SSL_PORT` already set in `.env`.
+
+---
+
+## WebSocket proxy
+
+### WebSocket connects but no events arrive
+
+**Symptom:** The UI shows connected, but sessions and messages do not update.
+
+**Cause:** The gateway did not grant `operator.read` and `operator.write`, usually because Nerve's device identity is not paired.
+
+**Diagnosis:** Check the server log for `[ws-proxy] Injected device identity: ...`, and for a `Device rejected (...)` line, which means the proxy fell back to a connection without device identity.
+
+**Fix:** Pair the device again: re-run `npm run setup` on the gateway machine, or approve it with `openclaw devices list` and `openclaw devices approve <requestId>`. If `~/.nerve/device-identity.json` is corrupted, delete it and restart Nerve; the new identity also needs pairing.
+
+### "Target not allowed" WebSocket error
+
+**Symptom:** The browser console shows the WebSocket closing with code 1008 and reason `Target not allowed`.
+
+**Cause:** The gateway URL's hostname is not in `WS_ALLOWED_HOSTS`, or its scheme is not `ws:` or `wss:`.
+
+**Fix:** Only `localhost`, `127.0.0.1` and `::1` are allowed by default. Add the gateway host to `.env` and restart:
+
+```bash
+WS_ALLOWED_HOSTS=mygateway.local
+```
+
+### Crons, Kanban runs or workspace panels fail with `origin not allowed`
+
+**Symptom:** Chat works, but the Crons tab, Kanban runs, sub-agent spawns, or remote workspace panels (Files, Config, Skills) fail with `origin not allowed`. The server log shows `[gateway-rpc] Gateway connect rejected: origin not allowed`.
+
+**Cause:** Those features use the server's own WebSocket to the gateway. It sends `NERVE_PUBLIC_ORIGIN` as its `Origin`, or else the first non-loopback `ALLOWED_ORIGINS` entry, or else `http://127.0.0.1:<PORT>`. The gateway must allow that origin.
+
+**Fix:** Set the exact browser origin in `.env` and allow the same origin on the gateway:
+
+```bash
+NERVE_PUBLIC_ORIGIN=https://nerve.example.com
+```
+
+Add `https://nerve.example.com` to `gateway.controlUi.allowedOrigins`, then restart Nerve and the gateway.
+
+### "device token mismatch" on connect
+
+**Symptom:** The server log shows `[ws-proxy:<id>] Gateway closed: code=1008, reason=unauthorized: device token mismatch`.
+
+**Causes:**
+
+1. **Stale browser config.** The browser still holds an old manually entered token in `localStorage` (`oc-config`).
+2. **Token mismatch between config files.** `openclaw onboard` can write different tokens to the systemd unit and `openclaw.json`. The gateway uses the systemd value; Nerve reads `.env`.
+
+**Fix (stale browser config):** Clear site data or remove `localStorage` key `oc-config`, then reload so the managed path reconnects with an empty token.
+
+**Fix (token mismatch):** Re-run setup on the gateway machine. It reads the systemd token first:
+
+```bash
+npm run setup
+```
+
+To compare by hand:
+
+```bash
+# The token the gateway process uses (systemd installs)
+grep OPENCLAW_GATEWAY_TOKEN ~/.config/systemd/user/openclaw-gateway.service /etc/systemd/system/openclaw-gateway.service 2>/dev/null
+
+# gateway.auth.token in the OpenClaw config (look for the "token" under "auth")
+grep -n '"token"' ~/.openclaw/openclaw.json
+
+# Nerve's copy
+grep '^GATEWAY_TOKEN=' .env
+```
+
+### Missing-scope errors after connecting
+
+**Symptom:** Chat sends, but replies or tool calls fail with a missing-scope error.
+
+**Cause:** The gateway did not grant `operator.read` and `operator.write`, because Nerve's device is not approved yet or was rejected after a gateway reset.
+
+**Fix:** For a gateway on this machine, re-run `npm run setup`; it repairs device scopes and pre-pairs Nerve. Otherwise, on the gateway host:
+
+```bash
+openclaw devices list
+openclaw devices approve <requestId>
+```
+
+Then reload the page.
+
+### Crons tab shows an error
+
+**Symptom:** The Crons tab shows a red error note instead of the job list, or a job's run fails.
+
+**Cause:** Cron jobs are managed through the gateway's `cron.*` RPC methods over the server's own gateway connection. The note shows that connection's error:
+
+| Error | Meaning and fix |
+|-------|-----------------|
+| `origin not allowed` | See [the `origin not allowed` entry](#crons-kanban-runs-or-workspace-panels-fail-with-origin-not-allowed) |
+| `Gateway connection not ready` | `GATEWAY_TOKEN` is not set; Nerve's server cannot connect |
+| `Gateway RPC timeout after 10000ms calling cron.list` | The gateway is unreachable or slow; check `curl http://127.0.0.1:3080/health` |
+| `unknown method: ...` | The gateway does not offer the cron RPC methods; upgrade OpenClaw |
+| A pairing or scope error | Approve Nerve's device (see above) |
+
+**Run now** on an isolated agent-turn job starts it through the gateway's `sessions_spawn` HTTP tool instead. If that fails with a gateway tool error (for example `Gateway tool invoke failed: ...`), add `sessions_spawn` to `gateway.tools.allow` on the gateway and restart it. On the gateway machine, re-running `npm run setup` adds it.
+
+The server log has the details under `[crons]` and `[gateway-rpc]`.
+
+### "Too many pending messages"
+
+**Symptom:** The browser is disconnected with close code 1008 and reason `Too many pending messages` right after connecting.
+
+**Cause:** While the gateway connection opens, the proxy buffers at most 100 messages or 1 MB from the browser. A larger burst closes the connection.
+
+**Fix:** Reconnect. If it repeats, look for something sending many messages at connect time.
+
+---
+
+## TTS
+
+### No audio plays
+
+**Symptom:** Replies are not spoken.
+
+**Check in order:**
+
+1. **Sound on?** Settings, Audio, **Sound effects** must be on. It is off by default and also controls spoken replies. (**UI sound volume** affects only the interface chimes, not TTS.)
+2. **Provider:** Settings, Audio, **TTS provider**.
+3. **API key present?**
+   - OpenAI: `OPENAI_API_KEY`
+   - Replicate: `REPLICATE_API_TOKEN`
+   - Xiaomi MiMo: `MIMO_API_KEY`
+   - Edge: no key needed
+4. **Server-side check** (with auth off, or add your session cookie):
+
+   ```bash
+   curl -X POST http://127.0.0.1:3080/api/tts \
+     -H "Content-Type: application/json" \
+     -d '{"text": "hello", "provider": "edge"}' \
+     --output tts-test.mp3
+   ```
+
+   A playable `tts-test.mp3` means the server side works.
+
+**Automatic provider:** a request without a provider uses OpenAI if its key is set, then Replicate if its key is set, then Edge. The browser always sends its selected provider. Xiaomi MiMo is used only when selected.
+
+### Same text keeps the old voice
+
+**Symptom:** After changing the voice, a reply you already heard plays in the old voice.
+
+**Cause:** TTS audio is cached in memory (1 hour by default, `TTS_CACHE_TTL_MS`). For Edge, Replicate and Xiaomi, the voice configured on the server is not part of the cache key, so identical text returns the cached audio.
+
+**Fix:** Restart Nerve to clear the cache, or wait for the entry to expire.
+
+### Edge TTS fails silently
+
+**Symptom:** Edge is selected but nothing plays and the UI shows no error.
+
+**Cause:** Edge TTS uses Microsoft's speech service over WebSocket. Token generation or the connection can fail.
+
+**Diagnosis:** Check the server log for `[edge-tts]` errors.
+
+**Fix:** Edge TTS needs no key but needs outbound WebSocket access to `speech.platform.bing.com`. Make sure your network allows it.
+
+---
+
+## Voice input and wake word
+
+### Microphone not working
+
+**Symptom:** The voice input button does nothing, or the browser denies permission.
+
+**Cause:** The microphone needs a **secure context**: HTTPS, or `localhost`.
+
+**Fix:**
+
+- `http://127.0.0.1:3080` and `http://localhost:3080` work.
+- For remote access, use HTTPS:
+
+  ```bash
+  mkdir -p certs
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout certs/key.pem -out certs/cert.pem -days 365 \
+    -subj "/CN=localhost"
+  # Restart Nerve; it starts HTTPS on SSL_PORT (default 3443)
+  ```
+
+### Transcription fails
+
+**Symptom:** Voice input records, but transcription returns an error.
+
+**Causes and fixes:**
+
+- **Local STT:** `Speech model not found at <path>. Re-run the installer or set STT_PROVIDER=openai with an OPENAI_API_KEY.` The model file is missing. Pick the model in Settings, Audio, **STT model** to download it, or re-run the installer. Check with `ls ~/.nerve/models/` (the default `base` model is `ggml-base.bin`).
+- **Local STT:** `ffmpeg not found. ...` Install `ffmpeg` (`apt install ffmpeg` or `brew install ffmpeg`).
+- **OpenAI STT:** set `STT_PROVIDER=openai` and `OPENAI_API_KEY` in `.env`.
+
+**Both providers:**
+
+- Maximum upload: 12 MB
+- Accepted types: `audio/webm`, `audio/mp3`, `audio/mpeg`, `audio/mp4`, `audio/m4a`, `audio/wav`, `audio/x-wav`, `audio/ogg`, `audio/flac`, `audio/x-flac`
+
+### Non-English transcription is inaccurate
+
+**Symptom:** STT works, but non-English speech is transcribed badly, or stop and cancel phrases are unreliable.
+
+**Causes:**
+
+- The language is set wrong.
+- A small local model is selected.
+- An English-only model (`*.en`) is selected for non-English speech.
+
+**Fix:**
+
+1. Set the language in Settings, Audio, **Language**. There is no auto-detect mode.
+2. For local STT, use `base` or `small` instead of `tiny`.
+3. Use a multilingual model (`tiny`, `base`, `small`).
+4. The language is saved as `NERVE_LANGUAGE` in `.env` (legacy `LANGUAGE` is still read but deprecated).
+
+### Voice phrase changes do not persist
+
+**Symptom:** Custom stop, cancel or wake phrases disappear after a reload or restart.
+
+**Cause:** Phrase overrides are saved at `~/.nerve/voice-phrases.json` (or `NERVE_VOICE_PHRASES_PATH`). Write failures usually come from the path or permissions.
+
+**Fix:**
+
+- Check the file:
+
+  ```bash
+  ls -l ~/.nerve/voice-phrases.json
+  ```
+
+- With a custom path, make sure `NERVE_VOICE_PHRASES_PATH` points somewhere writable.
+- Save the phrases again in Settings, Audio, **Voice phrases** and watch the server log for `/api/voice-phrases` errors.
+
+### Wake word does not trigger
+
+**Symptom:** Wake word is on, but saying it does nothing.
+
+**Cause:** Wake word detection uses the browser's speech recognition, which needs microphone permission and browser support.
+
+**Fix:**
+
+- Grant microphone permission.
+- Toggle it off and on in Settings, Audio, **Wake word**, or with "Toggle Wake Word" in the command palette (Cmd+K).
+- Check the browser console for speech recognition errors.
+
+---
+
+## Memory
+
+### Memory changes do not appear
+
+**Symptom:** Added or deleted memories do not show in the Memory tab.
+
+**Cause:** Nerve edits `MEMORY.md` (or the daily file) directly, through gateway RPC when the workspace is remote. Adding a memory also stores it in the gateway's memory index through the `memory_store` tool, on a best-effort basis. The file watcher then notifies the UI over the `/api/events` stream.
+
+**Diagnosis:**
+
+1. Check that the `POST` or `DELETE` to `/api/memories` returned `{ "ok": true, ... }`.
+2. Check the server log for `[memories]` and `[file-watcher]` lines.
+3. Watch the event stream: `curl -N http://127.0.0.1:3080/api/events` (add your session cookie with auth on).
+
+**Fix:**
+
+- If the watcher does not fire, the memory path may be wrong (see below).
+- Refresh by hand with the Memory tab's refresh button or "Refresh Memory" in the command palette (Cmd+K).
+
+### Memory file path is wrong
+
+**Symptom:** The Memory tab is empty although `MEMORY.md` exists.
+
+**Cause:** The main agent's memory file is `MEMORY_PATH` (default `~/.openclaw/workspace/MEMORY.md`), and its directory is the main workspace. Other agents use the workspaces in the OpenClaw config.
+
+**Fix:** Point `MEMORY_PATH` at the right file in `.env` and restart:
+
+```bash
+MEMORY_PATH=/path/to/.openclaw/workspace/MEMORY.md
+```
+
+---
+
+## Uploads
+
+### "Failed to import browser uploads."
+
+**Symptom:** Attaching files in the composer fails with "Failed to import browser uploads."
+
+**Cause:** All files picked at once go to the server in one request, which is capped at about 13 MB.
+
+**Fix:** Attach fewer or smaller files at a time. Non-image files are also capped at `NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB` (4 MB by default), with their own error message.
+
+### "Resolved attachment path is outside the workspace root."
+
+**Symptom:** Every browser upload fails with this message.
+
+**Cause:** `NERVE_UPLOAD_STAGING_TEMP_DIR` points outside the main workspace root (the directory of `MEMORY_PATH`, or `FILE_BROWSER_ROOT`).
+
+**Fix:** Move the staging directory inside the workspace, or remove the variable to use `<workspace>/.temp/nerve-uploads`.
+
+---
+
+## Sessions
+
+### Sessions missing from the sidebar
+
+**Symptom:** The session list is empty, clearly incomplete, or older top-level chats are missing.
+
+**Expected since 1.5.0:** older top-level chats stay in the sidebar; they no longer drop out after a period of inactivity.
+
+**Likely causes:**
+
+- Gateway connection or auth problems stopped the list from refreshing.
+- The browser shows stale state after a reconnect or upgrade.
+- A session fetch failed and has not recovered yet.
+
+**Fix:**
+
+- Check the gateway connection first; sessions come from the gateway.
+- Refresh with the refresh button or "Refresh Sessions" in the command palette (Cmd+K).
+- Reload the page after upgrades or repeated reconnects.
+- If it persists, check the browser console and server log for session-list or WebSocket errors.
+
+### "Timed out waiting for the new subagent session to appear"
+
+**Symptom:** Spawning a sub-agent fails with this error.
+
+**Cause:** Nerve first asks the gateway to create the child session directly (`sessions.create` and `sessions.send`). On gateways that do not support that, it asks the parent root agent to spawn the child and waits up to 60 seconds for the new session to appear. This error means the parent did not spawn it in time.
+
+**Fix:**
+
+- Make sure the parent root agent exists, is healthy, and is not busy with another task.
+- Check the gateway log for `sessions.create`, `sessions.send` or spawn failures.
+- Refresh sessions and retry once the gateway connection is stable.
+
+### Kanban task cannot start or attach to a worker
+
+**Symptom:** Running a Kanban task fails, or the task enters `in-progress` but no worker session links up, the task never reaches `review`, or the parent root never gets the completion update.
+
+**Cause:** Kanban has two execution paths:
+
+- **Assigned tasks** create a child session under the assignee's root through gateway RPC (`sessions.create`, then `sessions.send`). If that root does not exist, the run fails with `Parent agent session not found: <session key>`.
+- **Unassigned or `operator` tasks** use the gateway's `sessions_spawn` HTTP tool, which must be in `gateway.tools.allow`. On macOS this path is disabled and the run fails with `Kanban automation on macOS requires assigning the task to a live worker agent root (not @main).`
+
+Runs that never finish end with `Run timed out (polling limit reached)`.
+
+**Fix:**
+
+- For assigned tasks, make sure the assignee's root session exists and is healthy.
+- For unassigned tasks, check that `sessions_spawn` is allowed on the gateway.
+- On macOS, assign the task to a live worker root before running it.
+- If the worker never appears, check the gateway connection, the `origin not allowed` entry above, and recent session events.
+
+### Session stays busy
+
+**Symptom:** A session keeps showing as working long after the reply finished.
+
+**Cause:** Session status moves from `THINKING` to `STREAMING` to `DONE`, then back to `IDLE` 3 seconds later. A missed lifecycle event can leave it stuck.
+
+**Fix:**
+
+- Use the stop button, or Ctrl+C while a reply is generating, to abort.
+- Refresh sessions to resync from the gateway.
+
+---
+
+## Model switching
+
+### Model dropdown is empty or short
+
+**Symptom:** The model selector is empty or lists only the current model.
+
+**Cause:** `GET /api/gateway/models` reads the models from the OpenClaw config: `agents.defaults.model.primary`, `agents.defaults.model.fallbacks` and the `agents.defaults.models` allowlist. It reports `Could not read OpenClaw config.` or `No models configured in OpenClaw config.` when it finds none.
+
+**Fix:**
+
+- Configure the models in OpenClaw.
+- Make sure Nerve can read the config file (`~/.openclaw/openclaw.json`, or `OPENCLAW_CONFIG_PATH`).
+- Check the server log for `[gateway/models]` errors.
+- Reopen the dialog or reload the page after fixing the config.
+
+### Model change does not take effect
+
+**Symptom:** You switched models, but replies still come from the old one.
+
+**Cause:** Model and thinking changes go through the WebSocket RPC `sessions.patch`. Model changes fall back to `POST /api/gateway/session-patch` when that fails; thinking changes have no fallback.
+
+- The HTTP fallback returns **501** for a thinking-only change.
+- It returns **409** (`No active root session available. Provide sessionKey explicitly.`) when it cannot find a session and none was given.
+
+**Fix:**
+
+- For model changes, check that the fallback returned `{ "ok": true }`.
+- For thinking changes, retry once the WebSocket has reconnected.
+- On a 409, pass `sessionKey` or make sure a root session exists.
+- Some models may not be available for the current session type.
+
+---
+
+## Usage and limits
+
+### Claude Code limits show "Unavailable"
+
+**Symptom:** In the usage panel, the rate limits under Anthropic say "Unavailable", and `GET /api/claude-code-limits` returns `"available": false` with an `error`.
+
+**Cause:** Nerve reads the limits by running the Claude CLI in a pseudo-terminal through node-pty and parsing its `/usage` output. The `error` says which step failed:
+
+- `posix_spawnp failed.`: node-pty's `spawn-helper` is not executable. node-pty 1.1.0 installs it on macOS without the execute bit. Nerve adds the bit before its first spawn; when it cannot, the server log shows `[pty] node-pty's spawn-helper is not executable and could not be fixed`, followed by the `chmod +x` command to run.
+- `Timeout waiting for Claude to start`: the CLI is not installed for the user that runs Nerve, or it did not reach its prompt. Nerve looks for `~/.local/bin/claude`, `~/.claude/local/claude`, `/usr/local/bin/claude` and `/opt/homebrew/bin/claude`, then `claude` on `PATH`.
+- `No usage data found in Claude output`: the CLI started but `/usage` printed nothing Nerve could read, for example when it is not signed in.
+
+**Fix:**
+
+- For `posix_spawnp failed.`, run the `chmod +x` command from the log.
+- Otherwise install the Claude CLI and sign in by running `claude` once, as the user that runs Nerve on the Nerve host.
+
+An unavailable result is cached for 30 seconds, so the panel updates shortly after.
+
+## Rate limiting
+
+### "Too many requests" errors
+
+**Symptom:** The API returns 429 with `Too many requests. Please try again later.`
+
+**Cause:** Per-client, per-path limits per minute: 5 for login, 3 for gateway restart, 10 for TTS, 30 for transcription, and 60 for most other API routes.
+
+**Fix:**
+
+- Wait for the window to pass (see the `Retry-After` and `X-RateLimit-Reset` headers).
+- Behind a reverse proxy on another host, add its IP to `TRUSTED_PROXIES` so clients are told apart by `X-Forwarded-For`; otherwise they all share the proxy's limit. With a chain of proxies, list every hop.
+
+---
+
+## HTTPS
+
+### Certificate errors
+
+**Symptom:** The browser warns about the certificate or refuses to connect on port 3443.
+
+**Fix:** Self-signed certificates always warn once; accept the warning in the browser. To create one:
+
+```bash
+mkdir -p certs
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout certs/key.pem -out certs/cert.pem -days 365 \
+  -subj "/CN=localhost"
+```
+
+Nerve starts HTTPS on `SSL_PORT` (default 3443) when `certs/cert.pem` and `certs/key.pem` exist. Restart after adding them.
+
+### SSE not working over HTTPS
+
+**Symptom:** Live updates (memory changes, token usage) do not arrive over HTTPS.
+
+**Cause:** The HTTPS server streams `text/event-stream` responses instead of buffering them, and compression skips `/api/events`.
+
+**Fix:** This should work without changes. If it does not, check:
+
+- the response content type is `text/event-stream`
+- no reverse proxy in between buffers the response
+
+---
+
+## Build and development
 
 ### `tsc -b` fails with path alias errors
 
-**Symptom:** `Cannot find module '@/...'` during TypeScript compilation.
+**Symptom:** `Cannot find module '@/...'` during the TypeScript build.
 
-**Cause:** The `@/` alias must be configured in both `tsconfig.json` (for editor) and the relevant project reference config.
+**Cause:** The `@/` alias is defined in the root `tsconfig.json` and in `config/tsconfig.app.json`.
 
-**Fix:** Ensure the root `tsconfig.json` has:
+**Fix:** Make sure the root `tsconfig.json` still has:
+
 ```json
 {
   "compilerOptions": {
@@ -72,527 +686,49 @@ echo "NERVE_AUTH=false" >> .env
 }
 ```
 
-### `npm run build:server` produces nothing
+### `npm start` fails with "Cannot find module"
 
-**Symptom:** `server-dist/` is empty or `npm start` fails with "Cannot find module".
+**Symptom:** `server-dist/` is empty or missing, and `npm start` fails.
 
-**Cause:** Server TypeScript is compiled separately via `tsc -p config/tsconfig.server.json`.
+**Cause:** The server is compiled separately from the frontend.
 
 **Fix:**
+
 ```bash
-npm run build:server   # Compiles server/ → server-dist/
-npm start              # Then runs node server-dist/index.js
+npm run build:server   # compiles server/ to server-dist/
+npm start              # runs node server-dist/index.js
 ```
+
+`npm run build` builds both.
 
 ### Chunk size warnings during `vite build`
 
-**Symptom:** Vite warns about chunks exceeding 500 kB.
+**Symptom:** Vite warns about large chunks.
 
-**Cause:** Heavy dependencies (highlight.js, react-markdown) are bundled.
+**Info:** The build splits vendor code into chunks (`react-vendor`, `markdown`, `charts-vendor`, `lightweight-charts`, `editor-vendor`, `ui-vendor`, `utils`) and warns above 600 kB (`chunkSizeWarningLimit` in `vite.config.ts`). A new warning usually means an import pulled in a large library.
 
-**Info:** This is expected. The build uses manual chunks to split: `react-vendor`, `markdown`, `ui-vendor`, `utils`. The warning limit is set to 600 kB in `vite.config.ts`. If a chunk exceeds this, check for accidental imports pulling in large libraries.
+### `npm run dev` proxy errors
 
-### Port already in use
+**Symptom:** API requests fail with 502 in development.
 
-**Symptom:** `Port 3080 is already in use. Is another instance running?`
+**Cause:** Vite proxies `/api` and `/ws` to `http://localhost:${PORT}`, with `PORT` defaulting to `3081` in `vite.config.ts`. If no backend listens there, every proxied request fails. `npm run dev:server` uses `PORT` from `.env` (usually 3080) unless you set it.
 
-**Fix:**
-```bash
-# Find what's using the port
-lsof -i :3080
-# Kill it, or use a different port:
-PORT=3090 npm start
-```
+**Fix:** Run both, with the backend on 3081:
 
-The server detects `EADDRINUSE` and exits with a clear error (see `server/index.ts`).
-
----
-
-## Gateway Connection
-
-### "Auth failed" in ConnectDialog
-
-**Symptom:** Connection dialog shows "Auth failed: unknown" or similar.
-
-**Causes:**
-1. Wrong gateway token
-2. Gateway not running
-3. Token mismatch between Nerve server config and gateway
-
-**Fix:**
-- Verify the gateway is running: `openclaw gateway status`
-- Check token: the server reads `GATEWAY_TOKEN` or `OPENCLAW_GATEWAY_TOKEN` env var
-- For trusted official-gateway access, `/api/connect-defaults` advertises `serverSideAuth=true` and Nerve connects with an empty browser-side token
-- For custom gateway URLs or untrusted access, enter the token manually in the connection dialog
-
-### Connection drops and "SIGNAL LOST" banner
-
-**Symptom:** Red reconnecting banner appears periodically.
-
-**Cause:** WebSocket connection to gateway dropped. Nerve auto-reconnects with exponential backoff (1s base, 30s max).
-
-**Diagnosis:**
-```bash
-# Check gateway health
-curl http://127.0.0.1:18789/health
-
-# Check Nerve health (includes gateway probe)
-curl http://127.0.0.1:3080/health
-# Returns: { "status": "ok", "uptime": ..., "gateway": "ok"|"unreachable" }
-```
-
-**Fix:**
-- If gateway is unreachable, restart it: `openclaw gateway restart`
-- If persistent, check firewall rules or network configuration
-- If a stale manual token is saved in `localStorage`, clear `oc-config` and reload before reconnecting
-
-### Auto-connect doesn't work
-
-**Symptom:** ConnectDialog appears even though the gateway is running.
-
-**Cause:** The frontend fetches `/api/connect-defaults` on mount, but auto-connect only happens when:
-- `serverSideAuth=true`
-- the saved gateway URL is empty or matches the server's official gateway URL
-- the initial connect attempt succeeds
-
-**Fix:**
-- If you want the managed path, clear stale browser config (`localStorage.oc-config`) and reload
-- If you are using a custom gateway URL, manual token entry is expected
-- If you are remote but authenticated and using the official gateway URL, the dialog should not be required after stale config is cleared
-
----
-
-## WebSocket Proxy
-
-### WebSocket connects but no events arrive
-
-**Symptom:** UI shows "connected" but sessions/messages don't update.
-
-**Cause:** The WS proxy (`server/lib/ws-proxy.ts`) might not be injecting device identity correctly, so the gateway doesn't grant `operator.read`/`operator.write` scopes.
-
-**Diagnosis:**
-- Check server logs for `[ws-proxy] Injected device identity: ...`
-- If missing, the device identity file may be corrupted
-
-**Fix:**
-```bash
-# Remove and regenerate device identity
-rm ~/.nerve/device-identity.json
-# Restart Nerve — a new keypair will be generated
-```
-
-### "Target not allowed" WebSocket error
-
-**Symptom:** Browser console shows WebSocket close code 1008 with "Target not allowed".
-
-**Cause:** The gateway URL hostname is not in the `WS_ALLOWED_HOSTS` allowlist (configured in `server/lib/config.ts`).
-
-**Fix:** By default, only `127.0.0.1`, `localhost`, and `::1` are allowed. To add a custom host:
-```bash
-WS_ALLOWED_HOSTS=mygateway.local npm start
-```
-
-### Workspace panels fail with `origin not allowed`
-
-**Symptom:** Chat connects, but remote workspace panels like Files, Memory, Config, or Skills fail with gateway `origin not allowed` errors.
-
-**Cause:** Those panels can use the server-side gateway RPC fallback, which opens its own WebSocket to the gateway. If Nerve does not know its real browser-facing origin, that fallback can present the wrong origin even though the browser chat path is already working.
-
-**Fix:** Set the exact browser origin in `.env` and allow the same origin on the gateway:
-
-```bash
-NERVE_PUBLIC_ORIGIN=https://nerve.example.com
-```
-
-Also add `https://nerve.example.com` to `gateway.controlUi.allowedOrigins`, then restart both Nerve and the gateway.
-
-### "device token mismatch" on WebSocket connect
-
-**Symptom:** Server logs show `[ws-proxy] Gateway closed: code=1008, reason=unauthorized: device token mismatch`.
-
-**Causes:**
-1. **Stale browser config.** The browser may still have an old manually-entered token saved in `localStorage` (`oc-config`), often from an older build or a custom gateway connection.
-2. **Token mismatch across config files.** OpenClaw 2026.2.19 has a known bug where `openclaw onboard` writes different tokens to the systemd service file and `openclaw.json`. The gateway uses the systemd env var; Nerve reads from `.env`.
-
-**Fix (stale browser config):**
-Clear site data or remove `localStorage.oc-config`, then reload so the official managed gateway path can reconnect with an empty token.
-
-**Fix (token mismatch):**
-Re-run the setup wizard — it reads the real token from the systemd service file and aligns everything:
-```bash
-npm run setup
-```
-
-If you need to check manually:
-```bash
-# The gateway's actual token (source of truth)
-grep OPENCLAW_GATEWAY_TOKEN ~/.config/systemd/user/openclaw-gateway.service
-
-# These must all match:
-grep gateway.auth.token ~/.openclaw/openclaw.json     # CLI config
-grep GATEWAY_TOKEN .env                                 # Nerve config
-```
-
-### "Missing scope" errors after connecting
-
-**Symptom:** Chat sends but responses fail with "missing scope" or tool calls are rejected.
-
-**Cause:** The gateway didn't grant `operator.read`/`operator.write` scopes. This happens when:
-1. The device hasn't been approved yet (first connection)
-2. The device was rejected or the gateway was reset
-
-**Fix:** Re-run `npm run setup` — it bootstraps device scopes automatically. If that doesn't work:
-```bash
-# Check pending devices
-openclaw devices list
-
-# Approve the Nerve device
-openclaw devices approve <requestId>
-```
-
-After approval, reconnect from the browser (refresh the page or click reconnect).
-
-### Cron tab says "Tool not available: cron"
-
-**Symptom:** Settings → Cron fails with `Tool not available: cron` or shows a cron access warning.
-
-**Cause:** Fresh setup patches this, but older installs, upgrade paths that never re-ran setup, or remote gateway setups can still be missing the required HTTP tool allowlist.
-
-**Fix:** Add these tools to `gateway.tools.allow` on the gateway, then restart it:
-```json
-["cron", "gateway", "sessions_spawn"]
-```
-
-If Nerve and the gateway are on the same machine, re-running `npm run setup` can patch it for you.
-
-### Messages buffered indefinitely
-
-**Symptom:** Messages sent immediately after connecting are lost.
-
-**Info:** The proxy buffers up to 100 messages (1 MB) while the upstream gateway connection opens. If the buffer overflows, the client is disconnected with "Too many pending messages". This is a safety limit — reduce message burst rate.
-
----
-
-## TTS Issues
-
-### No audio plays
-
-**Symptom:** TTS is enabled but no sound on responses.
-
-**Diagnosis tree:**
-1. **Sound enabled?** Check Settings → Audio → Sound toggle is on
-2. **TTS provider configured?** Check Settings → Audio → TTS Provider
-3. **API key present?**
-   - OpenAI: requires `OPENAI_API_KEY`
-   - Replicate: requires `REPLICATE_API_TOKEN`
-   - Xiaomi MiMo: requires `MIMO_API_KEY`
-   - Edge: no key needed (free)
-4. **Server-side check:**
-   ```bash
-   curl -X POST http://127.0.0.1:3080/api/tts \
-     -H "Content-Type: application/json" \
-     -d '{"text": "hello", "provider": "edge"}'
-   ```
-   Should return playable audio binary.
-
-**Provider auto-fallback:** If no explicit provider is selected, the server tries: OpenAI (if key) → Replicate (if key) → Edge (always available). Xiaomi MiMo is explicit-only and is used only when you select the Xiaomi provider.
-
-### TTS plays old/wrong responses
-
-**Symptom:** Audio doesn't match the displayed message.
-
-**Cause:** TTS cache serving stale entries. The cache is an LRU with TTL expiry (configurable via `config.ttsCacheTtlMs`), 100 MB memory budget.
-
-**Fix:** Restart the Nerve server to clear the in-memory TTS cache.
-
-### Edge TTS fails silently
-
-**Symptom:** Edge TTS selected but no audio. No error in UI.
-
-**Cause:** Edge TTS uses Microsoft's speech service WebSocket. The Sec-MS-GEC token generation or the WebSocket connection may fail.
-
-**Diagnosis:** Check server logs for `[edge-tts]` errors.
-
-**Fix:** Edge TTS has no API key dependency, but requires outbound WebSocket access to `speech.platform.bing.com`. Ensure your network allows this.
-
----
-
-## Voice Input / Wake Word
-
-### Microphone not working
-
-**Symptom:** Voice input button does nothing or permission denied.
-
-**Cause:** Microphone requires a **secure context** (HTTPS or localhost).
-
-**Fix:**
-- If accessing via `http://127.0.0.1:3080` — should work (localhost is secure)
-- If accessing remotely, use HTTPS:
-  ```bash
-  # Generate self-signed cert
-  mkdir -p certs
-  openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout certs/key.pem -out certs/cert.pem -days 365 \
-    -subj "/CN=localhost"
-  # Nerve auto-detects certs and starts HTTPS on port 3443
-  ```
-
-### Whisper transcription fails
-
-**Symptom:** Voice input records but transcription returns error.
-
-**Causes:**
-- **Local STT** (default): The whisper model hasn't been downloaded yet, or `ffmpeg` is missing
-- **OpenAI STT**: `OPENAI_API_KEY` not set
-
-**Fix (local STT):**
-- Models auto-download on first use. Check server logs for download progress or errors
-- Ensure `ffmpeg` is installed (the installer handles this): `ffmpeg -version`
-- Check model file exists: `ls ~/.nerve/models/ggml-base.bin`
-
-**Fix (OpenAI STT):**
-- Set `STT_PROVIDER=openai` and `OPENAI_API_KEY` in `.env`
-
-**Both providers:**
-- Max file size: 12 MB
-- Accepted formats: `audio/webm`, `audio/mp3`, `audio/mpeg`, `audio/mp4`, `audio/m4a`, `audio/wav`, `audio/ogg`, `audio/flac`
-
-### Non-English transcription is inaccurate
-
-**Symptom:** STT works, but non-English speech is mis-transcribed or stop/cancel commands are unreliable.
-
-**Causes:**
-- Language is set incorrectly
-- Local model is set to a smaller low-accuracy model
-- English-only model (`*.en`) selected for non-English speech
-
-**Fix:**
-1. Set language explicitly in **Settings → Audio → Language** (no auto-detect mode)
-2. For local STT, switch model from `tiny` to `base`
-3. Ensure `WHISPER_MODEL` is multilingual (`tiny`, `base`, `small`) for non-English usage
-4. Persist language in `.env` as `NERVE_LANGUAGE=<code>` (legacy `LANGUAGE` is still read, but deprecated)
-
-### Voice phrase changes don't persist
-
-**Symptom:** Custom stop/cancel/wake phrases disappear after refresh or restart.
-
-**Cause:** Phrase overrides are stored on disk at `~/.nerve/voice-phrases.json` (or `NERVE_VOICE_PHRASES_PATH` if set). Write failures usually come from path/permission issues.
-
-**Fix:**
-- Verify file location and permissions:
-  ```bash
-  ls -l ~/.nerve/voice-phrases.json
-  ```
-- If using a custom path, ensure `NERVE_VOICE_PHRASES_PATH` points to a writable location
-- Re-save phrases via Settings and watch server logs for `/api/voice-phrases` errors
-
-### Wake word doesn't trigger
-
-**Symptom:** Wake word toggle is on but voice detection never activates.
-
-**Cause:** Wake word state is managed collaboratively — the InputBar component reports wake word state to SettingsContext via `handleWakeWordState(enabled, toggleFn)`.
-
-**Fix:**
-- Ensure microphone permissions are granted
-- Try toggling wake word off and on via Settings or Cmd+K command palette
-- Check browser console for speech recognition errors
-
----
-
-## Memory Editing
-
-### Memory changes don't appear
-
-**Symptom:** Added/deleted memories don't reflect in the UI.
-
-**Cause:** Memory operations go through the gateway tool invocation (`memory_store`/`memory_delete`), then the file watcher detects changes and broadcasts an SSE event.
-
-**Diagnosis:**
-1. Check POST/DELETE to `/api/memories` returns `{ ok: true }`
-2. Check server logs for `[file-watcher]` events
-3. Check SSE stream: `curl -N http://127.0.0.1:3080/api/events`
-
-**Fix:**
-- If the gateway tool call fails, check gateway connectivity
-- If file watcher isn't firing, the memory file path may be wrong — check `config.memoryPath`
-- Manual refresh: click the refresh button in the Memory tab, or use Cmd+K → "Refresh Memory"
-
-### Memory file path is wrong
-
-**Symptom:** Memories show as empty even though MEMORY.md exists.
-
-**Cause:** The server resolves memory path from config (`config.memoryPath`). The workspace path is the parent of the memory path.
-
-**Fix:** Check and set the correct path:
-```bash
-# In .env
-MEMORY_PATH=/path/to/.openclaw/workspace/MEMORY.md
-```
-
----
-
-## Session Management
-
-### Sessions don't appear in sidebar
-
-**Symptom:** Session list is empty, obviously incomplete, or older top-level chats are missing.
-
-**Expected behavior in 1.5.0+:** Older top-level chats should remain visible in the sidebar. They are no longer supposed to disappear just because they fell outside a recent-activity window.
-
-**Likely causes:**
-- Gateway connectivity or auth problems prevented the session list from refreshing
-- The browser is showing stale client state after a reconnect or upgrade
-- A session fetch failed and the sidebar did not recover yet
-
-**Fix:**
-- Check gateway connectivity first, sessions come from the gateway, not local browser state
-- Force refresh with the refresh button or Cmd+K → "Refresh Sessions"
-- Reload the page after upgrades or reconnect storms
-- If the problem persists, inspect browser console and server logs for session-list or WebSocket errors
-
-### Sub-agent spawn times out
-
-**Symptom:** "Timed out waiting for subagent to spawn" error.
-
-**Cause:** Nerve requested a child session, but the gateway never surfaced a matching worker session before the timeout. Depending on the path, that usually means the selected root session could not launch the child, the normal `sessions_spawn` path failed, or the child session metadata never became visible to Nerve's poller.
-
-**Fix:**
-- Make sure the selected root agent exists and is healthy
-- Check whether that root is already busy with another task
-- Inspect gateway logs for `sessions.create`, `sessions.send`, or `sessions_spawn` failures
-- Refresh sessions and retry after gateway reconnects if the session tree looks stale
-
-### Kanban task execution cannot attach to a worker
-
-**Symptom:** A Kanban task enters `in-progress`, but no worker session links up cleanly, the task never reaches `review`, or the parent root never gets the completion update.
-
-**Cause:** Kanban has two execution paths now:
-- **Assigned tasks** create a real child session beneath the assignee's live root via `sessions.create(parentSessionKey=...)`, then send the task with `sessions.send`.
-- **Unassigned or `operator` tasks** use the normal `sessions_spawn` path.
-
-That means failures can come from a missing assignee root, a child-session create/send failure, the normal `sessions_spawn` path, or a stalled completion poller. On macOS, unassigned or `operator` tasks are rejected outright and must be assigned to a live worker root first.
-
-**Fix:**
-- If the task is assigned, make sure that assignee's root session exists and is healthy
-- If the task is unassigned, verify the normal `sessions_spawn` path is working
-- On macOS, assign the task to a live worker root before executing it
-- Check gateway RPC/session logs for the assignee-root path, and HTTP tool logs for the normal spawn path
-- If the child session finishes but the parent root never updates, inspect gateway RPC logs and recent session events for the parent-report step
-- If the worker never appears in the session list, inspect gateway connectivity and recent session events first
-
-### Session status stuck on "THINKING"
-
-**Symptom:** Session shows thinking/spinning indefinitely.
-
-**Cause:** The agent state machine transitions THINKING → STREAMING → DONE → IDLE. If a lifecycle event was missed, the status can get stuck.
-
-**Fix:**
-- Use the abort button (or Ctrl+C when generating) to reset the state
-- The DONE → IDLE auto-transition happens after 3 seconds (see `doneTimeoutsRef` in SessionContext)
-- Force refresh sessions to re-sync from gateway
-
----
-
-## Model Switching
-
-### Model dropdown doesn't show available models
-
-**Symptom:** Model selector is empty or shows only the current model.
-
-**Cause:** Models are fetched via `GET /api/gateway/models`, which reads the active OpenClaw config. If that config is unreadable, or it has no configured models, the dropdown can stay empty or sparse.
-
-**Fix:**
-- Verify the expected models are configured in OpenClaw (`agents.defaults.model` / `agents.defaults.models`)
-- Check that Nerve can read the active OpenClaw config file
-- Check server logs for `gateway/models` read errors
-- After fixing config, reopen the spawn dialog or refresh the page
-
-### Model change doesn't take effect
-
-**Symptom:** Switched model in UI but responses still come from the old model.
-
-**Cause:** There are two different paths now:
-- **Model changes** can fall back to `POST /api/gateway/session-patch`
-- **Thinking changes** must go through WebSocket RPC `sessions.patch`
-
-If you call the HTTP fallback with only `thinkingLevel`, it returns **501**. If Nerve cannot find an active root session and you omitted `sessionKey`, it can return **409**.
-
-**Fix:**
-- For model changes, verify the HTTP fallback returned `{ ok: true }`
-- For thinking changes, retry after the WebSocket reconnects and use the normal `sessions.patch` flow
-- If you see a 409 from the HTTP fallback, pass `sessionKey` explicitly or make sure an active root session exists
-- Some models may not be available for the current session type
-
----
-
-## Rate Limiting
-
-### "Too many requests" errors
-
-**Symptom:** API returns 429 status.
-
-**Cause:** Per-IP sliding window rate limiter. Different limits for:
-- General API endpoints
-- TTS synthesis (more restrictive)
-- Transcription (more restrictive)
-
-**Fix:**
-- Wait for the rate limit window to reset (check `X-RateLimit-Reset` header)
-- If behind a reverse proxy, ensure `X-Forwarded-For` is set correctly (the server only trusts forwarded headers from trusted proxy IPs)
-
----
-
-## HTTPS / SSL
-
-### Certificate errors
-
-**Symptom:** Browser shows SSL warnings or refuses to connect on port 3443.
-
-**Fix:** For development, generate a self-signed cert:
-```bash
-mkdir -p certs
-openssl req -x509 -newkey rsa:2048 -nodes \
-  -keyout certs/key.pem -out certs/cert.pem -days 365 \
-  -subj "/CN=localhost"
-```
-
-The server auto-detects cert files at `certs/cert.pem` and `certs/key.pem`. No configuration needed — if the files exist, HTTPS starts on `config.sslPort` (default 3443).
-
-### SSE not working over HTTPS
-
-**Symptom:** Real-time updates (memory changes, token updates) don't arrive over HTTPS.
-
-**Cause:** The HTTPS server has special handling for SSE responses — it streams them instead of buffering (see `server/index.ts` SSE streaming fix).
-
-**Fix:** This should work automatically. If it doesn't, check that:
-- The response content-type includes `text/event-stream`
-- No intermediate reverse proxy is buffering the response
-- The compression middleware correctly skips `/api/events`
-
----
-
-## Development
-
-### `npm run dev` — proxy errors
-
-**Symptom:** API requests fail with 502 during development.
-
-**Cause:** Vite proxies `/api` and `/ws` to the backend server. If the backend isn't running, all proxied requests fail.
-
-**Fix:** Run both servers:
 ```bash
 # Terminal 1
-npm run dev:server   # Backend on port 3081
+PORT=3081 npm run dev:server   # backend on 3081
 
 # Terminal 2
-npm run dev          # Frontend on port 3080 (proxies to 3081)
+npm run dev                    # frontend on 3080, proxies to 3081
 ```
 
 ### Tests fail with "Cannot find module"
 
-**Symptom:** Vitest can't resolve `@/` imports.
+**Symptom:** Vitest cannot resolve `@/` imports.
 
-**Fix:** The test config (`vitest.config.ts`) must have the same path alias:
+**Fix:** `vitest.config.ts` needs the same alias:
+
 ```ts
 resolve: {
   alias: {
@@ -601,71 +737,82 @@ resolve: {
 },
 ```
 
-Also ensure `server-dist/` is excluded from test discovery (it contains compiled `.test.js` duplicates):
+It also excludes compiled output and worktrees from test discovery:
+
 ```ts
 test: {
-  exclude: ['node_modules/**', 'server-dist/**'],
+  exclude: ['node_modules/**', 'server-dist/**', '.worktrees/**'],
 }
 ```
 
 ---
 
-## Update & Rollback
+## Update and rollback
 
-See [docs/UPDATING.md](UPDATING.md) for the full updater reference.
+See [UPDATING.md](UPDATING.md) for the full updater reference.
 
-### "No semver tags found on remote"
+### "No published release or semver tags found" (exit 20)
 
-**Symptom:** `npm run update` fails at version resolution (exit 20).
+**Symptom:** `npm run update` fails while resolving the version.
 
-**Cause:** No tags on the remote, or git can't reach origin.
-
-**Fix:**
-```bash
-git remote -v              # Verify origin
-git fetch --tags origin    # Pull tags
-git tag -l                 # Confirm tags exist locally
-```
-
-### Update stuck or "Lock acquisition failure" (exit 80)
-
-**Symptom:** Update refuses to start, says another update is running.
-
-**Cause:** A previous update crashed without releasing the lock.
+**Cause:** The updater could not find a published GitHub release or a `vX.Y.Z` tag, often because git cannot reach `origin`.
 
 **Fix:**
+
 ```bash
-cat ~/.nerve/updater/nerve-update.lock   # Shows the PID
-ps -p <pid>                               # Check if alive
-rm ~/.nerve/updater/nerve-update.lock     # Remove if stale
+git remote -v              # check origin
+git fetch --tags origin    # fetch tags
+git tag -l 'v*'            # confirm tags exist locally
 ```
 
-### Health check version mismatch (exit 60)
+### "Another update is already running" (exit 80)
 
-**Symptom:** Update completes build and restart, but health check says wrong version.
+**Symptom:** The updater refuses to start: `Another update is already running (PID <pid>)`.
 
-**Cause:** The old server process didn't release the port, or systemd hasn't fully restarted.
+**Cause:** The lock file `~/.nerve/updater/update.lock` names a process that is still alive. A lock left by a dead process is removed automatically.
 
 **Fix:**
+
 ```bash
-systemctl restart nerve
-curl http://127.0.0.1:3080/api/version   # Verify version
+cat ~/.nerve/updater/update.lock   # shows the PID
+ps -p <pid>                         # is it still running?
 ```
+
+Wait for that update to finish, or stop it. Remove the lock by hand only if the PID belongs to an unrelated process.
+
+### Health check fails after update (exit 60)
+
+**Symptom:** The update builds and restarts, but the health check fails or reports the wrong version.
+
+**Cause:** The old server process kept the port, or the service has not fully restarted.
+
+The updater then rolls back. If the rollback succeeds, the previous version is back on disk and the service has been restarted on it, so restarting the service again serves the previous version, not the update.
+
+**Fix:** Check which version answers:
+
+```bash
+curl http://127.0.0.1:3080/api/version
+```
+
+Fix the cause, then run the update again. If the run ended with exit 70, see the next entry.
 
 ### Rollback failed (exit 70)
 
-**Symptom:** Both update and automatic rollback failed. Critical state.
+**Symptom:** Both the update and the automatic rollback failed. This includes a service restart command that fails both times, for example `systemctl` refusing a restart without `sudo`.
 
-**Fix:** Manual recovery:
+**Fix:** Recover by hand:
+
 ```bash
-cat ~/.nerve/updater/last-good.json       # Get snapshot ref
+cat ~/.nerve/updater/last-good.json       # note the "ref"
 git checkout --force <ref>
-npm install && npm run build && npm run build:server
-systemctl restart nerve
+npm install && npm run build
+# then restart the service
+sudo systemctl restart nerve.service                        # Linux
+launchctl kickstart -k gui/$(id -u)/com.nerve.server       # macOS
 ```
 
 ---
 
-## Known Limitations
+## Known limitations
 
 None currently tracked.

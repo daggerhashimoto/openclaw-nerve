@@ -1,14 +1,11 @@
-# AI Agent Setup
+# AI agent setup
 
-Nerve supports agent-driven installation.
+Nerve can be installed, configured, and validated by an AI agent that can read files and run shell commands on a macOS or Linux machine.
 
-If you want an AI agent to install, configure, and validate Nerve, the canonical raw instruction file is:
+The agent follows [`INSTALL.md`](./INSTALL.md), the install contract. This page is the human-readable summary: the prompt to paste, what the agent will and will not do on its own, and where to go for other setups.
 
-- [`INSTALL.md`](./INSTALL.md)
-- raw URL: `https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/master/docs/INSTALL.md`
-
-Use that file as the operational contract.
-Use this page for the human-readable explanation, boundaries, and topology map.
+- Contract: [`INSTALL.md`](./INSTALL.md)
+- Raw URL: `https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/master/docs/INSTALL.md`
 
 ## Copy-paste prompt
 
@@ -19,139 +16,51 @@ Fetch and follow instructions from:
 https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/master/docs/INSTALL.md
 ```
 
-## Default agent behavior
+## What to expect
 
-Unless you say otherwise, agents should use these defaults:
-- local-first
-- localhost-only by default
-- `~/nerve` as the install path
-- installer-first (`install.sh`)
-- setup wizard first
-- validate before reporting completion
+Unless you say otherwise, the agent works local-first:
 
-That means the common happy path is:
-1. detect an existing OpenClaw gateway
-2. install Nerve
-3. run setup
-4. start or restart Nerve
-5. validate the UI and gateway connection
+1. Looks for an existing OpenClaw gateway and prefers it.
+2. Runs `install.sh`, which installs Nerve in `~/nerve` and starts it as a service.
+3. Runs the setup wizard, keeping Nerve on localhost only.
+4. Checks that Nerve responds and is connected to the gateway.
 
-## What agents may do automatically
+Nerve is not standalone. It needs an OpenClaw gateway. If the agent finds none, it explains the dependency and asks before installing OpenClaw.
 
-For the default local path, agents may automatically:
-- inspect the current machine and existing install state
-- detect whether `~/nerve` already exists
-- detect whether OpenClaw is installed and reachable
-- detect the gateway token and gateway URL
-- install missing core prerequisites for the local path
-- run the Nerve installer
-- run the setup wizard
-- use defaults mode for local-only setup when no TTY is available
-- write a minimal local `.env` if the wizard cannot be used
-- restart local services or processes
-- run validation and smoke checks
+## What the agent does without asking
 
-Agents may also apply minimal localhost-safe OpenClaw changes needed for the default path, such as local origin allowlisting, local pairing fixes, or required local tool allow entries.
+On the default local path it may:
+- inspect the machine, an existing `~/nerve`, and the local OpenClaw install
+- install missing core prerequisites (Node.js 22 or later, npm, git, build tools)
+- run the installer and the setup wizard, and write a minimal local `.env` if the wizard cannot run
+- apply the small local OpenClaw changes setup makes: device pairing and scopes, and the `cron`, `gateway`, and `sessions_spawn` tool allow entries, followed by a local gateway restart
+- restart local services and run its checks
 
-## What requires confirmation
+## What needs your approval
 
-Agents should ask before they do anything that changes exposure, trust, or install ownership.
-
-That includes:
+The agent asks before anything that changes exposure, trust, or ownership of the install:
 - installing OpenClaw
-- exposing Nerve beyond localhost
-- LAN access
-- public internet exposure
-- reverse proxy setup
-- Tailscale setup or topology changes
-- destructive reinstall, replacement, or deletion
-- remote gateway auth or allowlist changes
-- cloud-hosted assumptions that materially change the security posture
+- exposing Nerve beyond localhost (LAN, Tailscale, or the public internet), or setting up a reverse proxy
+- reinstalling, replacing, or deleting an existing install
+- changing the config of a remote gateway (setup never edits one: it prints the steps for you)
+- cloud-hosted setups that change the security posture
 
-Short version: local repair and local setup can be automated. Public or destructive changes need consent.
+Short version: local repair and local setup can be automated. Public or destructive changes need your consent.
 
-## Dependency behavior
+## How you know it worked
 
-Nerve is not a standalone app. It depends on an OpenClaw gateway.
+The agent reports success only when Nerve is installed, running, connected to the intended gateway, and answering its health check. A script finishing is not enough. If a step fails, it reports which step failed, what it checked and changed, and what still needs you.
 
-Expected agent behavior:
-1. look for an existing reachable gateway first
-2. prefer using that gateway
-3. if none is found, explain the dependency clearly
-4. ask before installing OpenClaw
+## Choose your setup
 
-For the default same-machine flow, agents may make the smallest safe local OpenClaw fixes required for Nerve to connect. For remote or public gateway changes, they should stop and ask.
+Pick the guide that matches your topology. Local is the recommended default.
 
-## Topology map
-
-Choose the guide that matches the intended setup:
-
-- **Local / same machine:** [DEPLOYMENT-A.md](./DEPLOYMENT-A.md)
-- **Hybrid / local Nerve + remote gateway:** [DEPLOYMENT-B.md](./DEPLOYMENT-B.md)
-- **Cloud / remote Nerve:** [DEPLOYMENT-C.md](./DEPLOYMENT-C.md)
+- **Local, same machine:** [DEPLOYMENT-A.md](./DEPLOYMENT-A.md)
+- **Hybrid, local Nerve with a remote gateway:** [DEPLOYMENT-B.md](./DEPLOYMENT-B.md)
+- **Cloud, remote Nerve:** [DEPLOYMENT-C.md](./DEPLOYMENT-C.md)
 - **Add Tailscale to an existing install:** [TAILSCALE.md](./TAILSCALE.md)
 
-Recommended default: start with the local setup unless you already know you need something else.
-
-## Done criteria
-
-An agent should only report success when all of these are true:
-- Nerve is installed at the intended path
-- Nerve starts successfully
-- it points at the intended OpenClaw gateway
-- access and auth match the requested mode
-- the smoke test passes
-
-A script finishing is not enough. A valid install must actually respond and connect.
-
-## Smoke test expectations
-
-Keep validation minimal and real:
-
-1. confirm the Nerve service or process is running
-2. confirm the expected URL responds
-3. confirm the intended gateway responds
-4. confirm `.env` matches the intended gateway
-5. if auth is enabled, confirm the login surface or protected access path is present
-
-Typical local checks:
-
-```bash
-openclaw gateway status
-curl -fsS http://127.0.0.1:18789/health
-curl -fsS http://127.0.0.1:3080/health
-```
-
-For remote or custom setups, agents should adjust the URLs to match the requested topology.
-
-## Failure and recovery behavior
-
-Agents should fail clearly, not vaguely.
-
-### No OpenClaw gateway found
-
-Explain that Nerve depends on OpenClaw and ask before installing it.
-
-### Installer or setup wizard unavailable
-
-Use the smallest correct fallback:
-- clone the repo if needed
-- `npm install`
-- `npm run setup` when available
-- if local-only and no TTY is available, `npm run setup -- --defaults`
-- if needed, write a minimal `.env`, then build and start manually
-
-### Existing install already present
-
-Inspect it first. Prefer restart, repair, or reconfigure. Ask before replacing or deleting anything.
-
-### Port, auth, or access mismatch
-
-Adjust the config, restart, and revalidate. Do not declare success just because the process exists.
-
-### Remote or public topology requested without details
-
-Ask for the missing details instead of guessing. This especially matters for Tailscale, reverse proxies, public domains, and remote gateway allowlists.
+To see exactly what the installer does, read [INSTALLER-STEPS.md](./INSTALLER-STEPS.md). To update a running install later, see [UPDATING.md](./UPDATING.md).
 
 ## Example prompts
 
@@ -165,7 +74,7 @@ Fetch and follow instructions from:
 https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/master/docs/INSTALL.md
 ```
 
-### Local Nerve + existing remote gateway
+### Local Nerve with an existing remote gateway
 
 ```text
 Install Nerve on this machine and connect it to my existing remote OpenClaw gateway.

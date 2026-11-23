@@ -23,14 +23,14 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
 
 <div align="center">
 
-<img src="docs/screenshots/chat-mem.webp" alt="Nerve with a chat reply and chart in the middle, the agent and session tree on the right, and the memory panel open" width="100%" />
+<img src="docs/screenshots/hero.webp" alt="Nerve chat with a pasted screenshot, tool calls, a code diff and a live TradingView chart, next to the agent tree and the memory panel" width="100%" />
 
 <table>
 <tr>
-<td align="center"><img src="docs/screenshots/phone-chat.webp" alt="Chat with a chart on a phone" width="190" /></td>
+<td align="center"><img src="docs/screenshots/phone-chat.webp" alt="A live TradingView chart in chat on a phone" width="190" /></td>
+<td align="center"><img src="docs/screenshots/phone-map.webp" alt="An embedded Google Map in chat on a phone" width="190" /></td>
+<td align="center"><img src="docs/screenshots/phone-memory.webp" alt="An agent's memories on a phone" width="190" /></td>
 <td align="center"><img src="docs/screenshots/phone-agents.webp" alt="The agent and session tree on a phone" width="190" /></td>
-<td align="center"><img src="docs/screenshots/phone-tasks.webp" alt="The Kanban board on a phone" width="190" /></td>
-<td align="center"><img src="docs/screenshots/phone-files.webp" alt="The workspace file browser on a phone" width="190" /></td>
 </tr>
 </table>
 
@@ -94,8 +94,8 @@ Charts, diffs, previews, syntax-highlighted code, structured tool rendering, and
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/chat-code.webp" alt="A pasted CI screenshot, a subagent handoff and a code diff in chat" /><br /><sub>Paste a screenshot, hand the fix to a subagent, get a diff back</sub></td>
-<td width="50%"><img src="docs/screenshots/tradingview.webp" alt="A live TradingView chart of gold inside a chat reply" /><br /><sub>Live TradingView charts right inside a reply</sub></td>
+<td width="50%"><img src="docs/screenshots/launch-chart.webp" alt="A reply with thinking, tool calls and a bar chart built from the agent's data" /><br /><sub>Thinking, tool calls and charts built from your data</sub></td>
+<td width="50%"><img src="docs/screenshots/paper.webp" alt="A table, a math formula and an embedded map in the Workbench Paper theme" /><br /><sub>Tables, math and maps, here in Workbench Paper</sub></td>
 </tr>
 <tr>
 <td><img src="docs/screenshots/tasks.webp" alt="The Kanban board with a task running on an agent" /><br /><sub>A Kanban board agents work from, with live runs</sub></td>
@@ -111,7 +111,7 @@ Charts, diffs, previews, syntax-highlighted code, structured tool rendering, and
 </tr>
 <tr>
 <td><img src="docs/screenshots/audio.webp" alt="Voice settings with language, wake word and TTS providers" /><br /><sub>Voice settings: language, wake word, four TTS providers</sub></td>
-<td><img src="docs/screenshots/paper.webp" alt="A table, a math formula and an embedded map in the Workbench Paper theme" /><br /><sub>Tables, math and maps, here in Workbench Paper</sub></td>
+<td><img src="docs/screenshots/proposals.webp" alt="The proposals inbox with a task an agent suggested" /><br /><sub>Agents propose tasks; you approve them onto the board</sub></td>
 </tr>
 <tr>
 <td><img src="docs/screenshots/palette.webp" alt="The command palette searching sessions" /><br /><sub>Jump anywhere from the command palette</sub></td>

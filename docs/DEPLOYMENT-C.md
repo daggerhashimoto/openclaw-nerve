@@ -51,6 +51,8 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
   | bash -s -- --gateway-url https://gw.example.com --gateway-token <gateway-token> --skip-setup
 ```
 
+The installer needs the `openclaw` CLI on the Nerve host even when the gateway is remote (`npm install -g openclaw`): it checks for it and exits without it. On a host without the CLI, use the manual install from [Deployment B](DEPLOYMENT-B.md#2-install-nerve-and-run-setup) instead.
+
 ### 2. Run setup for remote browser access
 
 ```bash

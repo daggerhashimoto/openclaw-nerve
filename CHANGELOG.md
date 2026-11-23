@@ -41,7 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The chat header fits an iPhone SE while the agent works (PR #391)
 - Crons use the gateway's `cron.*` RPC methods; only manual runs of isolated agent-turn jobs still go through `sessions_spawn` on `/tools/invoke` (PR #390)
 - Setup classifies `GATEWAY_URL` as local or remote. For a remote gateway it leaves this machine's OpenClaw config alone and prints the changes to make on the gateway host. A loopback URL counts as remote when this machine runs no OpenClaw (PR #419, PR #420)
-- Non-root installs install and start the service through sudo, the installer waits for `/health` before it reports success, and it exits 2 with next steps when Nerve is not running (PR #393)
+- Non-root installs install and start the service through sudo, the installer waits for `/health` before it reports success, and it exits 2 with next steps when the service step fails or `/health` does not answer. If you decline the service or systemd is not running, it prints the manual start steps and can still exit 0 (PR #393)
 - Voice input no longer writes into the composer; the live transcription preview shows under your draft and the draft is kept (PR #417)
 - The model picker names the model behind the primary option, and the effort picker shows a readable label for the inherited level (PR #409, PR #413)
 - Markdown, the code editor, diff and preview highlighting and the Kanban quick view load on demand, cutting the initial bundle from 962 kB to 373 kB (PR #387)

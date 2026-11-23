@@ -759,17 +759,15 @@ Wait for that update to finish, or stop it. Remove the lock by hand only if the 
 
 **Cause:** The old server process kept the port, or the service has not fully restarted.
 
-**Fix:** Restart the service and check the version:
+The updater then rolls back. If the rollback succeeds, the previous version is back on disk and the service has been restarted on it, so restarting the service again serves the previous version, not the update.
+
+**Fix:** Check which version answers:
 
 ```bash
-# Linux (systemd)
-sudo systemctl restart nerve.service
-
-# macOS (launchd)
-launchctl kickstart -k gui/$(id -u)/com.nerve.server
-
 curl http://127.0.0.1:3080/api/version
 ```
+
+Fix the cause, then run the update again. If the run ended with exit 70, see the next entry.
 
 ### Rollback failed (exit 70)
 

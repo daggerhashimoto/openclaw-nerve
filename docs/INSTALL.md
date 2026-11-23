@@ -151,6 +151,8 @@ git checkout <release-tag>   # optional: the installer uses the latest release
 npm ci
 ```
 
+If the repo is already present, run `npm ci` in it when `node_modules` is missing. The build step below needs the dependencies, so it fails without them.
+
 If you need explicit minimal config, write `.env` with at least:
 
 ```bash

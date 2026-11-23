@@ -44,7 +44,7 @@ Chat, sessions, Crons and Kanban work well. Workspace features do not have full 
 | **Restart the local gateway** (Settings) | Not for this topology | Runs `openclaw gateway restart` on the Nerve host. Restart the remote gateway on its own host |
 | Live workspace updates | Off | Nerve starts no file watchers when the workspace is remote |
 
-If you need the full file browser, Memory, raw previews and file changes, put Nerve on the gateway host (deployment A or same-host [deployment C](DEPLOYMENT-C.md)), or make the workspace directory exist on the Nerve host, for example with a network mount.
+If you need the full file browser, Memory, raw previews and file changes, put Nerve on the gateway host (deployment A or same-host [deployment C](DEPLOYMENT-C.md)), or make the workspace directory exist on the Nerve host, for example with a network mount. With a mount, remove `NERVE_WORKSPACE_REMOTE=true` from `.env` and restart Nerve, because that override keeps Nerve in gateway-only mode even when the directory exists.
 
 ## Prerequisites
 

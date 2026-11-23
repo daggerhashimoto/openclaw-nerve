@@ -242,7 +242,7 @@ Task IDs are slugs made from the title: lowercase, non-alphanumeric runs become 
 6. The proposal appears in the Proposals pane of the kanban header.
 7. The operator approves or rejects it.
 
-When the board config `proposalPolicy` is `"auto"` (the default is `"confirm"`), step 7 is skipped and proposals are applied immediately.
+When the board config `proposalPolicy` is `"auto"` (the default is `"confirm"`), step 7 is skipped and proposals are applied immediately. That means the task named by an update marker's `id` must already exist: if it does not, no proposal is stored, the server logs a warning, and the marker is still stripped from the result. With `"confirm"`, the same update is stored as a pending proposal and fails when the operator approves it.
 
 ### Example
 
@@ -358,7 +358,7 @@ In all three the URL, ignoring any `?query`, must end in `.png`, `.jpg`, `.jpeg`
 
 ### Rules for agents
 
-- A local path (starting with `/`, `./` or `~`) is loaded through `GET /api/files`, which only serves those image types from `/tmp`, `~/.openclaw` and the `MEMORY_DIR` directory. Use an absolute path in one of those places.
+- A local path (starting with `/`, `./` or `~`) is loaded through `GET /api/files`, which only serves those image types from `/tmp`, `~/.openclaw` and the `MEMORY_DIR` directory. Use an absolute path in one of those places, and leave any `?query` off it. The extractor accepts `/tmp/results.png?v=1`, but `/api/files` takes the whole string as the file path, so the extension check fails and the image does not load (403).
 - Other URLs are used as written. Nerve's content security policy allows images only from its own origin and from `data:` and `blob:` sources, so a remote image URL is extracted but the browser does not load it. Prefer local files.
 - A markdown image whose URL has no image extension is not extracted, and assistant messages never render markdown images inline, so it shows nothing.
 - Images that the agent delivers as a reply attachment (for example a generated image) need no syntax. The gateway puts an image block in the message with a path under `/api/chat/media/outgoing/`, and Nerve loads it through its `GET /api/chat-media` proxy, which passes only that path shape and only raster image types.

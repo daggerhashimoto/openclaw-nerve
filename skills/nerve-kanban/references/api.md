@@ -730,6 +730,7 @@ const task = await fetch(`${NERVE_URL}/api/kanban/tasks`, {
   body: JSON.stringify({
     title: 'Implement caching layer',
     description: 'Add Redis caching for API responses',
+    status: 'todo', // execute accepts only todo or backlog
     priority: 'high',
     labels: ['backend', 'performance'],
   }),
@@ -749,6 +750,7 @@ if (patch.status === 409) {
     body: JSON.stringify({ version: latest.version, assignee: 'agent:designer' }),
   });
 }
+if (!patch.ok) throw new Error(`Assignment failed: ${patch.status}`); // do not execute an unassigned task
 
 // Execute
 await fetch(`${NERVE_URL}/api/kanban/tasks/${task.id}/execute`, {

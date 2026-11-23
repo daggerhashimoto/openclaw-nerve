@@ -51,6 +51,8 @@ Thanks for helping. This guide gets you from a clone to a merged pull request.
 
 5. Open **http://localhost:3080**. Vite proxies `/api` and `/ws` to the backend on `:3081`.
 
+   If the setup wizard generated HTTPS certificates (`certs/cert.pem` and `certs/key.pem`), Vite serves HTTPS instead, so open **https://localhost:3080** and accept the self-signed certificate warning. To keep the dev server on HTTP while those files exist, start it with `VITE_DISABLE_HTTPS=true npm run dev`.
+
    `npm run dev:server` does not pick `:3081` on its own. Without `PORT=3081` the backend uses its normal default, `:3080`, and clashes with Vite.
 
 ### npm scripts

@@ -55,13 +55,41 @@ describe('ensureSpawnHelperExecutable', () => {
     expect(modeOf(helper)).toBe(0o755);
   });
 
-  it('checks the same folder node-pty loads pty.node from, build/Release first', () => {
+  it('fixes every helper node-pty might load, since a stale build/Release falls through to the prebuild', () => {
     const built = nativeDir('build/Release', 0o644);
     const prebuilt = nativeDir('prebuilds/darwin-arm64', 0o644);
 
     expect(ensureSpawnHelperExecutable({ platform: 'darwin', arch: 'arm64', packageDir })).toBe('fixed');
     expect(modeOf(built)).toBe(0o755);
-    expect(modeOf(prebuilt)).toBe(0o644);
+    expect(modeOf(prebuilt)).toBe(0o755);
+  });
+
+  it('still fixes the prebuild when build/Release has a pty.node but no helper', () => {
+    nativeDir('build/Release', null);
+    const prebuilt = nativeDir('prebuilds/darwin-arm64', 0o644);
+
+    expect(ensureSpawnHelperExecutable({ platform: 'darwin', arch: 'arm64', packageDir })).toBe('fixed');
+    expect(modeOf(prebuilt)).toBe(0o755);
+  });
+
+  it('checks the bundled layout under lib/ that node-pty also searches', () => {
+    const bundled = nativeDir('lib/prebuilds/darwin-arm64', 0o644);
+
+    expect(ensureSpawnHelperExecutable({ platform: 'darwin', arch: 'arm64', packageDir })).toBe('fixed');
+    expect(modeOf(bundled)).toBe(0o755);
+  });
+
+  it('reports a failure when any helper cannot be fixed, even if another one was', () => {
+    nativeDir('build/Release', 0o644);
+    const prebuilt = nativeDir('prebuilds/darwin-arm64', 0o644);
+    const realChmod = fs.chmodSync;
+    vi.spyOn(fs, 'chmodSync').mockImplementation((file, mode) => {
+      if (String(file) === prebuilt) throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+      realChmod(file, mode);
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(ensureSpawnHelperExecutable({ platform: 'darwin', arch: 'arm64', packageDir })).toBe('failed');
   });
 
   it('uses the prebuild for the running architecture', () => {

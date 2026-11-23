@@ -30,31 +30,13 @@ export function resolveNodePtyDir(): string | null {
   }
 }
 
-/**
- * Make sure the `spawn-helper` node-pty will use is executable, adding the
- * execute bits when they are missing. Never throws.
- */
-export function ensureSpawnHelperExecutable(options: SpawnHelperOptions = {}): SpawnHelperStatus {
-  const platform = options.platform ?? process.platform;
-  if (platform === 'win32') return 'not-needed';
-
-  const packageDir = options.packageDir === undefined ? resolveNodePtyDir() : options.packageDir;
-  if (!packageDir) return 'missing';
-
-  // The same folders, in the same order, that node-pty loads pty.node from
-  // (lib/utils.js loadNativeModule); spawn-helper sits beside it.
-  const arch = options.arch ?? process.arch;
-  const nativeDir = ['build/Release', 'build/Debug', `prebuilds/${platform}-${arch}`]
-    .map((dir) => path.join(packageDir, dir))
-    .find((dir) => fs.existsSync(path.join(dir, 'pty.node')));
-  if (!nativeDir) return 'missing';
-
-  const helper = path.join(nativeDir, 'spawn-helper');
+/** Add the execute bits to one helper. Returns null when there is no helper in that folder. */
+function fixHelper(helper: string): Exclude<SpawnHelperStatus, 'not-needed' | 'missing'> | null {
   let mode: number;
   try {
     mode = fs.statSync(helper).mode;
   } catch {
-    return 'missing';
+    return null;
   }
   if ((mode & 0o111) === 0o111) return 'ok';
 
@@ -68,4 +50,33 @@ export function ensureSpawnHelperExecutable(options: SpawnHelperOptions = {}): S
     );
     return 'failed';
   }
+}
+
+/**
+ * Make sure the `spawn-helper` node-pty will use is executable, adding the
+ * execute bits when they are missing. Never throws.
+ *
+ * node-pty uses the helper beside the first pty.node that loads, trying
+ * build/Release, build/Debug and then the prebuild for the platform, each
+ * relative to the package and to its lib/ folder (lib/utils.js
+ * loadNativeModule). A pty.node that exists but fails to load is skipped, so
+ * every candidate helper is fixed rather than guessing which one loads.
+ */
+export function ensureSpawnHelperExecutable(options: SpawnHelperOptions = {}): SpawnHelperStatus {
+  const platform = options.platform ?? process.platform;
+  if (platform === 'win32') return 'not-needed';
+
+  const packageDir = options.packageDir === undefined ? resolveNodePtyDir() : options.packageDir;
+  if (!packageDir) return 'missing';
+
+  const arch = options.arch ?? process.arch;
+  const results = ['build/Release', 'build/Debug', `prebuilds/${platform}-${arch}`]
+    .flatMap((dir) => [path.join(packageDir, dir), path.join(packageDir, 'lib', dir)])
+    .filter((dir) => fs.existsSync(path.join(dir, 'pty.node')))
+    .map((dir) => fixHelper(path.join(dir, 'spawn-helper')))
+    .filter((result) => result !== null);
+
+  if (results.includes('failed')) return 'failed';
+  if (results.includes('fixed')) return 'fixed';
+  return results.includes('ok') ? 'ok' : 'missing';
 }

@@ -77,8 +77,8 @@ npm run update -- --yes --no-restart
 | 1 | Already up to date. Also returned for an unknown option, a missing `--version` value, and an uncaught fatal error. |
 | 10 | Preflight failure: `git`, `node` or `npm` missing, Node below 22, not a git repository, `origin` not HTTPS, or no write permission. |
 | 20 | Version resolution failure: `package.json` unreadable, no release or semver tags found, or `--version` invalid or not an existing tag. |
-| 40 | Update or build failure: `git fetch`, `git checkout`, `npm install` or a build step failed (rollback attempted). Also returned for an unexpected error outside the tracked stages, such as the service restart command itself failing (no rollback). |
-| 50 | The service was not active after the restart (rollback attempted). |
+| 40 | Update or build failure: `git fetch`, `git checkout`, `npm install` or a build step failed (rollback attempted). Also returned for an unexpected error outside the tracked stages (no rollback). |
+| 50 | The service restart command failed, or the service was not active after the restart (rollback attempted). |
 | 60 | Health check failure: `/health` never returned 2xx, or `/api/version` never reported the target version (rollback attempted). |
 | 70 | Rollback failure (needs manual intervention), or `--rollback` found no snapshot. |
 | 80 | Lock acquisition failure: another update is running. |
@@ -100,7 +100,7 @@ If `.env` exists, a copy also goes to `~/.nerve/updater/snapshots/<timestamp>/.e
 
 ### Rollback
 
-Rollback restores the snapshot commit, cleans `node_modules`, rebuilds, and restarts the service. It runs automatically when the git update, a build step, the service-active check after the restart, or the health check fails, or manually with `--rollback`.
+Rollback restores the snapshot commit, cleans `node_modules`, rebuilds, and restarts the service. It runs automatically when the git update, a build step, the service restart command, the service-active check after the restart, or the health check fails, or manually with `--rollback`.
 
 1. `git checkout --force <snapshot-commit>` (local, no fetch).
 2. Remove `node_modules`.
@@ -203,23 +203,27 @@ The service restarted, but `/api/version` kept reporting the old version until t
 - The old process kept serving, so the new one never took the port.
 - The shell running the updater sets `PORT` or `HOST` to something other than what the service uses, so the updater is checking a different instance.
 
-**Fix:** Restart the service yourself and check which version answers:
+The updater then rolls back. If the rollback succeeds, the previous version is back on disk and the service has been restarted on it, so restarting again serves the previous version, not the update.
+
+**Fix:** Check which version answers:
 ```bash
-sudo systemctl restart nerve.service       # Linux
+curl http://127.0.0.1:3080/api/version
+```
+Fix the cause above, then run the update again. If the run ended with exit 70 instead, the rollback failed too: restore by hand as in [Build failure after checkout](#build-failure-after-checkout-exit-40).
+
+### The service restart command fails (exit 50 or 70)
+
+The restart runs as your user, without `sudo`. If the command itself errors (for example your user may not restart a system-level unit), the updater fails with code 50 and rolls back: it restores and rebuilds the previous version, then restarts it with the same command. That restart usually fails the same way, so the run ends with exit 70. The service was never restarted, so it keeps running the version it ran before the update, and the previous version is back on disk.
+
+**Fix:** Run the update with `--no-restart`, then restart the service yourself:
+```bash
+npm run update -- --yes --no-restart
+sudo systemctl restart nerve.service
 curl http://127.0.0.1:3080/api/version
 ```
 On macOS, use `launchctl kickstart -k gui/$(id -u)/com.nerve.server`.
 
-### The service restart command fails (exit 40)
-
-The restart runs as your user, without `sudo`. If the command itself errors (for example your user may not restart a system-level unit), the updater exits with code 40 and does not roll back. The new version is already built on disk.
-
-**Fix:** Restart the service yourself:
-```bash
-sudo systemctl restart nerve.service
-curl http://127.0.0.1:3080/api/version
-```
-To avoid the problem next time, run the update with `--no-restart` and restart the service afterwards. `--rollback` restores and rebuilds the previous version but then uses the same unprivileged restart, so it can exit 70 for the same reason. Restart the service yourself after it.
+`--rollback` uses the same unprivileged restart, so it can exit 70 for the same reason after restoring and rebuilding the previous version. Restart the service yourself after it.
 
 ### Build failure after checkout (exit 40)
 

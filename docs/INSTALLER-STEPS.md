@@ -309,8 +309,7 @@ A detection layer (`detectNeededConfigChanges`) lists what needs changing withou
 3. **Tools allow**: adds `cron`, `gateway` and `sessions_spawn` to `gateway.tools.allow` when any is missing. Of the three, Nerve's server only invokes `sessions_spawn` over `/tools/invoke` (Kanban task execution and manual runs of isolated cron jobs). Cron management itself goes through gateway RPC.
 4. **Allowed origins**: adds the access plan's origins that are missing from `gateway.controlUi.allowedOrigins`.
    - Localhost-only mode has none, so nothing is added.
-   - LAN or tailnet IP: `http://<ip>:<port>`.
-   - Custom mode with a non-loopback bind address: `http://<host>:<port>`, plus `https://<host>:<ssl-port>` when HTTPS is enabled.
+   - LAN, tailnet IP or a custom non-loopback bind: `http://<host>:<port>`, plus `https://<host>:<ssl-port>` when HTTPS is enabled. The HTTP origin stays first. The wizard offers HTTPS for LAN and custom binds only. A tailnet IP gets the HTTPS origin only from `--defaults --access-mode tailscale-ip` when `.env` already has `SSL_PORT`.
    - Tailscale Serve: `https://<node>.tail<id>.ts.net`.
 
 If nothing needs changing, the step ends silently.
@@ -342,7 +341,7 @@ If nothing needs changing, the step ends silently.
 - Token order: the existing `.env` token, then a token detected from the systemd service file or `openclaw.json` (env and file secret references are resolved where possible), then `OPENCLAW_GATEWAY_TOKEN` from the environment.
 - It tests the gateway (`GET /health`, then `POST /tools/invoke` with `sessions_list` and the token) before writing anything. A failed test exits 1, and `--defaults` prints `Refusing to write .env because gateway auth could not be verified`.
 - Authentication prompts appear only when the chosen mode binds `0.0.0.0`. Declining a password still enables auth, with the gateway token as the password. In `--defaults` mode, auth is enabled automatically when `HOST=0.0.0.0` and a token exists.
-- It generates `NERVE_SESSION_SECRET` if missing, writes `.env` with mode `0600`, and backs up the previous file to `.env.backup` (or `.env.backup.<date>` if that exists).
+- It generates `NERVE_SESSION_SECRET` if missing, writes `.env` with mode `0600`, backs up the previous file to `.env.backup` (or `.env.backup.<date>` if that exists), and keeps the settings it does not manage as written unless you choose Start fresh.
 - It copies the bundled skills from `skills/` to `~/.openclaw/workspace/skills/`.
 - With `NERVE_INSTALLER=1` (set by the installer) it skips the banner and the "next steps" text, and draws its summary inside the installer's rail.
 - `npm run setup -- --check` validates an existing `.env` and tests the gateway without changing anything.

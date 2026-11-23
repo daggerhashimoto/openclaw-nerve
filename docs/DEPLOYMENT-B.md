@@ -41,14 +41,16 @@ Chat, sessions, Crons and Kanban work well. Workspace features do not have full 
 | Cron delivery channels | Reflect the Nerve host | Read the `channels` keys from `~/.openclaw/openclaw.json` on the Nerve host. The list is empty without that file |
 | Token and cost totals | Empty | Scanned from session transcripts in `SESSIONS_DIR` on the Nerve host, so they cover only sessions stored there (none for a remote gateway) |
 | Cron sessions in the session list | Full on current OpenClaw | Current OpenClaw lists them itself. For older gateways Nerve also reads `sessions.json` from `SESSIONS_DIR`. That file is not on the Nerve host, so `/api/sessions/hidden` answers `storeMissing: true` and the browser asks again only every 5 minutes |
+| Older images in chat history | Full on current OpenClaw | Current OpenClaw gives each omitted image an artifact id, and Nerve downloads it through the gateway. On older gateways Nerve needs `sessions.json`, which is not on the Nerve host, so `/api/sessions/media` answers 404 and the image shows as unavailable |
 | **Restart the local gateway** (Settings) | Not for this topology | Runs `openclaw gateway restart` on the Nerve host. Restart the remote gateway on its own host |
 | Live workspace updates | Off | Nerve starts no file watchers when the workspace is remote |
 
-If you need the full file browser, Memory, raw previews and file changes, put Nerve on the gateway host (deployment A or same-host [deployment C](DEPLOYMENT-C.md)), or make the workspace directory exist on the Nerve host, for example with a network mount.
+If you need the full file browser, Memory, raw previews and file changes, put Nerve on the gateway host (deployment A or same-host [deployment C](DEPLOYMENT-C.md)), or make the workspace directory exist on the Nerve host, for example with a network mount. With a mount, remove `NERVE_WORKSPACE_REMOTE=true` from `.env` and restart Nerve, because that override keeps Nerve in gateway-only mode even when the directory exists.
 
 ## Prerequisites
 
 - Node.js 22 or later on the Nerve host
+- The `openclaw` CLI on the Nerve host if you use the installer (`npm install -g openclaw`). `install.sh` checks for it and exits without it, even though the gateway is remote. Without the CLI, use the manual install in step 2
 - An OpenClaw gateway running on the gateway host (it must support connect protocol version 4)
 - A private network path to the gateway host (Tailscale, WireGuard, an SSH tunnel or a private VPC)
 - The gateway token
@@ -99,6 +101,17 @@ cd ~/nerve
 npm run setup
 ```
 
+Without the `openclaw` CLI on the Nerve host, install by hand instead. Setup itself does not need the CLI:
+
+```bash
+git clone https://github.com/daggerhashimoto/openclaw-nerve.git ~/nerve
+cd ~/nerve
+npm ci
+npm run setup
+```
+
+A manual install sets up no service, so start Nerve with `npm run prod` in step 5.
+
 When prompted:
 
 - **Gateway URL**: the remote gateway URL.
@@ -113,7 +126,7 @@ Setup counts a gateway as remote when `GATEWAY_URL` points at another machine, o
 
 ### 3. Adjust `.env` on the Nerve host
 
-Make these edits after your last `npm run setup`. Setup rewrites `.env` and keeps only the settings it manages, so it drops `NERVE_WORKSPACE_REMOTE` and `NERVE_PUBLIC_ORIGIN` on every run (the previous file is saved as `.env.backup`).
+Setup keeps `NERVE_WORKSPACE_REMOTE` and `NERVE_PUBLIC_ORIGIN` when it rewrites `.env`, so you can set them before or after `npm run setup`. Choosing **Start fresh** in the wizard drops them (the previous file is saved as `.env.backup`).
 
 ```bash
 # Force gateway-only workspace access (see "How Nerve decides the workspace is remote")

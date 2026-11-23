@@ -255,7 +255,7 @@ Provides the gateway WebSocket URL and trust metadata for the frontend's auto-co
 | `authEnabled` | `boolean` | Whether `NERVE_AUTH` is enabled |
 | `serverSideAuth` | `boolean` | `true` when a gateway token is configured and the request is trusted for injection |
 
-A request is trusted when `NERVE_AUTH` is enabled (the request already passed the session check) or when the client address is loopback. The client address is the socket address, except that `X-Forwarded-For` or `X-Real-IP` is used when the direct connection is itself loopback (a local reverse proxy). A remote client behind such a proxy is therefore judged by the forwarded address and is not trusted, while a loopback hop that adds no forwarded header, such as a local tunnel, counts as loopback access. If `serverSideAuth` is `false`, the connect dialog keeps the token field visible and the user must supply the token.
+A request is trusted when `NERVE_AUTH` is enabled (the request already passed the session check) or when the client address is loopback. The client address is the socket address, except that when the direct connection is itself loopback (a local reverse proxy), it is the first non-loopback entry of `X-Forwarded-For`, read from the right, or `X-Real-IP` when that header is missing or lists only loopback addresses. A remote client behind such a proxy is therefore judged by the forwarded address and is not trusted, while a loopback hop that adds no forwarded header, such as a local tunnel, counts as loopback access. If `serverSideAuth` is `false`, the connect dialog keeps the token field visible and the user must supply the token.
 
 ---
 
@@ -1419,7 +1419,7 @@ If the transcript cannot be found, the endpoint returns 200 with `{ "ok": true, 
 
 ### `GET /api/sessions/media`
 
-Returns an image that was attached to a message in a session transcript. Used by chat history to show images that are not available any other way. The server looks the session up in the main agent's `sessions.json`, opens its transcript, and returns the image block at the given index of the message with the given timestamp.
+Returns an image that chat history left out of a message. On current OpenClaw, `chat.history` puts an `artifactId` on each omitted image, and the server downloads the image from the gateway with `artifacts.download`. Without an `artifactId` (older OpenClaw), the server looks the session up in the main agent's `sessions.json`, opens its transcript, and returns the image block at the given index of the message with the given timestamp.
 
 **Rate limit:** General (60/min)
 
@@ -1427,21 +1427,24 @@ Returns an image that was attached to a message in a session transcript. Used by
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| `sessionKey` | `string` | Yes | Session key present in the store |
+| `sessionKey` | `string` | Yes | Session key. Without `artifactId`, it must be present in `sessions.json` |
 | `timestamp` | `number` | Yes | `timestamp` of the transcript message |
 | `imageIndex` | `integer` | No | Zero-based index among the message's image blocks. Default `0` |
+| `artifactId` | `string` | No | The gateway's id for an omitted image: `artifact_transcript_image_` followed by base64url characters, at most 8192 characters. When present, the image is downloaded from the gateway and `sessions.json` is not read |
 
-**Response:** the raw image bytes, with `Content-Type` from the block's MIME type, `Content-Disposition: inline; filename="message-<timestamp>-image-<index>.<ext>"`. The handler asks for `Cache-Control: private, max-age=3600`, but the global API cache middleware replaces it, so clients receive `Cache-Control: no-cache`.
+**Response:** the raw image bytes, with `Content-Type` set to the recorded MIME type (lower-cased, parameters removed), `X-Content-Type-Options: nosniff`, `Content-Disposition: inline; filename="message-<timestamp>-image-<index>.<ext>"`. Only `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `image/avif` are served. The handler asks for `Cache-Control: private, max-age=3600`, but the global API cache middleware replaces it, so clients receive `Cache-Control: no-cache`.
 
 **Errors:** all bodies have the shape `{ "ok": false, "error": "..." }`.
 
 | Status | `error` | Condition |
 |--------|---------|-----------|
-| 400 | `Invalid media lookup params` | Missing `sessionKey`, non-numeric `timestamp`, or `imageIndex` that is not a non-negative integer |
-| 404 | `Unknown session key` | The key is not in `sessions.json` |
+| 400 | `Invalid media lookup params` | Missing `sessionKey`, non-numeric `timestamp`, `imageIndex` that is not a non-negative integer, or an `artifactId` with the wrong form or more than 8192 characters |
+| 404 | `Unknown session key` | Without `artifactId`: the key is not in `sessions.json`, or `sessions.json` does not exist |
 | 404 | `Transcript not found` | No transcript file for the session |
-| 404 | `Image not found` | No such message, image block, or image data |
-| 500 | `Failed to load media` | `sessions.json` cannot be read, which includes the file not existing. Current OpenClaw keeps sessions in a database and writes no such file, so this route then always returns 500 |
+| 404 | `Image not found` | No such message, image block, or image data, or the gateway has no such artifact |
+| 415 | `Not a supported image type` | The recorded MIME type is not one of the five raster types |
+| 500 | `Failed to load media` | Without `artifactId`: `sessions.json` exists but cannot be read or parsed |
+| 502 | `Gateway unavailable` | With `artifactId`: the gateway could not be reached or failed the `artifacts.download` call |
 
 ### `POST /api/sessions/spawn-subagent`
 
@@ -1662,7 +1665,7 @@ Cron routes go through the gateway's `cron.*` RPC methods (`cron.list`, `cron.ge
 
 **Rate limit:** General (60/min) on all endpoints.
 
-**Errors:** a failure on the gateway side, and also a malformed JSON body, returns **502** with `{ "ok": false, "error": "<message>" }`. A request that fails validation returns **400** with the same body shape.
+**Errors:** a failure on the gateway side, and also a malformed JSON body, returns **502** with `{ "ok": false, "error": "<message>" }`. The one exception is `POST /api/crons/:id/toggle`, which treats a missing or malformed body as `{ "enabled": true }` and can return success. A request that fails validation returns **400** with the same body shape.
 
 ### `GET /api/crons`
 
@@ -1752,7 +1755,7 @@ Sets a cron job's enabled state with `cron.update`.
 { "enabled": false }
 ```
 
-If the body is missing or not valid JSON, `enabled` defaults to `true`.
+If the body is missing or not valid JSON, `enabled` defaults to `true`. A broken body therefore enables the job and returns success instead of 502, so send valid JSON whenever you mean to disable a job.
 
 **Response:**
 
@@ -1764,7 +1767,7 @@ If the body is missing or not valid JSON, `enabled` defaults to `true`.
 
 Triggers immediate execution of a cron job. Timeout: 60 seconds.
 
-- For an isolated job (`sessionTarget: "isolated"`) with an `agentTurn` payload and a non-empty message, Nerve starts the run itself with `sessions_spawn` (`mode: "run"`, the job's model, thinking level and agent, label `Cron · <name> · HH:MM`). The run shows up as its own session, and Nerve records it in `~/.openclaw/cron/nerve-manual-runs/<jobId>.jsonl` so it appears in the run history. `result` is the `sessions_spawn` tool result.
+- For an isolated job (`sessionTarget: "isolated"`) with an `agentTurn` payload and a non-empty message, Nerve starts the run itself with `sessions_spawn` (`mode: "run"`, the job's model, thinking level and agent, label `Cron · <name> · HH:MM`). The run shows up as its own session, and Nerve records it in `~/.openclaw/cron/nerve-manual-runs/<jobId>.jsonl` so it appears in the run history. `result` is the `sessions_spawn` tool result. Writing the history entry is best effort: if the history file cannot be written, Nerve logs a warning and still returns success, so a run that is missing from the history may still have started.
 - Any other job is run with `cron.run` in `force` mode.
 
 **Response:**
@@ -1939,7 +1942,7 @@ Browse, read and edit workspace files. Every path is relative to the selected wo
 
 **Binary files.** A file is treated as binary by extension (case-insensitive): `png`, `jpg`, `jpeg`, `gif`, `webp`, `avif`, `svg`, `ico`, `mp3`, `mp4`, `wav`, `ogg`, `flac`, `webm`, `zip`, `tar`, `gz`, `bz2`, `7z`, `rar`, `pdf`, `doc`, `docx`, `xls`, `xlsx`, `exe`, `dll`, `so`, `dylib`, `woff`, `woff2`, `ttf`, `eot`, `sqlite`, `db`. Binary files are listed with `binary: true` but cannot be read or written as text (415).
 
-**Size limit.** Text reads and writes are limited to 1 MB (1,048,576 bytes).
+**Size limit.** The limit is 1,048,576 for both text reads and writes, but it is counted differently. A local read is rejected (413) when the file is larger than 1,048,576 bytes. A write is rejected (413) when `content` is longer than 1,048,576 characters (JavaScript string length, not bytes). Multibyte text can therefore be accepted by a write and still be too large to read back: 600,000 `é` characters write successfully, but the resulting 1,200,000-byte file returns 413 on read.
 
 **Errors.** File browser errors are JSON: `{ "ok": false, "error": "<message>" }`. Failures from rename, move, trash and restore also include `"code"` (a machine-readable string, listed per route). Routes that do not support remote workspaces answer 501 with `"code": "REMOTE_WORKSPACE"`.
 
@@ -2042,7 +2045,7 @@ Lists the entries of one workspace directory, optionally expanding nested direct
 
 **Paging.** `cursor` is an offset into the sorted listing of the single directory named by `path`. To get the next page, repeat the request with `cursor` set to the previous `nextCursor`. With `depth` above 1, nested directories are listed from offset 0 using the same `limit`. A nested directory that did not fit gets `childrenTruncated: true` and, if its own listing has more entries, `childrenNextCursor`. Fetch the rest with `?path=<that directory's path>&cursor=<childrenNextCursor>`.
 
-**Caps.** Two limits apply. `limit` bounds each directory page (default 1000, maximum 5000). A response-wide budget bounds the total number of entries returned across all levels: `FILE_BROWSER_MAX_TREE_ENTRIES`, default 5000 (an invalid or non-positive value falls back to 5000). Each directory and each file spends one unit. When the budget runs out the listing stops, `truncated` is `true`, and `nextCursor` points at the first entry that was not returned, so paging does not skip entries.
+**Caps.** Two limits apply. `limit` bounds each directory page (default 1000, maximum 5000). A response-wide budget bounds the total number of entries returned across all levels: `FILE_BROWSER_MAX_TREE_ENTRIES`, default 5000 (an invalid or non-positive value falls back to 5000). Each directory and each file spends one unit. When the budget runs out the listing stops and `truncated` is `true`. If entries of the requested directory itself were dropped, `nextCursor` points at the first one that was not returned, so paging does not skip entries. If the budget runs out only inside a nested directory, the root has `truncated: true` but no `nextCursor`, and the missing entries are reached through that directory's `childrenNextCursor`. A client that needs the complete listing must follow the root `nextCursor` and also page every nested directory that carries `childrenNextCursor` (see Paging above). A directory with `childrenTruncated: true` and no `childrenNextCursor` has a directory further down that carries one.
 
 **Remote workspaces.** Entries are the gateway's top-level files (all `type: "file"`; hidden names follow `showHidden`), paged with `limit` and `cursor`. A non-empty `path`, or a gateway failure, returns 200 with an empty `entries` list.
 
@@ -2390,9 +2393,9 @@ Serves an image or PDF from the selected workspace for previews. The response is
 | `.ico` | `image/x-icon` | 10 MB |
 | `.pdf` | `application/pdf` | 50 MB (52,428,800 bytes) |
 
-**Response:** the file bytes, with `Content-Type`, `Content-Length` and `Cache-Control: no-cache`.
+**Response:** the file bytes, with `Content-Type`, `Content-Length` and `Cache-Control: no-cache`. SVG responses also carry `Content-Security-Policy: sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:`, which replaces the app-wide policy for that response.
 
-For PDFs the response also has `Accept-Ranges: bytes`, and a single `Range` header of the form `bytes=<start>-<end>`, `bytes=<start>-` or `bytes=-<suffix length>` returns `206 Partial Content` with `Content-Range: bytes <start>-<end>/<size>`. An unsatisfiable range returns `416` with an empty body and `Content-Range: bytes */<size>`. `Range` is ignored for other file types, and a malformed `Range` value is ignored (the whole file is returned).
+For PDFs the response also has `Accept-Ranges: bytes`, and a single `Range` header of the form `bytes=<start>-<end>`, `bytes=<start>-` or `bytes=-<suffix length>` returns `206 Partial Content` with `Content-Range: bytes <start>-<end>/<size>`. A range that cannot be served returns `416` with an empty body and `Content-Range: bytes */<size>`. That includes a range whose `<end>` is at or beyond the file size: Nerve does not clamp the end, so `bytes=0-65535` on a 1,000-byte PDF gets `416` even though it overlaps the file, and `bytes=0-` or `bytes=0-999` is the form to use. It also includes a `<start>` greater than `<end>` and a suffix length of `0`. `Range` is ignored for other file types, and a malformed `Range` value is ignored (the whole file is returned).
 
 **Errors:**
 
@@ -3391,7 +3394,7 @@ Each column:
 
 ## WebSocket proxy
 
-Browsers do not talk to the gateway directly. They connect to Nerve at `/ws?target=<gateway-ws-url>` (for example `ws://127.0.0.1:18789/ws`), and Nerve relays the traffic, injecting its device identity and, for trusted clients, the gateway token during the connect handshake (see [Connect defaults](#connect-defaults)).
+Browsers do not talk to the gateway directly. They connect to Nerve at `/ws?target=<gateway-ws-url>` (for example `ws://127.0.0.1:18789/ws`), and Nerve relays the traffic, injecting its device identity and, for trusted clients connecting to the gateway in `GATEWAY_URL`, the gateway token during the connect handshake (see [Connect defaults](#connect-defaults)).
 
 | Check | Failure |
 |-------|---------|
@@ -3460,7 +3463,7 @@ X-RateLimit-Reset: 1708100060
 
 `X-RateLimit-Reset` is in epoch seconds.
 
-**Client identification:** Uses the real TCP socket address (not spoofable headers). `X-Forwarded-For` and `X-Real-IP` are only trusted when the direct connection comes from a trusted proxy (loopback by default; extend via the `TRUSTED_PROXIES` env var).
+**Client identification:** Uses the real TCP socket address (not spoofable headers). `X-Forwarded-For` and `X-Real-IP` are only trusted when the direct connection comes from a trusted proxy (loopback by default; extend via the `TRUSTED_PROXIES` env var). `X-Forwarded-For` is read from the right, and the first address that is not a trusted proxy is the client, with `X-Real-IP` as the fallback.
 
 ---
 

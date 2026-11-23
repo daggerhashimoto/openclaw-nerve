@@ -72,7 +72,7 @@ A wrong-state workflow call returns `409 { "error": "invalid_transition", "from"
 ## Common patterns
 
 ### Creating and executing a task
-1. `POST /api/kanban/tasks` with `{ "title": "...", "description": "...", "assignee": "agent:<id>" }`. The response has the task `id` and `version`.
+1. `POST /api/kanban/tasks` with `{ "title": "...", "description": "...", "status": "todo", "assignee": "agent:<id>" }`. The response has the task `id` and `version`. Send `status` explicitly: the board's default status is configurable, and execute accepts only `todo` or `backlog`.
 2. `POST /api/kanban/tasks/:id/execute`. The task moves to `in-progress` and the agent is launched in the background.
 3. When the run ends, the task moves to `review` with the agent's summary in `result` (or back to `todo` with `run.error` on failure). Poll `GET /api/kanban/tasks/:id` to follow it.
 4. `POST /api/kanban/tasks/:id/approve` moves it to `done`, or `POST /api/kanban/tasks/:id/reject` with a `note` sends it back to `todo`.

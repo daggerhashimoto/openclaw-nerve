@@ -576,5 +576,46 @@ describe('ChatContext realtime handling (protocol v4)', () => {
       expect(speakMock).toHaveBeenCalledTimes(1);
       expect(speakMock).toHaveBeenCalledWith(next);
     });
+
+    it('stays silent for the ended run\'s late final once a newer turn that began with a delta has settled', async () => {
+      const { emit, speakMock } = await setup();
+      const next = 'The next answer.';
+      const nextRun = (payload: Record<string, unknown>) => ({ sessionKey: SESSION, runId: 'run-2', ...payload });
+
+      emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }));
+      emit('agent', lifecycle('start', 2));
+      emit('chat', chat({ state: 'delta', seq: 33, deltaText: spoken, message: textMessage(spoken, NOW) }));
+      emit('agent', lifecycle('end', 74));
+      emit('chat', nextRun({ state: 'delta', seq: 3, deltaText: next, message: textMessage(next, NOW + 5000) }));
+      emit('chat', nextRun({ state: 'final', seq: 5, stopReason: 'stop', message: textMessage(`${next}\n\n[tts:${next}]`, NOW + 6000) }));
+      emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 3000) }));
+
+      expect(speakMock).toHaveBeenCalledTimes(1);
+      expect(speakMock).toHaveBeenCalledWith(next);
+    });
+
+    it('stays silent for the ended run\'s late final once a turn sent from Nerve has settled', async () => {
+      const { emit, speakMock, getChat, rpcMock } = await setup();
+      const next = 'The next answer.';
+      const nextRun = (payload: Record<string, unknown>) => ({ sessionKey: SESSION, runId: 'run-2', ...payload });
+      const base = rpcMock.getMockImplementation()!;
+      rpcMock.mockImplementation(async (method: string) => (
+        method === 'chat.send' ? { runId: 'run-2', status: 'started' } : base(method)
+      ));
+
+      emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }));
+      emit('agent', lifecycle('start', 2));
+      emit('chat', chat({ state: 'delta', seq: 33, deltaText: spoken, message: textMessage(spoken, NOW) }));
+      emit('agent', lifecycle('end', 74));
+      await act(async () => {
+        await getChat().handleSend('And the next one?');
+      });
+      emit('chat', nextRun({ state: 'delta', seq: 3, deltaText: next, message: textMessage(next, NOW + 5000) }));
+      emit('chat', nextRun({ state: 'final', seq: 5, stopReason: 'stop', message: textMessage(`${next}\n\n[tts:${next}]`, NOW + 6000) }));
+      emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 3000) }));
+
+      expect(speakMock).toHaveBeenCalledTimes(1);
+      expect(speakMock).toHaveBeenCalledWith(next);
+    });
   });
 });

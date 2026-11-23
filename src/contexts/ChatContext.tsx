@@ -559,7 +559,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (typeof classified.chatSeq === 'number' && prevRunSeq !== null && classified.chatSeq <= prevRunSeq) return;
 
         if (!isGeneratingRef.current) setIsGenerating(true);
-        if (!activeRunIdRef.current) activeRunIdRef.current = runId;
+        if (!activeRunIdRef.current) {
+          activeRunIdRef.current = runId;
+          endedRunIdRef.current = null;
+        }
         run.turnStarted = true;
 
         captureThinkingDuration();
@@ -755,6 +758,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         run.status = ack.status;
         run.finalized = false;
         activeRunIdRef.current = ack.runId;
+        endedRunIdRef.current = null;
         startThinking(ack.runId);
       }
 

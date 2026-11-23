@@ -23,13 +23,14 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
 
 <div align="center">
 
-<https://github.com/user-attachments/assets/25d65a85-1d42-45bc-baae-5e6fca531705>
+<img src="docs/screenshots/chat-mem.webp" alt="Nerve with a chat reply and chart in the middle, the agent and session tree on the right, and the memory panel open" width="100%" />
 
 <table>
 <tr>
-<td align="center"><img src="https://y7qrgowhkj.ufs.sh/f/WxqUPjL9oRPTRBre6go2FRlk6Tbtc5WnrMZ9AUKdBC3vsNi0" alt="Nerve on a phone" width="200" /></td>
-<td align="center"><img src="https://y7qrgowhkj.ufs.sh/f/WxqUPjL9oRPTW4tYWWL9oRPTJEIWbY7sVfKzjyrSCXqMdGv6" alt="Nerve on a phone" width="200" /></td>
-<td align="center"><img src="https://y7qrgowhkj.ufs.sh/f/WxqUPjL9oRPTSe31HqKJOvEcMqm9djw1Y5srz3GQTIUlFg84" alt="Nerve on a phone" width="200" /></td>
+<td align="center"><img src="docs/screenshots/phone-chat.webp" alt="Chat with a chart on a phone" width="190" /></td>
+<td align="center"><img src="docs/screenshots/phone-agents.webp" alt="The agent and session tree on a phone" width="190" /></td>
+<td align="center"><img src="docs/screenshots/phone-tasks.webp" alt="The Kanban board on a phone" width="190" /></td>
+<td align="center"><img src="docs/screenshots/phone-files.webp" alt="The workspace file browser on a phone" width="190" /></td>
 </tr>
 </table>
 
@@ -88,6 +89,35 @@ Charts, diffs, previews, syntax-highlighted code, structured tool rendering, and
 | **Operations** | Session tree, subagents, cron scheduling, kanban task board, review flow, proposal inbox, model overrides |
 | **Observability** | Token usage, cost tracking, context meter, Claude Code and Codex plan limits, agent logs, event logs |
 | **Polish** | Command palette, responsive UI, four themes, font family and 10px to 24px font size controls, mobile-safe input sizing, hot-reloadable settings, updater with rollback |
+
+## A closer look
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/chat-code.webp" alt="A pasted CI screenshot, a subagent handoff and a code diff in chat" /><br /><sub>Paste a screenshot, hand the fix to a subagent, get a diff back</sub></td>
+<td width="50%"><img src="docs/screenshots/tradingview.webp" alt="A live TradingView chart of gold inside a chat reply" /><br /><sub>Live TradingView charts right inside a reply</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/tasks.webp" alt="The Kanban board with a task running on an agent" /><br /><sub>A Kanban board agents work from, with live runs</sub></td>
+<td><img src="docs/screenshots/review.webp" alt="A task in review with its result and approve and reject buttons" /><br /><sub>Results land in review for you to approve or reject</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/editor.webp" alt="A Python file open in the workspace code editor" /><br /><sub>Each agent's workspace in a full code editor</sub></td>
+<td><img src="docs/screenshots/config.webp" alt="An agent's SOUL.md open in the Config tab" /><br /><sub>Edit an agent's soul, identity and tools live</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/crons.webp" alt="The cron list next to a morning brief cron run" /><br /><sub>Crons you can see, every run its own session</sub></td>
+<td><img src="docs/screenshots/usage.webp" alt="The usage panel with spend by provider and plan limits" /><br /><sub>Spend by provider, plan limits and context pressure</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/audio.webp" alt="Voice settings with language, wake word and TTS providers" /><br /><sub>Voice settings: language, wake word, four TTS providers</sub></td>
+<td><img src="docs/screenshots/paper.webp" alt="A table, a math formula and an embedded map in the Workbench Paper theme" /><br /><sub>Tables, math and maps, here in Workbench Paper</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/palette.webp" alt="The command palette searching sessions" /><br /><sub>Jump anywhere from the command palette</sub></td>
+<td><img src="docs/screenshots/themes.webp" alt="The same chat in the four themes" /><br /><sub>Four themes, two dark and two light</sub></td>
+</tr>
+</table>
 
 ## Get started
 

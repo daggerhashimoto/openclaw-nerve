@@ -52,6 +52,8 @@ import { printDeploymentGuides, shouldPrintDeploymentGuides } from './lib/deploy
 
 const PROJECT_ROOT = resolve(process.cwd());
 const ENV_PATH = resolve(PROJECT_ROOT, '.env');
+const CERT_PATH = resolve(PROJECT_ROOT, 'certs', 'cert.pem');
+const KEY_PATH = resolve(PROJECT_ROOT, 'certs', 'key.pem');
 const SKILLS_SRC = resolve(PROJECT_ROOT, 'skills');
 const SKILLS_DEST = resolve(homedir(), '.openclaw', 'workspace', 'skills');
 const TOTAL_SECTIONS = 6;
@@ -129,6 +131,11 @@ function copyDirSync(src: string, dest: string): void {
       copyFileSync(srcPath, destPath);
     }
   }
+}
+
+/** Whether the HTTPS listener will start, matching server/index.ts. */
+function hasHttpsCerts(): boolean {
+  return existsSync(CERT_PATH) && existsSync(KEY_PATH);
 }
 
 function installBundledSkills(): void {
@@ -617,7 +624,7 @@ async function collectInteractive(
     }
 
     tailscaleState = getTailscaleState();
-    accessPlan = buildAccessPlan({ profile: 'tailscale-serve', port, tailscale: tailscaleState });
+    accessPlan = buildAccessPlan({ profile: 'tailscale-serve', port, tailscale: tailscaleState, httpsEnabled: hasHttpsCerts() });
 
     if (accessPlan.followUpSteps.length > 0) {
       console.log('');
@@ -727,7 +734,7 @@ async function collectInteractive(
     config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
   }
 
-  const isNetworkExposed = requiresAuthentication(config, accessPlan, tailscaleState);
+  const isNetworkExposed = requiresAuthentication(config, accessPlan, tailscaleState, hasHttpsCerts());
 
   if (isNetworkExposed) {
     section(4, TOTAL_SECTIONS, 'Authentication');
@@ -1036,7 +1043,7 @@ async function runCheck(config: EnvConfig, prereqs: PrereqResult): Promise<void>
     } else {
       warn('NERVE_SESSION_SECRET not set — will be auto-generated (sessions won\'t survive restarts)');
     }
-  } else if (requiresAuthentication(config, undefined, prereqs.tailscale)) {
+  } else if (requiresAuthentication(config, undefined, prereqs.tailscale, hasHttpsCerts())) {
     warn('Authentication is DISABLED while server is network-exposed');
     dim('Run `npm run setup` to enable authentication');
   } else {
@@ -1119,6 +1126,7 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
       profile: requestedAccessMode as InstallerAccessProfile,
       port: config.PORT,
       sslPort: config.SSL_PORT,
+      httpsEnabled: hasHttpsCerts(),
       remoteHost: !isLoopback(config.HOST || '') ? config.HOST : detectPrimaryIpv4() || config.HOST || DEFAULTS.HOST,
       tailscale: prereqs.tailscale,
     });
@@ -1155,7 +1163,7 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
   if (!config.NERVE_SESSION_SECRET) {
     config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
   }
-  if (requiresAuthentication(config, accessPlan, prereqs.tailscale) && config.NERVE_AUTH !== 'true') {
+  if (requiresAuthentication(config, accessPlan, prereqs.tailscale, hasHttpsCerts()) && config.NERVE_AUTH !== 'true') {
     if (config.NERVE_PASSWORD_HASH) {
       config.NERVE_AUTH = 'true';
       success('Authentication auto-enabled (use the existing password)');

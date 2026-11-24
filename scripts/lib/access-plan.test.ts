@@ -207,6 +207,20 @@ describe('buildAccessPlan with several Tailscale Serve endpoints', () => {
     expect(plan.browserOrigins).toEqual([NERVE]);
   });
 
+  it('does not match the default HTTPS port when certificates are unavailable', () => {
+    const plan = buildAccessPlan({
+      profile: 'tailscale-serve',
+      port: '3080',
+      httpsEnabled: false,
+      tailscale: serveState([
+        { origin: OTHER, rootProxy: 'http://127.0.0.1:9000' },
+        { origin: NERVE, rootProxy: 'https+insecure://localhost:3443' },
+      ]),
+    });
+    expect(plan.browserOrigins).toEqual([]);
+    expect(plan.followUpSteps.length).toBeGreaterThan(0);
+  });
+
   it('matches the shorthand targets Tailscale accepts: a bare port and host:port', () => {
     for (const rootProxy of ['3080', 'localhost:3080', '127.0.0.1:3080']) {
       const plan = buildAccessPlan({
@@ -474,6 +488,19 @@ describe('requiresAuthentication', () => {
         serveOrigins: [],
         serveEndpoints: [{ origin: `https://${EXAMPLE_TS_DNS}`, rootProxy: 'https+insecure://localhost:3443' }],
       },
+    )).toBe(false);
+  });
+
+  it('does not match the default HTTPS port when certificates are unavailable', () => {
+    expect(requiresAuthentication(
+      { HOST: '127.0.0.1', PORT: '3080' },
+      undefined,
+      {
+        ...connectedTailscale,
+        serveOrigins: [],
+        serveEndpoints: [{ origin: `https://${EXAMPLE_TS_DNS}`, rootProxy: 'https+insecure://localhost:3443' }],
+      },
+      false,
     )).toBe(false);
   });
 

@@ -131,6 +131,22 @@ describe('trust-utils', () => {
       };
       expect(getRealClientIp(req)).toBe('1.1.1.1');
     });
+
+    it('reads only X-Real-IP when TRUSTED_PROXY_HEADER=x-real-ip', () => {
+      const prev = process.env.TRUSTED_PROXY_HEADER;
+      process.env.TRUSTED_PROXY_HEADER = 'x-real-ip';
+      try {
+        const req = {
+          socket: { remoteAddress: '127.0.0.1' },
+          headers: { 'x-forwarded-for': '198.51.100.7', 'x-real-ip': '203.0.113.5' },
+        };
+        expect(getRealClientIp(req)).toBe('203.0.113.5');
+        expect(isRequestTrusted(req)).toBe(false);
+      } finally {
+        if (prev === undefined) delete process.env.TRUSTED_PROXY_HEADER;
+        else process.env.TRUSTED_PROXY_HEADER = prev;
+      }
+    });
   });
 
   describe('isRequestTrusted', () => {

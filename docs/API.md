@@ -255,7 +255,7 @@ Provides the gateway WebSocket URL and trust metadata for the frontend's auto-co
 | `authEnabled` | `boolean` | Whether `NERVE_AUTH` is enabled |
 | `serverSideAuth` | `boolean` | `true` when a gateway token is configured and the request is trusted for injection |
 
-A request is trusted when `NERVE_AUTH` is enabled (the request already passed the session check) or when the client address is loopback. The client address is the socket address, except that when the direct connection is itself loopback (a local reverse proxy), it is the first non-loopback entry of `X-Forwarded-For`, read from the right, or `X-Real-IP` when that header is missing or lists only loopback addresses. A remote client behind such a proxy is therefore judged by the forwarded address and is not trusted, while a loopback hop that adds no forwarded header, such as a local tunnel, counts as loopback access. If `serverSideAuth` is `false`, the connect dialog keeps the token field visible and the user must supply the token.
+A request is trusted when `NERVE_AUTH` is enabled (the request already passed the session check) or when the client address is loopback. The client address is the socket address, except that when the direct connection is itself loopback (a local reverse proxy), Nerve reads the header selected by `TRUSTED_PROXY_HEADER`. With the default `x-forwarded-for`, it is the first non-loopback entry of `X-Forwarded-For`, read from the right, or `X-Real-IP` when that header is missing or lists only loopback addresses. With `x-real-ip`, only `X-Real-IP` is read and `X-Forwarded-For` is ignored. A remote client behind such a proxy is therefore judged by the forwarded address and is not trusted, while a loopback hop that adds no forwarded header, such as a local tunnel, counts as loopback access. If none of the headers the current mode reads carries a client address, the socket address is used and the proxied client looks local. If `serverSideAuth` is `false`, the connect dialog keeps the token field visible and the user must supply the token.
 
 ---
 
@@ -3463,7 +3463,7 @@ X-RateLimit-Reset: 1708100060
 
 `X-RateLimit-Reset` is in epoch seconds.
 
-**Client identification:** Uses the real TCP socket address (not spoofable headers). `X-Forwarded-For` and `X-Real-IP` are only trusted when the direct connection comes from a trusted proxy (loopback by default; extend via the `TRUSTED_PROXIES` env var). `X-Forwarded-For` is read from the right, and the first address that is not a trusted proxy is the client, with `X-Real-IP` as the fallback.
+**Client identification:** Uses the real TCP socket address (not spoofable headers). `X-Forwarded-For` and `X-Real-IP` are only trusted when the direct connection comes from a trusted proxy (loopback by default; extend via the `TRUSTED_PROXIES` env var). `TRUSTED_PROXY_HEADER` selects the header the proxy owns. With the default `x-forwarded-for`, `X-Forwarded-For` is read from the right, the first address that is not a trusted proxy is the client, and `X-Real-IP` is the fallback. With `x-real-ip`, only `X-Real-IP` is read and `X-Forwarded-For` is ignored.
 
 ---
 

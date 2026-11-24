@@ -8,6 +8,7 @@ import {
   processChatMessages,
   loadChatHistory,
   latestHeartbeatAt,
+  stripHeartbeatToolCalls,
   transcriptRowId,
 } from './loadHistory';
 import type { ChatMessage } from '@/types';
@@ -127,6 +128,45 @@ describe('filterMessage', () => {
   it('hides a message left empty after its heartbeat call is stripped', () => {
     expect(filterMessage({ role: 'assistant', content: [] })).toBe(false);
     expect(filterMessage({ role: 'toolResult', content: [] })).toBe(false);
+    expect(filterMessage({ role: 'custom', content: [] })).toBe(false);
+  });
+});
+
+describe('stripHeartbeatToolCalls', () => {
+  it('strips a top-level result message linked only by its call id', () => {
+    const messages: ChatMessage[] = [
+      {
+        role: 'assistant',
+        content: [{ type: 'toolCall', id: 'hb-1', name: 'heartbeat_respond', arguments: {} }],
+      },
+      {
+        role: 'toolResult',
+        toolCallId: 'hb-1',
+        content: [{ type: 'text', text: '{"status":"accepted"}' }],
+      },
+    ];
+
+    const stripped = stripHeartbeatToolCalls(messages);
+
+    expect(stripped[0].content).toEqual([]);
+    expect(stripped[1].content).toEqual([]);
+    expect(filterMessage(stripped[1])).toBe(false);
+    expect(processChatMessages(messages)).toEqual([]);
+  });
+
+  it('strips a result block linked only by its call id from a message', () => {
+    const [stripped] = stripHeartbeatToolCalls([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'toolCall', id: 'hb-2', name: 'heartbeat_respond', arguments: {} },
+          { type: 'toolResult', toolCallId: 'hb-2', content: '{"status":"accepted"}' },
+          { type: 'text', text: 'Heartbeat note.' },
+        ],
+      },
+    ]);
+
+    expect(stripped.content).toEqual([{ type: 'text', text: 'Heartbeat note.' }]);
   });
 });
 
@@ -787,6 +827,49 @@ describe('processChatMessages', () => {
     ])).toBeNull();
   });
 
+  it('reports a heartbeat result linked only by its call id', () => {
+    const callAt = Date.parse('2026-11-24T19:05:00Z');
+    const resultAt = Date.parse('2026-11-24T19:06:00Z');
+
+    expect(latestHeartbeatAt([
+      {
+        role: 'assistant',
+        timestamp: callAt,
+        content: [{ type: 'toolCall', id: 'hb-linked', name: 'heartbeat_respond', arguments: {} }],
+      },
+      {
+        role: 'toolResult',
+        timestamp: resultAt,
+        toolCallId: 'hb-linked',
+        content: [{ type: 'text', text: '{"status":"accepted"}' }],
+      },
+    ])).toBe(resultAt);
+  });
+
+  it('reports a heartbeat named by a result block', () => {
+    const timestamp = Date.parse('2026-11-24T19:07:00Z');
+    const message: ChatMessage = {
+      role: 'custom',
+      timestamp,
+      content: [{ type: 'toolResult', toolName: 'heartbeat_respond', content: '{"status":"accepted"}' }],
+    };
+
+    expect(latestHeartbeatAt([message])).toBe(timestamp);
+  });
+
+  it('falls back to a valid createdAt or ts when timestamp is unparseable', () => {
+    const createdAt = Date.parse('2026-11-24T19:08:00Z');
+    const ts = Date.parse('2026-11-24T19:09:00Z');
+    const heartbeat = (times: Pick<ChatMessage, 'timestamp' | 'createdAt' | 'ts'>): ChatMessage => ({
+      role: 'assistant',
+      ...times,
+      content: [{ type: 'toolCall', name: 'heartbeat_respond', arguments: {} }],
+    });
+
+    expect(latestHeartbeatAt([heartbeat({ timestamp: 'not-a-date', createdAt })])).toBe(createdAt);
+    expect(latestHeartbeatAt([heartbeat({ timestamp: 'not-a-date', createdAt: 'also-bad', ts })])).toBe(ts);
+  });
+
   it('starts a new turn when the run changes behind a hidden prompt', () => {
     const run = (runId: string) => ({ __openclaw: { runId } });
     const msgs: ChatMessage[] = [
@@ -802,6 +885,24 @@ describe('processChatMessages', () => {
     const result = processChatMessages(msgs);
     expect(result.find(m => m.rawText === 'Let me read the report.')?.intermediate).toBe(true);
     expect(result.find(m => m.rawText === 'The report says revenue is up.')?.intermediate).toBeFalsy();
+  });
+
+  it('keeps the previous turn final when a stripped heartbeat boundary precedes more tool calls', () => {
+    const result = processChatMessages([
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'The answer.' },
+      {
+        role: 'assistant',
+        content: [{ type: 'toolCall', id: 'hb-boundary', name: 'heartbeat_respond', arguments: {} }],
+        __openclaw: { turnBoundary: true },
+      },
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'read-1', name: 'read', arguments: { path: 'notes.md' } }] },
+      { role: 'toolResult', toolCallId: 'read-1', toolName: 'read', content: [{ type: 'text', text: 'file body' }] },
+      { role: 'assistant', content: 'Read the notes during the heartbeat.' },
+    ]);
+
+    expect(result.find((m) => m.rawText === 'The answer.')?.intermediate).toBeFalsy();
+    expect(result.find((m) => m.rawText === 'Read the notes during the heartbeat.')).toBeDefined();
   });
 
   it('treats a prompt hidden by filterMessage as a turn boundary', () => {

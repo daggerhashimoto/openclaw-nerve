@@ -276,12 +276,30 @@ export function detectSystemNotification(text: string): { match: boolean; label:
   return { match: false, label: '' };
 }
 
+function hasVisibleContent(message: ChatMessage): boolean {
+  if (extractText(message).trim()) return true;
+  if (Array.isArray(message.content) && message.content.length > 0) return true;
+  return Boolean(
+    message.MediaPath
+    || message.MediaPaths?.length
+    || message.MediaUrl
+    || message.MediaUrls?.length,
+  );
+}
+
 /** Determine whether a history message should be shown in the chat UI. */
 export function filterMessage(m: ChatMessage): boolean {
   const text = extractText(m);
   const trimmedText = text.trim();
 
   if (hasInternalMessageMetadata(m)) {
+    return false;
+  }
+
+  if (
+    (m.role === 'assistant' || m.role === 'user' || m.role === 'tool' || m.role === 'toolResult')
+    && !hasVisibleContent(m)
+  ) {
     return false;
   }
 
@@ -304,6 +322,68 @@ export function filterMessage(m: ChatMessage): boolean {
   }
 
   return true;
+}
+
+/** The tool a heartbeat turn calls to answer the poll. */
+const HEARTBEAT_TOOL = 'heartbeat_respond';
+
+function isHeartbeatToolCall(block: ContentBlock): boolean {
+  return isToolCallBlock(block) && block.name === HEARTBEAT_TOOL;
+}
+
+/**
+ * Remove a heartbeat's tool call and result from history. The containing
+ * message stays so its turn boundary and run id still split the transcript;
+ * an empty message is dropped later by filterMessage.
+ */
+export function stripHeartbeatToolCalls(messages: ChatMessage[]): ChatMessage[] {
+  const callIds = new Set<string>();
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const block of message.content) {
+      if (isHeartbeatToolCall(block) && block.id) callIds.add(block.id);
+    }
+  }
+
+  return messages.map((message) => {
+    if (
+      (message.role === 'tool' || message.role === 'toolResult')
+      && (message.toolName === HEARTBEAT_TOOL
+        || (message.toolCallId !== undefined && callIds.has(message.toolCallId)))
+    ) {
+      return { ...message, content: [], text: '' };
+    }
+    if (!Array.isArray(message.content)) return message;
+
+    const content = message.content.filter((block) => {
+      if (isHeartbeatToolCall(block)) return false;
+      if (!isToolResultBlock(block)) return true;
+      if (block.toolName === HEARTBEAT_TOOL) return false;
+      return !(block.toolCallId !== undefined && callIds.has(block.toolCallId));
+    });
+
+    return content.length === message.content.length ? message : { ...message, content };
+  });
+}
+
+function messageTimeMs(message: ChatMessage): number | null {
+  const raw = message.timestamp ?? message.createdAt ?? message.ts;
+  if (raw == null) return null;
+  const time = new Date(raw).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+/** Newest heartbeat call time in history, or null when there is none. */
+export function latestHeartbeatAt(messages: ChatMessage[]): number | null {
+  let latest: number | null = null;
+  for (const message of messages) {
+    const isHeartbeat = (Array.isArray(message.content) && message.content.some(isHeartbeatToolCall))
+      || ((message.role === 'tool' || message.role === 'toolResult') && message.toolName === HEARTBEAT_TOOL);
+    if (!isHeartbeat) continue;
+    const at = messageTimeMs(message);
+    if (at != null && (latest == null || at > latest)) latest = at;
+  }
+  return latest;
 }
 
 // ─── Splitting ─────────────────────────────────────────────────────────────────
@@ -834,7 +914,7 @@ function splitIntoTurns(messages: ChatMessage[]): ChatMessage[][] {
  * turn's final answer as intermediate.
  */
 export function processChatMessages(messages: ChatMessage[], options: { sessionKey?: string } = {}): ChatMsg[] {
-  const tagged = splitIntoTurns(withSearchQueries(messages)).flatMap((turn) => {
+  const tagged = splitIntoTurns(withSearchQueries(stripHeartbeatToolCalls(messages))).flatMap((turn) => {
     const chatMsgs: ChatMsg[] = turn
       .filter(filterMessage)
       .flatMap((message) => withRunTerminal(withSendKey(withSourceIds(splitToolCallMessage(message, options), message), message), message));
@@ -947,11 +1027,13 @@ export async function loadChatHistory(params: {
   rpc: RpcFn;
   sessionKey: string;
   limit?: number;
+  onHeartbeat?: (at: number | null) => void;
 }): Promise<ChatMsg[]> {
-  const { rpc, sessionKey, limit = 100 } = params;
+  const { rpc, sessionKey, limit = 100, onHeartbeat } = params;
 
   const res = await rpc('chat.history', { sessionKey, limit }) as ChatHistoryResponse;
   const msgs = res?.messages || [];
+  onHeartbeat?.(latestHeartbeatAt(msgs));
 
   return processChatMessages(msgs, { sessionKey });
 }

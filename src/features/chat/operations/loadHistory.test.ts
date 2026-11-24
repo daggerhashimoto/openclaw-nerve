@@ -7,6 +7,7 @@ import {
   tagIntermediateMessages,
   processChatMessages,
   loadChatHistory,
+  latestHeartbeatAt,
   transcriptRowId,
 } from './loadHistory';
 import type { ChatMessage } from '@/types';
@@ -121,6 +122,11 @@ describe('filterMessage', () => {
       role: 'tool',
       content: 'File contents:\nfunction hello() {}',
     })).toBe(true);
+  });
+
+  it('hides a message left empty after its heartbeat call is stripped', () => {
+    expect(filterMessage({ role: 'assistant', content: [] })).toBe(false);
+    expect(filterMessage({ role: 'toolResult', content: [] })).toBe(false);
   });
 });
 
@@ -723,6 +729,64 @@ describe('processChatMessages', () => {
     expect(result.find(m => m.rawText === 'Here is the SOUL.md I would use.')?.intermediate).toBeFalsy();
   });
 
+  it('drops heartbeat tool rows but keeps text from the same message', () => {
+    const timestamp = Date.parse('2026-11-24T19:05:00Z');
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        timestamp,
+        content: [
+          { type: 'text', text: 'Heartbeat note.' },
+          { type: 'toolCall', id: 'hb-1', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } },
+        ],
+        __openclaw: { turnBoundary: true },
+      },
+      {
+        role: 'toolResult',
+        toolName: 'heartbeat_respond',
+        toolCallId: 'hb-1',
+        content: [{ type: 'text', text: '{"status":"accepted"}' }],
+      },
+    ]);
+
+    expect(result.map((m) => m.rawText)).toEqual(['Heartbeat note.']);
+  });
+
+  it('keeps a final reply non-intermediate across a heartbeat-only turn', () => {
+    const result = processChatMessages([
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'The answer.' },
+      {
+        role: 'assistant',
+        content: [{ type: 'toolCall', id: 'hb-2', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } }],
+        __openclaw: { turnBoundary: true },
+      },
+    ]);
+
+    expect(result.map((m) => m.rawText)).toEqual(['hello', 'The answer.']);
+    expect(result[1].intermediate).toBeFalsy();
+  });
+
+  it('reports the newest heartbeat in history', () => {
+    const older = Date.parse('2026-11-24T19:05:00Z');
+    const newer = Date.parse('2026-11-24T19:35:00Z');
+    const heartbeat = (timestamp: number, id: string) => ({
+      role: 'assistant' as const,
+      timestamp,
+      content: [{ type: 'toolCall' as const, id, name: 'heartbeat_respond', arguments: {} }],
+    });
+
+    expect(latestHeartbeatAt([
+      heartbeat(older, 'hb-old'),
+      { role: 'assistant', timestamp: newer + 1, content: [{ type: 'toolCall', id: 'r-1', name: 'read', arguments: {} }] } as ChatMessage,
+      heartbeat(newer, 'hb-new'),
+    ])).toBe(newer);
+
+    expect(latestHeartbeatAt([
+      { role: 'assistant', timestamp: newer, content: [{ type: 'toolCall', id: 'r-2', name: 'read', arguments: {} }] } as ChatMessage,
+    ])).toBeNull();
+  });
+
   it('starts a new turn when the run changes behind a hidden prompt', () => {
     const run = (runId: string) => ({ __openclaw: { runId } });
     const msgs: ChatMessage[] = [
@@ -926,6 +990,30 @@ describe('loadChatHistory', () => {
         alt: 'message-1775131617235-image-0.png',
       },
     ]);
+  });
+
+  it('reports the newest heartbeat timestamp to the caller', async () => {
+    const older = Date.parse('2026-11-24T19:05:00Z');
+    const newer = Date.parse('2026-11-24T19:35:00Z');
+    const rpc = vi.fn().mockResolvedValue({
+      messages: [
+        {
+          role: 'assistant',
+          timestamp: older,
+          content: [{ type: 'toolCall', id: 'hb-old', name: 'heartbeat_respond', arguments: {} }],
+        },
+        {
+          role: 'assistant',
+          timestamp: newer,
+          content: [{ type: 'toolCall', id: 'hb-new', name: 'heartbeat_respond', arguments: {} }],
+        },
+      ],
+    });
+    const onHeartbeat = vi.fn();
+
+    await loadChatHistory({ rpc, sessionKey: 'sk', onHeartbeat });
+
+    expect(onHeartbeat).toHaveBeenCalledWith(newer);
   });
 
   it('passes the artifact id current OpenClaw puts on an omitted image to the session media route', async () => {

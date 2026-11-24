@@ -443,6 +443,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const ap = classified.agentPayload!;
 
         if (type === 'lifecycle_start') {
+          // A newer run has begun, so a late final of the run that ended is obsolete.
+          endedRunIdRef.current = null;
           setIsGenerating(true);
           setProcessingStage('thinking');
           setLastEventTimestamp(Date.now());
@@ -459,10 +461,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           incrementGeneration();
 
           const activeRun = activeRunIdRef.current;
-          const runFinalized = activeRun ? runsRef.current.get(activeRun)?.finalized : false;
+          // A run with no chat frame before its end (a final-only reply) is not
+          // active, but the lifecycle frame names the run that just ended.
+          const endedRun = activeRun ?? classified.runId ?? null;
+          const runFinalized = endedRun ? runsRef.current.get(endedRun)?.finalized : false;
           if (!runFinalized) {
             triggerRecovery('reconnect');
-            endedRunIdRef.current = activeRun;
+            endedRunIdRef.current = endedRun;
+          } else {
+            // The run already settled; do not carry an older ended run across it.
+            endedRunIdRef.current = null;
           }
           activeRunIdRef.current = null;
           return;

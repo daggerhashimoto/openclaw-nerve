@@ -617,5 +617,44 @@ describe('ChatContext realtime handling (protocol v4)', () => {
       expect(speakMock).toHaveBeenCalledTimes(1);
       expect(speakMock).toHaveBeenCalledWith(next);
     });
+
+    // A final-only reply: the run ends before any chat frame starts the turn, so
+    // only the lifecycle frames name it.
+    it('speaks the reply when a final-only run ends before its first chat frame', async () => {
+      const { emit, speakMock } = await setup();
+
+      emit('agent', lifecycle('start', 2));
+      emit('agent', lifecycle('end', 74));
+      emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 3000) }));
+
+      expect(speakMock).toHaveBeenCalledTimes(1);
+      expect(speakMock).toHaveBeenCalledWith(spoken);
+    });
+
+    // The newer run starts and settles through lifecycle and final frames only, so
+    // no status, delta or send acknowledgement clears the ended run.
+    it('stays silent for the ended run once a newer lifecycle-only turn has settled', async () => {
+      const { emit, speakMock } = await setup();
+      const next = 'The next answer.';
+      const nextLifecycle = (phase: 'start' | 'end', seq: number) => (
+        { sessionKey: SESSION, runId: 'run-2', seq, stream: 'lifecycle', data: { phase } }
+      );
+
+      emit('agent', lifecycle('start', 2));
+      emit('agent', lifecycle('end', 74));
+      emit('agent', nextLifecycle('start', 3));
+      emit('chat', {
+        sessionKey: SESSION,
+        runId: 'run-2',
+        state: 'final',
+        seq: 5,
+        stopReason: 'stop',
+        message: textMessage(`${next}\n\n[tts:${next}]`, NOW + 6000),
+      });
+      emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 3000) }));
+
+      expect(speakMock).toHaveBeenCalledTimes(1);
+      expect(speakMock).toHaveBeenCalledWith(next);
+    });
   });
 });

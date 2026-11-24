@@ -1148,7 +1148,7 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
   if (!config.NERVE_SESSION_SECRET) {
     config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
   }
-  if (requiresAuthentication(config, accessPlan) && !config.NERVE_AUTH) {
+  if (requiresAuthentication(config, accessPlan) && config.NERVE_AUTH !== 'true') {
     if (config.GATEWAY_TOKEN) {
       config.NERVE_AUTH = 'true';
       success('Authentication auto-enabled (gateway token can be used as password)');

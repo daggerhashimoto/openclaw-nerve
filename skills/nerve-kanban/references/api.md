@@ -104,16 +104,12 @@ interface KanbanBoardConfig {
   columns: Array<{
     key: TaskStatus;         // custom keys allowed
     title: string;           // 1 to 100 chars
-    wipLimit?: number;       // integer >= 0, stored only, not enforced
     visible: boolean;        // whether the board shows the column
   }>;                        // 1 to 10; must include backlog, todo, in-progress, review, done
   defaults: {
     status: TaskStatus;      // default "todo"
     priority: TaskPriority;  // default "normal"
   };
-  reviewRequired: boolean;       // default true, stored only
-  allowDoneDragBypass: boolean;  // default false, stored only
-  quickViewLimit: number;        // default 5, integer 1 to 50, stored only
   proposalPolicy: 'confirm' | 'auto';  // default "confirm"
   defaultModel?: string;         // max 100 chars, unset by default
   defaultThinking?: string;      // any string, max 20 chars, unset by default
@@ -641,7 +637,7 @@ curl -X POST "$NERVE_URL/api/kanban/proposals/<proposal-id>/reject" \
 
 Get the board configuration.
 
-**Response:** `200` with `KanbanBoardConfig`. Defaults: columns `backlog`, `todo` ("To Do"), `in-progress`, `review`, `done` visible and `cancelled` hidden; `defaults` `{ status: "todo", priority: "normal" }`; `reviewRequired: true`; `allowDoneDragBypass: false`; `quickViewLimit: 5`; `proposalPolicy: "confirm"`. `defaultModel` and `defaultThinking` are absent until set.
+**Response:** `200` with `KanbanBoardConfig`. Defaults: columns `backlog`, `todo` ("To Do"), `in-progress`, `review`, `done` visible and `cancelled` hidden; `defaults` `{ status: "todo", priority: "normal" }`; `proposalPolicy: "confirm"`. `defaultModel` and `defaultThinking` are absent until set.
 
 ```bash
 curl "$NERVE_URL/api/kanban/config"
@@ -659,16 +655,13 @@ Update the board configuration. Send only the fields to change.
 |---|---|---|
 | `columns` | Column[] (1 to 10) | Replaces the whole list. Must include `backlog`, `todo`, `in-progress`, `review`, `done`. A column still used by a task or by any proposal's `status` cannot be removed |
 | `defaults` | `{ status, priority }` | Both keys required when sent |
-| `reviewRequired` | boolean | Stored only; nothing acts on it |
-| `allowDoneDragBypass` | boolean | Stored only; nothing acts on it |
-| `quickViewLimit` | integer (1 to 50) | Stored only; the quick view shows a fixed 5 rows |
 | `proposalPolicy` | `'confirm'` \| `'auto'` | `auto` applies proposals immediately |
 | `defaultModel` | string (max 100) | Fallback model for execute |
 | `defaultThinking` | string (max 20) | Fallback thinking for execute; empty or `off` launches as `low` |
 
 **Column shape:**
 ```typescript
-{ key: TaskStatus, title: string /* 1 to 100 */, wipLimit?: number /* integer >= 0, not enforced */, visible: boolean }
+{ key: TaskStatus, title: string /* 1 to 100 */, visible: boolean }
 ```
 
 **Response:** `200` with the full updated `KanbanBoardConfig`.

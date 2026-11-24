@@ -147,10 +147,14 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
   // Fetch available models and configured channels when dialog opens
   useEffect(() => {
     if (!open) return;
+    const fallbackModels = [
+      { value: '', label: 'Default model' },
+      ...(prefill?.model ? [{ value: prefill.model, label: prefill.model.split('/').pop() || prefill.model }] : []),
+    ];
     fetch('/api/gateway/models')
-      .then(r => r.json())
-      .then((data: { models?: ModelInfo[] }) => {
-        if (Array.isArray(data.models)) {
+      .then(r => (r.ok ? r.json().catch(() => null) : null))
+      .then((data: { models?: ModelInfo[] } | null) => {
+        if (Array.isArray(data?.models)) {
           const opts = [
             { value: '', label: 'Default model' },
             ...data.models.map(m => ({
@@ -158,20 +162,25 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
               label: m.label || m.id.split('/').pop() || m.id,
             })),
           ];
+          if (prefill?.model && !opts.some(option => option.value === prefill.model)) {
+            opts.push({ value: prefill.model, label: prefill.model.split('/').pop() || prefill.model });
+          }
           setModels(opts);
+        } else {
+          setModels(fallbackModels);
         }
       })
       .catch(() => {
-        setModels([{ value: '', label: 'Default model' }]);
+        setModels(fallbackModels);
       });
     fetch('/api/channels')
-      .then(r => r.json())
-      .then((data: { channels?: string[] }) => {
-        const ch = data.channels || [];
+      .then(r => (r.ok ? r.json().catch(() => null) : null))
+      .then((data: { channels?: string[] } | null) => {
+        const ch = data?.channels || [];
         setAvailableChannels(ch);
       })
       .catch(() => setAvailableChannels([]));
-  }, [open]);
+  }, [open, prefill?.model]);
 
   // Form state is initialized from props via useState initializers above.
   // Parent uses a `key` prop to force remount when mode/job changes.

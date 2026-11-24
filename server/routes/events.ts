@@ -6,8 +6,7 @@
  *
  * Event types:
  * - memory.changed  — Memory file was modified
- * - tokens.updated  — Token usage changed
- * - status.changed  — Gateway status changed
+ * - file.changed    — Workspace file was modified
  * - ping            — Keep-alive (every 30s)
  */
 

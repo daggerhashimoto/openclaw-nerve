@@ -127,16 +127,12 @@ export interface KanbanBoardConfig {
   columns: Array<{
     key: string;
     title: string;
-    wipLimit?: number;
     visible: boolean;
   }>;
   defaults: {
     status: TaskStatus;
     priority: TaskPriority;
   };
-  reviewRequired: boolean;
-  allowDoneDragBypass: boolean;
-  quickViewLimit: number;
   proposalPolicy: 'confirm' | 'auto';
   defaultModel?: string;
   defaultThinking?: string;
@@ -327,9 +323,6 @@ const DEFAULT_CONFIG: KanbanBoardConfig = {
     status: 'todo',
     priority: 'normal',
   },
-  reviewRequired: true,
-  allowDoneDragBypass: false,
-  quickViewLimit: 5,
   proposalPolicy: 'confirm',
 };
 
@@ -345,7 +338,7 @@ function emptyStore(): StoreData {
 // ── Audit log ────────────────────────────────────────────────────────
 
 export type AuditAction = 'create' | 'update' | 'delete' | 'reorder' | 'config_update'
-  | 'execute' | 'approve' | 'reject' | 'abort' | 'complete_run' | 'reconcile'
+  | 'execute' | 'approve' | 'reject' | 'abort' | 'complete_run'
   | 'proposal_create' | 'proposal_approve' | 'proposal_reject';
 
 interface AuditEntry {
@@ -419,9 +412,15 @@ export class KanbanStore {
     if (!Array.isArray(data.proposals)) {
       data.proposals = [];
     }
-    // Backfill missing config fields from defaults
+    // Backfill missing config fields from defaults and strip retired fields
     if (!data.config.columns || data.config.columns.length === 0) {
       data.config.columns = structuredClone(DEFAULT_CONFIG.columns);
+    } else {
+      data.config.columns = data.config.columns.map(({ key, title, visible }) => ({
+        key,
+        title,
+        visible,
+      }));
     }
     if (!data.config.defaults || !data.config.defaults.status) {
       data.config.defaults = structuredClone(DEFAULT_CONFIG.defaults);
@@ -432,15 +431,10 @@ export class KanbanStore {
     if (!data.config.proposalPolicy) {
       data.config.proposalPolicy = 'confirm';
     }
-    if (data.config.reviewRequired === undefined) {
-      data.config.reviewRequired = DEFAULT_CONFIG.reviewRequired;
-    }
-    if (data.config.allowDoneDragBypass === undefined) {
-      data.config.allowDoneDragBypass = DEFAULT_CONFIG.allowDoneDragBypass;
-    }
-    if (data.config.quickViewLimit === undefined) {
-      data.config.quickViewLimit = DEFAULT_CONFIG.quickViewLimit;
-    }
+    const legacyConfig = data.config as unknown as Record<string, unknown>;
+    delete legacyConfig.reviewRequired;
+    delete legacyConfig.allowDoneDragBypass;
+    delete legacyConfig.quickViewLimit;
     data.tasks = data.tasks.map((task) => {
       const childSessionKey = task.run?.childSessionKey ?? task.run?.sessionId;
       return {
@@ -1187,53 +1181,6 @@ export class KanbanStore {
         detail: error ? `session=${sessionKey},error: ${error}` : `session=${sessionKey},success`,
       });
       return task;
-    });
-  }
-
-  // ── Stale run reconciliation ─────────────────────────────────────
-
-  async reconcileStaleRuns(maxAgeMs: number): Promise<KanbanTask[]> {
-    return this.withStore(async () => {
-      const data = await this.readRaw();
-      const now = Date.now();
-      const reconciled: KanbanTask[] = [];
-
-      for (let i = 0; i < data.tasks.length; i++) {
-        const task = data.tasks[i];
-        if (
-          task.status === 'in-progress' &&
-          task.run?.status === 'running' &&
-          now - task.run.startedAt > maxAgeMs
-        ) {
-          task.run.status = 'error';
-          task.run.endedAt = now;
-          task.run.error = 'stale run reconciled';
-
-          task.status = 'todo';
-
-          const maxOrder = data.tasks
-            .filter((t) => t.status === 'todo' && t.id !== task.id)
-            .reduce((max, t) => Math.max(max, t.columnOrder), -1);
-          task.columnOrder = maxOrder + 1;
-
-          task.updatedAt = now;
-          task.version += 1;
-
-          data.tasks[i] = task;
-          reconciled.push(task);
-        }
-      }
-
-      if (reconciled.length > 0) {
-        await this.writeRaw(data);
-        await this.audit({
-          ts: now,
-          action: 'reconcile',
-          detail: `reconciled ${reconciled.length} stale run(s)`,
-        });
-      }
-
-      return reconciled;
     });
   }
 

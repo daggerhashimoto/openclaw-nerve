@@ -61,16 +61,12 @@ function buildQuery(filters: KanbanFilters): string {
 export interface BoardColumnConfig {
   key: string;
   title: string;
-  wipLimit?: number;
   visible: boolean;
 }
 
 export interface BoardConfig {
   columns: BoardColumnConfig[];
   defaults: { status: string; priority: string };
-  reviewRequired: boolean;
-  allowDoneDragBypass: boolean;
-  quickViewLimit: number;
   proposalPolicy: 'confirm' | 'auto';
 }
 

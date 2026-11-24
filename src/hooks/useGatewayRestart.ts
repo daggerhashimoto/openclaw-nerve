@@ -29,10 +29,10 @@ export function useGatewayRestart() {
     setGatewayRestartNotice(null);
     try {
       const response = await fetch('/api/gateway/restart', { method: 'POST', credentials: 'include' });
-      const data = await response.json() as { ok: boolean; output?: string; error?: string };
+      const data = await response.json().catch(() => null) as { ok?: boolean; output?: string; error?: string } | null;
       const notice = {
-        ok: data.ok,
-        message: data.ok ? 'Gateway restarted successfully' : (data.output || data.error || 'Gateway restart failed'),
+        ok: Boolean(response.ok && data?.ok),
+        message: response.ok && data?.ok ? 'Gateway restarted successfully' : (data?.output || data?.error || 'Gateway restart failed'),
       };
       setGatewayRestartNotice(notice);
       // Auto-dismiss success notices after 6s, keep error notices until user dismisses

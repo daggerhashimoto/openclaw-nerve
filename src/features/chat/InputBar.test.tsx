@@ -101,14 +101,7 @@ describe('InputBar', () => {
     twoModeEnabled: boolean;
     inlineEnabled: boolean;
     fileReferenceEnabled: boolean;
-    modeChooserEnabled: boolean;
     inlineAttachmentMaxMb: number;
-    inlineImageContextMaxBytes: number;
-    inlineImageAutoDowngradeToFileReference: boolean;
-    inlineImageShrinkMinDimension: number;
-    inlineImageMaxDimension: number;
-    inlineImageWebpQuality: number;
-    exposeInlineBase64ToAgent: boolean;
   };
 
   beforeEach(() => {
@@ -119,14 +112,7 @@ describe('InputBar', () => {
       twoModeEnabled: true,
       inlineEnabled: true,
       fileReferenceEnabled: true,
-      modeChooserEnabled: true,
       inlineAttachmentMaxMb: 1,
-      inlineImageContextMaxBytes: 32_768,
-      inlineImageAutoDowngradeToFileReference: true,
-      inlineImageShrinkMinDimension: 512,
-      inlineImageMaxDimension: 2048,
-      inlineImageWebpQuality: 82,
-      exposeInlineBase64ToAgent: false,
     };
 
     vi.mocked(compressImage).mockImplementation(async (file: File) => ({
@@ -748,7 +734,6 @@ describe('InputBar', () => {
   it('rejects browser uploads when inline uploads are disabled and directs the user to browse by path', async () => {
     uploadConfigResponse.inlineEnabled = false;
     uploadConfigResponse.fileReferenceEnabled = true;
-    uploadConfigResponse.modeChooserEnabled = false;
 
     render(<InputBar onSend={vi.fn()} isGenerating={false} />);
 
@@ -771,7 +756,6 @@ describe('InputBar', () => {
   it('allows large images onto the upload path when only inline mode is enabled', async () => {
     uploadConfigResponse.inlineEnabled = true;
     uploadConfigResponse.fileReferenceEnabled = false;
-    uploadConfigResponse.modeChooserEnabled = false;
     uploadConfigResponse.inlineAttachmentMaxMb = 1;
 
     render(<InputBar onSend={vi.fn()} isGenerating={false} />);

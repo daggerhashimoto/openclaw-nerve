@@ -196,16 +196,32 @@ describe('useAuth', () => {
     expect(result.current.state).toBe('login');
   });
 
-  it('handles fetch failure gracefully', async () => {
+  it('resolves to login when initial status fetch fails', async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
     vi.resetModules();
 
     const mod = await import('./useAuth.js');
     const { result } = renderHook(() => mod.useAuth());
 
-    // On fetch failure, should default to authenticated
     await waitFor(() => {
-      expect(result.current.state).toBe('authenticated');
+      expect(result.current.state).toBe('login');
+    });
+  });
+
+  it('resolves to login when initial status returns a non-JSON body', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response('<html>Bad Gateway</html>', {
+        status: 502,
+        headers: { 'Content-Type': 'text/html' },
+      }),
+    );
+    vi.resetModules();
+
+    const mod = await import('./useAuth.js');
+    const { result } = renderHook(() => mod.useAuth());
+
+    await waitFor(() => {
+      expect(result.current.state).toBe('login');
     });
   });
 });

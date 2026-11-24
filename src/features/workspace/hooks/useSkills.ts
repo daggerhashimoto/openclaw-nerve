@@ -52,8 +52,8 @@ export function useSkills(agentId: string = 'main') {
         return;
       }
 
-      const data = (await res.json()) as { ok: boolean; skills?: Skill[]; error?: string };
-      if (!data.ok) throw new Error(data.error || 'Failed to fetch skills');
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; skills?: Skill[]; error?: string } | null;
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to fetch skills');
 
       if (requestVersionRef.current !== requestVersion || agentIdRef.current !== requestAgentId) {
         return;

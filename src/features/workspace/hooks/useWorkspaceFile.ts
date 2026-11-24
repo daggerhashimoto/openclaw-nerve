@@ -57,8 +57,8 @@ export function useWorkspaceFile(agentId: string) {
         return;
       }
 
-      const data = await res.json() as { ok: boolean; content?: string; error?: string };
-      if (!data.ok) throw new Error(data.error || 'Failed to load');
+      const data = await res.json().catch(() => null) as { ok?: boolean; content?: string; error?: string } | null;
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to load');
 
       if (requestVersionRef.current !== requestVersion || agentIdRef.current !== requestAgentId) {
         return;
@@ -85,8 +85,8 @@ export function useWorkspaceFile(agentId: string) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, agentId: requestAgentId }),
       });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (!data.ok) throw new Error(data.error || 'Failed to save');
+      const data = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to save');
 
       if (requestVersionRef.current !== requestVersion || agentIdRef.current !== requestAgentId) {
         return 'stale';

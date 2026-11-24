@@ -9,7 +9,6 @@ import { useInputHistory } from '@/hooks/useInputHistory';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { MAX_ATTACHMENTS } from '@/lib/constants';
-import { compressImage } from './image-compress';
 import { formatWorkspacePathAddToChat, mergeAddToChatText } from './addToChat';
 import type {
   FileUploadReference,
@@ -23,7 +22,6 @@ import {
   DEFAULT_UPLOAD_FEATURE_CONFIG,
   getDefaultUploadMode,
   getInlineAttachmentMaxBytes,
-  getInlineModeGuardrailError,
   isUploadsEnabled,
   type UploadFeatureConfig,
 } from './uploadPolicy';
@@ -257,26 +255,6 @@ function formatFileSize(bytes: number): string {
   return `${mb.toFixed(mb >= 100 ? 0 : 1)} MB`;
 }
 
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result);
-        return;
-      }
-      reject(new Error(`Failed to read "${file.name}" as base64.`));
-    };
-    reader.onerror = () => reject(new Error(`Failed to read "${file.name}" as base64.`));
-    reader.readAsDataURL(file);
-  });
-}
-
-function getBase64ByteLength(base64: string): number {
-  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
-  return Math.floor((base64.length * 3) / 4) - padding;
-}
-
 function buildFileUriFromPath(path: string): string {
   if (path.startsWith('file://')) return path;
 
@@ -405,6 +383,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const fileInputRef = useRef<HTMLInputElement>(null);
   const deferredResizeFrameRef = useRef<number | null>(null);
   const deferredResizeSettledFrameRef = useRef<number | null>(null);
+  const focusRingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendPulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [draftText, setDraftText] = useState(() => persistedComposerSnapshot.text);
   const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>(() => persistedComposerSnapshot.stagedAttachments);
   const [uploadConfig, setUploadConfig] = useState<UploadFeatureConfig>(DEFAULT_UPLOAD_FEATURE_CONFIG);
@@ -479,7 +460,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     inputRef.current?.focus();
     // Add brief highlight animation
     inputRef.current?.classList.add('ring-1', 'ring-ring');
-    setTimeout(() => {
+    if (focusRingTimerRef.current !== null) {
+      clearTimeout(focusRingTimerRef.current);
+    }
+    focusRingTimerRef.current = setTimeout(() => {
+      focusRingTimerRef.current = null;
       inputRef.current?.classList.remove('ring-1', 'ring-ring');
     }, 500);
   }, []);
@@ -509,6 +494,18 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     }
     if (deferredResizeSettledFrameRef.current !== null) {
       cancelAnimationFrame(deferredResizeSettledFrameRef.current);
+    }
+    if (focusRingTimerRef.current !== null) {
+      clearTimeout(focusRingTimerRef.current);
+      focusRingTimerRef.current = null;
+    }
+    if (sendPulseTimerRef.current !== null) {
+      clearTimeout(sendPulseTimerRef.current);
+      sendPulseTimerRef.current = null;
+    }
+    if (sendErrorTimerRef.current !== null) {
+      clearTimeout(sendErrorTimerRef.current);
+      sendErrorTimerRef.current = null;
     }
   }, []);
 
@@ -549,36 +546,17 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     const controller = new AbortController();
 
     fetch('/api/upload-config', { signal: controller.signal })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok ? r.json().catch(() => null) : null))
       .then((data) => {
         if (controller.signal.aborted || !data) return;
         const nextConfig: UploadFeatureConfig = {
           twoModeEnabled: Boolean(data.twoModeEnabled),
           inlineEnabled: Boolean(data.inlineEnabled),
           fileReferenceEnabled: Boolean(data.fileReferenceEnabled),
-          modeChooserEnabled: Boolean(data.modeChooserEnabled),
           inlineAttachmentMaxMb:
             typeof data.inlineAttachmentMaxMb === 'number' && data.inlineAttachmentMaxMb > 0
               ? data.inlineAttachmentMaxMb
               : DEFAULT_UPLOAD_FEATURE_CONFIG.inlineAttachmentMaxMb,
-          inlineImageContextMaxBytes:
-            typeof data.inlineImageContextMaxBytes === 'number' && data.inlineImageContextMaxBytes > 0
-              ? data.inlineImageContextMaxBytes
-              : DEFAULT_UPLOAD_FEATURE_CONFIG.inlineImageContextMaxBytes,
-          inlineImageAutoDowngradeToFileReference: data.inlineImageAutoDowngradeToFileReference !== false,
-          inlineImageShrinkMinDimension:
-            typeof data.inlineImageShrinkMinDimension === 'number' && data.inlineImageShrinkMinDimension > 0
-              ? data.inlineImageShrinkMinDimension
-              : DEFAULT_UPLOAD_FEATURE_CONFIG.inlineImageShrinkMinDimension,
-          inlineImageMaxDimension:
-            typeof data.inlineImageMaxDimension === 'number' && data.inlineImageMaxDimension > 0
-              ? data.inlineImageMaxDimension
-              : DEFAULT_UPLOAD_FEATURE_CONFIG.inlineImageMaxDimension,
-          inlineImageWebpQuality:
-            typeof data.inlineImageWebpQuality === 'number' && data.inlineImageWebpQuality > 0
-              ? data.inlineImageWebpQuality
-              : DEFAULT_UPLOAD_FEATURE_CONFIG.inlineImageWebpQuality,
-          exposeInlineBase64ToAgent: Boolean(data.exposeInlineBase64ToAgent),
         };
         setUploadConfig(nextConfig);
       })
@@ -943,87 +921,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     onWakeWordState?.(wakeWordEnabled, toggleWakeWord);
   }, [wakeWordEnabled, toggleWakeWord, onWakeWordState]);
 
-  const buildInlineAttachment = useCallback(async (item: StagedAttachment): Promise<{
-    attachment: ImageAttachment;
-    preparation?: UploadPreparationMetadata;
-  }> => {
-    if (item.file.type.startsWith('image/')) {
-      const compressed = await compressImage(item.file, {
-        contextMaxBytes: uploadConfig.inlineImageContextMaxBytes,
-        contextTargetBytes: Math.floor(uploadConfig.inlineImageContextMaxBytes * 0.9),
-        maxDimension: uploadConfig.inlineImageMaxDimension,
-        minDimension: uploadConfig.inlineImageShrinkMinDimension,
-        webpQuality: uploadConfig.inlineImageWebpQuality,
-      });
-      return {
-        attachment: {
-          id: item.id,
-          mimeType: compressed.mimeType,
-          content: compressed.base64,
-          preview: compressed.preview,
-          name: item.file.name,
-        },
-        preparation: {
-          sourceMode: 'inline',
-          finalMode: 'inline',
-          outcome: 'optimized_inline',
-          reason: `Adaptive inline shrink fit within the context-safe budget (${formatFileSize(compressed.bytes)} <= ${formatFileSize(uploadConfig.inlineImageContextMaxBytes)}).`,
-          originalMimeType: item.file.type || 'application/octet-stream',
-          originalSizeBytes: item.file.size,
-          inlineBase64Bytes: compressed.bytes,
-          contextSafetyMaxBytes: uploadConfig.inlineImageContextMaxBytes,
-          inlineTargetBytes: compressed.targetBytes,
-          inlineChosenWidth: compressed.width,
-          inlineChosenHeight: compressed.height,
-          inlineIterations: compressed.iterations,
-          inlineMinDimension: compressed.minDimension,
-          localPathAvailable: hasResolvableLocalPath(item.file),
-        },
-      };
-    }
-
-    const dataUrl = await readAsDataUrl(item.file);
-    const [, base64 = ''] = dataUrl.split(',', 2);
-    return {
-      attachment: {
-        id: item.id,
-        mimeType: item.file.type || 'application/octet-stream',
-        content: base64,
-        preview: dataUrl,
-        name: item.file.name,
-      },
-    };
-  }, [
-    uploadConfig.inlineImageMaxDimension,
-    uploadConfig.inlineImageWebpQuality,
-    uploadConfig.inlineImageContextMaxBytes,
-    uploadConfig.inlineImageShrinkMinDimension,
-  ]);
-
-  const buildInlineDescriptor = useCallback((
-    item: StagedAttachment,
-    attachment: ImageAttachment,
-    preparation?: UploadPreparationMetadata,
-  ): UploadAttachmentDescriptor => ({
-    id: item.id,
-    origin: item.origin,
-    mode: 'inline',
-    name: item.file.name,
-    mimeType: attachment.mimeType,
-    sizeBytes: item.file.size,
-    inline: {
-      encoding: 'base64',
-      base64: attachment.content,
-      base64Bytes: getBase64ByteLength(attachment.content),
-      previewUrl: attachment.preview,
-      compressed: item.file.type.startsWith('image/'),
-    },
-    preparation,
-    policy: {
-      forwardToSubagents: true,
-    },
-  }), []);
-
   const buildFileReferenceDescriptor = useCallback(async (
     item: StagedAttachment,
     preparation?: UploadPreparationMetadata,
@@ -1041,95 +938,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     },
   }), []);
 
-  const prepareInlineItem = useCallback(async (item: StagedAttachment): Promise<{
-    inlineAttachment?: ImageAttachment;
-    descriptor: UploadAttachmentDescriptor;
-  }> => {
-    const { attachment: inlineAttachment, preparation } = await buildInlineAttachment(item);
-    const inlineBase64Bytes = getBase64ByteLength(inlineAttachment.content);
-    const localPathAvailable = hasResolvableLocalPath(item.file);
-
-    if (!item.file.type.startsWith('image/')) {
-      return {
-        inlineAttachment,
-        descriptor: buildInlineDescriptor(item, inlineAttachment, {
-          sourceMode: 'inline',
-          finalMode: 'inline',
-          outcome: 'inline_ready',
-          originalMimeType: item.file.type || 'application/octet-stream',
-          originalSizeBytes: item.file.size,
-          inlineBase64Bytes,
-          localPathAvailable,
-        }),
-      };
-    }
-
-    if (inlineBase64Bytes <= uploadConfig.inlineImageContextMaxBytes) {
-      return {
-        inlineAttachment,
-        descriptor: buildInlineDescriptor(item, inlineAttachment, {
-          ...preparation,
-          sourceMode: 'inline',
-          finalMode: 'inline',
-          outcome: 'optimized_inline',
-          reason: preparation?.inlineBase64Bytes != null && preparation.inlineTargetBytes != null && preparation.inlineBase64Bytes <= preparation.inlineTargetBytes
-            ? `Adaptive inline shrink fit under the target budget (${formatFileSize(preparation.inlineBase64Bytes)} <= ${formatFileSize(preparation.inlineTargetBytes)}).`
-            : `Adaptive inline shrink fit within the context-safe budget (${formatFileSize(inlineBase64Bytes)} <= ${formatFileSize(uploadConfig.inlineImageContextMaxBytes)}).`,
-          originalMimeType: item.file.type || 'application/octet-stream',
-          originalSizeBytes: item.file.size,
-          inlineBase64Bytes,
-          contextSafetyMaxBytes: uploadConfig.inlineImageContextMaxBytes,
-          localPathAvailable,
-        }),
-      };
-    }
-
-    const fallbackReason = `Adaptive inline shrinking hit the minimum dimension (${uploadConfig.inlineImageShrinkMinDimension}px) without reaching the context-safe budget.`;
-
-    if (
-      item.origin === 'server_path'
-      && uploadConfig.inlineImageAutoDowngradeToFileReference
-      && uploadConfig.fileReferenceEnabled
-      && localPathAvailable
-    ) {
-      return {
-        descriptor: await buildFileReferenceDescriptor(item, {
-          ...preparation,
-          sourceMode: 'inline',
-          finalMode: 'file_reference',
-          outcome: 'downgraded_to_file_reference',
-          reason: `${fallbackReason} Falling back to file reference (${formatFileSize(inlineBase64Bytes)} > ${formatFileSize(uploadConfig.inlineImageContextMaxBytes)}).`,
-          originalMimeType: item.file.type || 'application/octet-stream',
-          originalSizeBytes: item.file.size,
-          inlineBase64Bytes,
-          contextSafetyMaxBytes: uploadConfig.inlineImageContextMaxBytes,
-          inlineFallbackReason: 'minimum inline dimension reached; used file reference fallback',
-          localPathAvailable: true,
-        }),
-      };
-    }
-
-    if (item.origin === 'upload') {
-      throw new Error(
-        `"${item.file.name}" was blocked after adaptive inline shrinking reached the minimum dimension (${uploadConfig.inlineImageShrinkMinDimension}px) and browser uploads cannot preserve a true file-reference fallback (${formatFileSize(inlineBase64Bytes)} > ${formatFileSize(uploadConfig.inlineImageContextMaxBytes)}). Send a smaller image or browse by path.`,
-      );
-    }
-
-    throw new Error(
-      uploadConfig.fileReferenceEnabled
-        ? `"${item.file.name}" was blocked after adaptive inline shrinking reached the minimum dimension (${uploadConfig.inlineImageShrinkMinDimension}px) and no file-reference fallback was available (${formatFileSize(inlineBase64Bytes)} > ${formatFileSize(uploadConfig.inlineImageContextMaxBytes)}).`
-        : `"${item.file.name}" was blocked after adaptive inline shrinking reached the minimum dimension (${uploadConfig.inlineImageShrinkMinDimension}px) (${formatFileSize(inlineBase64Bytes)} > ${formatFileSize(uploadConfig.inlineImageContextMaxBytes)}). Enable file-reference mode or choose a smaller image.`,
-    );
-  }, [
-    buildFileReferenceDescriptor,
-    buildInlineAttachment,
-    buildInlineDescriptor,
-    uploadConfig.fileReferenceEnabled,
-    uploadConfig.inlineImageAutoDowngradeToFileReference,
-    uploadConfig.inlineImageContextMaxBytes,
-    uploadConfig.inlineImageShrinkMinDimension,
-  ]);
-
   const handleSend = useCallback(async () => {
     // The draft is locked while voice records; a voice send goes
     // straight to onSend and never through here.
@@ -1138,16 +946,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     if (!text && stagedAttachments.length === 0) {
       // Shake on empty send attempt
       setSendError(true);
-      setTimeout(() => setSendError(false), 400);
-      return;
-    }
-
-    const inlineGuardrailViolation = stagedAttachments
-      .filter((item) => item.mode === 'inline')
-      .map((item) => getInlineModeGuardrailError(item.file, uploadConfig))
-      .find(Boolean);
-    if (inlineGuardrailViolation) {
-      setAttachmentError(inlineGuardrailViolation);
+      if (sendErrorTimerRef.current !== null) {
+        clearTimeout(sendErrorTimerRef.current);
+      }
+      sendErrorTimerRef.current = setTimeout(() => {
+        sendErrorTimerRef.current = null;
+        setSendError(false);
+      }, 400);
       return;
     }
 
@@ -1156,19 +961,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
     setIsPreparingInline(true);
     try {
-      const inlineAttachments: ImageAttachment[] = [];
       const descriptors: UploadAttachmentDescriptor[] = [];
 
       for (const item of stagedAttachments) {
-        if (item.mode === 'inline') {
-          const prepared = await prepareInlineItem(item);
-          if (prepared.inlineAttachment) {
-            inlineAttachments.push(prepared.inlineAttachment);
-          }
-          descriptors.push(prepared.descriptor);
-          continue;
-        }
-
         const descriptor = await buildFileReferenceDescriptor(item, {
           sourceMode: 'file_reference',
           finalMode: 'file_reference',
@@ -1186,7 +981,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           descriptors,
           manifest: {
             enabled: true,
-            exposeInlineBase64ToAgent: uploadConfig.exposeInlineBase64ToAgent,
+            exposeInlineBase64ToAgent: false,
             allowSubagentForwarding: true,
           },
         }
@@ -1194,7 +989,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
       // Trigger pulse animation on successful send
       setSendPulse(true);
-      setTimeout(() => setSendPulse(false), 400);
+      if (sendPulseTimerRef.current !== null) {
+        clearTimeout(sendPulseTimerRef.current);
+      }
+      sendPulseTimerRef.current = setTimeout(() => {
+        sendPulseTimerRef.current = null;
+        setSendPulse(false);
+      }, 400);
 
       const input = inputRef.current;
       if (input) {
@@ -1206,7 +1007,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       setDismissedSlashQuery(null);
       setSelectedSlashIndex(0);
 
-      await onSend(text || '', inlineAttachments.length > 0 ? inlineAttachments : undefined, uploadPayload);
+      await onSend(text || '', undefined, uploadPayload);
       clearStagedAttachments();
       setAttachmentError(null);
       clearVoiceError();
@@ -1223,11 +1024,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   }, [
     isRecording,
     stagedAttachments,
-    uploadConfig,
     inputHistory,
     buildFileReferenceDescriptor,
     onSend,
-    prepareInlineItem,
     clearStagedAttachments,
     clearVoiceError,
   ]);

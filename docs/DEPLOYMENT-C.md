@@ -102,7 +102,7 @@ Browsers allow the microphone only on HTTPS (or localhost), so voice input needs
   - send `X-Forwarded-For`
   - not buffer `/api/events` (a server-sent event stream)
   - accept request bodies of at least 13 MB, Nerve's own limit
-- **Nerve's own HTTPS.** Nerve serves HTTPS on `SSL_PORT` (default `3443`) when `certs/cert.pem` and `certs/key.pem` exist in the install directory. Setup can generate a self-signed pair. For a real certificate, put your certificate and key at those paths, and bind Nerve to `0.0.0.0`.
+- **Nerve's own HTTPS.** Nerve serves HTTPS on `SSL_PORT` (for example `SSL_PORT=3443` in `.env`) when `SSL_PORT` is not empty and `certs/cert.pem` and `certs/key.pem` exist in the install directory. An older `.env` without an `SSL_PORT` line uses the default `3443`, and `SSL_PORT=` keeps HTTPS off. Setup can generate a self-signed pair and write `SSL_PORT`. For a real certificate, put your certificate and key at those paths, set `SSL_PORT` in `.env`, and bind Nerve to `0.0.0.0`.
 
 ### 5. Configure the gateway
 

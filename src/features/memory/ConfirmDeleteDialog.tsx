@@ -65,9 +65,9 @@ export function ConfirmDeleteDialog({
         }
         
         const res = await fetch(`/api/memories/section?${params.toString()}`);
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
         
-        if (data.ok && data.content) {
+        if (data?.ok && data.content) {
           setMarkdownContent(data.content);
         } else {
           setMarkdownContent(null);

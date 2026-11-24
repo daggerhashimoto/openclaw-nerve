@@ -33,7 +33,7 @@ On the default local path it may:
 - inspect the machine, an existing `~/nerve`, and the local OpenClaw install
 - install missing core prerequisites (Node.js 22 or later, npm, git, build tools)
 - run the installer and the setup wizard, and write a minimal local `.env` if the wizard cannot run
-- apply the small local OpenClaw changes setup makes: device pairing and scopes, and the `cron`, `gateway`, and `sessions_spawn` tool allow entries, followed by a local gateway restart
+- apply the small local OpenClaw changes setup makes: device pairing and scopes, and the `sessions_spawn` tool allow entry, followed by a local gateway restart
 - restart local services and run its checks
 
 ## What needs your approval

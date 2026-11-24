@@ -43,6 +43,7 @@ import {
   applyAccessPlanToConfig,
   buildAccessPlan,
   requiresAuthentication,
+  serveTargetPort,
   type AccessPlan,
   type InstallerAccessProfile,
 } from './lib/access-plan.js';
@@ -133,9 +134,17 @@ function copyDirSync(src: string, dest: string): void {
   }
 }
 
-/** Whether the HTTPS listener will start, matching server/index.ts. */
+/** Whether the certificate pair exists. */
 function hasHttpsCerts(): boolean {
   return existsSync(CERT_PATH) && existsSync(KEY_PATH);
+}
+
+/**
+ * Whether the HTTPS listener will start for this config, matching
+ * server/lib/https-listener.ts: certificates start it unless SSL_PORT is empty.
+ */
+function httpsListenerWillStart(config: EnvConfig): boolean {
+  return hasHttpsCerts() && config.SSL_PORT !== '';
 }
 
 function installBundledSkills(): void {
@@ -574,7 +583,10 @@ async function collectInteractive(
 
   } else if (accessMode === 'tailscale-ip') {
     tailscaleState = await ensureInteractiveTailscale();
-    accessPlan = buildAccessPlan({ profile: 'tailscale-ip', port, tailscale: tailscaleState });
+    if (tailscaleState.ipv4) {
+      sslPort = await offerHttpsSetup(tailscaleState.ipv4);
+    }
+    accessPlan = buildAccessPlan({ profile: 'tailscale-ip', port, sslPort, tailscale: tailscaleState });
     if (accessPlan.followUpSteps.length > 0) {
       warn('Tailscale tailnet IP access is not ready yet.');
       printFollowUpSteps(accessPlan.followUpSteps);
@@ -624,7 +636,17 @@ async function collectInteractive(
     }
 
     tailscaleState = getTailscaleState();
-    accessPlan = buildAccessPlan({ profile: 'tailscale-serve', port, tailscale: tailscaleState, httpsEnabled: hasHttpsCerts() });
+    // An existing Serve endpoint may proxy to Nerve's HTTPS listener rather
+    // than the HTTP port. Match it here and keep that listener on below,
+    // since SSL_PORT is otherwise cleared for this mode.
+    const serveHttpsPort = httpsListenerWillStart(config) ? config.SSL_PORT || DEFAULTS.SSL_PORT : undefined;
+    accessPlan = buildAccessPlan({
+      profile: 'tailscale-serve',
+      port,
+      sslPort: serveHttpsPort,
+      httpsEnabled: Boolean(serveHttpsPort),
+      tailscale: tailscaleState,
+    });
 
     if (accessPlan.followUpSteps.length > 0) {
       console.log('');
@@ -646,7 +668,12 @@ async function collectInteractive(
         process.exit(1);
       }
 
-      accessPlan = buildAccessPlan({ profile: 'tailscale-ip', port, tailscale: tailscaleState });
+      // The fallback is a non-loopback tailnet URL, so offer HTTPS just like
+      // choosing tailnet IP directly; otherwise microphone access stops working.
+      if (tailscaleState.ipv4) {
+        sslPort = await offerHttpsSetup(tailscaleState.ipv4);
+      }
+      accessPlan = buildAccessPlan({ profile: 'tailscale-ip', port, sslPort, tailscale: tailscaleState });
       if (accessPlan.followUpSteps.length > 0) {
         warn('Tailnet IP fallback is also unavailable.');
         printFollowUpSteps(accessPlan.followUpSteps);
@@ -656,6 +683,9 @@ async function collectInteractive(
 
       success(`Falling back to tailnet IP access at ${accessPlan.browserOrigins[0]}`);
     } else {
+      if (serveHttpsPort && serveTargetPort(tailscaleState, [port, serveHttpsPort]) === serveHttpsPort) {
+        sslPort = serveHttpsPort;
+      }
       success(`Nerve will be available at ${accessPlan.browserOrigins[0]}`);
       dim('Nerve will stay private on 127.0.0.1 and be reached through Tailscale Serve');
     }
@@ -701,7 +731,7 @@ async function collectInteractive(
     if (!isLoopback(customHost)) {
       sslPort = await offerHttpsSetup(customHost);
     } else {
-      delete config.SSL_PORT;
+      config.SSL_PORT = '';
     }
 
     accessPlan = buildAccessPlan({ profile: 'custom', port, remoteHost: customHost, sslPort });
@@ -710,7 +740,7 @@ async function collectInteractive(
 
   delete config.ALLOWED_ORIGINS;
   delete config.CSP_CONNECT_EXTRA;
-  delete config.SSL_PORT;
+  config.SSL_PORT = '';
   // WS_ALLOWED_HOSTS is intentionally NOT cleared here. applyAccessPlanToConfig
   // merges plan-derived hosts, the user's existing entries, and the remote-gateway
   // host from GATEWAY_URL, so clearing first would drop user-added allowlist values.
@@ -734,7 +764,7 @@ async function collectInteractive(
     config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
   }
 
-  const isNetworkExposed = requiresAuthentication(config, accessPlan, tailscaleState, hasHttpsCerts());
+  const isNetworkExposed = requiresAuthentication(config, accessPlan, tailscaleState, httpsListenerWillStart(config));
 
   if (isNetworkExposed) {
     section(4, TOTAL_SECTIONS, 'Authentication');
@@ -906,7 +936,7 @@ function printSummary(config: EnvConfig): void {
   const port = config.PORT || DEFAULTS.PORT;
   const sslPort = config.SSL_PORT || DEFAULTS.SSL_PORT;
   const host = config.HOST || DEFAULTS.HOST;
-  const hasCerts = existsSync(resolve(PROJECT_ROOT, 'certs', 'cert.pem'));
+  const hasCerts = Boolean(config.SSL_PORT) && hasHttpsCerts();
 
   let ttsProvider = 'Edge (free)';
   if (config.OPENAI_API_KEY && config.REPLICATE_API_TOKEN) {
@@ -1043,7 +1073,7 @@ async function runCheck(config: EnvConfig, prereqs: PrereqResult): Promise<void>
     } else {
       warn('NERVE_SESSION_SECRET not set — will be auto-generated (sessions won\'t survive restarts)');
     }
-  } else if (requiresAuthentication(config, undefined, prereqs.tailscale, hasHttpsCerts())) {
+  } else if (requiresAuthentication(config, undefined, prereqs.tailscale, httpsListenerWillStart(config))) {
     warn('Authentication is DISABLED while server is network-exposed');
     dim('Run `npm run setup` to enable authentication');
   } else {
@@ -1051,8 +1081,14 @@ async function runCheck(config: EnvConfig, prereqs: PrereqResult): Promise<void>
   }
 
   // HTTPS certs
-  if (existsSync(resolve(PROJECT_ROOT, 'certs', 'cert.pem'))) {
+  const certsPresent = hasHttpsCerts();
+  // A missing SSL_PORT keeps the legacy certificate-only behavior on any bind
+  // address; an empty one disables HTTPS.
+  const httpsEnabled = httpsListenerWillStart(config);
+  if (httpsEnabled) {
     success('HTTPS certificates found at certs/');
+  } else if (certsPresent) {
+    info('HTTPS certificates found, but SSL_PORT is empty (HTTPS disabled)');
   } else {
     info('No HTTPS certificates (HTTP only)');
   }
@@ -1076,6 +1112,14 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
 
   const config: EnvConfig = { ...existing };
   const followUpSteps: string[] = [];
+
+  // Older .env files omitted the default SSL_PORT. Adopt it when certs exist
+  // so the next write records HTTPS explicitly and the listener keeps
+  // starting, matching what the server does for a missing SSL_PORT.
+  const certsPresent = hasHttpsCerts();
+  if (config.SSL_PORT === undefined && certsPresent) {
+    config.SSL_PORT = DEFAULTS.SSL_PORT;
+  }
 
   function appendFollowUp(steps: string[]): void {
     for (const step of steps) {
@@ -1122,11 +1166,19 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
 
   let accessPlan: AccessPlan | undefined;
   if (requestedAccessMode) {
+    // Resolve the HTTPS port before the plan: hosted modes include the secure
+    // origin in ALLOWED_ORIGINS/CSP only when sslPort is set, and Serve matching
+    // needs the port to find an endpoint that proxies to the HTTPS listener.
+    // An explicit empty SSL_PORT stays off; a missing one was adopted above.
+    if (requestedAccessMode === 'local') {
+      config.SSL_PORT = '';
+    }
+
     accessPlan = buildAccessPlan({
       profile: requestedAccessMode as InstallerAccessProfile,
       port: config.PORT,
       sslPort: config.SSL_PORT,
-      httpsEnabled: hasHttpsCerts(),
+      httpsEnabled: httpsListenerWillStart(config),
       remoteHost: !isLoopback(config.HOST || '') ? config.HOST : detectPrimaryIpv4() || config.HOST || DEFAULTS.HOST,
       tailscale: prereqs.tailscale,
     });
@@ -1137,6 +1189,7 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
       accessPlan = buildAccessPlan({
         profile: 'tailscale-ip',
         port: config.PORT,
+        sslPort: config.SSL_PORT,
         tailscale: prereqs.tailscale,
       });
     }
@@ -1149,6 +1202,22 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
 
     delete config.ALLOWED_ORIGINS;
     delete config.CSP_CONNECT_EXTRA;
+    // Local mode keeps Nerve's HTTPS listener off. Tailscale Serve terminates
+    // TLS itself, so an endpoint that proxies to the HTTP port needs no local
+    // listener; keep SSL_PORT only when the accepted endpoint proxies to it.
+    // Write the empty value so the server does not reopen the listener for
+    // leftover certs/.
+    if (accessPlan.profile === 'local') {
+      config.SSL_PORT = '';
+    } else if (accessPlan.profile === 'tailscale-serve') {
+      const targetPort = serveTargetPort(prereqs.tailscale, [
+        config.PORT || DEFAULTS.PORT,
+        config.SSL_PORT ?? '',
+      ]);
+      if (!config.SSL_PORT || targetPort !== config.SSL_PORT) {
+        config.SSL_PORT = '';
+      }
+    }
     // WS_ALLOWED_HOSTS preserved across setup runs. See merge logic in
     // applyAccessPlanToConfig (plan + existing + remote-gateway host).
     Object.assign(config, applyAccessPlanToConfig(config, accessPlan));
@@ -1163,7 +1232,7 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
   if (!config.NERVE_SESSION_SECRET) {
     config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
   }
-  if (requiresAuthentication(config, accessPlan, prereqs.tailscale, hasHttpsCerts()) && config.NERVE_AUTH !== 'true') {
+  if (requiresAuthentication(config, accessPlan, prereqs.tailscale, httpsListenerWillStart(config)) && config.NERVE_AUTH !== 'true') {
     if (config.NERVE_PASSWORD_HASH) {
       config.NERVE_AUTH = 'true';
       success('Authentication auto-enabled (use the existing password)');

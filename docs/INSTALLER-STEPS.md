@@ -248,7 +248,7 @@ The access-mode question offers `Via Tailscale tailnet IP` and `Via Tailscale Se
 
 - Tailnet IP:
   - Nerve binds `0.0.0.0` and is reachable at `http://<tailnet-ip>:<port>`;
-  - the origin is added to Nerve's `ALLOWED_ORIGINS` and to the gateway's allowed origins.
+  - setup offers HTTPS, generates a self-signed certificate when accepted, and adds both the HTTP origin and the `https://<tailnet-ip>:<SSL_PORT>` origin to Nerve's `ALLOWED_ORIGINS` and to the gateway's allowed origins.
 - Tailscale Serve:
   - Nerve stays on `127.0.0.1`;
   - setup asks whether to run `tailscale serve --bg http://127.0.0.1:<PORT>`;
@@ -294,7 +294,7 @@ Two exceptions cover what a URL cannot show:
 Setup does not read, write or restart anything. It prints why, then the steps to run where the gateway lives:
 
 1. Add the Nerve browser origins to `gateway.controlUi.allowedOrigins`: the origins from the access plan plus `http://localhost:<port>` and `http://127.0.0.1:<port>`.
-2. Add `cron`, `gateway` and `sessions_spawn` to `gateway.tools.allow`.
+2. Add `sessions_spawn` to `gateway.tools.allow`.
 3. Run `openclaw gateway restart`.
 4. After starting Nerve, run `openclaw devices list`, then `openclaw devices approve <requestId>` for the Nerve request.
 
@@ -306,10 +306,10 @@ A detection layer (`detectNeededConfigChanges`) lists what needs changing withou
 
 1. **Device scopes**: makes sure the gateway's own device in `devices/paired.json` (and the CLI's `identity/device-auth.json`) has the five operator scopes `operator.admin`, `operator.read`, `operator.write`, `operator.approvals` and `operator.pairing`. If `paired.json` is missing, it creates it from `identity/device.json`.
 2. **Pre-pair Nerve device**: registers Nerve's Ed25519 identity (`${NERVE_DATA_DIR:-~/.nerve}/device-identity.json`, generated if absent) in `paired.json` with full operator scopes and the gateway token. The metadata matches Nerve's browser client (platform `web`, client id `webchat-ui`, mode `webchat`, display name `Nerve UI`), so Nerve connects without a manual `openclaw devices approve`.
-3. **Tools allow**: adds `cron`, `gateway` and `sessions_spawn` to `gateway.tools.allow` when any is missing. Of the three, Nerve's server only invokes `sessions_spawn` over `/tools/invoke` (Kanban task execution and manual runs of isolated cron jobs). Cron management itself goes through gateway RPC.
+3. **Tools allow**: adds `sessions_spawn` to `gateway.tools.allow` when missing. Nerve's server invokes `sessions_spawn` over `/tools/invoke` for Kanban task execution and manual runs of isolated cron jobs. Cron management itself goes through gateway RPC.
 4. **Allowed origins**: adds the access plan's origins that are missing from `gateway.controlUi.allowedOrigins`.
    - Localhost-only mode has none, so nothing is added.
-   - LAN, tailnet IP or a custom non-loopback bind: `http://<host>:<port>`, plus `https://<host>:<ssl-port>` when HTTPS is enabled. The HTTP origin stays first. The wizard offers HTTPS for LAN and custom binds only. A tailnet IP gets the HTTPS origin only from `--defaults --access-mode tailscale-ip` when `.env` already has `SSL_PORT`.
+   - LAN, tailnet IP or a custom non-loopback bind: `http://<host>:<port>`, plus `https://<host>:<ssl-port>` when HTTPS is enabled. The HTTP origin stays first. The wizard offers HTTPS for LAN, tailnet IP and custom non-loopback binds.
    - Tailscale Serve: `https://<node>.tail<id>.ts.net`.
 
 If nothing needs changing, the step ends silently.

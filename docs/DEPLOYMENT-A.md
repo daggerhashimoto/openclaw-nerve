@@ -41,7 +41,7 @@ Recommended choices:
 - Access mode: **This machine only (localhost)**
 - Password: not needed when only localhost can reach Nerve
 
-The gateway is on this machine, so setup also brings its OpenClaw config in line with Nerve, asking first in interactive mode. It fixes device scopes, pairs Nerve's device, adds `cron`, `gateway` and `sessions_spawn` to `gateway.tools.allow`, and restarts the gateway when something changed.
+The gateway is on this machine, so setup also brings its OpenClaw config in line with Nerve, asking first in interactive mode. It fixes device scopes, pairs Nerve's device, adds `sessions_spawn` to `gateway.tools.allow`, and restarts the gateway when something changed.
 
 ### 3. Start or restart Nerve
 
@@ -73,7 +73,7 @@ Open `http://localhost:3080` in your browser. Nerve connects without asking for 
 ## Notes
 
 - Kanban tasks launch in one of two ways. A task assigned to a worker agent (not `main`) launches over gateway RPC. An unassigned task launches with the `sessions_spawn` HTTP tool. When Nerve runs on macOS it refuses unassigned tasks by default, so assign each task to a worker agent first.
-- Nerve calls only `sessions_spawn` among the three allowlisted tools: for the Crons tab's manual run of an isolated agent-turn job, and for unassigned Kanban tasks. Crons are otherwise managed over gateway RPC. Setup still writes all three entries.
+- Nerve calls `sessions_spawn` over HTTP (`/tools/invoke`) for the Crons tab's manual run of an isolated agent-turn job, and for unassigned Kanban tasks. Crons are otherwise managed over gateway RPC. Setup adds `sessions_spawn` to `gateway.tools.allow`.
 
 ## Common issues
 
@@ -103,7 +103,7 @@ openclaw devices approve <requestId>
 ```json
 "gateway": {
   "tools": {
-    "allow": ["cron", "gateway", "sessions_spawn"]
+    "allow": ["sessions_spawn"]
   }
 }
 ```

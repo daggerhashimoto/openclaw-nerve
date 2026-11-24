@@ -481,20 +481,18 @@ describe('reorderTask', () => {
 describe('config', () => {
   it('returns default config', async () => {
     const cfg = await store.getConfig();
-    expect(cfg.reviewRequired).toBe(true);
-    expect(cfg.allowDoneDragBypass).toBe(false);
-    expect(cfg.quickViewLimit).toBe(5);
+    expect(cfg.proposalPolicy).toBe('confirm');
     expect(cfg.defaults.status).toBe('todo');
     expect(cfg.defaults.priority).toBe('normal');
     expect(cfg.columns.length).toBe(6);
   });
 
   it('updates config partially', async () => {
-    const updated = await store.updateConfig({ reviewRequired: false, quickViewLimit: 10 });
-    expect(updated.reviewRequired).toBe(false);
-    expect(updated.quickViewLimit).toBe(10);
+    const updated = await store.updateConfig({ proposalPolicy: 'auto', defaultModel: 'claude-sonnet-4-6' });
+    expect(updated.proposalPolicy).toBe('auto');
+    expect(updated.defaultModel).toBe('claude-sonnet-4-6');
     // Other fields untouched
-    expect(updated.allowDoneDragBypass).toBe(false);
+    expect(updated.defaults.status).toBe('todo');
   });
 
   it('updates defaults nested', async () => {
@@ -504,9 +502,9 @@ describe('config', () => {
   });
 
   it('persists config changes', async () => {
-    await store.updateConfig({ quickViewLimit: 20 });
+    await store.updateConfig({ proposalPolicy: 'auto' });
     const cfg = await store.getConfig();
-    expect(cfg.quickViewLimit).toBe(20);
+    expect(cfg.proposalPolicy).toBe('auto');
   });
 
   it('preserves custom default status across reads', async () => {
@@ -1042,65 +1040,6 @@ describe('completeRun', () => {
 });
 
 // ── Reconcile stale runs ─────────────────────────────────────────────
-
-describe('reconcileStaleRuns', () => {
-  it('reconciles stale running tasks', async () => {
-    const task = await createSampleTask({ status: 'todo' });
-    const executed = await store.executeTask(task.id);
-
-    // Manually backdate the run start time
-    await store.updateTask(executed.id, executed.version, {
-      run: { ...executed.run!, startedAt: Date.now() - 100_000 },
-    });
-
-    const reconciled = await store.reconcileStaleRuns(50_000);
-    expect(reconciled.length).toBe(1);
-    expect(reconciled[0].status).toBe('todo');
-    expect(reconciled[0].run!.status).toBe('error');
-    expect(reconciled[0].run!.error).toBe('stale run reconciled');
-  });
-
-  it('does not reconcile fresh runs', async () => {
-    const task = await createSampleTask({ status: 'todo' });
-    await store.executeTask(task.id);
-
-    const reconciled = await store.reconcileStaleRuns(999_999_999);
-    expect(reconciled.length).toBe(0);
-  });
-
-  it('does not reconcile non-running tasks', async () => {
-    await createSampleTask({ status: 'todo' });
-    // Task is in todo, not in-progress
-    const reconciled = await store.reconcileStaleRuns(0);
-    expect(reconciled.length).toBe(0);
-  });
-
-  it('reconciles multiple stale tasks', async () => {
-    const t1 = await createSampleTask({ status: 'todo', title: 'A' });
-    const t2 = await createSampleTask({ status: 'todo', title: 'B' });
-    const e1 = await store.executeTask(t1.id);
-    const e2 = await store.executeTask(t2.id);
-
-    // Backdate both
-    await store.updateTask(e1.id, e1.version, {
-      run: { ...e1.run!, startedAt: Date.now() - 100_000 },
-    });
-    const e2Updated = await store.getTask(e2.id);
-    await store.updateTask(e2Updated.id, e2Updated.version, {
-      run: { ...e2Updated.run!, startedAt: Date.now() - 100_000 },
-    });
-
-    const reconciled = await store.reconcileStaleRuns(50_000);
-    expect(reconciled.length).toBe(2);
-    expect(reconciled.every((t) => t.status === 'todo')).toBe(true);
-    expect(reconciled.every((t) => t.run!.status === 'error')).toBe(true);
-  });
-
-  it('returns empty array when nothing to reconcile', async () => {
-    const reconciled = await store.reconcileStaleRuns(50_000);
-    expect(reconciled).toEqual([]);
-  });
-});
 
 // ── Full workflow (execute → complete → approve) ─────────────────────
 

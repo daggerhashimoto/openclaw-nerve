@@ -33,7 +33,6 @@ function createTestApp(): Hono {
   app.get('/api/auth/login', (c) => c.json({ login: true }));
   app.get('/api/auth/logout', (c) => c.json({ logout: true }));
   app.get('/api/auth/status', (c) => c.json({ status: true }));
-  app.get('/api/health', (c) => c.json({ health: true }));
   app.get('/health', (c) => c.json({ health: true }));
   app.get('/api/version', (c) => c.json({ version: '1.0' }));
   app.get('/some/page', (c) => c.html('<h1>Page</h1>'));
@@ -102,7 +101,7 @@ describe('authMiddleware', () => {
         '/api/auth/login',
         '/api/auth/logout',
         '/api/auth/status',
-        '/api/health',
+        '/api/version',
         '/health',
       ];
 

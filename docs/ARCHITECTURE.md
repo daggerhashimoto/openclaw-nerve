@@ -320,7 +320,7 @@ Subagent spawns go through `POST /api/sessions/spawn-subagent` instead, so the s
 Browser → GET /api/events → text/event-stream
 ```
 
-The server emits `memory.changed` and `file.changed` (from the file watcher and the memories API, tagged with `agentId`) and a `ping` every 30 seconds. The client also listens for `tokens.updated` and `status.changed`, but nothing on the server emits them today. SSE is excluded from compression, and slow clients are handled by `sse-backpressure.ts`.
+The server emits `memory.changed` and `file.changed` (from the file watcher and the memories API, tagged with `agentId`) and a `ping` every 30 seconds. The client subscribes to those events plus `connected`; nothing else is emitted. SSE is excluded from compression, and slow clients are handled by `sse-backpressure.ts`.
 
 ### REST
 

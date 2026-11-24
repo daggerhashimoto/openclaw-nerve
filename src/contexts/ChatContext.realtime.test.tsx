@@ -15,6 +15,8 @@ import type { useChat as UseChat } from './ChatContext';
 
 type ChatApi = ReturnType<typeof UseChat>;
 
+const { speakMock } = vi.hoisted(() => ({ speakMock: vi.fn() }));
+
 const SESSION = 'agent:main:main';
 const RUN = 'run-1';
 const NOW = 1_700_000_015_000; // middle of a 30s bucket, keeps message signatures stable
@@ -481,6 +483,27 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     });
   });
 
+  it('clears voice fallback tracking when the active run aborts', async () => {
+    const { emit, getChat } = await setup();
+
+    await act(async () => {
+      await getChat().handleSend('[voice] What is the weather?');
+    });
+
+    emit('chat', chat({ state: 'aborted', seq: 2 }));
+    emit('chat', { sessionKey: SESSION, runId: 'run-2', state: 'started', seq: 1 });
+    emit('chat', {
+      sessionKey: SESSION,
+      runId: 'run-2',
+      state: 'final',
+      seq: 2,
+      stopReason: 'stop',
+      message: textMessage('External reply.', NOW + 1000),
+    });
+
+    expect(speakMock).not.toHaveBeenCalled();
+  });
+
   it('reconciles a late final for a settled run from history instead of appending it', async () => {
     const history = [
       { role: 'user', content: 'Write about clouds', timestamp: NOW },
@@ -555,6 +578,26 @@ describe('ChatContext realtime handling (protocol v4)', () => {
 
       expect(speakMock).toHaveBeenCalledTimes(1);
       expect(speakMock).toHaveBeenCalledWith(spoken);
+    });
+
+    // A voice send whose reply has no [tts:] marker relies on the voice fallback,
+    // which has to survive both the lifecycle start and the run ending before its final.
+    it('speaks the voice fallback when a voice send\'s run ends just before its final', async () => {
+      const { emit, getChat, speakMock } = await setup();
+      const answer = 'The forecast is sunny.';
+
+      await act(async () => {
+        await getChat().handleSend('[voice] What is the weather?');
+      });
+
+      emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }));
+      emit('agent', lifecycle('start', 2));
+      emit('chat', chat({ state: 'delta', seq: 33, deltaText: answer, message: textMessage(answer, NOW) }));
+      emit('agent', lifecycle('end', 74));
+      emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(answer, NOW + 3000) }));
+
+      expect(speakMock).toHaveBeenCalledTimes(1);
+      expect(speakMock).toHaveBeenCalledWith(answer);
     });
 
     // A newer run's own lifecycle end would replace the ended run, so the newer turn

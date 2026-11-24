@@ -9,7 +9,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { RefreshCw, Play, Plus, Trash2, Pencil, History, Loader2, Settings2 } from 'lucide-react';
-import { useCrons, type CronJob, type CronRun, CRON_GATEWAY_TOOL_ALLOWLIST } from '../hooks/useCrons';
+import { useCrons, type CronJob, type CronRun } from '../hooks/useCrons';
 import { CronDialog } from './CronDialog';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { Pane } from '@/components/ui/Pane';
@@ -388,7 +388,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
 
 /** Workspace tab listing cron jobs with create/edit/delete/toggle controls. */
 export function CronsTab() {
-  const { jobs, isLoading, error, cronWarning, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
+  const { jobs, isLoading, error, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
   const { refreshSessions } = useSessionContext();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
@@ -480,64 +480,20 @@ export function CronsTab() {
         </div>
 
         <div aria-live="polite" aria-atomic="true">
-          {error && !cronWarning && (
+          {error && (
             <div className="px-3 py-2">
               <div className="cockpit-note" data-tone="danger">{error}</div>
             </div>
           )}
         </div>
 
-        {cronWarning && (
-          <div className="space-y-4 px-3 py-3 text-left text-[0.867rem] leading-relaxed">
-            <div className="space-y-1">
-              <div className="font-medium text-foreground">Cron unavailable</div>
-              <p className="text-muted-foreground">
-                {cronWarning}
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="font-medium text-foreground">Recommended fix</div>
-              <p className="text-muted-foreground">
-                Ask your agent to update your OpenClaw config (<code>openclaw.json</code>) so <code>gateway.tools.allow</code> includes:
-              </p>
-              <ul className="ml-5 list-disc space-y-1 text-muted-foreground">
-                {CRON_GATEWAY_TOOL_ALLOWLIST.map((tool) => (
-                  <li key={`recommended-${tool}`}><code>{tool}</code></li>
-                ))}
-              </ul>
-              <p className="text-muted-foreground">Then restart the gateway.</p>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="font-medium text-foreground">Manual fix</div>
-              <p className="text-muted-foreground">
-                Edit <code>openclaw.json</code> and add these entries to <code>gateway.tools.allow</code>:
-              </p>
-              <ul className="ml-5 list-disc space-y-1 text-muted-foreground">
-                {CRON_GATEWAY_TOOL_ALLOWLIST.map((tool) => (
-                  <li key={`manual-${tool}`}><code>{tool}</code></li>
-                ))}
-              </ul>
-              <p className="text-muted-foreground">Then restart the gateway.</p>
-            </div>
-
-            <div className="space-y-1">
-              <div className="font-medium text-foreground">Local install shortcut</div>
-              <p className="text-muted-foreground">
-                If this is a local install, rerun <code>npm run setup</code> to restore the missing entries.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {isLoading && !jobs.length && !error && !cronWarning && (
+        {isLoading && !jobs.length && !error && (
           <div className="flex min-h-[var(--row-unit)] items-center px-3 text-[0.8rem] text-muted-foreground">
             Loading crons…
           </div>
         )}
 
-        {!isLoading && !jobs.length && !error && !cronWarning && (
+        {!isLoading && !jobs.length && !error && (
           <div className="space-y-1 px-3 py-4 text-center">
             <div className="text-[0.867rem] font-medium text-foreground">No scheduled tasks yet</div>
             <p className="text-[0.8rem] leading-relaxed text-muted-foreground">

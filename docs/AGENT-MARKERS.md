@@ -261,7 +261,7 @@ Two proposals are created for the operator to review.
 
 ### Implementation
 
-- **Parser**: `server/lib/parseMarkers.ts`, `parseKanbanMarkers()` and `stripKanbanMarkers()` (regex extraction with JSON validation). `src/features/kanban/lib/parseMarkers.ts` is a copy that only its test uses; the server copy is the one that runs.
+- **Parser**: `server/lib/parseMarkers.ts`, `parseKanbanMarkers()` and `stripKanbanMarkers()` (regex extraction with JSON validation).
 - **Integration**: `server/routes/kanban.ts`, `pollSessionCompletion()`, `pollFallbackSessionCompletion()` (the assignee-root launch path, the default on macOS) and the `POST /api/kanban/tasks/:id/complete` handler.
 - **Proposals**: `server/lib/kanban-store.ts`, `createProposal()` (status and assignee checks, auto policy) and `approveProposal()`.
 - **Frontend**: `src/features/kanban/ProposalInbox.tsx`, shown from `KanbanHeader.tsx`.

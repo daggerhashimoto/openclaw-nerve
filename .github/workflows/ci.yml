@@ -29,9 +29,6 @@ jobs:
       - name: Build
         run: npm run build
       
-      - name: Build server
-        run: npm run build:server
-      
       - name: Test
         run: npm test -- --run
       

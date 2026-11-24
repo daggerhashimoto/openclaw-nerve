@@ -693,9 +693,8 @@ describe('GET /api/kanban/config', () => {
     const res = await app.request('/api/kanban/config');
     expect(res.status).toBe(200);
     const cfg = await res.json() as Record<string, unknown>;
-    expect(cfg.reviewRequired).toBe(true);
-    expect(cfg.allowDoneDragBypass).toBe(false);
-    expect(cfg.quickViewLimit).toBe(5);
+    expect(cfg.proposalPolicy).toBe('confirm');
+    expect(cfg.defaults).toEqual({ status: 'todo', priority: 'normal' });
   });
 });
 
@@ -705,19 +704,19 @@ describe('PUT /api/kanban/config', () => {
   it('updates config', async () => {
     const app = await buildApp();
     const res = await app.request('/api/kanban/config', jsonPut({
-      reviewRequired: false,
-      quickViewLimit: 10,
+      proposalPolicy: 'auto',
+      defaultModel: 'claude-sonnet-4-6',
     }));
     expect(res.status).toBe(200);
     const cfg = await res.json() as Record<string, unknown>;
-    expect(cfg.reviewRequired).toBe(false);
-    expect(cfg.quickViewLimit).toBe(10);
+    expect(cfg.proposalPolicy).toBe('auto');
+    expect(cfg.defaultModel).toBe('claude-sonnet-4-6');
   });
 
   it('returns 400 for invalid config', async () => {
     const app = await buildApp();
     const res = await app.request('/api/kanban/config', jsonPut({
-      quickViewLimit: -1,
+      proposalPolicy: 'invalid',
     }));
     expect(res.status).toBe(400);
   });
@@ -734,11 +733,11 @@ describe('PUT /api/kanban/config', () => {
 
   it('persists config across requests', async () => {
     const app = await buildApp();
-    await app.request('/api/kanban/config', jsonPut({ reviewRequired: false }));
+    await app.request('/api/kanban/config', jsonPut({ proposalPolicy: 'auto' }));
 
     const res = await app.request('/api/kanban/config');
     const cfg = await res.json() as Record<string, unknown>;
-    expect(cfg.reviewRequired).toBe(false);
+    expect(cfg.proposalPolicy).toBe('auto');
   });
 
   it('returns 400 when config removes a status used by existing tasks', async () => {

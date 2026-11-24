@@ -8,8 +8,7 @@
  * - connected: Initial connection confirmation
  * - ping: Keep-alive (every 30s)
  * - memory.changed: Memory file was modified
- * - tokens.updated: Token usage changed
- * - status.changed: Gateway status changed
+ * - file.changed: Workspace file was modified
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
@@ -110,8 +109,6 @@ export function useServerEvents(
     es.addEventListener('connected', handleEvent);
     es.addEventListener('ping', handleEvent);
     es.addEventListener('memory.changed', handleEvent);
-    es.addEventListener('tokens.updated', handleEvent);
-    es.addEventListener('status.changed', handleEvent);
     es.addEventListener('file.changed', handleEvent);
 
     // Also handle generic message events (fallback)

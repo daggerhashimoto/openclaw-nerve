@@ -264,9 +264,15 @@ app.get('/api/sessions/media', rateLimitGeneral, async (c) => {
     }
   } else {
     // Older OpenClaw: sessions.json maps the key to a JSONL transcript that still holds the bytes.
+    let sessionsDir: string;
+    try {
+      sessionsDir = resolveSessionsDir(getAgentIdFromSessionKey(sessionKey));
+    } catch {
+      return c.json({ ok: false, error: 'Invalid media lookup params' }, 400);
+    }
     let store: Record<string, StoredSessionSummary | undefined>;
     try {
-      store = await loadSessionStore();
+      store = await loadSessionStoreFromDir(sessionsDir);
     } catch (err) {
       // No sessions.json is a miss, not a failure: current OpenClaw writes none.
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -277,7 +283,7 @@ app.get('/api/sessions/media', rateLimitGeneral, async (c) => {
     }
     const sessionId = store[sessionKey]?.sessionId;
     if (!sessionId) return c.json({ ok: false, error: 'Unknown session key' }, 404);
-    const transcriptPath = await findTranscript(sessionId);
+    const transcriptPath = await findTranscript(sessionId, sessionsDir);
     if (!transcriptPath) return c.json({ ok: false, error: 'Transcript not found' }, 404);
     media = await readImageBlockFromTranscript(transcriptPath, messageTimestamp, imageIndex);
   }
@@ -293,7 +299,9 @@ app.get('/api/sessions/media', rateLimitGeneral, async (c) => {
       'Content-Type': mimeType,
       'X-Content-Type-Options': 'nosniff',
       'Content-Disposition': `inline; filename="message-${messageTimestamp}-image-${imageIndex}${IMAGE_EXTENSIONS[mimeType] ?? ''}"`,
-      'Cache-Control': 'private, max-age=3600',
+      // Auth-protected media must revalidate so a logged-out browser cannot
+      // reuse a previously viewed transcript image from its cache.
+      'Cache-Control': 'private, no-cache',
     },
   });
 });

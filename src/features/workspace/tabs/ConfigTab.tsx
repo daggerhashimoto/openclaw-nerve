@@ -49,8 +49,8 @@ async function createSeededChatPathLinksTemplate(agentId: string): Promise<strin
     const response = await fetch(`/api/files/tree?${params.toString()}`);
 
     if (response.ok) {
-      const data = await response.json() as { ok?: boolean; workspaceInfo?: { rootPath?: unknown } };
-      if (data.ok && typeof data.workspaceInfo?.rootPath === 'string' && data.workspaceInfo.rootPath) {
+      const data = await response.json().catch(() => null) as { ok?: boolean; workspaceInfo?: { rootPath?: unknown } } | null;
+      if (data?.ok && typeof data.workspaceInfo?.rootPath === 'string' && data.workspaceInfo.rootPath) {
         seedContext.workspaceRoot = data.workspaceInfo.rootPath;
       }
     }
@@ -63,7 +63,6 @@ async function createSeededChatPathLinksTemplate(agentId: string): Promise<strin
 
 interface ConfigTabProps {
   agentId: string;
-  cronWarning?: string | null;
   /** Extra entries at the end of the file picker that switch the panel to another view. */
   viewOptions?: InlineSelectOption[];
   /** Called with the chosen view option's value; unsaved edits are guarded first. */
@@ -71,7 +70,7 @@ interface ConfigTabProps {
 }
 
 /** Workspace tab displaying an editable agent config file (YAML/TOML). */
-export function ConfigTab({ agentId, cronWarning = null, viewOptions = NO_VIEW_OPTIONS, onViewChange }: ConfigTabProps) {
+export function ConfigTab({ agentId, viewOptions = NO_VIEW_OPTIONS, onViewChange }: ConfigTabProps) {
   const [selectedKey, setSelectedKey] = useState(() => getInitialSelectedKey(agentId));
   const { content, isLoading, error, exists, load, save } = useWorkspaceFile(agentId);
   const initialDraft = readPersistedDraft<string>(getConfigDraftKind(getInitialSelectedKey(agentId)), agentId);
@@ -264,12 +263,6 @@ export function ConfigTab({ agentId, cronWarning = null, viewOptions = NO_VIEW_O
             ? <CheckCircle size={14} className="shrink-0 text-muted-foreground" />
             : <AlertCircle size={14} className="shrink-0" />}
           {feedback.message}
-        </div>
-      )}
-
-      {cronWarning && (
-        <div className="border-b border-border px-3 py-2 text-[0.8rem] leading-relaxed text-muted-foreground">
-          {cronWarning}
         </div>
       )}
 

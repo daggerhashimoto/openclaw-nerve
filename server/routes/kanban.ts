@@ -642,7 +642,6 @@ const reorderSchema = z.object({
 const columnSchema = z.object({
   key: taskStatusSchema,
   title: z.string().min(1).max(100),
-  wipLimit: z.number().int().min(0).optional(),
   visible: z.boolean(),
 });
 
@@ -652,9 +651,6 @@ const configSchema = z.object({
     status: taskStatusSchema,
     priority: taskPrioritySchema,
   }).optional(),
-  reviewRequired: z.boolean().optional(),
-  allowDoneDragBypass: z.boolean().optional(),
-  quickViewLimit: z.number().int().min(1).max(50).optional(),
   proposalPolicy: z.enum(['confirm', 'auto']).optional(),
   defaultModel: z.string().max(100).optional(),
   defaultThinking: z.string().max(20).optional(),

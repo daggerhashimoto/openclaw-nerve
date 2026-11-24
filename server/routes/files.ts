@@ -79,7 +79,9 @@ app.get('/api/files', async (c) => {
       status: 200,
       headers: {
         'Content-Type': mime,
-        'Cache-Control': 'public, max-age=3600',
+        // Chat image URLs are built from the file path, so an image rewritten
+        // at the same path must revalidate instead of being reused for an hour.
+        'Cache-Control': 'private, no-cache',
         'Content-Length': String(data.length),
         // Force download for SVGs to prevent stored XSS via embedded <script> tags
         ...(ext === '.svg' ? { 'Content-Disposition': 'attachment' } : {}),

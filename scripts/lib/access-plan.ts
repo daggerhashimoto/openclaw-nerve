@@ -41,17 +41,36 @@ function expandProxyTarget(target: string): string {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`;
 }
 
-/** Whether a Serve proxy target is Nerve on this machine: 127.0.0.1 or localhost on Nerve's HTTP or HTTPS port. */
-function proxiesToNerve(target: string | null, ports: string[]): boolean {
-  if (!target) return false;
+interface ProxyTarget {
+  host: string;
+  port: string;
+}
+
+function parseProxyTarget(target: string | null): ProxyTarget | null {
+  if (!target) return null;
   try {
     const url = new URL(expandProxyTarget(target));
-    const host = url.hostname.replace(/^\[|\]$/g, '');
-    const port = url.port || (url.protocol.startsWith('https') ? '443' : '80');
-    return NERVE_SERVE_HOSTS.has(host) && ports.includes(port);
+    return {
+      host: url.hostname.replace(/^\[|\]$/g, ''),
+      port: url.port || (url.protocol.startsWith('https') ? '443' : '80'),
+    };
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** Whether a Serve proxy target is Nerve on this machine: 127.0.0.1 or localhost on Nerve's HTTP or HTTPS port. */
+function proxiesToNerve(target: string | null, ports: string[]): boolean {
+  const parsed = parseProxyTarget(target);
+  return Boolean(parsed && NERVE_SERVE_HOSTS.has(parsed.host) && ports.includes(parsed.port));
+}
+
+/** The Serve endpoint whose root handler proxies to Nerve, if there is one. */
+function matchingServeEndpoint(
+  tailscale: TailscaleState | undefined,
+  ports: string[],
+): NonNullable<TailscaleState['serveEndpoints']>[number] | null {
+  return tailscale?.serveEndpoints?.find((endpoint) => proxiesToNerve(endpoint.rootProxy, ports)) ?? null;
 }
 
 /**
@@ -62,9 +81,19 @@ function proxiesToNerve(target: string | null, ports: string[]): boolean {
 function nerveServeOrigin(tailscale: TailscaleState | undefined, ports: string[]): string | null {
   const endpoints = tailscale?.serveEndpoints;
   if (!endpoints || endpoints.length === 0) return tailscale?.serveOrigins?.[0] || null;
-  const match = endpoints.find((endpoint) => proxiesToNerve(endpoint.rootProxy, ports));
+  const match = matchingServeEndpoint(tailscale, ports);
   if (match) return match.origin;
   return endpoints.every((endpoint) => endpoint.rootProxy === null) ? endpoints[0].origin : null;
+}
+
+/**
+ * The port the accepted Serve endpoint proxies to, when its root handler
+ * targets Nerve on this machine. Null when no endpoint matches or the target
+ * is unreadable, so callers can distinguish an HTTP proxy from an HTTPS one.
+ */
+export function serveTargetPort(tailscale: TailscaleState | undefined, ports: string[]): string | null {
+  const match = matchingServeEndpoint(tailscale, ports);
+  return match ? parseProxyTarget(match.rootProxy)?.port ?? null : null;
 }
 
 function dedupe(values: Array<string | null | undefined>): string[] {

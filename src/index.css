@@ -706,17 +706,27 @@ html[data-theme="light"] {
 
 /* === Plates and the brand === */
 
-/* Wordmark: the shell's one display moment. The brand pane beside it is the
-   whole fleet in one window: blue while any agent works, cantaloupe when work
-   waits on the operator, dark when the house is quiet. */
+/* Wordmark: the lowercase "nerve" lockup in IBM Plex Mono, identical in every
+   theme and to nerve.zone and the docs (DESIGN.md, typography `wordmark`). Self-hosted under its own family
+   name (SIL Open Font License, public/fonts/ibm-plex-mono/LICENSE.md) so it never
+   collides with the Plex Mono that Workbench loads for code. The brand pane beside
+   it is the whole fleet in one window: blue while any agent works, cantaloupe when
+   work waits on the operator, dark when the house is quiet. */
+@font-face {
+  font-family: 'Nerve Wordmark';
+  src: url('/fonts/ibm-plex-mono/IBMPlexMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 .nerve-wordmark {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  font-family: var(--font-display);
-  font-size: 1.533rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-family: 'Nerve Wordmark', 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 1.333rem;
+  font-weight: 400;
+  letter-spacing: -0.02em;
   line-height: 1;
   color: var(--color-foreground);
 }
@@ -1817,8 +1827,8 @@ html[data-theme="light"] .name-hued {
 /* The login page is the operator's first window: the sign at 2.4rem over Midnight, one floating
    window for the password that warms while the operator types, a red pane on a failed line. */
 .nerve-login .nerve-wordmark {
-  font-size: 2.4rem;
-  gap: 14px;
+  font-size: 1.867rem;
+  gap: 12px;
 }
 .nerve-login .nerve-brand-pane {
   width: 1.2rem;
@@ -2046,9 +2056,9 @@ html[data-world="workbench"][data-theme="light"] {
   }
 }
 
-/* The wordmark and names in Plex Serif at semibold with normal tracking: Workbench's serif, weighted
-   to hold a name in a row (the user kept the heavier setting, wordmark included) */
-html[data-world="workbench"] :is(.font-display, .nerve-wordmark, .nerve-nameplate) {
+/* Names in Plex Serif at semibold with normal tracking: Workbench's serif, weighted to hold a name
+   in a row. The wordmark is not a name: it keeps its Plex Mono lockup in every theme. */
+html[data-world="workbench"] :is(.font-display, .nerve-nameplate) {
   font-weight: 600;
   letter-spacing: normal;
 }

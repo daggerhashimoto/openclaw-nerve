@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- The wordmark reads `nerve` in lowercase IBM Plex Mono in every theme, the same lockup as nerve.zone and the docs. The face is self-hosted, so it no longer depends on Google Fonts (PR #444)
+
 ## [1.6.0] - 2026-11-23
 
 ### Highlights

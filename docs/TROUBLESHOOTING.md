@@ -633,7 +633,7 @@ An unavailable result is cached for 30 seconds, so the panel updates shortly aft
 **Fix:**
 
 - Wait for the window to pass (see the `Retry-After` and `X-RateLimit-Reset` headers).
-- Behind a reverse proxy on another host, add its IP to `TRUSTED_PROXIES` so clients are told apart by `X-Forwarded-For`; otherwise they all share the proxy's limit. With a chain of proxies, list every hop.
+- Behind a reverse proxy on another host, add its IP to `TRUSTED_PROXIES` so clients are told apart by `X-Forwarded-For`; otherwise they all share the proxy's limit. With a chain of proxies, list every hop. If the proxy sets only `X-Real-IP` and passes a client-sent `X-Forwarded-For` through, set `TRUSTED_PROXY_HEADER=x-real-ip` so clients cannot pick their own rate-limit bucket.
 
 ---
 

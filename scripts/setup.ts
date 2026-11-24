@@ -39,13 +39,21 @@ import { generateSelfSignedCert } from './lib/cert-gen.js';
 import { detectGatewayConfig, getEnvGatewayToken, chooseSetupGatewayToken, hasLocalOpenClaw } from './lib/gateway-detect.js';
 import { gatewayHostLabel, locateGateway, readGatewayLocationOverride, readLocalMachine } from './lib/gateway-locality.js';
 import { detectedTokenNotice, detectedTokenPrompt, manualTokenHint, runGatewayConfigStep } from './lib/gateway-config-step.js';
-import { applyAccessPlanToConfig, buildAccessPlan, type InstallerAccessProfile } from './lib/access-plan.js';
+import {
+  applyAccessPlanToConfig,
+  buildAccessPlan,
+  requiresAuthentication,
+  type AccessPlan,
+  type InstallerAccessProfile,
+} from './lib/access-plan.js';
 import { getTailscaleState, type TailscaleState } from './lib/tailscale.js';
 import { detectAgentDisplayNameDefault } from './lib/agent-name-default.js';
 import { printDeploymentGuides, shouldPrintDeploymentGuides } from './lib/deployment-guides.js';
 
 const PROJECT_ROOT = resolve(process.cwd());
 const ENV_PATH = resolve(PROJECT_ROOT, '.env');
+const CERT_PATH = resolve(PROJECT_ROOT, 'certs', 'cert.pem');
+const KEY_PATH = resolve(PROJECT_ROOT, 'certs', 'key.pem');
 const SKILLS_SRC = resolve(PROJECT_ROOT, 'skills');
 const SKILLS_DEST = resolve(homedir(), '.openclaw', 'workspace', 'skills');
 const TOTAL_SECTIONS = 6;
@@ -123,6 +131,11 @@ function copyDirSync(src: string, dest: string): void {
       copyFileSync(srcPath, destPath);
     }
   }
+}
+
+/** Whether the HTTPS listener will start, matching server/index.ts. */
+function hasHttpsCerts(): boolean {
+  return existsSync(CERT_PATH) && existsSync(KEY_PATH);
 }
 
 function installBundledSkills(): void {
@@ -217,7 +230,7 @@ async function main(): Promise<void> {
 
   // --check mode: validate and exit
   if (isCheck) {
-    await runCheck(existing);
+    await runCheck(existing, prereqs);
     return;
   }
 
@@ -611,7 +624,7 @@ async function collectInteractive(
     }
 
     tailscaleState = getTailscaleState();
-    accessPlan = buildAccessPlan({ profile: 'tailscale-serve', port, tailscale: tailscaleState });
+    accessPlan = buildAccessPlan({ profile: 'tailscale-serve', port, tailscale: tailscaleState, httpsEnabled: hasHttpsCerts() });
 
     if (accessPlan.followUpSteps.length > 0) {
       console.log('');
@@ -721,7 +734,7 @@ async function collectInteractive(
     config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
   }
 
-  const isNetworkExposed = config.HOST === '0.0.0.0';
+  const isNetworkExposed = requiresAuthentication(config, accessPlan, tailscaleState, hasHttpsCerts());
 
   if (isNetworkExposed) {
     section(4, TOTAL_SECTIONS, 'Authentication');
@@ -769,8 +782,11 @@ async function collectInteractive(
         success('Password set. Authentication will be enabled.');
       }
     } else {
-      // No password, but still enable auth if gateway token exists
-      if (config.GATEWAY_TOKEN) {
+      // No new password set — keep existing password hash if present, or fall back to gateway token
+      if (config.NERVE_PASSWORD_HASH) {
+        config.NERVE_AUTH = 'true';
+        success('Authentication enabled — your existing password will be kept.');
+      } else if (config.GATEWAY_TOKEN) {
         config.NERVE_AUTH = 'true';
         success('Authentication enabled — your gateway token can be used as a password.');
       } else {
@@ -947,7 +963,7 @@ function printNextSteps(config: EnvConfig): void {
 
 // ── --check mode ─────────────────────────────────────────────────────
 
-async function runCheck(config: EnvConfig): Promise<void> {
+async function runCheck(config: EnvConfig, prereqs: PrereqResult): Promise<void> {
   console.log('');
   console.log('  \x1b[1mValidating configuration...\x1b[0m');
   console.log('');
@@ -1027,7 +1043,7 @@ async function runCheck(config: EnvConfig): Promise<void> {
     } else {
       warn('NERVE_SESSION_SECRET not set — will be auto-generated (sessions won\'t survive restarts)');
     }
-  } else if (host === '0.0.0.0') {
+  } else if (requiresAuthentication(config, undefined, prereqs.tailscale, hasHttpsCerts())) {
     warn('Authentication is DISABLED while server is network-exposed');
     dim('Run `npm run setup` to enable authentication');
   } else {
@@ -1104,11 +1120,13 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
   if (!config.PORT) config.PORT = DEFAULTS.PORT;
   if (!config.HOST) config.HOST = DEFAULTS.HOST;
 
+  let accessPlan: AccessPlan | undefined;
   if (requestedAccessMode) {
-    let accessPlan = buildAccessPlan({
+    accessPlan = buildAccessPlan({
       profile: requestedAccessMode as InstallerAccessProfile,
       port: config.PORT,
       sslPort: config.SSL_PORT,
+      httpsEnabled: hasHttpsCerts(),
       remoteHost: !isLoopback(config.HOST || '') ? config.HOST : detectPrimaryIpv4() || config.HOST || DEFAULTS.HOST,
       tailscale: prereqs.tailscale,
     });
@@ -1145,8 +1163,11 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
   if (!config.NERVE_SESSION_SECRET) {
     config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
   }
-  if (config.HOST === '0.0.0.0' && !config.NERVE_AUTH) {
-    if (config.GATEWAY_TOKEN) {
+  if (requiresAuthentication(config, accessPlan, prereqs.tailscale, hasHttpsCerts()) && config.NERVE_AUTH !== 'true') {
+    if (config.NERVE_PASSWORD_HASH) {
+      config.NERVE_AUTH = 'true';
+      success('Authentication auto-enabled (use the existing password)');
+    } else if (config.GATEWAY_TOKEN) {
       config.NERVE_AUTH = 'true';
       success('Authentication auto-enabled (gateway token can be used as password)');
     } else {

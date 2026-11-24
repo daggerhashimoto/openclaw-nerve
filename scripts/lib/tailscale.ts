@@ -15,6 +15,8 @@ export interface TailscaleState {
   serveOrigins: string[];
   /** The same endpoints as serveOrigins, with their proxy targets. */
   serveEndpoints?: ServeEndpoint[];
+  /** Targets of raw TCP forwarders (`TCP` entries that carry a `TCPForward`). */
+  tcpForwards?: string[];
 }
 
 type ExecLike = (command: string, options?: Record<string, unknown>) => string | Buffer;
@@ -91,6 +93,19 @@ export function extractServeOrigins(json: unknown): string[] {
   return extractServeEndpoints(json).map((endpoint) => endpoint.origin);
 }
 
+/** The target of each raw TCP forwarder in `tailscale serve status --json`. */
+export function extractTcpForwards(json: unknown): string[] {
+  if (!isRecord(json) || !isRecord(json.TCP)) return [];
+
+  const forwards: string[] = [];
+  for (const entry of Object.values(json.TCP)) {
+    if (isRecord(entry) && typeof entry.TCPForward === 'string' && entry.TCPForward.trim()) {
+      forwards.push(entry.TCPForward.trim());
+    }
+  }
+  return forwards;
+}
+
 export function parseTailscaleStatus(json: unknown): Pick<TailscaleState, 'authenticated' | 'ipv4' | 'dnsName'> {
   if (!isRecord(json) || !isRecord(json.Self)) {
     return {
@@ -122,6 +137,7 @@ export function getTailscaleState(exec: ExecLike = execSync): TailscaleState {
       dnsName: null,
       serveOrigins: [],
       serveEndpoints: [],
+      tcpForwards: [],
     };
   }
 
@@ -131,6 +147,7 @@ export function getTailscaleState(exec: ExecLike = execSync): TailscaleState {
     dnsName: null,
   };
   let serveEndpoints: ServeEndpoint[] = [];
+  let tcpForwards: string[] = [];
 
   try {
     const statusJson = parseJson(toText(exec('tailscale status --json 2>/dev/null', { stdio: 'pipe', timeout: 3000 })));
@@ -142,6 +159,7 @@ export function getTailscaleState(exec: ExecLike = execSync): TailscaleState {
   try {
     const serveJson = parseJson(toText(exec('tailscale serve status --json 2>/dev/null', { stdio: 'pipe', timeout: 3000 })));
     serveEndpoints = extractServeEndpoints(serveJson);
+    tcpForwards = extractTcpForwards(serveJson);
   } catch {
     // serve may be inactive or unsupported
   }
@@ -153,5 +171,6 @@ export function getTailscaleState(exec: ExecLike = execSync): TailscaleState {
     dnsName: status.dnsName,
     serveOrigins: serveEndpoints.map((endpoint) => endpoint.origin),
     serveEndpoints,
+    tcpForwards,
   };
 }

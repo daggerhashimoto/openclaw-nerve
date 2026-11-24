@@ -1,4 +1,4 @@
-import type { EnvConfig } from './env-writer.js';
+import { DEFAULTS, type EnvConfig } from './env-writer.js';
 import type { TailscaleState } from './tailscale.js';
 
 export type InstallerAccessProfile =
@@ -22,6 +22,8 @@ export interface BuildAccessPlanInput {
   profile: InstallerAccessProfile;
   port: string;
   sslPort?: string;
+  /** Whether the HTTPS listener will start (certificates exist). Defaults to true. */
+  httpsEnabled?: boolean;
   remoteHost?: string | null;
   tailscale?: TailscaleState;
 }
@@ -197,7 +199,11 @@ export function buildAccessPlan(input: BuildAccessPlanInput): AccessPlan {
 
     case 'tailscale-serve': {
       const plan = emptyPlan('tailscale-serve', '127.0.0.1');
-      const origin = nerveServeOrigin(tailscale, [port, input.sslPort ?? '']);
+      // .env omits SSL_PORT when it is the default. The server still starts
+      // HTTPS on 3443 when certificates exist, so keep the default in the
+      // match only when the HTTPS listener will actually start.
+      const httpsPort = input.httpsEnabled === false ? undefined : input.sslPort || DEFAULTS.SSL_PORT;
+      const origin = nerveServeOrigin(tailscale, httpsPort ? [port, httpsPort] : [port]);
       if (!origin) {
         const servingElsewhere = (tailscale?.serveEndpoints?.length ?? 0) > 0;
         plan.followUpSteps = dedupe([
@@ -240,4 +246,54 @@ export function applyAccessPlanToConfig(config: EnvConfig, plan: AccessPlan): En
   else delete next.WS_ALLOWED_HOSTS;
 
   return next;
+}
+
+function hasNonLoopbackOrigin(allowedOrigins: string | null | undefined): boolean {
+  for (const entry of splitCsv(allowedOrigins)) {
+    try {
+      const host = new URL(entry).hostname;
+      if (!isLoopback(host)) return true;
+    } catch {
+      // Ignore malformed origin entries
+    }
+  }
+  return false;
+}
+
+/**
+ * The listener ports Nerve can answer on. The HTTPS port is omitted from .env
+ * when it is the default and only starts when certificates exist, so the
+ * default has to stay in the match for those cases.
+ */
+function listenerPorts(config: EnvConfig, httpsEnabled: boolean): string[] {
+  const ports = [config.PORT || DEFAULTS.PORT];
+  if (httpsEnabled) ports.push(config.SSL_PORT || DEFAULTS.SSL_PORT);
+  return ports;
+}
+
+/**
+ * Whether the chosen access mode or configuration exposes Nerve beyond
+ * localhost and therefore requires authentication setup.
+ *
+ * Tailscale Serve keeps HOST=127.0.0.1 while publishing Nerve to the tailnet
+ * over *.ts.net (and forwarding requests from loopback), so it needs
+ * authentication just like a non-loopback bind. Browser endpoints and raw TCP
+ * forwarders are checked separately because only the former provides a
+ * browser origin.
+ *
+ * `httpsEnabled` reports whether the HTTPS listener will start (certificates
+ * exist); without it a Serve target on the default HTTPS port is not Nerve.
+ */
+export function requiresAuthentication(
+  config: EnvConfig,
+  plan?: Pick<AccessPlan, 'profile'>,
+  tailscale?: TailscaleState,
+  httpsEnabled = true,
+): boolean {
+  if (plan?.profile === 'tailscale-serve') return true;
+  if (!isLoopback(config.HOST)) return true;
+  if (hasNonLoopbackOrigin(config.ALLOWED_ORIGINS)) return true;
+  const ports = listenerPorts(config, httpsEnabled);
+  if (tailscale?.tcpForwards?.some((target) => proxiesToNerve(target, ports))) return true;
+  return Boolean(nerveServeOrigin(tailscale, ports));
 }

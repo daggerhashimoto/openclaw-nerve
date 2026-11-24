@@ -281,6 +281,7 @@ describe('claude-usage', () => {
 
     it('does not treat a split trust-option redraw cursor as the REPL ready prompt', async () => {
       let trusted = false;
+      let ready = false;
 
       const pty = createFakePty((data, self) => {
         if (!trusted && data === '\x1b[B') {
@@ -294,11 +295,12 @@ describe('claude-usage', () => {
         if (!trusted && data === '\r') {
           trusted = true;
           setTimeout(() => {
+            ready = true;
             self.emit('\x1b[2J\x1b[H❯ Try "refactor <filepath>"');
           }, 300);
           return;
         }
-        if (trusted && data === '/usage\r') {
+        if (ready && data === '/usage\r') {
           self.emit(SAMPLE_USAGE_OUTPUT);
         }
       });
@@ -315,6 +317,7 @@ describe('claude-usage', () => {
       await vi.advanceTimersByTimeAsync(5_000);
       const result = await promise;
 
+      expect(ready).toBe(true);
       expect(pty.writes).toEqual(['\x1b[B', '\r', '/usage\r', '\r']);
       expect(result.available).toBe(true);
     });

@@ -206,12 +206,15 @@ export async function getClaudeUsage(): Promise<RawClaudeLimits> {
       for (let i = 0; i < trustKeys.length - 1; i++) {
         const beforeMove = buffer.length;
         pty.write(trustKeys[i]);
-        await pollFor(
+        const gotSelection = await pollFor(
           () => buffer.slice(beforeMove),
           (clean) => /[❯>]\s*(?:\d+\.\s*)?yes\b/i.test(clean),
-          200,
+          15_000,
           50,
         );
+        if (!gotSelection) {
+          return { available: false, error: 'Timeout waiting for Claude after trust prompt' };
+        }
       }
       const postTrustOffset = buffer.length;
       pty.write(trustKeys[trustKeys.length - 1]);

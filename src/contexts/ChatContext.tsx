@@ -131,6 +131,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // ─── Run state management ─────────────────────────────────────────────────
   const runsRef = useRef<Map<string, RunState>>(new Map());
   const activeRunIdRef = useRef<string | null>(null);
+  // The run whose lifecycle end arrived while it was on screen and not yet finalized.
+  // A 2026.9 gateway sends that end just before the chat final, so the final has to
+  // be recognised as this run's own even though no run is active any more.
+  const endedRunIdRef = useRef<string | null>(null);
   const lastGatewaySeqRef = useRef<number | null>(null);
   const historyRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Heartbeats on the open session never show as a run; rows one commits wait until it is over.
@@ -196,6 +200,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     recoveryHook.resetRecoveryState();
     runsRef.current.clear();
     activeRunIdRef.current = null;
+    endedRunIdRef.current = null;
     lastGatewaySeqRef.current = null;
     heartbeatRuns.settle();
     heartbeatRowsPendingRef.current = false;
@@ -438,6 +443,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const ap = classified.agentPayload!;
 
         if (type === 'lifecycle_start') {
+          // A newer run has begun, so a late final of the run that ended is obsolete.
+          endedRunIdRef.current = null;
+          // A lifecycle-only turn has no chat_started to begin it; clear the
+          // speech dedup set here so it can repeat the previous run's tts text.
+          resetPlayedSounds();
           setIsGenerating(true);
           setProcessingStage('thinking');
           setLastEventTimestamp(Date.now());
@@ -454,9 +464,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           incrementGeneration();
 
           const activeRun = activeRunIdRef.current;
-          const runFinalized = activeRun ? runsRef.current.get(activeRun)?.finalized : false;
+          // A run with no chat frame before its end (a final-only reply) is not
+          // active, but the lifecycle frame names the run that just ended.
+          const endedRun = activeRun ?? classified.runId ?? null;
+          const runFinalized = endedRun ? runsRef.current.get(endedRun)?.finalized : false;
           if (!runFinalized) {
             triggerRecovery('reconnect');
+            endedRunIdRef.current = endedRun;
+          } else {
+            // The run already settled; do not carry an older ended run across it.
+            endedRunIdRef.current = null;
           }
           activeRunIdRef.current = null;
           return;
@@ -519,6 +536,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       const beginTurn = () => {
         activeRunIdRef.current = runId;
+        // Once a newer turn has begun, a late final of the run that ended is not this turn's.
+        endedRunIdRef.current = null;
         run.startedAt = Date.now();
         run.finalized = false;
         run.turnStarted = true;
@@ -551,7 +570,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (typeof classified.chatSeq === 'number' && prevRunSeq !== null && classified.chatSeq <= prevRunSeq) return;
 
         if (!isGeneratingRef.current) setIsGenerating(true);
-        if (!activeRunIdRef.current) activeRunIdRef.current = runId;
+        if (!activeRunIdRef.current) {
+          activeRunIdRef.current = runId;
+          endedRunIdRef.current = null;
+        }
         run.turnStarted = true;
 
         captureThinkingDuration();
@@ -575,9 +597,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        const endedJustBefore = endedRunIdRef.current === runId;
+        if (endedJustBefore) endedRunIdRef.current = null;
         const isActiveRun = activeRunBefore !== null
           ? activeRunBefore === runId
-          : isGeneratingRef.current;
+          : isGeneratingRef.current || endedJustBefore;
 
         run.finalized = true;
         run.status = 'ok';
@@ -745,6 +769,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         run.status = ack.status;
         run.finalized = false;
         activeRunIdRef.current = ack.runId;
+        endedRunIdRef.current = null;
         startThinking(ack.runId);
       }
 

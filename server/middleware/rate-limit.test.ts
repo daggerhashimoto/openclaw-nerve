@@ -194,18 +194,23 @@ describe('rate-limit middleware', () => {
 
 describe('getClientId behind a trusted proxy', () => {
   const originalTrustedProxies = process.env.TRUSTED_PROXIES;
+  const originalTrustedProxyHeader = process.env.TRUSTED_PROXY_HEADER;
 
   afterEach(() => {
     if (originalTrustedProxies === undefined) delete process.env.TRUSTED_PROXIES;
     else process.env.TRUSTED_PROXIES = originalTrustedProxies;
+    if (originalTrustedProxyHeader === undefined) delete process.env.TRUSTED_PROXY_HEADER;
+    else process.env.TRUSTED_PROXY_HEADER = originalTrustedProxyHeader;
     vi.resetModules();
   });
 
   /** Re-import so TRUSTED_PROXIES is read again, then give each request a real socket address. */
-  async function loadRateLimit(trustedProxies?: string) {
+  async function loadRateLimit(trustedProxies?: string, trustedProxyHeader?: string) {
     vi.resetModules();
     if (trustedProxies === undefined) delete process.env.TRUSTED_PROXIES;
     else process.env.TRUSTED_PROXIES = trustedProxies;
+    if (trustedProxyHeader === undefined) delete process.env.TRUSTED_PROXY_HEADER;
+    else process.env.TRUSTED_PROXY_HEADER = trustedProxyHeader;
     return import('./rate-limit.js');
   }
 
@@ -213,8 +218,13 @@ describe('getClientId behind a trusted proxy', () => {
     return app.request(path, { headers }, { incoming: { socket: { remoteAddress } } });
   }
 
-  async function clientIdFor(remoteAddress: string, headers: Record<string, string>, trustedProxies?: string) {
-    const mod = await loadRateLimit(trustedProxies);
+  async function clientIdFor(
+    remoteAddress: string,
+    headers: Record<string, string>,
+    trustedProxies?: string,
+    trustedProxyHeader?: string,
+  ) {
+    const mod = await loadRateLimit(trustedProxies, trustedProxyHeader);
     const app = new Hono();
     app.get('/id', (c) => c.text(mod.getClientId(c)));
     return (await send(app, '/id', remoteAddress, headers)).text();
@@ -254,6 +264,45 @@ describe('getClientId behind a trusted proxy', () => {
     expect(first.status).toBe(200);
 
     const second = await send(app, '/limited', '127.0.0.1', { 'x-forwarded-for': '198.51.100.2, 203.0.113.20' });
+    expect(second.status).toBe(429);
+  });
+
+  it('reads only X-Real-IP and ignores X-Forwarded-For when TRUSTED_PROXY_HEADER=x-real-ip', async () => {
+    const id = await clientIdFor(
+      '127.0.0.1',
+      { 'x-forwarded-for': '198.51.100.1', 'x-real-ip': '203.0.113.9' },
+      undefined,
+      'x-real-ip',
+    );
+    expect(id).toBe('203.0.113.9');
+  });
+
+  it('falls back to the proxy socket address when TRUSTED_PROXY_HEADER=x-real-ip and X-Real-IP is absent', async () => {
+    const id = await clientIdFor(
+      '127.0.0.1',
+      { 'x-forwarded-for': '198.51.100.1' },
+      undefined,
+      'X-Real-IP',
+    );
+    expect(id).toBe('127.0.0.1');
+  });
+
+  it('prevents a client from rotating rate-limit buckets via X-Forwarded-For behind an X-Real-IP-only proxy', async () => {
+    const mod = await loadRateLimit(undefined, 'x-real-ip');
+    const app = new Hono();
+    app.use('/limited', mod.rateLimit({ maxRequests: 1, windowMs: 60_000 }));
+    app.get('/limited', (c) => c.text('ok'));
+
+    const first = await send(app, '/limited', '127.0.0.1', {
+      'x-forwarded-for': '198.51.100.1',
+      'x-real-ip': '203.0.113.30',
+    });
+    expect(first.status).toBe(200);
+
+    const second = await send(app, '/limited', '127.0.0.1', {
+      'x-forwarded-for': '198.51.100.2',
+      'x-real-ip': '203.0.113.30',
+    });
     expect(second.status).toBe(429);
   });
 });

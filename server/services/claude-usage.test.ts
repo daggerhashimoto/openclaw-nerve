@@ -205,7 +205,7 @@ describe('claude-usage', () => {
           }
           if (data === '\r') {
             trusted = true;
-            self.emit('❯ Try "refactor <filepath>"');
+            self.emit('❯ ');
             return;
           }
         }
@@ -372,6 +372,45 @@ describe('claude-usage', () => {
       const result = await promise;
 
       expect(usageSentDuringTrust).toBe(false);
+      expect(pty.writes).toEqual(['\x1b[B', '\r', '/usage\r', '\r']);
+      expect(result.available).toBe(true);
+    });
+
+    it('accepts a stable bare REPL prompt after confirming trust', async () => {
+      let trusted = false;
+
+      const pty = createFakePty((data, self) => {
+        if (!trusted) {
+          if (data === '\x1b[B') {
+            self.emit(
+              ' \x1b[4GNo, exit\r\x1b[1C\x1b[1B\x1b[38;2;177;185;249m❯\x1b[4GYes, I trust this folder\x1b[39m',
+            );
+            return;
+          }
+          if (data === '\r') {
+            trusted = true;
+            self.emit('❯ ');
+            return;
+          }
+        }
+
+        if (data === '/usage\r') {
+          self.emit(SAMPLE_USAGE_OUTPUT);
+        }
+      });
+
+      const promise = getClaudeUsage();
+      pty.emit(
+        [
+          'Quick safety check: Is this a project you created or one you trust?',
+          '❯ No, exit',
+          '  Yes, I trust this folder',
+        ].join('\n'),
+      );
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      const result = await promise;
+
       expect(pty.writes).toEqual(['\x1b[B', '\r', '/usage\r', '\r']);
       expect(result.available).toBe(true);
     });

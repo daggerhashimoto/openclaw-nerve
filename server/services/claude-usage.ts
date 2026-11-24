@@ -117,6 +117,15 @@ function hasReadyPrompt(clean: string, afterTrustPrompt = false): boolean {
   return withoutTrustCursor.includes('❯') || /^>\s*$/m.test(withoutTrustCursor);
 }
 
+/**
+ * Check if the text ends with a bare prompt cursor.
+ * A trust-menu line redraw can emit exactly this before its option label arrives, so the
+ * post-trust wait accepts it only once the output stops changing.
+ */
+function endsWithBarePrompt(clean: string): boolean {
+  return /[❯>]\s*$/.test(clean.replace(TRUST_OPTION_CURSOR_RE, ''));
+}
+
 /** Check if the buffer contains a workspace trust prompt */
 function hasTrustPrompt(clean: string): boolean {
   const lower = clean.toLowerCase();
@@ -225,9 +234,26 @@ export async function getClaudeUsage(): Promise<RawClaudeLimits> {
       }
       const postTrustOffset = buffer.length;
       pty.write(trustKeys[trustKeys.length - 1]);
+
+      // A bare cursor can be a trust-menu redraw whose label is still in flight, so accept
+      // it only after the output has been stable for a poll. Labeled prompts are immediate.
+      let barePromptSince: number | null = null;
+      let barePromptBufferLength = -1;
       const gotReady = await pollFor(
         () => buffer.slice(postTrustOffset),
-        (clean) => hasReadyPrompt(clean, true),
+        (clean) => {
+          if (hasReadyPrompt(clean, true)) return true;
+          if (!endsWithBarePrompt(clean)) {
+            barePromptSince = null;
+            return false;
+          }
+          if (barePromptSince === null || barePromptBufferLength !== buffer.length) {
+            barePromptSince = Date.now();
+            barePromptBufferLength = buffer.length;
+            return false;
+          }
+          return Date.now() - barePromptSince >= 1_000;
+        },
         15_000,
       );
       if (!gotReady) {

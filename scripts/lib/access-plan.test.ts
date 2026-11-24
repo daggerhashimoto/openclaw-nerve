@@ -420,4 +420,24 @@ describe('requiresAuthentication', () => {
       ALLOWED_ORIGINS: 'http://localhost:3080,http://127.0.0.1:3080',
     })).toBe(false);
   });
+
+  it('returns true without an access plan when Tailscale Serve actively proxies to Nerve', () => {
+    expect(requiresAuthentication(
+      { HOST: '127.0.0.1', PORT: '3080' },
+      undefined,
+      {
+        ...connectedTailscale,
+        serveEndpoints: [{ origin: `https://${EXAMPLE_TS_DNS}`, rootProxy: 'http://127.0.0.1:3080' }],
+      },
+    )).toBe(true);
+
+    expect(requiresAuthentication(
+      { HOST: '127.0.0.1', PORT: '3080' },
+      undefined,
+      {
+        ...connectedTailscale,
+        serveEndpoints: [{ origin: `https://${EXAMPLE_TS_DNS}`, rootProxy: 'http://127.0.0.1:9000' }],
+      },
+    )).toBe(false);
+  });
 });

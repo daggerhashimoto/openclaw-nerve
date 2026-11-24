@@ -219,7 +219,7 @@ async function main(): Promise<void> {
 
   // --check mode: validate and exit
   if (isCheck) {
-    await runCheck(existing);
+    await runCheck(existing, prereqs);
     return;
   }
 
@@ -949,7 +949,7 @@ function printNextSteps(config: EnvConfig): void {
 
 // ── --check mode ─────────────────────────────────────────────────────
 
-async function runCheck(config: EnvConfig): Promise<void> {
+async function runCheck(config: EnvConfig, prereqs: PrereqResult): Promise<void> {
   console.log('');
   console.log('  \x1b[1mValidating configuration...\x1b[0m');
   console.log('');
@@ -1029,7 +1029,7 @@ async function runCheck(config: EnvConfig): Promise<void> {
     } else {
       warn('NERVE_SESSION_SECRET not set — will be auto-generated (sessions won\'t survive restarts)');
     }
-  } else if (requiresAuthentication(config)) {
+  } else if (requiresAuthentication(config, undefined, prereqs.tailscale)) {
     warn('Authentication is DISABLED while server is network-exposed');
     dim('Run `npm run setup` to enable authentication');
   } else {
@@ -1148,8 +1148,11 @@ async function runDefaults(existing: EnvConfig, prereqs: PrereqResult): Promise<
   if (!config.NERVE_SESSION_SECRET) {
     config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
   }
-  if (requiresAuthentication(config, accessPlan) && config.NERVE_AUTH !== 'true') {
-    if (config.GATEWAY_TOKEN) {
+  if (requiresAuthentication(config, accessPlan, prereqs.tailscale) && config.NERVE_AUTH !== 'true') {
+    if (config.NERVE_PASSWORD_HASH) {
+      config.NERVE_AUTH = 'true';
+      success('Authentication auto-enabled (use the existing password)');
+    } else if (config.GATEWAY_TOKEN) {
       config.NERVE_AUTH = 'true';
       success('Authentication auto-enabled (gateway token can be used as password)');
     } else {

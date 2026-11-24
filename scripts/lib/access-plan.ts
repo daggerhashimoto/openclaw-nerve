@@ -265,8 +265,11 @@ function hasNonLoopbackOrigin(allowedOrigins: string | null | undefined): boolea
 export function requiresAuthentication(
   config: EnvConfig,
   plan?: Pick<AccessPlan, 'profile'>,
+  tailscale?: TailscaleState,
 ): boolean {
   if (plan?.profile === 'tailscale-serve') return true;
   if (!isLoopback(config.HOST)) return true;
-  return hasNonLoopbackOrigin(config.ALLOWED_ORIGINS);
+  if (hasNonLoopbackOrigin(config.ALLOWED_ORIGINS)) return true;
+  const ports = [config.PORT || '3080', config.SSL_PORT ?? ''].filter(Boolean);
+  return Boolean(nerveServeOrigin(tailscale, ports));
 }

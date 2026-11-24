@@ -113,6 +113,7 @@ export default function App({ onLogout }: AppProps) {
   const {
     messages, isGenerating, stream, processingStage,
     lastEventTimestamp, activityLog, currentToolDescription,
+    lastHeartbeatAt,
     handleSend, handleAbort, handleReset,
     loadMore, hasMore, historyLoaded,
     showResetConfirm, confirmReset, cancelReset,
@@ -1193,6 +1194,7 @@ export default function App({ onLogout }: AppProps) {
           currentSessionKey={currentSession}
           contextTokens={contextTokens}
           contextLimit={contextLimit}
+          lastHeartbeatAt={lastHeartbeatAt}
           performanceMode={performanceMode}
         />
       </div>

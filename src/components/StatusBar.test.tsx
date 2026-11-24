@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 import { StatusBar } from './StatusBar';
@@ -28,6 +28,7 @@ describe('StatusBar', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -96,5 +97,35 @@ describe('StatusBar', () => {
 
     expect(screen.getByText('Context')).toBeInTheDocument();
     expect(screen.getByText('61% of 200k')).toBeInTheDocument();
+  });
+
+  it('shows the open session heartbeat and ages it every minute', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-24T20:00:00Z'));
+
+    renderStatusBar({ lastHeartbeatAt: new Date('2026-11-24T19:40:00Z').getTime() });
+
+    expect(screen.getByText('last heartbeat 20m ago')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(screen.getByText('last heartbeat 21m ago')).toBeInTheDocument();
+  });
+
+  it('shows just now for a fresh heartbeat', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-24T20:00:00Z'));
+
+    renderStatusBar({ lastHeartbeatAt: Date.now() - 5_000 });
+
+    expect(screen.getByText('last heartbeat just now')).toBeInTheDocument();
+  });
+
+  it('hides the heartbeat label when the open session has none', () => {
+    renderStatusBar();
+
+    expect(screen.queryByText(/last heartbeat/)).not.toBeInTheDocument();
   });
 });

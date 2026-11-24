@@ -99,10 +99,17 @@ async function pollFor(
 const TRUST_OPTION_CURSOR_RE =
   /[❯>]\s*(?:\d+\.\s*)?(?:no,?\s*exit|yes,?\s*(?:i\s*trust|trust\b|proceed))/gi;
 
-/** Check if the buffer contains Claude's ready prompt (❯ or >), ignoring trust menu cursors */
-function hasReadyPrompt(clean: string): boolean {
+/**
+ * Check if the buffer contains Claude's ready prompt (❯ or >), ignoring trust menu cursors.
+ *
+ * While confirming the trust menu, a line-level redraw can emit its cursor before the
+ * option label. `afterTrustPrompt` makes a trailing bare cursor count as a partial trust
+ * redraw instead of the REPL prompt; the post-Enter buffer excludes the trust header, so
+ * `hasTrustPrompt()` cannot be used to detect that case there.
+ */
+function hasReadyPrompt(clean: string, afterTrustPrompt = false): boolean {
   let withoutTrustCursor = clean.replace(TRUST_OPTION_CURSOR_RE, '');
-  if (hasTrustPrompt(clean)) {
+  if (afterTrustPrompt) {
     // Reject a trailing cursor from an unfinished trust-option redraw whose label has not arrived yet
     withoutTrustCursor = withoutTrustCursor.replace(/[❯>]\s*$/, '');
   }
@@ -220,7 +227,7 @@ export async function getClaudeUsage(): Promise<RawClaudeLimits> {
       pty.write(trustKeys[trustKeys.length - 1]);
       const gotReady = await pollFor(
         () => buffer.slice(postTrustOffset),
-        hasReadyPrompt,
+        (clean) => hasReadyPrompt(clean, true),
         15_000,
       );
       if (!gotReady) {

@@ -205,7 +205,7 @@ describe('claude-usage', () => {
           }
           if (data === '\r') {
             trusted = true;
-            self.emit('❯ ');
+            self.emit('❯ Try "refactor <filepath>"');
             return;
           }
         }
@@ -318,6 +318,60 @@ describe('claude-usage', () => {
       const result = await promise;
 
       expect(ready).toBe(true);
+      expect(pty.writes).toEqual(['\x1b[B', '\r', '/usage\r', '\r']);
+      expect(result.available).toBe(true);
+    });
+
+    it('waits for the REPL after confirming trust when the post-Enter redraw emits a bare cursor', async () => {
+      let trusted = false;
+      let ready = false;
+      let usageSentDuringTrust = false;
+
+      const pty = createFakePty((data, self) => {
+        if (!trusted) {
+          if (data === '\x1b[B') {
+            self.emit(
+              ' \x1b[4GNo, exit\r\x1b[1C\x1b[1B\x1b[38;2;177;185;249m❯\x1b[4GYes, I trust this folder\x1b[39m',
+            );
+            return;
+          }
+          if (data === '\r') {
+            trusted = true;
+            // Ink line-level redraw of the trust menu: the cursor arrives before its label
+            self.emit(' \x1b[4GNo, exit\r\x1b[1C\x1b[1B❯');
+            setTimeout(() => {
+              self.emit('\x1b[4GYes, I trust this folder');
+              setTimeout(() => {
+                ready = true;
+                self.emit('\x1b[2J\x1b[H❯ Try "refactor <filepath>"');
+              }, 200);
+            }, 100);
+            return;
+          }
+        }
+
+        if (data === '/usage\r') {
+          if (!ready) {
+            usageSentDuringTrust = true;
+            return;
+          }
+          self.emit(SAMPLE_USAGE_OUTPUT);
+        }
+      });
+
+      const promise = getClaudeUsage();
+      pty.emit(
+        [
+          'Quick safety check: Is this a project you created or one you trust?',
+          '❯ No, exit',
+          '  Yes, I trust this folder',
+        ].join('\n'),
+      );
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      const result = await promise;
+
+      expect(usageSentDuringTrust).toBe(false);
       expect(pty.writes).toEqual(['\x1b[B', '\r', '/usage\r', '\r']);
       expect(result.available).toBe(true);
     });

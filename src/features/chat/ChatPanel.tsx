@@ -119,7 +119,13 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   const scrollRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const inputBarRef = useRef<InputBarHandle>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  // The resize observer reads these between renders, so they are written where the panel
+  // learns or sets them, not after the next render: whether the chat follows the
+  // conversation, and the scroll position the panel last saw or set.
+  const followingRef = useRef(true);
+  const lastScrollTop = useRef(0);
   const [collapsed, setCollapsed] = useState<Record<string | number, boolean>>({});
   const [unreadCount, setUnreadCount] = useState(0);
   const [processingTime, setProcessingTime] = useState(0);
@@ -233,12 +239,29 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     if (scrollRef.current && autoScroll) {
       requestAnimationFrame(() => {
         const el = scrollRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
+        if (!el) return;
+        el.scrollTop = el.scrollHeight;
+        lastScrollTop.current = el.scrollTop;
       });
     }
   }, [autoScroll]);
 
   useEffect(scrollToBottom, [messages, stream.html, scrollToBottom]);
+
+  // Content that grows after it rendered (a lazy chart, an image that loads, an embed)
+  // changes no message, so follow it here while the chat follows the conversation.
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    if (!el || !content || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (!followingRef.current) return;
+      el.scrollTop = el.scrollHeight;
+      lastScrollTop.current = el.scrollTop;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   // NOTE: Cmd+F and Escape are now handled globally in App.tsx via useKeyboardShortcuts
 
@@ -248,6 +271,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     const row = messageRefs.current.get(matchIndex);
     if (!row || !scrollRef.current) return;
     row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    followingRef.current = false;
     setAutoScroll(false);
     // Then the marked text itself, once: it can sit in a result or memories box that
     // scrolls on its own, and a body drawn by the lazy markdown renderer shows only its
@@ -299,13 +323,25 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     if (!scrollRef.current) return;
     const el = scrollRef.current;
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    setAutoScroll(isAtBottom);
-    if (isAtBottom) setUnreadCount(0);
+    // Only a move up leaves the bottom. Content growing under the view moves the bottom
+    // away without moving the view, and must not read as the operator scrolling up.
+    const movedUp = el.scrollTop < lastScrollTop.current;
+    lastScrollTop.current = el.scrollTop;
+    if (isAtBottom) {
+      followingRef.current = true;
+      setAutoScroll(true);
+      setUnreadCount(0);
+    } else if (movedUp) {
+      followingRef.current = false;
+      setAutoScroll(false);
+    }
   };
 
   const handleScrollToBottom = () => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      lastScrollTop.current = scrollRef.current.scrollTop;
+      followingRef.current = true;
       setAutoScroll(true);
       setUnreadCount(0);
     }
@@ -485,7 +521,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         className="nerve-room flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6"
       >
         {/* The transcript takes the whole column; prose is capped only on very wide screens (--reading-measure) */}
-        <div className="flex w-full flex-col gap-1 py-4">
+        <div ref={contentRef} className="flex w-full flex-col gap-1 py-4">
           {/* Infinite scroll sentinel + "load more" indicator */}
           {hasMore && (
             <div ref={sentinelRef}>

@@ -276,9 +276,14 @@ export function detectSystemNotification(text: string): { match: boolean; label:
   return { match: false, label: '' };
 }
 
-function hasVisibleContent(message: ChatMessage): boolean {
-  if (extractText(message).trim()) return true;
-  if (Array.isArray(message.content) && message.content.length > 0) return true;
+function hasVisibleContent(message: ChatMessage, trimmedText: string): boolean {
+  if (trimmedText) return true;
+  if (
+    Array.isArray(message.content)
+    && message.content.some((block) => block.type !== 'text' || Boolean(block.text?.trim()))
+  ) {
+    return true;
+  }
   return Boolean(
     message.MediaPath
     || message.MediaPaths?.length
@@ -298,7 +303,7 @@ export function filterMessage(m: ChatMessage): boolean {
 
   if (
     (m.role === 'assistant' || m.role === 'user' || m.role === 'tool' || m.role === 'toolResult' || m.role === 'custom')
-    && !hasVisibleContent(m)
+    && !hasVisibleContent(m, trimmedText)
   ) {
     return false;
   }
@@ -380,7 +385,8 @@ export function stripHeartbeatToolCalls(messages: ChatMessage[]): ChatMessage[] 
 function messageTimeMs(message: ChatMessage): number | null {
   for (const raw of [message.timestamp, message.createdAt, message.ts]) {
     if (raw == null) continue;
-    const time = new Date(raw).getTime();
+    const normalized = typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : raw;
+    const time = new Date(normalized).getTime();
     if (Number.isFinite(time)) return time;
   }
   return null;
@@ -1036,19 +1042,22 @@ export function transcriptRowId(msg: ChatMsg): string | null {
  *
  * Pipeline: fetch → turns → filter → split → group → tag
  *
+ * `onLatestHeartbeat` is called on every successful read with the newest
+ * heartbeat time in this fetched window, or null when it has none.
+ *
  * The caller is responsible for calling `setMessages(result)`.
  */
 export async function loadChatHistory(params: {
   rpc: RpcFn;
   sessionKey: string;
   limit?: number;
-  onHeartbeat?: (at: number | null) => void;
+  onLatestHeartbeat?: (at: number | null) => void;
 }): Promise<ChatMsg[]> {
-  const { rpc, sessionKey, limit = 100, onHeartbeat } = params;
+  const { rpc, sessionKey, limit = 100, onLatestHeartbeat } = params;
 
   const res = await rpc('chat.history', { sessionKey, limit }) as ChatHistoryResponse;
   const msgs = res?.messages || [];
-  onHeartbeat?.(latestHeartbeatAt(msgs));
+  onLatestHeartbeat?.(latestHeartbeatAt(msgs));
 
   return processChatMessages(msgs, { sessionKey });
 }

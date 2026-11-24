@@ -259,7 +259,7 @@ export function TopBar({
         <span className="nerve-wordmark mr-2 shrink-0">
           {/* The mark fires while any agent works and rests otherwise */}
           <NerveLogo size={24} static={activity !== "live"} />
-          <span>Nerve</span>
+          <span>nerve</span>
           {/* The fleet in one pane: blue while any agent works, cantaloupe when work waits on you */}
           <Pane
             state={activity}

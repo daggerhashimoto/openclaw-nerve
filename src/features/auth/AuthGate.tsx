@@ -23,7 +23,7 @@ export function AuthGate() {
       <div className="h-screen w-screen flex items-center justify-center bg-background" aria-busy="true" aria-label="Loading">
         <span className="nerve-wordmark">
           <NerveLogo size={24} />
-          <span>Nerve</span>
+          <span>nerve</span>
           <Pane state="off" className="nerve-brand-pane" />
         </span>
       </div>

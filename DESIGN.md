@@ -73,12 +73,12 @@ colors:
   wb-paper-node-edge: "#8E949D"
   wb-paper-key-edge: "#C88451"
 typography:
-  display:
-    fontFamily: "Geist, Atkinson Hyperlegible Next, Helvetica Neue, Arial, sans-serif"
-    fontSize: "1.533rem"
-    fontWeight: 700
+  wordmark:
+    fontFamily: "Nerve Wordmark, IBM Plex Mono, ui-monospace, SFMono-Regular, Menlo, monospace"
+    fontSize: "1.333rem"
+    fontWeight: 400
     lineHeight: 1
-    letterSpacing: "-0.03em"
+    letterSpacing: "-0.02em"
   nameplate:
     fontFamily: "Geist, Atkinson Hyperlegible Next, Helvetica Neue, Arial, sans-serif"
     fontSize: "1.2rem"
@@ -127,12 +127,6 @@ typography:
     fontFamily: "Atkinson Hyperlegible Mono, JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace"
     fontSize: "0.733rem"
     fontWeight: 400
-  wb-display:
-    fontFamily: "IBM Plex Serif, Georgia, serif"
-    fontSize: "1.533rem"
-    fontWeight: 600
-    lineHeight: 1
-    letterSpacing: "normal"
   wb-nameplate:
     fontFamily: "IBM Plex Serif, Georgia, serif"
     fontSize: "1.2rem"
@@ -409,7 +403,7 @@ An operator's console is a building seen at night. You do not read the facade by
 
 Nerve ships that meaning in two worlds, and the meaning is written once in this file because both worlds share it. **Workbench** ("The Working Drawing") is the default for every install, in Workbench Night (graphite) and Workbench Paper. It is the console printed as a working drawing, adapted from the Ruled Workbench design system the user made for the Nerve landing page: rules are drawn as structure, floating surfaces print a faint hard offset, panes switch flat without bloom, a cool wash falls from the top of the room, paper grain lies over the shell, and the room is pinned to the frame by four diamond corner nodes. **Night light** is the console as a building lit at night, in Night and Daylight: plates read by value and a 1px edge light, a lit pane throws a short bloom, and the room carries an ambient light from above. Daylight is that building by day: cool paper, printed hairlines, panes printed as ink swatches. A browser that stored Night under the old default moves to Workbench Night once; picking Night again sticks.
 
-Workbench lends type, palette, density and one signature move; layout, navigation, controls, the row unit and every component are the same in both worlds. The mood is exact, calm and dense in both. This is an Operate-mode surface that stays open for hours, so the brand lives in precise details: a 28px row unit shared by every list row, tool row and panel header; one display face reserved for the wordmark and the names of agents and speakers; prose held to a measure that spans the column. State changes are a light switch, 120ms, on or off. Both worlds refuse the hacker costume (scanlines, glowing HUD chrome, tracked uppercase labels), the grey dashboard with one decorative accent, glass and decorative gradients, coloured side rails, and any pulsing or breathing motion. The retired community themes and Classic skin do not return; these four themes are the whole set.
+Workbench lends type, palette, density and one signature move; layout, navigation, controls, the row unit and every component are the same in both worlds. The mood is exact, calm and dense in both. This is an Operate-mode surface that stays open for hours, so the brand lives in precise details: a 28px row unit shared by every list row, tool row and panel header; one display face reserved for the names of agents and speakers, and a lowercase mono wordmark shared with nerve.zone; prose held to a measure that spans the column. State changes are a light switch, 120ms, on or off. Both worlds refuse the hacker costume (scanlines, glowing HUD chrome, tracked uppercase labels), the grey dashboard with one decorative accent, glass and decorative gradients, coloured side rails, and any pulsing or breathing motion. The retired community themes and Classic skin do not return; these four themes are the whole set.
 
 **Key Characteristics:**
 - Light temperature is the state vocabulary in both worlds: blue works, cantaloupe waits on you, red failed, dark is done.
@@ -419,7 +413,7 @@ Workbench lends type, palette, density and one signature move; layout, navigatio
 - Night light: plates read by value plus a 1px top edge light, and only floating surfaces cast a soft offset shadow. Workbench: plates are ruled cells, and floating surfaces print a hard 6px offset at 5% to 6%.
 - Workbench pins the room sheet (and the login window) to the frame with four 7px diamond nodes, as rules cross on a drafting sheet.
 - Corners stay between 1px and 4px; the Workbench room sheet is 2px.
-- Night light sets Atkinson Hyperlegible Next for reading and UI, Atkinson Hyperlegible Mono for measures, Geist for names. Workbench sets iA Writer Quattro S for reading and UI, IBM Plex Mono for measures, IBM Plex Serif for names.
+- Night light sets Atkinson Hyperlegible Next for reading and UI, Atkinson Hyperlegible Mono for measures, Geist for names. Workbench sets iA Writer Quattro S for reading and UI, IBM Plex Mono for measures, IBM Plex Serif for names. The wordmark is IBM Plex Mono in both.
 - Sentence case everywhere in both worlds; no eyebrows, kickers or tracked caps.
 - Motion is a 120ms switch with a near-linear ease-out; light travels down the spine 70ms per region when a run starts; a new turn lands with one 200ms rise; reduced motion makes all of it instant.
 - The composer is the operator's next window: at rest a quiet plate with a dark gutter pane, warmed to the operator plate with a lit pane while the operator is in it.
@@ -494,11 +488,11 @@ Workbench:
 **Body Font:** iA Writer Quattro S (with IBM Plex Sans, Helvetica Neue, Arial), self-hosted under the SIL Open Font License in regular, italic, bold and bold italic
 **Label/Mono Font:** IBM Plex Mono (with ui-monospace, SFMono-Regular, Menlo, Consolas), from Google Fonts
 
-**Character:** In Night light, Atkinson carries the whole console at a 15px base with kerning, ligatures and contextual alternates on; Geist appears only where a name is spoken, always at 700 with tight tracking, and the mono shares Atkinson's skeleton. In Workbench, Quattro reads and runs the UI set tight (-0.025em on body and control text, as in the source), Plex Serif at semibold and normal tracking names things, and Plex Mono measures at normal tracking. Workbench's faces load only while a Workbench theme is active. An explicit font pick in Appearance still overrides the reading face in either world. Both worlds use tabular numerals for counts and clocks so they do not shimmer.
+**Character:** In Night light, Atkinson carries the whole console at a 15px base with kerning, ligatures and contextual alternates on; Geist appears only where a name is spoken, always at 700 with tight tracking, and the mono shares Atkinson's skeleton. In Workbench, Quattro reads and runs the UI set tight (-0.025em on body and control text, as in the source), Plex Serif at semibold and normal tracking names things, and Plex Mono measures at normal tracking. Workbench's faces load only while a Workbench theme is active. An explicit font pick in Appearance still overrides the reading face in either world. Both worlds use tabular numerals for counts and clocks so they do not shimmer. The wordmark sits outside both worlds: lowercase `nerve` in IBM Plex Mono at regular weight, self-hosted as the Nerve Wordmark face so it is the same in every theme and on nerve.zone and the docs.
 
 ### Hierarchy
-Sizes, line heights and roles are shared by both worlds; the face and tracking follow the world (frontmatter `display` through `keycap` for Night light, `wb-*` for Workbench).
-- **Display** (1.533rem, line-height 1; Geist 700 at -0.03em in Night light, Plex Serif 600 at normal tracking in Workbench): the Nerve wordmark only, after the Nerve mark and followed by the 12x17 fleet pane.
+Sizes, line heights and roles are shared by both worlds; the face and tracking follow the world (frontmatter `nameplate` through `keycap` for Night light, `wb-*` for Workbench; `wordmark` is shared).
+- **Wordmark** (1.333rem, line-height 1; IBM Plex Mono 400 at -0.02em in every theme): lowercase `nerve`, after the Nerve mark and followed by the 12x17 fleet pane. The same lockup as nerve.zone and docs.nerve.zone.
 - **Nameplate** (1.2rem, line-height 1.1; Geist 700 at -0.02em, or Plex Serif 600 at normal tracking): the open session's agent name in the chat header, in its family hue; the one place a name is set larger than the text around it.
 - **Name** (inherits size in rows and message headers; Geist 700 or 600 at -0.01em, or Plex Serif 600 at normal tracking): agent and speaker names in top-level session rows and message headers. An agent's name takes its family hue; the operator's name stays in the primary text colour on its warm plate. A reply is signed by the agent that wrote it: a root or subagent session by its own name, and every other session of an agent (a direct or channel conversation, a group or thread, a cron job) by the family's root name, never by a session label that names a peer, a room or a job.
 - **Headline** (600, 1.2rem, 1.2): section titles on settings and dialog surfaces.
@@ -511,7 +505,7 @@ Sizes, line heights and roles are shared by both worlds; the face and tracking f
 Quattro ships regular and bold only, so in Workbench the 500 roles (UI, Label) render at regular and the 600 roles (Headline, Title) at bold.
 
 ### Named Rules
-**The Names Rule.** The display face (Geist in Night light, Plex Serif in Workbench) is used only for the wordmark and for agent or speaker names. Headings, labels and buttons stay in the reading face.
+**The Names Rule.** The display face (Geist in Night light, Plex Serif in Workbench) is used only for agent or speaker names. The wordmark has its own mono lockup. Headings, labels and buttons stay in the reading face.
 
 **The Sentence Case Rule.** Every label, header, chip and button is sentence case in both worlds. No eyebrows, no kickers above headings, no letterspaced capitals; Workbench's uppercase eyebrows from the landing page are not adopted.
 
@@ -630,7 +624,7 @@ The room's sign that the open session is working: a faint segmented equalizer ri
 - **Shell icon button:** row-unit square, 3px radius, secondary icon, Raised fill and primary text on hover and when active; icons never shrink.
 - **Panel header:** row-unit tall, transparent on the frame, rule below, 0 4px 0 12px padding, 600 label at 0.867rem in sentence case.
 - **List rows (sessions, tree):** row-unit tall, 0.867rem text, Raised on hover and when selected; a pane leads the row (default size in the agents column, small in the tree). Top-level session names use the display face; folders in the workspace tree carry 500 weight instead of type icons. An idle session row says nothing at its right end; text appears there only as a live token count, "waiting on you" in cantaloupe text, or "error" in red, so the quiet rows stay quiet and the lit ones stand out. The open room's row takes a 14% tint of its family hue over Raised.
-- **Login page:** the operator's first window. The sign at 2.4rem over the frame (the still Nerve mark at 32px, the wordmark, the brand pane lit Cantaloupe: Nerve is waiting on you), one line of primary copy, then a window for the password: Plate warming to the operator plate while the operator is in it, a status line with the window pane and "Waiting on you", the Enter keycap hint and a Sign in button in the Send style. Night light floats the window with the float shadow and edge light; Workbench sets it as a ruled cell with no inner light, pinned by four corner nodes. A failed attempt is a line under the window with a red pane. No feature cards, no kickers; the loading state is the same sign with its pane off and the mark firing.
+- **Login page:** the operator's first window. The sign at 1.867rem over the frame (the still Nerve mark at 32px, the wordmark, the brand pane lit Cantaloupe: Nerve is waiting on you), one line of primary copy, then a window for the password: Plate warming to the operator plate while the operator is in it, a status line with the window pane and "Waiting on you", the Enter keycap hint and a Sign in button in the Send style. Night light floats the window with the float shadow and edge light; Workbench sets it as a ruled cell with no inner light, pinned by four corner nodes. A failed attempt is a line under the window with a red pane. No feature cards, no kickers; the loading state is the same sign with its pane off and the mark firing.
 - **Settings drawer:** a floating Panel plate on the right with the float token (a soft shadow in Night light, the hard print in Workbench), a thin light along its inner edge in Night light and a plain ruled edge in Workbench, no blur; the backdrop dims the room to 60% of the frame colour. The header is a nameplate row with "Settings" in the display face and a close button; Connection, Audio and Appearance are the same underline text tabs as the workspace column. Content is a list of settings rows separated by rules, never boxed: an icon in the secondary colour, a 0.867rem label with a 0.8rem hint, and the control at the right. Section headings are 0.867rem 600 sentence case. Selects are the flat Raised triggers of the chat header; provider choices sit on a segmented track recessed to the frame; warnings are operator-toned notes; confirmations are plain notes without glyphs. The switch is a pane: a Raised track with a muted thumb, and a Cantaloupe thumb on a warm track when on. The gateway status row carries a pane with the status bar's mapping (quiet when connected, Cantaloupe while connecting, red when down). The theme picker lists Night, Daylight, Workbench Night and Workbench Paper. The footer is one row: Sign out as a chip at the left, the version at the right.
 - **Transcript dividers:** one rule across the column with a word on it in the mono voice (Today, Yesterday, "Mon 20 May", the year only in another year; "Older messages" at the top while more can load). Day dividers appear only when the visible transcript spans more than one day, and then the first day is labelled too. An empty room says "Nothing said here yet" in primary text with one muted line naming the agent, and only once its history has been fetched; it never flashes while history loads.
 - **Dialogs (Create task, Create cron, Add memory, confirmations):** a Popover plate with a 1px border and the dialog token (the menu token on confirmations and the cron dialog), a 1.067rem 600 title with one line of copy, flat fields with 0.867rem 600 labels and 0.8rem hints, sections separated by rules, never nested cards. The field where the operator writes a brief, a memory or a description is an operator window (The Window Rule). Cancel then the warm primary at the right, in sentence case.
@@ -640,7 +634,7 @@ The room's sign that the open session is working: a faint segmented equalizer ri
 - **Status bar:** row-unit tall, frame fill with a rule above, 0.8rem secondary text; a connection pane, then counts in words with tabular numerals, version in mono at the right. The context meter fills the live blue, Cantaloupe past the warning threshold and red when nearly full.
 - **Usage panel:** a top bar panel on Popover with the menu token. The panel header says "Usage" with the all-time spend in mono at its right ("$2,615.81 all time"). One row per provider on the row unit, Raised on hover: a chevron, the provider in the product's words (Anthropic, OpenAI Codex), a neutral share meter only when there are two or more providers, the cost in mono tabular at the right; a provider with errors carries a small red pane. An open row shows a definition list (Input, Output, Cached, Messages, Per message, Errors) with secondary labels and mono values, then a Rate limits section: heading, "checked 3m ago" in mono, and one meter row per window (5 hour window, Weekly, Session) whose fill is the secondary colour, Cantaloupe from 80% and red from 95%, with the readout in the same colour and the reset time after it. A footer row sums the fleet in mono (in, out, messages). No provider colours, emoji, glows or tracked capitals.
 - **Agent log and Events panels (feature-flagged):** the same top bar panel idiom. A plain header ("Agent log", "Events") with the count in mono at the right; the Agent log header carries a small live pane while the agent works. Lines are 1.6rem tall at 0.8rem: a small pane, then mono time (log) or the event kind in lower-case mono (events), then the text, then a mono relative time (events). The pane is dark for history and lights only with meaning: red for a failure, Cantaloupe for an exec approval request; a failed line reads in red. No badge chips, glyph icons, coloured borders or tracked capitals.
-- **Wordmark:** the display face at 1.533rem (Geist 700 at -0.03em in Night light, Plex Serif 600 at normal tracking in Workbench), primary text colour, after the Nerve mark and followed by the 12x17 fleet pane.
+- **Wordmark:** lowercase `nerve` in IBM Plex Mono 400 at 1.333rem and -0.02em in every theme (the self-hosted Nerve Wordmark face), primary text colour, after the Nerve mark and followed by the 12x17 fleet pane.
 - **Nerve mark:** an orange (#FF8C32) hub and six nodes on a pointy-top hexagon, fixed in every theme (`src/components/NerveLogo.tsx`). 33px and up draws synapse gaps, the hexagon ring and lit cores; 32px and below uses the bold cut (solid spokes, no ring). It animates with CSS only, never in performance mode or under reduced motion. The tab icon is the bold cut on a dark square (`public/favicon.svg`), static.
 
 ### Tool row
@@ -661,7 +655,7 @@ One 28px line of mono text at 0.8rem: a small pane (live while running, off when
 - **Do** build raised surfaces from the plate token so each world draws its own edge: the 1px edge light in Night, a printed hairline in Daylight, a ruled cell in Workbench (The Edge Light Rule, The Printed Rule, The Frame Rule).
 - **Do** give floating chrome the menu or dialog shadow token rather than a fixed shadow, so Workbench can print it (The Printed Rule).
 - **Do** keep every list row, tool row, panel header and the status bar on the 1.867rem row unit (The One Row Rule).
-- **Do** reserve the display face (Geist in Night light, Plex Serif 600 in Workbench) for the wordmark and agent or speaker names (The Names Rule).
+- **Do** reserve the display face (Geist in Night light, Plex Serif 600 in Workbench) for agent or speaker names, and set the wordmark only in its lowercase Plex Mono lockup (The Names Rule).
 - **Do** set Quattro body and control text at -0.025em in Workbench and keep code, measures and names at normal tracking (The Tight Hand Rule).
 - **Do** hold agent prose to the 72em reading measure and let code, tables and charts take the column.
 - **Do** set timestamps, counts, durations, models and code in the world's mono (Atkinson Hyperlegible Mono or IBM Plex Mono) with tabular numerals.

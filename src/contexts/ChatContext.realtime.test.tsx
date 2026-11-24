@@ -656,5 +656,33 @@ describe('ChatContext realtime handling (protocol v4)', () => {
       expect(speakMock).toHaveBeenCalledTimes(1);
       expect(speakMock).toHaveBeenCalledWith(next);
     });
+
+    it('speaks the same tts text again when a newer lifecycle-only turn starts', async () => {
+      const { emit, speakMock } = await setup();
+      const nextLifecycle = (phase: 'start' | 'end', seq: number) => (
+        { sessionKey: SESSION, runId: 'run-2', seq, stream: 'lifecycle', data: { phase } }
+      );
+
+      // First run settles from lifecycle frames and a final only.
+      emit('agent', lifecycle('start', 2));
+      emit('agent', lifecycle('end', 74));
+      emit('chat', chat({ state: 'final', seq: 75, stopReason: 'stop', message: textMessage(reply, NOW + 3000) }));
+      expect(speakMock).toHaveBeenCalledTimes(1);
+
+      // The next run repeats the same spoken text; its own start must clear the
+      // dedup set rather than suppress the reply.
+      emit('agent', nextLifecycle('start', 3));
+      emit('chat', {
+        sessionKey: SESSION,
+        runId: 'run-2',
+        state: 'final',
+        seq: 5,
+        stopReason: 'stop',
+        message: textMessage(reply, NOW + 6000),
+      });
+
+      expect(speakMock).toHaveBeenCalledTimes(2);
+      expect(speakMock).toHaveBeenLastCalledWith(spoken);
+    });
   });
 });

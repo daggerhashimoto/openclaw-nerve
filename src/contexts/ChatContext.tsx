@@ -445,6 +445,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (type === 'lifecycle_start') {
           // A newer run has begun, so a late final of the run that ended is obsolete.
           endedRunIdRef.current = null;
+          // A lifecycle-only turn has no chat_started to begin it; clear the
+          // speech dedup set here so it can repeat the previous run's tts text.
+          resetPlayedSounds();
           setIsGenerating(true);
           setProcessingStage('thinking');
           setLastEventTimestamp(Date.now());

@@ -37,7 +37,10 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     vi.useRealTimers();
   });
 
-  async function setup(history: unknown[] = []) {
+  async function setup(
+    history: unknown[] = [],
+    connectionState: 'disconnected' | 'connected' = 'disconnected',
+  ) {
     let handler: ((msg: GatewayEvent) => void) | null = null;
     const subscribeMock = vi.fn((h: (msg: GatewayEvent) => void) => {
       handler = h;
@@ -51,7 +54,7 @@ describe('ChatContext realtime handling (protocol v4)', () => {
 
     vi.doMock('./GatewayContext', () => ({
       useGateway: () => ({
-        connectionState: 'disconnected',
+        connectionState,
         rpc: rpcMock,
         subscribe: subscribeMock,
       }),
@@ -109,6 +112,38 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }));
 
     await waitFor(() => expect(getChat().isGenerating).toBe(true));
+  });
+
+  it('seeds the heartbeat clock from history without showing a run', async () => {
+    const heartbeatAt = NOW - 20 * 60_000;
+    const { getChat } = await setup([
+      {
+        role: 'assistant',
+        timestamp: heartbeatAt,
+        content: [{ type: 'toolCall', id: 'hb-1', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } }],
+      },
+    ], 'connected');
+
+    await waitFor(() => expect(getChat().lastHeartbeatAt).toBe(heartbeatAt));
+    expect(getChat().messages).toHaveLength(0);
+    expect(getChat().isGenerating).toBe(false);
+  });
+
+  it('updates the heartbeat clock from a live heartbeat without starting a run', async () => {
+    const { emit, getChat } = await setup();
+
+    emit('agent', {
+      sessionKey: SESSION,
+      runId: 'hb-1',
+      seq: 2,
+      stream: 'lifecycle',
+      data: { phase: 'start' },
+      isHeartbeat: true,
+    });
+
+    await waitFor(() => expect(getChat().lastHeartbeatAt).toBe(NOW));
+    expect(getChat().isGenerating).toBe(false);
+    expect(getChat().messages).toHaveLength(0);
   });
 
   it('streams the full text when later frames carry only deltaText', async () => {

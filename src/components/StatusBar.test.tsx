@@ -103,7 +103,28 @@ describe('StatusBar', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-11-24T20:00:00Z'));
 
-    renderStatusBar({ lastHeartbeatAt: new Date('2026-11-24T19:40:00Z').getTime() });
+    const lastHeartbeatAt = new Date('2026-11-24T19:40:00Z').getTime();
+    renderStatusBar({ lastHeartbeatAt });
+
+    const heartbeat = screen.getByText('last heartbeat 20m ago');
+    expect(heartbeat).toBeInTheDocument();
+    expect(heartbeat).toHaveAttribute('title', new Date(lastHeartbeatAt).toLocaleString());
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(screen.getByText('last heartbeat 21m ago')).toBeInTheDocument();
+  });
+
+  it('ages the heartbeat in performance mode', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-24T20:00:00Z'));
+
+    renderStatusBar({
+      lastHeartbeatAt: new Date('2026-11-24T19:40:00Z').getTime(),
+      performanceMode: true,
+    });
 
     expect(screen.getByText('last heartbeat 20m ago')).toBeInTheDocument();
 
@@ -112,6 +133,12 @@ describe('StatusBar', () => {
     });
 
     expect(screen.getByText('last heartbeat 21m ago')).toBeInTheDocument();
+  });
+
+  it('hides the heartbeat item below the sm breakpoint', () => {
+    renderStatusBar({ lastHeartbeatAt: Date.now() });
+
+    expect(screen.getByText(/last heartbeat/)).toHaveClass('hidden', 'sm:inline-flex');
   });
 
   it('shows just now for a fresh heartbeat', () => {
@@ -125,6 +152,12 @@ describe('StatusBar', () => {
 
   it('hides the heartbeat label when the open session has none', () => {
     renderStatusBar();
+
+    expect(screen.queryByText(/last heartbeat/)).not.toBeInTheDocument();
+  });
+
+  it('hides the heartbeat label for a non-finite timestamp', () => {
+    renderStatusBar({ lastHeartbeatAt: Number.NaN });
 
     expect(screen.queryByText(/last heartbeat/)).not.toBeInTheDocument();
   });

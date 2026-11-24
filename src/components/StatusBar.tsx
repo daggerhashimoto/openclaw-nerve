@@ -58,7 +58,6 @@ export function StatusBar({
   agentStatus,
   generating = false,
   currentSessionKey,
-  performanceMode = false,
 }: StatusBarProps) {
   useGateway(); // Keep gateway context connected
 
@@ -90,10 +89,10 @@ export function StatusBar({
   const [, setHeartbeatTick] = useState(0);
 
   useEffect(() => {
-    if (lastHeartbeatAt == null || performanceMode) return;
+    if (lastHeartbeatAt == null) return;
     const id = window.setInterval(() => setHeartbeatTick(t => t + 1), 60_000);
     return () => window.clearInterval(id);
-  }, [lastHeartbeatAt, performanceMode]);
+  }, [lastHeartbeatAt]);
 
   const heartbeatAge = lastHeartbeatAt != null && Number.isFinite(lastHeartbeatAt)
     ? timeAgo(lastHeartbeatAt)
@@ -144,15 +143,13 @@ export function StatusBar({
 
       {/* Heartbeat: how fresh the open session's last sign of life is */}
       {heartbeatText && lastHeartbeatAt != null && (
-        <>
+        <span
+          className="hidden min-w-0 items-center gap-2.5 sm:inline-flex"
+          title={new Date(lastHeartbeatAt).toLocaleString()}
+        >
           <Separator />
-          <span
-            className="inline-flex shrink-0 items-center"
-            title={new Date(lastHeartbeatAt).toLocaleString()}
-          >
-            {heartbeatText}
-          </span>
-        </>
+          {heartbeatText}
+        </span>
       )}
 
       {/* Context meter (when available) */}

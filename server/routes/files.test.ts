@@ -94,6 +94,6 @@ describe('GET /api/files', () => {
     const app = await buildApp();
     const res = await app.request(`/api/files?path=${encodeURIComponent(filePath)}`);
     expect(res.status).toBe(200);
-    expect(res.headers.get('Cache-Control')).toContain('max-age');
+    expect(res.headers.get('Cache-Control')).toBe('private, no-cache');
   });
 });

@@ -97,6 +97,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const terminalPingSeenRef = useRef<Map<string, number>>(new Map());
   const doneTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const delayedRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const missingSessionRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
   // Refreshes overlap (events, the poll, spawn and delete all start one). Each takes a number when it
   // starts; one that answers after a later refresh has landed is an older snapshot and is dropped, and
   // one that started before a delete landed leaves the deleted rows out (key -> refreshes started by then).
@@ -605,11 +607,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [addAgentLogEntry, friendlyName, shouldLogTool]);
 
   const refreshSessions = useCallback(async () => {
-    if (connectionState !== 'connected') return;
+    if (!mountedRef.current || connectionState !== 'connected') return;
     const refreshId = ++refreshStartedRef.current;
     try {
       const answer = await fetchAuthoritativeSessions();
-      if (!answer || refreshId <= refreshLandedRef.current) return;
+      if (!mountedRef.current || !answer || refreshId <= refreshLandedRef.current) return;
       refreshLandedRef.current = refreshId;
       const deletedBefore = deletedBeforeRefreshRef.current;
       const newSessions = answer.filter((session) => refreshId > (deletedBefore.get(getSessionKey(session)) ?? 0));
@@ -656,14 +658,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.debug('[SessionContext] Failed to refresh sessions:', err);
     } finally {
-      setSessionsLoading(false);
+      if (mountedRef.current) {
+        setSessionsLoading(false);
+      }
     }
   }, [connectionState, fetchAuthoritativeSessions, setCurrentSession]);
 
   const refreshSessionsRef = useRef(refreshSessions);
-  useEffect(() => {
-    refreshSessionsRef.current = refreshSessions;
-  }, [refreshSessions]);
+  refreshSessionsRef.current = refreshSessions;
 
   // Update session in list from WebSocket event data
   const updateSessionFromEvent = useCallback((sessionKey: string, updates: Partial<Session>) => {
@@ -672,9 +674,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (idx === -1) {
         // New session appeared that we don't have - schedule a refresh
         // Use setTimeout to avoid calling during render
-        setTimeout(() => {
-          void refreshSessionsRef.current();
-        }, 100);
+        if (missingSessionRefreshTimeoutRef.current === null) {
+          missingSessionRefreshTimeoutRef.current = setTimeout(() => {
+            missingSessionRefreshTimeoutRef.current = null;
+            void refreshSessionsRef.current();
+          }, 100);
+        }
         return prev;
       }
       
@@ -843,7 +848,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [subscribe, addEvent, setGranularStatus, markSessionUnread, pingSession, feedAgentLog, updateSessionFromEvent, extractSessionUpdates, refreshSessions, scheduleDelayedRefresh, heartbeatRuns]);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       for (const key of Object.keys(doneTimeoutsRef.current)) {
         clearTimeout(doneTimeoutsRef.current[key]);
       }
@@ -851,6 +858,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (delayedRefreshTimeoutRef.current) {
         clearTimeout(delayedRefreshTimeoutRef.current);
         delayedRefreshTimeoutRef.current = null;
+      }
+      if (missingSessionRefreshTimeoutRef.current) {
+        clearTimeout(missingSessionRefreshTimeoutRef.current);
+        missingSessionRefreshTimeoutRef.current = null;
       }
     };
   }, []);
@@ -875,11 +886,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // Poll sessions when connected (reduced to 30s - WebSocket events provide real-time updates)
   useEffect(() => {
     if (connectionState !== 'connected') return;
-    refreshSessions();
+    void refreshSessionsRef.current();
     // Polling is now just a fallback for catching missed updates
-    const iv = setInterval(() => refreshSessions(), 30000);
+    const iv = setInterval(() => {
+      void refreshSessionsRef.current();
+    }, 30000);
     return () => clearInterval(iv);
-  }, [connectionState, refreshSessions]);
+  }, [connectionState]);
 
   // Load agent log on mount
   useEffect(() => {
@@ -887,8 +900,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const res = await fetch('/api/agentlog', { signal: controller.signal });
-        const entries: AgentLogEntry[] = await res.json();
-        setAgentLogEntries(entries.slice().reverse().slice(0, 100));
+        const entries = await res.json().catch(() => null) as AgentLogEntry[] | null;
+        if (Array.isArray(entries)) {
+          setAgentLogEntries(entries.slice().reverse().slice(0, 100));
+        }
       } catch (err) {
         if (err instanceof Error && err.name !== 'AbortError') {
           console.debug('[SessionContext] Failed to load agent log:', err.message);
@@ -1001,9 +1016,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }),
     });
 
-    const data = await res.json() as { ok: boolean; sessionKey?: string; error?: string };
-    if (!data.ok || !data.sessionKey) {
-      throw new Error(data.error ?? 'Failed to spawn subagent');
+    const data = await res.json().catch(() => null) as { ok?: boolean; sessionKey?: string; error?: string } | null;
+    if (!res.ok || !data?.ok || !data.sessionKey) {
+      throw new Error(data?.error ?? 'Failed to spawn subagent');
     }
 
     await refreshSessions();

@@ -155,7 +155,7 @@ describe('gateway config step', () => {
         'The gateway at gw.example.com is on another machine, so setup did not change any OpenClaw config.',
         'Make these changes on gw.example.com:',
         `  • Origins: add ${TAILNET_ORIGIN}, http://localhost:3080, http://127.0.0.1:3080 to gateway.controlUi.allowedOrigins in ~/.openclaw/openclaw.json`,
-        '  • HTTP tools: add "cron", "gateway", and "sessions_spawn" to gateway.tools.allow in ~/.openclaw/openclaw.json',
+        '  • HTTP tools: add "sessions_spawn" to gateway.tools.allow in ~/.openclaw/openclaw.json',
         '  • Restart: run `openclaw gateway restart` after saving the config',
         '  • Device: after starting Nerve, run `openclaw devices list`, then `openclaw devices approve <requestId>` for the Nerve request',
       ]);
@@ -262,7 +262,7 @@ describe('gateway config step', () => {
       expect(execSyncMock).not.toHaveBeenCalled();
       expect(output.slice(-3)).toEqual([
         'Skipped gateway config changes. Some features may not work:',
-        '  • HTTP tools: add "cron", "gateway", and "sessions_spawn" to gateway.tools.allow in ~/.openclaw/openclaw.json',
+        '  • HTTP tools: add "sessions_spawn" to gateway.tools.allow in ~/.openclaw/openclaw.json',
         '  • Origins: add the required origin(s) to gateway.controlUi.allowedOrigins in ~/.openclaw/openclaw.json',
       ]);
     });

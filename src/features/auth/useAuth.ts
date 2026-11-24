@@ -21,9 +21,13 @@ const getSnapshot = () => authSnapshot;
 
 // Fire the initial auth check once (module-level, not inside an effect)
 fetch('/api/auth/status')
-  .then(r => r.json())
-  .then(data => setAuthSnapshot(!data.authEnabled || data.authenticated ? 'authenticated' : 'login'))
-  .catch(() => setAuthSnapshot('authenticated'));
+  .then(async (r) => {
+    if (!r.ok) return setAuthSnapshot('login');
+    const data = await r.json().catch(() => null);
+    if (!data || typeof data.authEnabled !== 'boolean') return setAuthSnapshot('login');
+    setAuthSnapshot(!data.authEnabled || data.authenticated ? 'authenticated' : 'login');
+  })
+  .catch(() => setAuthSnapshot('login'));
 
 /** Message for a 429 from the auth rate limiter, naming the wait when the server gave one. */
 function rateLimitMessage(retryAfter: string | null): string {

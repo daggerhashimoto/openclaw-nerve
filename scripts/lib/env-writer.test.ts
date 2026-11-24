@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   MANAGED_ENV_KEYS,
   generateEnvContent,
+  loadExistingEnv,
   writeEnvFile,
   type EnvConfig,
 } from './env-writer.js';
@@ -439,6 +440,48 @@ describe('MANAGED_ENV_KEYS', () => {
   it('leaves out the EnvConfig keys that setup never writes', () => {
     for (const key of ['TTS_CACHE_TTL_MS', 'TTS_CACHE_MAX', 'VITE_PORT']) {
       expect(MANAGED_ENV_KEYS).not.toContain(key);
+    }
+  });
+
+  it('writes SSL_PORT even when it equals the default 3443 so HTTPS state is recorded', () => {
+    const out = generateEnvContent({ GATEWAY_TOKEN: 'tok', PORT: '3080', SSL_PORT: '3443' });
+    expect(out).toContain('SSL_PORT=3443\n');
+  });
+
+  it('writes an empty SSL_PORT so setup can record HTTPS as explicitly off', () => {
+    const out = generateEnvContent({ GATEWAY_TOKEN: 'tok', PORT: '3080', SSL_PORT: '' });
+    expect(out).toContain('SSL_PORT=\n');
+  });
+
+  it('omits SSL_PORT when the config has no value', () => {
+    const out = generateEnvContent({ GATEWAY_TOKEN: 'tok', PORT: '3080' });
+    expect(out).not.toContain('SSL_PORT=');
+  });
+
+  it('loadExistingEnv parses export KEY=value lines', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'nerve-env-load-'));
+    const envPath = path.join(dir, '.env');
+    try {
+      writeFileSync(envPath, 'export GATEWAY_TOKEN="my-token"\nexport PORT=4000\n', 'utf-8');
+      const loaded = loadExistingEnv(envPath);
+      expect(loaded.GATEWAY_TOKEN).toBe('my-token');
+      expect(loaded.PORT).toBe('4000');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('loadExistingEnv keeps an explicitly empty SSL_PORT distinct from a missing one', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'nerve-env-load-'));
+    const envPath = path.join(dir, '.env');
+    try {
+      writeFileSync(envPath, 'GATEWAY_TOKEN="my-token"\nSSL_PORT=\n', 'utf-8');
+      const loaded = loadExistingEnv(envPath);
+      expect(loaded.SSL_PORT).toBe('');
+      expect('SSL_PORT' in loaded).toBe(true);
+      expect(loaded.GATEWAY_TOKEN).toBe('my-token');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

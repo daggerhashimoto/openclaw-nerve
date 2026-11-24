@@ -135,6 +135,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // A 2026.9 gateway sends that end just before the chat final, so the final has to
   // be recognised as this run's own even though no run is active any more.
   const endedRunIdRef = useRef<string | null>(null);
+  const voiceSendSeqRef = useRef(0);
+  const voiceRunRef = useRef<{ runId: string } | null>(null);
   const lastGatewaySeqRef = useRef<number | null>(null);
   const historyRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Heartbeats on the open session never show as a run; rows one commits wait until it is over.
@@ -190,11 +192,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     playCompletionPing,
     resetPlayedSounds,
     handleFinalTTS,
+    clearVoiceMessage,
   } = ttsHook;
 
   // ─── Reset transient state on session switch ──────────────────────────────
   useEffect(() => {
     setIsGenerating(false);
+    voiceSendSeqRef.current += 1;
+    voiceRunRef.current = null;
+    ttsHook.trackVoiceMessage('');
     msgHook.resetMessageState();
     streamHook.resetStreamState();
     recoveryHook.resetRecoveryState();
@@ -638,7 +644,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           triggerRecovery('unrenderable-final');
         }
 
-        handleFinalTTS(finalData, isActiveRun);
+        // Only the run started by the voice send may consume its fallback;
+        // an earlier run that finalizes while a newer send is pending must not.
+        const voiceOwner = voiceRunRef.current?.runId === runId;
+        handleFinalTTS(finalData, isActiveRun, voiceOwner);
+        if (voiceOwner) {
+          voiceRunRef.current = null;
+        }
         resetThinking();
         pruneRunRegistry(runsRef.current, activeRunIdRef.current);
         return;
@@ -676,6 +688,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           playCompletionPing();
         }
 
+        if (isActiveRun && voiceRunRef.current?.runId === runId) {
+          clearVoiceMessage();
+          voiceRunRef.current = null;
+        }
+
         resetThinking();
         pruneRunRegistry(runsRef.current, activeRunIdRef.current);
         return;
@@ -707,6 +724,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           triggerRecovery('unrenderable-final');
         }
 
+        if (isActiveRun && voiceRunRef.current?.runId === runId) {
+          clearVoiceMessage();
+          voiceRunRef.current = null;
+        }
+
         resetThinking();
         pruneRunRegistry(runsRef.current, activeRunIdRef.current);
       }
@@ -731,6 +753,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     playCompletionPing,
     resetPlayedSounds,
     handleFinalTTS,
+    clearVoiceMessage,
     subscribe,
     heartbeatRuns,
     scheduleHistoryRefresh,
@@ -738,6 +761,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // ─── Send message ─────────────────────────────────────────────────────────
   const handleSend = useCallback(async (text: string, images?: ImageAttachment[], uploadPayload?: OutgoingUploadPayload) => {
+    const sendSeq = ++voiceSendSeqRef.current;
+    const isVoice = text.startsWith('[voice] ');
+    // A newer send owns the pending voice flag; the previous run can no longer clear it.
+    voiceRunRef.current = null;
     ttsHook.trackVoiceMessage(text);
 
     const { msg: userMsg, tempId } = buildUserMessage({ text, images, uploadPayload });
@@ -770,6 +797,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         run.finalized = false;
         activeRunIdRef.current = ack.runId;
         endedRunIdRef.current = null;
+        if (isVoice && voiceSendSeqRef.current === sendSeq) {
+          voiceRunRef.current = { runId: ack.runId };
+        }
         startThinking(ack.runId);
       }
 
@@ -778,6 +808,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       msgHook.setAllMessages(prev => prev.map(confirmMsg));
       msgHook.setMessages((prev: ChatMsg[]) => prev.map(confirmMsg));
     } catch (e) {
+      if (voiceSendSeqRef.current === sendSeq) {
+        clearVoiceMessage();
+        voiceRunRef.current = null;
+      }
       const errMsg = e instanceof Error ? e.message : String(e);
 
       const failMsg = (m: ChatMsg) => m.tempId === tempId ? { ...m, pending: false, failed: true } : m;
@@ -789,7 +823,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       msgHook.setMessages((prev: ChatMsg[]) => [...prev, errMsgBubble]);
       setIsGenerating(false);
     }
-  }, [rpc, msgHook, streamHook, ttsHook, incrementGeneration, setProcessingStage, startThinking]);
+  }, [rpc, msgHook, streamHook, ttsHook, clearVoiceMessage, incrementGeneration, setProcessingStage, startThinking]);
 
   // ─── Abort / Reset ────────────────────────────────────────────────────────
   const handleAbort = useCallback(async () => {

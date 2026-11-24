@@ -67,7 +67,6 @@ function persistConfigView(view: ConfigView, agentId: string) {
 
 interface ConfigWithSkillsProps {
   agentId: string;
-  cronWarning?: string | null;
 }
 
 /**
@@ -75,7 +74,7 @@ interface ConfigWithSkillsProps {
  * workspace files, or the installed skills. ConfigTab owns the picker while a file is open
  * (it guards unsaved edits); the Skills view carries the same picker so the control never moves.
  */
-function ConfigWithSkills({ agentId, cronWarning = null }: ConfigWithSkillsProps) {
+function ConfigWithSkills({ agentId }: ConfigWithSkillsProps) {
   const [view, setView] = useState<ConfigView>(() => getInitialConfigView(agentId));
 
   const switchView = useCallback((nextView: ConfigView) => {
@@ -98,7 +97,6 @@ function ConfigWithSkills({ agentId, cronWarning = null }: ConfigWithSkillsProps
       <ConfigTab
         key={agentId}
         agentId={agentId}
-        cronWarning={cronWarning}
         viewOptions={[SKILLS_VIEW_OPTION]}
         onViewChange={handleFileViewChange}
       />
@@ -166,7 +164,7 @@ export function WorkspacePanel({
 }: WorkspacePanelProps) {
   const { kanbanVisible } = useSettings();
   const [activeTab, setActiveTab] = useState<TabId>(() => getInitialTab(kanbanVisible));
-  const { activeCount, cronWarning } = useCrons();
+  const { activeCount } = useCrons();
 
   const [visitedTabs, setVisitedTabs] = useState<Set<TabId>>(() => new Set([activeTab]));
 
@@ -232,7 +230,7 @@ export function WorkspacePanel({
           )}
         </div>
         <div className={activeTab === 'config' ? 'h-full' : 'hidden'} hidden={activeTab !== 'config'} role="tabpanel" id="workspace-tabpanel-config" aria-labelledby="workspace-tab-config">
-          {visitedTabs.has('config') && <ConfigWithSkills key={workspaceAgentId} agentId={workspaceAgentId} cronWarning={cronWarning} />}
+          {visitedTabs.has('config') && <ConfigWithSkills key={workspaceAgentId} agentId={workspaceAgentId} />}
         </div>
         {kanbanVisible && (
           <div className={activeTab === 'kanban' ? 'h-full' : 'hidden'} hidden={activeTab !== 'kanban'} role="tabpanel" id="workspace-tabpanel-kanban" aria-labelledby="workspace-tab-kanban">

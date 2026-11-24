@@ -396,12 +396,12 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
           continue;
         }
 
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
         if (!isLatestReadRequest(scopedPathKey, token)) {
           restartRestore();
           return;
         }
-        if (!data.ok) {
+        if (!data?.ok) {
           restoreDirtySnapshot();
           continue;
         }
@@ -545,7 +545,7 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
 
     try {
       const res = await fetch(buildReadUrl(filePath, requestAgentId));
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
       if (agentIdRef.current !== requestAgentId || !isLatestReadRequest(scopedPathKey, token)) {
         return;
@@ -553,8 +553,8 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
 
       setOpenFiles((prev) => prev.map((file) => {
         if (file.path !== filePath) return file;
-        if (!data.ok) {
-          return { ...file, loading: false, error: data.error || 'Failed to load' };
+        if (!res.ok || !data?.ok) {
+          return { ...file, loading: false, error: data?.error || 'Failed to load' };
         }
         return {
           ...file,
@@ -632,9 +632,9 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
           agentId: requestAgentId,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
-      if (data.ok) {
+      if (res.ok && data?.ok) {
         const savedContent = file.content;
         const ownsRequestState = stateOwnerAgentIdRef.current === requestAgentId;
 
@@ -687,13 +687,13 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
 
     try {
       const res = await fetch(buildReadUrl(filePath, requestAgentId));
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
       if (agentIdRef.current !== requestAgentId || !isLatestReadRequest(scopedPathKey, token)) {
         return;
       }
 
-      if (!data.ok) {
+      if (!res.ok || !data?.ok) {
         if (res.status === 404) {
           setOpenFiles((prev) => prev.map((file) => (
             file.path === filePath

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCronWarning, normalizeCronJob } from './useCrons';
+import { normalizeCronJob } from './useCrons';
 
 describe('normalizeCronJob', () => {
   it('preserves explicit root routing fields from the gateway', () => {
@@ -40,17 +40,5 @@ describe('normalizeCronJob', () => {
 
     expect(job.sessionTarget).toBeUndefined();
     expect(job.sessionKey).toBeUndefined();
-  });
-});
-
-describe('getCronWarning', () => {
-  it('returns a short remediation summary for the known cron tool unavailable error', () => {
-    expect(
-      getCronWarning('Gateway tool invoke failed: 404 {"ok":false,"error":{"type":"not_found","message":"Tool not available: cron"}}'),
-    ).toBe('This gateway does not expose cron management, so Nerve can’t load or edit crons right now.');
-  });
-
-  it('ignores unrelated cron errors', () => {
-    expect(getCronWarning('Failed to fetch crons')).toBeNull();
   });
 });

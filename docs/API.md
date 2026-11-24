@@ -296,7 +296,7 @@ Each client has a bounded send queue (64 messages or 256 KiB) and a 5-second wri
 | `memory.changed` | Memory changed through the API or seen by the file watcher | `source` (`"api"` or `"file"`), `action?` (`"create"`, `"update"` or `"delete"`, API only), `section?`, `file?`, `agentId?` |
 | `file.changed` | Workspace file changed (file watcher) | `path`, `agentId` |
 
-The client also listens for `tokens.updated` and `status.changed`, but the server does not currently emit them.
+The client listens for the events in the table above.
 
 ### `POST /api/events/test`
 
@@ -1432,7 +1432,7 @@ Returns an image that chat history left out of a message. On current OpenClaw, `
 | `imageIndex` | `integer` | No | Zero-based index among the message's image blocks. Default `0` |
 | `artifactId` | `string` | No | The gateway's id for an omitted image: `artifact_transcript_image_` followed by base64url characters, at most 8192 characters. When present, the image is downloaded from the gateway and `sessions.json` is not read |
 
-**Response:** the raw image bytes, with `Content-Type` set to the recorded MIME type (lower-cased, parameters removed), `X-Content-Type-Options: nosniff`, `Content-Disposition: inline; filename="message-<timestamp>-image-<index>.<ext>"`. Only `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `image/avif` are served. The handler asks for `Cache-Control: private, max-age=3600`, but the global API cache middleware replaces it, so clients receive `Cache-Control: no-cache`.
+**Response:** the raw image bytes, with `Content-Type` set to the recorded MIME type (lower-cased, parameters removed), `X-Content-Type-Options: nosniff`, `Content-Disposition: inline; filename="message-<timestamp>-image-<index>.<ext>"`. Only `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `image/avif` are served. The handler sets `Cache-Control: private, no-cache`; the API cache middleware preserves a route's non-public cache header, so clients receive that value and must revalidate protected media.
 
 **Errors:** all bodies have the shape `{ "ok": false, "error": "..." }`.
 
@@ -2445,7 +2445,7 @@ GET /api/files?path=~/.openclaw/workspace/memory/image.jpg
 
 **Allowed directory prefixes:** `/tmp`, `~/.openclaw`, and the configured `MEMORY_DIR` (default `~/.openclaw/workspace/memory`). The path is resolved first (so `..` cannot escape), checked against the prefixes, then resolved through symlinks and checked again. Each prefix is also accepted in its real-path form (for example `/tmp` is `/private/tmp` on macOS).
 
-**Response:** the raw image bytes with `Content-Type` and `Content-Length`. SVG files are sent with `Content-Disposition: attachment` so a browser downloads them instead of rendering embedded scripts. The handler sets `Cache-Control: public, max-age=3600`, but the global API cache middleware replaces it, so clients receive `Cache-Control: no-cache`. There is no file size limit; the whole file is read into memory.
+**Response:** the raw image bytes with `Content-Type` and `Content-Length`. SVG files are sent with `Content-Disposition: attachment` so a browser downloads them instead of rendering embedded scripts. The handler sets `Cache-Control: private, no-cache`, so a rewritten image at the same path is revalidated instead of being reused. There is no file size limit; the whole file is read into memory.
 
 **Errors:** plain text bodies (`text/plain`), not JSON.
 
@@ -2515,30 +2515,16 @@ Returns the attachment policy: which upload modes are on and the limits for inli
   "twoModeEnabled": false,
   "inlineEnabled": true,
   "fileReferenceEnabled": false,
-  "modeChooserEnabled": false,
-  "inlineAttachmentMaxMb": 4,
-  "inlineImageContextMaxBytes": 32768,
-  "inlineImageAutoDowngradeToFileReference": true,
-  "inlineImageShrinkMinDimension": 512,
-  "inlineImageMaxDimension": 2048,
-  "inlineImageWebpQuality": 82,
-  "exposeInlineBase64ToAgent": false
+  "inlineAttachmentMaxMb": 4
 }
 ```
 
 | Field | Type | Default | Environment variable | Meaning |
 |-------|------|---------|----------------------|---------|
-| `twoModeEnabled` | `boolean` | `false` | `NERVE_UPLOAD_TWO_MODE_ENABLED` | One of the four flags (with `inlineEnabled`, `fileReferenceEnabled` and `modeChooserEnabled`) that must all be `true` for the client to show its upload mode chooser. Also lets the file picker accept any file type |
-| `inlineEnabled` | `boolean` | `true` | `NERVE_UPLOAD_INLINE_ENABLED` | Attachments can be sent inline in the message |
+| `twoModeEnabled` | `boolean` | `false` | `NERVE_UPLOAD_TWO_MODE_ENABLED` | Lets the file picker accept any file type instead of images only |
+| `inlineEnabled` | `boolean` | `true` | `NERVE_UPLOAD_INLINE_ENABLED` | Browser file uploads are enabled |
 | `fileReferenceEnabled` | `boolean` | `false` | `NERVE_UPLOAD_FILE_REFERENCE_ENABLED` | Attachments can be sent as workspace file references. Also enables attaching by path and "Add to chat" in the file browser, and lets the file picker accept any file type |
-| `modeChooserEnabled` | `boolean` | `false` | `NERVE_UPLOAD_MODE_CHOOSER_ENABLED` | One of the four flags required for the client to show its upload mode chooser (see `twoModeEnabled`) |
-| `inlineAttachmentMaxMb` | `number` | `4` | `NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB` | Size cap in MB for inline attachments that are not images |
-| `inlineImageContextMaxBytes` | `number` | `32768` | `NERVE_UPLOAD_INLINE_IMAGE_CONTEXT_MAX_BYTES` | Size budget in bytes for an inline image. Larger images are shrunk adaptively |
-| `inlineImageAutoDowngradeToFileReference` | `boolean` | `true` | `NERVE_UPLOAD_INLINE_IMAGE_AUTO_DOWNGRADE_TO_FILE_REFERENCE` | When shrinking cannot reach the budget, fall back to a file reference (needs `fileReferenceEnabled` and an image that exists at a server path) |
-| `inlineImageShrinkMinDimension` | `number` | `512` | `NERVE_UPLOAD_INLINE_IMAGE_SHRINK_MIN_DIMENSION` | Smallest dimension in pixels that shrinking goes down to |
-| `inlineImageMaxDimension` | `number` | `2048` | `NERVE_UPLOAD_IMAGE_OPTIMIZATION_MAX_DIMENSION` | Largest dimension in pixels used when optimizing an image |
-| `inlineImageWebpQuality` | `number` | `82` | `NERVE_UPLOAD_IMAGE_OPTIMIZATION_WEBP_QUALITY` | WebP quality used when re-encoding images |
-| `exposeInlineBase64ToAgent` | `boolean` | `false` | `NERVE_UPLOAD_EXPOSE_INLINE_BASE64_TO_AGENT` | Keeps the inline base64 data in the upload descriptor sent to the agent |
+| `inlineAttachmentMaxMb` | `number` | `4` | `NERVE_UPLOAD_INLINE_ATTACHMENT_MAX_MB` | Size cap in MB for browser upload attachments that are not images |
 
 Boolean variables accept `1`, `true`, `yes`, `on`, `0`, `false`, `no` and `off` (case-insensitive, trimmed). Any other value, or an unset variable, gives the default. Number variables must be finite and greater than 0 (fractions are allowed); otherwise the default is used.
 
@@ -3334,9 +3320,6 @@ Get the current board configuration.
     "status": "todo",
     "priority": "normal"
   },
-  "reviewRequired": true,
-  "allowDoneDragBypass": false,
-  "quickViewLimit": 5,
   "proposalPolicy": "confirm"
 }
 ```
@@ -3363,9 +3346,6 @@ Update the board configuration. Partial: send only the fields you want to change
 |-------|------|---------|-------------|
 | `columns` | `array` | *(see above)* | 1 to 10 columns. Must include `backlog`, `todo`, `in-progress`, `review`, and `done` (`cancelled` is optional). A column whose key is still used by a task or by any proposal's `status` cannot be removed |
 | `defaults` | `object` | `{ "status": "todo", "priority": "normal" }` | Defaults for new tasks. Both `status` and `priority` are required when sent; `status` must be a built-in status or a configured column |
-| `reviewRequired` | `boolean` | `true` | Stored and returned. Neither the server nor the current UI acts on it |
-| `allowDoneDragBypass` | `boolean` | `false` | Stored and returned. Neither the server nor the current UI acts on it |
-| `quickViewLimit` | `number` | `5` | Integer, 1 to 50. Stored and returned; the workspace quick view currently shows a fixed 5 rows |
 | `proposalPolicy` | `string` | `"confirm"` | `"confirm"` (proposals wait for approval) or `"auto"` (applied immediately) |
 | `defaultModel` | `string` | *(unset)* | Fallback model for execute (max 100 chars) |
 | `defaultThinking` | `string` | *(unset)* | Fallback thinking level for execute (any string, max 20 chars). Empty or `off` launches as `low` |
@@ -3376,7 +3356,6 @@ Each column:
 |-------|------|----------|-------------|
 | `key` | `string` | Yes | Status key, lowercase kebab-case (1 to 64 chars). Custom keys are allowed |
 | `title` | `string` | Yes | Display label (1 to 100 chars) |
-| `wipLimit` | `number` | No | Integer, 0 or more. Stored only; not enforced |
 | `visible` | `boolean` | Yes | Whether the board shows the column |
 
 **Response:** The full updated config object.

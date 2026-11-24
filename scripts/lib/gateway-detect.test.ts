@@ -204,7 +204,7 @@ describe('gateway detection and repair', () => {
     expect(result.configPath).toBe(customConfigPath);
 
     const updatedCustom = JSON.parse(readFileSync(customConfigPath, 'utf8'));
-    expect(updatedCustom.gateway.tools.allow).toEqual(['cron', 'gateway', 'sessions_spawn']);
+    expect(updatedCustom.gateway.tools.allow).toEqual(['sessions_spawn']);
 
     const unchangedDefault = JSON.parse(readFileSync(path.join(tempHome, '.openclaw', 'openclaw.json'), 'utf8'));
     expect(unchangedDefault.gateway.tools.allow).toEqual(['cron', 'gateway']);

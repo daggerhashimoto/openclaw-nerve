@@ -150,7 +150,7 @@ On the gateway host, edit `~/.openclaw/openclaw.json` and merge in these entries
     "allowedOrigins": ["http://localhost:3080", "http://127.0.0.1:3080"]
   },
   "tools": {
-    "allow": ["cron", "gateway", "sessions_spawn"]
+    "allow": ["sessions_spawn"]
   }
 }
 ```
@@ -168,7 +168,7 @@ openclaw gateway restart
 
 The loopback pair covers a default install. If you reach Nerve at another origin, add that exact origin too, and set `NERVE_PUBLIC_ORIGIN` to it.
 
-**Tool allowlist.** Nerve calls gateway tools over HTTP (`POST /tools/invoke`). Setup writes `cron`, `gateway` and `sessions_spawn`, and the list above matches. Among them Nerve itself calls only `sessions_spawn`, for **Run now** on an isolated agent-turn cron and for unassigned Kanban tasks. Crons are otherwise managed over gateway RPC. Nerve also calls `sessions_list`, `session_status`, `sessions_history`, `subagents` and `memory_store` over HTTP; setup does not change the allowlist for those.
+**Tool allowlist.** Nerve calls gateway tools over HTTP (`POST /tools/invoke`). Setup adds `sessions_spawn` to `gateway.tools.allow` for **Run now** on an isolated agent-turn cron and for unassigned Kanban tasks. Crons are otherwise managed over gateway RPC. Nerve also calls `sessions_list`, `session_status`, `sessions_history`, `subagents` and `memory_store` over HTTP; setup does not change the allowlist for those.
 
 ### 5. Start Nerve and approve its device
 

@@ -27,7 +27,7 @@ Common problems and fixes for Nerve.
 **Fix:** On the gateway host, do what setup printed:
 
 1. Add the listed origins to `gateway.controlUi.allowedOrigins` in `~/.openclaw/openclaw.json`.
-2. Add `"cron"`, `"gateway"` and `"sessions_spawn"` to `gateway.tools.allow`.
+2. Add `"sessions_spawn"` to `gateway.tools.allow`.
 3. Run `openclaw gateway restart`.
 4. Start Nerve, open it in a browser, then run `openclaw devices list` and `openclaw devices approve <requestId>` for Nerve's request.
 
@@ -206,7 +206,7 @@ ALLOWED_ORIGINS=https://nerve.example.com
 CSP_CONNECT_EXTRA=https://nerve.example.com wss://nerve.example.com
 ```
 
-Setup writes these for its Tailscale, Network and Custom access modes, but not for a reverse-proxy domain. When HTTPS is on in Network or Custom mode, setup also adds the `https://<host>:<SSL_PORT>` origin. In Tailscale IP mode it does so only for a non-interactive run (`--defaults --access-mode tailscale-ip`) with `SSL_PORT` already set in `.env`.
+Setup writes these for its Tailscale, Network and Custom access modes, but not for a reverse-proxy domain. When HTTPS is on in Tailscale IP, Network or Custom mode, setup also adds the `https://<host>:<SSL_PORT>` origin. In Tailscale IP mode the wizard offers HTTPS on every run; `--defaults --access-mode tailscale-ip` uses `SSL_PORT` when `.env` already has it.
 
 ---
 
@@ -387,7 +387,7 @@ The server log has the details under `[crons]` and `[gateway-rpc]`.
   openssl req -x509 -newkey rsa:2048 -nodes \
     -keyout certs/key.pem -out certs/cert.pem -days 365 \
     -subj "/CN=localhost"
-  # Restart Nerve; it starts HTTPS on SSL_PORT (default 3443)
+  # Set SSL_PORT=3443 in .env and restart Nerve; it starts HTTPS on SSL_PORT
   ```
 
 ### Transcription fails
@@ -652,7 +652,7 @@ openssl req -x509 -newkey rsa:2048 -nodes \
   -subj "/CN=localhost"
 ```
 
-Nerve starts HTTPS on `SSL_PORT` (default 3443) when `certs/cert.pem` and `certs/key.pem` exist. Restart after adding them.
+Nerve starts HTTPS on `SSL_PORT` (default 3443) when `certs/cert.pem` and `certs/key.pem` exist and `SSL_PORT` is not empty. An older `.env` without an `SSL_PORT` line starts on the default, whatever the bind address, and `SSL_PORT=` disables HTTPS. Restart after changing either.
 
 ### SSE not working over HTTPS
 

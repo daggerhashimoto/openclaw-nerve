@@ -20,9 +20,19 @@ export const cacheHeaders: MiddlewareHandler = async (c, next) => {
   await next();
 
   const path = c.req.path;
+  const routeCacheControl = c.res.headers.get('Cache-Control');
+  const isApiRoute = path.startsWith('/api/') || path === '/api';
+  const isNoCacheRoute = isApiRoute || path === '/health';
 
-  // API routes — no caching
-  if (path.startsWith('/api/') || path === '/health') {
+  // Keep a route's own Cache-Control header when it set one explicitly. API
+  // responses may be auth-protected, so never let a route mark them public:
+  // a shared cache could then serve the response without the session check.
+  if (routeCacheControl && !(isApiRoute && /\bpublic\b/i.test(routeCacheControl))) {
+    return;
+  }
+
+  // API routes and /health — no caching
+  if (isNoCacheRoute) {
     c.header('Cache-Control', 'no-cache');
     return;
   }

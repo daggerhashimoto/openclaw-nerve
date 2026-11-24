@@ -45,16 +45,6 @@ export interface CronRun {
   summary?: string;
 }
 
-const CRON_TOOL_UNAVAILABLE_RE = /tool not available:\s*cron/i;
-
-export const CRON_GATEWAY_TOOL_ALLOWLIST = ['cron', 'gateway', 'sessions_spawn'] as const;
-export const CRON_WARNING_SUMMARY = 'This gateway does not expose cron management, so Nerve can’t load or edit crons right now.';
-
-export function getCronWarning(error: string | null | undefined): string | null {
-  if (!error || !CRON_TOOL_UNAVAILABLE_RE.test(error)) return null;
-  return CRON_WARNING_SUMMARY;
-}
-
 export function normalizeCronJob(j: Record<string, unknown>): CronJob {
   const sched = (j.schedule || {}) as Record<string, unknown>;
   const payload = (j.payload || {}) as Record<string, unknown>;
@@ -106,23 +96,20 @@ export function useCrons() {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cronWarning, setCronWarning] = useState<string | null>(null);
   const fetchedRef = useRef(false);
 
   const setErrorState = useCallback((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     setError(message);
-    setCronWarning(getCronWarning(message));
   }, []);
 
   const fetchJobs = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    setCronWarning(null);
     try {
       const res = await fetch('/api/crons');
-      const data = await res.json() as { ok: boolean; result?: { jobs?: unknown[]; details?: { jobs?: unknown[] } }; error?: string };
-      if (!data.ok) throw new Error(data.error || 'Failed to fetch crons');
+      const data = await res.json().catch(() => null) as { ok?: boolean; result?: { jobs?: unknown[]; details?: { jobs?: unknown[] } }; error?: string } | null;
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to fetch crons');
       const rawJobs = data.result?.jobs || data.result?.details?.jobs || (Array.isArray(data.result) ? data.result : []);
       setJobs((rawJobs as Record<string, unknown>[]).map(normalizeCronJob));
     } catch (err) {
@@ -147,8 +134,8 @@ export function useCrons() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled }),
       });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (!data.ok) throw new Error(data.error || 'Failed to toggle');
+      const data = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to toggle');
       setJobs(prev => prev.map(j => j.id === id ? { ...j, enabled } : j));
       return true;
     } catch (err) {
@@ -160,8 +147,8 @@ export function useCrons() {
   const runJob = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/crons/${encodeURIComponent(id)}/run`, { method: 'POST' });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (!data.ok) throw new Error(data.error || 'Failed to run');
+      const data = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to run');
       const nowIso = new Date().toISOString();
       setJobs(prev => prev.map(job => (
         job.id === id
@@ -178,12 +165,12 @@ export function useCrons() {
   const fetchRuns = useCallback(async (id: string): Promise<CronRun[]> => {
     try {
       const res = await fetch(`/api/crons/${encodeURIComponent(id)}/runs`);
-      const data = await res.json() as {
-        ok: boolean;
+      const data = await res.json().catch(() => null) as {
+        ok?: boolean;
         result?: { entries?: unknown[]; runs?: unknown[]; details?: { entries?: unknown[] } };
         error?: string;
-      };
-      if (!data.ok) throw new Error(data.error || 'Failed to fetch runs');
+      } | null;
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to fetch runs');
       const rawRuns = data.result?.entries || data.result?.runs || data.result?.details?.entries || (Array.isArray(data.result) ? data.result : []);
       return (rawRuns as Record<string, unknown>[]).map(r => ({
         timestamp: r.timestamp as string || (r.ts ? new Date(r.ts as number).toISOString() : ''),
@@ -204,8 +191,8 @@ export function useCrons() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ job }),
       });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (!data.ok) throw new Error(data.error || 'Failed to add cron');
+      const data = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to add cron');
       await fetchJobs();
       return true;
     } catch (err) {
@@ -221,8 +208,8 @@ export function useCrons() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ patch }),
       });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (!data.ok) throw new Error(data.error || 'Failed to update cron');
+      const data = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to update cron');
       await fetchJobs();
       return true;
     } catch (err) {
@@ -234,8 +221,8 @@ export function useCrons() {
   const deleteJob = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/crons/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (!data.ok) throw new Error(data.error || 'Failed to delete');
+      const data = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Failed to delete');
       setJobs(prev => prev.filter(j => j.id !== id));
       return true;
     } catch (err) {
@@ -246,5 +233,5 @@ export function useCrons() {
 
   const activeCount = jobs.filter(j => j.enabled).length;
 
-  return { jobs, isLoading, error, cronWarning, activeCount, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob };
+  return { jobs, isLoading, error, activeCount, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob };
 }

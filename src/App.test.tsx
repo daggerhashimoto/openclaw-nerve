@@ -436,14 +436,7 @@ beforeEach(() => {
           twoModeEnabled: false,
           inlineEnabled: true,
           fileReferenceEnabled: uploadConfigState.fileReferenceEnabled,
-          modeChooserEnabled: false,
           inlineAttachmentMaxMb: 4,
-          inlineImageContextMaxBytes: 32768,
-          inlineImageAutoDowngradeToFileReference: true,
-          inlineImageShrinkMinDimension: 512,
-          inlineImageMaxDimension: 2048,
-          inlineImageWebpQuality: 82,
-          exposeInlineBase64ToAgent: false,
         }),
       } as Response;
     }
@@ -541,14 +534,7 @@ describe('App save toast workspace scoping', () => {
               twoModeEnabled: false,
               inlineEnabled: true,
               fileReferenceEnabled: true,
-              modeChooserEnabled: false,
               inlineAttachmentMaxMb: 4,
-              inlineImageContextMaxBytes: 32768,
-              inlineImageAutoDowngradeToFileReference: true,
-              inlineImageShrinkMinDimension: 512,
-              inlineImageMaxDimension: 2048,
-              inlineImageWebpQuality: 82,
-              exposeInlineBase64ToAgent: false,
             }),
           } as Response;
         }

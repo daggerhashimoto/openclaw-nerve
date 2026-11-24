@@ -104,8 +104,6 @@ export const config = {
   bunPath: path.join(HOME, '.bun', 'bin', 'bunx'),
   // Limits
   limits: {
-    tts: 64 * 1024,                  // 64 KB
-    agentLog: 64 * 1024,             // 64 KB
     transcribe: 12 * 1024 * 1024,    // 12 MB
     /** Global max request body size (transcribe + 1 MB overhead) */
     maxBodyBytes: 12 * 1024 * 1024 + 1024 * 1024,  // ~13 MB

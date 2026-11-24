@@ -50,7 +50,7 @@ Nerve depends on an OpenClaw gateway. You must:
 
 For the default local path, you may apply the minimal OpenClaw changes that `npm run setup` makes itself:
 - fixing local device scopes and pre-pairing Nerve's device in `~/.openclaw/devices/paired.json`
-- adding `cron`, `gateway`, and `sessions_spawn` to `gateway.tools.allow`
+- adding `sessions_spawn` to `gateway.tools.allow`
 - restarting the local gateway so those take effect
 
 Setup adds origins to `gateway.controlUi.allowedOrigins` only for non-localhost access modes, and those need consent anyway.

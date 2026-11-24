@@ -220,9 +220,9 @@ describe('sessions routes', () => {
       source: 'sqlite', rawSeq: 7, messageId: 'msg-7', messageSeq: 7, contentIndex: 1,
     })).toString('base64url')}`;
 
-    function mediaUrl(params: { artifactId?: string; imageIndex?: number; timestamp?: number } = {}) {
+    function mediaUrl(params: { sessionKey?: string; artifactId?: string; imageIndex?: number; timestamp?: number } = {}) {
       const query = new URLSearchParams({
-        sessionKey,
+        sessionKey: params.sessionKey ?? sessionKey,
         timestamp: String(params.timestamp ?? timestamp),
         imageIndex: String(params.imageIndex ?? 0),
       });
@@ -257,6 +257,7 @@ describe('sessions routes', () => {
       expect(res.headers.get('content-type')).toBe('image/png');
       expect(res.headers.get('x-content-type-options')).toBe('nosniff');
       expect(res.headers.get('content-disposition')).toContain(`message-${timestamp}-image-0.png`);
+      expect(res.headers.get('cache-control')).toBe('private, no-cache');
       expect(Buffer.from(await res.arrayBuffer()).toString('utf-8')).toBe('hello-image');
       expect(gatewayRpcCallMock).toHaveBeenCalledWith('artifacts.download', { sessionKey, artifactId }, expect.any(Number));
     });
@@ -380,6 +381,28 @@ describe('sessions routes', () => {
 
       expect(res.status).toBe(415);
       expect(res.headers.get('content-type')).toContain('application/json');
+    });
+
+    it('reads a non-main agent transcript from that agent sessions folder in the sessions.json fallback', async () => {
+      const designerKey = 'agent:designer:main';
+      const designerDir = path.join(tmpDir, '.openclaw', 'agents', 'designer', 'sessions');
+      const sessionId = '11111111-2222-3333-4444-555555555555';
+      await fs.mkdir(designerDir, { recursive: true });
+      await fs.writeFile(path.join(designerDir, 'sessions.json'), JSON.stringify({ [designerKey]: { sessionId } }));
+      await fs.writeFile(path.join(designerDir, `${sessionId}.jsonl`), JSON.stringify({
+        type: 'message',
+        message: {
+          timestamp,
+          content: [{ type: 'image', mimeType: 'image/png', data: Buffer.from('designer-img').toString('base64') }],
+        },
+      }));
+      const app = await buildApp();
+
+      const res = await app.request(mediaUrl({ sessionKey: designerKey }));
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('image/png');
+      expect(Buffer.from(await res.arrayBuffer()).toString('utf-8')).toBe('designer-img');
     });
   });
 

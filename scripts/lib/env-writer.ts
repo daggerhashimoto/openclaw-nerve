@@ -171,7 +171,7 @@ export function generateEnvContent(config: EnvConfig, existingContent = ''): str
   if (config.HOST && config.HOST !== DEFAULTS.HOST) {
     serverLines.push(`HOST=${config.HOST}`);
   }
-  if (config.SSL_PORT && config.SSL_PORT !== DEFAULTS.SSL_PORT) {
+  if (config.SSL_PORT !== undefined) {
     serverLines.push(`SSL_PORT=${config.SSL_PORT}`);
   }
   lines.push('# Server');
@@ -273,13 +273,16 @@ export function loadExistingEnv(envPath: string): EnvConfig {
     if (!trimmed || trimmed.startsWith('#')) continue;
     const eqIdx = trimmed.indexOf('=');
     if (eqIdx > 0) {
-      const key = trimmed.slice(0, eqIdx).trim();
+      const key = trimmed.slice(0, eqIdx).trim().replace(/^export\s+/, '').trim();
       let value = trimmed.slice(eqIdx + 1).trim();
       // Strip matching surrounding quotes ("value" or 'value')
       if (value.length >= 2 && ((value[0] === '"' && value[value.length - 1] === '"') || (value[0] === "'" && value[value.length - 1] === "'"))) {
         value = value.slice(1, -1);
       }
-      if (value) config[key] = value;
+      // An empty SSL_PORT is meaningful: setup writes it to record HTTPS as
+      // explicitly off. Keep it distinct from a missing key, which still means
+      // "use the legacy default when certificates exist".
+      if (value || key === 'SSL_PORT') config[key] = value;
     }
   }
   return config as EnvConfig;

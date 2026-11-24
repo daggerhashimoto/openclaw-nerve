@@ -36,9 +36,9 @@ const EMPTY_SPARKLINE = '▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁';
  */
 const normalizeModel = (m: string) => m.trim() || '--';
 
-// Security: Use sessionStorage instead of localStorage for auth credentials.
-// sessionStorage is cleared when the browser tab closes, reducing exposure if
-// the device is shared or left unattended. localStorage persists indefinitely.
+// Connection preferences (gateway URL and any manually entered token) are kept
+// in localStorage under 'oc-config' for reconnects; when server-side token
+// injection is used, the stored token remains empty.
 function loadConfig() {
   try { return JSON.parse(localStorage.getItem('oc-config') || '{}'); } catch { return {}; }
 }

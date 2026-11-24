@@ -301,12 +301,17 @@ app.get('/api/crons', rateLimitGeneral, async (c) => {
 });
 
 app.post('/api/crons', rateLimitGeneral, async (c) => {
+  let raw: unknown;
   try {
-    const raw = await c.req.json();
-    const parsed = cronJobSchema.safeParse(raw);
-    if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
-    const legacyError = legacyFlatFieldsError(raw.job);
-    if (legacyError) return c.json({ ok: false, error: legacyError }, 400);
+    raw = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'Invalid JSON body' }, 400);
+  }
+  const parsed = cronJobSchema.safeParse(raw);
+  if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
+  const legacyError = legacyFlatFieldsError((raw as { job: Record<string, unknown> }).job);
+  if (legacyError) return c.json({ ok: false, error: legacyError }, 400);
+  try {
     const body = parsed.data;
     const normalizedJob = normalizeCronTarget(body.job);
     const result = await gatewayRpcCall('cron.add', normalizedJob);
@@ -319,12 +324,17 @@ app.post('/api/crons', rateLimitGeneral, async (c) => {
 
 app.patch('/api/crons/:id', rateLimitGeneral, async (c) => {
   const id = c.req.param('id');
+  let raw: unknown;
   try {
-    const raw = await c.req.json();
-    const parsed = cronPatchSchema.safeParse(raw);
-    if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
-    const legacyError = legacyFlatFieldsError(raw.patch);
-    if (legacyError) return c.json({ ok: false, error: legacyError }, 400);
+    raw = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'Invalid JSON body' }, 400);
+  }
+  const parsed = cronPatchSchema.safeParse(raw);
+  if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
+  const legacyError = legacyFlatFieldsError((raw as { patch: Record<string, unknown> }).patch);
+  if (legacyError) return c.json({ ok: false, error: legacyError }, 400);
+  try {
     const body = parsed.data;
     const normalizedPatch = normalizeCronTarget(body.patch);
     const result = await gatewayRpcCall('cron.update', { id, patch: normalizedPatch });

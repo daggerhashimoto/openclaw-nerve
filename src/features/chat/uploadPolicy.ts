@@ -4,28 +4,14 @@ export interface UploadFeatureConfig {
   twoModeEnabled: boolean;
   inlineEnabled: boolean;
   fileReferenceEnabled: boolean;
-  modeChooserEnabled: boolean;
   inlineAttachmentMaxMb: number;
-  inlineImageContextMaxBytes: number;
-  inlineImageAutoDowngradeToFileReference: boolean;
-  inlineImageShrinkMinDimension: number;
-  inlineImageMaxDimension: number;
-  inlineImageWebpQuality: number;
-  exposeInlineBase64ToAgent: boolean;
 }
 
 export const DEFAULT_UPLOAD_FEATURE_CONFIG: UploadFeatureConfig = {
   twoModeEnabled: false,
   inlineEnabled: true,
   fileReferenceEnabled: false,
-  modeChooserEnabled: false,
   inlineAttachmentMaxMb: 4,
-  inlineImageContextMaxBytes: 32_768,
-  inlineImageAutoDowngradeToFileReference: true,
-  inlineImageShrinkMinDimension: 512,
-  inlineImageMaxDimension: 2048,
-  inlineImageWebpQuality: 82,
-  exposeInlineBase64ToAgent: false,
 };
 
 export function getInlineAttachmentMaxBytes(config: UploadFeatureConfig): number {
@@ -33,15 +19,6 @@ export function getInlineAttachmentMaxBytes(config: UploadFeatureConfig): number
     ? config.inlineAttachmentMaxMb
     : DEFAULT_UPLOAD_FEATURE_CONFIG.inlineAttachmentMaxMb;
   return Math.round(mb * 1024 * 1024);
-}
-
-export function shouldShowUploadChooser(config: UploadFeatureConfig): boolean {
-  return Boolean(
-    config.twoModeEnabled
-      && config.inlineEnabled
-      && config.fileReferenceEnabled
-      && config.modeChooserEnabled,
-  );
 }
 
 export function isUploadsEnabled(config: UploadFeatureConfig): boolean {

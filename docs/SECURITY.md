@@ -405,7 +405,7 @@ Exceeding the global limit returns **413 Request body too large**.
 
 ## TLS and HTTPS
 
-Nerve starts an HTTPS server on `SSL_PORT` next to HTTP when both files exist:
+Nerve starts an HTTPS server on `SSL_PORT` next to HTTP when both certificate files exist and `SSL_PORT` is not empty. An older `.env` without an `SSL_PORT` line uses the default port `3443`, and an empty `SSL_PORT=` disables the listener while the certificates stay on disk.
 
 ```
 certs/cert.pem    # X.509 certificate

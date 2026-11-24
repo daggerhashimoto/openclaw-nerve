@@ -17,6 +17,7 @@ import { releaseWhisperContext } from './services/whisper-local.js';
 import { config, validateConfig, printStartupBanner, probeGateway } from './lib/config.js';
 import { setupWebSocketProxy, closeAllWebSockets } from './lib/ws-proxy.js';
 import { startFileWatcher, stopFileWatcher } from './lib/file-watcher.js';
+import { httpsListenerEnabled } from './lib/https-listener.js';
 
 // ── Startup banner + validation ──────────────────────────────────────
 
@@ -63,7 +64,11 @@ probeGateway();
 
 let sslServer: https.Server | undefined;
 
-if (fs.existsSync(config.certPath) && fs.existsSync(config.keyPath)) {
+// See server/lib/https-listener.ts: certificates start HTTPS unless SSL_PORT is empty.
+const certsPresent = fs.existsSync(config.certPath) && fs.existsSync(config.keyPath);
+const sslEnabled = httpsListenerEnabled(process.env.SSL_PORT, certsPresent);
+
+if (sslEnabled) {
   const sslOptions = {
     cert: fs.readFileSync(config.certPath),
     key: fs.readFileSync(config.keyPath),
@@ -152,6 +157,8 @@ if (fs.existsSync(config.certPath) && fs.existsSync(config.keyPath)) {
   });
 
   setupWebSocketProxy(sslServer);
+} else if (certsPresent) {
+  console.log('\x1b[33m[openclaw-ui]\x1b[0m HTTPS off: certs/ found but SSL_PORT is empty');
 }
 
 // ── Graceful shutdown ────────────────────────────────────────────────

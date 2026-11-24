@@ -88,14 +88,14 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
         const res = await fetch(`/api/memories/section?${params.toString()}`, {
           signal: controller.signal,
         });
-        const data = await res.json() as { ok: boolean; content?: string; error?: string };
+        const data = await res.json().catch(() => null) as { ok?: boolean; content?: string; error?: string } | null;
 
         if (controller.signal.aborted || requestVersionRef.current !== requestVersion || activeEditorKeyRef.current !== editorKey) {
           return;
         }
 
-        if (!data.ok) {
-          setError(data.error || 'Failed to load section');
+        if (!res.ok || !data?.ok) {
+          setError(data?.error || 'Failed to load section');
           return;
         }
 
@@ -156,14 +156,14 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
         body: JSON.stringify({ title, content, date, agentId }),
       });
 
-      const data = await res.json() as { ok: boolean; error?: string };
+      const data = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
 
       if (requestVersionRef.current !== requestVersion || activeEditorKeyRef.current !== requestEditorKey) {
         return;
       }
 
-      if (!data.ok) {
-        setError(data.error || 'Failed to save');
+      if (!res.ok || !data?.ok) {
+        setError(data?.error || 'Failed to save');
         return;
       }
 

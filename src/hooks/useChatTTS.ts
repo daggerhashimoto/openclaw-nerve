@@ -54,23 +54,37 @@ export function useChatTTS({ soundEnabled, speak }: UseChatTTSDeps) {
     lastMessageWasVoiceRef.current = text.startsWith('[voice] ');
   }, []);
 
+  /** Drop voice tracking for a run that ended without a final reply. */
+  const clearVoiceMessage = useCallback(() => {
+    lastMessageWasVoiceRef.current = false;
+  }, []);
+
   /** Clear the played-sounds dedup set (called on chat_started). */
   const resetPlayedSounds = useCallback(() => {
     playedSoundsRef.current.clear();
-    lastMessageWasVoiceRef.current = false;
   }, []);
 
   /**
    * Handle TTS for a completed assistant turn.
    * Called from chat_final processing when the run is the active run.
+   * `ownsVoiceFallback` is true only for the run whose send set the voice
+   * marker, so an earlier active run cannot consume a newer voice send's
+   * fallback. Explicit ttsText is independent of that ownership.
    */
-  const handleFinalTTS = useCallback((finalData: FinalMessageData | null, isActiveRun: boolean) => {
+  const handleFinalTTS = useCallback((
+    finalData: FinalMessageData | null,
+    isActiveRun: boolean,
+    ownsVoiceFallback = true,
+  ) => {
+    const wasVoice = ownsVoiceFallback && lastMessageWasVoiceRef.current;
+    if (wasVoice) lastMessageWasVoiceRef.current = false;
+
     if (!isActiveRun) return;
 
     if (finalData?.ttsText && !playedSoundsRef.current.has(finalData.ttsText)) {
       playedSoundsRef.current.add(finalData.ttsText);
       speak.current(finalData.ttsText);
-    } else if (!finalData?.ttsText && lastMessageWasVoiceRef.current && finalData?.text) {
+    } else if (!finalData?.ttsText && wasVoice && finalData?.text) {
       // Voice fallback: agent forgot [tts:...] marker — auto-speak cleaned response
       const fallback = buildVoiceFallbackText(finalData.text);
       if (fallback) speak.current(fallback);
@@ -86,11 +100,13 @@ export function useChatTTS({ soundEnabled, speak }: UseChatTTSDeps) {
 
   return useMemo(() => ({
     trackVoiceMessage,
+    clearVoiceMessage,
     resetPlayedSounds,
     handleFinalTTS,
     playCompletionPing,
   }), [
     trackVoiceMessage,
+    clearVoiceMessage,
     resetPlayedSounds,
     handleFinalTTS,
     playCompletionPing,

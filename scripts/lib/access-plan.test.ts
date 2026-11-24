@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAccessPlan, applyAccessPlanToConfig, requiresAuthentication } from './access-plan.js';
+import { buildAccessPlan, applyAccessPlanToConfig, requiresAuthentication, serveTargetPort } from './access-plan.js';
 
 const EXAMPLE_TS_DNS = 'example-node.tail0000.ts.net';
 const EXAMPLE_TS_IPV4 = '100.64.0.42';
@@ -281,6 +281,26 @@ describe('buildAccessPlan with several Tailscale Serve endpoints', () => {
       ]),
     });
     expect(plan.browserOrigins).toEqual([NERVE]);
+  });
+
+  it('reports the port the accepted Serve endpoint proxies to', () => {
+    const http = serveState([
+      { origin: OTHER, rootProxy: 'http://127.0.0.1:9000' },
+      { origin: NERVE, rootProxy: 'http://localhost:3080' },
+    ]);
+    expect(serveTargetPort(http, ['3080', '3443'])).toBe('3080');
+
+    const https = serveState([
+      { origin: OTHER, rootProxy: 'http://127.0.0.1:9000' },
+      { origin: NERVE, rootProxy: 'https+insecure://localhost:3443' },
+    ]);
+    expect(serveTargetPort(https, ['3080', '3443'])).toBe('3443');
+    expect(serveTargetPort(https, ['3080'])).toBeNull();
+
+    const shorthand = serveState([{ origin: NERVE, rootProxy: '3443' }]);
+    expect(serveTargetPort(shorthand, ['3080', '3443'])).toBe('3443');
+
+    expect(serveTargetPort(undefined, ['3080'])).toBeNull();
   });
 });
 

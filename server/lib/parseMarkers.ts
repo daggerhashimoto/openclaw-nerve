@@ -1,5 +1,5 @@
 /**
- * Parse kanban proposal markers from assistant message text (server-side copy).
+ * Parse kanban proposal markers from assistant message text.
  *
  * Markers follow the protocol:
  *   [kanban:create]{"title":"...","priority":"high"}[/kanban:create]
@@ -9,7 +9,6 @@
  *   - Max 5 markers per message
  *   - Max 2KB per JSON payload
  *
- * Copied from src/features/kanban/lib/parseMarkers.ts — keep in sync.
  * @module
  */
 

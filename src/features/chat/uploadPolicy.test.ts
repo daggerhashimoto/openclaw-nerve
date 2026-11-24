@@ -5,7 +5,6 @@ import {
   getInlineAttachmentMaxBytes,
   getInlineModeGuardrailError,
   isUploadsEnabled,
-  shouldShowUploadChooser,
   type UploadFeatureConfig,
 } from './uploadPolicy';
 
@@ -26,7 +25,6 @@ describe('uploadPolicy', () => {
       twoModeEnabled: true,
       inlineEnabled: true,
       fileReferenceEnabled: true,
-      modeChooserEnabled: true,
       inlineAttachmentMaxMb: 4,
     });
 
@@ -39,7 +37,6 @@ describe('uploadPolicy', () => {
       twoModeEnabled: true,
       inlineEnabled: true,
       fileReferenceEnabled: true,
-      modeChooserEnabled: true,
       inlineAttachmentMaxMb: 1,
     });
 
@@ -74,24 +71,6 @@ describe('uploadPolicy', () => {
     const image = makeFile('huge.png', 'image/png', 8 * 1024 * 1024);
     expect(getInlineModeGuardrailError(archive, config)).toContain('exceeds inline cap (1.5MB)');
     expect(getInlineModeGuardrailError(image, config)).toBeNull();
-  });
-
-  it('shows chooser only when all chooser gates are true', () => {
-    const on = makeConfig({
-      twoModeEnabled: true,
-      inlineEnabled: true,
-      fileReferenceEnabled: true,
-      modeChooserEnabled: true,
-    });
-    const off = makeConfig({
-      twoModeEnabled: true,
-      inlineEnabled: true,
-      fileReferenceEnabled: true,
-      modeChooserEnabled: false,
-    });
-
-    expect(shouldShowUploadChooser(on)).toBe(true);
-    expect(shouldShowUploadChooser(off)).toBe(false);
   });
 
   it('converts inline MB caps to bytes', () => {

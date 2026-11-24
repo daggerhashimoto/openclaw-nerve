@@ -23,7 +23,6 @@ describe('config module', () => {
       expect(typeof config.language).toBe('string');
       expect(typeof config.agentName).toBe('string');
       expect(config.limits).toBeDefined();
-      expect(typeof config.limits.tts).toBe('number');
       expect(typeof config.limits.transcribe).toBe('number');
     });
 
@@ -149,11 +148,6 @@ describe('config module', () => {
   });
 
   describe('limits', () => {
-    it('has reasonable TTS limit', async () => {
-      const { config } = await import('./config.js');
-      expect(config.limits.tts).toBe(64 * 1024);
-    });
-
     it('has reasonable transcribe limit', async () => {
       const { config } = await import('./config.js');
       expect(config.limits.transcribe).toBe(12 * 1024 * 1024);

@@ -48,7 +48,7 @@ Decides how browsers reach Nerve and writes `HOST`, `ALLOWED_ORIGINS`, `CSP_CONN
 | **Network (LAN)** | `0.0.0.0` | Reachable from your local network. Prompts for your LAN IPv4 address. |
 | **Custom** | as entered | Manual port and bind address. |
 
-For Network mode, and for Custom mode with a non-loopback bind address, setup offers to generate a self-signed certificate with `openssl` and asks for `SSL_PORT`. When HTTPS is on, setup also adds the `https://<host>:<SSL_PORT>` origin after the HTTP origin in `ALLOWED_ORIGINS`, `CSP_CONNECT_EXTRA` (with its `wss://` form) and the gateway's allowed origins. Browsers need HTTPS for microphone access away from localhost.
+For Network mode, for Custom mode with a non-loopback bind address, and for Tailscale IP mode, setup offers to generate a self-signed certificate with `openssl` and asks for `SSL_PORT`. When HTTPS is on, setup also adds the `https://<host>:<SSL_PORT>` origin after the HTTP origin in `ALLOWED_ORIGINS`, `CSP_CONNECT_EXTRA` (with its `wss://` form) and the gateway's allowed origins. Tailscale Serve keeps Nerve on loopback and terminates TLS itself, so setup does not offer its own HTTPS for that mode. Browsers need HTTPS for microphone access away from localhost.
 
 #### Gateway config changes
 
@@ -58,7 +58,7 @@ After the access mode, setup brings the gateway's config in line with Nerve. Wha
 
 - Fix the gateway device's scopes, bootstrapping `devices/paired.json` and `identity/device-auth.json` with full operator scopes on a fresh install
 - Pre-pair Nerve's device identity, so it connects without a manual `openclaw devices approve`
-- Add `cron`, `gateway` and `sessions_spawn` to `gateway.tools.allow`
+- Add `sessions_spawn` to `gateway.tools.allow`
 - Add the access mode's browser origins to `gateway.controlUi.allowedOrigins`
 
 When a change needs it, setup restarts the gateway (`openclaw gateway restart`) and approves Nerve's pending device request. If you decline, setup prints how to make each change by hand.
@@ -122,7 +122,7 @@ Setup also copies the bundled agent skills to `~/.openclaw/workspace/skills`.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3080` | HTTP port. Also names the session cookie (`nerve_session_<PORT>`). |
-| `SSL_PORT` | `3443` | HTTPS port. HTTPS starts only when `certs/cert.pem` and `certs/key.pem` exist. |
+| `SSL_PORT` | `3443` | HTTPS port. HTTPS starts when the certificate pair exists and `SSL_PORT` is not empty. An older `.env` with no `SSL_PORT` line uses the default, whatever the bind address. Set `SSL_PORT=` (empty) to keep HTTPS off. |
 | `HOST` | `127.0.0.1` | Bind address. See the warning below. |
 
 > **Network exposure:** with `HOST=0.0.0.0` every endpoint is reachable from the network. Enable authentication (`NERVE_AUTH=true`) and set a password with the setup wizard first. Without auth, anyone who can reach the port can read and write agent memory, edit workspace files, save API keys, and control sessions. The server refuses to start with `HOST=0.0.0.0` and auth off (see [`NERVE_ALLOW_INSECURE`](#nerve_allow_insecure)). Other non-loopback bind addresses only log a warning. See [Security](SECURITY.md).
@@ -349,8 +349,6 @@ Files attached in the chat composer are uploaded to the server, saved in the mai
 
 A message can carry up to 4 attachments. All files picked at once go to the server in one request, so they share the request body limit (about 13 MB).
 
-`NERVE_UPLOAD_MODE_CHOOSER_ENABLED`, `NERVE_UPLOAD_INLINE_IMAGE_CONTEXT_MAX_BYTES` (32768), `NERVE_UPLOAD_INLINE_IMAGE_AUTO_DOWNGRADE_TO_FILE_REFERENCE` (true), `NERVE_UPLOAD_INLINE_IMAGE_SHRINK_MIN_DIMENSION` (512), `NERVE_UPLOAD_IMAGE_OPTIMIZATION_MAX_DIMENSION` (2048), `NERVE_UPLOAD_IMAGE_OPTIMIZATION_WEBP_QUALITY` (82) and `NERVE_UPLOAD_EXPOSE_INLINE_BASE64_TO_AGENT` (false) are still read and reported, but they govern inline image sending, which the current composer does not use.
-
 ### TTS cache
 
 | Variable | Default | Description |
@@ -442,15 +440,12 @@ With auth on, these calls need the session cookie.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `columns` | `array` | *(see below)* | 1 to 10 column definitions. Each: `{ key, title, wipLimit?, visible }` |
+| `columns` | `array` | *(see below)* | 1 to 10 column definitions. Each: `{ key, title, visible }` |
 | `defaults.status` | `string` | `"todo"` | Status for new tasks. Must be a configured column. |
 | `defaults.priority` | `string` | `"normal"` | Priority for new tasks: `critical`, `high`, `normal` or `low` |
 | `proposalPolicy` | `string` | `"confirm"` | Agent proposals: `"confirm"` waits for review, `"auto"` applies them immediately |
 | `defaultModel` | `string` | *(none)* | Model for task runs when neither the run request nor the task sets one (max 100 chars). Unset means OpenClaw's default model. |
 | `defaultThinking` | `string` | *(none)* | Thinking level for task runs when neither the run request nor the task sets one (max 20 chars). Unset, empty or `off` runs with `low`. |
-| `reviewRequired` | `boolean` | `true` | Stored and validated, but nothing reads it yet |
-| `allowDoneDragBypass` | `boolean` | `false` | Stored and validated, but nothing reads it yet |
-| `quickViewLimit` | `number` | `5` | Stored and validated (1 to 50), but nothing reads it yet |
 
 ### Column schema
 
@@ -458,7 +453,6 @@ With auth on, these calls need the session cookie.
 |-------|------|----------|-------------|
 | `key` | `string` | Yes | Status key in lowercase kebab case (for example `in-progress` or `blocked`), up to 64 chars |
 | `title` | `string` | Yes | Display label, 1 to 100 chars |
-| `wipLimit` | `integer` | No | Work-in-progress limit, 0 or more. Stored and validated, but not enforced yet |
 | `visible` | `boolean` | Yes | Whether the column shows on the board |
 
 A board must keep the `backlog`, `todo`, `in-progress`, `review` and `done` columns; `cancelled` is optional, and custom keys can be added. A column that tasks or proposals still use cannot be removed.
@@ -480,12 +474,14 @@ A board must keep the `backlog`, `todo`, `in-progress`, `review` and `done` colu
 
 ## HTTPS
 
-Nerve also starts an HTTPS server on `SSL_PORT` when both files exist:
+Nerve also starts an HTTPS server on `SSL_PORT` when both certificate files exist and `SSL_PORT` is not empty:
 
 ```
 certs/cert.pem    # Certificate
 certs/key.pem     # Private key
 ```
+
+An older `.env` without an `SSL_PORT` line uses the default port `3443` when the pair exists, whatever the bind address. Setup writes `SSL_PORT=3443` when HTTPS is on and an empty `SSL_PORT=` when HTTPS is off, so leaving `certs/` in place does not reopen the listener. To disable HTTPS by hand, set `SSL_PORT=`.
 
 Generate a self-signed certificate:
 

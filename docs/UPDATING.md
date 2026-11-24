@@ -178,6 +178,7 @@ From 1.5.4, Nerve connects to the OpenClaw gateway with connect protocol v4 only
 
 - The Classic skin and the fourteen community themes are gone. A saved light theme opens as Daylight and any other as Workbench Night, so there is nothing to do.
 - The rate limiter now reads `X-Forwarded-For` from the right. Behind more than one reverse proxy, for example a remote proxy in front of a local one, list every proxy address in `TRUSTED_PROXIES`. Otherwise every client behind the outer proxy shares one rate-limit bucket.
+- Nerve's built-in HTTPS listener now records its state explicitly in `.env`: setup writes `SSL_PORT=3443` when HTTPS is on and an empty `SSL_PORT=` when it is off, so leftover `certs/` no longer opens a listener after HTTPS is turned off. Existing `.env` files that have certificates but no `SSL_PORT` line keep starting HTTPS on the default `3443`, whatever the bind address; no manual change is required, and `npm run setup` writes the explicit value on its next run.
 
 ## Troubleshooting
 

@@ -3,11 +3,10 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspacePanel } from './WorkspacePanel';
 
-const configTabRenderLog: Array<{ agentId: string; cronWarning?: string | null }> = [];
+const configTabRenderLog: Array<{ agentId: string }> = [];
 const skillsTabRenderLog: string[] = [];
-const mockUseCrons = vi.fn<() => { activeCount: number; cronWarning: string | null }>(() => ({
+const mockUseCrons = vi.fn<() => { activeCount: number }>(() => ({
   activeCount: 0,
-  cronWarning: null,
 }));
 let kanbanVisible = true;
 const mockUseSettings = vi.fn(() => ({ kanbanVisible }));
@@ -23,9 +22,9 @@ vi.mock('./WorkspaceTabs', () => ({
 
 vi.mock('./tabs', () => ({
   CronsTab: () => <div data-testid="crons-tab" />,
-  ConfigTab: ({ agentId, cronWarning }: { agentId: string; cronWarning?: string | null }) => {
-    configTabRenderLog.push({ agentId, cronWarning });
-    return <div data-testid="config-tab">config:{agentId}:{cronWarning ?? 'none'}</div>;
+  ConfigTab: ({ agentId }: { agentId: string }) => {
+    configTabRenderLog.push({ agentId });
+    return <div data-testid="config-tab">config:{agentId}</div>;
   },
   SkillsTab: ({ agentId }: { agentId: string }) => {
     skillsTabRenderLog.push(agentId);
@@ -51,7 +50,7 @@ describe('WorkspacePanel', () => {
     configTabRenderLog.length = 0;
     skillsTabRenderLog.length = 0;
     mockUseCrons.mockReset();
-    mockUseCrons.mockReturnValue({ activeCount: 0, cronWarning: null });
+    mockUseCrons.mockReturnValue({ activeCount: 0 });
     kanbanVisible = true;
     mockUseSettings.mockClear();
   });
@@ -77,23 +76,9 @@ describe('WorkspacePanel', () => {
 
     rerender(<WorkspacePanel {...props} workspaceAgentId="bravo" />);
 
-    expect(await screen.findByTestId('config-tab')).toHaveTextContent('config:bravo:none');
-    expect(configTabRenderLog).toEqual([{ agentId: 'bravo', cronWarning: null }]);
+    expect(await screen.findByTestId('config-tab')).toHaveTextContent('config:bravo');
+    expect(configTabRenderLog).toEqual([{ agentId: 'bravo' }]);
     expect(skillsTabRenderLog).toEqual(['alpha']);
-  });
-
-  it('passes the cron warning into the config tab', async () => {
-    localStorage.setItem('nerve-workspace-tab', 'config');
-    mockUseCrons.mockReturnValue({
-      activeCount: 0,
-      cronWarning: 'This gateway does not expose cron management, so Nerve can’t load or edit crons right now.',
-    });
-
-    render(
-      <WorkspacePanel workspaceAgentId="alpha" memories={[]} onRefreshMemories={vi.fn()} />,
-    );
-
-    expect(await screen.findByTestId('config-tab')).toHaveTextContent('Nerve can’t load or edit crons right now');
   });
 
   it('falls back to memory when kanban is hidden but persisted as active', () => {

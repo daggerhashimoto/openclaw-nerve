@@ -101,7 +101,11 @@ const TRUST_OPTION_CURSOR_RE =
 
 /** Check if the buffer contains Claude's ready prompt (❯ or >), ignoring trust menu cursors */
 function hasReadyPrompt(clean: string): boolean {
-  const withoutTrustCursor = clean.replace(TRUST_OPTION_CURSOR_RE, '');
+  let withoutTrustCursor = clean.replace(TRUST_OPTION_CURSOR_RE, '');
+  if (hasTrustPrompt(clean)) {
+    // Reject a trailing cursor from an unfinished trust-option redraw whose label has not arrived yet
+    withoutTrustCursor = withoutTrustCursor.replace(/[❯>]\s*$/, '');
+  }
   // Claude shows ❯ (U+276F) or > when ready for input
   return withoutTrustCursor.includes('❯') || /^>\s*$/m.test(withoutTrustCursor);
 }
@@ -185,10 +189,10 @@ export async function getClaudeUsage(): Promise<RawClaudeLimits> {
 
     const getBuffer = () => buffer;
 
-    // Step 1: Wait for either a trust prompt or the ready prompt (max 15s)
+    // Step 1: Wait for either a trust prompt (with its menu choices) or the ready prompt (max 15s)
     const gotInitial = await pollFor(
       getBuffer,
-      (clean) => hasTrustPrompt(clean) || hasReadyPrompt(clean),
+      (clean) => (hasTrustPrompt(clean) ? hasTrustPromptChoice(clean) : hasReadyPrompt(clean)),
       15_000,
     );
 
@@ -198,15 +202,19 @@ export async function getClaudeUsage(): Promise<RawClaudeLimits> {
 
     // Step 2: If trust prompt, select "Yes, I trust this folder" and wait for ready prompt
     if (hasTrustPrompt(stripAnsi(buffer))) {
-      if (!hasTrustPromptChoice(stripAnsi(buffer))) {
-        await pollFor(getBuffer, hasTrustPromptChoice, 2_000, 50);
-      }
       const trustKeys = getTrustPromptKeys(stripAnsi(buffer));
-      const postTrustOffset = buffer.length;
-      for (let i = 0; i < trustKeys.length; i++) {
-        if (i > 0) await sleep(50);
+      for (let i = 0; i < trustKeys.length - 1; i++) {
+        const beforeMove = buffer.length;
         pty.write(trustKeys[i]);
+        await pollFor(
+          () => buffer.slice(beforeMove),
+          (clean) => /[❯>]\s*(?:\d+\.\s*)?yes\b/i.test(clean),
+          200,
+          50,
+        );
       }
+      const postTrustOffset = buffer.length;
+      pty.write(trustKeys[trustKeys.length - 1]);
       const gotReady = await pollFor(
         () => buffer.slice(postTrustOffset),
         hasReadyPrompt,

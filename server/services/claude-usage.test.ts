@@ -261,5 +261,62 @@ describe('claude-usage', () => {
       expect(pty.writes).toEqual(['/usage\r', '\r']);
       expect(result.available).toBe(true);
     });
+
+    it('waits past 2s for trust menu choices when the header arrives first, and aborts if choices never render', async () => {
+      const pty = createFakePty();
+      const promise = getClaudeUsage();
+
+      // Only the header arrives; menu options never render
+      pty.emit('Accessing workspace:\n/tmp\nQuick safety check: Is this a project you created or one you trust?\n');
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      const result = await promise;
+
+      expect(pty.writes).toEqual([]);
+      expect(result).toEqual({
+        available: false,
+        error: 'Timeout waiting for Claude to start',
+      });
+    });
+
+    it('does not treat a split trust-option redraw cursor as the REPL ready prompt', async () => {
+      let trusted = false;
+
+      const pty = createFakePty((data, self) => {
+        if (!trusted && data === '\x1b[B') {
+          // Emit the redraw cursor first, and its "Yes, I trust this folder" label 50ms later
+          self.emit(' \x1b[4GNo, exit\r\x1b[1C\x1b[1B❯');
+          setTimeout(() => {
+            self.emit('\x1b[4GYes, I trust this folder');
+          }, 50);
+          return;
+        }
+        if (!trusted && data === '\r') {
+          trusted = true;
+          setTimeout(() => {
+            self.emit('\x1b[2J\x1b[H❯ Try "refactor <filepath>"');
+          }, 300);
+          return;
+        }
+        if (trusted && data === '/usage\r') {
+          self.emit(SAMPLE_USAGE_OUTPUT);
+        }
+      });
+
+      const promise = getClaudeUsage();
+      pty.emit(
+        [
+          'Quick safety check: Is this a project you created or one you trust?',
+          '❯ No, exit',
+          '  Yes, I trust this folder',
+        ].join('\n'),
+      );
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      const result = await promise;
+
+      expect(pty.writes).toEqual(['\x1b[B', '\r', '/usage\r', '\r']);
+      expect(result.available).toBe(true);
+    });
   });
 });

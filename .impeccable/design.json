@@ -1084,9 +1084,9 @@
       }
     },
     "typographyMeta": {
-      "display": {
-        "displayName": "Display",
-        "purpose": "The Nerve wordmark only: Geist at 700 weight with -0.03em tracking, followed by the 12x17 fleet pane."
+      "wordmark": {
+        "displayName": "Wordmark",
+        "purpose": "Lowercase nerve in IBM Plex Mono 400 at -0.02em in every theme, after the Nerve mark and followed by the 12x17 fleet pane; the same lockup as nerve.zone."
       },
       "nameplate": {
         "displayName": "Nameplate",
@@ -1123,10 +1123,6 @@
       "keycap": {
         "displayName": "Keycap",
         "purpose": "Keyboard shortcut hints inside .cockpit-kbd."
-      },
-      "wb-display": {
-        "displayName": "Workbench Display",
-        "purpose": "The Nerve wordmark in Workbench: IBM Plex Serif 600 at normal tracking, followed by the fleet pane."
       },
       "wb-nameplate": {
         "displayName": "Workbench Nameplate",
@@ -1431,7 +1427,7 @@
   ],
   "narrative": {
     "northStar": "Night Light",
-    "overview": "An operator's console is a building seen at night. You do not read the facade by its architecture; you read it by which rooms are lit and how warm the light is. Nerve borrows that reading. Cold blue is an agent at work. Warm cantaloupe is the operator, and anything that has finished and now waits on the operator. When work is done the window goes back to its family colour: every room keeps its own light on at idle, so the building reads as inhabited, and only a lit pane changes, which is how work shows. Colour never decorates, it reports, and because every lit surface means something, the shell can hold a whole fleet in a glance without asking for attention.\n\nNerve ships that meaning in two worlds, and the meaning is written once in this file because both worlds share it. **Workbench** (\"The Working Drawing\") is the default for every install, in Workbench Night (graphite) and Workbench Paper. It is the console printed as a working drawing, adapted from the Ruled Workbench design system the user made for the Nerve landing page: rules are drawn as structure, floating surfaces print a faint hard offset, panes switch flat without bloom, a cool wash falls from the top of the room, paper grain lies over the shell, and the room is pinned to the frame by four diamond corner nodes. **Night light** is the console as a building lit at night, in Night and Daylight: plates read by value and a 1px edge light, a lit pane throws a short bloom, and the room carries an ambient light from above. Daylight is that building by day: cool paper, printed hairlines, panes printed as ink swatches. A browser that stored Night under the old default moves to Workbench Night once; picking Night again sticks.\n\nWorkbench lends type, palette, density and one signature move; layout, navigation, controls, the row unit and every component are the same in both worlds. The mood is exact, calm and dense in both. This is an Operate-mode surface that stays open for hours, so the brand lives in precise details: a 28px row unit shared by every list row, tool row and panel header; one display face reserved for the wordmark and the names of agents and speakers; prose held to a measure that spans the column. State changes are a light switch, 120ms, on or off. Both worlds refuse the hacker costume (scanlines, glowing HUD chrome, tracked uppercase labels), the grey dashboard with one decorative accent, glass and decorative gradients, coloured side rails, and any pulsing or breathing motion. The retired community themes and Classic skin do not return; these four themes are the whole set.",
+    "overview": "An operator's console is a building seen at night. You do not read the facade by its architecture; you read it by which rooms are lit and how warm the light is. Nerve borrows that reading. Cold blue is an agent at work. Warm cantaloupe is the operator, and anything that has finished and now waits on the operator. When work is done the window goes back to its family colour: every room keeps its own light on at idle, so the building reads as inhabited, and only a lit pane changes, which is how work shows. Colour never decorates, it reports, and because every lit surface means something, the shell can hold a whole fleet in a glance without asking for attention.\n\nNerve ships that meaning in two worlds, and the meaning is written once in this file because both worlds share it. **Workbench** (\"The Working Drawing\") is the default for every install, in Workbench Night (graphite) and Workbench Paper. It is the console printed as a working drawing, adapted from the Ruled Workbench design system the user made for the Nerve landing page: rules are drawn as structure, floating surfaces print a faint hard offset, panes switch flat without bloom, a cool wash falls from the top of the room, paper grain lies over the shell, and the room is pinned to the frame by four diamond corner nodes. **Night light** is the console as a building lit at night, in Night and Daylight: plates read by value and a 1px edge light, a lit pane throws a short bloom, and the room carries an ambient light from above. Daylight is that building by day: cool paper, printed hairlines, panes printed as ink swatches. A browser that stored Night under the old default moves to Workbench Night once; picking Night again sticks.\n\nWorkbench lends type, palette, density and one signature move; layout, navigation, controls, the row unit and every component are the same in both worlds. The mood is exact, calm and dense in both. This is an Operate-mode surface that stays open for hours, so the brand lives in precise details: a 28px row unit shared by every list row, tool row and panel header; one display face reserved for the names of agents and speakers, and a lowercase mono wordmark shared with nerve.zone; prose held to a measure that spans the column. State changes are a light switch, 120ms, on or off. Both worlds refuse the hacker costume (scanlines, glowing HUD chrome, tracked uppercase labels), the grey dashboard with one decorative accent, glass and decorative gradients, coloured side rails, and any pulsing or breathing motion. The retired community themes and Classic skin do not return; these four themes are the whole set.",
     "keyCharacteristics": [
       "Light temperature is the state vocabulary in both worlds: blue works, cantaloupe waits on you, red failed, dark is done.",
       "Panes are the state marker: an idle pane shows its family colour at 84% strength, a lit pane switches to the state colour; Night light adds a short bloom, Workbench switches it flat. No dots, rails or glyph icons.",
@@ -1468,7 +1464,7 @@
       },
       {
         "name": "The Names Rule",
-        "body": "The display face (Geist in Night light, Plex Serif in Workbench) is used only for the wordmark and for agent or speaker names. Headings, labels and buttons stay in the reading face.",
+        "body": "The display face (Geist in Night light, Plex Serif in Workbench) is used only for agent or speaker names. The wordmark has its own mono lockup. Headings, labels and buttons stay in the reading face.",
         "section": "typography"
       },
       {
@@ -1525,7 +1521,7 @@
       "Do build raised surfaces from the plate token so each world draws its own edge: the 1px edge light in Night, a printed hairline in Daylight, a ruled cell in Workbench (The Edge Light Rule, The Printed Rule, The Frame Rule).",
       "Do give floating chrome the menu or dialog shadow token rather than a fixed shadow, so Workbench can print it (The Printed Rule).",
       "Do keep every list row, tool row, panel header and the status bar on the 1.867rem row unit (The One Row Rule).",
-      "Do reserve the display face (Geist in Night light, Plex Serif 600 in Workbench) for the wordmark and agent or speaker names (The Names Rule).",
+      "Do reserve the display face (Geist in Night light, Plex Serif 600 in Workbench) for agent or speaker names, and set the wordmark only in its lowercase Plex Mono lockup (The Names Rule).",
       "Do set Quattro body and control text at -0.025em in Workbench and keep code, measures and names at normal tracking (The Tight Hand Rule).",
       "Do hold agent prose to the 72em reading measure and let code, tables and charts take the column.",
       "Do set timestamps, counts, durations, models and code in the world's mono (Atkinson Hyperlegible Mono or IBM Plex Mono) with tabular numerals.",

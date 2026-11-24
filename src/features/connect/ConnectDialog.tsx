@@ -68,7 +68,7 @@ export function ConnectDialog({
             {/* The sign with its pane lit cantaloupe: Nerve is waiting on you */}
             <span className="nerve-wordmark">
               <NerveLogo size={24} static />
-              <span>Nerve</span>
+              <span>nerve</span>
               <Pane state="operator" className="nerve-brand-pane" label="Waiting on you" />
             </span>
             <DialogTitle className="text-[1.067rem] font-semibold leading-snug text-foreground">

@@ -45,7 +45,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
       <div className="w-full max-w-[26rem]">
         <span className="nerve-wordmark">
           <NerveLogo size={32} static />
-          <span>Nerve</span>
+          <span>nerve</span>
           <Pane state="operator" className="nerve-brand-pane" label="Waiting on you" />
         </span>
         <p className="mt-3 text-[1rem] leading-relaxed text-muted-foreground">

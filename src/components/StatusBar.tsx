@@ -19,7 +19,10 @@ interface StatusBarProps {
   contextLimit?: number;
   /** Open session's last heartbeat, epoch milliseconds (omit to hide the label). */
   lastHeartbeatAt?: number | null;
-  /** Freeze non-essential live telemetry for lower idle repaint cost. */
+  /**
+   * Freeze non-essential live telemetry for lower idle repaint cost.
+   * Accepted for layout/API parity; the status bar currently ignores it.
+   */
   performanceMode?: boolean;
   /** Sessions to count as running or waiting (omit to show only the session count). */
   sessions?: Session[];
@@ -44,7 +47,8 @@ function Separator() {
  *
  * One row unit tall: connection state, a plain-language count of what is
  * running and what waits on the operator (the agents column's facade draws
- * the windows themselves), the context meter, and the app version.
+ * the windows themselves), the open session's last heartbeat, the context
+ * meter, and the app version.
  */
 export function StatusBar({
   connectionState,
@@ -88,18 +92,18 @@ export function StatusBar({
 
   const [, setHeartbeatTick] = useState(0);
 
-  useEffect(() => {
-    if (lastHeartbeatAt == null) return;
-    const id = window.setInterval(() => setHeartbeatTick(t => t + 1), 60_000);
-    return () => window.clearInterval(id);
-  }, [lastHeartbeatAt]);
-
-  const heartbeatAge = lastHeartbeatAt != null && Number.isFinite(lastHeartbeatAt)
-    ? timeAgo(lastHeartbeatAt)
-    : null;
+  const heartbeatAt = lastHeartbeatAt != null ? new Date(lastHeartbeatAt) : null;
+  const heartbeatValid = heartbeatAt != null && !Number.isNaN(heartbeatAt.getTime());
+  const heartbeatAge = heartbeatValid ? timeAgo(heartbeatAt) : null;
   const heartbeatText = heartbeatAge == null
     ? null
     : `last heartbeat ${heartbeatAge === 'now' ? 'just now' : `${heartbeatAge} ago`}`;
+
+  useEffect(() => {
+    if (!heartbeatValid) return;
+    const id = window.setInterval(() => setHeartbeatTick(t => t + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, [heartbeatValid]);
 
   return (
     <div className="flex h-[var(--row-unit)] shrink-0 select-none items-center gap-2.5 overflow-hidden whitespace-nowrap border-t border-border bg-background px-3 text-[0.8rem] text-muted-foreground max-[378px]:gap-2 max-[378px]:px-2">
@@ -142,10 +146,10 @@ export function StatusBar({
       </span>
 
       {/* Heartbeat: how fresh the open session's last sign of life is */}
-      {heartbeatText && lastHeartbeatAt != null && (
+      {heartbeatText && heartbeatAt && (
         <span
-          className="hidden min-w-0 items-center gap-2.5 sm:inline-flex"
-          title={new Date(lastHeartbeatAt).toLocaleString()}
+          className="hidden shrink-0 items-center gap-2.5 sm:inline-flex"
+          title={heartbeatAt.toLocaleString()}
         >
           <Separator />
           {heartbeatText}

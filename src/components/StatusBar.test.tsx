@@ -138,7 +138,17 @@ describe('StatusBar', () => {
   it('hides the heartbeat item below the sm breakpoint', () => {
     renderStatusBar({ lastHeartbeatAt: Date.now() });
 
-    expect(screen.getByText(/last heartbeat/)).toHaveClass('hidden', 'sm:inline-flex');
+    expect(screen.getByText(/last heartbeat/)).toHaveClass('hidden', 'shrink-0', 'sm:inline-flex');
+  });
+
+  it('keeps the heartbeat out of the live region inside its own separator wrapper', () => {
+    renderStatusBar({ lastHeartbeatAt: Date.now() - 5_000 });
+
+    const heartbeat = screen.getByText(/last heartbeat/);
+    const separator = heartbeat.querySelector('[aria-hidden="true"]');
+    expect(separator).not.toBeNull();
+    expect(separator).toHaveClass('h-3.5', 'w-px');
+    expect(heartbeat.closest('[aria-live]')).toBeNull();
   });
 
   it('shows just now for a fresh heartbeat', () => {
@@ -156,9 +166,24 @@ describe('StatusBar', () => {
     expect(screen.queryByText(/last heartbeat/)).not.toBeInTheDocument();
   });
 
-  it('hides the heartbeat label for a non-finite timestamp', () => {
+  it('hides the heartbeat label for a non-finite timestamp without starting a timer', () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+
     renderStatusBar({ lastHeartbeatAt: Number.NaN });
 
     expect(screen.queryByText(/last heartbeat/)).not.toBeInTheDocument();
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+  });
+
+  it('clears the heartbeat interval on unmount', () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval');
+
+    const { unmount } = renderStatusBar({ lastHeartbeatAt: Date.now() - 5_000 });
+    const intervalId = setIntervalSpy.mock.results[0]?.value;
+    unmount();
+
+    expect(intervalId).toBeDefined();
+    expect(clearIntervalSpy).toHaveBeenCalledWith(intervalId);
   });
 });

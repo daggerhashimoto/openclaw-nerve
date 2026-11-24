@@ -146,11 +146,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // Newest heartbeat seen on the open session: from history or a live frame.
   const [lastHeartbeatAt, setLastHeartbeatAt] = useState<number | null>(null);
 
-  /** Keep the newest heartbeat time; an older history read never lowers it. */
-  const recordHistoryHeartbeat = useCallback((at: number | null) => {
-    if (at == null) return;
+  /** Keep the newest heartbeat time; an older read or frame never lowers it. */
+  const recordHeartbeat = useCallback((at: number) => {
     setLastHeartbeatAt(prev => (prev == null || at > prev ? at : prev));
   }, []);
+
+  const recordHistoryHeartbeat = useCallback((at: number | null) => {
+    // A history window without a heartbeat is not evidence the session has none;
+    // keep the last known value instead of clearing it.
+    if (at == null) return;
+    recordHeartbeat(at);
+  }, [recordHeartbeat]);
 
   // ─── Compose hooks ────────────────────────────────────────────────────────
   const msgHook = useChatMessages({
@@ -445,7 +451,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       if (heartbeat) {
         const sk = currentSessionRef.current;
         if (heartbeat.sessionKey === sk) {
-          setLastHeartbeatAt(Date.now());
+          recordHeartbeat(Date.now());
         }
         if (heartbeat.ended && heartbeat.sessionKey === sk && !heartbeatRuns.running(sk)) {
           const cp = (msg.payload || {}) as ChatEventPayload;
@@ -789,6 +795,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     subscribe,
     heartbeatRuns,
     scheduleHistoryRefresh,
+    recordHeartbeat,
   ]);
 
   // ─── Send message ─────────────────────────────────────────────────────────

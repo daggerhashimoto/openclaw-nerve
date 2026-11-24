@@ -25,6 +25,14 @@ function textMessage(text: string, timestamp: number) {
   return { role: 'assistant', content: [{ type: 'text', text }], timestamp };
 }
 
+function heartbeatMessage(timestamp: number) {
+  return {
+    role: 'assistant',
+    timestamp,
+    content: [{ type: 'toolCall', id: 'hb-1', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } }],
+  };
+}
+
 describe('ChatContext realtime handling (protocol v4)', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -42,13 +50,14 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     connectionState: 'disconnected' | 'connected' = 'disconnected',
   ) {
     let handler: ((msg: GatewayEvent) => void) | null = null;
+    let session = SESSION;
     const subscribeMock = vi.fn((h: (msg: GatewayEvent) => void) => {
       handler = h;
       return () => {};
     });
     const rpcMock = vi.fn(async (method: string) => {
       if (method === 'chat.send') return { runId: RUN, status: 'started' };
-      if (method === 'chat.history') return { messages: history };
+      if (method === 'chat.history') return { messages: session === SESSION ? history : [] };
       return {};
     });
 
@@ -62,7 +71,7 @@ describe('ChatContext realtime handling (protocol v4)', () => {
 
     vi.doMock('./SessionContext', () => ({
       useSessionContext: () => ({
-        currentSession: SESSION,
+        currentSession: session,
         sessions: [],
       }),
     }));
@@ -86,13 +95,22 @@ describe('ChatContext realtime handling (protocol v4)', () => {
       return null;
     }
 
-    render(
+    const view = render(
       <ChatProvider>
         <Consumer />
       </ChatProvider>,
     );
 
     await waitFor(() => expect(handler).not.toBeNull());
+
+    const setSession = (next: string) => {
+      session = next;
+      view.rerender(
+        <ChatProvider>
+          <Consumer />
+        </ChatProvider>,
+      );
+    };
 
     const emit = (event: string, payload: Record<string, unknown>, seq?: number) => {
       act(() => {
@@ -101,7 +119,7 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     };
     const historyCalls = () => rpcMock.mock.calls.filter(([method]) => method === 'chat.history').length;
 
-    return { emit, historyCalls, getChat: () => chat!, rpcMock, speakMock };
+    return { emit, historyCalls, getChat: () => chat!, rpcMock, speakMock, setSession };
   }
 
   const chat = (payload: Record<string, unknown>) => ({ sessionKey: SESSION, runId: RUN, ...payload });
@@ -144,6 +162,109 @@ describe('ChatContext realtime handling (protocol v4)', () => {
     await waitFor(() => expect(getChat().lastHeartbeatAt).toBe(NOW));
     expect(getChat().isGenerating).toBe(false);
     expect(getChat().messages).toHaveLength(0);
+  });
+
+  /** Emits a heartbeat run starting on the open session and waits for its clock. */
+  async function liveHeartbeat(
+    harness: Awaited<ReturnType<typeof setup>>,
+    sessionKey = SESSION,
+  ) {
+    harness.emit('agent', {
+      sessionKey,
+      runId: 'hb-live',
+      seq: 2,
+      stream: 'lifecycle',
+      data: { phase: 'start' },
+      isHeartbeat: true,
+    });
+    await waitFor(() => expect(harness.getChat().lastHeartbeatAt).toBe(NOW));
+  }
+
+  it('does not lower the heartbeat clock when older history answers', async () => {
+    const harness = await setup();
+    const { getChat, rpcMock } = harness;
+    await liveHeartbeat(harness);
+
+    const base = rpcMock.getMockImplementation()!;
+    rpcMock.mockImplementation(async (method: string) => (
+      method === 'chat.history'
+        ? { messages: [heartbeatMessage(NOW - 20 * 60_000)] }
+        : base(method)
+    ));
+    await act(async () => {
+      await getChat().loadHistory();
+    });
+
+    expect(getChat().lastHeartbeatAt).toBe(NOW);
+  });
+
+  it('keeps the heartbeat clock when a history window holds no heartbeat', async () => {
+    const harness = await setup();
+    const { getChat, rpcMock } = harness;
+    await liveHeartbeat(harness);
+
+    const base = rpcMock.getMockImplementation()!;
+    rpcMock.mockImplementation(async (method: string) => (
+      method === 'chat.history'
+        ? { messages: [textMessage('All quiet.', NOW - 60_000)] }
+        : base(method)
+    ));
+    await act(async () => {
+      await getChat().loadHistory();
+    });
+
+    expect(getChat().lastHeartbeatAt).toBe(NOW);
+  });
+
+  it('ignores a heartbeat on another session', async () => {
+    const harness = await setup();
+
+    harness.emit('agent', {
+      sessionKey: 'agent:other:main',
+      runId: 'hb-other',
+      seq: 2,
+      stream: 'lifecycle',
+      data: { phase: 'start' },
+      isHeartbeat: true,
+    });
+
+    expect(harness.getChat().lastHeartbeatAt).toBeNull();
+  });
+
+  it('clears the heartbeat clock on session switch', async () => {
+    const harness = await setup([heartbeatMessage(NOW - 60 * 60_000)], 'connected');
+    const { getChat, setSession } = harness;
+    await waitFor(() => expect(getChat().lastHeartbeatAt).toBe(NOW - 60 * 60_000));
+    await liveHeartbeat(harness);
+
+    act(() => setSession('agent:main:other'));
+
+    await waitFor(() => expect(getChat().lastHeartbeatAt).toBeNull());
+    expect(getChat().messages).toHaveLength(0);
+  });
+
+  it('does not reseed the heartbeat clock from a read of the session it left', async () => {
+    const { getChat, rpcMock, setSession } = await setup();
+    const base = rpcMock.getMockImplementation()!;
+    let resolveRead!: (value: unknown) => void;
+    rpcMock.mockImplementation((method: string) => (
+      method === 'chat.history'
+        ? new Promise((resolve) => { resolveRead = resolve; })
+        : base(method)
+    ));
+
+    let loading!: Promise<void>;
+    act(() => {
+      loading = getChat().loadHistory();
+    });
+    act(() => setSession('agent:main:other'));
+
+    await act(async () => {
+      resolveRead({ messages: [heartbeatMessage(NOW - 20 * 60_000)] });
+      await loading;
+    });
+
+    expect(getChat().lastHeartbeatAt).toBeNull();
   });
 
   it('streams the full text when later frames carry only deltaText', async () => {

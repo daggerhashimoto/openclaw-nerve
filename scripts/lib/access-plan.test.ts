@@ -195,6 +195,18 @@ describe('buildAccessPlan with several Tailscale Serve endpoints', () => {
     }
   });
 
+  it('matches the Nerve HTTPS port when SSL_PORT is absent', () => {
+    const plan = buildAccessPlan({
+      profile: 'tailscale-serve',
+      port: '3080',
+      tailscale: serveState([
+        { origin: OTHER, rootProxy: 'http://127.0.0.1:9000' },
+        { origin: NERVE, rootProxy: 'https+insecure://localhost:3443' },
+      ]),
+    });
+    expect(plan.browserOrigins).toEqual([NERVE]);
+  });
+
   it('matches the shorthand targets Tailscale accepts: a bare port and host:port', () => {
     for (const rootProxy of ['3080', 'localhost:3080', '127.0.0.1:3080']) {
       const plan = buildAccessPlan({
@@ -438,6 +450,50 @@ describe('requiresAuthentication', () => {
         ...connectedTailscale,
         serveEndpoints: [{ origin: `https://${EXAMPLE_TS_DNS}`, rootProxy: 'http://127.0.0.1:9000' }],
       },
+    )).toBe(false);
+  });
+
+  it('matches the default HTTPS port when SSL_PORT is absent', () => {
+    expect(requiresAuthentication(
+      { HOST: '127.0.0.1', PORT: '3080' },
+      undefined,
+      {
+        ...connectedTailscale,
+        serveOrigins: [],
+        serveEndpoints: [{ origin: `https://${EXAMPLE_TS_DNS}`, rootProxy: 'https+insecure://localhost:3443' }],
+      },
+    )).toBe(true);
+  });
+
+  it('does not match the default HTTPS port when a different SSL_PORT is configured', () => {
+    expect(requiresAuthentication(
+      { HOST: '127.0.0.1', PORT: '3080', SSL_PORT: '4443' },
+      undefined,
+      {
+        ...connectedTailscale,
+        serveOrigins: [],
+        serveEndpoints: [{ origin: `https://${EXAMPLE_TS_DNS}`, rootProxy: 'https+insecure://localhost:3443' }],
+      },
+    )).toBe(false);
+  });
+
+  it('returns true without an access plan when a Serve TCP forward reaches Nerve', () => {
+    const tcpOnly = {
+      ...connectedTailscale,
+      serveOrigins: [],
+      serveEndpoints: [],
+    };
+
+    expect(requiresAuthentication(
+      { HOST: '127.0.0.1', PORT: '3080' },
+      undefined,
+      { ...tcpOnly, tcpForwards: ['127.0.0.1:3080'] },
+    )).toBe(true);
+
+    expect(requiresAuthentication(
+      { HOST: '127.0.0.1', PORT: '3080' },
+      undefined,
+      { ...tcpOnly, tcpForwards: ['127.0.0.1:9000'] },
     )).toBe(false);
   });
 });

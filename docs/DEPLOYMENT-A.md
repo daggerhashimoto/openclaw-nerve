@@ -39,7 +39,7 @@ Recommended choices:
 
 - Gateway URL: keep the default (`http://127.0.0.1:18789`)
 - Access mode: **This machine only (localhost)**
-- Password: setup only asks for one when Nerve binds to `0.0.0.0`, so localhost-only needs none
+- Password: not needed when only localhost can reach Nerve
 
 The gateway is on this machine, so setup also brings its OpenClaw config in line with Nerve, asking first in interactive mode. It fixes device scopes, pairs Nerve's device, adds `cron`, `gateway` and `sessions_spawn` to `gateway.tools.allow`, and restarts the gateway when something changed.
 

@@ -96,7 +96,7 @@ Every `/api/*` route needs a valid session cookie except `/api/auth/login`, `/ap
 
 When Nerve is reachable from other machines:
 
-- **Enable authentication.** The setup wizard prompts for it when the access mode binds `0.0.0.0`. Tailscale Serve and Custom binds to a specific address skip that prompt, so set it up yourself if other people can reach the tailnet or network.
+- **Enable authentication.** The setup wizard prompts for it when the access mode or detected configuration exposes Nerve beyond localhost, including Tailscale Serve and Custom binds to a non-loopback address. Set it up yourself if you skip the prompt and other people can reach the tailnet or network.
 - A VPN (Tailscale, WireGuard) adds a layer in front of the password.
 - Put a reverse proxy with HTTPS in front for anything wider.
 - A reverse proxy on the same host must pass the real client address in `X-Forwarded-For`, either by setting it or by appending to the client's value (nginx `$proxy_add_x_forwarded_for`). Nerve reads the header from the right and takes the first address that is not loopback, so entries a client writes on the left do not count. A proxy that sets only `X-Real-IP` also keeps remote clients from looking local, because Nerve uses `X-Real-IP` when `X-Forwarded-For` is missing or lists only loopback addresses. It does not stop a client from choosing its own address with a non-loopback `X-Forwarded-For` entry, which matters for rate limiting. With neither header, every proxied client looks local and, with auth off, gets the gateway token injected.

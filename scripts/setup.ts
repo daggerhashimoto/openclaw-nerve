@@ -727,7 +727,7 @@ async function collectInteractive(
     config.NERVE_SESSION_SECRET = randomBytes(32).toString('hex');
   }
 
-  const isNetworkExposed = requiresAuthentication(config, accessPlan);
+  const isNetworkExposed = requiresAuthentication(config, accessPlan, tailscaleState);
 
   if (isNetworkExposed) {
     section(4, TOTAL_SECTIONS, 'Authentication');

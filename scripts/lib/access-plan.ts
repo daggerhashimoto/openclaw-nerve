@@ -1,4 +1,4 @@
-import type { EnvConfig } from './env-writer.js';
+import { DEFAULTS, type EnvConfig } from './env-writer.js';
 import type { TailscaleState } from './tailscale.js';
 
 export type InstallerAccessProfile =
@@ -197,7 +197,9 @@ export function buildAccessPlan(input: BuildAccessPlanInput): AccessPlan {
 
     case 'tailscale-serve': {
       const plan = emptyPlan('tailscale-serve', '127.0.0.1');
-      const origin = nerveServeOrigin(tailscale, [port, input.sslPort ?? '']);
+      // .env omits SSL_PORT when it is the default, but the server still starts
+      // HTTPS on 3443 when certificates exist, so keep the default in the match.
+      const origin = nerveServeOrigin(tailscale, [port, input.sslPort || DEFAULTS.SSL_PORT]);
       if (!origin) {
         const servingElsewhere = (tailscale?.serveEndpoints?.length ?? 0) > 0;
         plan.followUpSteps = dedupe([
@@ -255,12 +257,23 @@ function hasNonLoopbackOrigin(allowedOrigins: string | null | undefined): boolea
 }
 
 /**
+ * The listener ports Nerve can answer on. SSL_PORT is omitted from .env when
+ * it is the default, but the server still starts HTTPS there when certificates
+ * exist, so the default has to stay in the match.
+ */
+function listenerPorts(config: EnvConfig): string[] {
+  return [config.PORT || DEFAULTS.PORT, config.SSL_PORT || DEFAULTS.SSL_PORT];
+}
+
+/**
  * Whether the chosen access mode or configuration exposes Nerve beyond
  * localhost and therefore requires authentication setup.
  *
  * Tailscale Serve keeps HOST=127.0.0.1 while publishing Nerve to the tailnet
  * over *.ts.net (and forwarding requests from loopback), so it needs
- * authentication just like a non-loopback bind.
+ * authentication just like a non-loopback bind. Browser endpoints and raw TCP
+ * forwarders are checked separately because only the former provides a
+ * browser origin.
  */
 export function requiresAuthentication(
   config: EnvConfig,
@@ -270,6 +283,7 @@ export function requiresAuthentication(
   if (plan?.profile === 'tailscale-serve') return true;
   if (!isLoopback(config.HOST)) return true;
   if (hasNonLoopbackOrigin(config.ALLOWED_ORIGINS)) return true;
-  const ports = [config.PORT || '3080', config.SSL_PORT ?? ''].filter(Boolean);
+  const ports = listenerPorts(config);
+  if (tailscale?.tcpForwards?.some((target) => proxiesToNerve(target, ports))) return true;
   return Boolean(nerveServeOrigin(tailscale, ports));
 }

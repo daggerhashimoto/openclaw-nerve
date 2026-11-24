@@ -64,7 +64,7 @@ Recommended choices:
 
 - **Gateway URL** and **Gateway Auth Token (required)**: the default for same host. For split hosts, the remote gateway URL and token.
 - **How will you connect to Nerve?**: **From other devices on my network** (enter the host's IP address; setup also offers HTTPS with a self-signed certificate and allows its origin) or **Custom setup** (HTTP port, bind address, HTTPS).
-- **Set a password for Nerve access?**: yes. Setup asks only when Nerve binds to `0.0.0.0`. Without a password, the gateway token is the login password.
+- **Set a password for Nerve access?**: yes. Setup asks when the chosen mode exposes Nerve beyond localhost. Without a password, your existing password hash or the gateway token is the login password.
 
 Setup writes `HOST`, `ALLOWED_ORIGINS`, `CSP_CONNECT_EXTRA` and `WS_ALLOWED_HOSTS` for the IP address you give it. It does not know a domain name or a reverse proxy, so step 3 covers that.
 
@@ -85,7 +85,7 @@ NERVE_PUBLIC_ORIGIN=https://nerve.example.com
 ```
 
 - `ALLOWED_ORIGINS` must include the exact origin the browser uses. Nerve rejects a WebSocket from any other non-loopback origin.
-- Turn `NERVE_AUTH=true` on for any public setup. Setup only offers a password when Nerve binds to `0.0.0.0`; with `NERVE_AUTH=true` and no `NERVE_PASSWORD_HASH`, the gateway token works as the password. Without `NERVE_SESSION_SECRET`, sessions do not survive a restart.
+- Turn `NERVE_AUTH=true` on for any public setup. Setup asks for a password when the chosen mode exposes Nerve beyond localhost; with `NERVE_AUTH=true` and no `NERVE_PASSWORD_HASH`, the gateway token works as the password. Without `NERVE_SESSION_SECRET`, sessions do not survive a restart.
 - `NERVE_PUBLIC_ORIGIN` is the origin Nerve's own server-side gateway connection presents. If you leave it unset, Nerve uses the first non-loopback entry in `ALLOWED_ORIGINS`.
 - If the proxy connects to Nerve from an address other than loopback, add that address to `TRUSTED_PROXIES` so rate limiting sees client addresses. Loopback is trusted by default. With more than one proxy (for example a remote proxy in front of a local one), list every proxy address. Otherwise all clients behind the outer proxy share one rate-limit bucket.
 - Split hosts: also set `NERVE_WORKSPACE_REMOTE=true`, and keep `WS_ALLOWED_HOSTS` (setup writes it) set to the gateway's host.

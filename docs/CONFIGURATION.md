@@ -79,7 +79,7 @@ The OpenClaw home is `~/.openclaw`, or the directory of `OPENCLAW_CONFIG_PATH` w
 
 #### 4. Authentication
 
-Runs only when the chosen mode binds `HOST=0.0.0.0` (Tailscale IP, Network, or Custom with `0.0.0.0`). Setup offers to set a password (at least 4 characters), stored as a scrypt hash in `NERVE_PASSWORD_HASH`. If you skip the password and a gateway token is set, setup still enables auth and the gateway token works as the password.
+Runs when the chosen mode or detected configuration exposes Nerve beyond localhost: a non-loopback `HOST` (Tailscale IP, Network, or Custom with `0.0.0.0`), a non-loopback `ALLOWED_ORIGINS` entry, Tailscale Serve forwarding to Nerve, or a Serve TCP forward to Nerve. Setup offers to set a password (at least 4 characters), stored as a scrypt hash in `NERVE_PASSWORD_HASH`. If you skip the password, setup still enables auth, using an existing password hash when present, otherwise the gateway token.
 
 Other modes skip this step and keep any existing auth settings. Setup always generates `NERVE_SESSION_SECRET` if it is missing.
 
@@ -104,7 +104,7 @@ Setup also copies the bundled agent skills to `~/.openclaw/workspace/skills`.
 |------|-----------|
 | *(none)* | Full interactive wizard. If `.env` has a gateway token, asks whether to update it, start fresh or cancel. |
 | `--check` | Validates the config, tests the gateway connection, and exits. Changes nothing. |
-| `--defaults` | No prompts. Auto-detects the gateway token (or fails if none is found), keeps existing values, fills in defaults, and writes `.env` only after the gateway check passes. Enables auth when `HOST=0.0.0.0` and a gateway token is set. |
+| `--defaults` | No prompts. Auto-detects the gateway token (or fails if none is found), keeps existing values, fills in defaults, and writes `.env` only after the gateway check passes. Enables auth when the access mode or existing configuration exposes Nerve beyond localhost and a password hash or gateway token is available. |
 | `--access-mode <mode>` | Access mode for `--defaults`: `local`, `network`, `custom`, `tailscale-ip` (alias `tailscale`), or `tailscale-serve`. A Tailscale mode that is not ready falls back (Serve to tailnet IP, then to localhost) and prints follow-up steps. |
 
 ### What setup writes
@@ -246,7 +246,7 @@ To add Tailscale to an existing install, see [Add Tailscale to an existing Nerve
 
 ### Authentication
 
-Nerve has an optional password login. When enabled, every `/api/*` route except the public ones needs a valid session cookie, and so do WebSocket upgrades. Setup offers it when the access mode binds `0.0.0.0`.
+Nerve has an optional password login. When enabled, every `/api/*` route except the public ones needs a valid session cookie, and so do WebSocket upgrades. Setup offers it when the access mode or detected configuration exposes Nerve beyond localhost, including Tailscale Serve.
 
 | Variable | Default | Description |
 |----------|---------|-------------|

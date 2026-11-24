@@ -3,6 +3,7 @@ import {
   normalizeDnsName,
   extractServeEndpoints,
   extractServeOrigins,
+  extractTcpForwards,
   parseTailscaleStatus,
   getTailscaleState,
 } from './tailscale.js';
@@ -99,6 +100,7 @@ describe('getTailscaleState', () => {
       dnsName: null,
       serveOrigins: [],
       serveEndpoints: [],
+      tcpForwards: [],
     });
   });
 
@@ -108,6 +110,10 @@ describe('getTailscaleState', () => {
       if (command.startsWith('tailscale status')) return JSON.stringify({ Self: { DNSName: `${EXAMPLE_TS_DNS}.`, TailscaleIPs: ['100.64.0.42'] } });
       if (command.startsWith('tailscale serve status')) {
         return JSON.stringify({
+          TCP: {
+            '443': { HTTPS: true },
+            '8080': { TCPForward: '127.0.0.1:3080' },
+          },
           Web: {
             [`${EXAMPLE_TS_DNS}:8443`]: { Handlers: { '/': { Proxy: 'http://127.0.0.1:9000' } } },
             [`${EXAMPLE_TS_DNS}:443`]: { Handlers: { '/': { Proxy: 'http://127.0.0.1:3080' } } },
@@ -124,6 +130,25 @@ describe('getTailscaleState', () => {
       { origin: `https://${EXAMPLE_TS_DNS}:8443`, rootProxy: 'http://127.0.0.1:9000' },
       { origin: `https://${EXAMPLE_TS_DNS}`, rootProxy: 'http://127.0.0.1:3080' },
     ]);
+    expect(state.tcpForwards).toEqual(['127.0.0.1:3080']);
+  });
+});
+
+describe('extractTcpForwards', () => {
+  it('reads the target of each raw TCP forwarder and ignores web listener entries', () => {
+    expect(extractTcpForwards({
+      TCP: {
+        '443': { HTTPS: true },
+        '8080': { TCPForward: '127.0.0.1:3080' },
+        '8443': { TCPForward: ' localhost:3443 ' },
+        '9000': {},
+      },
+    })).toEqual(['127.0.0.1:3080', 'localhost:3443']);
+  });
+
+  it('returns no forwards when the serve config has no TCP section', () => {
+    expect(extractTcpForwards({ Web: {} })).toEqual([]);
+    expect(extractTcpForwards(null)).toEqual([]);
   });
 });
 

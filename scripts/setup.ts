@@ -42,7 +42,6 @@ import { detectedTokenNotice, detectedTokenPrompt, manualTokenHint, runGatewayCo
 import {
   applyAccessPlanToConfig,
   buildAccessPlan,
-  isLoopback,
   requiresAuthentication,
   type AccessPlan,
   type InstallerAccessProfile,
@@ -96,6 +95,11 @@ function detectPrimaryIpv4(): string | null {
     }
   }
   return null;
+}
+
+/** Check whether a host string is a loopback address (IPv4, IPv6, or localhost). */
+function isLoopback(host: string): boolean {
+  return !host || host === '127.0.0.1' || host === 'localhost' || host === '::1';
 }
 
 function sleep(ms: number): Promise<void> {
@@ -771,8 +775,11 @@ async function collectInteractive(
         success('Password set. Authentication will be enabled.');
       }
     } else {
-      // No password, but still enable auth if gateway token exists
-      if (config.GATEWAY_TOKEN) {
+      // No new password set — keep existing password hash if present, or fall back to gateway token
+      if (config.NERVE_PASSWORD_HASH) {
+        config.NERVE_AUTH = 'true';
+        success('Authentication enabled — your existing password will be kept.');
+      } else if (config.GATEWAY_TOKEN) {
         config.NERVE_AUTH = 'true';
         success('Authentication enabled — your gateway token can be used as a password.');
       } else {

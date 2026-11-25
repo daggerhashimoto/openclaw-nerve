@@ -348,6 +348,16 @@ function isHeartbeatResultMessage(message: ChatMessage, callIds: Set<string>): b
   return message.toolCallId !== undefined && callIds.has(message.toolCallId);
 }
 
+function isUnnamedResultBlock(block: ContentBlock): boolean {
+  return isToolResultBlock(block) && !block.toolName && !block.toolCallId;
+}
+
+function isUnnamedResultMessage(message: ChatMessage): boolean {
+  return (message.role === 'tool' || message.role === 'toolResult')
+    && !message.toolName
+    && !message.toolCallId;
+}
+
 /** Every heartbeat call id in history, so a result can be found even when it is unnamed. */
 function heartbeatCallIds(messages: ChatMessage[]): Set<string> {
   const callIds = new Set<string>();
@@ -367,18 +377,35 @@ function heartbeatCallIds(messages: ChatMessage[]): Set<string> {
  */
 export function stripHeartbeatToolCalls(messages: ChatMessage[]): ChatMessage[] {
   const callIds = heartbeatCallIds(messages);
+  let previousHadHeartbeatCall = false;
 
   return messages.map((message) => {
-    if (isHeartbeatResultMessage(message, callIds)) {
+    const content = Array.isArray(message.content) ? message.content : null;
+    const hasHeartbeatCall = content?.some(isHeartbeatToolCall) ?? false;
+
+    // An older gateway can omit both the call id and the result's tool name/id.
+    // In that shape the only link is adjacency: the result in the same message
+    // as the call, or the next result message after it.
+    if (
+      isHeartbeatResultMessage(message, callIds)
+      || (previousHadHeartbeatCall && isUnnamedResultMessage(message))
+    ) {
+      previousHadHeartbeatCall = false;
       return { ...message, content: [], text: '' };
     }
-    if (!Array.isArray(message.content)) return message;
 
-    const content = message.content.filter((block) => (
-      !isHeartbeatToolCall(block) && !isHeartbeatResultBlock(block, callIds)
-    ));
+    let next = message;
+    if (content) {
+      const filtered = content.filter((block) => {
+        if (isHeartbeatToolCall(block) || isHeartbeatResultBlock(block, callIds)) return false;
+        if (hasHeartbeatCall && isUnnamedResultBlock(block)) return false;
+        return true;
+      });
+      if (filtered.length !== content.length) next = { ...message, content: filtered };
+    }
 
-    return content.length === message.content.length ? message : { ...message, content };
+    previousHadHeartbeatCall = hasHeartbeatCall;
+    return next;
   });
 }
 

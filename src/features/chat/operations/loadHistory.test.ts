@@ -814,6 +814,36 @@ describe('processChatMessages', () => {
     expect(result.map((m) => m.rawText)).toEqual(['Heartbeat note.']);
   });
 
+  it('drops an unnamed result beside an unlabelled heartbeat call', () => {
+    const result = processChatMessages([
+      { role: 'assistant', content: 'Earlier reply.' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'toolCall', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } },
+          { type: 'toolResult', content: '{"status":"accepted"}' },
+        ],
+        __openclaw: { turnBoundary: true },
+      },
+    ]);
+
+    expect(result.map((m) => m.rawText)).toEqual(['Earlier reply.']);
+    expect(result.some((m) => m.role === 'toolResult')).toBe(false);
+  });
+
+  it('drops an unnamed result message after an unlabelled heartbeat call', () => {
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        content: [{ type: 'toolCall', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } }],
+        __openclaw: { turnBoundary: true },
+      },
+      { role: 'toolResult', content: [{ type: 'text', text: '{"status":"accepted"}' }] },
+    ]);
+
+    expect(result).toEqual([]);
+  });
+
   it('keeps a final reply non-intermediate across a heartbeat-only turn', () => {
     const result = processChatMessages([
       { role: 'user', content: 'hello' },

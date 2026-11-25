@@ -6,18 +6,17 @@
  */
 import { useRef, useCallback, useMemo } from 'react';
 import { playPing } from '@/features/voice/audio-feedback';
+import { extractTTSMarkers } from '@/features/tts/useTTS';
 import type { FinalMessageData } from '@/features/chat/operations';
 
 // ─── Constants ──────────────────────────────────────────────────────────────────
-
-export const FALLBACK_MAX_CHARS = 300;
 
 // ─── Pure helpers ───────────────────────────────────────────────────────────────
 
 /** Strip code blocks, markdown noise, and validate text is speakable for TTS fallback. */
 export function buildVoiceFallbackText(raw: string): string | null {
   // Strip fenced code blocks
-  let text = raw.replace(/```[\s\S]*?```/g, '');
+  let text = extractTTSMarkers(raw).cleaned.replace(/```[\s\S]*?```/g, '');
   // Strip inline code
   text = text.replace(/`[^`]+`/g, '');
   // Strip markdown images/links
@@ -31,10 +30,6 @@ export function buildVoiceFallbackText(raw: string): string | null {
   text = text.replace(/\n{2,}/g, '. ').replace(/\n/g, ' ').replace(/\s{2,}/g, ' ').trim();
   // Must have at least 3 letter characters (unicode-aware for non-Latin scripts)
   if (!/\p{L}{3,}/u.test(text)) return null;
-  // Cap length
-  if (text.length > FALLBACK_MAX_CHARS) {
-    text = text.slice(0, FALLBACK_MAX_CHARS).replace(/\s\S*$/, '') + '…';
-  }
   return text;
 }
 
@@ -63,6 +58,14 @@ export function useChatTTS({ soundEnabled, speak }: UseChatTTSDeps) {
   const resetPlayedSounds = useCallback(() => {
     playedSoundsRef.current.clear();
   }, []);
+
+  /** Directly committed assistant messages can bypass the chat-final stream. */
+  const handleCommittedTTS = useCallback((text: string) => {
+    const { ttsText } = extractTTSMarkers(text);
+    if (!ttsText || playedSoundsRef.current.has(ttsText)) return;
+    playedSoundsRef.current.add(ttsText);
+    speak.current(ttsText);
+  }, [speak]);
 
   /**
    * Handle TTS for a completed assistant turn.
@@ -102,12 +105,14 @@ export function useChatTTS({ soundEnabled, speak }: UseChatTTSDeps) {
     trackVoiceMessage,
     clearVoiceMessage,
     resetPlayedSounds,
+    handleCommittedTTS,
     handleFinalTTS,
     playCompletionPing,
   }), [
     trackVoiceMessage,
     clearVoiceMessage,
     resetPlayedSounds,
+    handleCommittedTTS,
     handleFinalTTS,
     playCompletionPing,
   ]);

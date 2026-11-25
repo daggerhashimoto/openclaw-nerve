@@ -192,6 +192,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     playCompletionPing,
     resetPlayedSounds,
     handleFinalTTS,
+    handleCommittedTTS,
     clearVoiceMessage,
   } = ttsHook;
 
@@ -402,6 +403,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (heartbeatRuns.running(committed.sessionKey)) {
           heartbeatRowsPendingRef.current = true;
           return;
+        }
+        if (committed.role === 'assistant' && msg.event === 'session.message') {
+          const row = (msg.payload as { message?: ChatEventPayload['message'] } | undefined)?.message;
+          if (row) {
+            const finalData = extractFinalMessage({ state: 'final', message: row });
+            if (finalData) handleCommittedTTS(finalData.text);
+          }
         }
         // Rows of a run on screen are reconciled by its final; a new prompt
         // (an inbound channel message) shows as soon as it is committed.
@@ -753,6 +761,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     playCompletionPing,
     resetPlayedSounds,
     handleFinalTTS,
+    handleCommittedTTS,
     clearVoiceMessage,
     subscribe,
     heartbeatRuns,

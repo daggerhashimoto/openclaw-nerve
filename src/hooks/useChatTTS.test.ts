@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useChatTTS } from './useChatTTS';
+import { buildVoiceFallbackText, useChatTTS } from './useChatTTS';
 
 const { playPingMock } = vi.hoisted(() => ({
   playPingMock: vi.fn(),
@@ -13,6 +13,11 @@ vi.mock('@/features/voice/audio-feedback', () => ({
 describe('useChatTTS', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('keeps a long voice fallback intact for chunked playback', () => {
+    const reply = 'Marcus faced war and grief. '.repeat(300).trim();
+    expect(buildVoiceFallbackText(reply)).toBe(reply);
   });
 
   it('pings a completed text response while sound is on', () => {

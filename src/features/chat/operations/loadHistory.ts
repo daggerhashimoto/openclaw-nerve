@@ -276,12 +276,35 @@ export function detectSystemNotification(text: string): { match: boolean; label:
   return { match: false, label: '' };
 }
 
+function hasVisibleContent(message: ChatMessage, trimmedText: string): boolean {
+  if (trimmedText) return true;
+  if (
+    Array.isArray(message.content)
+    && message.content.some((block) => block.type !== 'text' || Boolean(block.text?.trim()))
+  ) {
+    return true;
+  }
+  return Boolean(
+    message.MediaPath
+    || message.MediaPaths?.length
+    || message.MediaUrl
+    || message.MediaUrls?.length,
+  );
+}
+
 /** Determine whether a history message should be shown in the chat UI. */
 export function filterMessage(m: ChatMessage): boolean {
   const text = extractText(m);
   const trimmedText = text.trim();
 
   if (hasInternalMessageMetadata(m)) {
+    return false;
+  }
+
+  if (
+    (m.role === 'assistant' || m.role === 'user' || m.role === 'tool' || m.role === 'toolResult' || m.role === 'custom')
+    && !hasVisibleContent(m, trimmedText)
+  ) {
     return false;
   }
 
@@ -304,6 +327,142 @@ export function filterMessage(m: ChatMessage): boolean {
   }
 
   return true;
+}
+
+/** The tool a heartbeat turn calls to answer the poll. */
+const HEARTBEAT_TOOL = 'heartbeat_respond';
+
+function isHeartbeatToolCall(block: ContentBlock): boolean {
+  return isToolCallBlock(block) && block.name === HEARTBEAT_TOOL;
+}
+
+function isHeartbeatResultBlock(block: ContentBlock, callIds: Set<string>): boolean {
+  if (!isToolResultBlock(block)) return false;
+  if (block.toolName === HEARTBEAT_TOOL) return true;
+  return block.toolCallId !== undefined && callIds.has(block.toolCallId);
+}
+
+function isHeartbeatResultMessage(message: ChatMessage, callIds: Set<string>): boolean {
+  if (message.role !== 'tool' && message.role !== 'toolResult') return false;
+  if (message.toolName === HEARTBEAT_TOOL) return true;
+  return message.toolCallId !== undefined && callIds.has(message.toolCallId);
+}
+
+function isUnnamedResultBlock(block: ContentBlock): boolean {
+  return isToolResultBlock(block) && !block.toolName && !block.toolCallId;
+}
+
+function isUnnamedResultMessage(message: ChatMessage): boolean {
+  return (message.role === 'tool' || message.role === 'toolResult')
+    && !message.toolName
+    && !message.toolCallId;
+}
+
+/** Every heartbeat call id in history, so a result can be found even when it is unnamed. */
+function heartbeatCallIds(messages: ChatMessage[]): Set<string> {
+  const callIds = new Set<string>();
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const block of message.content) {
+      if (isHeartbeatToolCall(block) && block.id) callIds.add(block.id);
+    }
+  }
+  return callIds;
+}
+
+/**
+ * Remove a heartbeat's tool call and result from history. The containing
+ * message stays so its turn boundary and run id still split the transcript;
+ * an empty message is dropped later by filterMessage.
+ */
+export function stripHeartbeatToolCalls(messages: ChatMessage[]): ChatMessage[] {
+  const callIds = heartbeatCallIds(messages);
+  // An older gateway can omit both the call id and the result's tool name/id.
+  // The only link is then recorded order: the result belongs to the call just
+  // before it, in the same message or the one that follows.
+  let previousLastCallWasHeartbeat = false;
+
+  return messages.map((message) => {
+    if (isHeartbeatResultMessage(message, callIds)) {
+      previousLastCallWasHeartbeat = false;
+      return { ...message, content: [], text: '' };
+    }
+    if (
+      previousLastCallWasHeartbeat
+      && isUnnamedResultMessage(message)
+    ) {
+      previousLastCallWasHeartbeat = false;
+      return { ...message, content: [], text: '' };
+    }
+    if (!Array.isArray(message.content)) {
+      previousLastCallWasHeartbeat = false;
+      return message;
+    }
+
+    const content: ContentBlock[] = [];
+    let lastCall: 'heartbeat' | 'other' | null = null;
+    let changed = false;
+
+    for (const block of message.content) {
+      if (isHeartbeatToolCall(block)) {
+        lastCall = 'heartbeat';
+        changed = true;
+        continue;
+      }
+      if (isToolCallBlock(block)) {
+        content.push(block);
+        lastCall = 'other';
+        continue;
+      }
+      if (isHeartbeatResultBlock(block, callIds)) {
+        lastCall = null;
+        changed = true;
+        continue;
+      }
+      if (isToolResultBlock(block)) {
+        const adjacentHeartbeat = lastCall === 'heartbeat'
+          || (lastCall == null && previousLastCallWasHeartbeat);
+        if (isUnnamedResultBlock(block) && adjacentHeartbeat) {
+          lastCall = null;
+          changed = true;
+          continue;
+        }
+        content.push(block);
+        lastCall = null;
+        continue;
+      }
+      content.push(block);
+    }
+
+    const next = changed ? { ...message, content } : message;
+    previousLastCallWasHeartbeat = lastCall === 'heartbeat';
+    return next;
+  });
+}
+
+function messageTimeMs(message: ChatMessage): number | null {
+  for (const raw of [message.timestamp, message.createdAt, message.ts]) {
+    if (raw == null) continue;
+    const normalized = typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : raw;
+    const time = new Date(normalized).getTime();
+    if (Number.isFinite(time)) return time;
+  }
+  return null;
+}
+
+/** Newest heartbeat call or result time in history, or null when there is none. */
+export function latestHeartbeatAt(messages: ChatMessage[]): number | null {
+  const callIds = heartbeatCallIds(messages);
+  let latest: number | null = null;
+  for (const message of messages) {
+    const isHeartbeat = (Array.isArray(message.content)
+      && message.content.some((block) => isHeartbeatToolCall(block) || isHeartbeatResultBlock(block, callIds)))
+      || isHeartbeatResultMessage(message, callIds);
+    if (!isHeartbeat) continue;
+    const at = messageTimeMs(message);
+    if (at != null && (latest == null || at > latest)) latest = at;
+  }
+  return latest;
 }
 
 // ─── Splitting ─────────────────────────────────────────────────────────────────
@@ -834,7 +993,7 @@ function splitIntoTurns(messages: ChatMessage[]): ChatMessage[][] {
  * turn's final answer as intermediate.
  */
 export function processChatMessages(messages: ChatMessage[], options: { sessionKey?: string } = {}): ChatMsg[] {
-  const tagged = splitIntoTurns(withSearchQueries(messages)).flatMap((turn) => {
+  const tagged = splitIntoTurns(withSearchQueries(stripHeartbeatToolCalls(messages))).flatMap((turn) => {
     const chatMsgs: ChatMsg[] = turn
       .filter(filterMessage)
       .flatMap((message) => withRunTerminal(withSendKey(withSourceIds(splitToolCallMessage(message, options), message), message), message));
@@ -941,17 +1100,22 @@ export function transcriptRowId(msg: ChatMsg): string | null {
  *
  * Pipeline: fetch → turns → filter → split → group → tag
  *
+ * `onLatestHeartbeat` is called on every successful read with the newest
+ * heartbeat time in this fetched window, or null when it has none.
+ *
  * The caller is responsible for calling `setMessages(result)`.
  */
 export async function loadChatHistory(params: {
   rpc: RpcFn;
   sessionKey: string;
   limit?: number;
+  onLatestHeartbeat?: (at: number | null) => void;
 }): Promise<ChatMsg[]> {
-  const { rpc, sessionKey, limit = 100 } = params;
+  const { rpc, sessionKey, limit = 100, onLatestHeartbeat } = params;
 
   const res = await rpc('chat.history', { sessionKey, limit }) as ChatHistoryResponse;
   const msgs = res?.messages || [];
+  onLatestHeartbeat?.(latestHeartbeatAt(msgs));
 
   return processChatMessages(msgs, { sessionKey });
 }

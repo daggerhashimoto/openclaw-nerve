@@ -140,9 +140,10 @@ export function patchThinkingDuration(messages: ChatMsg[], durationMs: number): 
 interface UseChatMessagesDeps {
   rpc: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
   currentSessionRef: React.RefObject<string>;
+  onLatestHeartbeat?: (at: number | null) => void;
 }
 
-export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps) {
+export function useChatMessages({ rpc, currentSessionRef, onLatestHeartbeat }: UseChatMessagesDeps) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [, setVisibleCount] = useState(DEFAULT_VISIBLE_COUNT);
   const [hasMore, setHasMore] = useState(false);
@@ -181,7 +182,14 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
     const requestId = ++historyRequestRef.current;
     const isCurrent = () => historyRequestRef.current === requestId;
     try {
-      const result = await loadChatHistory({ rpc, sessionKey: sk, limit: 500 });
+      const result = await loadChatHistory({
+        rpc,
+        sessionKey: sk,
+        limit: 500,
+        onLatestHeartbeat: (at) => {
+          if (isCurrent() && sk === currentSessionRef.current) onLatestHeartbeat?.(at);
+        },
+      });
       if (!isCurrent()) return;
       // Prompts still sending or that failed to send are not in history; keep them
       // (read now, so one sent while the request was out is kept too).
@@ -196,7 +204,7 @@ export function useChatMessages({ rpc, currentSessionRef }: UseChatMessagesDeps)
     } finally {
       if (isCurrent()) setHistoryLoaded(true);
     }
-  }, [applyMessageWindow, currentSessionRef, rpc]);
+  }, [applyMessageWindow, currentSessionRef, onLatestHeartbeat, rpc]);
 
   /** Load more (older) messages — returns true if there are still more to show. */
   const loadMore = useCallback(() => {

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 import { StatusBar } from './StatusBar';
@@ -28,6 +28,7 @@ describe('StatusBar', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -96,5 +97,93 @@ describe('StatusBar', () => {
 
     expect(screen.getByText('Context')).toBeInTheDocument();
     expect(screen.getByText('61% of 200k')).toBeInTheDocument();
+  });
+
+  it('shows the open session heartbeat and ages it every minute', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-24T20:00:00Z'));
+
+    const lastHeartbeatAt = new Date('2026-11-24T19:40:00Z').getTime();
+    renderStatusBar({ lastHeartbeatAt });
+
+    const heartbeat = screen.getByText('last heartbeat 20m ago');
+    expect(heartbeat).toBeInTheDocument();
+    expect(heartbeat).toHaveAttribute('title', new Date(lastHeartbeatAt).toLocaleString());
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(screen.getByText('last heartbeat 21m ago')).toBeInTheDocument();
+  });
+
+  it('ages the heartbeat in performance mode', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-24T20:00:00Z'));
+
+    renderStatusBar({
+      lastHeartbeatAt: new Date('2026-11-24T19:40:00Z').getTime(),
+      performanceMode: true,
+    });
+
+    expect(screen.getByText('last heartbeat 20m ago')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(screen.getByText('last heartbeat 21m ago')).toBeInTheDocument();
+  });
+
+  it('hides the heartbeat item below the sm breakpoint', () => {
+    renderStatusBar({ lastHeartbeatAt: Date.now() });
+
+    expect(screen.getByText(/last heartbeat/)).toHaveClass('hidden', 'shrink-0', 'sm:inline-flex');
+  });
+
+  it('keeps the heartbeat out of the live region inside its own separator wrapper', () => {
+    renderStatusBar({ lastHeartbeatAt: Date.now() - 5_000 });
+
+    const heartbeat = screen.getByText(/last heartbeat/);
+    const separator = heartbeat.querySelector('[aria-hidden="true"]');
+    expect(separator).not.toBeNull();
+    expect(separator).toHaveClass('h-3.5', 'w-px');
+    expect(heartbeat.closest('[aria-live]')).toBeNull();
+  });
+
+  it('shows just now for a fresh heartbeat', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-24T20:00:00Z'));
+
+    renderStatusBar({ lastHeartbeatAt: Date.now() - 5_000 });
+
+    expect(screen.getByText('last heartbeat just now')).toBeInTheDocument();
+  });
+
+  it('hides the heartbeat label when the open session has none', () => {
+    renderStatusBar();
+
+    expect(screen.queryByText(/last heartbeat/)).not.toBeInTheDocument();
+  });
+
+  it('hides the heartbeat label for a non-finite timestamp without starting a timer', () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+
+    renderStatusBar({ lastHeartbeatAt: Number.NaN });
+
+    expect(screen.queryByText(/last heartbeat/)).not.toBeInTheDocument();
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+  });
+
+  it('clears the heartbeat interval on unmount', () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval');
+
+    const { unmount } = renderStatusBar({ lastHeartbeatAt: Date.now() - 5_000 });
+    const intervalId = setIntervalSpy.mock.results[0]?.value;
+    unmount();
+
+    expect(intervalId).toBeDefined();
+    expect(clearIntervalSpy).toHaveBeenCalledWith(intervalId);
   });
 });

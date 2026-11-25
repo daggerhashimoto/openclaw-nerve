@@ -40,6 +40,7 @@ interface UseChatRecoveryDeps {
   getAllMessages: () => ChatMsg[];
   applyMessageWindow: (all: ChatMsg[], resetVisibleWindow?: boolean) => void;
   setStream: React.Dispatch<React.SetStateAction<ChatStreamState>>;
+  onLatestHeartbeat?: (at: number | null) => void;
 }
 
 export function useChatRecovery({
@@ -51,6 +52,7 @@ export function useChatRecovery({
   getAllMessages,
   applyMessageWindow,
   setStream,
+  onLatestHeartbeat,
 }: UseChatRecoveryDeps) {
   const recoveryRef = useRef<RecoveryState>({ timer: null, inFlight: false, reason: null });
   // Generation counter: incremented on session switch and chat_final apply.
@@ -91,6 +93,9 @@ export function useChatRecovery({
           rpc,
           sessionKey: currentSessionRef.current,
           limit: RECOVERY_LIMITS[reason],
+          onLatestHeartbeat: (at) => {
+            if (capturedGeneration === recoveryGenerationRef.current) onLatestHeartbeat?.(at);
+          },
         });
 
         // Check generation again after async fetch — another session switch or
@@ -134,7 +139,7 @@ export function useChatRecovery({
         setStream(prev => ({ ...prev, isRecovering: false, recoveryReason: null }));
       }
     }, 180);
-  }, [applyMessageWindow, clearRecoveryTimer, rpc, currentSessionRef, activeRunIdRef, runsRef, getAllMessages, setStream]);
+  }, [applyMessageWindow, clearRecoveryTimer, rpc, currentSessionRef, activeRunIdRef, runsRef, getAllMessages, setStream, onLatestHeartbeat]);
 
   /** Increment the recovery generation counter (invalidates in-flight recoveries). */
   const incrementGeneration = useCallback(() => {

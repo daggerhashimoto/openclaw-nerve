@@ -86,6 +86,7 @@ interface ChatContextValue {
   stream: ChatStreamState;
   processingStage: ProcessingStage;
   lastEventTimestamp: number;
+  lastHeartbeatAt: number | null;
   activityLog: ActivityLogEntry[];
   currentToolDescription: string | null;
   handleSend: (text: string, images?: ImageAttachment[]) => Promise<void>;
@@ -142,9 +143,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // Heartbeats on the open session never show as a run; rows one commits wait until it is over.
   const [heartbeatRuns] = useState(() => new HeartbeatRuns());
   const heartbeatRowsPendingRef = useRef(false);
+  // Newest heartbeat seen on the open session: from history or a live frame.
+  const [lastHeartbeatAt, setLastHeartbeatAt] = useState<number | null>(null);
+
+  /** Keep the newest heartbeat time; an older read or frame never lowers it. */
+  const recordHeartbeat = useCallback((at: number) => {
+    setLastHeartbeatAt(prev => (prev == null || at > prev ? at : prev));
+  }, []);
+
+  const recordHistoryHeartbeat = useCallback((at: number | null) => {
+    // A history window without a heartbeat is not evidence the session has none;
+    // keep the last known value instead of clearing it.
+    if (at == null) return;
+    recordHeartbeat(at);
+  }, [recordHeartbeat]);
 
   // ─── Compose hooks ────────────────────────────────────────────────────────
-  const msgHook = useChatMessages({ rpc, currentSessionRef });
+  const msgHook = useChatMessages({
+    rpc,
+    currentSessionRef,
+    onLatestHeartbeat: recordHistoryHeartbeat,
+  });
   const streamHook = useChatStreaming();
   const ttsHook = useChatTTS({ soundEnabled: soundEnabledRef, speak: speakRef });
 
@@ -157,6 +176,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     getAllMessages: msgHook.getAllMessages,
     applyMessageWindow: msgHook.applyMessageWindow,
     setStream: streamHook.setStream,
+    onLatestHeartbeat: recordHistoryHeartbeat,
   });
 
   const {
@@ -200,6 +220,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setIsGenerating(false);
     voiceSendSeqRef.current += 1;
     voiceRunRef.current = null;
+    setLastHeartbeatAt(null);
     ttsHook.trackVoiceMessage('');
     msgHook.resetMessageState();
     streamHook.resetStreamState();
@@ -263,7 +284,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       try {
         await historyLoadRef.current;
         const seq = ++historyRefreshSeqRef.current;
-        const recovered = await loadChatHistory({ rpc, sessionKey: capturedSession, limit: 100 });
+        const recovered = await loadChatHistory({
+          rpc,
+          sessionKey: capturedSession,
+          limit: 100,
+          onLatestHeartbeat: (at) => {
+            if (capturedSession === currentSessionRef.current) recordHistoryHeartbeat(at);
+          },
+        });
         if (seq !== historyRefreshSeqRef.current) return;
         if (capturedSession !== currentSessionRef.current) return;
         if (capturedGeneration !== getGeneration()) return;
@@ -273,7 +301,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       } catch { /* best-effort */ }
     }, 300);
-  }, [rpc, getGeneration, getAllMessages, applyMessageWindow]);
+  }, [rpc, getGeneration, getAllMessages, applyMessageWindow, recordHistoryHeartbeat]);
 
   useEffect(() => {
     if (connectionState !== 'connected' || !currentSession) return;
@@ -322,7 +350,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       subagentPollInFlightRef.current = true;
       try {
         const sk = currentSessionRef.current;
-        const result = await loadChatHistory({ rpc, sessionKey: sk, limit: 500 });
+        const result = await loadChatHistory({
+          rpc,
+          sessionKey: sk,
+          limit: 500,
+          onLatestHeartbeat: (at) => {
+            if (sk === currentSessionRef.current) recordHistoryHeartbeat(at);
+          },
+        });
         if (sk !== currentSessionRef.current) return;
         const prev = getAllMessages();
         // Compare against the rows history gave; prompts not sent yet are kept apart.
@@ -343,7 +378,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       clearInterval(pollInterval);
       subagentPollInFlightRef.current = false;
     };
-  }, [isSubagentActive, connectionState, currentSession, rpc, applyMessageWindow, getAllMessages]);
+  }, [isSubagentActive, connectionState, currentSession, rpc, applyMessageWindow, getAllMessages, recordHistoryHeartbeat]);
 
   // ─── Watchdog: if stream stalls, recover once ─────────────────────────────
   useEffect(() => {
@@ -415,6 +450,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const heartbeat = heartbeatRuns.observe(msg);
       if (heartbeat) {
         const sk = currentSessionRef.current;
+        if (heartbeat.sessionKey === sk) {
+          recordHeartbeat(Date.now());
+        }
         if (heartbeat.ended && heartbeat.sessionKey === sk && !heartbeatRuns.running(sk)) {
           const cp = (msg.payload || {}) as ChatEventPayload;
           if (msg.event === 'chat' && cp.state === 'final' && extractFinalMessages(cp).length > 0) {
@@ -757,6 +795,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     subscribe,
     heartbeatRuns,
     scheduleHistoryRefresh,
+    recordHeartbeat,
   ]);
 
   // ─── Send message ─────────────────────────────────────────────────────────
@@ -864,6 +903,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     stream: streamHook.stream,
     processingStage: streamHook.processingStage,
     lastEventTimestamp: lastEventTimestamp,
+    lastHeartbeatAt,
     activityLog: streamHook.activityLog,
     currentToolDescription: streamHook.currentToolDescription,
     handleSend,
@@ -882,6 +922,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     streamHook.stream,
     streamHook.processingStage,
     lastEventTimestamp,
+    lastHeartbeatAt,
     streamHook.activityLog,
     streamHook.currentToolDescription,
     handleSend,

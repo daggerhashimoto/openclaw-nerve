@@ -7,6 +7,8 @@ import {
   tagIntermediateMessages,
   processChatMessages,
   loadChatHistory,
+  latestHeartbeatAt,
+  stripHeartbeatToolCalls,
   transcriptRowId,
 } from './loadHistory';
 import type { ChatMessage } from '@/types';
@@ -121,6 +123,72 @@ describe('filterMessage', () => {
       role: 'tool',
       content: 'File contents:\nfunction hello() {}',
     })).toBe(true);
+  });
+
+  it('hides messages with no visible content', () => {
+    expect(filterMessage({ role: 'assistant', content: [] })).toBe(false);
+    expect(filterMessage({ role: 'toolResult', content: [] })).toBe(false);
+    expect(filterMessage({ role: 'custom', content: [] })).toBe(false);
+  });
+
+  it('keeps an image-only message visible', () => {
+    expect(filterMessage({
+      role: 'assistant',
+      content: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
+    })).toBe(true);
+  });
+});
+
+describe('stripHeartbeatToolCalls', () => {
+  it('strips a top-level result message linked only by its call id', () => {
+    const messages: ChatMessage[] = [
+      {
+        role: 'assistant',
+        content: [{ type: 'toolCall', id: 'hb-1', name: 'heartbeat_respond', arguments: {} }],
+      },
+      {
+        role: 'toolResult',
+        toolCallId: 'hb-1',
+        content: [{ type: 'text', text: '{"status":"accepted"}' }],
+      },
+    ];
+
+    const stripped = stripHeartbeatToolCalls(messages);
+
+    expect(stripped[0].content).toEqual([]);
+    expect(stripped[1].content).toEqual([]);
+    expect(filterMessage(stripped[1])).toBe(false);
+    expect(processChatMessages(messages)).toEqual([]);
+  });
+
+  it('strips a result block linked only by its call id from a message', () => {
+    const [stripped] = stripHeartbeatToolCalls([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'toolCall', id: 'hb-2', name: 'heartbeat_respond', arguments: {} },
+          { type: 'toolResult', toolCallId: 'hb-2', content: '{"status":"accepted"}' },
+          { type: 'text', text: 'Heartbeat note.' },
+        ],
+      },
+    ]);
+
+    expect(stripped.content).toEqual([{ type: 'text', text: 'Heartbeat note.' }]);
+  });
+
+  it('keeps a normal tool call beside a heartbeat call', () => {
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'toolCall', id: 'hb-mixed', name: 'heartbeat_respond', arguments: {} },
+          { type: 'toolCall', id: 'read-mixed', name: 'read', arguments: { path: 'notes.md' } },
+        ],
+      },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].rawText.startsWith('**tool:** `read`')).toBe(true);
   });
 });
 
@@ -723,6 +791,213 @@ describe('processChatMessages', () => {
     expect(result.find(m => m.rawText === 'Here is the SOUL.md I would use.')?.intermediate).toBeFalsy();
   });
 
+  it('drops heartbeat tool rows but keeps text from the same message', () => {
+    const timestamp = Date.parse('2026-11-24T19:05:00Z');
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        timestamp,
+        content: [
+          { type: 'text', text: 'Heartbeat note.' },
+          { type: 'toolCall', id: 'hb-1', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } },
+        ],
+        __openclaw: { turnBoundary: true },
+      },
+      {
+        role: 'toolResult',
+        toolName: 'heartbeat_respond',
+        toolCallId: 'hb-1',
+        content: [{ type: 'text', text: '{"status":"accepted"}' }],
+      },
+    ]);
+
+    expect(result.map((m) => m.rawText)).toEqual(['Heartbeat note.']);
+  });
+
+  it('drops an unnamed result beside an unlabelled heartbeat call', () => {
+    const result = processChatMessages([
+      { role: 'assistant', content: 'Earlier reply.' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'toolCall', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } },
+          { type: 'toolResult', content: '{"status":"accepted"}' },
+        ],
+        __openclaw: { turnBoundary: true },
+      },
+    ]);
+
+    expect(result.map((m) => m.rawText)).toEqual(['Earlier reply.']);
+    expect(result.some((m) => m.role === 'toolResult')).toBe(false);
+  });
+
+  it('drops an unnamed result message after an unlabelled heartbeat call', () => {
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        content: [{ type: 'toolCall', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } }],
+        __openclaw: { turnBoundary: true },
+      },
+      { role: 'toolResult', content: [{ type: 'text', text: '{"status":"accepted"}' }] },
+    ]);
+
+    expect(result).toEqual([]);
+  });
+
+  it('keeps an unnamed result that belongs to a normal tool beside a heartbeat call', () => {
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'toolCall', name: 'read', arguments: { path: 'note.md' } },
+          { type: 'toolResult', content: 'file body' },
+          { type: 'toolCall', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } },
+        ],
+        __openclaw: { turnBoundary: true },
+      },
+    ]);
+
+    const toolRow = result.find((m) => m.role === 'tool');
+    expect(toolRow?.rawText).toContain('read');
+    expect(toolRow?.toolResult).toBe('file body');
+  });
+
+  it('strips an unnamed heartbeat result embedded in the following user message', () => {
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        content: [{ type: 'toolCall', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } }],
+        __openclaw: { turnBoundary: true },
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Visible note.' },
+          { type: 'toolResult', content: '{"status":"accepted"}' },
+        ],
+      },
+    ]);
+
+    expect(result.some((m) => m.rawText === 'Visible note.')).toBe(true);
+    expect(result.some((m) => m.rawText.includes('accepted'))).toBe(false);
+  });
+
+  it('keeps a final reply non-intermediate across a heartbeat-only turn', () => {
+    const result = processChatMessages([
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'The answer.' },
+      {
+        role: 'assistant',
+        content: [{ type: 'toolCall', id: 'hb-2', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } }],
+        __openclaw: { turnBoundary: true },
+      },
+    ]);
+
+    expect(result.map((m) => m.rawText)).toEqual(['hello', 'The answer.']);
+    expect(result[1].intermediate).toBeFalsy();
+  });
+
+  it('reports the newest heartbeat in history', () => {
+    const older = Date.parse('2026-11-24T19:05:00Z');
+    const newer = Date.parse('2026-11-24T19:35:00Z');
+    const heartbeat = (timestamp: number, id: string) => ({
+      role: 'assistant' as const,
+      timestamp,
+      content: [{ type: 'toolCall' as const, id, name: 'heartbeat_respond', arguments: {} }],
+    });
+
+    expect(latestHeartbeatAt([
+      heartbeat(older, 'hb-old'),
+      { role: 'assistant', timestamp: newer + 1, content: [{ type: 'toolCall', id: 'r-1', name: 'read', arguments: {} }] } as ChatMessage,
+      heartbeat(newer, 'hb-new'),
+    ])).toBe(newer);
+
+    expect(latestHeartbeatAt([
+      { role: 'assistant', timestamp: newer, content: [{ type: 'toolCall', id: 'r-2', name: 'read', arguments: {} }] } as ChatMessage,
+    ])).toBeNull();
+  });
+
+  it('reports a heartbeat result linked only by its call id', () => {
+    const callAt = Date.parse('2026-11-24T19:05:00Z');
+    const resultAt = Date.parse('2026-11-24T19:06:00Z');
+
+    expect(latestHeartbeatAt([
+      {
+        role: 'assistant',
+        timestamp: callAt,
+        content: [{ type: 'toolCall', id: 'hb-linked', name: 'heartbeat_respond', arguments: {} }],
+      },
+      {
+        role: 'toolResult',
+        timestamp: resultAt,
+        toolCallId: 'hb-linked',
+        content: [{ type: 'text', text: '{"status":"accepted"}' }],
+      },
+    ])).toBe(resultAt);
+  });
+
+  it('reports a heartbeat named by a result block', () => {
+    const timestamp = Date.parse('2026-11-24T19:07:00Z');
+    const message: ChatMessage = {
+      role: 'custom',
+      timestamp,
+      content: [{ type: 'toolResult', toolName: 'heartbeat_respond', content: '{"status":"accepted"}' }],
+    };
+
+    expect(latestHeartbeatAt([message])).toBe(timestamp);
+  });
+
+  it('falls back to a valid createdAt or ts when timestamp is unparseable', () => {
+    const createdAt = Date.parse('2026-11-24T19:08:00Z');
+    const ts = Date.parse('2026-11-24T19:09:00Z');
+    const heartbeat = (times: Pick<ChatMessage, 'timestamp' | 'createdAt' | 'ts'>): ChatMessage => ({
+      role: 'assistant',
+      ...times,
+      content: [{ type: 'toolCall', name: 'heartbeat_respond', arguments: {} }],
+    });
+
+    expect(latestHeartbeatAt([heartbeat({ timestamp: 'not-a-date', createdAt })])).toBe(createdAt);
+    expect(latestHeartbeatAt([heartbeat({ timestamp: 'not-a-date', createdAt: 'also-bad', ts })])).toBe(ts);
+  });
+
+  it('reads a numeric-string timestamp', () => {
+    const timestamp = Date.parse('2026-11-24T19:10:00Z');
+
+    expect(latestHeartbeatAt([{
+      role: 'assistant',
+      timestamp: String(timestamp),
+      content: [{ type: 'toolCall', name: 'heartbeat_respond', arguments: {} }],
+    }])).toBe(timestamp);
+  });
+
+  it('drops a heartbeat message whose only remaining block is empty text', () => {
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: '' },
+          { type: 'toolCall', id: 'hb-empty', name: 'heartbeat_respond', arguments: {} },
+        ],
+      },
+    ]);
+
+    expect(result).toEqual([]);
+  });
+
+  it('drops a custom heartbeat result message whose only remaining block is empty text', () => {
+    const result = processChatMessages([
+      {
+        role: 'custom',
+        content: [
+          { type: 'text', text: '' },
+          { type: 'toolResult', toolName: 'heartbeat_respond', content: '{"status":"accepted"}' },
+        ],
+      },
+    ]);
+
+    expect(result).toEqual([]);
+  });
+
   it('starts a new turn when the run changes behind a hidden prompt', () => {
     const run = (runId: string) => ({ __openclaw: { runId } });
     const msgs: ChatMessage[] = [
@@ -738,6 +1013,24 @@ describe('processChatMessages', () => {
     const result = processChatMessages(msgs);
     expect(result.find(m => m.rawText === 'Let me read the report.')?.intermediate).toBe(true);
     expect(result.find(m => m.rawText === 'The report says revenue is up.')?.intermediate).toBeFalsy();
+  });
+
+  it('keeps the previous turn final when a stripped heartbeat boundary precedes more tool calls', () => {
+    const result = processChatMessages([
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'The answer.' },
+      {
+        role: 'assistant',
+        content: [{ type: 'toolCall', id: 'hb-boundary', name: 'heartbeat_respond', arguments: {} }],
+        __openclaw: { turnBoundary: true },
+      },
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'read-1', name: 'read', arguments: { path: 'notes.md' } }] },
+      { role: 'toolResult', toolCallId: 'read-1', toolName: 'read', content: [{ type: 'text', text: 'file body' }] },
+      { role: 'assistant', content: 'Read the notes during the heartbeat.' },
+    ]);
+
+    expect(result.find((m) => m.rawText === 'The answer.')?.intermediate).toBeFalsy();
+    expect(result.find((m) => m.rawText === 'Read the notes during the heartbeat.')).toBeDefined();
   });
 
   it('treats a prompt hidden by filterMessage as a turn boundary', () => {
@@ -926,6 +1219,44 @@ describe('loadChatHistory', () => {
         alt: 'message-1775131617235-image-0.png',
       },
     ]);
+  });
+
+  it('reports the newest heartbeat timestamp to the caller', async () => {
+    const older = Date.parse('2026-11-24T19:05:00Z');
+    const newer = Date.parse('2026-11-24T19:35:00Z');
+    const rpc = vi.fn().mockResolvedValue({
+      messages: [
+        {
+          role: 'assistant',
+          timestamp: older,
+          content: [{ type: 'toolCall', id: 'hb-old', name: 'heartbeat_respond', arguments: {} }],
+        },
+        {
+          role: 'assistant',
+          timestamp: newer,
+          content: [{ type: 'toolCall', id: 'hb-new', name: 'heartbeat_respond', arguments: {} }],
+        },
+      ],
+    });
+    const onLatestHeartbeat = vi.fn();
+
+    await loadChatHistory({ rpc, sessionKey: 'sk', onLatestHeartbeat });
+
+    expect(onLatestHeartbeat).toHaveBeenCalledWith(newer);
+  });
+
+  it('reports no heartbeat for a window without any', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      messages: [
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi!' },
+      ],
+    });
+    const onLatestHeartbeat = vi.fn();
+
+    await loadChatHistory({ rpc, sessionKey: 'sk', onLatestHeartbeat });
+
+    expect(onLatestHeartbeat).toHaveBeenCalledWith(null);
   });
 
   it('passes the artifact id current OpenClaw puts on an omitted image to the session media route', async () => {

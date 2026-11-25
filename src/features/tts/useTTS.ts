@@ -43,6 +43,28 @@ async function fetchTTS(text: string, provider: TTSProvider = 'openai', model?: 
   return blob;
 }
 
+// Keep each request short enough for speech providers that synthesize in real time.
+// This is a per-request size, never a limit on the length of a spoken reply.
+export const TTS_CHUNK_CHARS = 800;
+
+export function splitTTSChunks(text: string, maxChars = TTS_CHUNK_CHARS): string[] {
+  const chunks: string[] = [];
+  let remaining = text.trim();
+  while (remaining.length > maxChars) {
+    const window = remaining.slice(0, maxChars);
+    const sentence = Math.max(
+      window.lastIndexOf('. '), window.lastIndexOf('! '), window.lastIndexOf('? '),
+      window.lastIndexOf('.\n'), window.lastIndexOf('!\n'), window.lastIndexOf('?\n'),
+    );
+    const whitespace = Math.max(window.lastIndexOf(' '), window.lastIndexOf('\n'));
+    const cut = sentence >= maxChars / 3 ? sentence + 1 : whitespace > 0 ? whitespace : maxChars;
+    chunks.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trimStart();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
 /**
  * Hook that provides a `speak` function for text-to-speech playback.
  *
@@ -54,6 +76,7 @@ export function useTTS(enabled: boolean, provider: TTSProvider = 'openai', model
   const generationRef = useRef(0);
 
   const cleanupAudio = useCallback(() => {
+    generationRef.current += 1;
     const current = currentAudio.current;
     if (!current) return;
     current.audio.pause();
@@ -71,34 +94,51 @@ export function useTTS(enabled: boolean, provider: TTSProvider = 'openai', model
   const speak = useCallback(async (text: string) => {
     if (!enabled || !text) return;
     cleanupAudio();
-    const gen = ++generationRef.current;
-    try {
-      const blob = await fetchTTS(text, provider, model);
-      // Superseded by a newer speak() call during fetch
-      if (gen !== generationRef.current) return;
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      currentAudio.current = { audio, url };
-      let revoked = false;
-      const revoke = () => {
-        if (revoked) return;
-        revoked = true;
-        URL.revokeObjectURL(url);
-        if (currentAudio.current?.audio === audio) {
-          currentAudio.current = null;
-        }
-      };
-      audio.addEventListener('ended', revoke, { once: true });
-      audio.addEventListener('error', () => revoke(), { once: true });
+    const gen = generationRef.current;
+    const chunks = splitTTSChunks(text);
+    let prefetched: Promise<Blob> | null = null;
+    const playChunk = async (index: number): Promise<void> => {
+      if (gen !== generationRef.current || index >= chunks.length) return;
       try {
-        await audio.play();
-      } catch (err) {
-        revoke();
-        throw err;
+        const blob = await (prefetched ?? fetchTTS(chunks[index], provider, model));
+        prefetched = null;
+        if (gen !== generationRef.current) return;
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        currentAudio.current = { audio, url };
+        let revoked = false;
+        const revoke = () => {
+          if (revoked) return;
+          revoked = true;
+          URL.revokeObjectURL(url);
+          if (currentAudio.current?.audio === audio) currentAudio.current = null;
+        };
+        audio.addEventListener('ended', () => {
+          revoke();
+          void playChunk(index + 1);
+        }, { once: true });
+        audio.addEventListener('error', () => {
+          revoke();
+          console.error('[TTS] audio playback error');
+        }, { once: true });
+        try {
+          await audio.play();
+          if (gen === generationRef.current && index + 1 < chunks.length) {
+            prefetched = fetchTTS(chunks[index + 1], provider, model);
+            // The next clip may finish loading before this one ends.
+            void prefetched.catch(() => {});
+          }
+        } catch (err) {
+          revoke();
+          throw err;
+        }
+      } catch (err: unknown) {
+        if (gen === generationRef.current) {
+          console.error('[TTS] play failed:', err instanceof Error ? err.message : String(err));
+        }
       }
-    } catch (err: unknown) {
-      console.error('[TTS] play failed:', err instanceof Error ? err.message : String(err));
-    }
+    };
+    await playChunk(0);
   }, [enabled, provider, model, cleanupAudio]);
 
   return { speak };
@@ -111,5 +151,7 @@ export function extractTTSMarkers(text: string): { cleaned: string; ttsText: str
     if (ttsText === null) ttsText = t;
     return '';
   });
-  return { cleaned: cleaned.trim(), ttsText };
+  // A streaming reply can spend seconds inside a long marker. Never render
+  // its unfinished contents as a second copy of the assistant's answer.
+  return { cleaned: cleaned.replace(/\[tts:[\s\S]*$/g, '').trim(), ttsText };
 }

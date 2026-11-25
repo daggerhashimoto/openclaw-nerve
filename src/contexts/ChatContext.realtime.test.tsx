@@ -698,6 +698,24 @@ describe('ChatContext realtime handling (protocol v4)', () => {
       { sessionKey: SESSION, runId: RUN, seq, stream: 'lifecycle', data: { phase } }
     );
 
+    it('speaks a directly committed assistant marker without a chat-final frame', async () => {
+      const { emit, speakMock } = await setup();
+      emit('session.message', {
+        sessionKey: SESSION,
+        message: textMessage(reply, NOW),
+      });
+      expect(speakMock).toHaveBeenCalledOnce();
+      expect(speakMock).toHaveBeenCalledWith(spoken);
+    });
+
+    it('does not replay a directly committed marker when the run final arrives', async () => {
+      const { emit, speakMock } = await setup();
+      emit('chat', chat({ state: 'status', seq: 1, phase: 'preparing_workspace' }));
+      emit('session.message', { sessionKey: SESSION, message: textMessage(reply, NOW) });
+      emit('chat', chat({ state: 'final', seq: 2, stopReason: 'stop', message: textMessage(reply, NOW) }));
+      expect(speakMock).toHaveBeenCalledOnce();
+    });
+
     it('speaks the reply when its final arrives before the run ends', async () => {
       const { emit, speakMock } = await setup();
 

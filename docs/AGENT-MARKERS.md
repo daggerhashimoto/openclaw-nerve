@@ -29,8 +29,9 @@ The marker ends at the first `]`, so the spoken text cannot contain a `]`.
 1. The user sends a voice message. The client sends the transcript prefixed with `[voice] `.
 2. When the outgoing text starts with `[voice] `, Nerve appends a system hint to the message it sends to the gateway. The hint tells the agent to include its full text reply plus a `[tts: ...]` marker at the end, and never to send only a marker. The chat bubble and loaded history hide both the prefix and the hint.
 3. The agent replies with readable text and a `[tts:...]` marker.
-4. Nerve strips all `[tts:...]` markers from the visible text, while the reply streams and when it is loaded from history. When a live reply finishes, the text of the first marker is sent to the TTS engine (`POST /api/tts`) and played.
-5. Fallback: if the reply to a voice message has no marker, Nerve tries to speak a cleaned excerpt of the reply instead. It removes code, links, images and markdown formatting, requires some letters to remain, and cuts the text to 300 characters. Treat this as a safety net only and always include the marker.
+4. Nerve strips all `[tts:...]` markers from the visible text, including an unfinished marker while the reply streams and markers loaded from history. A live final or a directly committed assistant message starts playback.
+5. The browser splits long speech into sentence-aware chunks of at most 800 characters. It requests each clip from `POST /api/tts`, preloads the next, and plays them in order. The endpoint's 5,000-character limit applies to each request, not to the whole reply.
+6. Fallback: if the reply to a voice message has no marker, Nerve tries to speak the cleaned reply instead. It removes code, links, images and markdown formatting and requires some letters to remain. Treat this as a safety net only and always include the marker.
 
 ### Example
 
@@ -49,7 +50,7 @@ Nerve speaks: "The weather in Istanbul is 22 degrees and sunny."
 - Place `[tts:...]` at the end of the response.
 - The spoken text can differ from the written text (for example, expand abbreviations or simplify formatting).
 - Only the first `[tts:...]` marker is spoken. All markers are stripped from the display.
-- Keep the spoken text under 5000 characters. `/api/tts` rejects longer text and nothing plays.
+- Long spoken text is supported; Nerve chunks it before making TTS requests.
 - Never send only a TTS marker. The response must be readable as text too.
 - Nerve asks for a marker only after a voice message, but a marker in any live reply is spoken. Playback needs the "Sound effects" setting turned on (Settings, Audio). Loading history strips markers and never plays them.
 
@@ -58,7 +59,7 @@ Nerve speaks: "The weather in Istanbul is 22 degrees and sunny."
 - **Voice prefix**: `src/features/chat/InputBar.tsx` sends the finished transcription with `onSend('[voice] ' + text)`.
 - **Hint injection**: `src/features/chat/operations/sendMessage.ts`, `applyVoiceTTSHint()`, called from `sendChatMessage()`.
 - **Extraction**: `src/features/tts/useTTS.ts`, `extractTTSMarkers()`, called while streaming and on final replies from `src/features/chat/operations/streamEventHandler.ts` and when loading history from `src/features/chat/operations/loadHistory.ts`.
-- **Playback and fallback**: `src/hooks/useChatTTS.ts` (`handleFinalTTS()`, `buildVoiceFallbackText()`), wired up in `src/contexts/ChatContext.tsx`. `speak()` in `useTTS.ts` fetches the audio.
+- **Playback and fallback**: `src/hooks/useChatTTS.ts` (`handleFinalTTS()`, `handleCommittedTTS()`, `buildVoiceFallbackText()`), wired up in `src/contexts/ChatContext.tsx`. `speak()` in `useTTS.ts` chunks, preloads, and plays the audio.
 
 ---
 

@@ -347,6 +347,10 @@ The server log has the details under `[crons]` and `[gateway-rpc]`.
 
    A playable `tts-test.mp3` means the server side works.
 
+   The endpoint accepts at most 5,000 characters per request. Nerve's browser
+   splits longer spoken replies into smaller clips automatically; callers using
+   the endpoint directly must split their own requests.
+
 **Automatic provider:** a request without a provider uses OpenAI if its key is set, then Replicate if its key is set, then Edge. The browser always sends its selected provider. Xiaomi MiMo is used only when selected.
 
 ### Same text keeps the old voice

@@ -377,34 +377,65 @@ function heartbeatCallIds(messages: ChatMessage[]): Set<string> {
  */
 export function stripHeartbeatToolCalls(messages: ChatMessage[]): ChatMessage[] {
   const callIds = heartbeatCallIds(messages);
-  let previousHadHeartbeatCall = false;
+  // An older gateway can omit both the call id and the result's tool name/id.
+  // The only link is then recorded order: the result belongs to the call just
+  // before it, in the same message or the one that follows.
+  let previousLastCallWasHeartbeat = false;
 
   return messages.map((message) => {
-    const content = Array.isArray(message.content) ? message.content : null;
-    const hasHeartbeatCall = content?.some(isHeartbeatToolCall) ?? false;
-
-    // An older gateway can omit both the call id and the result's tool name/id.
-    // In that shape the only link is adjacency: the result in the same message
-    // as the call, or the next result message after it.
-    if (
-      isHeartbeatResultMessage(message, callIds)
-      || (previousHadHeartbeatCall && isUnnamedResultMessage(message))
-    ) {
-      previousHadHeartbeatCall = false;
+    if (isHeartbeatResultMessage(message, callIds)) {
+      previousLastCallWasHeartbeat = false;
       return { ...message, content: [], text: '' };
     }
-
-    let next = message;
-    if (content) {
-      const filtered = content.filter((block) => {
-        if (isHeartbeatToolCall(block) || isHeartbeatResultBlock(block, callIds)) return false;
-        if (hasHeartbeatCall && isUnnamedResultBlock(block)) return false;
-        return true;
-      });
-      if (filtered.length !== content.length) next = { ...message, content: filtered };
+    if (
+      previousLastCallWasHeartbeat
+      && isUnnamedResultMessage(message)
+    ) {
+      previousLastCallWasHeartbeat = false;
+      return { ...message, content: [], text: '' };
+    }
+    if (!Array.isArray(message.content)) {
+      previousLastCallWasHeartbeat = false;
+      return message;
     }
 
-    previousHadHeartbeatCall = hasHeartbeatCall;
+    const content: ContentBlock[] = [];
+    let lastCall: 'heartbeat' | 'other' | null = null;
+    let changed = false;
+
+    for (const block of message.content) {
+      if (isHeartbeatToolCall(block)) {
+        lastCall = 'heartbeat';
+        changed = true;
+        continue;
+      }
+      if (isToolCallBlock(block)) {
+        content.push(block);
+        lastCall = 'other';
+        continue;
+      }
+      if (isHeartbeatResultBlock(block, callIds)) {
+        lastCall = null;
+        changed = true;
+        continue;
+      }
+      if (isToolResultBlock(block)) {
+        const adjacentHeartbeat = lastCall === 'heartbeat'
+          || (lastCall == null && previousLastCallWasHeartbeat);
+        if (isUnnamedResultBlock(block) && adjacentHeartbeat) {
+          lastCall = null;
+          changed = true;
+          continue;
+        }
+        content.push(block);
+        lastCall = null;
+        continue;
+      }
+      content.push(block);
+    }
+
+    const next = changed ? { ...message, content } : message;
+    previousLastCallWasHeartbeat = lastCall === 'heartbeat';
     return next;
   });
 }

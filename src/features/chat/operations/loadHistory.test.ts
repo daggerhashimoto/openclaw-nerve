@@ -844,6 +844,44 @@ describe('processChatMessages', () => {
     expect(result).toEqual([]);
   });
 
+  it('keeps an unnamed result that belongs to a normal tool beside a heartbeat call', () => {
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'toolCall', name: 'read', arguments: { path: 'note.md' } },
+          { type: 'toolResult', content: 'file body' },
+          { type: 'toolCall', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } },
+        ],
+        __openclaw: { turnBoundary: true },
+      },
+    ]);
+
+    const toolRow = result.find((m) => m.role === 'tool');
+    expect(toolRow?.rawText).toContain('read');
+    expect(toolRow?.toolResult).toBe('file body');
+  });
+
+  it('strips an unnamed heartbeat result embedded in the following user message', () => {
+    const result = processChatMessages([
+      {
+        role: 'assistant',
+        content: [{ type: 'toolCall', name: 'heartbeat_respond', arguments: { outcome: 'no_change' } }],
+        __openclaw: { turnBoundary: true },
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Visible note.' },
+          { type: 'toolResult', content: '{"status":"accepted"}' },
+        ],
+      },
+    ]);
+
+    expect(result.some((m) => m.rawText === 'Visible note.')).toBe(true);
+    expect(result.some((m) => m.rawText.includes('accepted'))).toBe(false);
+  });
+
   it('keeps a final reply non-intermediate across a heartbeat-only turn', () => {
     const result = processChatMessages([
       { role: 'user', content: 'hello' },

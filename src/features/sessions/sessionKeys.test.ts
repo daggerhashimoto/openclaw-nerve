@@ -8,6 +8,7 @@ import {
   getChatRoomNames,
   getRootAgentId,
   getRootAgentSessionKey,
+  getSessionAgentId,
   getSessionDisplayLabel,
   getTopLevelAgentSessions,
   inferParentSessionKey,
@@ -16,6 +17,16 @@ import {
   pickDefaultSessionKey,
   resolveParentSessionKey,
 } from './sessionKeys';
+
+describe('getSessionAgentId', () => {
+  it('reads the agent from any agent-scoped key, also kinds getRootAgentId does not know', () => {
+    expect(getSessionAgentId('agent:ops:main')).toBe('ops');
+    expect(getSessionAgentId('agent:ops:subagent:worker')).toBe('ops');
+    expect(getSessionAgentId('agent:ops:acp:abc')).toBe('ops');
+    expect(getSessionAgentId('global')).toBeNull();
+    expect(getSessionAgentId('agent::main')).toBeNull();
+  });
+});
 
 function session(sessionKey: string, extra: Partial<Session> = {}): Session {
   return { sessionKey, ...extra };

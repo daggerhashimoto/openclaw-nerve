@@ -64,6 +64,14 @@ export function getRootAgentId(sessionKey: string): string | null {
   return null;
 }
 
+/**
+ * The agent any agent-scoped key belongs to (`agent:<id>:...`), including session kinds
+ * getRootAgentId does not know. Removing an agent uses it to find everything that was its.
+ */
+export function getSessionAgentId(sessionKey: string): string | null {
+  return sessionKey.match(/^agent:([^:]+):/)?.[1] ?? null;
+}
+
 export function getRootAgentSessionKey(sessionKey: string): string | null {
   const rootId = getRootAgentId(sessionKey);
   return rootId ? `agent:${rootId}:main` : null;

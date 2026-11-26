@@ -789,10 +789,10 @@ describe('SessionContext', () => {
     });
   });
 
-  describe('getAgentWorkspace', () => {
+  describe('getAgentRemovalInfo', () => {
     function WorkspaceProbe({ agentId, onResult }: { agentId: string; onResult: (result: unknown) => void }) {
-      const { getAgentWorkspace } = useSessionContext();
-      return <button data-testid="workspace" onClick={() => { void getAgentWorkspace(agentId).then(onResult); }} />;
+      const { getAgentRemovalInfo } = useSessionContext();
+      return <button data-testid="workspace" onClick={() => { void getAgentRemovalInfo(agentId).then(onResult); }} />;
     }
 
     function installAgentsList(answer: () => unknown) {
@@ -826,6 +826,7 @@ describe('SessionContext', () => {
       expect(await lookUp('ops')).toEqual({
         path: '/home/me/.openclaw/workspace/ops',
         overlap: { agentId: 'main', relation: 'inside' },
+        isOnlyAgent: false,
       });
     });
 
@@ -834,6 +835,7 @@ describe('SessionContext', () => {
       expect(await lookUp('main')).toEqual({
         path: '/home/me/.openclaw/workspace',
         overlap: { agentId: 'ops', relation: 'contains' },
+        isOnlyAgent: false,
       });
     });
 
@@ -844,12 +846,18 @@ describe('SessionContext', () => {
       expect(await lookUp('side')).toEqual({
         path: '/home/me/.openclaw/workspace-side',
         overlap: { agentId: 'twin', relation: 'same' },
+        isOnlyAgent: false,
       });
     });
 
     it('names no holder for a workspace beside the others', async () => {
       installAgentsList(() => AGENTS);
-      expect(await lookUp('side')).toEqual({ path: '/home/me/.openclaw/workspace-side' });
+      expect(await lookUp('side')).toEqual({ path: '/home/me/.openclaw/workspace-side', isOnlyAgent: false });
+    });
+
+    it('says when the agent is the only one the gateway lists', async () => {
+      installAgentsList(() => ({ agents: [{ id: 'main', workspace: '/home/me/.openclaw/workspace' }] }));
+      expect(await lookUp('main')).toEqual({ path: '/home/me/.openclaw/workspace', isOnlyAgent: true });
     });
 
     it('answers null for an agent agents.list does not have', async () => {
@@ -981,6 +989,7 @@ describe('SessionContext', () => {
       installRemoveGateway(OPS_TREE);
       localStorage.setItem(PINNED_SESSIONS_STORAGE_KEY, JSON.stringify([
         'agent:ops:subagent:away',
+        'agent:ops:acp:abc',
         'agent:ops:main',
         'agent:main:main',
         'agent:opsx:main',
@@ -1008,7 +1017,12 @@ describe('SessionContext', () => {
       installRemoveGateway(OPS_TREE);
       function OpsStatus() {
         const { agentStatus } = useSessionContext();
-        return <div data-testid="ops-status">{agentStatus['agent:ops:main']?.status ?? 'NONE'}</div>;
+        return (
+          <>
+            <div data-testid="ops-status">{agentStatus['agent:ops:main']?.status ?? 'NONE'}</div>
+            <div data-testid="gone-status">{agentStatus['agent:ops:subagent:gone']?.status ?? 'NONE'}</div>
+          </>
+        );
       }
       const onError = vi.fn();
 
@@ -1017,9 +1031,12 @@ describe('SessionContext', () => {
       await waitFor(() => expect(subscribedHandler).not.toBeNull());
       await act(async () => {
         subscribedHandler?.({ type: 'event', event: 'chat', payload: { sessionKey: 'agent:ops:main', state: 'final' } });
+        // A child the list does not show
+        subscribedHandler?.({ type: 'event', event: 'chat', payload: { sessionKey: 'agent:ops:subagent:gone', state: 'final' } });
         await Promise.resolve();
       });
       expect(screen.getByTestId('ops-status').textContent).toBe('DONE');
+      expect(screen.getByTestId('gone-status').textContent).toBe('DONE');
 
       await act(async () => {
         screen.getByTestId('remove').click();
@@ -1028,6 +1045,60 @@ describe('SessionContext', () => {
       await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main']));
       expect(onError).not.toHaveBeenCalled();
       expect(screen.getByTestId('ops-status').textContent).toBe('NONE');
+      expect(screen.getByTestId('gone-status').textContent).toBe('NONE');
+    });
+
+    it('keeps a child the list never showed out of an older refresh that lands after the removal', async () => {
+      const gateway = installRemoveGateway(OPS_TREE);
+      // Hold one full sessions.list answer, taken after a new child appeared but before the removal.
+      // The removal's own refresh fails, so only the held answer could bring that child in.
+      const answer = rpcMock.getMockImplementation()!;
+      let holdNextFullList = false;
+      let failNextFullList = false;
+      let releaseHeldList = () => {};
+      rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+        if (method === 'sessions.list' && !params?.spawnedBy && failNextFullList) {
+          failNextFullList = false;
+          throw new Error('gateway unreachable');
+        }
+        const result = await answer(method, params);
+        if (method === 'agents.delete') failNextFullList = true;
+        if (method === 'sessions.list' && !params?.spawnedBy && holdNextFullList) {
+          holdNextFullList = false;
+          await new Promise<void>((resolve) => { releaseHeldList = resolve; });
+        }
+        return result;
+      });
+      vi.spyOn(console, 'debug').mockImplementation(() => {});
+      const onError = vi.fn();
+
+      render(
+        <SessionProvider>
+          <SessionRefreshProbe />
+          <RemoveProbe agentId="ops" onError={onError} />
+        </SessionProvider>,
+      );
+      await screen.findByText('agent:ops:cron:nightly');
+
+      gateway.add({ sessionKey: 'agent:ops:subagent:fresh', label: 'Fresh' });
+      holdNextFullList = true;
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click();
+      });
+      await act(async () => {
+        screen.getByTestId('remove').click();
+      });
+      await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main']));
+
+      await act(async () => {
+        releaseHeldList();
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(listedKeys()).toEqual(['agent:main:main']);
     });
 
     it('reads the identity of an agent re-created with the same id afresh', async () => {

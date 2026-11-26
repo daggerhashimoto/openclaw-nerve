@@ -20,6 +20,7 @@ import {
   isTopLevelAgentSessionKey,
   pickDefaultSessionKey,
   getRootAgentId,
+  getSessionAgentId,
 } from '@/features/sessions/sessionKeys';
 
 const BUSY_STATES = new Set(['running', 'thinking', 'tool_use', 'delta', 'started']);
@@ -60,21 +61,24 @@ export interface RemoveAgentOpts {
 }
 
 /**
- * Where an agent's workspace is, and another agent whose workspace overlaps it. agents.delete
- * never moves a workspace to the Trash when it overlaps a remaining agent's: when it sits inside
- * it, holds it, or is the same folder.
+ * What the remove dialog says about an agent, from agents.list: where its workspace is, another
+ * agent whose workspace overlaps it, and whether it is the only configured agent. agents.delete
+ * never moves a workspace to the Trash when it overlaps a remaining agent's (it sits inside it,
+ * holds it, or is the same folder), and refuses to remove the only agent.
  */
-export interface AgentWorkspaceInfo {
+export interface AgentRemovalInfo {
   path: string;
   overlap?: { agentId: string; relation: 'inside' | 'contains' | 'same' };
+  isOnlyAgent: boolean;
 }
 
 const trimTrailingSlashes = (path: string): string => path.replace(/\/+$/, '') || '/';
 
 /** The agent's workspace in an agents.list answer, or null when the answer does not list it. */
-export function findAgentWorkspace(answer: unknown, agentId: string): AgentWorkspaceInfo | null {
+export function findAgentRemovalInfo(answer: unknown, agentId: string): AgentRemovalInfo | null {
   const agents = (answer as { agents?: unknown } | null)?.agents;
   if (!Array.isArray(agents)) return null;
+  const isOnlyAgent = agents.filter((agent) => typeof agent?.id === 'string').length === 1;
   const workspaces = agents
     .filter((agent): agent is { id: string; workspace: string } => (
       typeof agent?.id === 'string' && typeof agent?.workspace === 'string' && agent.workspace !== ''
@@ -85,12 +89,12 @@ export function findAgentWorkspace(answer: unknown, agentId: string): AgentWorks
   const others = workspaces.filter((agent) => agent.id !== agentId);
   const isInside = (inner: string, outer: string) => outer === '/' || inner.startsWith(`${outer}/`);
   const same = others.find((agent) => agent.path === own.path);
-  if (same) return { path: own.path, overlap: { agentId: same.id, relation: 'same' } };
+  if (same) return { path: own.path, overlap: { agentId: same.id, relation: 'same' }, isOnlyAgent };
   const holder = others.find((agent) => isInside(own.path, agent.path));
-  if (holder) return { path: own.path, overlap: { agentId: holder.id, relation: 'inside' } };
+  if (holder) return { path: own.path, overlap: { agentId: holder.id, relation: 'inside' }, isOnlyAgent };
   const held = others.find((agent) => isInside(agent.path, own.path));
-  if (held) return { path: own.path, overlap: { agentId: held.id, relation: 'contains' } };
-  return { path: own.path };
+  if (held) return { path: own.path, overlap: { agentId: held.id, relation: 'contains' }, isOnlyAgent };
+  return { path: own.path, isOnlyAgent };
 }
 
 interface SessionContextValue {
@@ -108,7 +112,7 @@ interface SessionContextValue {
   /** Removes a top-level agent through agents.delete; rejects with the gateway's refusal and changes nothing then. */
   removeAgent: (agentId: string, opts: RemoveAgentOpts) => Promise<void>;
   /** The agent's workspace from agents.list, or null when the gateway does not answer with it. */
-  getAgentWorkspace: (agentId: string) => Promise<AgentWorkspaceInfo | null>;
+  getAgentRemovalInfo: (agentId: string) => Promise<AgentRemovalInfo | null>;
   spawnSession: (opts: SpawnSessionOpts) => Promise<void>;
   renameSession: (sessionKey: string, label: string) => Promise<void>;
   updateSession: (sessionKey: string, updates: Partial<Session>) => void;
@@ -146,6 +150,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // starts; one that answers after a later refresh has landed is an older snapshot and is dropped, and
   // one that started before a delete landed leaves the deleted rows out (key -> refreshes started by then).
   const deletedBeforeRefreshRef = useRef(new Map<string, number>());
+  // Removed agents, by id: a refresh that started before a removal drops every session of that agent.
+  const removedAgentsBeforeRefreshRef = useRef(new Map<string, number>());
   const refreshStartedRef = useRef(0);
   const refreshLandedRef = useRef(0);
   const [heartbeatRuns] = useState(() => new HeartbeatRuns());
@@ -657,9 +663,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (!mountedRef.current || !answer || refreshId <= refreshLandedRef.current) return;
       refreshLandedRef.current = refreshId;
       const deletedBefore = deletedBeforeRefreshRef.current;
-      const newSessions = answer.filter((session) => refreshId > (deletedBefore.get(getSessionKey(session)) ?? 0));
+      const removedAgentsBefore = removedAgentsBeforeRefreshRef.current;
+      const newSessions = answer.filter((session) => {
+        const key = getSessionKey(session);
+        const agentId = getSessionAgentId(key);
+        return refreshId > (deletedBefore.get(key) ?? 0)
+          && refreshId > ((agentId && removedAgentsBefore.get(agentId)) || 0);
+      });
       for (const [key, startedBy] of deletedBefore) {
         if (startedBy <= refreshId) deletedBefore.delete(key);
+      }
+      for (const [agentId, startedBy] of removedAgentsBefore) {
+        if (startedBy <= refreshId) removedAgentsBefore.delete(agentId);
       }
       const nextCurrentSession = pickDefaultSessionKey(newSessions, currentSessionRef.current);
       
@@ -1015,12 +1030,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const removeAgent = useCallback(async (agentId: string, opts: RemoveAgentOpts) => {
     // agents.delete takes the agent's sessions, crons and (with deleteFiles) its files with it.
     await rpc('agents.delete', { agentId, deleteFiles: opts.deleteFiles });
-    const removedKeys = sessionsRef.current
-      .map(getSessionKey)
-      .filter((key) => getRootAgentId(key) === agentId);
-    forgetDeletedSessions(removedKeys);
-    // The agent's pins go too, also those of sessions the list was not showing.
-    unpinSessionsMatching((key) => getRootAgentId(key) === agentId);
+    const isTheAgents = (key: string) => getSessionAgentId(key) === agentId;
+    // A refresh already in flight may hold sessions of this agent, also ones the list never showed.
+    removedAgentsBeforeRefreshRef.current.set(agentId, refreshStartedRef.current);
+    forgetDeletedSessions(sessionsRef.current.map(getSessionKey).filter(isTheAgents));
+    // Its pins and statuses go too, also those of sessions the list was not showing.
+    unpinSessionsMatching(isTheAgents);
+    for (const key of Object.keys(doneTimeoutsRef.current)) {
+      if (!isTheAgents(key)) continue;
+      clearTimeout(doneTimeoutsRef.current[key]);
+      delete doneTimeoutsRef.current[key];
+    }
+    setAgentStatus(prev => {
+      const keys = Object.keys(prev).filter(isTheAgents);
+      if (keys.length === 0) return prev;
+      const next = { ...prev };
+      for (const key of keys) delete next[key];
+      return next;
+    });
     // An agent re-created with this id reads its identity afresh.
     const withoutAgent = <T,>(prev: Record<string, T>): Record<string, T> => {
       if (!(agentId in prev)) return prev;
@@ -1033,9 +1060,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await refreshSessions();
   }, [forgetDeletedSessions, refreshSessions, rpc]);
 
-  const getAgentWorkspace = useCallback(async (agentId: string) => {
+  const getAgentRemovalInfo = useCallback(async (agentId: string) => {
     try {
-      return findAgentWorkspace(await rpc('agents.list', {}), agentId);
+      return findAgentRemovalInfo(await rpc('agents.list', {}), agentId);
     } catch (err) {
       console.debug('[SessionContext] Failed to look up the agent workspace:', err);
       return null;
@@ -1143,7 +1170,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     refreshSessions,
     deleteSession,
     removeAgent,
-    getAgentWorkspace,
+    getAgentRemovalInfo,
     spawnSession,
     renameSession,
     updateSession: updateSessionFromEvent,
@@ -1153,7 +1180,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }), [
     displaySessions, sessionsLoading, currentSession, setCurrentSession, busyState, agentStatus,
     unreadSessions, markSessionRead,
-    abortSession, refreshSessions, deleteSession, removeAgent, getAgentWorkspace, spawnSession, renameSession,
+    abortSession, refreshSessions, deleteSession, removeAgent, getAgentRemovalInfo, spawnSession, renameSession,
     updateSessionFromEvent, agentLogEntries, eventEntries, agentName,
   ]);
 

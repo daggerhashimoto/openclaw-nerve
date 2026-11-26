@@ -57,7 +57,7 @@ const {
     refreshSessions: vi.fn(),
     deleteSession: vi.fn(),
     removeAgent: vi.fn(),
-    getAgentWorkspace: vi.fn(),
+    getAgentRemovalInfo: vi.fn(),
     abortSession: vi.fn(),
     spawnSession: vi.fn(),
     renameSession: vi.fn(),

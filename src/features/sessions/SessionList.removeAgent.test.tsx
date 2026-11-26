@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import type { Session } from '@/types';
-import type { AgentWorkspaceInfo, RemoveAgentOpts } from '@/contexts/SessionContext';
+import type { AgentRemovalInfo, RemoveAgentOpts } from '@/contexts/SessionContext';
 import { SessionList } from './SessionList';
+
+// One agent row on screen; whether it is the only configured agent is the gateway's to say.
+const ONE_AGENT_ROW: Session[] = [
+  { sessionKey: 'agent:main:main', label: 'Main' },
+  { sessionKey: 'agent:main:subagent:x', label: 'X' },
+];
 
 const OPS_TREE: Session[] = [
   { sessionKey: 'agent:main:main', label: 'Main' },
@@ -14,7 +20,7 @@ const OPS_TREE: Session[] = [
 function renderSessionList(
   sessions: Session[],
   onRemoveAgent: (agentId: string, opts: RemoveAgentOpts) => Promise<void>,
-  getAgentWorkspace?: (agentId: string) => Promise<AgentWorkspaceInfo | null>,
+  getAgentRemovalInfo?: (agentId: string) => Promise<AgentRemovalInfo | null>,
 ) {
   return render(
     <SessionList
@@ -25,7 +31,7 @@ function renderSessionList(
       onRefresh={() => {}}
       onDelete={async () => {}}
       onRemoveAgent={onRemoveAgent}
-      getAgentWorkspace={getAgentWorkspace}
+      getAgentRemovalInfo={getAgentRemovalInfo}
       onRename={async () => {}}
     />,
   );
@@ -116,16 +122,17 @@ describe('SessionList remove agent', () => {
   });
 
   it('shows the workspace and says it stays when it sits inside another agent workspace', async () => {
-    const getAgentWorkspace = vi.fn(async (): Promise<AgentWorkspaceInfo> => ({
+    const getAgentRemovalInfo = vi.fn(async (): Promise<AgentRemovalInfo> => ({
       path: '/home/me/.openclaw/workspace/ops',
       overlap: { agentId: 'main', relation: 'inside' },
+      isOnlyAgent: false,
     }));
-    renderSessionList(OPS_TREE, vi.fn(async () => {}), getAgentWorkspace);
+    renderSessionList(OPS_TREE, vi.fn(async () => {}), getAgentRemovalInfo);
 
     openRemoveFor('Ops');
 
     expect(await screen.findByText('/home/me/.openclaw/workspace/ops')).toBeInTheDocument();
-    expect(getAgentWorkspace).toHaveBeenCalledWith('ops');
+    expect(getAgentRemovalInfo).toHaveBeenCalledWith('ops');
     expect(screen.getByRole('radio', { name: /Move files to Trash/ })).toHaveAccessibleName(
       expect.stringContaining("Its workspace stays: it sits inside main's workspace."),
     );
@@ -135,11 +142,12 @@ describe('SessionList remove agent', () => {
     ['contains', "Its workspace stays: worker's workspace sits inside it."],
     ['same', 'Its workspace stays: worker uses the same folder.'],
   ] as const)('says the workspace stays when it overlaps another agent workspace (%s)', async (relation, hint) => {
-    const getAgentWorkspace = vi.fn(async (): Promise<AgentWorkspaceInfo> => ({
+    const getAgentRemovalInfo = vi.fn(async (): Promise<AgentRemovalInfo> => ({
       path: '/home/me/ops',
       overlap: { agentId: 'worker', relation },
+      isOnlyAgent: false,
     }));
-    renderSessionList(OPS_TREE, vi.fn(async () => {}), getAgentWorkspace);
+    renderSessionList(OPS_TREE, vi.fn(async () => {}), getAgentRemovalInfo);
 
     openRemoveFor('Ops');
 
@@ -148,8 +156,8 @@ describe('SessionList remove agent', () => {
   });
 
   it('says the workspace goes to the Trash when it sits beside the others', async () => {
-    const getAgentWorkspace = vi.fn(async () => ({ path: '/home/me/.openclaw/workspace-ops' }));
-    renderSessionList(OPS_TREE, vi.fn(async () => {}), getAgentWorkspace);
+    const getAgentRemovalInfo = vi.fn(async () => ({ path: '/home/me/.openclaw/workspace-ops', isOnlyAgent: false }));
+    renderSessionList(OPS_TREE, vi.fn(async () => {}), getAgentRemovalInfo);
 
     openRemoveFor('Ops');
 
@@ -159,19 +167,29 @@ describe('SessionList remove agent', () => {
     );
   });
 
-  it('shows Remove agent disabled with the reason when only one agent is listed', () => {
-    renderSessionList([
-      { sessionKey: 'agent:main:main', label: 'Main' },
-      { sessionKey: 'agent:main:subagent:x', label: 'X' },
-    ], vi.fn(async () => {}));
+  it('says the only agent cannot be removed when the gateway lists just one', async () => {
+    const onRemoveAgent = vi.fn(async () => {});
+    renderSessionList(ONE_AGENT_ROW, onRemoveAgent, vi.fn(async () => ({ path: '/home/me/.openclaw/workspace', isOnlyAgent: true })));
 
-    expect(screen.queryByTitle('Remove agent')).not.toBeInTheDocument();
-    // aria-disabled, not disabled: a disabled button shows no tooltip, and the title is the reason
-    const button = screen.getByTitle('The only agent cannot be removed');
-    expect(button).toHaveAttribute('aria-disabled', 'true');
-    act(() => {
-      button.click();
+    openRemoveFor('Agent (main)');
+
+    expect(await screen.findByText(/The only agent cannot be removed/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove agent' })).toBeDisabled();
+  });
+
+  it('offers removal when the gateway lists other agents, even with one agent row on screen', async () => {
+    const onRemoveAgent = vi.fn(async () => {});
+    const getAgentRemovalInfo = vi.fn(async () => ({ path: '/home/me/.openclaw/workspace', isOnlyAgent: false }));
+    renderSessionList(ONE_AGENT_ROW, onRemoveAgent, getAgentRemovalInfo);
+
+    openRemoveFor('Agent (main)');
+    await waitFor(() => expect(getAgentRemovalInfo).toHaveBeenCalledWith('main'));
+    expect(await screen.findByText('/home/me/.openclaw/workspace')).toBeInTheDocument();
+    expect(screen.queryByText(/The only agent cannot be removed/)).not.toBeInTheDocument();
+    await act(async () => {
+      screen.getByRole('button', { name: 'Remove agent' }).click();
     });
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    expect(onRemoveAgent).toHaveBeenCalledWith('main', { deleteFiles: false });
   });
 });

@@ -13,6 +13,11 @@ import { AGENT_HUES } from '@/lib/agentColors';
 
 const GHOST_ACTION = 'inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-[3px] border-0 bg-transparent text-muted-foreground transition-colors duration-[120ms] hover:text-foreground';
 const GHOST_DANGER = 'inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-[3px] border-0 bg-transparent text-muted-foreground transition-colors duration-[120ms] hover:text-destructive';
+// A row action that cannot run: dimmed, no hover colour, its title still readable on hover.
+const GHOST_DISABLED = 'cursor-not-allowed opacity-40 hover:text-muted-foreground';
+
+/** Keeps a click on a disabled row action from selecting the row. */
+const stopClick = (e: React.MouseEvent) => e.stopPropagation();
 
 interface SessionNodeProps {
   node: TreeNode;
@@ -44,6 +49,10 @@ interface SessionNodeProps {
   onSelect: (key: string) => void;
   onToggleExpand: (key: string) => void;
   onDelete?: (key: string, label: string) => void;
+  /** What the delete button says; top-level agent rows say "Remove agent". */
+  deleteLabel?: string;
+  /** Shown instead of the label, with the button disabled, when the row cannot be deleted. */
+  deleteDisabledReason?: string;
   onStartRename?: (key: string, label: string) => void;
   onTogglePin?: (key: string) => void;
   onAbort?: (key: string) => void;
@@ -80,6 +89,8 @@ function arePropsEqual(prev: SessionNodeProps, next: SessionNodeProps): boolean 
     prev.hue === next.hue &&
     prev.agentId === next.agentId &&
     prev.compact === next.compact &&
+    prev.deleteLabel === next.deleteLabel &&
+    prev.deleteDisabledReason === next.deleteDisabledReason &&
     // Rename and Delete are offered by handler presence, so a handler coming or going must re-render
     Boolean(prev.onStartRename) === Boolean(next.onStartRename) &&
     Boolean(prev.onTogglePin) === Boolean(next.onTogglePin) &&
@@ -113,6 +124,8 @@ export const SessionNode = memo(function SessionNode({
   onSelect,
   onToggleExpand,
   onDelete,
+  deleteLabel = 'Delete session',
+  deleteDisabledReason,
   onStartRename,
   onTogglePin,
   onAbort,
@@ -460,9 +473,10 @@ export const SessionNode = memo(function SessionNode({
                 {hasDeleteAction && (
                   <button
                     type="button"
-                    onClick={handleDeleteFromMenu}
-                    title="Delete session"
-                    className={GHOST_DANGER}
+                    onClick={deleteDisabledReason ? stopClick : handleDeleteFromMenu}
+                    title={deleteDisabledReason ?? deleteLabel}
+                    aria-disabled={deleteDisabledReason ? true : undefined}
+                    className={cn(GHOST_DANGER, deleteDisabledReason && GHOST_DISABLED)}
                   >
                     <Trash2 size={14} aria-hidden="true" />
                   </button>
@@ -524,9 +538,10 @@ export const SessionNode = memo(function SessionNode({
           {hasDeleteAction && (
             <button
               type="button"
-              onClick={handleDeleteClick}
-              title="Delete session"
-              className={GHOST_DANGER}
+              onClick={deleteDisabledReason ? stopClick : handleDeleteClick}
+              title={deleteDisabledReason ?? deleteLabel}
+              aria-disabled={deleteDisabledReason ? true : undefined}
+              className={cn(GHOST_DANGER, deleteDisabledReason && GHOST_DISABLED)}
             >
               <Trash2 size={14} aria-hidden="true" />
             </button>

@@ -823,7 +823,28 @@ describe('SessionContext', () => {
 
     it('finds an agent workspace and the agent whose workspace holds it', async () => {
       installAgentsList(() => AGENTS);
-      expect(await lookUp('ops')).toEqual({ path: '/home/me/.openclaw/workspace/ops', insideAgentId: 'main' });
+      expect(await lookUp('ops')).toEqual({
+        path: '/home/me/.openclaw/workspace/ops',
+        overlap: { agentId: 'main', relation: 'inside' },
+      });
+    });
+
+    it('names an agent whose workspace sits inside this one', async () => {
+      installAgentsList(() => AGENTS);
+      expect(await lookUp('main')).toEqual({
+        path: '/home/me/.openclaw/workspace',
+        overlap: { agentId: 'ops', relation: 'contains' },
+      });
+    });
+
+    it('names an agent that uses the same folder', async () => {
+      installAgentsList(() => ({
+        agents: [...AGENTS.agents, { id: 'twin', workspace: '/home/me/.openclaw/workspace-side/' }],
+      }));
+      expect(await lookUp('side')).toEqual({
+        path: '/home/me/.openclaw/workspace-side',
+        overlap: { agentId: 'twin', relation: 'same' },
+      });
     });
 
     it('names no holder for a workspace beside the others', async () => {

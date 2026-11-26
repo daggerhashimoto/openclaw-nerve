@@ -60,12 +60,13 @@ export interface RemoveAgentOpts {
 }
 
 /**
- * Where an agent's workspace is, and the agent whose workspace holds it when it is nested.
- * agents.delete never moves a workspace nested inside another agent's workspace to the Trash.
+ * Where an agent's workspace is, and another agent whose workspace overlaps it. agents.delete
+ * never moves a workspace to the Trash when it overlaps a remaining agent's: when it sits inside
+ * it, holds it, or is the same folder.
  */
 export interface AgentWorkspaceInfo {
   path: string;
-  insideAgentId?: string;
+  overlap?: { agentId: string; relation: 'inside' | 'contains' | 'same' };
 }
 
 const trimTrailingSlashes = (path: string): string => path.replace(/\/+$/, '') || '/';
@@ -81,8 +82,15 @@ export function findAgentWorkspace(answer: unknown, agentId: string): AgentWorks
     .map((agent) => ({ id: agent.id, path: trimTrailingSlashes(agent.workspace) }));
   const own = workspaces.find((agent) => agent.id === agentId);
   if (!own) return null;
-  const holder = workspaces.find((agent) => agent.id !== agentId && own.path.startsWith(`${agent.path}/`));
-  return holder ? { path: own.path, insideAgentId: holder.id } : { path: own.path };
+  const others = workspaces.filter((agent) => agent.id !== agentId);
+  const isInside = (inner: string, outer: string) => outer === '/' || inner.startsWith(`${outer}/`);
+  const same = others.find((agent) => agent.path === own.path);
+  if (same) return { path: own.path, overlap: { agentId: same.id, relation: 'same' } };
+  const holder = others.find((agent) => isInside(own.path, agent.path));
+  if (holder) return { path: own.path, overlap: { agentId: holder.id, relation: 'inside' } };
+  const held = others.find((agent) => isInside(agent.path, own.path));
+  if (held) return { path: own.path, overlap: { agentId: held.id, relation: 'contains' } };
+  return { path: own.path };
 }
 
 interface SessionContextValue {

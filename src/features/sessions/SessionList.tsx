@@ -90,15 +90,23 @@ const REMOVE_MODES: { value: RemoveMode; label: string }[] = [
   { value: 'trash', label: 'Move files to Trash' },
 ];
 
+/** Why the workspace stays, for each way it can overlap another agent's (AgentWorkspaceInfo). */
+const OVERLAP_REASONS: Record<NonNullable<AgentWorkspaceInfo['overlap']>['relation'], (agentId: string) => string> = {
+  inside: (agentId) => `it sits inside ${agentId}'s workspace`,
+  contains: (agentId) => `${agentId}'s workspace sits inside it`,
+  same: (agentId) => `${agentId} uses the same folder`,
+};
+
 /**
- * What a mode does with the agent's files. agents.delete never moves a workspace nested inside
- * another agent's workspace to the Trash, so the Trash hint says so when the lookup found one.
+ * What a mode does with the agent's files. agents.delete never moves a workspace that overlaps
+ * another agent's to the Trash, so the Trash hint says so when the lookup found one.
  */
 function removeModeHint(mode: RemoveMode, workspace: AgentWorkspaceInfo | undefined): string {
   if (mode === 'keep') return 'Its workspace, memory and history stay where they are.';
-  if (!workspace) return "Its sessions and state go to the system Trash, and its workspace too unless it sits inside another agent's workspace.";
-  if (workspace.insideAgentId) {
-    return `Its sessions and state go to the system Trash. Its workspace stays: it sits inside ${workspace.insideAgentId}'s workspace.`;
+  if (!workspace) return "Its sessions and state go to the system Trash, and its workspace too unless it overlaps another agent's workspace.";
+  if (workspace.overlap) {
+    const reason = OVERLAP_REASONS[workspace.overlap.relation](workspace.overlap.agentId);
+    return `Its sessions and state go to the system Trash. Its workspace stays: ${reason}.`;
   }
   return 'Its workspace, sessions and state go to the system Trash.';
 }

@@ -116,7 +116,10 @@ describe('SessionList remove agent', () => {
   });
 
   it('shows the workspace and says it stays when it sits inside another agent workspace', async () => {
-    const getAgentWorkspace = vi.fn(async () => ({ path: '/home/me/.openclaw/workspace/ops', insideAgentId: 'main' }));
+    const getAgentWorkspace = vi.fn(async (): Promise<AgentWorkspaceInfo> => ({
+      path: '/home/me/.openclaw/workspace/ops',
+      overlap: { agentId: 'main', relation: 'inside' },
+    }));
     renderSessionList(OPS_TREE, vi.fn(async () => {}), getAgentWorkspace);
 
     openRemoveFor('Ops');
@@ -126,6 +129,22 @@ describe('SessionList remove agent', () => {
     expect(screen.getByRole('radio', { name: /Move files to Trash/ })).toHaveAccessibleName(
       expect.stringContaining("Its workspace stays: it sits inside main's workspace."),
     );
+  });
+
+  it.each([
+    ['contains', "Its workspace stays: worker's workspace sits inside it."],
+    ['same', 'Its workspace stays: worker uses the same folder.'],
+  ] as const)('says the workspace stays when it overlaps another agent workspace (%s)', async (relation, hint) => {
+    const getAgentWorkspace = vi.fn(async (): Promise<AgentWorkspaceInfo> => ({
+      path: '/home/me/ops',
+      overlap: { agentId: 'worker', relation },
+    }));
+    renderSessionList(OPS_TREE, vi.fn(async () => {}), getAgentWorkspace);
+
+    openRemoveFor('Ops');
+
+    expect(await screen.findByText('/home/me/ops')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Move files to Trash/ })).toHaveAccessibleName(expect.stringContaining(hint));
   });
 
   it('says the workspace goes to the Trash when it sits beside the others', async () => {

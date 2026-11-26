@@ -789,6 +789,175 @@ describe('SessionContext', () => {
     });
   });
 
+  describe('removeAgent', () => {
+    const OPS_TREE = [
+      { sessionKey: 'agent:main:main', label: 'Main' },
+      { sessionKey: 'agent:ops:main', label: 'Ops' },
+      { sessionKey: 'agent:ops:subagent:worker', label: 'Worker' },
+      { sessionKey: 'agent:ops:cron:nightly', label: 'Nightly' },
+    ];
+
+    // Gateway stand-in: agents.delete refuses with the given message, or drops every stored session of the agent.
+    function installRemoveGateway(initial: Array<Record<string, unknown>>, refusal: string | null = null) {
+      let stored = [...initial];
+      rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+        if (method === 'sessions.list') return { sessions: stored };
+        if (method === 'agents.delete') {
+          if (refusal) throw new Error(refusal);
+          const prefix = `agent:${String(params?.agentId)}:`;
+          stored = stored.filter((session) => !String(session.sessionKey).startsWith(prefix));
+          return { ok: true, agentId: params?.agentId };
+        }
+        return {};
+      });
+    }
+
+    function listedKeys() {
+      return screen.getAllByRole('listitem').map((item) => item.textContent);
+    }
+
+    function RemoveProbe({ agentId, deleteFiles = false, select, onError }: {
+      agentId: string;
+      deleteFiles?: boolean;
+      select?: string;
+      onError: (err: Error) => void;
+    }) {
+      const { sessions, currentSession, removeAgent, setCurrentSession } = useSessionContext();
+      return (
+        <div>
+          <div data-testid="current-session">{currentSession}</div>
+          <ul>
+            {sessions.map((session) => <li key={getSessionKey(session)}>{getSessionKey(session)}</li>)}
+          </ul>
+          {select && <button data-testid="select" onClick={() => setCurrentSession(select)} />}
+          <button data-testid="remove" onClick={() => { removeAgent(agentId, { deleteFiles }).catch(onError); }} />
+        </div>
+      );
+    }
+
+    it.each([false, true])('calls agents.delete for the agent with deleteFiles %s and drops all of its sessions', async (deleteFiles) => {
+      installRemoveGateway(OPS_TREE);
+      const onError = vi.fn();
+
+      render(<SessionProvider><RemoveProbe agentId="ops" deleteFiles={deleteFiles} onError={onError} /></SessionProvider>);
+      await screen.findByText('agent:ops:cron:nightly');
+
+      await act(async () => {
+        screen.getByTestId('remove').click();
+      });
+
+      await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main']));
+      expect(onError).not.toHaveBeenCalled();
+      expect(rpcMock.mock.calls.filter(([method]) => method === 'agents.delete'))
+        .toEqual([['agents.delete', { agentId: 'ops', deleteFiles }]]);
+      expect(rpcMock.mock.calls.some(([method]) => method === 'sessions.delete')).toBe(false);
+    });
+
+    it('leaves every session in place and rejects with the gateway refusal', async () => {
+      const refusal = 'Agent "ops" owns the shared auth store and cannot be deleted.';
+      installRemoveGateway(OPS_TREE, refusal);
+      const onError = vi.fn();
+
+      render(<SessionProvider><RemoveProbe agentId="ops" onError={onError} /></SessionProvider>);
+      await screen.findByText('agent:ops:cron:nightly');
+
+      await act(async () => {
+        screen.getByTestId('remove').click();
+      });
+
+      await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+      expect(onError.mock.calls[0][0].message).toBe(refusal);
+      expect(listedKeys()).toEqual(OPS_TREE.map((session) => session.sessionKey));
+    });
+
+    it('switches away from a removed agent session and drops its pins', async () => {
+      installRemoveGateway(OPS_TREE);
+      localStorage.setItem(PINNED_SESSIONS_STORAGE_KEY, JSON.stringify([
+        'agent:ops:main',
+        'agent:ops:subagent:worker',
+        'agent:main:main',
+      ]));
+      resetPinnedSessionsCache();
+      onTestFinished(() => {
+        localStorage.removeItem(PINNED_SESSIONS_STORAGE_KEY);
+        resetPinnedSessionsCache();
+      });
+      const onError = vi.fn();
+
+      render(<SessionProvider><RemoveProbe agentId="ops" select="agent:ops:subagent:worker" onError={onError} /></SessionProvider>);
+      await screen.findByText('agent:ops:subagent:worker');
+      act(() => {
+        screen.getByTestId('select').click();
+      });
+      expect(screen.getByTestId('current-session')).toHaveTextContent('agent:ops:subagent:worker');
+
+      await act(async () => {
+        screen.getByTestId('remove').click();
+      });
+
+      await waitFor(() => expect(screen.getByTestId('current-session')).toHaveTextContent('agent:main:main'));
+      expect(onError).not.toHaveBeenCalled();
+      expect(JSON.parse(localStorage.getItem(PINNED_SESSIONS_STORAGE_KEY) ?? '[]')).toEqual(['agent:main:main']);
+    });
+
+    it('keeps a removed agent gone when a refresh that started before the removal lands after it', async () => {
+      installRemoveGateway(OPS_TREE);
+      // Hold one full sessions.list answer, taken before the removal, until after the removal has landed.
+      // The removal's own refresh fails, so only the held, older answer could bring the agent's rows back.
+      const gateway = rpcMock.getMockImplementation()!;
+      let holdNextFullList = false;
+      let failNextFullList = false;
+      let releaseHeldList = () => {};
+      rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+        if (method === 'sessions.list' && !params?.spawnedBy && failNextFullList) {
+          failNextFullList = false;
+          throw new Error('gateway unreachable');
+        }
+        const answer = await gateway(method, params);
+        if (method === 'agents.delete') failNextFullList = true;
+        if (method === 'sessions.list' && !params?.spawnedBy && holdNextFullList) {
+          holdNextFullList = false;
+          await new Promise<void>((resolve) => { releaseHeldList = resolve; });
+        }
+        return answer;
+      });
+      vi.spyOn(console, 'debug').mockImplementation(() => {});
+      const onError = vi.fn();
+
+      render(
+        <SessionProvider>
+          <SessionRefreshProbe />
+          <RemoveProbe agentId="ops" onError={onError} />
+        </SessionProvider>,
+      );
+      await screen.findByText('agent:ops:cron:nightly');
+
+      holdNextFullList = true;
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click();
+      });
+      await act(async () => {
+        screen.getByTestId('remove').click();
+      });
+      await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main']));
+
+      const spawnedByCallsBefore = rpcMock.mock.calls.filter(([method, params]) => method === 'sessions.list' && params?.spawnedBy).length;
+      await act(async () => {
+        releaseHeldList();
+      });
+      // The held refresh has finished once it has asked for both roots' children.
+      await waitFor(() => {
+        expect(rpcMock.mock.calls.filter(([method, params]) => method === 'sessions.list' && params?.spawnedBy)).toHaveLength(spawnedByCallsBefore + 2);
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(listedKeys()).toEqual(['agent:main:main']);
+    });
+  });
+
   it('lets an older refresh land when a newer one failed to reach the gateway', async () => {
     let listed = [
       { sessionKey: 'agent:main:main', label: 'Main' },

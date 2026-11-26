@@ -54,6 +54,11 @@ export interface SpawnSessionOpts {
   parentSessionKey?: string;
 }
 
+/** How an agent leaves OpenClaw: with its files kept on disk, or with them moved to the Trash. */
+export interface RemoveAgentOpts {
+  deleteFiles: boolean;
+}
+
 interface SessionContextValue {
   sessions: Session[];
   sessionsLoading: boolean;
@@ -66,6 +71,8 @@ interface SessionContextValue {
   abortSession: (sessionKey: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
   deleteSession: (sessionKey: string) => Promise<void>;
+  /** Removes a top-level agent through agents.delete; rejects with the gateway's refusal and changes nothing then. */
+  removeAgent: (agentId: string, opts: RemoveAgentOpts) => Promise<void>;
   spawnSession: (opts: SpawnSessionOpts) => Promise<void>;
   renameSession: (sessionKey: string, label: string) => Promise<void>;
   updateSession: (sessionKey: string, updates: Partial<Session>) => void;
@@ -913,6 +920,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => controller.abort();
   }, []);
 
+  // Drops sessions the gateway no longer has: their rows, pins and unread marks, and the current
+  // session when it was one of them.
+  const forgetDeletedSessions = useCallback((deletedKeys: string[]) => {
+    if (deletedKeys.length === 0) return;
+    // A refresh still in flight may hold a snapshot from before these deletes and would bring the rows back.
+    for (const key of deletedKeys) deletedBeforeRefreshRef.current.set(key, refreshStartedRef.current);
+    const shouldReplaceCurrent = deletedKeys.includes(currentSessionRef.current);
+    const remaining = sessionsRef.current.filter(s => !deletedKeys.includes(getSessionKey(s)));
+    setSessions(prev => prev.filter(s => !deletedKeys.includes(getSessionKey(s))));
+    // A deleted session's pin goes with it; pins of sessions merely missing from a refresh stay.
+    unpinSessions(deletedKeys);
+    if (unreadSessionKeysRef.current.size > 0) {
+      const next = new Set(unreadSessionKeysRef.current);
+      for (const key of deletedKeys) next.delete(key);
+      unreadSessionKeysRef.current = next;
+      setUnreadSessionKeys(next);
+    }
+    if (shouldReplaceCurrent) {
+      setCurrentSession(pickDefaultSessionKey(remaining));
+    }
+  }, [setCurrentSession]);
+
   const deleteSession = useCallback(async (sessionKey: string) => {
     const authoritativeSessions = await listAuthoritativeSessions();
     const descendants = findDescendantSessionKeys(sessionKey, authoritativeSessions);
@@ -929,26 +958,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     } finally {
       // Mirror what the gateway actually deleted, also when a later delete in the tree failed.
-      if (deletedKeys.length > 0) {
-        // A refresh still in flight may hold a snapshot from before these deletes and would bring the rows back.
-        for (const key of deletedKeys) deletedBeforeRefreshRef.current.set(key, refreshStartedRef.current);
-        const shouldReplaceCurrent = deletedKeys.includes(currentSessionRef.current);
-        const remaining = sessionsRef.current.filter(s => !deletedKeys.includes(getSessionKey(s)));
-        setSessions(prev => prev.filter(s => !deletedKeys.includes(getSessionKey(s))));
-        // A deleted session's pin goes with it; pins of sessions merely missing from a refresh stay.
-        unpinSessions(deletedKeys);
-        if (unreadSessionKeysRef.current.size > 0) {
-          const next = new Set(unreadSessionKeysRef.current);
-          for (const key of deletedKeys) next.delete(key);
-          unreadSessionKeysRef.current = next;
-          setUnreadSessionKeys(next);
-        }
-        if (shouldReplaceCurrent) {
-          setCurrentSession(pickDefaultSessionKey(remaining));
-        }
-      }
+      forgetDeletedSessions(deletedKeys);
     }
-  }, [findDescendantSessionKeys, listAuthoritativeSessions, rpc, setCurrentSession]);
+  }, [findDescendantSessionKeys, forgetDeletedSessions, listAuthoritativeSessions, rpc]);
+
+  const removeAgent = useCallback(async (agentId: string, opts: RemoveAgentOpts) => {
+    // agents.delete takes the agent's sessions, crons and (with deleteFiles) its files with it.
+    await rpc('agents.delete', { agentId, deleteFiles: opts.deleteFiles });
+    const removedKeys = sessionsRef.current
+      .map(getSessionKey)
+      .filter((key) => getRootAgentId(key) === agentId);
+    forgetDeletedSessions(removedKeys);
+    await refreshSessions();
+  }, [forgetDeletedSessions, refreshSessions, rpc]);
 
   const spawnSession = useCallback(async (opts: SpawnSessionOpts) => {
     const authoritativeSessions = await listAuthoritativeSessions();
@@ -1050,6 +1072,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     abortSession,
     refreshSessions,
     deleteSession,
+    removeAgent,
     spawnSession,
     renameSession,
     updateSession: updateSessionFromEvent,
@@ -1059,7 +1082,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }), [
     displaySessions, sessionsLoading, currentSession, setCurrentSession, busyState, agentStatus,
     unreadSessions, markSessionRead,
-    abortSession, refreshSessions, deleteSession, spawnSession, renameSession,
+    abortSession, refreshSessions, deleteSession, removeAgent, spawnSession, renameSession,
     updateSessionFromEvent, agentLogEntries, eventEntries, agentName,
   ]);
 

@@ -59,6 +59,32 @@ export interface RemoveAgentOpts {
   deleteFiles: boolean;
 }
 
+/**
+ * Where an agent's workspace is, and the agent whose workspace holds it when it is nested.
+ * agents.delete never moves a workspace nested inside another agent's workspace to the Trash.
+ */
+export interface AgentWorkspaceInfo {
+  path: string;
+  insideAgentId?: string;
+}
+
+const trimTrailingSlashes = (path: string): string => path.replace(/\/+$/, '') || '/';
+
+/** The agent's workspace in an agents.list answer, or null when the answer does not list it. */
+export function findAgentWorkspace(answer: unknown, agentId: string): AgentWorkspaceInfo | null {
+  const agents = (answer as { agents?: unknown } | null)?.agents;
+  if (!Array.isArray(agents)) return null;
+  const workspaces = agents
+    .filter((agent): agent is { id: string; workspace: string } => (
+      typeof agent?.id === 'string' && typeof agent?.workspace === 'string' && agent.workspace !== ''
+    ))
+    .map((agent) => ({ id: agent.id, path: trimTrailingSlashes(agent.workspace) }));
+  const own = workspaces.find((agent) => agent.id === agentId);
+  if (!own) return null;
+  const holder = workspaces.find((agent) => agent.id !== agentId && own.path.startsWith(`${agent.path}/`));
+  return holder ? { path: own.path, insideAgentId: holder.id } : { path: own.path };
+}
+
 interface SessionContextValue {
   sessions: Session[];
   sessionsLoading: boolean;
@@ -73,6 +99,8 @@ interface SessionContextValue {
   deleteSession: (sessionKey: string) => Promise<void>;
   /** Removes a top-level agent through agents.delete; rejects with the gateway's refusal and changes nothing then. */
   removeAgent: (agentId: string, opts: RemoveAgentOpts) => Promise<void>;
+  /** The agent's workspace from agents.list, or null when the gateway does not answer with it. */
+  getAgentWorkspace: (agentId: string) => Promise<AgentWorkspaceInfo | null>;
   spawnSession: (opts: SpawnSessionOpts) => Promise<void>;
   renameSession: (sessionKey: string, label: string) => Promise<void>;
   updateSession: (sessionKey: string, updates: Partial<Session>) => void;
@@ -972,6 +1000,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await refreshSessions();
   }, [forgetDeletedSessions, refreshSessions, rpc]);
 
+  const getAgentWorkspace = useCallback(async (agentId: string) => {
+    try {
+      return findAgentWorkspace(await rpc('agents.list', {}), agentId);
+    } catch (err) {
+      console.debug('[SessionContext] Failed to look up the agent workspace:', err);
+      return null;
+    }
+  }, [rpc]);
+
   const spawnSession = useCallback(async (opts: SpawnSessionOpts) => {
     const authoritativeSessions = await listAuthoritativeSessions();
 
@@ -1073,6 +1110,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     refreshSessions,
     deleteSession,
     removeAgent,
+    getAgentWorkspace,
     spawnSession,
     renameSession,
     updateSession: updateSessionFromEvent,
@@ -1082,7 +1120,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }), [
     displaySessions, sessionsLoading, currentSession, setCurrentSession, busyState, agentStatus,
     unreadSessions, markSessionRead,
-    abortSession, refreshSessions, deleteSession, removeAgent, spawnSession, renameSession,
+    abortSession, refreshSessions, deleteSession, removeAgent, getAgentWorkspace, spawnSession, renameSession,
     updateSessionFromEvent, agentLogEntries, eventEntries, agentName,
   ]);
 

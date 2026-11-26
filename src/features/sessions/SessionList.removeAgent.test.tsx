@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import type { Session } from '@/types';
-import type { RemoveAgentOpts } from '@/contexts/SessionContext';
+import type { AgentWorkspaceInfo, RemoveAgentOpts } from '@/contexts/SessionContext';
 import { SessionList } from './SessionList';
 
 const OPS_TREE: Session[] = [
@@ -11,7 +11,11 @@ const OPS_TREE: Session[] = [
   { sessionKey: 'agent:ops:cron:nightly', label: 'Nightly' },
 ];
 
-function renderSessionList(sessions: Session[], onRemoveAgent: (agentId: string, opts: RemoveAgentOpts) => Promise<void>) {
+function renderSessionList(
+  sessions: Session[],
+  onRemoveAgent: (agentId: string, opts: RemoveAgentOpts) => Promise<void>,
+  getAgentWorkspace?: (agentId: string) => Promise<AgentWorkspaceInfo | null>,
+) {
   return render(
     <SessionList
       sessions={sessions}
@@ -21,6 +25,7 @@ function renderSessionList(sessions: Session[], onRemoveAgent: (agentId: string,
       onRefresh={() => {}}
       onDelete={async () => {}}
       onRemoveAgent={onRemoveAgent}
+      getAgentWorkspace={getAgentWorkspace}
       onRename={async () => {}}
     />,
   );
@@ -108,6 +113,31 @@ describe('SessionList remove agent', () => {
 
     expect(onRemoveAgent).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: 'Removing...' })).toBeDisabled();
+  });
+
+  it('shows the workspace and says it stays when it sits inside another agent workspace', async () => {
+    const getAgentWorkspace = vi.fn(async () => ({ path: '/home/me/.openclaw/workspace/ops', insideAgentId: 'main' }));
+    renderSessionList(OPS_TREE, vi.fn(async () => {}), getAgentWorkspace);
+
+    openRemoveFor('Ops');
+
+    expect(await screen.findByText('/home/me/.openclaw/workspace/ops')).toBeInTheDocument();
+    expect(getAgentWorkspace).toHaveBeenCalledWith('ops');
+    expect(screen.getByRole('radio', { name: /Move files to Trash/ })).toHaveAccessibleName(
+      expect.stringContaining("Its workspace stays: it sits inside main's workspace."),
+    );
+  });
+
+  it('says the workspace goes to the Trash when it sits beside the others', async () => {
+    const getAgentWorkspace = vi.fn(async () => ({ path: '/home/me/.openclaw/workspace-ops' }));
+    renderSessionList(OPS_TREE, vi.fn(async () => {}), getAgentWorkspace);
+
+    openRemoveFor('Ops');
+
+    expect(await screen.findByText('/home/me/.openclaw/workspace-ops')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Move files to Trash/ })).toHaveAccessibleName(
+      expect.stringContaining('Its workspace, sessions and state go to the system Trash.'),
+    );
   });
 
   it('shows Remove agent disabled with the reason when only one agent is listed', () => {

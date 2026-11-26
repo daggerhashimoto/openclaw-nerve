@@ -789,6 +789,60 @@ describe('SessionContext', () => {
     });
   });
 
+  describe('getAgentWorkspace', () => {
+    function WorkspaceProbe({ agentId, onResult }: { agentId: string; onResult: (result: unknown) => void }) {
+      const { getAgentWorkspace } = useSessionContext();
+      return <button data-testid="workspace" onClick={() => { void getAgentWorkspace(agentId).then(onResult); }} />;
+    }
+
+    function installAgentsList(answer: () => unknown) {
+      const gateway = rpcMock.getMockImplementation()!;
+      rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+        if (method === 'agents.list') return answer();
+        return gateway(method, params);
+      });
+    }
+
+    async function lookUp(agentId: string) {
+      const onResult = vi.fn();
+      render(<SessionProvider><WorkspaceProbe agentId={agentId} onResult={onResult} /></SessionProvider>);
+      await act(async () => {
+        screen.getByTestId('workspace').click();
+      });
+      await waitFor(() => expect(onResult).toHaveBeenCalledTimes(1));
+      return onResult.mock.calls[0][0];
+    }
+
+    const AGENTS = {
+      agents: [
+        { id: 'main', workspace: '/home/me/.openclaw/workspace' },
+        { id: 'ops', workspace: '/home/me/.openclaw/workspace/ops' },
+        { id: 'side', workspace: '/home/me/.openclaw/workspace-side' },
+      ],
+    };
+
+    it('finds an agent workspace and the agent whose workspace holds it', async () => {
+      installAgentsList(() => AGENTS);
+      expect(await lookUp('ops')).toEqual({ path: '/home/me/.openclaw/workspace/ops', insideAgentId: 'main' });
+    });
+
+    it('names no holder for a workspace beside the others', async () => {
+      installAgentsList(() => AGENTS);
+      expect(await lookUp('side')).toEqual({ path: '/home/me/.openclaw/workspace-side' });
+    });
+
+    it('answers null for an agent agents.list does not have', async () => {
+      installAgentsList(() => AGENTS);
+      expect(await lookUp('ghost')).toBeNull();
+    });
+
+    it('answers null when agents.list fails', async () => {
+      vi.spyOn(console, 'debug').mockImplementation(() => {});
+      installAgentsList(() => { throw new Error('gateway unreachable'); });
+      expect(await lookUp('ops')).toBeNull();
+    });
+  });
+
   describe('removeAgent', () => {
     const OPS_TREE = [
       { sessionKey: 'agent:main:main', label: 'Main' },

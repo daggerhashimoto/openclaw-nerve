@@ -1,7 +1,7 @@
 import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import type { Session } from '@/types';
 import { getSessionKey } from '@/types';
-import type { RemoveAgentOpts, SpawnSessionOpts } from '@/contexts/SessionContext';
+import type { AgentWorkspaceInfo, RemoveAgentOpts, SpawnSessionOpts } from '@/contexts/SessionContext';
 import { cn } from '@/lib/utils';
 import { SessionSkeletonGroup } from '@/components/skeletons';
 import { buildAgentSidebarTree, buildSessionTree, flattenTree, getSessionType, type TreeNode } from './sessionTree';
@@ -35,6 +35,8 @@ interface SessionListProps {
   onDelete?: (sessionKey: string) => Promise<void>;
   /** Removes a top-level agent through agents.delete; offered on top-level agent rows when given. */
   onRemoveAgent?: (agentId: string, opts: RemoveAgentOpts) => Promise<void>;
+  /** Looks up the agent's workspace for the remove dialog, which shows it and what Trash will do with it. */
+  getAgentWorkspace?: (agentId: string) => Promise<AgentWorkspaceInfo | null>;
   onSpawn?: (opts: SpawnSessionOpts) => Promise<void | boolean>;
   onRename?: (sessionKey: string, label: string) => Promise<void>;
   onAbort?: (sessionKey: string) => Promise<void>;
@@ -83,16 +85,29 @@ function describeRenameFailure(err: unknown): string {
 type RemoveMode = 'keep' | 'trash';
 
 /** The two ways an agent can leave OpenClaw, as agents.delete's deleteFiles flag offers them. */
-const REMOVE_MODES: { value: RemoveMode; label: string; hint: string }[] = [
-  { value: 'keep', label: 'Keep files on disk', hint: 'Its workspace, memory and history stay where they are.' },
-  { value: 'trash', label: 'Move files to Trash', hint: 'Its workspace, state and transcripts go to the system Trash.' },
+const REMOVE_MODES: { value: RemoveMode; label: string }[] = [
+  { value: 'keep', label: 'Keep files on disk' },
+  { value: 'trash', label: 'Move files to Trash' },
 ];
 
+/**
+ * What a mode does with the agent's files. agents.delete never moves a workspace nested inside
+ * another agent's workspace to the Trash, so the Trash hint says so when the lookup found one.
+ */
+function removeModeHint(mode: RemoveMode, workspace: AgentWorkspaceInfo | undefined): string {
+  if (mode === 'keep') return 'Its workspace, memory and history stay where they are.';
+  if (!workspace) return "Its sessions and state go to the system Trash, and its workspace too unless it sits inside another agent's workspace.";
+  if (workspace.insideAgentId) {
+    return `Its sessions and state go to the system Trash. Its workspace stays: it sits inside ${workspace.insideAgentId}'s workspace.`;
+  }
+  return 'Its workspace, sessions and state go to the system Trash.';
+}
+
 /** Sidebar list of agent sessions with tree structure and context menus. */
-export function SessionList({ sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onRemoveAgent, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
+export function SessionList({ sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onRemoveAgent, getAgentWorkspace, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string; descendantCount: number; isRootAgent: boolean; error?: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState<{ agentId: string; label: string; error?: string } | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<{ agentId: string; label: string; workspace?: AgentWorkspaceInfo; error?: string } | null>(null);
   const [removeMode, setRemoveMode] = useState<RemoveMode>('keep');
   const [removing, setRemoving] = useState(false);
   // Set at once on confirm, so a second click before the button re-renders disabled sends nothing.
@@ -128,14 +143,15 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
     if (!removeTarget || !onRemoveAgent || removingRef.current) return;
     removingRef.current = true;
     setRemoving(true);
-    setRemoveTarget({ ...removeTarget, error: undefined });
+    setRemoveTarget((target) => (target ? { ...target, error: undefined } : target));
     try {
       await onRemoveAgent(removeTarget.agentId, { deleteFiles: removeMode === 'trash' });
       setRemoveTarget(null);
     } catch (err) {
       console.error('Failed to remove agent:', err);
       // Keep the dialog open with the gateway's reason; nothing was removed.
-      setRemoveTarget({ ...removeTarget, error: err instanceof Error ? err.message : String(err) });
+      const error = err instanceof Error ? err.message : String(err);
+      setRemoveTarget((target) => (target ? { ...target, error } : target));
     } finally {
       removingRef.current = false;
       setRemoving(false);
@@ -269,7 +285,13 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
     if (!agentId) return;
     setRemoveMode('keep');
     setRemoveTarget({ agentId, label });
-  }, []);
+    if (!getAgentWorkspace) return;
+    void getAgentWorkspace(agentId).then((workspace) => {
+      if (!workspace) return;
+      // The dialog may have closed, or opened for another agent, while the lookup ran.
+      setRemoveTarget((target) => (target && target.agentId === agentId ? { ...target, workspace } : target));
+    });
+  }, [getAgentWorkspace]);
 
   // The gateway refuses to remove the only configured agent, so its row says why instead of offering it.
   const topLevelAgentCount = useMemo(
@@ -432,6 +454,9 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
             <DialogDescription className="text-[0.867rem] text-muted-foreground">
               Remove {removeTarget?.label} from OpenClaw. Its cron jobs and sessions go with it.
             </DialogDescription>
+            {removeTarget?.workspace && (
+              <p className="break-all font-mono text-[0.8rem] text-muted-foreground">{removeTarget.workspace.path}</p>
+            )}
             {removeTarget?.error && (
               <p role="alert" className="text-[0.8rem] text-destructive break-words">{removeTarget.error}</p>
             )}
@@ -453,7 +478,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
                 />
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="text-[0.867rem] font-semibold text-foreground">{mode.label}</span>
-                  <span className="text-[0.8rem] text-muted-foreground">{mode.hint}</span>
+                  <span className="text-[0.8rem] text-muted-foreground">{removeModeHint(mode.value, removeTarget?.workspace)}</span>
                 </span>
               </label>
             ))}

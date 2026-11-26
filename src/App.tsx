@@ -17,7 +17,7 @@ import {
   Suspense,
 } from 'react';
 import { useGateway } from '@/contexts/GatewayContext';
-import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
+import { useSessionContext, type RemoveAgentOpts, type SpawnSessionOpts } from '@/contexts/SessionContext';
 import { useChat } from '@/contexts/ChatContext';
 import { useSettings, type STTInputMode } from '@/contexts/SettingsContext';
 import { getSessionKey } from '@/types';
@@ -38,7 +38,7 @@ import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { fleetActivity, fleetCounts, sessionPaneState } from '@/lib/paneState';
 import { shadeFor, useAgentHues } from '@/lib/agentColors';
-import { getChatRoomNames, getRootAgentId, isSubagentSessionKey } from '@/features/sessions/sessionKeys';
+import { getChatRoomNames, getRootAgentId, isSubagentSessionKey, pickDefaultSessionKey } from '@/features/sessions/sessionKeys';
 import { createCommands, createSessionCommands } from '@/features/command-palette/commands';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
@@ -741,6 +741,21 @@ export default function App({ onLogout }: AppProps) {
     });
   }, [currentSession, getWorkspaceSwitchLabel, requestWorkspaceTransition, sessions, spawnSession]);
 
+  // Removing the agent whose workspace is open moves Nerve to another agent, so unsaved edits get
+  // the same Save, Discard or Cancel prompt as a switch. Cancel removes nothing.
+  const handleRemoveAgent = useCallback(async (agentId: string, opts: RemoveAgentOpts) => {
+    if (getWorkspaceAgentId(currentSession) !== agentId) {
+      await removeAgent(agentId, opts);
+      return;
+    }
+    const remaining = sessions.filter((session) => getRootAgentId(getSessionKey(session)) !== agentId);
+    const nextSessionKey = pickDefaultSessionKey(remaining);
+    const proceeded = await requestWorkspaceTransition(nextSessionKey, getWorkspaceSwitchLabel(nextSessionKey), async () => {
+      await removeAgent(agentId, opts);
+    });
+    if (!proceeded) throw new Error('Nothing was removed: the unsaved workspace edits are still open.');
+  }, [currentSession, getWorkspaceSwitchLabel, removeAgent, requestWorkspaceTransition, sessions]);
+
   // Boot sequence: fade in panels when connected
   useEffect(() => {
     if (connectionState === 'connected' && !booted) {
@@ -897,7 +912,7 @@ export default function App({ onLogout }: AppProps) {
               onSelect={onSelect}
               onRefresh={refreshSessions}
               onDelete={deleteSession}
-              onRemoveAgent={removeAgent}
+              onRemoveAgent={handleRemoveAgent}
               getAgentWorkspace={getAgentWorkspace}
               onSpawn={handleSpawnSession}
               onRename={renameSession}
@@ -936,7 +951,7 @@ export default function App({ onLogout }: AppProps) {
           onSelect={handleSessionChange}
           onRefresh={refreshSessions}
           onDelete={deleteSession}
-          onRemoveAgent={removeAgent}
+          onRemoveAgent={handleRemoveAgent}
           getAgentWorkspace={getAgentWorkspace}
           onSpawn={handleSpawnSession}
           onRename={renameSession}

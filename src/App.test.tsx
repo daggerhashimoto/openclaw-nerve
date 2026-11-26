@@ -56,6 +56,8 @@ const {
     unreadSessions: new Set<string>(),
     refreshSessions: vi.fn(),
     deleteSession: vi.fn(),
+    removeAgent: vi.fn(),
+    getAgentWorkspace: vi.fn(),
     abortSession: vi.fn(),
     spawnSession: vi.fn(),
     renameSession: vi.fn(),
@@ -377,13 +379,27 @@ vi.mock('@/features/command-palette/CommandPalette', () => ({
 }));
 
 vi.mock('@/features/sessions/SessionList', () => ({
-  SessionList: ({ onSelect, onSpawn }: {
+  SessionList: ({ onSelect, onSpawn, onRemoveAgent }: {
     onSelect: (key: string) => void;
+    onRemoveAgent?: (agentId: string, opts: { deleteFiles: boolean }) => Promise<void>;
     onSpawn?: (opts: { kind: 'root' | 'subagent'; agentName?: string; parentSessionKey?: string; task: string; model: string; thinking: string; cleanup?: string }) => Promise<void>;
   }) => (
     <div>
       <button type="button" onClick={() => onSelect('agent:bravo:main')}>Select Bravo</button>
       <button type="button" onClick={() => onSelect('agent:alpha:subagent:abc')}>Select Alpha Subagent</button>
+      {onRemoveAgent && ['alpha', 'bravo'].map((agentId) => (
+        <button
+          key={agentId}
+          type="button"
+          onClick={() => {
+            onRemoveAgent(agentId, { deleteFiles: false }).catch((err: Error) => {
+              document.body.dataset.removeError = err.message;
+            });
+          }}
+        >
+          {`Remove ${agentId}`}
+        </button>
+      ))}
       {onSpawn && (
         <button
           type="button"
@@ -801,6 +817,47 @@ describe('App workspace switch guard', () => {
 
     expect(sessionContext.setCurrentSession).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toHaveTextContent('shared.md');
+  });
+
+  it('guards removing the current agent until save and remove completes', async () => {
+    sessionContext.removeAgent.mockReset().mockResolvedValue(undefined);
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove alpha' }));
+
+    expect(sessionContext.removeAgent).not.toHaveBeenCalled();
+    expect(screen.getByText('Unsaved workspace edits')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save and switch' }));
+
+    await waitFor(() => {
+      expect(saveAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
+      expect(sessionContext.removeAgent).toHaveBeenCalledWith('alpha', { deleteFiles: false });
+    });
+  });
+
+  it('removes nothing when the user cancels removing the current agent', async () => {
+    sessionContext.removeAgent.mockReset().mockResolvedValue(undefined);
+    delete document.body.dataset.removeError;
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove alpha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(document.body.dataset.removeError).toMatch(/Nothing was removed/));
+    expect(sessionContext.removeAgent).not.toHaveBeenCalled();
+    expect(saveAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
+    expect(discardAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
+  });
+
+  it('does not guard removing another agent', async () => {
+    sessionContext.removeAgent.mockReset().mockResolvedValue(undefined);
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bravo' }));
+
+    await waitFor(() => expect(sessionContext.removeAgent).toHaveBeenCalledWith('bravo', { deleteFiles: false }));
+    expect(screen.queryByText('Unsaved workspace edits')).not.toBeInTheDocument();
   });
 
   it('guards root-agent creation until the user confirms the switch', async () => {

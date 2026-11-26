@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { forwardRef, useImperativeHandle, type ReactNode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import App from './App';
 import { AGENT_HUES, resetAgentHues, shadeFor } from '@/lib/agentColors';
 
@@ -848,6 +848,28 @@ describe('App workspace switch guard', () => {
     expect(sessionContext.removeAgent).not.toHaveBeenCalled();
     expect(saveAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
     expect(discardAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
+  });
+
+  it('guards removing the current agent even when no other agent has a session to switch to', async () => {
+    sessionContext.removeAgent.mockReset().mockResolvedValue(undefined);
+    const allSessions = sessionContext.sessions;
+    sessionContext.sessions = allSessions.filter((session) => session.key.startsWith('agent:alpha:'));
+    onTestFinished(() => {
+      sessionContext.sessions = allSessions;
+    });
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove alpha' }));
+
+    expect(sessionContext.removeAgent).not.toHaveBeenCalled();
+    expect(screen.getByText('Unsaved workspace edits')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and switch' }));
+
+    await waitFor(() => {
+      expect(discardAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
+      expect(sessionContext.removeAgent).toHaveBeenCalledWith('alpha', { deleteFiles: false });
+    });
   });
 
   it('does not guard removing another agent', async () => {

@@ -635,8 +635,13 @@ export default function App({ onLogout }: AppProps) {
     targetSessionKey: string,
     targetLabel: string,
     execute: () => Promise<void>,
+    // Leaving the current workspace for good (its agent is being removed): guard whenever it is dirty.
+    options: { leavesCurrentWorkspace?: boolean } = {},
   ) => {
-    if (!shouldGuardWorkspaceSwitch(currentSession, targetSessionKey, hasDirtyFiles)) {
+    const guard = options.leavesCurrentWorkspace
+      ? hasDirtyFiles
+      : shouldGuardWorkspaceSwitch(currentSession, targetSessionKey, hasDirtyFiles);
+    if (!guard) {
       return execute().then(() => true);
     }
 
@@ -749,10 +754,12 @@ export default function App({ onLogout }: AppProps) {
       return;
     }
     const remaining = sessions.filter((session) => getRootAgentId(getSessionKey(session)) !== agentId);
+    // Empty when no other agent has a session on screen, though the gateway may still have one.
     const nextSessionKey = pickDefaultSessionKey(remaining);
-    const proceeded = await requestWorkspaceTransition(nextSessionKey, getWorkspaceSwitchLabel(nextSessionKey), async () => {
+    const nextLabel = nextSessionKey ? getWorkspaceSwitchLabel(nextSessionKey) : 'another agent';
+    const proceeded = await requestWorkspaceTransition(nextSessionKey, nextLabel, async () => {
       await removeAgent(agentId, opts);
-    });
+    }, { leavesCurrentWorkspace: true });
     if (!proceeded) throw new Error('Nothing was removed: the unsaved workspace edits are still open.');
   }, [currentSession, getWorkspaceSwitchLabel, removeAgent, requestWorkspaceTransition, sessions]);
 

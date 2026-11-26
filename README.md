@@ -23,7 +23,9 @@ curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/mast
 
 <div align="center">
 
-<img src="docs/screenshots/hero.webp" alt="Nerve chat with a pasted screenshot, tool calls, a code diff and a live TradingView chart, next to the agent tree and the memory panel" width="100%" />
+<!-- demo-video:start -->
+https://github.com/user-attachments/assets/e5cd9150-4f3f-4050-a63c-190e6947e3a2
+<!-- demo-video:end -->
 
 <table>
 <tr>

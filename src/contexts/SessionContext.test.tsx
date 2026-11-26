@@ -875,6 +875,7 @@ describe('SessionContext', () => {
     // Gateway stand-in: agents.delete refuses with the given message, or drops every stored session of the agent.
     function installRemoveGateway(initial: Array<Record<string, unknown>>, refusal: string | null = null) {
       let stored = [...initial];
+      const gateway = { add: (session: Record<string, unknown>) => { stored = [...stored, session]; } };
       rpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
         if (method === 'sessions.list') return { sessions: stored };
         if (method === 'agents.delete') {
@@ -885,6 +886,7 @@ describe('SessionContext', () => {
         }
         return {};
       });
+      return gateway;
     }
 
     function listedKeys() {
@@ -973,6 +975,100 @@ describe('SessionContext', () => {
       await waitFor(() => expect(screen.getByTestId('current-session')).toHaveTextContent('agent:main:main'));
       expect(onError).not.toHaveBeenCalled();
       expect(JSON.parse(localStorage.getItem(PINNED_SESSIONS_STORAGE_KEY) ?? '[]')).toEqual(['agent:main:main']);
+    });
+
+    it('drops every pin of the removed agent, also of sessions the list does not show', async () => {
+      installRemoveGateway(OPS_TREE);
+      localStorage.setItem(PINNED_SESSIONS_STORAGE_KEY, JSON.stringify([
+        'agent:ops:subagent:away',
+        'agent:ops:main',
+        'agent:main:main',
+        'agent:opsx:main',
+      ]));
+      resetPinnedSessionsCache();
+      onTestFinished(() => {
+        localStorage.removeItem(PINNED_SESSIONS_STORAGE_KEY);
+        resetPinnedSessionsCache();
+      });
+      const onError = vi.fn();
+
+      render(<SessionProvider><RemoveProbe agentId="ops" onError={onError} /></SessionProvider>);
+      await screen.findByText('agent:ops:cron:nightly');
+
+      await act(async () => {
+        screen.getByTestId('remove').click();
+      });
+
+      await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main']));
+      expect(onError).not.toHaveBeenCalled();
+      expect(JSON.parse(localStorage.getItem(PINNED_SESSIONS_STORAGE_KEY) ?? '[]')).toEqual(['agent:main:main', 'agent:opsx:main']);
+    });
+
+    it('clears the statuses of the removed agent sessions', async () => {
+      installRemoveGateway(OPS_TREE);
+      function OpsStatus() {
+        const { agentStatus } = useSessionContext();
+        return <div data-testid="ops-status">{agentStatus['agent:ops:main']?.status ?? 'NONE'}</div>;
+      }
+      const onError = vi.fn();
+
+      render(<SessionProvider><OpsStatus /><RemoveProbe agentId="ops" onError={onError} /></SessionProvider>);
+      await screen.findByText('agent:ops:cron:nightly');
+      await waitFor(() => expect(subscribedHandler).not.toBeNull());
+      await act(async () => {
+        subscribedHandler?.({ type: 'event', event: 'chat', payload: { sessionKey: 'agent:ops:main', state: 'final' } });
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId('ops-status').textContent).toBe('DONE');
+
+      await act(async () => {
+        screen.getByTestId('remove').click();
+      });
+
+      await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main']));
+      expect(onError).not.toHaveBeenCalled();
+      expect(screen.getByTestId('ops-status').textContent).toBe('NONE');
+    });
+
+    it('reads the identity of an agent re-created with the same id afresh', async () => {
+      // No labels on the agent rows, so they show their identity names.
+      const gateway = installRemoveGateway([
+        { sessionKey: 'agent:main:main', label: 'Main' },
+        { sessionKey: 'agent:ops:main' },
+      ]);
+      let identityName = 'Old Ops';
+      const baseFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.includes('/api/workspace/identity?agentId=ops')) {
+          return Promise.resolve(jsonResponse({ ok: true, content: `# IDENTITY.md\n- Name: ${identityName}\n` }));
+        }
+        return baseFetch(input, init);
+      }) as typeof fetch;
+      const onError = vi.fn();
+
+      render(
+        <SessionProvider>
+          <SessionDisplayLabels />
+          <SessionRefreshProbe />
+          <RemoveProbe agentId="ops" onError={onError} />
+        </SessionProvider>,
+      );
+      expect(await screen.findByText('Old Ops (ops)')).toBeInTheDocument();
+
+      await act(async () => {
+        screen.getByTestId('remove').click();
+      });
+      await waitFor(() => expect(listedKeys()).toEqual(['agent:main:main']));
+
+      identityName = 'New Ops';
+      gateway.add({ sessionKey: 'agent:ops:main' });
+      await act(async () => {
+        screen.getByTestId('refresh-sessions').click();
+      });
+
+      expect(await screen.findByText('New Ops (ops)')).toBeInTheDocument();
+      expect(onError).not.toHaveBeenCalled();
     });
 
     it('keeps a removed agent gone when a refresh that started before the removal lands after it', async () => {

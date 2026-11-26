@@ -8,7 +8,7 @@ import { describeToolUse } from '@/utils/helpers';
 import { HeartbeatRuns } from '@/features/chat/operations/heartbeatRuns';
 import { buildSessionTree } from '@/features/sessions/sessionTree';
 import { getSessionDeleteRefusal } from '@/features/sessions/sessionDeletion';
-import { unpinSessions } from '@/features/sessions/pinnedSessions';
+import { unpinSessions, unpinSessionsMatching } from '@/features/sessions/pinnedSessions';
 import {
   buildAgentRootSessionKey,
   extractIdentityName,
@@ -965,6 +965,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const shouldReplaceCurrent = deletedKeys.includes(currentSessionRef.current);
     const remaining = sessionsRef.current.filter(s => !deletedKeys.includes(getSessionKey(s)));
     setSessions(prev => prev.filter(s => !deletedKeys.includes(getSessionKey(s))));
+    // A deleted session's status goes too: a key can come back (an agent re-created with the same
+    // id) and must not show the old run.
+    for (const key of deletedKeys) {
+      if (doneTimeoutsRef.current[key]) {
+        clearTimeout(doneTimeoutsRef.current[key]);
+        delete doneTimeoutsRef.current[key];
+      }
+    }
+    setAgentStatus(prev => {
+      if (!deletedKeys.some((key) => key in prev)) return prev;
+      const next = { ...prev };
+      for (const key of deletedKeys) delete next[key];
+      return next;
+    });
     // A deleted session's pin goes with it; pins of sessions merely missing from a refresh stay.
     unpinSessions(deletedKeys);
     if (unreadSessionKeysRef.current.size > 0) {
@@ -1005,6 +1019,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .map(getSessionKey)
       .filter((key) => getRootAgentId(key) === agentId);
     forgetDeletedSessions(removedKeys);
+    // The agent's pins go too, also those of sessions the list was not showing.
+    unpinSessionsMatching((key) => getRootAgentId(key) === agentId);
+    // An agent re-created with this id reads its identity afresh.
+    const withoutAgent = <T,>(prev: Record<string, T>): Record<string, T> => {
+      if (!(agentId in prev)) return prev;
+      const next = { ...prev };
+      delete next[agentId];
+      return next;
+    };
+    setRootIdentityNames(withoutAgent);
+    setRootIdentityMisses(withoutAgent);
     await refreshSessions();
   }, [forgetDeletedSessions, refreshSessions, rpc]);
 

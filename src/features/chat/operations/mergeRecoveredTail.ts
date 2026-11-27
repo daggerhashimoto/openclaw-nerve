@@ -183,10 +183,14 @@ function isRowOnScreen(merged: ChatMsg[], row: ChatMsg): boolean {
     const signature = messageSignature(row);
     if (merged.some((msg) => transcriptRowId(msg) === null && messageSignature(msg) === signature)) return true;
   }
-  // A recovered tool group cut by the window's start repeats calls already shown.
+  // A recovered tool group cut by the window's start repeats calls already shown;
+  // match the calls' transcript ids, not their text, so a later identical group
+  // is still a distinct row.
   if (row.toolGroup?.length) {
-    return row.toolGroup.every((entry) => merged.some((msg) => (
-      msg.toolGroup?.some((shown) => shown.rawText === entry.rawText)
+    const entryIds = row.toolGroup.map((entry) => entry.entryId).filter(Boolean);
+    if (entryIds.length === 0) return false;
+    return merged.some((msg) => msg.toolGroup?.some((shown) => (
+      Boolean(shown.entryId) && entryIds.includes(shown.entryId!)
     )));
   }
   return false;
@@ -291,7 +295,7 @@ function restoreUnsentPrompts(merged: ChatMsg[], replaced: ChatMsg[], regionStar
 
 /** A row histories the same prompt even when it carries no idempotency key. */
 function samePromptRow(row: ChatMsg, prompt: ChatMsg): boolean {
-  if (row.role !== 'user') return false;
+  if (row.role !== 'user' || row.idempotencyKey) return false;
   const rowText = (row.rawText || '').trim();
   const promptText = (prompt.rawText || '').trim();
   if (!rowText || rowText !== promptText) return false;

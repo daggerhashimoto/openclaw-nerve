@@ -315,6 +315,40 @@ describe('mergeRecoveredTail', () => {
       expect(result.map((m) => m.msgId)).toEqual(recovered.map((m) => m.msgId));
     });
 
+    it('inserts an identical tool group from a later turn when the window missed it', () => {
+      // Same calls and text as the earlier group, but distinct transcript entries:
+      // content alone must not make the missed group look already shown.
+      const call = (id: string, ts: number): ChatMessage => ({
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: `${id}-call`, name: 'exec', input: { command: 'ls' } }],
+        timestamp: ts,
+        __openclaw: { id },
+      });
+      const reply = (id: string, text: string, ts: number): ChatMessage => ({
+        role: 'assistant', content: text, timestamp: ts, __openclaw: { id, runTerminal: true },
+      });
+      const ask = (id: string, text: string, ts: number): ChatMessage => ({
+        role: 'user', content: text, timestamp: ts, __openclaw: { id },
+      });
+      const existing = processChatMessages([
+        ask('e1', 'List files', T),
+        call('e2', T + 1000), call('e3', T + 2000),
+        reply('e4', 'Listed.', T + 3000),
+        ask('e5', 'List files again', T + 60_000),
+        reply('e6', 'Listed.', T + 63_000),
+      ]);
+      // The window starts inside the second turn, so its group is not in the
+      // anchored suffix; it has to be placed by its transcript ids.
+      const recovered = processChatMessages([
+        call('e7', T + 61_000), call('e8', T + 62_000),
+        reply('e6', 'Listed.', T + 63_000),
+      ]);
+
+      const result = mergeRecoveredTail(existing, recovered);
+
+      expect(texts(result)).toEqual(['List files', 'exec: ls\nexec: ls', 'Listed.', 'List files again', 'exec: ls\nexec: ls', 'Listed.']);
+    });
+
     it('keeps the full tool group when the recovered window starts inside it', () => {
       // The window cut the first call off, so the recovered group is the rest of the
       // calls under the second call's id. The group already shown covers them.
@@ -568,6 +602,23 @@ describe('mergeRecoveredTail', () => {
 
       expect(texts(result)).toEqual(['Question', 'Next']);
       expect(result[1].pending).toBe(false);
+    });
+
+    it('keeps a second prompt with the same text when history records a different key', () => {
+      const now = Date.now();
+      const previous = [
+        historyRow('user', 'Question', 'e1', now - 10_000),
+        localPrompt('Next', 'k2', now - 1_000, 'sent'),
+      ];
+      const history = [
+        historyRow('user', 'Question', 'e1', now - 10_000),
+        historyRow('user', 'Next', 'e2', now - 2_000, { idempotencyKey: 'k1:user' }),
+      ];
+
+      const result = keepUnsentMessages(previous, history);
+
+      expect(texts(result)).toEqual(['Question', 'Next', 'Next']);
+      expect(result[2].tempId).toBe('k2');
     });
 
     it('collapses the just-acknowledged prompt once history records its key', () => {

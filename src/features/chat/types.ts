@@ -96,6 +96,8 @@ export interface ToolGroupEntry {
   preview: string;
   /** The call's result as plain text, when its transcript entry carried it (see ChatMsg.toolResult) */
   result?: string;
+  /** Transcript id of the entry this call came from, when the gateway gave one. */
+  entryId?: string;
 }
 
 import type { ChartData } from '@/features/charts/extractCharts';

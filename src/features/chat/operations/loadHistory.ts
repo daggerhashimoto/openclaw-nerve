@@ -876,6 +876,7 @@ export function groupToolMessages(msgs: ChatMsg[]): ChatMsg[] {
           rawText: t.rawText,
           preview: plainPreview || t.rawText.slice(0, 80),
           ...(t.toolResult !== undefined ? { result: t.toolResult } : {}),
+          ...(t.msgId ? { entryId: t.msgId } : {}),
         };
       });
       grouped.push({

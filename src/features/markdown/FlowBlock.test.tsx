@@ -156,6 +156,12 @@ describe('FlowBlock', () => {
 
     const figure = container.querySelector('figure.markdown-flow');
     expect(figure).toHaveClass('flow-wide-fanout');
+    // Default `kind: flow` edges still need a stacked chip: branching is
+    // expressed by the graph shape, not by the optional kind label.
+    const chips = container.querySelectorAll('.flow-edge-label--branch-only');
+    expect(chips).toHaveLength(6);
+    expect(chips[0]).toHaveAttribute('data-source', 'Hub');
+    expect(chips[0]).toHaveAttribute('data-target', 'Leaf 0');
     const css = figure?.querySelector('style')?.textContent ?? '';
     expect(css).toContain('@container (max-width: 48rem)');
     expect(css).toContain('.flow-wide-fanout .flow-level');

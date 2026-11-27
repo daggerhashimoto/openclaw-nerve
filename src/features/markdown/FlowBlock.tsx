@@ -148,11 +148,15 @@ function FlowConnectors({
   fromItems,
   toItems,
   labels,
+  outDegree,
+  inDegree,
 }: {
   segments: FlowSegment[];
   fromItems: FlowLayoutItem[];
   toItems: FlowLayoutItem[];
   labels: Map<string, string>;
+  outDegree: Map<string, number>;
+  inDegree: Map<string, number>;
 }) {
   if (segments.length === 0) return null;
 
@@ -196,8 +200,12 @@ function FlowConnectors({
         const sourceLabel = labels.get(segment.edge.from) ?? segment.edge.from;
         const targetLabel = labels.get(segment.edge.to) ?? segment.edge.to;
         const hasLabel = Boolean(segment.label);
-        const hasBranchChip =
-          !hasLabel && isRealTarget && segment.edge.kind === 'branch';
+        // Branching is a graph property, not a `kind` label: a fan-out or merge
+        // written with the default kind must still show its target in stacked mode.
+        const branchesHere = (outDegree.get(segment.edge.from) ?? 0) > 1
+          || (inDegree.get(segment.edge.to) ?? 0) > 1;
+        const hasBranchChip = !hasLabel && isRealTarget
+          && (segment.edge.kind === 'branch' || branchesHere);
         return (
           <React.Fragment key={`edge-${index}`}>
             <span
@@ -363,7 +371,15 @@ const FLOW_RESPONSIVE_CSS = `
 export function FlowBlock({ spec }: { spec: FlowSpec }) {
   const layout = layoutFlow(spec);
   const labels = new Map(spec.nodes.map((node) => [node.id, node.label]));
-  const hasWideFanout = layout.levels.some((level) => level.length >= WIDE_FANOUT_COLUMNS);
+  const hasWideFanout = layout.levels.some(
+    (level) => level.filter((item) => item.node !== null).length >= WIDE_FANOUT_COLUMNS,
+  );
+  const outDegree = new Map<string, number>();
+  const inDegree = new Map<string, number>();
+  for (const edge of spec.edges) {
+    outDegree.set(edge.from, (outDegree.get(edge.from) ?? 0) + 1);
+    inDegree.set(edge.to, (inDegree.get(edge.to) ?? 0) + 1);
+  }
 
   const edgeSummary = spec.edges
     .map((edge) => {
@@ -407,6 +423,8 @@ export function FlowBlock({ spec }: { spec: FlowSpec }) {
                   fromItems={layout.levels[levelIndex - 1]}
                   toItems={level}
                   labels={labels}
+                  outDegree={outDegree}
+                  inDegree={inDegree}
                 />
               ) : (
                 <div className="relative h-7" aria-hidden="true">

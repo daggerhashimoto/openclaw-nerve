@@ -13,6 +13,7 @@ export default defineConfig({
       'node_modules/**',
       'server-dist/**',  // Exclude compiled server output (contains duplicate .test.js files)
       '.worktrees/**',
+      '.claude/worktrees/**',
     ],
     coverage: {
       provider: 'v8',

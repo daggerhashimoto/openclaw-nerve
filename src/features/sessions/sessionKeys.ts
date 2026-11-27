@@ -154,16 +154,64 @@ export function getTopLevelAgentSessions(sessions: Session[]): Session[] {
     });
 }
 
+/**
+ * Wording the starter IDENTITY.md leaves in place of a real name. A placeholder is not an
+ * identity: reading one as a name would label an agent `_ (pick something you like) _`.
+ */
+const PLACEHOLDER_IDENTITY_NAMES = new Set([
+  'pick something you like',
+  'your name',
+  'agent',
+  'name',
+]);
+
+/** Strips the markdown emphasis and trailing punctuation a template wraps a value in. */
+function cleanIdentityValue(value: string): string {
+  return value
+    .replace(/\*\*|__/g, '')
+    .trim()
+    .replace(/^[*_`~]+|[*_`~]+$/g, '')
+    .trim()
+    .replace(/[.!?…]+$/g, '')
+    .trim();
+}
+
+/**
+ * True for empty values and the starter IDENTITY.md's stand-in text. The gateway and the
+ * workspace are both untrusted here: no such text may ever reach a label or a card.
+ */
+export function isPlaceholderIdentityName(value: string | null | undefined): boolean {
+  if (typeof value !== 'string') return true;
+  const cleaned = cleanIdentityValue(value)
+    .replace(/^\((.*)\)$/s, '$1')
+    .trim()
+    .toLowerCase();
+  return cleaned === '' || PLACEHOLDER_IDENTITY_NAMES.has(cleaned);
+}
+
+/**
+ * The agent name from an IDENTITY.md. Only a value on the same line as the `Name` field counts:
+ * the starter file leaves `Name:` empty with `_(pick something you like)_` on the next line, and
+ * a pattern allowed to cross that newline would report the template text as the agent's name.
+ */
 export function extractIdentityName(content: string): string | null {
-  const normalized = content.replace(/\*\*/g, '');
-  const match = normalized.match(/^\s*(?:[-*]\s*)?Name\s*:\s*(.+?)\s*$/im);
-  return match?.[1]?.trim() || null;
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.replace(/\*\*|__/g, '');
+    const match = line.match(/^\s*(?:[-*]\s*)?Name\s*:\s*(.*)$/i);
+    if (!match) continue;
+    const name = cleanIdentityValue(match[1]);
+    if (!name || isPlaceholderIdentityName(name)) return null;
+    return name;
+  }
+  return null;
 }
 
 export function getSessionDisplayLabel(session: Session, agentName = 'Agent'): string {
   const sessionKey = getSessionKey(session);
   const rootId = getRootAgentId(sessionKey);
-  const identityName = session.identityName?.trim();
+  const identityName = session.identityName && !isPlaceholderIdentityName(session.identityName)
+    ? session.identityName.trim()
+    : undefined;
   const explicitLabel = session.label?.trim();
 
   if (sessionKey === 'agent:main:main') {

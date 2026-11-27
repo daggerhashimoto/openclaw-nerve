@@ -241,6 +241,53 @@ describe('InlineSelect', () => {
     expect(listbox.style.top).toBe('136px');
   });
 
+  it('lets its own touch and wheel scrolling bypass the dialog scroll lock', async () => {
+    const onChange = vi.fn();
+    const onDocumentTouchMove = vi.fn();
+    const onDocumentWheel = vi.fn();
+    document.addEventListener('touchmove', onDocumentTouchMove);
+    document.addEventListener('wheel', onDocumentWheel);
+
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent>
+            <DialogTitle>Configure agent</DialogTitle>
+            <DialogDescription>Pick a model.</DialogDescription>
+            <InlineSelect
+              value="default"
+              onChange={onChange}
+              options={Array.from({ length: 30 }, (_, index) => ({
+                value: `model-${index}`,
+                label: `model-${index}`,
+              }))}
+              ariaLabel="Model"
+              inline
+            />
+          </DialogContent>
+        </Dialog>
+      );
+    }
+
+    try {
+      render(<Harness />);
+      fireEvent.click(screen.getByRole('button', { name: 'Model' }));
+      const option = await screen.findByRole('option', { name: 'model-12' });
+
+      fireEvent.touchMove(option, { touches: [{ clientX: 40, clientY: 200 }] });
+      fireEvent.wheel(option, { deltaY: 120 });
+
+      // Radix's RemoveScroll listens on document. The listbox must stop the
+      // event first, otherwise the dialog locks the menu's own scrolling.
+      expect(onDocumentTouchMove).not.toHaveBeenCalled();
+      expect(onDocumentWheel).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener('touchmove', onDocumentTouchMove);
+      document.removeEventListener('wheel', onDocumentWheel);
+    }
+  });
+
   it('does not dismiss a Radix dialog when a portaled option is pressed', async () => {
     const onChange = vi.fn();
 

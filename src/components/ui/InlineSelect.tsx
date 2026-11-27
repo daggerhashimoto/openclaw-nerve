@@ -84,6 +84,7 @@ export function InlineSelect({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const listboxRef = useRef<HTMLUListElement | null>(null);
+  const listboxCleanupRef = useRef<(() => void) | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties>(HIDDEN_MENU_STYLE);
   const [placement, setPlacement] = useState<'top' | 'bottom'>('bottom');
@@ -178,9 +179,30 @@ export function InlineSelect({
   // Position the menu during commit, before the browser paints, so it never
   // flashes at the hidden placeholder position. Kept out of a layout effect to
   // avoid a synchronous setState cascade there.
+  //
+  // The menu is portaled outside Radix DialogContent, so Radix's RemoveScroll
+  // treats a touchmove/wheel over it as an outside scroll and preventDefaults
+  // it. Stopping propagation at the listbox lets the menu's own overflow
+  // scroll natively while the dialog stays scroll-locked.
   const attachListbox = useCallback((node: HTMLUListElement | null) => {
+    if (listboxCleanupRef.current) {
+      listboxCleanupRef.current();
+      listboxCleanupRef.current = null;
+    }
     listboxRef.current = node;
-    if (node) updateMenuPosition();
+    if (!node) return;
+
+    const stopScrollLock = (event: Event) => {
+      event.stopPropagation();
+    };
+    node.addEventListener('touchmove', stopScrollLock, { passive: true });
+    node.addEventListener('wheel', stopScrollLock, { passive: true });
+    listboxCleanupRef.current = () => {
+      node.removeEventListener('touchmove', stopScrollLock);
+      node.removeEventListener('wheel', stopScrollLock);
+    };
+
+    updateMenuPosition();
   }, [updateMenuPosition]);
 
   // Keep the fixed menu anchored while the page or the dialog content scrolls

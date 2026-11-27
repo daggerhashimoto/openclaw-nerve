@@ -521,6 +521,25 @@ describe('mergeRecoveredTail', () => {
     ]);
   });
 
+  it('keeps the send error for a failed prompt when another send has the same text', () => {
+    const existing = [
+      historyRow('user', 'Question', 'e1', T),
+      localPrompt('yes', 'k-failed', T + 1000, 'failed'),
+      makeMsg('system', 'Send error: WebSocket disconnected', T + 1001),
+      localPrompt('yes', 'k-recorded', T + 2000, 'sent'),
+    ];
+    const recovered = [
+      historyRow('user', 'Question', 'e1', T),
+      historyRow('user', 'yes', 'e2', T + 2100, { idempotencyKey: 'k-recorded:user' }),
+    ];
+
+    const result = mergeRecoveredTail(existing, recovered);
+
+    expect(result.some((m) => m.rawText.startsWith('Send error: WebSocket disconnected'))).toBe(true);
+    expect(result.some((m) => m.failed && m.rawText === 'yes')).toBe(true);
+    expect(result.filter((m) => m.role === 'user' && m.rawText === 'yes')).toHaveLength(2);
+  });
+
   it('drops the failed copy of a prompt the gateway recorded, and its send error', () => {
     const key = 'k-accepted';
     const existing = [

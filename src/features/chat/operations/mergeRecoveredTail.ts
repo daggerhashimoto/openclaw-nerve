@@ -234,10 +234,12 @@ function collapseRecordedPrompts(merged: ChatMsg[]): ChatMsg[] {
   if (dropped.size === 0) return merged;
   const droppedKeys = new Set([...dropped].map((msg) => msg.tempId).filter(Boolean));
   const droppedText = new Set([...dropped].map((msg) => (msg.rawText || '').trim()).filter(Boolean));
-  const isCollapsedPromptCopy = (msg: ChatMsg) => msg.role === 'user' && (
-    (msg.tempId !== undefined && droppedKeys.has(msg.tempId))
-    || droppedText.has((msg.rawText || '').trim())
-  );
+  const isCollapsedPromptCopy = (msg: ChatMsg) => {
+    if (msg.role !== 'user') return false;
+    // A local prompt has an identity: another send with the same text is not it.
+    if (msg.tempId !== undefined) return droppedKeys.has(msg.tempId);
+    return droppedText.has((msg.rawText || '').trim());
+  };
   return merged.filter((msg, i) => {
     if (dropped.has(msg)) return false;
     if (msg.role !== 'system' || !msg.rawText.startsWith('Send error')) return true;

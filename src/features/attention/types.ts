@@ -13,7 +13,9 @@ export type OpenTarget =
   | { type: 'task'; id: string }
   | { type: 'proposal'; id: string }
   | { type: 'cron'; id: string }
-  | { type: 'session'; key: string };
+  | { type: 'session'; key: string }
+  /** A source's own panel with nothing selected, for "Open Crons" when a source could not be read. */
+  | { type: 'source'; source: 'tasks' | 'crons' };
 
 export interface SourceStatus {
   state: 'loading' | 'live' | 'error' | 'off';

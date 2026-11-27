@@ -38,6 +38,8 @@ export interface TaskFeedback {
 
 export interface TaskRunLink {
   sessionKey: string;
+  /** Worker session spawned for the run, when it differs from sessionKey. */
+  childSessionKey?: string;
   sessionId?: string;
   runId?: string;
   startedAt: number;

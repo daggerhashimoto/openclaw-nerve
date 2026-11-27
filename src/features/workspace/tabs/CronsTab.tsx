@@ -14,21 +14,9 @@ import { CronDialog } from './CronDialog';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { Pane } from '@/components/ui/Pane';
 import { paneStateLabel, type PaneState } from '@/lib/paneState';
+import { isFailedCronStatus, isOkCronStatus } from '../cronStatus';
 
 type CronRowJob = CronJob;
-
-const OK_STATUSES = new Set(['success', 'ok', 'finished']);
-
-function isOkStatus(status?: string): boolean {
-  return Boolean(status) && OK_STATUSES.has(status!.toLowerCase());
-}
-
-/** A run that did not happen (a skipped heartbeat) is quiet, not broken. */
-function isFailedStatus(status?: string): boolean {
-  if (!status) return false;
-  const normalized = status.toLowerCase();
-  return !OK_STATUSES.has(normalized) && normalized !== 'skipped';
-}
 
 function everyPhrase(count: number, unit: string): string {
   return count === 1 ? `Every ${unit}` : `Every ${count} ${unit}s`;
@@ -188,7 +176,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   }, [confirmingDelete, job.id, onDelete]);
 
   const name = job.name || job.label || job.id;
-  const lastOk = isOkStatus(job.lastStatus);
+  const lastOk = isOkCronStatus(job.lastStatus);
   // Detect delivery-only failures: task ran but delivery failed
   const errorLower = job.lastError?.toLowerCase() ?? '';
   const isDeliveryFailure = !lastOk && (
@@ -198,7 +186,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   );
   const taskSucceeded = lastOk || isDeliveryFailure;
   // Light temperature: an enabled job whose last run broke keeps a red pane until it runs clean
-  const broken = job.enabled && (isFailedStatus(job.lastStatus) || isDeliveryFailure);
+  const broken = job.enabled && (isFailedCronStatus(job.lastStatus) || isDeliveryFailure);
   const executionLabel = job.payloadKind === 'agentTurn' ? 'Private session' : 'Main thread event';
   const paneState: PaneState = running ? 'live' : broken ? 'error' : 'off';
   const schedule = humanSchedule(job);
@@ -358,7 +346,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
             </div>
           )}
           {runs.map((r, i) => {
-            const runPane: PaneState = isFailedStatus(r.status) ? 'error' : 'off';
+            const runPane: PaneState = isFailedCronStatus(r.status) ? 'error' : 'off';
             return (
               <div key={i}>
                 <div className="flex min-h-[var(--row-unit)] min-w-0 items-center gap-2 text-muted-foreground">
@@ -396,7 +384,7 @@ export function CronsTab() {
 
   const toolbarSummary = useMemo(() => {
     const enabledJobs = jobs.filter((job) => job.enabled);
-    const failedCount = enabledJobs.filter((job) => isFailedStatus(job.lastStatus)).length;
+    const failedCount = enabledJobs.filter((job) => isFailedCronStatus(job.lastStatus)).length;
     const nextJob = enabledJobs
       .filter((job) => job.nextRun)
       .sort((a, b) => new Date(a.nextRun as string).getTime() - new Date(b.nextRun as string).getTime())[0];

@@ -198,9 +198,9 @@ export function useChatMessages({ rpc, currentSessionRef, onLatestHeartbeat }: U
     } catch (e) {
       if (!isCurrent()) return;
       const errMsg = e instanceof Error ? e.message : String(e);
-      allMessagesRef.current = [];
-      setHasMore(false);
-      setMessages(prev => [...prev, systemNotice(`Failed to load history: ${errMsg}`)]);
+      // A read lost with the connection says nothing about the transcript
+      // already on screen; keep it and only note that this refresh failed.
+      applyMessageWindow([...allMessagesRef.current, systemNotice(`Failed to load history: ${errMsg}`)], false);
     } finally {
       if (isCurrent()) setHistoryLoaded(true);
     }

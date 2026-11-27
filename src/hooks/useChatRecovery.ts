@@ -67,7 +67,9 @@ export function useChatRecovery({
   // Track whether we were generating at disconnect, for conditional reconnect recovery.
   const wasGeneratingOnDisconnectRef = useRef(false);
   // A read reported the run over but did not hold its reply: the next read settles it.
-  const confirmRunOverRef = useRef(false);
+  // Bound to the run id and run epoch that produced it, so a retry after a newer run
+  // starts cannot settle that newer run without its reply.
+  const confirmRunOverRef = useRef<{ runId: string | null; epoch: number } | null>(null);
   const triggerRecoveryRef = useRef<(reason: RecoveryReason) => void>(() => {});
 
   const clearRecoveryTimer = useCallback(() => {
@@ -117,6 +119,11 @@ export function useChatRecovery({
         // chat_final may have occurred while we were loading.
         if (capturedGeneration !== recoveryGenerationRef.current) return;
 
+        // A run frame or send after this read went out moved the transcript past
+        // what its snapshot can speak for; applying it could put the older view
+        // back, and the live frames (or the next read) hold the newer rows.
+        const runEpochStale = getRunEpoch() !== runEpoch;
+
         // A run on screen whose end and final were lost (the connection dropped
         // as it finished) would otherwise stay on screen for good. The gateway's
         // word counts only if no run frame or send came after this read went out.
@@ -128,15 +135,19 @@ export function useChatRecovery({
         // this window yet. Settle now only when the window holds the run's final
         // reply; otherwise read once more (that read sees everything written
         // before the run state was sampled) and settle on it.
-        if (runOver && !confirmRunOverRef.current) {
-          const runId = activeRunIdRef.current;
+        const runId = activeRunIdRef.current;
+        const confirmation = confirmRunOverRef.current;
+        const confirmedRunOver = confirmation !== null
+          && confirmation.runId === runId
+          && confirmation.epoch === runEpoch;
+        if (runOver && !confirmedRunOver) {
           const hasReply = runId !== null && recovered.some((msg) => msg.terminalRunId === runId);
           if (!hasReply) {
             runOver = false;
             confirmAgain = true;
           }
         }
-        confirmRunOverRef.current = confirmAgain;
+        confirmRunOverRef.current = confirmAgain ? { runId, epoch: runEpoch } : null;
 
         // When streaming is active, the recovered transcript may include the
         // partial assistant text that the streaming bubble is already showing.
@@ -146,6 +157,7 @@ export function useChatRecovery({
         const activeBuffer = activeRun && !runOver
           ? runsRef.current.get(activeRun)?.bufferText || ''
           : '';
+        const existingMessages = getAllMessages();
         const filtered = activeBuffer.length > 0
           ? recovered.filter(msg => {
             // Always keep non-assistant messages (user, system, etc.)
@@ -154,10 +166,15 @@ export function useChatRecovery({
             if (msg.isThinking) return true;
             // Always keep tool groups / intermediate tool messages
             if (msg.toolGroup || msg.intermediate) return true;
+            const text = (msg.rawText || '').trim();
+            // A reply already in the transcript is not a duplicate of the stream
+            // bubble: the merge replaces the same row, while dropping it would
+            // remove it from the screen.
+            if (text && existingMessages.some((row) => row.role === 'assistant'
+              && (row.rawText || '').trim() === text)) return true;
             // Drop assistant text that duplicates the active stream buffer.
             // Require minimum length to avoid suppressing short legitimate messages
             // like "Yes." or "Done" that could be common substrings.
-            const text = (msg.rawText || '').trim();
             if (text.length >= 20 && activeBuffer.includes(text)) return false;
             // For short texts, require exact match with the buffer (normalized).
             if (text && text.length < 20 && activeBuffer.trim() === text) return false;
@@ -165,8 +182,10 @@ export function useChatRecovery({
           })
           : recovered;
 
-        const merged = mergeRecoveredTail(getAllMessages(), filtered);
-        applyMessageWindow(merged, false);
+        if (!runEpochStale) {
+          const merged = mergeRecoveredTail(existingMessages, filtered);
+          applyMessageWindow(merged, false);
+        }
         if (runOver) onRunOver();
       } catch (err) {
         console.debug('[ChatContext] Recovery failed:', err);
@@ -218,7 +237,7 @@ export function useChatRecovery({
     recoveryRef.current.reason = null;
     recoveryGenerationRef.current += 1;
     wasGeneratingOnDisconnectRef.current = false;
-    confirmRunOverRef.current = false;
+    confirmRunOverRef.current = null;
   }, [clearRecoveryTimer]);
 
   // Cleanup recovery timer on unmount

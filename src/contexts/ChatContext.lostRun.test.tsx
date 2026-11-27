@@ -44,13 +44,19 @@ describe('ChatContext when a run ends while disconnected', () => {
     let handler: ((msg: GatewayEvent) => void) | null = null;
     const gateway = { connectionState: 'connected' as ConnectionState };
     const history: unknown[] = [earlier, prompt];
-    const state: { sessionInfo?: { hasActiveRun: boolean }; hold: boolean } = { hold: false };
+    const state: { sessionInfo?: { hasActiveRun: boolean }; hold: boolean; holdRefresh: boolean } = {
+      hold: false,
+      holdRefresh: false,
+    };
     const held: Array<() => void> = [];
+    const heldRefresh: Array<() => void> = [];
     const rpcMock = vi.fn(async (method: string, params?: Record<string, unknown>) => {
       if (method === 'chat.history') {
         const answer = { messages: [...history], ...(state.sessionInfo ? { sessionInfo: { ...state.sessionInfo } } : {}) };
         // Hold only the reconnect recovery read (it asks for 120 rows).
         if (state.hold && params?.limit === 120) return new Promise((resolve) => held.push(() => resolve(answer)));
+        // Hold an ordinary history refresh (it asks for 100 rows).
+        if (state.holdRefresh && params?.limit === 100) return new Promise((resolve) => heldRefresh.push(() => resolve(answer)));
         return answer;
       }
       if (method === 'sessions.messages.subscribe') return { subscribed: true, key: SESSION };
@@ -112,7 +118,7 @@ describe('ChatContext when a run ends while disconnected', () => {
       history.push(reply);
     };
 
-    return { getChat: () => chat!, state, held, emit, chatFrame, setConnection, streamThenDrop, history };
+    return { getChat: () => chat!, state, held, heldRefresh, emit, chatFrame, setConnection, streamThenDrop, history };
   }
 
   it('takes the run down once the recovery read reports none going', async () => {
@@ -154,6 +160,79 @@ describe('ChatContext when a run ends while disconnected', () => {
     await waitFor(() => expect(getChat().isGenerating).toBe(false));
     expect(getChat().stream.html).toBe('');
     expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'What is the weather', 'It is sunny and warm today.']);
+  });
+
+  it('does not let an older history refresh remove the reply after the run settles', async () => {
+    const { getChat, state, held, heldRefresh, emit, setConnection, streamThenDrop, history } = await setup();
+    await streamThenDrop();
+
+    // An ordinary refresh snapshots the transcript before the lost run's reply.
+    history.pop();
+    state.holdRefresh = true;
+    emit('session.message', {
+      sessionKey: SESSION,
+      message: { role: 'user', content: 'Inbound while away', timestamp: NOW + 500 },
+      messageSeq: 9,
+    });
+    await waitFor(() => expect(heldRefresh).toHaveLength(1));
+
+    // The reconnect recovery reads with the reply, reports the run over and settles.
+    history.push(reply);
+    state.sessionInfo = { hasActiveRun: false };
+    state.hold = true;
+    setConnection('connected');
+    await waitFor(() => expect(held).toHaveLength(1));
+    await act(async () => {
+      held[0]();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    await waitFor(() => expect(getChat().isGenerating).toBe(false));
+    expect(getChat().messages.map((m) => m.rawText)).toContain('It is sunny and warm today.');
+
+    // The older refresh lands last. It must not put the pre-final transcript back.
+    await act(async () => {
+      heldRefresh[0]();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(getChat().messages.map((m) => m.rawText)).toContain('It is sunny and warm today.');
+    expect(getChat().stream.html).toBe('');
+  });
+
+  it('does not settle a newer run when the retry confirmation belongs to the lost run', async () => {
+    const { getChat, state, held, emit, setConnection, streamThenDrop, history } = await setup();
+    await streamThenDrop();
+    // First read: run over, but its terminal reply is not in the window yet.
+    history.pop();
+    state.sessionInfo = { hasActiveRun: false };
+    state.hold = true;
+    setConnection('connected');
+    await waitFor(() => expect(held).toHaveLength(1));
+    await act(async () => {
+      held[0]();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(getChat().isGenerating).toBe(true);
+
+    // A new run starts before the confirmation retry reads. The retry must not
+    // reuse the lost run's confirmation and clear the new run's stream.
+    emit('chat', {
+      runId: 'run-2',
+      sessionKey: SESSION,
+      state: 'delta',
+      seq: 1,
+      deltaText: 'New run',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'New run' }], timestamp: NOW + 3_000 },
+    });
+    await waitFor(() => expect(getChat().stream.html).toContain('New run'));
+    await waitFor(() => expect(held).toHaveLength(2));
+
+    await act(async () => {
+      held[1]();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(getChat().isGenerating).toBe(true);
+    expect(getChat().stream.html).toContain('New run');
   });
 
   it('keeps the run when the gateway reports it still going', async () => {

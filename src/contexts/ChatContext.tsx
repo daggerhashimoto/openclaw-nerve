@@ -255,7 +255,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     clearStreamBuffer();
     resetThinking();
     pruneRunRegistry(runsRef.current, null);
-  }, [setProcessingStage, setActivityLog, setLastEventTimestamp, clearStreamBuffer, resetThinking]);
+    // A history refresh that snapshotted before this run's terminal reply must not
+    // land after settlement and put the pre-final transcript back on screen.
+    runEpochRef.current += 1;
+    incrementGeneration();
+  }, [setProcessingStage, setActivityLog, setLastEventTimestamp, clearStreamBuffer, resetThinking, incrementGeneration]);
   useEffect(() => {
     runOverRef.current = settleLostRun;
   }, [settleLostRun]);
@@ -324,6 +328,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (historyRefreshRef.current) clearTimeout(historyRefreshRef.current);
     const capturedSession = currentSessionRef.current;
     const capturedGeneration = getGeneration();
+    const capturedRunEpoch = getRunEpoch();
     historyRefreshRef.current = setTimeout(async () => {
       historyRefreshRef.current = null;
       try {
@@ -340,13 +345,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (seq !== historyRefreshSeqRef.current) return;
         if (capturedSession !== currentSessionRef.current) return;
         if (capturedGeneration !== getGeneration()) return;
+        if (capturedRunEpoch !== getRunEpoch()) return;
         if (recovered.length > 0) {
           const merged = mergeRecoveredTail(getAllMessages(), recovered);
           applyMessageWindow(merged, false);
         }
       } catch { /* best-effort */ }
     }, 300);
-  }, [rpc, getGeneration, getAllMessages, applyMessageWindow, recordHistoryHeartbeat]);
+  }, [rpc, getGeneration, getRunEpoch, getAllMessages, applyMessageWindow, recordHistoryHeartbeat]);
 
   useEffect(() => {
     if (connectionState !== 'connected' || !currentSession) return;

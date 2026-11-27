@@ -464,6 +464,49 @@ describe('mergeRecoveredTail', () => {
     });
   });
 
+  it('brings in a history row committed while the connection was down', () => {
+    // The screen has the rows on either side of the missed one; an anchor walk
+    // matches those and would otherwise never place the row in between.
+    const existing = [
+      historyRow('user', 'Earlier question', 'e1', T),
+      historyRow('assistant', 'Earlier answer', 'e2', T + 1000),
+      historyRow('assistant', 'Reply 1 says hello.', 'e4', T + 4000),
+    ];
+    const recovered = [
+      historyRow('user', 'Earlier question', 'e1', T),
+      historyRow('assistant', 'Earlier answer', 'e2', T + 1000),
+      historyRow('user', 'Channel message 1', 'e3', T + 3000),
+      historyRow('assistant', 'Reply 1 says hello.', 'e4', T + 4000),
+    ];
+
+    expect(texts(mergeRecoveredTail(existing, recovered))).toEqual([
+      'Earlier question',
+      'Earlier answer',
+      'Channel message 1',
+      'Reply 1 says hello.',
+    ]);
+  });
+
+  it('drops the failed copy of a prompt the gateway recorded, and its send error', () => {
+    const key = 'k-accepted';
+    const existing = [
+      historyRow('user', 'Question', 'e1', T),
+      localPrompt('Question 2', key, T + 2000, 'failed'),
+      makeMsg('system', 'Send error: WebSocket disconnected', T + 2001),
+      historyRow('assistant', 'Reply 2 says hello.', 'e4', T + 4000),
+    ];
+    const recovered = [
+      historyRow('user', 'Question', 'e1', T),
+      historyRow('user', 'Question 2', 'e2', T + 2000, { idempotencyKey: `${key}:user` }),
+      historyRow('assistant', 'Reply 2 says hello.', 'e4', T + 4000),
+    ];
+
+    const result = mergeRecoveredTail(existing, recovered);
+
+    expect(texts(result)).toEqual(['Question', 'Question 2', 'Reply 2 says hello.']);
+    expect(result[1].failed).toBeFalsy();
+  });
+
   describe('keepUnsentMessages (full history reload)', () => {
     it('keeps a prompt still sending at the end of the reloaded transcript', () => {
       const previous = [historyRow('user', 'Question', 'e1', T), localPrompt('Next', 'k1', T + 2000, 'pending')];
@@ -506,11 +549,68 @@ describe('mergeRecoveredTail', () => {
       expect(result[2].failed).toBe(true);
     });
 
-    it('does not keep a prompt the gateway already acknowledged', () => {
+    it('does not keep an old prompt the gateway already acknowledged', () => {
       const previous = [historyRow('user', 'Question', 'e1', T), localPrompt('Next', 'k1', T + 2000, 'sent')];
       const history = [historyRow('user', 'Question', 'e1', T)];
 
       expect(keepUnsentMessages(previous, history)).toEqual(history);
+    });
+
+    it('keeps a just-acknowledged prompt when an older read does not hold its row yet', () => {
+      const now = Date.now();
+      const previous = [
+        historyRow('user', 'Question', 'e1', now - 10_000),
+        localPrompt('Next', 'k1', now - 1_000, 'sent'),
+      ];
+      const history = [historyRow('user', 'Question', 'e1', now - 10_000)];
+
+      const result = keepUnsentMessages(previous, history);
+
+      expect(texts(result)).toEqual(['Question', 'Next']);
+      expect(result[1].pending).toBe(false);
+    });
+
+    it('collapses the just-acknowledged prompt once history records its key', () => {
+      const now = Date.now();
+      const previous = [
+        historyRow('user', 'Question', 'e1', now - 10_000),
+        localPrompt('Next', 'k1', now - 1_000, 'sent'),
+      ];
+      const history = [
+        historyRow('user', 'Question', 'e1', now - 10_000),
+        historyRow('user', 'Next', 'e2', now - 900, { idempotencyKey: 'k1:user' }),
+      ];
+
+      expect(keepUnsentMessages(previous, history)).toEqual(history);
+    });
+
+    it('keeps a reply the older read did not hold yet', () => {
+      // The read was handled before the reply was committed but answers last; the
+      // screen must not go back to the pre-reply transcript.
+      const before = Date.now();
+      const previous = [
+        historyRow('user', 'Question', 'e1', before - 30_000),
+        historyRow('assistant', 'The answer.', 'e2', before - 1_000),
+      ];
+      const history = [historyRow('user', 'Question', 'e1', before - 30_000)];
+
+      expect(texts(keepUnsentMessages(previous, history))).toEqual(['Question', 'The answer.']);
+    });
+
+    it('keeps the recorded prompt once and never restores its failed copy', () => {
+      const now = Date.now();
+      const previous = [
+        historyRow('user', 'Question', 'e1', now - 10_000),
+        localPrompt('Next', 'k1', now - 2_000, 'failed'),
+        historyRow('user', 'Next', 'e2', now - 1_900, { idempotencyKey: 'k1:user' }),
+        historyRow('assistant', 'The answer.', 'e3', now - 1_000),
+      ];
+      const history = [historyRow('user', 'Question', 'e1', now - 10_000)];
+
+      const result = keepUnsentMessages(previous, history);
+
+      expect(texts(result)).toEqual(['Question', 'Next', 'The answer.']);
+      expect(result.some((m) => m.failed)).toBe(false);
     });
   });
 });

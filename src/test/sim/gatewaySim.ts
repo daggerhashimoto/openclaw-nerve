@@ -432,7 +432,7 @@ export class SimGateway {
         role: 'assistant',
         content: [{ type: 'text', text: reply }],
         timestamp: Date.now(),
-        __openclaw: { runId: run.id },
+        __openclaw: { runId: run.id, runTerminal: true },
       }, run.id);
     });
     const final = () => this.emit('chat', chat({

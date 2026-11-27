@@ -66,6 +66,9 @@ export function useChatRecovery({
   const recoveryGenerationRef = useRef(0);
   // Track whether we were generating at disconnect, for conditional reconnect recovery.
   const wasGeneratingOnDisconnectRef = useRef(false);
+  // A read reported the run over but did not hold its reply: the next read settles it.
+  const confirmRunOverRef = useRef(false);
+  const triggerRecoveryRef = useRef<(reason: RecoveryReason) => void>(() => {});
 
   const clearRecoveryTimer = useCallback(() => {
     if (recoveryRef.current.timer) {
@@ -94,6 +97,7 @@ export function useChatRecovery({
       }
 
       recoveryRef.current.inFlight = true;
+      let confirmAgain = false;
       try {
         const runEpoch = getRunEpoch();
         let runActive: boolean | null = null;
@@ -116,9 +120,23 @@ export function useChatRecovery({
         // A run on screen whose end and final were lost (the connection dropped
         // as it finished) would otherwise stay on screen for good. The gateway's
         // word counts only if no run frame or send came after this read went out.
-        const runOver = runActive === false
+        let runOver = runActive === false
           && getRunEpoch() === runEpoch
           && (isGeneratingRef.current || activeRunIdRef.current !== null);
+        // The gateway reads the transcript before it samples the run state, so a
+        // run that finished in between is reported over while its reply is not in
+        // this window yet. Settle now only when the window holds the run's final
+        // reply; otherwise read once more (that read sees everything written
+        // before the run state was sampled) and settle on it.
+        if (runOver && !confirmRunOverRef.current) {
+          const runId = activeRunIdRef.current;
+          const hasReply = runId !== null && recovered.some((msg) => msg.terminalRunId === runId);
+          if (!hasReply) {
+            runOver = false;
+            confirmAgain = true;
+          }
+        }
+        confirmRunOverRef.current = confirmAgain;
 
         // When streaming is active, the recovered transcript may include the
         // partial assistant text that the streaming bubble is already showing.
@@ -157,8 +175,13 @@ export function useChatRecovery({
         recoveryRef.current.reason = null;
         setStream(prev => ({ ...prev, isRecovering: false, recoveryReason: null }));
       }
+      if (confirmAgain) triggerRecoveryRef.current(reason);
     }, 180);
   }, [applyMessageWindow, clearRecoveryTimer, rpc, currentSessionRef, isGeneratingRef, activeRunIdRef, runsRef, getAllMessages, setStream, onLatestHeartbeat, getRunEpoch, onRunOver]);
+
+  useEffect(() => {
+    triggerRecoveryRef.current = triggerRecovery;
+  }, [triggerRecovery]);
 
   /** Increment the recovery generation counter (invalidates in-flight recoveries). */
   const incrementGeneration = useCallback(() => {
@@ -195,6 +218,7 @@ export function useChatRecovery({
     recoveryRef.current.reason = null;
     recoveryGenerationRef.current += 1;
     wasGeneratingOnDisconnectRef.current = false;
+    confirmRunOverRef.current = false;
   }, [clearRecoveryTimer]);
 
   // Cleanup recovery timer on unmount

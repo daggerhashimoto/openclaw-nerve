@@ -25,7 +25,7 @@ const reply = {
   role: 'assistant',
   content: [{ type: 'text', text: 'It is sunny and warm today.' }],
   timestamp: NOW + 2_000,
-  __openclaw: { id: 'e3', runId: RUN },
+  __openclaw: { id: 'e3', runId: RUN, runTerminal: true },
 };
 
 describe('ChatContext when a run ends while disconnected', () => {
@@ -112,7 +112,7 @@ describe('ChatContext when a run ends while disconnected', () => {
       history.push(reply);
     };
 
-    return { getChat: () => chat!, state, held, emit, chatFrame, setConnection, streamThenDrop };
+    return { getChat: () => chat!, state, held, emit, chatFrame, setConnection, streamThenDrop, history };
   }
 
   it('takes the run down once the recovery read reports none going', async () => {
@@ -122,6 +122,35 @@ describe('ChatContext when a run ends while disconnected', () => {
     state.sessionInfo = { hasActiveRun: false };
     setConnection('connected');
 
+    await waitFor(() => expect(getChat().isGenerating).toBe(false));
+    expect(getChat().stream.html).toBe('');
+    expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'What is the weather', 'It is sunny and warm today.']);
+  });
+
+  it('reads once more when the read reports the run over without its reply, then settles', async () => {
+    const { getChat, state, held, setConnection, streamThenDrop, history } = await setup();
+    await streamThenDrop();
+    // The run finished between the gateway reading the transcript and sampling the run state.
+    history.pop();
+
+    state.sessionInfo = { hasActiveRun: false };
+    state.hold = true;
+    setConnection('connected');
+    await waitFor(() => expect(held).toHaveLength(1));
+    await act(async () => {
+      held[0]();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    // Not settled on a window without the reply: the stream stays.
+    expect(getChat().isGenerating).toBe(true);
+    expect(getChat().stream.html).toContain('It is sunny');
+
+    history.push(reply);
+    await waitFor(() => expect(held).toHaveLength(2));
+    await act(async () => {
+      held[1]();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
     await waitFor(() => expect(getChat().isGenerating).toBe(false));
     expect(getChat().stream.html).toBe('');
     expect(getChat().messages.map((m) => m.rawText)).toEqual(['Earlier', 'What is the weather', 'It is sunny and warm today.']);

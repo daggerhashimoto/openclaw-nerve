@@ -17,7 +17,7 @@ import {
   Suspense,
 } from 'react';
 import { useGateway } from '@/contexts/GatewayContext';
-import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
+import { useSessionContext, type RemoveAgentOpts, type SpawnSessionOpts } from '@/contexts/SessionContext';
 import { useChat } from '@/contexts/ChatContext';
 import { useSettings, type STTInputMode } from '@/contexts/SettingsContext';
 import { getSessionKey } from '@/types';
@@ -38,7 +38,7 @@ import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { fleetActivity, fleetCounts, sessionPaneState } from '@/lib/paneState';
 import { shadeFor, useAgentHues } from '@/lib/agentColors';
-import { getChatRoomNames, getRootAgentId, isSubagentSessionKey } from '@/features/sessions/sessionKeys';
+import { getChatRoomNames, getRootAgentId, isSubagentSessionKey, pickDefaultSessionKey } from '@/features/sessions/sessionKeys';
 import { createCommands, createSessionCommands } from '@/features/command-palette/commands';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
@@ -68,6 +68,8 @@ interface AppProps {
 
 interface PendingWorkspaceSwitch {
   targetLabel: string;
+  /** Set when the transition removes this agent: Discard then runs only after the removal succeeded. */
+  removingAgentId?: string;
   execute: () => Promise<void>;
   resolve: (didSwitch: boolean) => void;
   reject: (error: unknown) => void;
@@ -104,7 +106,7 @@ export default function App({ onLogout }: AppProps) {
   // Session state
   const {
     sessions, sessionsLoading, currentSession, setCurrentSession,
-    busyState, agentStatus, unreadSessions, refreshSessions, deleteSession, abortSession, spawnSession, renameSession,
+    busyState, agentStatus, unreadSessions, refreshSessions, deleteSession, removeAgent, getAgentRemovalInfo, abortSession, spawnSession, renameSession,
     agentLogEntries, eventEntries,
     agentName,
   } = useSessionContext();
@@ -245,7 +247,7 @@ export default function App({ onLogout }: AppProps) {
     openFiles, activeTab, setActiveTab,
     openFile, closeFile, updateContent, saveFile, reloadFile,
     handleFileChanged, remapOpenPaths, closeOpenPathsByPrefix,
-    hasDirtyFiles, saveAllDirtyFiles, discardAllDirtyFiles,
+    hasDirtyFiles, saveAllDirtyFiles, discardAllDirtyFiles, discardDirtyFilesFor,
   } = useOpenFiles(workspaceAgentId);
 
   // Save with workspace-scoped conflict toast
@@ -635,8 +637,13 @@ export default function App({ onLogout }: AppProps) {
     targetSessionKey: string,
     targetLabel: string,
     execute: () => Promise<void>,
+    // Removing the current workspace's agent leaves it for good: guard whenever it is dirty.
+    options: { removingAgentId?: string } = {},
   ) => {
-    if (!shouldGuardWorkspaceSwitch(currentSession, targetSessionKey, hasDirtyFiles)) {
+    const guard = options.removingAgentId
+      ? hasDirtyFiles
+      : shouldGuardWorkspaceSwitch(currentSession, targetSessionKey, hasDirtyFiles);
+    if (!guard) {
       return execute().then(() => true);
     }
 
@@ -646,6 +653,7 @@ export default function App({ onLogout }: AppProps) {
     return new Promise<boolean>((resolve, reject) => {
       setPendingWorkspaceSwitch({
         targetLabel,
+        removingAgentId: options.removingAgentId,
         execute,
         resolve,
         reject,
@@ -696,10 +704,12 @@ export default function App({ onLogout }: AppProps) {
     const pendingSwitch = pendingWorkspaceSwitch;
     setWorkspaceSwitchAction('discard');
     setWorkspaceSwitchError(null);
-    discardAllDirtyFiles();
+    // A removal can be refused; its agent's edits are dropped only once the gateway has accepted it.
+    if (!pendingSwitch.removingAgentId) discardAllDirtyFiles();
 
     try {
       await pendingSwitch.execute();
+      if (pendingSwitch.removingAgentId) discardDirtyFilesFor(pendingSwitch.removingAgentId);
       pendingSwitch.resolve(true);
       setPendingWorkspaceSwitch(null);
       setWorkspaceSwitchError(null);
@@ -710,7 +720,7 @@ export default function App({ onLogout }: AppProps) {
     } finally {
       setWorkspaceSwitchAction(null);
     }
-  }, [discardAllDirtyFiles, pendingWorkspaceSwitch, workspaceSwitchAction]);
+  }, [discardAllDirtyFiles, discardDirtyFilesFor, pendingWorkspaceSwitch, workspaceSwitchAction]);
 
   const handleSessionChange = useCallback((key: string) => {
     void requestWorkspaceTransition(key, getWorkspaceSwitchLabel(key), async () => {
@@ -740,6 +750,23 @@ export default function App({ onLogout }: AppProps) {
       await spawnSession(opts);
     });
   }, [currentSession, getWorkspaceSwitchLabel, requestWorkspaceTransition, sessions, spawnSession]);
+
+  // Removing the agent whose workspace is open moves Nerve to another agent, so unsaved edits get
+  // the same Save, Discard or Cancel prompt as a switch. Cancel removes nothing.
+  const handleRemoveAgent = useCallback(async (agentId: string, opts: RemoveAgentOpts) => {
+    if (getWorkspaceAgentId(currentSession) !== agentId) {
+      await removeAgent(agentId, opts);
+      return;
+    }
+    const remaining = sessions.filter((session) => getRootAgentId(getSessionKey(session)) !== agentId);
+    // Empty when no other agent has a session on screen, though the gateway may still have one.
+    const nextSessionKey = pickDefaultSessionKey(remaining);
+    const nextLabel = nextSessionKey ? getWorkspaceSwitchLabel(nextSessionKey) : 'another agent';
+    const proceeded = await requestWorkspaceTransition(nextSessionKey, nextLabel, async () => {
+      await removeAgent(agentId, opts);
+    }, { removingAgentId: agentId });
+    if (!proceeded) throw new Error('Nothing was removed: the unsaved workspace edits are still open.');
+  }, [currentSession, getWorkspaceSwitchLabel, removeAgent, requestWorkspaceTransition, sessions]);
 
   // Boot sequence: fade in panels when connected
   useEffect(() => {
@@ -897,6 +924,8 @@ export default function App({ onLogout }: AppProps) {
               onSelect={onSelect}
               onRefresh={refreshSessions}
               onDelete={deleteSession}
+              onRemoveAgent={handleRemoveAgent}
+              getAgentRemovalInfo={getAgentRemovalInfo}
               onSpawn={handleSpawnSession}
               onRename={renameSession}
               onAbort={abortSession}
@@ -934,6 +963,8 @@ export default function App({ onLogout }: AppProps) {
           onSelect={handleSessionChange}
           onRefresh={refreshSessions}
           onDelete={deleteSession}
+          onRemoveAgent={handleRemoveAgent}
+          getAgentRemovalInfo={getAgentRemovalInfo}
           onSpawn={handleSpawnSession}
           onRename={renameSession}
           onAbort={abortSession}

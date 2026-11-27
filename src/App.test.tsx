@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { forwardRef, useImperativeHandle, type ReactNode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import App from './App';
 import { AGENT_HUES, resetAgentHues, shadeFor } from '@/lib/agentColors';
 
@@ -26,6 +26,7 @@ const {
   saveFileByAgent,
   saveAllDirtyFilesByAgent,
   discardAllDirtyFilesByAgent,
+  discardDirtyFilesFor,
   dirtyStateByAgent,
   reloadCalls,
   topBarRenderSnapshots,
@@ -56,6 +57,8 @@ const {
     unreadSessions: new Set<string>(),
     refreshSessions: vi.fn(),
     deleteSession: vi.fn(),
+    removeAgent: vi.fn(),
+    getAgentRemovalInfo: vi.fn(),
     abortSession: vi.fn(),
     spawnSession: vi.fn(),
     renameSession: vi.fn(),
@@ -76,6 +79,7 @@ const {
     alpha: vi.fn<[], void>(),
     bravo: vi.fn<[], void>(),
   };
+  const discardDirtyFilesFor = vi.fn<[string], void>();
   const dirtyStateByAgent: Record<string, boolean> = {
     alpha: false,
     bravo: false,
@@ -107,6 +111,7 @@ const {
     getDirtyFilePaths: vi.fn(() => (dirtyStateByAgent[agentId] ? ['shared.md'] : [])),
     saveAllDirtyFiles: saveAllDirtyFilesByAgent[agentId as keyof typeof saveAllDirtyFilesByAgent] ?? vi.fn().mockResolvedValue({ ok: true }),
     discardAllDirtyFiles: discardAllDirtyFilesByAgent[agentId as keyof typeof discardAllDirtyFilesByAgent] ?? vi.fn(),
+    discardDirtyFilesFor,
   }));
 
   return {
@@ -116,6 +121,7 @@ const {
     saveFileByAgent,
     saveAllDirtyFilesByAgent,
     discardAllDirtyFilesByAgent,
+    discardDirtyFilesFor,
     dirtyStateByAgent,
     reloadCalls,
     topBarRenderSnapshots,
@@ -377,13 +383,27 @@ vi.mock('@/features/command-palette/CommandPalette', () => ({
 }));
 
 vi.mock('@/features/sessions/SessionList', () => ({
-  SessionList: ({ onSelect, onSpawn }: {
+  SessionList: ({ onSelect, onSpawn, onRemoveAgent }: {
     onSelect: (key: string) => void;
+    onRemoveAgent?: (agentId: string, opts: { deleteFiles: boolean }) => Promise<void>;
     onSpawn?: (opts: { kind: 'root' | 'subagent'; agentName?: string; parentSessionKey?: string; task: string; model: string; thinking: string; cleanup?: string }) => Promise<void>;
   }) => (
     <div>
       <button type="button" onClick={() => onSelect('agent:bravo:main')}>Select Bravo</button>
       <button type="button" onClick={() => onSelect('agent:alpha:subagent:abc')}>Select Alpha Subagent</button>
+      {onRemoveAgent && ['alpha', 'bravo'].map((agentId) => (
+        <button
+          key={agentId}
+          type="button"
+          onClick={() => {
+            onRemoveAgent(agentId, { deleteFiles: false }).catch((err: Error) => {
+              document.body.dataset.removeError = err.message;
+            });
+          }}
+        >
+          {`Remove ${agentId}`}
+        </button>
+      ))}
       {onSpawn && (
         <button
           type="button"
@@ -801,6 +821,98 @@ describe('App workspace switch guard', () => {
 
     expect(sessionContext.setCurrentSession).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toHaveTextContent('shared.md');
+  });
+
+  it('guards removing the current agent until save and remove completes', async () => {
+    sessionContext.removeAgent.mockReset().mockResolvedValue(undefined);
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove alpha' }));
+
+    expect(sessionContext.removeAgent).not.toHaveBeenCalled();
+    expect(screen.getByText('Unsaved workspace edits')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save and switch' }));
+
+    await waitFor(() => {
+      expect(saveAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
+      expect(sessionContext.removeAgent).toHaveBeenCalledWith('alpha', { deleteFiles: false });
+    });
+  });
+
+  it('removes nothing when the user cancels removing the current agent', async () => {
+    sessionContext.removeAgent.mockReset().mockResolvedValue(undefined);
+    delete document.body.dataset.removeError;
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove alpha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(document.body.dataset.removeError).toMatch(/Nothing was removed/));
+    expect(sessionContext.removeAgent).not.toHaveBeenCalled();
+    expect(saveAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
+    expect(discardAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
+  });
+
+  it('guards removing the current agent even when no other agent has a session to switch to', async () => {
+    sessionContext.removeAgent.mockReset().mockResolvedValue(undefined);
+    const allSessions = sessionContext.sessions;
+    sessionContext.sessions = allSessions.filter((session) => session.key.startsWith('agent:alpha:'));
+    onTestFinished(() => {
+      sessionContext.sessions = allSessions;
+    });
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove alpha' }));
+
+    expect(sessionContext.removeAgent).not.toHaveBeenCalled();
+    expect(screen.getByText('Unsaved workspace edits')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and switch' }));
+
+    await waitFor(() => {
+      expect(sessionContext.removeAgent).toHaveBeenCalledWith('alpha', { deleteFiles: false });
+      expect(discardDirtyFilesFor).toHaveBeenCalledWith('alpha');
+    });
+    expect(discardAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
+  });
+
+  it('discards the removed agent edits only after the gateway accepted the removal', async () => {
+    const order: string[] = [];
+    discardDirtyFilesFor.mockReset().mockImplementation(() => { order.push('discard'); });
+    sessionContext.removeAgent.mockReset().mockImplementation(async () => { order.push('remove'); });
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove alpha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and switch' }));
+
+    await waitFor(() => expect(order).toEqual(['remove', 'discard']));
+    expect(discardDirtyFilesFor).toHaveBeenCalledWith('alpha');
+    expect(discardAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
+  });
+
+  it('keeps the edits when the gateway refuses a removal after Discard', async () => {
+    discardDirtyFilesFor.mockReset();
+    delete document.body.dataset.removeError;
+    sessionContext.removeAgent.mockReset().mockRejectedValue(new Error('Agent "alpha" owns the shared auth store and cannot be deleted.'));
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove alpha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and switch' }));
+
+    await waitFor(() => expect(document.body.dataset.removeError).toMatch(/owns the shared auth store/));
+    expect(discardDirtyFilesFor).not.toHaveBeenCalled();
+    expect(discardAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
+  });
+
+  it('does not guard removing another agent', async () => {
+    sessionContext.removeAgent.mockReset().mockResolvedValue(undefined);
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bravo' }));
+
+    await waitFor(() => expect(sessionContext.removeAgent).toHaveBeenCalledWith('bravo', { deleteFiles: false }));
+    expect(screen.queryByText('Unsaved workspace edits')).not.toBeInTheDocument();
   });
 
   it('guards root-agent creation until the user confirms the switch', async () => {

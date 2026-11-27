@@ -44,6 +44,8 @@ interface SessionNodeProps {
   onSelect: (key: string) => void;
   onToggleExpand: (key: string) => void;
   onDelete?: (key: string, label: string) => void;
+  /** What the delete button says; top-level agent rows say "Remove agent". */
+  deleteLabel?: string;
   onStartRename?: (key: string, label: string) => void;
   onTogglePin?: (key: string) => void;
   onAbort?: (key: string) => void;
@@ -80,6 +82,7 @@ function arePropsEqual(prev: SessionNodeProps, next: SessionNodeProps): boolean 
     prev.hue === next.hue &&
     prev.agentId === next.agentId &&
     prev.compact === next.compact &&
+    prev.deleteLabel === next.deleteLabel &&
     // Rename and Delete are offered by handler presence, so a handler coming or going must re-render
     Boolean(prev.onStartRename) === Boolean(next.onStartRename) &&
     Boolean(prev.onTogglePin) === Boolean(next.onTogglePin) &&
@@ -113,6 +116,7 @@ export const SessionNode = memo(function SessionNode({
   onSelect,
   onToggleExpand,
   onDelete,
+  deleteLabel = 'Delete session',
   onStartRename,
   onTogglePin,
   onAbort,
@@ -461,7 +465,7 @@ export const SessionNode = memo(function SessionNode({
                   <button
                     type="button"
                     onClick={handleDeleteFromMenu}
-                    title="Delete session"
+                    title={deleteLabel}
                     className={GHOST_DANGER}
                   >
                     <Trash2 size={14} aria-hidden="true" />
@@ -525,7 +529,7 @@ export const SessionNode = memo(function SessionNode({
             <button
               type="button"
               onClick={handleDeleteClick}
-              title="Delete session"
+              title={deleteLabel}
               className={GHOST_DANGER}
             >
               <Trash2 size={14} aria-hidden="true" />

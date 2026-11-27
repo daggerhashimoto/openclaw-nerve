@@ -159,6 +159,16 @@ export function unpinSessions(sessionKeys: readonly string[]): void {
   if (next !== current) commit(next);
 }
 
+/**
+ * Forget every pin whose key matches, also of sessions the list does not show right now: for
+ * example all of a removed agent's sessions.
+ */
+export function unpinSessionsMatching(match: (sessionKey: string) => boolean): void {
+  const current = latestPins();
+  const matched = current.filter(match);
+  if (matched.length > 0) commit(removePinnedSessions(current, matched));
+}
+
 /** Test hook: drop the in-memory copy, so the next read comes from storage as on a page load. */
 export function resetPinnedSessionsCache(): void {
   pins = null;

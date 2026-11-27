@@ -13,8 +13,13 @@ pass-through lane in the rows they cross. Cycles are broken deterministically;
 edges that would point back up the diagram (or have `"kind": "return"`) are
 listed beneath it as return links instead of being drawn over other rows.
 
-Rows keep a minimum card width and the figure scrolls horizontally on narrow
-screens, so branches stay aligned instead of wrapping and losing their arrows.
+Rows are equal-width columns when the chat column is wide enough. Below
+`27rem` every row becomes a stack of full-width cards, and connectors become
+text chips that spell out `source → target` (a chip is shown even for an
+unlabeled branch edge, so a fan-out never reads as a linear chain). Below
+`48rem`, a figure with any row of five or more cards stacks for the same
+reason: six or eight columns would otherwise squeeze each card to an
+unreadable sliver. The figure never needs a horizontal scrollbar.
 
 ## Example
 

@@ -356,6 +356,11 @@ function getWorkspaceLinkFragment(href: string): string | null {
   return splitWorkspaceLinkTarget(href).fragment;
 }
 
+/** Exact whitespace-delimited language class, so `flow-json` stays a code fence. */
+function hasFlowLanguageClass(className: string): boolean {
+  return /(?:^|\s)language-flow(?:\s|$)/.test(className);
+}
+
 function CodeBlock({ code, language, highlightedHtml }: {
   code: string;
   language: string;
@@ -505,7 +510,7 @@ export function MarkdownRenderer({
         const childClassName = React.isValidElement<{ className?: string }>(child)
           ? child.props.className ?? ''
           : '';
-        if (/\blanguage-flow\b/.test(childClassName)) {
+        if (hasFlowLanguageClass(childClassName)) {
           return <>{children}</>;
         }
         return <pre {...props}>{children}</pre>;
@@ -516,7 +521,7 @@ export function MarkdownRenderer({
         const codeString = String(children).replace(/\n$/, '');
         const inline = !codeClassName;
 
-        if (!inline && lang === 'flow') {
+        if (!inline && hasFlowLanguageClass(codeClassName || '')) {
           return <FlowFence code={codeString} />;
         }
 

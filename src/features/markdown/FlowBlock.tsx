@@ -202,7 +202,8 @@ function FlowConnectors({
         const hasLabel = Boolean(segment.label);
         // Branching is a graph property, not a `kind` label: a fan-out or merge
         // written with the default kind must still show its target in stacked mode.
-        const branchesHere = (outDegree.get(segment.edge.from) ?? 0) > 1
+        const branchesHere = segments.length > 1
+          || (outDegree.get(segment.edge.from) ?? 0) > 1
           || (inDegree.get(segment.edge.to) ?? 0) > 1;
         const hasBranchChip = !hasLabel && isRealTarget
           && (segment.edge.kind === 'branch' || branchesHere);

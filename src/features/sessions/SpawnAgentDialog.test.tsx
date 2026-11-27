@@ -118,6 +118,64 @@ describe('SpawnAgentDialog', () => {
     expect(screen.queryByRole('option', { name: 'gpt-5.4' })).toBeNull();
   });
 
+  it('offers gateway-only models and scopes thinking levels to the selected model', async () => {
+    globalThis.fetch = vi.fn(() => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({
+        models: [
+          {
+            id: 'openai/gpt-6-luna',
+            label: 'gpt-6-luna',
+            role: 'primary',
+            thinkingLevels: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }],
+            thinkingDefault: 'medium',
+          },
+          {
+            // Present in the gateway catalog, absent from the old config-only reader.
+            id: 'opencode-go/jev-1.14',
+            label: 'jev-1.14',
+            role: 'allowed',
+            thinkingLevels: [{ id: 'off', label: 'off' }, { id: 'ultra', label: 'ultra' }],
+            thinkingDefault: 'off',
+          },
+        ],
+        error: null,
+        source: 'gateway',
+      }),
+    } as Response)) as typeof fetch;
+
+    renderDialog();
+    fireEvent.click(screen.getByText('New agent'));
+
+    const modelSelect = await screen.findByRole('button', { name: 'Select model' });
+    fireEvent.click(modelSelect);
+    expect(await screen.findByRole('option', { name: 'jev-1.14' })).toBeInTheDocument();
+    fireEvent.click(modelSelect); // close the model menu before opening Thinking
+
+    // While the choice is inherited, the primary model's levels drive the picker.
+    fireEvent.click(screen.getByRole('button', { name: 'Select thinking level' }));
+    expect(await screen.findByRole('option', { name: 'medium' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'ultra' })).toBeNull();
+    fireEvent.pointerDown(screen.getByRole('option', { name: 'high' }));
+    expect(screen.getByRole('button', { name: 'Select thinking level' })).toHaveTextContent('high');
+
+    // Switch to the gateway-only model.
+    fireEvent.click(screen.getByRole('button', { name: 'Select model' }));
+    fireEvent.pointerDown(await screen.findByRole('option', { name: 'jev-1.14' }));
+    expect(screen.getByRole('button', { name: 'Select model' })).toHaveTextContent('jev-1.14');
+
+    // 'high' is not offered by jev-1.14, so the stale override resets to the inherited default.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Select thinking level' })).toHaveTextContent('Default');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select thinking level' }));
+    expect(await screen.findByRole('option', { name: 'off' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'ultra' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'medium' })).toBeNull();
+    expect(screen.queryByRole('option', { name: 'high' })).toBeNull();
+  });
+
   it('names the primary model on the button and in the list when the catalog says which it is', async () => {
     globalThis.fetch = vi.fn(() => Promise.resolve({
       ok: true,

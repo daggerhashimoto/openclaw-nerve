@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - The wordmark reads `nerve` in lowercase IBM Plex Mono in every theme, the same lockup as nerve.zone and the docs. The face is self-hosted, so it no longer depends on Google Fonts (PR #444)
 
+### Fixed
+- The effort picker lists the thinking levels the session's model actually supports, read from `sessions.list` (`thinkingLevels`), so harness levels such as `max` and `ultra` are offered and preserved instead of being dropped against a fixed five-level list
+
 ## [1.6.0] - 2026-11-23
 
 ### Highlights

@@ -280,6 +280,113 @@ describe('useModelEffort', () => {
     });
   });
 
+  it('lists only the thinking levels the gateway reports for the session model', async () => {
+    mockUseSessionContext.mockReturnValue({
+      currentSession: 'agent:linus:main',
+      sessions: [
+        {
+          key: 'agent:linus:main',
+          model: 'opencode-go/deepseek-v4.1-flash',
+          thinkingLevel: 'high',
+          thinkingDefault: 'high',
+          thinkingLevels: [
+            { id: 'off', label: 'off' },
+            { id: 'low', label: 'low' },
+            { id: 'high', label: 'high' },
+            { id: 'max', label: 'max' },
+            { id: 'ultra', label: 'ultra' },
+          ],
+          thinkingOptions: ['off', 'low', 'high', 'max', 'ultra'],
+        },
+      ],
+      updateSession: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useModelEffort());
+
+    await waitFor(() => {
+      expect(result.current.selectedEffort).toBe('high');
+    });
+
+    expect(result.current.selectedEffortLabel).toBe('high');
+    expect(result.current.effortOptions).toEqual([
+      { value: 'thinkingDefault', label: 'high (default)' },
+      { value: 'off', label: 'off' },
+      { value: 'low', label: 'low' },
+      { value: 'high', label: 'high' },
+      { value: 'max', label: 'max' },
+      { value: 'ultra', label: 'ultra' },
+    ]);
+  });
+
+  it('falls back to thinkingOptions when a gateway row omits thinkingLevels', async () => {
+    mockUseSessionContext.mockReturnValue({
+      currentSession: 'agent:linus:main',
+      sessions: [
+        {
+          key: 'agent:linus:main',
+          model: 'opencode-go/deepseek-v4.1-flash',
+          thinkingDefault: 'high',
+          thinkingOptions: ['off', 'low', 'high', 'max', 'ultra'],
+        },
+      ],
+      updateSession: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useModelEffort());
+
+    await waitFor(() => {
+      expect(result.current.effortOptions.map((option) => option.value)).toEqual([
+        'thinkingDefault', 'off', 'low', 'high', 'max', 'ultra',
+      ]);
+    });
+  });
+
+  it('sends max and ultra as real thinking overrides', async () => {
+    const rpc = vi.fn().mockResolvedValue({ ok: true });
+    const updateSession = vi.fn();
+
+    mockUseGateway.mockReturnValue({
+      rpc,
+      connectionState: 'connected',
+      model: 'opencode-go/deepseek-v4.1-flash',
+      thinking: 'high',
+    });
+
+    mockUseSessionContext.mockReturnValue({
+      currentSession: 'agent:linus:main',
+      sessions: [
+        {
+          key: 'agent:linus:main',
+          model: 'opencode-go/deepseek-v4.1-flash',
+          thinkingLevel: 'high',
+          thinkingDefault: 'high',
+          thinkingLevels: [
+            { id: 'off', label: 'off' },
+            { id: 'low', label: 'low' },
+            { id: 'high', label: 'high' },
+            { id: 'max', label: 'max' },
+            { id: 'ultra', label: 'ultra' },
+          ],
+        },
+      ],
+      updateSession,
+    });
+
+    const { result } = renderHook(() => useModelEffort());
+
+    await waitFor(() => {
+      expect(result.current.selectedEffort).toBe('high');
+    });
+
+    await act(async () => {
+      await result.current.handleEffortChange('ultra');
+    });
+
+    expect(rpc).toHaveBeenCalledWith('sessions.patch', { key: 'agent:linus:main', thinkingLevel: 'ultra' });
+    expect(updateSession).toHaveBeenCalledWith('agent:linus:main', { thinkingLevel: 'ultra' });
+  });
+
   it('sends explicit off as a real thinking override instead of collapsing it to inherited default', async () => {
     const rpc = vi.fn().mockResolvedValue({ ok: true });
     const updateSession = vi.fn();

@@ -580,7 +580,17 @@ const taskActorSchema = z.union([
   z.literal('operator'),
   z.string().regex(/^agent:.+$/),
 ]) as z.ZodType<TaskActor>;
-const thinkingSchema = z.enum(['off', 'low', 'medium', 'high']);
+const thinkingSchema = z.enum([
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'adaptive',
+  'max',
+  'ultra',
+]);
 
 const feedbackSchema = z.object({
   at: z.number(),

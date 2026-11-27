@@ -42,6 +42,22 @@ const DIFFED_SESSION_FIELDS = [
   'label', 'displayName', 'channel', 'parentSessionKey', 'parentId',
 ] as const satisfies readonly (keyof Session)[];
 
+/** `sessions.list` rebuilds these arrays every poll; compare their contents, not references. */
+function sameThinkingLevels(
+  a: Session['thinkingLevels'],
+  b: Session['thinkingLevels'],
+): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((level, i) => level.id === b[i]?.id && level.label === b[i]?.label);
+}
+
+function sameThinkingOptions(a: Session['thinkingOptions'], b: Session['thinkingOptions']): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((level, i) => level === b[i]);
+}
+
 export type SubagentCleanupMode = 'keep' | 'delete';
 
 export interface SpawnSessionOpts {
@@ -698,7 +714,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             return newSession;
           }
           
-          const changed = DIFFED_SESSION_FIELDS.some((field) => existing[field] !== newSession[field]);
+          const changed = DIFFED_SESSION_FIELDS.some((field) => existing[field] !== newSession[field])
+            || !sameThinkingLevels(existing.thinkingLevels, newSession.thinkingLevels)
+            || !sameThinkingOptions(existing.thinkingOptions, newSession.thinkingOptions);
           
           if (changed) {
             hasChanges = true;

@@ -64,7 +64,7 @@ export interface KanbanTask {
   result?: string;
   resultAt?: number;
   model?: string;
-  thinking?: 'off' | 'low' | 'medium' | 'high';
+  thinking?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'adaptive' | 'max' | 'ultra';
   dueAt?: number;
   estimateMin?: number;
   actualMin?: number;

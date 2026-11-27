@@ -25,16 +25,24 @@ type MockVoiceState = 'idle' | 'listening' | 'recording' | 'transcribing';
 const { voiceMock, settingsMock, resetVoiceAndSettingsMocks } = vi.hoisted(() => {
   const voiceMock = {
     voiceState: 'idle' as MockVoiceState,
+    isStarting: false,
     interimTranscript: '',
     error: null as string | null,
     onTranscription: null as ((text: string) => void) | null,
+    startRecording: vi.fn(),
+    stopAndTranscribe: vi.fn(),
+    discardRecording: vi.fn(),
   };
   const settingsMock = { liveTranscriptionPreview: false };
   const resetVoiceAndSettingsMocks = () => {
     voiceMock.voiceState = 'idle';
+    voiceMock.isStarting = false;
     voiceMock.interimTranscript = '';
     voiceMock.error = null;
     voiceMock.onTranscription = null;
+    voiceMock.startRecording.mockClear();
+    voiceMock.stopAndTranscribe.mockClear();
+    voiceMock.discardRecording.mockClear();
     settingsMock.liveTranscriptionPreview = false;
   };
   return { voiceMock, settingsMock, resetVoiceAndSettingsMocks };
@@ -45,7 +53,11 @@ vi.mock('@/features/voice/useVoiceInput', () => ({
     voiceMock.onTranscription = onTranscription;
     return {
       voiceState: voiceMock.voiceState,
+      isStarting: voiceMock.isStarting,
       interimTranscript: voiceMock.interimTranscript,
+      startRecording: voiceMock.startRecording,
+      stopAndTranscribe: voiceMock.stopAndTranscribe,
+      discardRecording: voiceMock.discardRecording,
       wakeWordEnabled: false,
       toggleWakeWord: vi.fn(),
       error: voiceMock.error,
@@ -96,6 +108,20 @@ describe('InputBar', () => {
   const originalCancelAnimationFrame = global.cancelAnimationFrame;
   const originalCreateObjectUrl = global.URL.createObjectURL;
   const originalRevokeObjectUrl = global.URL.revokeObjectURL;
+  const originalMatchMedia = window.matchMedia;
+
+  function setCoarsePointer(matches: boolean) {
+    window.matchMedia = vi.fn((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(() => true),
+    } as unknown as MediaQueryList)) as unknown as typeof window.matchMedia;
+  }
 
   let uploadConfigResponse: {
     twoModeEnabled: boolean;
@@ -225,6 +251,11 @@ describe('InputBar', () => {
     global.cancelAnimationFrame = originalCancelAnimationFrame;
     global.URL.createObjectURL = originalCreateObjectUrl;
     global.URL.revokeObjectURL = originalRevokeObjectUrl;
+    if (originalMatchMedia) {
+      window.matchMedia = originalMatchMedia;
+    } else {
+      delete (window as unknown as { matchMedia?: typeof window.matchMedia }).matchMedia;
+    }
     resetVoiceAndSettingsMocks();
     vi.restoreAllMocks();
   });
@@ -1092,6 +1123,74 @@ describe('InputBar', () => {
       expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([5, 5]);
       expect(textarea.readOnly).toBe(false);
       expect(textarea.value).toBe('caret stays here');
+    });
+  });
+
+  describe('mobile voice controls', () => {
+    function renderComposer() {
+      const composer = () => <InputBar onSend={vi.fn()} isGenerating={false} />;
+      const view = render(composer());
+      return { ...view, rerenderComposer: () => view.rerender(composer()) };
+    }
+
+    it('shows a 44px microphone control on coarse-pointer layouts', () => {
+      setCoarsePointer(true);
+      renderComposer();
+
+      const mic = screen.getByRole('button', { name: 'Start voice input' });
+      expect(mic).toHaveClass('min-h-11', 'min-w-11');
+    });
+
+    it('keeps the microphone hidden on fine-pointer layouts', () => {
+      setCoarsePointer(false);
+      renderComposer();
+
+      expect(screen.queryByRole('button', { name: 'Start voice input' })).not.toBeInTheDocument();
+    });
+
+    it('starts recording on tap and stops/sends on the second tap', () => {
+      setCoarsePointer(true);
+      const { rerenderComposer } = renderComposer();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Start voice input' }));
+      expect(voiceMock.startRecording).toHaveBeenCalledTimes(1);
+
+      voiceMock.voiceState = 'recording';
+      rerenderComposer();
+
+      const stopButton = screen.getByRole('button', { name: 'Stop voice input and send' });
+      expect(stopButton).toHaveAttribute('aria-pressed', 'true');
+      fireEvent.click(stopButton);
+      expect(voiceMock.stopAndTranscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels a recording without sending', () => {
+      setCoarsePointer(true);
+      voiceMock.voiceState = 'recording';
+      renderComposer();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel voice recording' }));
+
+      expect(voiceMock.discardRecording).toHaveBeenCalledTimes(1);
+      expect(voiceMock.stopAndTranscribe).not.toHaveBeenCalled();
+    });
+
+    it('disables the microphone and labels the transcribing state', () => {
+      setCoarsePointer(true);
+      voiceMock.voiceState = 'transcribing';
+      renderComposer();
+
+      expect(screen.getByRole('button', { name: 'Transcribing voice input' })).toBeDisabled();
+    });
+
+    it('shows the live interim transcript on mobile even when the preview preference is off', () => {
+      setCoarsePointer(true);
+      voiceMock.voiceState = 'recording';
+      voiceMock.interimTranscript = 'hello from my phone';
+      renderComposer();
+
+      expect(screen.getByText('hello from my phone')).toHaveAttribute('aria-live', 'polite');
+      expect(screen.getByText('Recording… tap the mic to send')).toBeInTheDocument();
     });
   });
 });

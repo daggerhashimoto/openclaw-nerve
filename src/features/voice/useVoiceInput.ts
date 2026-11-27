@@ -3,6 +3,7 @@ import { buildPrimaryWakePhrase, buildStopPhrasesRegex } from '@/lib/constants';
 import { playWakePing, playSubmitPing, playCancelPing, ensureAudioContext } from './audio-feedback';
 import type { STTInputMode } from '@/contexts/SettingsContext';
 import { getWakeWordSupport } from './wakeWordSupport';
+import { matchesCoarsePointer } from './coarsePointer';
 
 // ─── Phrases from server config ──────────────────────────────────────────────
 
@@ -53,6 +54,100 @@ function getSpeechRecognition(): SpeechRecognitionConstructor | undefined {
 }
 
 export type VoiceState = 'idle' | 'listening' | 'recording' | 'transcribing';
+
+export interface RecorderMimeOption {
+  /** MIME type passed to the MediaRecorder constructor. */
+  mimeType: string;
+  /** Base MIME type attached to the recorded Blob (accepted by /api/transcribe). */
+  blobType: string;
+  /** File extension used for the multipart upload. */
+  extension: string;
+}
+
+/**
+ * Candidate recording formats, most preferred first.
+ *
+ * Chrome/Firefox record WebM/Opus. iOS Safari's MediaRecorder does not support
+ * WebM at all and records MP4/AAC instead, so WebM must never be assumed.
+ */
+export const RECORDER_MIME_OPTIONS: readonly RecorderMimeOption[] = [
+  { mimeType: 'audio/webm;codecs=opus', blobType: 'audio/webm', extension: 'webm' },
+  { mimeType: 'audio/webm', blobType: 'audio/webm', extension: 'webm' },
+  { mimeType: 'audio/mp4', blobType: 'audio/mp4', extension: 'mp4' },
+  { mimeType: 'audio/m4a', blobType: 'audio/m4a', extension: 'm4a' },
+  { mimeType: 'audio/ogg;codecs=opus', blobType: 'audio/ogg', extension: 'ogg' },
+];
+
+const AUDIO_MIME_EXTENSIONS: Record<string, string> = {
+  'audio/webm': 'webm',
+  'audio/mp4': 'mp4',
+  'audio/m4a': 'm4a',
+  'audio/ogg': 'ogg',
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/flac': 'flac',
+  'audio/x-flac': 'flac',
+};
+
+/** Strip codec parameters so the Blob type matches the server's allow-list. */
+export function normalizeAudioMimeType(mimeType: string): string {
+  const base = (mimeType || '').split(';')[0].trim().toLowerCase();
+  return base || 'audio/webm';
+}
+
+/**
+ * Pick the best recording format this browser supports.
+ *
+ * Returns null when the browser exposes no `isTypeSupported`; callers then
+ * construct MediaRecorder without options and read `recorder.mimeType` instead.
+ */
+export function pickRecorderMimeOption(
+  isTypeSupported?: (type: string) => boolean,
+): RecorderMimeOption | null {
+  let supports = isTypeSupported;
+  if (!supports) {
+    const Ctor = typeof window === 'undefined' ? undefined : window.MediaRecorder;
+    if (!Ctor || typeof Ctor.isTypeSupported !== 'function') return null;
+    supports = (type) => Ctor.isTypeSupported(type);
+  }
+
+  for (const option of RECORDER_MIME_OPTIONS) {
+    try {
+      if (supports(option.mimeType)) return option;
+    } catch {
+      // Keep checking the remaining candidates.
+    }
+  }
+  return null;
+}
+
+/** Turn getUserMedia/MediaRecorder failures into an actionable message. */
+export function describeMicrophoneError(err: unknown): string {
+  const name = err instanceof DOMException
+    ? err.name
+    : (typeof err === 'object' && err !== null && 'name' in err
+      ? String((err as { name?: unknown }).name ?? '')
+      : '');
+
+  switch (name) {
+    case 'NotAllowedError':
+    case 'PermissionDeniedError':
+    case 'SecurityError':
+      return 'Microphone access was blocked. Allow microphone access for this site in your browser settings, then tap the mic again.';
+    case 'NotFoundError':
+    case 'DevicesNotFoundError':
+      return 'No microphone was found. Connect a microphone and try again.';
+    case 'NotReadableError':
+    case 'TrackStartError':
+      return 'The microphone is in use by another app. Close it and try again.';
+    case 'OverconstrainedError':
+      return 'The available microphone does not support the requested audio settings.';
+    default:
+      return 'Could not start recording. Check microphone access and try again.';
+  }
+}
 
 function normalizeForMatch(text: string, language: string): string {
   const normalized = (text || '')
@@ -148,10 +243,14 @@ export function useVoiceInput(
 ) {
   const [state, setState] = useState<VoiceState>('idle');
   const stateRef = useRef<VoiceState>('idle');
+  const [isStarting, setIsStarting] = useState(false);
+  const isStartingRef = useRef(false);
+  const disposedRef = useRef(false);
   const [interimTranscript, setInterimTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const clearError = useCallback(() => setError(null), []);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingMetaRef = useRef<{ blobType: string; extension: string }>({ blobType: 'audio/webm', extension: 'webm' });
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const lastCapsTimeRef = useRef(0);
@@ -383,6 +482,26 @@ export function useVoiceInput(
 
   // Action functions that use refs to avoid stale closures
   const doStartRecording = useCallback(async () => {
+    if (stateRef.current === 'recording' || stateRef.current === 'transcribing' || isStartingRef.current) return;
+    setError(null);
+
+    if (typeof window !== 'undefined' && window.isSecureContext === false) {
+      setError('Voice input needs a secure HTTPS connection. Open Nerve over HTTPS and try again.');
+      return;
+    }
+
+    const mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices?.getUserMedia) {
+      setError('Voice input is not available in this browser. Try Safari on iOS or Chrome on Android.');
+      return;
+    }
+
+    const MediaRecorderCtor = typeof window === 'undefined' ? undefined : window.MediaRecorder;
+    if (!MediaRecorderCtor) {
+      setError('This browser cannot record audio. Update Safari (iOS 14.3+) or Chrome and try again.');
+      return;
+    }
+
     // Initialize AudioContext on user interaction
     ensureAudioContext();
     // Stop recognition intentionally — we'll restart in stop mode after recording starts
@@ -391,30 +510,79 @@ export function useVoiceInput(
     try { recognitionRef.current?.abort(); } catch { /* already stopped */ }
     recognitionRef.current = null;
 
+    isStartingRef.current = true;
+    setIsStarting(true);
+    let stream: MediaStream | null = null;
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await mediaDevices.getUserMedia({ audio: true });
+      if (disposedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
       chunksRef.current = [];
       resetBrowserTranscript();
       setInterimTranscript('');
-      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+
+      // iOS Safari records MP4/AAC; Chrome records WebM/Opus. Never assume WebM.
+      const option = pickRecorderMimeOption();
+      let mr: MediaRecorder | null = null;
+      if (option) {
+        try {
+          mr = new MediaRecorderCtor(stream, { mimeType: option.mimeType });
+        } catch {
+          mr = null;
+        }
+      }
+      if (!mr) {
+        try {
+          mr = new MediaRecorderCtor(stream);
+        } catch {
+          mr = null;
+        }
+      }
+
+      if (!mr) {
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        setError('This browser cannot record audio. Update Safari (iOS 14.3+) or Chrome and try again.');
+        return;
+      }
+
+      const actualMime = normalizeAudioMimeType(mr.mimeType || option?.blobType || 'audio/webm');
+      recordingMetaRef.current = {
+        blobType: actualMime,
+        extension: AUDIO_MIME_EXTENSIONS[actualMime] || option?.extension || 'webm',
+      };
+
       mediaRecorderRef.current = mr;
       mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       mr.start();
       setError(null);
       setVoiceState('recording');
-      // Now start listening for stop phrases
-      ensureRecognitionRef.current('stop');
+      // Stop-phrase recognition shares the microphone. On iOS Safari the
+      // recorder produces MP4; starting Web Speech there can steal the audio
+      // pipeline, so let the tap-to-stop flow own the recording and rely on the
+      // server transcript. WebM recorders (Android Chrome) keep live interim text.
+      if (!matchesCoarsePointer() || recordingMetaRef.current.blobType === 'audio/webm') {
+        ensureRecognitionRef.current('stop');
+      }
     } catch (err) {
       console.error('Mic access denied:', err);
-      const msg = err instanceof DOMException && err.name === 'NotAllowedError'
-        ? 'Microphone permission denied'
-        : 'Failed to access microphone';
-      setError(msg);
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+      mediaRecorderRef.current = null;
+      setVoiceState(wakeWordEnabledRef.current ? 'listening' : 'idle');
+      setError(describeMicrophoneError(err));
       if (wakeWordEnabledRef.current) {
-        setVoiceState('listening');
         ensureRecognitionRef.current('wake');
       }
+    } finally {
+      isStartingRef.current = false;
+      setIsStarting(false);
     }
   }, [resetBrowserTranscript, setVoiceState]);
 
@@ -440,11 +608,17 @@ export function useVoiceInput(
     }
   }, [resetBrowserTranscript, stopStream, setVoiceState]);
 
-  const transcribeWithBackend = useCallback(async (blob: Blob) => {
+  const transcribeWithBackend = useCallback(async (blob: Blob, filename = 'audio.webm') => {
     const fd = new FormData();
-    fd.append('file', blob, 'audio.webm');
+    fd.append('file', blob, filename);
     const resp = await fetch('/api/transcribe', { method: 'POST', body: fd, credentials: 'include' });
-    if (!resp.ok) throw new Error(await resp.text());
+    if (!resp.ok) {
+      const detail = (await resp.text().catch(() => '')).trim().slice(0, 300);
+      if (/empty result/i.test(detail)) {
+        throw new Error('No speech was detected. Tap the mic and try again.');
+      }
+      throw new Error(detail || `Transcription request failed (${resp.status})`);
+    }
     const { text } = await resp.json();
     return cleanTranscript(text || '', stopPhrasesRegexRef.current);
   }, []);
@@ -475,15 +649,15 @@ export function useVoiceInput(
 
     setVoiceState('transcribing');
     mr.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+      const { blobType, extension } = recordingMetaRef.current;
+      const blob = new Blob(chunksRef.current, { type: blobType });
       stopStream();
       try {
-        const browserRecognitionSupported = Boolean(getSpeechRecognition());
         let browserTranscript = browserTranscriptRef.current.trim();
         let cleaned = '';
 
         if (sttInputModeRef.current === 'local') {
-          cleaned = await transcribeWithBackend(blob);
+          cleaned = await transcribeWithBackend(blob, `audio.${extension}`);
         } else {
           if (!browserTranscript) {
             browserTranscript = await waitForBrowserTranscript();
@@ -491,10 +665,16 @@ export function useVoiceInput(
 
           if (browserTranscript) {
             cleaned = browserTranscript;
-          } else if (sttInputModeRef.current === 'hybrid' || !browserRecognitionSupported) {
-            cleaned = await transcribeWithBackend(blob);
           } else {
-            throw new Error('Browser speech recognition did not produce a transcript');
+            // Mobile browsers may expose SpeechRecognition but return nothing
+            // (iOS standalone/PWA, service-not-allowed, flaky network STT).
+            // Always fall back to the recorded audio instead of failing.
+            try {
+              cleaned = await transcribeWithBackend(blob, `audio.${extension}`);
+            } catch (backendErr) {
+              const detail = backendErr instanceof Error ? backendErr.message : String(backendErr);
+              throw new Error(`No speech was recognized in the browser, and server transcription failed: ${detail}`);
+            }
           }
         }
 
@@ -665,8 +845,10 @@ export function useVoiceInput(
   }, []);
 
   useEffect(() => {
+    disposedRef.current = false;
     const timers = pendingTimersRef.current;
     return () => {
+      disposedRef.current = true;
       // Clear all pending timers
       for (const id of timers) clearTimeout(id);
       timers.clear();
@@ -684,6 +866,7 @@ export function useVoiceInput(
 
   return {
     voiceState: state,
+    isStarting,
     interimTranscript,
     startRecording: doStartRecording,
     stopAndTranscribe: doStopAndTranscribe,

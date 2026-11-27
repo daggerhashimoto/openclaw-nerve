@@ -5,6 +5,8 @@ import { nameHueStyle } from '@/lib/agentColors';
 import { cn } from '@/lib/utils';
 import { formatClock } from './briefCopy';
 import { ownedReason, paneFor, type ItemView } from './itemPresentation';
+import { ActionButton, ActionError, StopConfirm } from './AttentionActions';
+import { useItemActions, type AttentionActionsConfig } from './useAttentionActions';
 import type { AttentionItem, OpenTarget } from './types';
 
 const CLOCK = /(\b\d{1,2}:\d{2}\b)/;
@@ -56,6 +58,7 @@ export function MarkItemSeenButton({
   onMarkSeen: (item: AttentionItem) => void;
   className?: string;
 }) {
+  // `.shell-chip` sits outside the Tailwind layers, so the phone height needs `!` to win.
   return (
     <button
       type="button"
@@ -64,7 +67,7 @@ export function MarkItemSeenButton({
         event.stopPropagation();
         onMarkSeen(item);
       }}
-      className={cn('shell-chip shrink-0 cursor-pointer text-[0.8rem]', compact && 'min-h-[44px]', className)}
+      className={cn('shell-chip shrink-0 cursor-pointer text-[0.8rem]', compact && 'min-h-[44px]!', className)}
     >
       Mark seen
     </button>
@@ -79,58 +82,77 @@ interface AttentionRowProps {
   onOpen: (target: OpenTarget) => void;
   /** Blocked, failed and finished items only: adds a Mark seen button beside the row. */
   onMarkSeen?: (item: AttentionItem) => void;
+  /** Turns on the item's main action as a chip beside the row. Second actions stay on cards. */
+  actions?: AttentionActionsConfig;
 }
 
-/** One item as a row that opens its source. */
-export function AttentionRow({ item, view, compact, onOpen, onMarkSeen }: AttentionRowProps) {
+/**
+ * One item as a row that opens its source. Its main action (Approve, Retry, Stop, Run now) is
+ * a sibling of the open button, never inside it; Stop's confirm and any error take a line below.
+ */
+export function AttentionRow({ item, view, compact, onOpen, onMarkSeen, actions }: AttentionRowProps) {
   const pane = paneFor(item.kind);
   const sub = ownedReason(view.reason, view.ownerName);
+  const state = useItemActions(item, actions);
+  const primary = state.actions.primary;
+  const confirmingStop = primary === 'stop' && state.confirming;
 
   return (
-    <div className={cn('flex min-w-0 items-center', compact && 'border-b border-border')}>
-      <button
-        type="button"
-        data-testid="attention-row"
-        onClick={() => onOpen(item.open)}
-        className={cn(
-          'flex min-w-0 flex-1 cursor-pointer items-center text-left transition-colors duration-[120ms] hover:bg-raised focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
-          compact
-            ? 'min-h-[60px] gap-3 px-4 py-2'
-            : 'min-h-[44px] gap-2.5 rounded-[3px] px-1 py-2',
-          item.freshness !== 'live' && 'opacity-80',
-        )}
-      >
-        <Pane state={pane.state} hue={pane.state === 'off' ? view.hue : undefined} label={pane.label} />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className={cn('min-w-0 flex-1 truncate text-foreground', compact ? 'text-[1rem]' : 'text-[0.867rem]')}>
-              {item.title}
-            </span>
-            {view.isNew && <NewTag />}
-            {!compact && (
-              <span
-                className={cn(
-                  'shrink-0 font-mono text-[0.733rem] tabular',
-                  pane.state === 'live' ? 'text-live-text' : 'text-muted-foreground',
-                )}
-              >
-                {formatClock(item.updatedAt)}
+    <div className={cn('flex min-w-0 flex-col', compact && 'border-b border-border')}>
+      <div className="flex min-w-0 items-center">
+        <button
+          type="button"
+          data-testid="attention-row"
+          onClick={() => onOpen(item.open)}
+          className={cn(
+            'flex min-w-0 flex-1 cursor-pointer items-center text-left transition-colors duration-[120ms] hover:bg-raised focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
+            compact
+              ? 'min-h-[60px] gap-3 px-4 py-2'
+              : 'min-h-[44px] gap-2.5 rounded-[3px] px-1 py-2',
+            item.freshness !== 'live' && 'opacity-80',
+          )}
+        >
+          <Pane state={pane.state} hue={pane.state === 'off' ? view.hue : undefined} label={pane.label} />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className={cn('min-w-0 flex-1 truncate text-foreground', compact ? 'text-[1rem]' : 'text-[0.867rem]')}>
+                {item.title}
               </span>
-            )}
+              {view.isNew && <NewTag />}
+              {!compact && (
+                <span
+                  className={cn(
+                    'shrink-0 font-mono text-[0.733rem] tabular',
+                    pane.state === 'live' ? 'text-live-text' : 'text-muted-foreground',
+                  )}
+                >
+                  {formatClock(item.updatedAt)}
+                </span>
+              )}
+            </span>
+            <span className={cn('min-w-0 truncate text-muted-foreground', compact ? 'text-[0.867rem]' : 'text-[0.8rem]')}>
+              <ReasonText text={sub} ownerName={view.ownerName} hue={view.hue} />
+            </span>
           </span>
-          <span className={cn('min-w-0 truncate text-muted-foreground', compact ? 'text-[0.867rem]' : 'text-[0.8rem]')}>
-            <ReasonText text={sub} ownerName={view.ownerName} hue={view.hue} />
-          </span>
-        </span>
-        {compact && <ChevronRight size={18} className="shrink-0 text-muted-foreground" aria-hidden="true" />}
-      </button>
-      {onMarkSeen && (
-        <MarkItemSeenButton
-          item={item}
-          compact={compact}
-          onMarkSeen={onMarkSeen}
-          className={compact ? 'mx-1' : 'ml-1'}
-        />
+          {compact && <ChevronRight size={18} className="shrink-0 text-muted-foreground" aria-hidden="true" />}
+        </button>
+        {primary && !confirmingStop && (
+          <ActionButton state={state} action={primary} variant="chip" compact={compact} className={compact && !onMarkSeen ? 'mx-1' : 'ml-1'} />
+        )}
+        {onMarkSeen && (
+          <MarkItemSeenButton
+            item={item}
+            compact={compact}
+            onMarkSeen={onMarkSeen}
+            className={compact ? 'mx-1' : 'ml-1'}
+          />
+        )}
+      </div>
+      {(confirmingStop || state.error) && (
+        <div className={cn('flex flex-col gap-1 pb-2', compact ? 'px-4' : 'px-1')}>
+          {confirmingStop && <StopConfirm state={state} compact={compact} />}
+          {state.error && <ActionError message={state.error} />}
+        </div>
       )}
     </div>
   );

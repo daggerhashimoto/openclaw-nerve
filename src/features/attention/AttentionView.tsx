@@ -1,6 +1,8 @@
 /**
  * The Attention brief: what needs the operator, ranked, each item opening its source.
- * Read-only: it reads the polled sources and the session context and never changes them.
+ * It reads the polled sources and the session context. The only writes are the operator's own
+ * item actions (useAttentionActions); after one succeeds the sources are re-read, and the item
+ * moves or leaves through the normal brief rather than by editing it here.
  *
  * Order is frozen per epoch (useStableOrder). An epoch starts once per activation or Refresh,
  * and only after every enabled source has answered since then, so a cold load ranks the real
@@ -22,6 +24,7 @@ import { AttentionRow, Clocked } from './AttentionRow';
 import type { ItemView } from './itemPresentation';
 import { useAttentionSources } from './useAttentionSources';
 import { useStableOrder, type StableOrder } from './useStableOrder';
+import type { AttentionActionsConfig } from './useAttentionActions';
 import type { AttentionItem, AttentionSource, OpenTarget, SourceStatus } from './types';
 
 type Polled = 'tasks' | 'proposals' | 'crons';
@@ -238,6 +241,10 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     };
   };
 
+  // After an action the sources are fetched again without a new epoch, so the rest of the
+  // brief keeps its order and only the acted-on item moves or leaves.
+  const actions = useMemo<AttentionActionsConfig>(() => ({ kanbanEnabled, onDone: refresh }), [kanbanEnabled, refresh]);
+
   const markSeen = useCallback((items: AttentionItem[]) => {
     setSeen(addSeen(items.map((item) => item.key)));
   }, []);
@@ -270,6 +277,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
           compact={compact}
           onOpen={onOpen}
           onMarkSeen={onMarkSeen}
+          actions={actions}
         />
       ))}
     </div>
@@ -296,7 +304,14 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
         <>
           <div className={cn('text-[0.8rem] text-muted-foreground', compact && 'px-4')}>Start here</div>
           <div className={compact ? 'px-3' : undefined}>
-            <StartHereCard key={start.key} item={start} view={viewOf(start, decide)} compact={compact} onOpen={onOpen} />
+            <StartHereCard
+              key={start.key}
+              item={start}
+              view={viewOf(start, decide)}
+              compact={compact}
+              onOpen={onOpen}
+              actions={actions}
+            />
           </div>
           {then.length > 0 && (
             <>
@@ -304,7 +319,14 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
               {compact ? renderRows(then, decide) : (
                 <div className="flex flex-col gap-3">
                   {then.map((item, index) => (
-                    <AttentionCard key={item.key} item={item} view={viewOf(item, decide)} rank={index + 2} onOpen={onOpen} />
+                    <AttentionCard
+                      key={item.key}
+                      item={item}
+                      view={viewOf(item, decide)}
+                      rank={index + 2}
+                      onOpen={onOpen}
+                      actions={actions}
+                    />
                   ))}
                 </div>
               )}
@@ -340,6 +362,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
                 rank={index + 1}
                 onOpen={onOpen}
                 onMarkSeen={markOneSeen}
+                actions={actions}
                 className="flex-[1_1_300px]"
               />
             ))}

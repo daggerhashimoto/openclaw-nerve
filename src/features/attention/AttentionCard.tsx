@@ -3,6 +3,8 @@ import { cn } from '@/lib/utils';
 import { formatClock } from './briefCopy';
 import { KIND_WORD, paneFor, sourceTag, type ItemView } from './itemPresentation';
 import { MarkItemSeenButton, NewTag, ReasonText } from './AttentionRow';
+import { ActionButton, ActionError, CardActions, ChangesNote, PRIMARY_BUTTON, TEXT_BUTTON } from './AttentionActions';
+import { useItemActions, type AttentionActionsConfig } from './useAttentionActions';
 import type { AttentionItem, OpenTarget } from './types';
 
 const RESULT_EXCERPT = 240;
@@ -81,11 +83,17 @@ interface AttentionCardProps {
   onOpen: (target: OpenTarget) => void;
   /** Blocked and failed cards only: adds a Mark seen button that sits above the card's hit area. */
   onMarkSeen?: (item: AttentionItem) => void;
+  /** Turns on the item's actions (Approve, Retry, Stop...). Without it the card only opens. */
+  actions?: AttentionActionsConfig;
   className?: string;
 }
 
-/** A ranked card. The title is the button; its hit area covers the whole card. */
-export function AttentionCard({ item, view, rank, onOpen, onMarkSeen, className }: AttentionCardProps) {
+/**
+ * A ranked card. The title is the button; its hit area covers the whole card. Actions and
+ * Mark seen sit above that hit area, so they act without opening the source.
+ */
+export function AttentionCard({ item, view, rank, onOpen, onMarkSeen, actions, className }: AttentionCardProps) {
+  const state = useItemActions(item, actions);
   return (
     <article className={cn(CARD, 'nerve-task-card', item.freshness !== 'live' && 'opacity-80', className)}>
       <KindLine
@@ -108,11 +116,12 @@ export function AttentionCard({ item, view, rank, onOpen, onMarkSeen, className 
         </button>
       </h3>
       <CardDetail item={item} view={view} />
-      {onMarkSeen && (
-        <div className="flex justify-end">
+      <CardActions
+        state={state}
+        trailing={onMarkSeen && (
           <MarkItemSeenButton item={item} compact={false} onMarkSeen={onMarkSeen} className="relative z-10" />
-        </div>
-      )}
+        )}
+      />
     </article>
   );
 }
@@ -122,14 +131,43 @@ interface StartHereCardProps {
   view: ItemView;
   compact: boolean;
   onOpen: (target: OpenTarget) => void;
+  /** Turns on Approve and its second action. Without it the one button opens the source. */
+  actions?: AttentionActionsConfig;
 }
 
-/** The top decision: what the source already has, no evidence claims, and one warm button. */
-export function StartHereCard({ item, view, compact, onOpen }: StartHereCardProps) {
+/**
+ * The top decision: what the source already has, no evidence claims, and one warm button.
+ * With actions the warm button is the decision (Approve) and opening the source is a text
+ * button beside it, so phones still show exactly one filled button.
+ */
+export function StartHereCard({ item, view, compact, onOpen, actions }: StartHereCardProps) {
   const { detail } = item;
   const run = runLine(item);
   const sessionKey = detail.sessionKey;
-  const action = item.kind === 'proposal' ? 'Open proposal' : 'Open review';
+  const openLabel = item.kind === 'proposal' ? 'Open proposal' : 'Open review';
+  const state = useItemActions(item, actions);
+  const { primary, secondary } = state.actions;
+
+  const openButton = (
+    <button
+      type="button"
+      onClick={() => onOpen(item.open)}
+      className={primary
+        ? cn(TEXT_BUTTON, compact && 'min-h-11')
+        : cn(PRIMARY_BUTTON, compact ? 'min-h-11 w-full' : 'min-h-8')}
+    >
+      {openLabel}
+    </button>
+  );
+  const sessionButton = sessionKey && !compact && (
+    <button
+      type="button"
+      onClick={() => onOpen({ type: 'session', key: sessionKey })}
+      className={TEXT_BUTTON}
+    >
+      Open session
+    </button>
+  );
 
   return (
     <section
@@ -155,34 +193,29 @@ export function StartHereCard({ item, view, compact, onOpen }: StartHereCardProp
         <span>No evidence attached</span>
       </div>
 
-      <div
-        className={cn(
-          'mt-1 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3',
-          compact && 'flex-col items-stretch',
-        )}
-      >
-        <button
-          type="button"
-          onClick={() => onOpen(item.open)}
-          className={cn(
-            'send-btn inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-[3px] border-none bg-primary px-3.5 text-[0.867rem] font-semibold text-primary-foreground transition-[filter] duration-[120ms] hover:brightness-110',
-            compact ? 'min-h-11 w-full' : 'min-h-8',
-          )}
-        >
-          {action}
-        </button>
-        {sessionKey && !compact && (
-          <button
-            type="button"
-            onClick={() => onOpen({ type: 'session', key: sessionKey })}
-            className={cn(
-              'cursor-pointer text-[0.867rem] text-foreground underline decoration-border underline-offset-4 hover:decoration-operator',
-              compact && 'min-h-11',
+      <div className="mt-1 flex flex-col gap-2 border-t border-border pt-3">
+        {state.noteOpen ? (
+          <ChangesNote state={state} submitVariant="primary" compact={compact} />
+        ) : (
+          <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-2', compact && 'flex-col items-stretch')}>
+            {primary ? <ActionButton state={state} action={primary} variant="primary" compact={compact} /> : openButton}
+            {compact ? (
+              primary && (
+                <div className="flex flex-wrap items-center gap-x-4">
+                  {secondary && <ActionButton state={state} action={secondary} variant="text" compact />}
+                  {openButton}
+                </div>
+              )
+            ) : (
+              <>
+                {secondary && <ActionButton state={state} action={secondary} variant="text" compact={false} />}
+                {primary && openButton}
+                {sessionButton}
+              </>
             )}
-          >
-            Open session
-          </button>
+          </div>
         )}
+        {state.error && <ActionError message={state.error} />}
       </div>
     </section>
   );

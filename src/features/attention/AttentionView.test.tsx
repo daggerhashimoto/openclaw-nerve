@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KanbanTask } from '@/features/kanban/types';
 import type { KanbanProposal } from '@/features/kanban/hooks/useProposals';
@@ -137,6 +137,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('AttentionView', () => {
@@ -227,8 +228,14 @@ describe('AttentionView', () => {
     });
     const { onOpen } = renderView({ compact: true });
 
+    // On phones Start here has one filled button, the decision; the rest are text buttons.
     const start = screen.getByRole('region', { name: 'Start here' });
-    expect(within(start).getAllByRole('button')).toHaveLength(1);
+    const startButtons = within(start).getAllByRole('button');
+    const filled = startButtons.filter((button) => button.className.includes('bg-primary'));
+    expect(filled).toHaveLength(1);
+    expect(filled[0]).toHaveTextContent('Approve');
+    expect(startButtons.map((button) => button.textContent)).toEqual(['Approve', 'Request changes', 'Open review']);
+    for (const button of startButtons) expect(button.className).toContain('min-h-11');
     const rows = screen.getAllByTestId('attention-row');
     expect(rows.length).toBe(2);
     for (const row of rows) {
@@ -549,6 +556,309 @@ describe('AttentionView', () => {
         expect(button.className).toContain('min-h-[44px]');
         expect(button.closest('[data-testid="attention-row"]')).toBeNull();
       }
+    });
+  });
+  describe('item actions', () => {
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>();
+
+    function respond(status: number, body: unknown) {
+      return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    beforeEach(() => {
+      fetchMock.mockReset();
+      fetchMock.mockImplementation(async () => respond(200, { ok: true }));
+      vi.stubGlobal('fetch', fetchMock);
+    });
+
+    function calls() {
+      return fetchMock.mock.calls.map(([url, init]) => ({
+        url,
+        method: init?.method,
+        body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+      }));
+    }
+
+    function failedTask(overrides: Partial<KanbanTask> = {}): KanbanTask {
+      return task({
+        id: 'f1',
+        title: 'Rebuild the index',
+        status: 'todo',
+        result: undefined,
+        run: {
+          sessionKey: 'agent:forge:subagent:fix',
+          startedAt: NOW - 3 * HOUR,
+          endedAt: NOW - 2 * HOUR,
+          status: 'error',
+          error: 'Tests failed',
+        },
+        ...overrides,
+      });
+    }
+
+    function runningTask(overrides: Partial<KanbanTask> = {}): KanbanTask {
+      return task({
+        id: 'r1',
+        title: 'Index the archive',
+        status: 'in-progress',
+        result: undefined,
+        updatedAt: NOW - 10 * MINUTE,
+        run: { sessionKey: 'agent:forge:subagent:index', startedAt: NOW - 10 * MINUTE, status: 'running' },
+        ...overrides,
+      });
+    }
+
+    function proposal(overrides: Partial<KanbanProposal> = {}): KanbanProposal {
+      return {
+        id: 'p1',
+        type: 'create',
+        payload: { title: 'Write release notes' },
+        proposedBy: 'agent:kim',
+        proposedAt: NOW - 3 * HOUR,
+        status: 'pending',
+        version: 1,
+        ...overrides,
+      };
+    }
+
+    function cardOf(title: string): HTMLElement {
+      return screen.getByRole('button', { name: title }).closest('article')!;
+    }
+
+    function rowOf(title: string): HTMLElement {
+      const row = screen.getAllByTestId('attention-row').find((button) => button.textContent?.includes(title));
+      // The row's own line, then the line under it for Stop's confirm and errors.
+      return row!.parentElement!.parentElement!;
+    }
+
+    it('Approve on Start here posts the approval, shows progress and refreshes without opening', async () => {
+      let release: (value: Response) => void = () => {};
+      fetchMock.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+      const value = setSources({ tasks: [task()] });
+      const { onOpen } = renderView();
+
+      const start = screen.getByRole('region', { name: 'Start here' });
+      fireEvent.click(within(start).getByRole('button', { name: 'Approve' }));
+
+      const pending = within(start).getByRole('button', { name: 'Approving...' });
+      expect(pending).toBeDisabled();
+      expect(within(start).getByRole('button', { name: 'Request changes' })).toBeDisabled();
+      expect(value.refresh).not.toHaveBeenCalled();
+
+      release(respond(200, { id: 't1' }));
+      expect(await within(start).findByRole('button', { name: 'Approved' })).toBeDisabled();
+      expect(value.refresh).toHaveBeenCalledTimes(1);
+      expect(calls()).toEqual([{ url: '/api/kanban/tasks/t1/approve', method: 'POST', body: {} }]);
+      expect(onOpen).not.toHaveBeenCalled();
+    });
+
+    it('Request changes opens a note, needs text, and sends it as the rejection note', async () => {
+      const value = setSources({ tasks: [task()] });
+      const { onOpen } = renderView();
+      const start = screen.getByRole('region', { name: 'Start here' });
+
+      fireEvent.click(within(start).getByRole('button', { name: 'Request changes' }));
+      const field = within(start).getByRole('textbox', { name: 'What needs to change' });
+      const send = within(start).getByRole('button', { name: 'Request changes' });
+      expect(send).toBeDisabled();
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      fireEvent.change(field, { target: { value: 'Cover the timeout path' } });
+      fireEvent.click(send);
+
+      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
+      expect(calls()).toEqual([
+        { url: '/api/kanban/tasks/t1/reject', method: 'POST', body: { note: 'Cover the timeout path' } },
+      ]);
+      expect(onOpen).not.toHaveBeenCalled();
+    });
+
+    it('Cancel closes the note without a request', () => {
+      setSources({ tasks: [task()] });
+      renderView();
+      const start = screen.getByRole('region', { name: 'Start here' });
+
+      fireEvent.click(within(start).getByRole('button', { name: 'Request changes' }));
+      fireEvent.click(within(start).getByRole('button', { name: 'Cancel' }));
+
+      expect(within(start).queryByRole('textbox')).not.toBeInTheDocument();
+      expect(within(start).getByRole('button', { name: 'Approve' })).toBeEnabled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('a failed action shows the server error on the card and re-enables the buttons', async () => {
+      fetchMock.mockImplementationOnce(async () => respond(400, { error: 'invalid_transition', details: 'Task is not in review' }));
+      const value = setSources({ tasks: [task()] });
+      renderView();
+      const start = screen.getByRole('region', { name: 'Start here' });
+
+      fireEvent.click(within(start).getByRole('button', { name: 'Approve' }));
+
+      expect(await within(start).findByRole('alert')).toHaveTextContent('Could not approve: Task is not in review');
+      expect(within(start).getByRole('button', { name: 'Approve' })).toBeEnabled();
+      expect(within(start).getByRole('button', { name: 'Request changes' })).toBeEnabled();
+      expect(value.refresh).not.toHaveBeenCalled();
+    });
+
+    it('a pending proposal can be approved or rejected from its card', async () => {
+      const value = setSources({
+        tasks: [task({ resultAt: NOW - 5 * HOUR })],
+        proposals: [proposal(), proposal({ id: 'p2', payload: { title: 'Prune old branches' }, proposedAt: NOW - 2 * HOUR })],
+      });
+      const { onOpen } = renderView();
+
+      fireEvent.click(within(cardOf('Write release notes')).getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
+
+      fireEvent.click(within(cardOf('Prune old branches')).getByRole('button', { name: 'Reject' }));
+      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(2));
+
+      expect(calls()).toEqual([
+        { url: '/api/kanban/proposals/p1/approve', method: 'POST', body: undefined },
+        { url: '/api/kanban/proposals/p2/reject', method: 'POST', body: {} },
+      ]);
+      expect(onOpen).not.toHaveBeenCalled();
+    });
+
+    it('a failed run can be retried from its card', async () => {
+      const value = setSources({ tasks: [failedTask()] });
+      const { onOpen } = renderView();
+
+      fireEvent.click(within(cardOf('Rebuild the index')).getByRole('button', { name: 'Retry' }));
+
+      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
+      expect(calls()).toEqual([{ url: '/api/kanban/tasks/f1/execute', method: 'POST', body: {} }]);
+      expect(within(cardOf('Rebuild the index')).getByRole('button', { name: 'Started' })).toBeDisabled();
+      expect(onOpen).not.toHaveBeenCalled();
+    });
+
+    it('Stop on a running row needs the confirm step', async () => {
+      const value = setSources({ tasks: [runningTask()] });
+      const { onOpen } = renderView();
+
+      fireEvent.click(within(rowOf('Index the archive')).getByRole('button', { name: 'Stop' }));
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(within(rowOf('Index the archive')).getByText('Stop run?')).toBeInTheDocument();
+
+      fireEvent.click(within(rowOf('Index the archive')).getByRole('button', { name: 'Cancel' }));
+      expect(within(rowOf('Index the archive')).queryByText('Stop run?')).not.toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      fireEvent.click(within(rowOf('Index the archive')).getByRole('button', { name: 'Stop' }));
+      fireEvent.click(within(rowOf('Index the archive')).getByRole('button', { name: 'Confirm' }));
+
+      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
+      expect(calls()).toEqual([{ url: '/api/kanban/tasks/r1/abort', method: 'POST', body: {} }]);
+      expect(onOpen).not.toHaveBeenCalled();
+    });
+
+    it('Stop on a gone-quiet card needs the confirm step', async () => {
+      const value = setSources({
+        tasks: [runningTask({ updatedAt: NOW - 5 * HOUR, run: { startedAt: NOW - 5 * HOUR, status: 'running' } })],
+      });
+      const { onOpen } = renderView();
+      const card = cardOf('Index the archive');
+
+      fireEvent.click(within(card).getByRole('button', { name: 'Stop' }));
+      expect(fetchMock).not.toHaveBeenCalled();
+      fireEvent.click(within(card).getByRole('button', { name: 'Confirm' }));
+
+      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
+      expect(calls()).toEqual([{ url: '/api/kanban/tasks/r1/abort', method: 'POST', body: {} }]);
+      expect(onOpen).not.toHaveBeenCalled();
+    });
+
+    it('a failed cron can be run now or paused from its card', async () => {
+      const crons = [
+        cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error', lastError: 'AccessDenied' }),
+        cron({ id: 'c3', name: 'Weekly digest', lastStatus: 'error', lastError: 'Timeout' }),
+      ];
+      const value = setSources({ crons });
+      const { onOpen } = renderView();
+
+      fireEvent.click(within(cardOf('Nightly backup')).getByRole('button', { name: 'Run now' }));
+      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
+
+      fireEvent.click(within(cardOf('Weekly digest')).getByRole('button', { name: 'Pause' }));
+      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(2));
+
+      expect(calls()).toEqual([
+        { url: '/api/crons/c2/run', method: 'POST', body: undefined },
+        { url: '/api/crons/c3/toggle', method: 'POST', body: { enabled: false } },
+      ]);
+      expect(onOpen).not.toHaveBeenCalled();
+    });
+
+    it('after Run now the cron card stays and Pause still works', async () => {
+      const value = setSources({ crons: [cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error' })] });
+      renderView();
+      const card = cardOf('Nightly backup');
+
+      fireEvent.click(within(card).getByRole('button', { name: 'Run now' }));
+      expect(await within(card).findByRole('button', { name: 'Started' })).toBeDisabled();
+      expect(within(card).getByRole('button', { name: 'Pause' })).toBeEnabled();
+
+      fireEvent.click(within(card).getByRole('button', { name: 'Pause' }));
+      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(2));
+      expect(within(card).getByRole('button', { name: 'Paused' })).toBeDisabled();
+      expect(calls().map((call) => call.url)).toEqual(['/api/crons/c2/run', '/api/crons/c2/toggle']);
+    });
+
+    it('a failed cron run shows the gateway error on the card', async () => {
+      fetchMock.mockImplementationOnce(async () => respond(502, { ok: false, error: 'gateway down' }));
+      const value = setSources({ crons: [cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error' })] });
+      renderView();
+      const card = cardOf('Nightly backup');
+
+      fireEvent.click(within(card).getByRole('button', { name: 'Run now' }));
+
+      expect(await within(card).findByRole('alert')).toHaveTextContent('Could not run: gateway down');
+      expect(within(card).getByRole('button', { name: 'Run now' })).toBeEnabled();
+      expect(value.refresh).not.toHaveBeenCalled();
+    });
+
+    it('offers no task or proposal actions with kanban off', () => {
+      setSources({
+        tasks: [task(), failedTask(), runningTask()],
+        proposals: [proposal({ proposedAt: NOW - 30 * MINUTE })],
+        crons: [cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error' })],
+      });
+      renderView({ kanbanEnabled: false });
+
+      const start = screen.getByRole('region', { name: 'Start here' });
+      expect(within(start).getAllByRole('button').map((button) => button.textContent)).toEqual(['Open review', 'Open session']);
+      for (const name of ['Approve', 'Reject', 'Request changes', 'Retry', 'Stop']) {
+        expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+      }
+      expect(screen.getByRole('button', { name: 'Run now' })).toBeInTheDocument();
+    });
+
+    it('session items have no actions', () => {
+      sessionMock.mockReturnValue({
+        sessions: [{ key: 'agent:kim:subagent:abc', label: 'Research worker', updatedAt: NOW - 10 * MINUTE }],
+        sessionsLoading: false,
+        agentStatus: {},
+        busyState: { 'agent:kim:subagent:abc': true },
+      });
+      setSources();
+      renderView();
+
+      expect(within(rowOf('Research worker')).getAllByRole('button')).toHaveLength(1);
+    });
+
+    it('phone rows carry the main action as a 44px chip beside the row', async () => {
+      const value = setSources({ tasks: [task({ resultAt: NOW - 5 * HOUR }), failedTask(), runningTask()] });
+      const { onOpen } = renderView({ compact: true });
+
+      const retry = within(rowOf('Rebuild the index')).getByRole('button', { name: 'Retry' });
+      expect(retry.className).toContain('min-h-[44px]');
+      expect(retry.closest('[data-testid="attention-row"]')).toBeNull();
+      expect(within(rowOf('Index the archive')).getByRole('button', { name: 'Stop' }).className).toContain('min-h-[44px]');
+
+      fireEvent.click(retry);
+      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
+      expect(calls()).toEqual([{ url: '/api/kanban/tasks/f1/execute', method: 'POST', body: {} }]);
+      expect(onOpen).not.toHaveBeenCalled();
     });
   });
 });

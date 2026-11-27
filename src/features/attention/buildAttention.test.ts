@@ -300,8 +300,22 @@ describe('buildAttention', () => {
       sources: { ...live(), crons: { state: 'error', error: 'HTTP 502' } },
     }));
     expect(errored.allClear).toBe(false);
-    expect(errored.blocked).toHaveLength(0);
     expect(errored.sources.crons).toEqual({ state: 'error', error: 'HTTP 502' });
+  });
+
+  it('an errored source keeps contributing its retained items, shown as stale', () => {
+    const errored = buildAttention(input({
+      tasks: [task({ status: 'review' })],
+      crons: [cron({ lastStatus: 'error', lastRun: new Date(NOW - HOUR).toISOString() })],
+      sources: {
+        ...live(),
+        tasks: { state: 'error', error: 'HTTP 503' },
+        crons: { state: 'error', error: 'HTTP 502' },
+      },
+    }));
+    expect(errored.decide.map((i) => [i.sourceId, i.freshness])).toEqual([['t1', 'stale']]);
+    expect(errored.blocked.map((i) => [i.sourceId, i.freshness])).toEqual([['c1', 'stale']]);
+    expect(errored.allClear).toBe(false);
   });
 
   it('tasks source off produces no task or proposal items and allClear stays false', () => {
@@ -312,6 +326,50 @@ describe('buildAttention', () => {
     }));
     expect(all(brief).some((i) => i.source === 'tasks' || i.source === 'proposals')).toBe(false);
     expect(brief.allClear).toBe(false);
+  });
+
+  it('a create proposal takes its payload priority when it is a valid one, else normal', () => {
+    const brief = buildAttention(input({
+      proposals: [
+        proposal({ id: 'urgent', payload: { title: 'Patch the gateway', priority: 'critical' } }),
+        proposal({ id: 'odd', payload: { title: 'Odd one', priority: 'urgent' } }),
+        proposal({ id: 'none', payload: { title: 'No priority' } }),
+      ],
+    }));
+    const priorityOf = (id: string) => brief.decide.find((i) => i.sourceId === id)?.priority;
+    expect(priorityOf('urgent')).toBe('critical');
+    expect(priorityOf('odd')).toBe('normal');
+    expect(priorityOf('none')).toBe('normal');
+  });
+
+  it('reads a string lastActivity as session activity', () => {
+    const key = 'agent:kim:subagent:iso';
+    const t = task({
+      status: 'in-progress',
+      updatedAt: NOW - 5 * HOUR,
+      run: run({ sessionKey: key }),
+    });
+    const brief = buildAttention(input({
+      tasks: [t],
+      sessions: [session({ key, updatedAt: undefined, lastActivity: new Date(NOW - 60_000).toISOString() })],
+    }));
+    expect(brief.progress.map((i) => i.kind)).toEqual(['task-running']);
+    expect(brief.blocked).toHaveLength(0);
+  });
+
+  it('an errored session linked to a finished task run still shows as session-failed', () => {
+    const key = 'agent:kim:subagent:err';
+    const since = NOW - 20 * 60_000;
+    const done = task({
+      status: 'done',
+      run: run({ status: 'done', sessionKey: key, endedAt: NOW - HOUR }),
+    });
+    const brief = buildAttention(input({
+      tasks: [done],
+      sessions: [session({ key })],
+      agentStatus: { [key]: { status: 'ERROR', since } },
+    }));
+    expect(brief.blocked.map((i) => i.kind)).toEqual(['session-failed']);
   });
 
   it('uses lastLook for since and falls back to the last 24 hours', () => {

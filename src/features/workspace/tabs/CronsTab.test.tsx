@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CronsTab } from './CronsTab';
 import type { CronJob } from '../hooks/useCrons';
@@ -88,5 +88,37 @@ describe('CronsTab', () => {
     expect(fetchRuns).toHaveBeenCalledWith('cron-2');
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect((scrollIntoView.mock.contexts[0] as Element).contains(focused)).toBe(true);
+  });
+
+  it('a second request with a new nonce for the same cron expands and scrolls to it again', async () => {
+    const fetchRuns = vi.fn(async () => [{ timestamp: new Date().toISOString(), status: 'ok' }]);
+    mockUseCrons.mockReturnValue({
+      jobs: [makeJob('cron-1', 'Nightly digest'), makeJob('cron-2', 'Weekly review')],
+      isLoading: false,
+      error: null,
+      fetchJobs: vi.fn(),
+      toggleJob: vi.fn(),
+      runJob: vi.fn(),
+      fetchRuns,
+      addJob: vi.fn(),
+      updateJob: vi.fn(),
+      deleteJob: vi.fn(),
+    });
+
+    const { rerender } = render(<CronsTab focusCronId="cron-2" focusNonce={1} />);
+    const row = screen.getByRole('button', { name: 'Weekly review' });
+    await waitFor(() => expect(row).toHaveAttribute('aria-expanded', 'true'));
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(row);
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+
+    // The same request again changes nothing.
+    rerender(<CronsTab focusCronId="cron-2" focusNonce={1} />);
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+
+    rerender(<CronsTab focusCronId="cron-2" focusNonce={2} />);
+    await waitFor(() => expect(row).toHaveAttribute('aria-expanded', 'true'));
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
   });
 });

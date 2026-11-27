@@ -21,8 +21,8 @@ vi.mock('./WorkspaceTabs', () => ({
 }));
 
 vi.mock('./tabs', () => ({
-  CronsTab: ({ focusCronId }: { focusCronId?: string | null }) => (
-    <div data-testid="crons-tab" data-focus-cron={focusCronId ?? ''} />
+  CronsTab: ({ focusCronId, focusNonce }: { focusCronId?: string | null; focusNonce?: number }) => (
+    <div data-testid="crons-tab" data-focus-cron={focusCronId ?? ''} data-focus-nonce={focusNonce ?? ''} />
   ),
   ConfigTab: ({ agentId }: { agentId: string }) => {
     configTabRenderLog.push({ agentId });
@@ -164,5 +164,17 @@ describe('WorkspacePanel', () => {
 
     rerender(<WorkspacePanel {...props} focusRequest={{ tab: 'crons', cronId: 'cron-7', nonce: 104 }} />);
     expect(screen.getByTestId('active-tab')).toHaveTextContent('crons');
+  });
+
+  it('forwards each request nonce to the Crons tab, even for the same cron', () => {
+    const props = { workspaceAgentId: 'alpha', memories: [], onRefreshMemories: vi.fn() };
+    const { rerender } = render(
+      <WorkspacePanel {...props} focusRequest={{ tab: 'crons', cronId: 'cron-7', nonce: 106 }} />,
+    );
+    expect(screen.getByTestId('crons-tab')).toHaveAttribute('data-focus-nonce', '106');
+
+    rerender(<WorkspacePanel {...props} focusRequest={{ tab: 'crons', cronId: 'cron-7', nonce: 107 }} />);
+    expect(screen.getByTestId('crons-tab')).toHaveAttribute('data-focus-cron', 'cron-7');
+    expect(screen.getByTestId('crons-tab')).toHaveAttribute('data-focus-nonce', '107');
   });
 });

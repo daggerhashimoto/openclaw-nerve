@@ -176,6 +176,24 @@ describe('AttentionView', () => {
     expect(screen.queryByText(/Nothing needs you/)).not.toBeInTheDocument();
   });
 
+  it('shows the footer only once a live source has reported, with that time', () => {
+    const loading: Record<Polled, SourceStatus> = {
+      tasks: { state: 'loading' },
+      proposals: { state: 'loading' },
+      crons: { state: 'loading' },
+    };
+    setSources({ sources: loading });
+    const { rerenderWith } = renderView();
+    expect(screen.queryByText(hasText(/That is everything the live sources reported/))).not.toBeInTheDocument();
+
+    const checkedAt = NOW - 4 * MINUTE;
+    setSources({ sources: { ...loading, tasks: { state: 'live', checkedAt } } });
+    rerenderWith({});
+    expect(
+      screen.getByText(hasText(`That is everything the live sources reported at ${formatClock(checkedAt)}.`)),
+    ).toBeInTheDocument();
+  });
+
   it('errored crons source shows its message and an Open Crons link', () => {
     setSources({ sources: { ...allLive(), crons: { state: 'error', error: 'HTTP 502' } } });
     const { onOpen } = renderView();

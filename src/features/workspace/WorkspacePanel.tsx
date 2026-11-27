@@ -190,6 +190,8 @@ export function WorkspacePanel({
 
   // The cron is handed to CronsTab in the same render that shows the tab, so its row can scroll
   const [focusCronId, setFocusCronId] = useState<string | null>(null);
+  // Each request has its own nonce, so asking for the same cron again lands again
+  const [focusNonce, setFocusNonce] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (!focusRequest || focusRequest.nonce === lastAppliedFocusNonce) return;
@@ -197,6 +199,7 @@ export function WorkspacePanel({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-time sync from a request prop
     handleTabChange(focusRequest.tab);
     setFocusCronId(focusRequest.tab === 'crons' ? focusRequest.cronId ?? null : null);
+    setFocusNonce(focusRequest.nonce);
   }, [focusRequest, handleTabChange]);
 
   useEffect(() => {
@@ -244,7 +247,7 @@ export function WorkspacePanel({
         </div>
         <div className={activeTab === 'crons' ? 'h-full' : 'hidden'} hidden={activeTab !== 'crons'} role="tabpanel" id="workspace-tabpanel-crons" aria-labelledby="workspace-tab-crons">
           {visitedTabs.has('crons') && (
-            <CronsTab focusCronId={focusCronId} />
+            <CronsTab focusCronId={focusCronId} focusNonce={focusNonce} />
           )}
         </div>
         <div className={activeTab === 'config' ? 'h-full' : 'hidden'} hidden={activeTab !== 'config'} role="tabpanel" id="workspace-tabpanel-config" aria-labelledby="workspace-tab-config">

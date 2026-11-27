@@ -32,6 +32,7 @@ const {
   topBarRenderSnapshots,
   tabRenderSnapshots,
   addWorkspacePathSpy,
+  setActiveFileTab,
   useOpenFilesMock,
 } = vi.hoisted(() => {
   const settingsContext = {
@@ -92,11 +93,12 @@ const {
     saveToastPath: string | null;
   }> = [];
   const addWorkspacePathSpy = vi.fn();
+  const setActiveFileTab = vi.fn();
 
   const useOpenFilesMock = vi.fn((agentId: string) => ({
     openFiles: [{ path: 'shared.md', name: 'shared.md', content: 'draft', savedContent: 'draft', dirty: dirtyStateByAgent[agentId] ?? false }],
     activeTab: 'shared.md',
-    setActiveTab: vi.fn(),
+    setActiveTab: setActiveFileTab,
     openFile: vi.fn(),
     closeFile: vi.fn(),
     updateContent: vi.fn(),
@@ -127,6 +129,7 @@ const {
     topBarRenderSnapshots,
     tabRenderSnapshots,
     addWorkspacePathSpy,
+    setActiveFileTab,
     useOpenFilesMock,
   };
 });
@@ -323,6 +326,7 @@ vi.mock('@/features/attention', () => ({
   }) => (
     <div data-testid="attention-view" data-active={String(active)}>
       <button type="button" onClick={() => onOpen({ type: 'session', key: 'agent:alpha:main' })}>Open attention session</button>
+      <button type="button" onClick={() => onOpen({ type: 'session', key: 'agent:bravo:main' })}>Open attention other agent</button>
       <button type="button" onClick={() => onOpen({ type: 'proposal', id: 'p1' })}>Open attention proposal</button>
     </div>
   ),
@@ -1368,13 +1372,16 @@ describe('App attention landing and Back to Attention', () => {
     expect(screen.queryByRole('button', { name: 'Back to Attention' })).not.toBeInTheDocument();
   });
 
-  it('opens a session from the brief and comes back to it', () => {
+  it('opens a session from the brief on the Chat tab and comes back to it', async () => {
+    setActiveFileTab.mockClear();
     render(<App />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open attention session' }));
 
-    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('chat');
+    await waitFor(() => expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('chat'));
     expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:alpha:main');
+    // An open file tab must not hide the transcript
+    expect(setActiveFileTab).toHaveBeenCalledWith('chat');
     // The brief stays mounted, only hidden
     expect(screen.getByTestId('attention-view')).toHaveAttribute('data-active', 'false');
 
@@ -1382,6 +1389,33 @@ describe('App attention landing and Back to Attention', () => {
 
     expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('attention');
     expect(screen.queryByRole('button', { name: 'Back to Attention' })).not.toBeInTheDocument();
+  });
+
+  it('stays on the brief when the unsaved-workspace dialog is cancelled, and leaves it once confirmed', async () => {
+    dirtyStateByAgent.alpha = true;
+    saveAllDirtyFilesByAgent.alpha.mockResolvedValue({ ok: true });
+    setActiveFileTab.mockClear();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open attention other agent' }));
+    expect(screen.getByText('Unsaved workspace edits')).toBeInTheDocument();
+    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('attention');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByText('Unsaved workspace edits')).not.toBeInTheDocument());
+
+    expect(sessionContext.setCurrentSession).not.toHaveBeenCalled();
+    expect(setActiveFileTab).not.toHaveBeenCalled();
+    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('attention');
+    expect(screen.queryByRole('button', { name: 'Back to Attention' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open attention other agent' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save and switch' }));
+
+    await waitFor(() => expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('chat'));
+    expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:bravo:main');
+    expect(setActiveFileTab).toHaveBeenCalledWith('chat');
+    expect(screen.getByRole('button', { name: 'Back to Attention' })).toBeInTheDocument();
   });
 
   it('opens a proposal in the board, and choosing a view chip ends the trip from the brief', () => {

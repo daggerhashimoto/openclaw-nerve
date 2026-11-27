@@ -760,11 +760,16 @@ export default function App({ onLogout }: AppProps) {
     }
   }, [discardAllDirtyFiles, discardDirtyFilesFor, pendingWorkspaceSwitch, workspaceSwitchAction]);
 
-  const handleSessionChange = useCallback((key: string) => {
-    void requestWorkspaceTransition(key, getWorkspaceSwitchLabel(key), async () => {
+  // Resolves true once the session is switched, false when the operator cancels the unsaved-workspace dialog.
+  const switchSession = useCallback((key: string) => (
+    requestWorkspaceTransition(key, getWorkspaceSwitchLabel(key), async () => {
       setCurrentSession(key);
-    });
-  }, [getWorkspaceSwitchLabel, requestWorkspaceTransition, setCurrentSession]);
+    })
+  ), [getWorkspaceSwitchLabel, requestWorkspaceTransition, setCurrentSession]);
+
+  const handleSessionChange = useCallback((key: string) => {
+    void switchSession(key);
+  }, [switchSession]);
 
   // Open an item from the brief at its source. Tasks and proposals need the board, so they do
   // nothing while kanban is hidden (the brief does not offer them then).
@@ -794,9 +799,14 @@ export default function App({ onLogout }: AppProps) {
         openCronsTab(target.id);
         break;
       case 'session':
-        handleSessionChange(target.key);
-        setViewMode('chat');
-        break;
+        // The switch can wait on the unsaved-workspace dialog; leave the brief only once it is confirmed
+        void switchSession(target.key).then((switched) => {
+          if (!switched) return;
+          setActiveTab('chat');
+          setViewMode('chat');
+          setCameFromAttention(true);
+        });
+        return;
       case 'source':
         if (target.source === 'tasks') {
           if (!kanbanVisible) return;
@@ -807,7 +817,7 @@ export default function App({ onLogout }: AppProps) {
         break;
     }
     setCameFromAttention(true);
-  }, [handleSessionChange, kanbanVisible, openCronsTab, openTaskInBoard, setViewMode]);
+  }, [kanbanVisible, openCronsTab, openTaskInBoard, setActiveTab, setViewMode, switchSession]);
 
   // display: none drops an element's scroll offset in some browsers, so the brief's scroll is
   // remembered here and put back each time the view shows again

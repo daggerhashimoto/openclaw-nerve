@@ -100,10 +100,12 @@ function fullTime(ts?: string): string | undefined {
 const menuItemClass =
   'flex min-h-[var(--row-unit)] w-full items-center gap-2 px-2.5 text-[0.867rem] text-foreground transition-colors duration-[120ms] hover:bg-raised max-sm:min-h-11';
 
-function CronRow({ job, focused, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
+function CronRow({ job, focused, focusKey, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   job: CronRowJob;
   /** True while this row is the one asked for from outside the tab. */
   focused: boolean;
+  /** Changes with each request for this row, so asking again re-opens and re-scrolls it. */
+  focusKey?: number;
   onToggle: (id: string, enabled: boolean) => void;
   onRun: (id: string) => Promise<boolean | undefined>;
   onDelete: (id: string) => void;
@@ -159,13 +161,13 @@ function CronRow({ job, focused, onToggle, onRun, onDelete, onEdit, onFetchRuns 
     await showRuns();
   }, [expanded, showRuns]);
 
-  // Asked for from outside the tab: bring the row into view and open its history, once per focus
+  // Asked for from outside the tab: bring the row into view and open its history, once per request
   useEffect(() => {
     if (!focused) return;
     rowRef.current?.scrollIntoView?.({ block: 'start' });
     void showRuns();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires when focus lands on this row, not when showRuns changes
-  }, [focused]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires when a request lands on this row, not when showRuns changes
+  }, [focused, focusKey]);
 
   const handleRun = useCallback(async () => {
     setRunning(true);
@@ -394,10 +396,12 @@ function CronRow({ job, focused, onToggle, onRun, onDelete, onEdit, onFetchRuns 
 interface CronsTabProps {
   /** Expand and scroll to this cron row when it changes (the tab was opened from outside). */
   focusCronId?: string | null;
+  /** Changes with each request, so asking for the same cron again expands and scrolls to it again. */
+  focusNonce?: number;
 }
 
 /** Workspace tab listing cron jobs with create/edit/delete/toggle controls. */
-export function CronsTab({ focusCronId = null }: CronsTabProps = {}) {
+export function CronsTab({ focusCronId = null, focusNonce }: CronsTabProps = {}) {
   const { jobs, isLoading, error, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
   const { refreshSessions } = useSessionContext();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -518,6 +522,7 @@ export function CronsTab({ focusCronId = null }: CronsTabProps = {}) {
             key={job.id}
             job={job}
             focused={job.id === focusCronId}
+            focusKey={focusCronId === job.id ? focusNonce : undefined}
             onToggle={toggleJob}
             onRun={handleRun}
             onDelete={deleteJob}

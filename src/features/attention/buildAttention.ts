@@ -43,6 +43,10 @@ export function rankItems(items: AttentionItem[], now: number): AttentionItem[] 
   ));
 }
 
+function isTaskPriority(value: unknown): value is TaskPriority {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(PRIORITY_RANK, value);
+}
+
 function agentIdOf(actor?: TaskActor | string): string | undefined {
   return actor?.startsWith('agent:') ? actor.slice('agent:'.length) : undefined;
 }
@@ -53,8 +57,9 @@ function isoToMs(value?: string): number | undefined {
   return Number.isFinite(ms) ? ms : undefined;
 }
 
+/** An errored source still contributes the data the hook kept, shown as stale; only off does not. */
 function contributes(status: SourceStatus): boolean {
-  return status.state !== 'off' && status.state !== 'error';
+  return status.state !== 'off';
 }
 
 function freshnessOf(status: SourceStatus): AttentionItem['freshness'] {
@@ -64,7 +69,9 @@ function freshnessOf(status: SourceStatus): AttentionItem['freshness'] {
 function sessionActivity(session: Session | undefined): number | undefined {
   if (!session) return undefined;
   if (typeof session.updatedAt === 'number') return session.updatedAt;
-  if (typeof session.lastActivity === 'number') return session.lastActivity;
+  const { lastActivity } = session;
+  if (typeof lastActivity === 'number') return lastActivity;
+  if (typeof lastActivity === 'string') return isoToMs(lastActivity);
   return undefined;
 }
 
@@ -149,7 +156,7 @@ function proposalItem(proposal: KanbanProposal, tasks: KanbanTask[], status: Sou
   const payload = proposal.payload;
   const payloadTitle = typeof payload.title === 'string' && payload.title ? payload.title : undefined;
   let title = payloadTitle ?? 'New task';
-  let priority: TaskPriority = 'normal';
+  let priority: TaskPriority = isTaskPriority(payload.priority) ? payload.priority : 'normal';
   let proposalChange: string | undefined;
 
   if (proposal.type === 'update') {
@@ -270,11 +277,12 @@ export function buildAttention(input: AttentionInput): AttentionBrief {
     if (key) sessionsByKey.set(key, session);
   }
 
-  // Sessions linked to a task run fold into the task card.
+  // Sessions linked to a running task fold into its running or gone-quiet card. A session
+  // linked to any other run stays its own item, so its failure is not hidden.
   const linkedKeys = new Set<string>();
   if (tasksOn) {
     for (const task of input.tasks) {
-      if (!task.run) continue;
+      if (task.run?.status !== 'running') continue;
       linkedKeys.add(task.run.sessionKey);
       if (task.run.childSessionKey) linkedKeys.add(task.run.childSessionKey);
     }

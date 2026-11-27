@@ -248,7 +248,8 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     .filter((source) => effectiveSources[source].state === 'live')
     .map((source) => effectiveSources[source].checkedAt)
     .filter((checkedAt): checkedAt is number => typeof checkedAt === 'number');
-  const checkedClock = formatClock(liveChecked.length > 0 ? Math.min(...liveChecked) : now);
+  const checkedAt = liveChecked.length > 0 ? Math.min(...liveChecked) : undefined;
+  const checkedClock = formatClock(checkedAt ?? now);
   const allClear = brief.allClear && !waiting && connected;
   const disconnectedSince = connected ? null : link.lostAt;
   const disconnected = disconnectedSince !== null;
@@ -292,7 +293,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
         <>
           <div className={cn('text-[0.8rem] text-muted-foreground', compact && 'px-4')}>Start here</div>
           <div className={compact ? 'px-3' : undefined}>
-            <StartHereCard item={start} view={viewOf(start, decide)} compact={compact} onOpen={onOpen} />
+            <StartHereCard key={start.key} item={start} view={viewOf(start, decide)} compact={compact} onOpen={onOpen} />
           </div>
           {then.length > 0 && (
             <>
@@ -453,14 +454,16 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
             </div>
           )}
 
-          <p
-            className={cn(
-              'm-0 border-t border-border pt-3 text-[0.8rem] text-muted-foreground',
-              compact && 'mx-4',
-            )}
-          >
-            <Clocked text={`That is everything the live sources reported at ${checkedClock}.`} />
-          </p>
+          {checkedAt !== undefined && (
+            <p
+              className={cn(
+                'm-0 border-t border-border pt-3 text-[0.8rem] text-muted-foreground',
+                compact && 'mx-4',
+              )}
+            >
+              <Clocked text={`That is everything the live sources reported at ${checkedClock}.`} />
+            </p>
+          )}
         </div>
       </div>
     </div>

@@ -60,7 +60,7 @@ function pathOf(input: RequestInfo | URL): string {
 }
 
 interface Routes {
-  tasks: () => Response | Promise<Response>;
+  tasks: (url: string) => Response | Promise<Response>;
   proposals: () => Response | Promise<Response>;
   crons: () => Response | Promise<Response>;
 }
@@ -75,7 +75,7 @@ function installFetch(overrides: Partial<Routes> = {}) {
   const mock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     void init;
     const url = pathOf(input);
-    if (url.startsWith('/api/kanban/tasks')) return routes.tasks();
+    if (url.startsWith('/api/kanban/tasks')) return routes.tasks(url);
     if (url.startsWith('/api/kanban/proposals')) return routes.proposals();
     if (url.startsWith('/api/crons')) return routes.crons();
     return jsonResponse({ error: 'Unexpected request' }, { ok: false, status: 500 });
@@ -190,6 +190,52 @@ describe('useAttentionSources', () => {
     expect(countOf(fetchMock, '/api/kanban/tasks')).toBe(13);
     expect(countOf(fetchMock, '/api/kanban/proposals')).toBe(13);
     expect(countOf(fetchMock, '/api/crons')).toBe(2);
+  });
+
+  it('follows tasks pagination and merges every page', async () => {
+    const second: KanbanTask = { ...TASK, id: 't2', title: 'Rotate the logs' };
+    const fetchMock = installFetch({
+      tasks: (url) => (url.includes('offset=1')
+        ? jsonResponse({ items: [second], total: 2, limit: 1, offset: 1, hasMore: false })
+        : jsonResponse({ items: [TASK], total: 2, limit: 1, offset: 0, hasMore: true })),
+    });
+
+    const { result } = renderHook(() => useAttentionSources({ active: true, kanbanEnabled: true }));
+    await flush();
+
+    expect(urls(fetchMock).filter((url) => url.startsWith('/api/kanban/tasks'))).toEqual([
+      '/api/kanban/tasks?limit=200',
+      '/api/kanban/tasks?limit=200&offset=1',
+    ]);
+    expect(result.current.tasks).toEqual([TASK, second]);
+    expect(result.current.sources.tasks).toEqual({ state: 'live', checkedAt: NOW });
+  });
+
+  it('a poll tick does not abort a request that is still pending', async () => {
+    const pending = createDeferred<Response>();
+    const signals: AbortSignal[] = [];
+    const fetchMock = installFetch({ tasks: () => pending.promise });
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (pathOf(input).startsWith('/api/kanban/tasks') && init?.signal) signals.push(init.signal);
+      return base(input, init);
+    });
+
+    const { result } = renderHook(() => useAttentionSources({ active: true, kanbanEnabled: true }));
+    await flush(15_000);
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+    expect(countOf(fetchMock, '/api/kanban/proposals')).toBe(4);
+
+    pending.resolve(jsonResponse({ items: [TASK], total: 1, limit: 200, offset: 0, hasMore: false }));
+    await flush();
+
+    expect(result.current.tasks).toEqual([TASK]);
+    expect(result.current.sources.tasks.state).toBe('live');
+
+    await flush(5_000);
+    expect(signals).toHaveLength(2);
   });
 
   it('a failed crons request marks crons error and keeps previous jobs', async () => {

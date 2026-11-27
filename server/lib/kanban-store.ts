@@ -116,7 +116,7 @@ export interface KanbanTask {
   result?: string;
   resultAt?: number;
   model?: string;
-  thinking?: 'off' | 'low' | 'medium' | 'high';
+  thinking?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'adaptive' | 'max' | 'ultra';
   dueAt?: number;
   estimateMin?: number;
   actualMin?: number;
@@ -611,7 +611,7 @@ export class KanbanStore {
     assignee?: TaskActor;
     labels?: string[];
     model?: string;
-    thinking?: 'off' | 'low' | 'medium' | 'high';
+    thinking?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'adaptive' | 'max' | 'ultra';
     dueAt?: number;
     estimateMin?: number;
   }): Promise<KanbanTask> {
@@ -871,7 +871,7 @@ export class KanbanStore {
 
   async executeTask(
     id: string,
-    options?: { model?: string; thinking?: 'off' | 'low' | 'medium' | 'high'; sessionKey?: string },
+    options?: { model?: string; thinking?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'adaptive' | 'max' | 'ultra'; sessionKey?: string },
     actor?: string,
   ): Promise<KanbanTask> {
     return this.withStore(async () => {

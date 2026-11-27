@@ -27,6 +27,10 @@ export interface Session {
   model?: string;
   thinking?: string;
   thinkingLevel?: string;
+  /** Levels the session's current model supports, as reported by sessions.list. */
+  thinkingLevels?: { id: string; label?: string }[];
+  /** Flat form of thinkingLevels (ids only), kept for older gateway payloads. */
+  thinkingOptions?: string[];
   /** The level the gateway says an unset thinkingLevel resolves to for this session. */
   thinkingDefault?: string;
   totalTokens?: number;

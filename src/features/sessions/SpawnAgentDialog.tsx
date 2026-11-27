@@ -16,6 +16,7 @@ import type { InlineSelectOption } from '@/components/ui/InlineSelect';
 import { useSessionContext, type SpawnSessionOpts, type SubagentCleanupMode } from '@/contexts/SessionContext';
 import { getSessionKey } from '@/types';
 import { inheritedModelLabels } from '@/lib/inheritedModel';
+import { THINKING_LEVELS as CANONICAL_THINKING_LEVELS, type ThinkingLevel } from '@/lib/thinkingLevels';
 import {
   getRootAgentSessionKey,
   getSessionDisplayLabel,
@@ -24,15 +25,11 @@ import {
 
 const INHERITED_THINKING_VALUE = 'thinkingDefault';
 
-type ThinkingSelection = typeof INHERITED_THINKING_VALUE | 'off' | 'low' | 'medium' | 'high' | 'adaptive';
+type ThinkingSelection = typeof INHERITED_THINKING_VALUE | ThinkingLevel;
 
 const THINKING_LEVELS: InlineSelectOption[] = [
   { value: INHERITED_THINKING_VALUE, label: 'Default' },
-  { value: 'off', label: 'off' },
-  { value: 'low', label: 'low' },
-  { value: 'medium', label: 'medium' },
-  { value: 'high', label: 'high' },
-  { value: 'adaptive', label: 'adaptive' },
+  ...CANONICAL_THINKING_LEVELS.map((level) => ({ value: level, label: level })),
 ];
 const AFTER_RUN_OPTIONS: InlineSelectOption[] = [
   { value: 'keep', label: 'Keep' },

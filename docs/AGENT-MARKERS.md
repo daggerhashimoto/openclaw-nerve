@@ -212,7 +212,7 @@ The closing tag must repeat the opening type. The payload must be a single JSON 
 | `assignee` | `string` | No | `"operator"` or `"agent:<agent id>"`. `agent:main` is rejected |
 | `labels` | `string[]` | No | Tags |
 | `model` | `string` | No | Model for execution |
-| `thinking` | `string` | No | `off`, `low`, `medium`, `high` |
+| `thinking` | `string` | No | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, `max`, or `ultra`. The gateway clamps to what the execution model supports |
 | `dueAt` | `number` | No | Due date (epoch ms) |
 | `estimateMin` | `number` | No | Estimated minutes |
 

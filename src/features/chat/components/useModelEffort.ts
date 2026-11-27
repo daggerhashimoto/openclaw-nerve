@@ -14,6 +14,7 @@ import { useSessionContext } from '@/contexts/SessionContext';
 import { getSessionKey } from '@/types';
 import { getSessionType } from '@/features/sessions/sessionTree';
 import { inheritedModelLabels } from '@/lib/inheritedModel';
+import { normalizeThinkingLevel, thinkingLevelsForSession, type ThinkingLevel } from '@/lib/thinkingLevels';
 
 /**
  * Duration (ms) after an optimistic model/effort change during which we ignore
@@ -38,16 +39,8 @@ const INHERITED_EFFORT_VALUE = 'thinkingDefault';
 /** What the inherited effort reads as when the gateway has not said which level the default resolves to. */
 const INHERITED_EFFORT_FALLBACK_LABEL = 'Default';
 
-type EffortLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'adaptive';
+type EffortLevel = ThinkingLevel;
 type EffortSelection = typeof INHERITED_EFFORT_VALUE | EffortLevel;
-const EFFORT_OPTIONS: EffortLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'adaptive'];
-
-function normalizeEffortLevel(raw: string | null | undefined): EffortLevel | null {
-  const normalized = raw?.toLowerCase();
-  return normalized && EFFORT_OPTIONS.includes(normalized as EffortLevel)
-    ? normalized as EffortLevel
-    : null;
-}
 export type GatewayModelInfo = {
   id: string;
   label: string;
@@ -199,7 +192,7 @@ export function useModelEffort(): UseModelEffortReturn {
   const [selectedEffort, setSelectedEffort] = useState<EffortSelection>(() => {
     try {
       const saved = localStorage.getItem(getEffortKey(currentSession)) as EffortSelection | null;
-      return saved && (saved === INHERITED_EFFORT_VALUE || EFFORT_OPTIONS.includes(saved as EffortLevel))
+      return saved && (saved === INHERITED_EFFORT_VALUE || normalizeThinkingLevel(saved))
         ? saved
         : INHERITED_EFFORT_VALUE;
     } catch {
@@ -228,7 +221,14 @@ export function useModelEffort(): UseModelEffortReturn {
   // thinkingDefault). Null when the row does not carry it.
   const rowThinkingDefault = useMemo(() => {
     const s = sessions.find(sess => getSessionKey(sess) === currentSession);
-    return normalizeEffortLevel(s?.thinkingDefault);
+    return normalizeThinkingLevel(s?.thinkingDefault);
+  }, [sessions, currentSession]);
+
+  // The levels this session's model supports, straight from the gateway row. Older gateways
+  // that do not project per-session levels fall back to the canonical vocabulary.
+  const sessionThinkingLevels = useMemo(() => {
+    const s = sessions.find(sess => getSessionKey(sess) === currentSession);
+    return thinkingLevelsForSession(s);
   }, [sessions, currentSession]);
 
   // Resolve current session's thinking level.
@@ -237,13 +237,13 @@ export function useModelEffort(): UseModelEffortReturn {
   const currentSessionThinking = useMemo(() => {
     const s = sessions.find(sess => getSessionKey(sess) === currentSession);
 
-    const explicit = normalizeEffortLevel(s?.thinkingLevel);
+    const explicit = normalizeThinkingLevel(s?.thinkingLevel);
     if (explicit) {
       return explicit;
     }
 
-    const effective = normalizeEffortLevel(s?.thinking);
-    const inheritedDefault = rowThinkingDefault ?? normalizeEffortLevel(thinking);
+    const effective = normalizeThinkingLevel(s?.thinking);
+    const inheritedDefault = rowThinkingDefault ?? normalizeThinkingLevel(thinking);
     if (effective && inheritedDefault && effective !== inheritedDefault) {
       return effective;
     }
@@ -257,8 +257,8 @@ export function useModelEffort(): UseModelEffortReturn {
     const s = sessions.find(sess => getSessionKey(sess) === currentSession);
     return rowThinkingDefault
       || resolvedSessionThinking[currentSession]
-      || normalizeEffortLevel(s?.thinking)
-      || normalizeEffortLevel(thinking)
+      || normalizeThinkingLevel(s?.thinking)
+      || normalizeThinkingLevel(thinking)
       || null;
   }, [sessions, currentSession, thinking, resolvedSessionThinking, rowThinkingDefault]);
 
@@ -266,7 +266,7 @@ export function useModelEffort(): UseModelEffortReturn {
   // it is known, else the plain word. The raw selector value is never shown.
   const selectedEffortLabel = selectedEffort === INHERITED_EFFORT_VALUE
     ? inheritedEffortLevel ?? INHERITED_EFFORT_FALLBACK_LABEL
-    : selectedEffort;
+    : sessionThinkingLevels.find((level) => level.id === selectedEffort)?.label ?? selectedEffort;
 
   // Sync model dropdown when switching sessions (setState-during-render pattern)
   //
@@ -367,7 +367,7 @@ export function useModelEffort(): UseModelEffortReturn {
       try {
         const info = await fetchGatewaySessionInfo(currentSession);
         if (signal.cancelled) return;
-        resolvedThinking = normalizeEffortLevel(info?.thinking);
+        resolvedThinking = normalizeThinkingLevel(info?.thinking);
       } catch (err) {
         console.warn('[useModelEffort] Failed to fetch gateway session info:', err);
       }
@@ -378,7 +378,7 @@ export function useModelEffort(): UseModelEffortReturn {
         const data = await res.json() as { ok: boolean; model?: string | null; thinking?: string | null; missing?: boolean };
         if (data.ok) {
           if (data.model != null) resolvedModel = data.model;
-          if (!resolvedThinking) resolvedThinking = normalizeEffortLevel(data.thinking);
+          if (!resolvedThinking) resolvedThinking = normalizeThinkingLevel(data.thinking);
         }
       } catch { /* ignore */ }
 
@@ -612,9 +612,9 @@ export function useModelEffort(): UseModelEffortReturn {
           ? `${inheritedEffortLevel} (default)`
           : INHERITED_EFFORT_FALLBACK_LABEL,
       },
-      ...EFFORT_OPTIONS.map((lvl) => ({ value: lvl, label: lvl })),
+      ...sessionThinkingLevels.map((lvl) => ({ value: lvl.id, label: lvl.label })),
     ],
-    [inheritedEffortLevel],
+    [inheritedEffortLevel, sessionThinkingLevels],
   );
 
   return {

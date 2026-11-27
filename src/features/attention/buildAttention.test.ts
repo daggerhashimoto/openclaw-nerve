@@ -190,6 +190,7 @@ describe('buildAttention', () => {
     }));
     expect(brief.blocked.map((i) => i.sourceId)).toEqual(['quiet']);
     expect(brief.blocked[0].kind).toBe('gone-quiet');
+    expect(brief.blocked[0].key).toBe(`tasks:quiet:gone-quiet:${NOW - 2 * HOUR}`);
     expect(brief.blocked[0].detail.quietSince).toBe(NOW - GONE_QUIET_MS - 60_000);
     expect(brief.progress.map((i) => i.sourceId)).toEqual(['busy']);
     expect(brief.progress[0].kind).toBe('task-running');

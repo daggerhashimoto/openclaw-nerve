@@ -121,7 +121,7 @@ function taskItems(input: AttentionInput, sessionsByKey: Map<string, Session>): 
       const quiet = now - activity > GONE_QUIET_MS;
       items.push({
         ...base,
-        key: `tasks:${task.id}:${quiet ? 'gone-quiet' : 'task-running'}`,
+        key: quiet ? `tasks:${task.id}:gone-quiet:${run.startedAt}` : `tasks:${task.id}:task-running`,
         kind: quiet ? 'gone-quiet' : 'task-running',
         section: quiet ? 'blocked' : 'progress',
         updatedAt: quiet ? activity : run.startedAt,

@@ -1229,7 +1229,7 @@ export default function App({ onLogout }: AppProps) {
       </PanelErrorBoundary>
       
       {cameFromAttention && viewMode !== 'attention' && (
-        <div className="flex shrink-0 items-center border-b border-border bg-card px-2 max-[900px]:min-h-[44px]">
+        <div className="relative z-[45] flex shrink-0 items-center border-b border-border bg-card px-2 max-[900px]:min-h-[44px]">
           <button
             type="button"
             onClick={backToAttention}

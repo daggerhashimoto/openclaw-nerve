@@ -304,6 +304,55 @@ describe('AttentionView', () => {
     expect(localStorage.getItem('nerve:attention:lastLook')).toBe(String(NOW + 5 * MINUTE));
   });
 
+  it('keeps Since you left across leaving the view and coming back in one page session', () => {
+    localStorage.setItem('nerve:attention:lastLook', String(NOW - 5 * HOUR));
+    setSources();
+    const { rerenderWith } = renderView();
+
+    const heading = () => screen.getByRole('heading', { level: 1 }).textContent;
+    const before = heading();
+    expect(before).toMatch(/^Since you left /);
+    expect(before).toContain(formatClock(NOW - 5 * HOUR));
+
+    vi.setSystemTime(NOW + 5 * MINUTE);
+    rerenderWith({ active: false });
+    // The next page load gets the new time, but this session keeps the one it started with.
+    expect(localStorage.getItem('nerve:attention:lastLook')).toBe(String(NOW + 5 * MINUTE));
+    rerenderWith({ active: true });
+
+    expect(heading()).toBe(before);
+  });
+
+  it('marking every failure seen keeps a Seen count in the all-clear block', () => {
+    setSources({
+      tasks: [task({
+        status: 'todo',
+        result: undefined,
+        run: {
+          sessionKey: 'agent:forge:subagent:fix',
+          startedAt: NOW - 3 * HOUR,
+          endedAt: NOW - 2 * HOUR,
+          status: 'error',
+          error: 'Tests failed',
+        },
+      })],
+    });
+    renderView();
+
+    expect(screen.getByRole('heading', { name: 'Blocked or failed' })).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing needs you/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Mark seen' }));
+
+    expect(screen.getByText(hasText(/Nothing needs you\. Checked/))).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Blocked or failed' })).not.toBeInTheDocument();
+    const seenLine = screen.getByRole('button', { name: 'Seen (1)' });
+    expect(seenLine).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Fix the flaky retry test')).not.toBeInTheDocument();
+
+    fireEvent.click(seenLine);
+    expect(screen.getByText('Fix the flaky retry test')).toBeInTheDocument();
+  });
+
   it('cold load waits for every source, then Start here is the top-ranked item without New tags', () => {
     const loading: Record<Polled, SourceStatus> = {
       tasks: { state: 'loading' },

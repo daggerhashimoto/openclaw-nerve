@@ -102,7 +102,8 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   const [prevActive, setPrevActive] = useState(active);
   const [gate, setGate] = useState<Gate>(() => ({ armed: active, baseline: null, awaitSessions: false }));
   const [epoch, setEpoch] = useState(0);
-  const [lastLook, setLastLook] = useState(() => readLastLook());
+  // Read once per page session: hopping to a source and back must not reset "since you left".
+  const [lastLook] = useState(() => readLastLook());
   const [seen, setSeen] = useState<ReadonlySet<string>>(() => readSeen());
   const [tick, setTick] = useState(() => Date.now());
   const [link, setLink] = useState<Link>(() => ({ seen: connected ? 'connected' : 'none', lostAt: null }));
@@ -114,7 +115,6 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     setPrevActive(active);
     if (active) {
       currentGate = { armed: true, baseline: polled, awaitSessions: false };
-      setLastLook(readLastLook());
     }
   }
   // Sessions never finish loading without a gateway; do not hold the polled sources on them.
@@ -361,14 +361,13 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   );
 
   const allClearBlock = (
-    <section
-      aria-label="Nothing needs you"
-      className={cn('flex flex-col gap-1 border-y border-border py-4', compact && 'px-4')}
-    >
-      <p className="m-0 text-[1rem] text-foreground">
+    <section aria-label="Nothing needs you" className="flex flex-col gap-1 border-y border-border py-4">
+      <p className={cn('m-0 text-[1rem] text-foreground', compact && 'px-4')}>
         <Clocked text={`Nothing needs you. Checked tasks, proposals and crons at ${checkedClock}.`} />
       </p>
-      <p className="m-0 text-[0.8rem] text-muted-foreground">{SESSION_CAVEAT}</p>
+      <p className={cn('m-0 text-[0.8rem] text-muted-foreground', compact && 'px-4')}>{SESSION_CAVEAT}</p>
+      {/* Failures marked seen stay visible as a collapsed count; they are not gone. */}
+      <SeenLine items={brief.seen.blocked} compact={compact} render={(items) => renderRows(items)} />
     </section>
   );
 
@@ -390,7 +389,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
           <section aria-label="Summary" className={cn('flex flex-col gap-1.5', compact && 'px-4')}>
             <div className="flex items-start gap-3">
               <h1 className={cn('m-0 font-semibold leading-tight text-foreground', compact ? 'text-[1.333rem]' : 'text-[1.2rem]')}>
-                <Clocked text={sinceHeading(brief, lastLook)} />
+                <Clocked text={sinceHeading(brief, lastLook, now)} />
               </h1>
               <span className="flex-1" />
               <button

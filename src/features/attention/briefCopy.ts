@@ -18,6 +18,7 @@ const SOURCE_NAMES: Record<AttentionSource, string> = {
 };
 const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
 const SESSION_CAVEAT = 'session failures show from when this page opened';
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 type SourceState = AttentionBrief['sources'][AttentionSource]['state'];
 
@@ -26,6 +27,25 @@ export function formatClock(ts: number): string {
   const date = new Date(ts);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function sameLocalDay(a: number, b: number): boolean {
+  const first = new Date(a);
+  const second = new Date(b);
+  return first.getFullYear() === second.getFullYear()
+    && first.getMonth() === second.getMonth()
+    && first.getDate() === second.getDate();
+}
+
+/** `HH:MM` when `ts` falls on the same local day as `now`, otherwise `Sat 07:57`. */
+export function formatDayClock(ts: number, now: number): string {
+  const clock = formatClock(ts);
+  return sameLocalDay(ts, now) ? clock : `${WEEKDAYS[new Date(ts).getDay()]} ${clock}`;
+}
+
+/** `at HH:MM` when `ts` is today, otherwise `Sat 07:57`: reads after "since you left" and "fails again". */
+function atDayClock(ts: number, now: number): string {
+  return sameLocalDay(ts, now) ? `at ${formatClock(ts)}` : formatDayClock(ts, now);
 }
 
 function countWord(n: number): string {
@@ -88,9 +108,9 @@ function ago(ts: number, now: number): string {
   return age === 'now' ? 'just now' : `${age} ago`;
 }
 
-export function sinceHeading(brief: AttentionBrief, lastLook: number | null): string {
+export function sinceHeading(brief: AttentionBrief, lastLook: number | null, now: number): string {
   // brief.since is the window the brief was built for; it equals lastLook when one exists.
-  return lastLook === null ? 'In the last 24 hours' : `Since you left at ${formatClock(brief.since)}`;
+  return lastLook === null ? 'In the last 24 hours' : `Since you left ${atDayClock(brief.since, now)}`;
 }
 
 export function sourceLine(brief: AttentionBrief, now: number): string {
@@ -160,7 +180,7 @@ export function summarySentence(brief: AttentionBrief, now: number): string {
   if (needs) {
     sentences.push(needs);
     const cron = soonestCronRun(brief, now);
-    if (cron) sentences.push(`${cron.title} fails again at ${formatClock(cron.nextRun)} unless fixed.`);
+    if (cron) sentences.push(`${cron.title} fails again ${atDayClock(cron.nextRun, now)} unless fixed.`);
   } else if (gap.length === 0) {
     sentences.push('Nothing is waiting on you.');
   }
@@ -177,7 +197,7 @@ export function summarySentence(brief: AttentionBrief, now: number): string {
 export function reasonFor(item: AttentionItem, now: number, ownerName?: string): string {
   switch (item.kind) {
     case 'review':
-      return `Ready ${timeAgo(item.updatedAt, now)} · ${ownerName ? `${ownerName} says done` : 'Waiting for your review'}`;
+      return `Ready ${ago(item.updatedAt, now)} · ${ownerName ? `${ownerName} says done` : 'Waiting for your review'}`;
     case 'proposal':
       return `${ownerName ?? 'An agent'} proposes this`;
     case 'task-failed':
@@ -186,9 +206,10 @@ export function reasonFor(item: AttentionItem, now: number, ownerName?: string):
       return `Quiet for ${timeAgo(item.detail.quietSince ?? item.updatedAt, now)}`;
     case 'cron-failed': {
       const nextRun = item.detail.nextRun;
+      const failed = `Failed ${ago(item.updatedAt, now)}`;
       return nextRun !== undefined && nextRun > now
-        ? `Fails again at ${formatClock(nextRun)}`
-        : `Failed ${ago(item.updatedAt, now)}`;
+        ? `${failed} · fails again ${atDayClock(nextRun, now)}`
+        : failed;
     }
     case 'session-failed':
       return 'Run failed while this page was open';

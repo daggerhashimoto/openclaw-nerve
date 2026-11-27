@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildAttention } from './buildAttention';
 import {
   formatClock,
+  formatDayClock,
   reasonFor,
   sinceHeading,
   sourceLine,
@@ -97,6 +98,25 @@ describe('formatClock', () => {
   });
 });
 
+describe('formatDayClock', () => {
+  it('prints HH:MM on the same local day and a short weekday with HH:MM otherwise', () => {
+    const now = new Date(2026, 10, 27, 8, 22).getTime();
+    expect(formatDayClock(new Date(2026, 10, 27, 7, 57).getTime(), now)).toBe('07:57');
+    expect(formatDayClock(new Date(2026, 10, 27, 23, 59).getTime(), now)).toBe('23:59');
+    expect(formatDayClock(new Date(2026, 10, 27, 0, 0).getTime(), now)).toBe('00:00');
+    // 2026-11-28 is a Saturday, 2026-11-29 a Sunday, 2026-11-26 a Thursday.
+    expect(formatDayClock(new Date(2026, 10, 28, 7, 57).getTime(), now)).toBe('Sat 07:57');
+    expect(formatDayClock(new Date(2026, 10, 29, 0, 5).getTime(), now)).toBe('Sun 00:05');
+    expect(formatDayClock(new Date(2026, 10, 26, 23, 40).getTime(), now)).toBe('Thu 23:40');
+  });
+
+  it('treats the same clock time on another month or year as another day', () => {
+    const now = new Date(2026, 10, 27, 8, 22).getTime();
+    expect(formatDayClock(new Date(2026, 9, 27, 7, 57).getTime(), now)).toBe('Tue 07:57');
+    expect(formatDayClock(new Date(2025, 10, 27, 7, 57).getTime(), now)).toBe('Thu 07:57');
+  });
+});
+
 describe('summarySentence', () => {
   it('summary names counts in words', () => {
     expect(summarySentence(
@@ -128,7 +148,15 @@ describe('summarySentence', () => {
       brief({ blocked: [failingCron('Nightly backup', tomorrow)] }),
       NOW,
     );
-    expect(sentence).toBe('One failure needs you. Nightly backup fails again at 02:00 unless fixed.');
+    expect(sentence).toBe('One failure needs you. Nightly backup fails again Sat 02:00 unless fixed.');
+  });
+
+  it('summary says "at HH:MM" when the next run is later today', () => {
+    const sentence = summarySentence(
+      brief({ blocked: [failingCron('Nightly backup', at(23, 30))] }),
+      NOW,
+    );
+    expect(sentence).toBe('One failure needs you. Nightly backup fails again at 23:30 unless fixed.');
   });
 
   it('summary names the soonest next run and skips crons without an upcoming one', () => {
@@ -143,7 +171,7 @@ describe('summarySentence', () => {
       }),
       NOW,
     );
-    expect(sentence).toBe('Four failures need you. Nightly backup fails again at 02:00 unless fixed.');
+    expect(sentence).toBe('Four failures need you. Nightly backup fails again Sat 02:00 unless fixed.');
 
     expect(summarySentence(
       brief({ blocked: [failingCron('Unscheduled')] }),
@@ -252,7 +280,7 @@ describe('summarySentence', () => {
       sources: live(),
     });
     expect(summarySentence(built, NOW))
-      .toBe('Two decisions and one failure need you. Nightly backup fails again at 02:00 unless fixed.');
+      .toBe('Two decisions and one failure need you. Nightly backup fails again Sat 02:00 unless fixed.');
     expect(sourceLine(built, NOW)).toBe(
       'Checked 08:22. Tasks, proposals and crons are live; session failures show from when this page opened.',
     );
@@ -340,20 +368,26 @@ describe('sourceLine', () => {
 });
 
 describe('sinceHeading', () => {
-  it('names the clock time of the last look', () => {
-    expect(sinceHeading(brief({ since: at(7, 45) }), at(7, 45))).toBe('Since you left at 07:45');
+  it('names the clock time of the last look when it was today', () => {
+    expect(sinceHeading(brief({ since: at(7, 45) }), at(7, 45), NOW)).toBe('Since you left at 07:45');
+  });
+
+  it('adds the weekday when the last look was on another day', () => {
+    // at(23, 40, -1) is 2026-11-26, a Thursday.
+    expect(sinceHeading(brief({ since: at(23, 40, -1) }), at(23, 40, -1), NOW)).toBe('Since you left Thu 23:40');
   });
 
   it('heading falls back to the last 24 hours', () => {
-    expect(sinceHeading(brief({ since: NOW - 24 * HOUR }), null)).toBe('In the last 24 hours');
+    expect(sinceHeading(brief({ since: NOW - 24 * HOUR }), null, NOW)).toBe('In the last 24 hours');
   });
 });
 
 describe('reasonFor', () => {
   it('review: age and who says it is done', () => {
-    expect(reasonFor(item({ updatedAt: NOW - 2 * HOUR }), NOW, 'Kim')).toBe('Ready 2h · Kim says done');
-    expect(reasonFor(item({ updatedAt: NOW - 20_000 }), NOW, 'Kim')).toBe('Ready now · Kim says done');
-    expect(reasonFor(item({ updatedAt: NOW - 2 * HOUR }), NOW)).toBe('Ready 2h · Waiting for your review');
+    expect(reasonFor(item({ updatedAt: NOW - HOUR }), NOW, 'Kim')).toBe('Ready 1h ago · Kim says done');
+    expect(reasonFor(item({ updatedAt: NOW - 2 * HOUR }), NOW, 'Kim')).toBe('Ready 2h ago · Kim says done');
+    expect(reasonFor(item({ updatedAt: NOW - 20_000 }), NOW, 'Kim')).toBe('Ready just now · Kim says done');
+    expect(reasonFor(item({ updatedAt: NOW - 2 * HOUR }), NOW)).toBe('Ready 2h ago · Waiting for your review');
   });
 
   it('proposal: who proposes it', () => {
@@ -379,9 +413,12 @@ describe('reasonFor', () => {
     expect(reasonFor(item({ kind: 'gone-quiet', updatedAt: NOW - 5 * HOUR }), NOW)).toBe('Quiet for 5h');
   });
 
-  it('cron: the next run when upcoming, otherwise the age of the failure', () => {
-    const upcoming = failingCron('Nightly backup', at(2, 0, 1));
-    expect(reasonFor(upcoming, NOW)).toBe('Fails again at 02:00');
+  it('cron: the age of the failure and the next run, dated when it is not today', () => {
+    const tomorrow = failingCron('Nightly backup', at(7, 57, 1));
+    expect(reasonFor(tomorrow, NOW)).toBe('Failed 6h ago · fails again Sat 07:57');
+
+    const later = failingCron('Nightly backup', at(23, 30));
+    expect(reasonFor(later, NOW)).toBe('Failed 6h ago · fails again at 23:30');
 
     const unscheduled = failingCron('Nightly backup');
     expect(reasonFor(unscheduled, NOW)).toBe('Failed 6h ago');
@@ -425,9 +462,11 @@ describe('copy hygiene', () => {
       summarySentence(brief({ allClear: true }), NOW),
       summarySentence(brief({ decide: many(2), blocked: many(2, { kind: 'task-failed', section: 'blocked' }) }), NOW),
       summarySentence(brief({ blocked: [failingCron('Nightly backup', at(2, 0, 1))] }), NOW),
+      reasonFor(failingCron('Nightly backup', at(2, 0, 1)), NOW),
       sourceLine(brief({ sources: { ...live(), crons: { state: 'error', error: 'HTTP 502' } } }), NOW),
-      sinceHeading(brief(), NOW - HOUR),
-      sinceHeading(brief(), null),
+      sinceHeading(brief({ since: NOW - HOUR }), NOW - HOUR, NOW),
+      sinceHeading(brief({ since: at(23, 40, -1) }), at(23, 40, -1), NOW),
+      sinceHeading(brief(), null, NOW),
     ];
     for (const text of texts) {
       expect(text).not.toMatch(/verified|approved/i);

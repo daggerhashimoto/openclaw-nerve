@@ -284,7 +284,7 @@ describe('MarkdownRenderer flow fences', () => {
   });
 
   it('keeps a flow-json fence on the code path', () => {
-    const { container } = render(<MarkdownRenderer content={'```flow-json\n{"nodes":[]}\n```'} />);
+    const { container } = render(<MarkdownRenderer content={'```flow-json\n{"nodes":[{"id":"a","label":"A"}],"edges":[]}\n```'} />);
 
     expect(container.querySelector('figure.markdown-flow')).toBeNull();
     expect(container.querySelector('pre.hljs')).toBeTruthy();

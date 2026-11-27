@@ -78,6 +78,96 @@ describe('FlowBlock', () => {
     expect(container.querySelectorAll('svg')).toHaveLength(2);
   });
 
+  it('attributes a multi-row edge chip to its original source, not the row above', () => {
+    const { container } = render(
+      <FlowBlock
+        spec={{
+          title: 'Skip edge',
+          nodes: [
+            { id: 'a', label: 'Alpha', tone: 'neutral' },
+            { id: 'b', label: 'Bravo', tone: 'neutral' },
+            { id: 'c', label: 'Charlie', tone: 'neutral' },
+          ],
+          edges: [
+            { from: 'a', to: 'b', kind: 'flow' },
+            { from: 'b', to: 'c', kind: 'flow' },
+            { from: 'a', to: 'c', label: 'skips', kind: 'flow' },
+          ],
+          groups: [],
+        }}
+      />,
+    );
+
+    const chips = container.querySelectorAll('.flow-edge-label[data-label="skips"]');
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toHaveAttribute('data-source', 'Alpha');
+    expect(chips[0]).toHaveAttribute('data-target', 'Charlie');
+    expect(chips[0]).toHaveTextContent('skips');
+  });
+
+  it('renders a source → target chip for unlabeled branch edges in stacked mode', () => {
+    const { container } = render(
+      <FlowBlock
+        spec={{
+          title: 'Fan-out',
+          nodes: [
+            { id: 'hub', label: 'Hub', tone: 'neutral' },
+            { id: 'yes', label: 'Yes lane', tone: 'neutral' },
+            { id: 'no', label: 'No lane', tone: 'neutral' },
+          ],
+          edges: [
+            { from: 'hub', to: 'yes', label: 'yes', kind: 'branch' },
+            { from: 'hub', to: 'no', kind: 'branch' },
+          ],
+          groups: [],
+        }}
+      />,
+    );
+
+    const chips = container.querySelectorAll('.flow-edge-label');
+    expect(chips).toHaveLength(2);
+    const branchOnly = container.querySelectorAll('.flow-edge-label--branch-only');
+    expect(branchOnly).toHaveLength(1);
+    expect(branchOnly[0]).toHaveAttribute('data-source', 'Hub');
+    expect(branchOnly[0]).toHaveAttribute('data-target', 'No lane');
+
+    // Hidden on desktop via the scoped sheet; the stacked rules show it.
+    const css = container.querySelector('figure.markdown-flow style')?.textContent ?? '';
+    expect(css).toContain('.flow-edge-label--branch-only { display: none; }');
+    expect(css).toContain('.flow-edge-label--branch-only { display: inline; }');
+  });
+
+  it('flags wide fan-outs so they stack below 48rem instead of squeezing cards', () => {
+    const leaves = Array.from({ length: 6 }, (_, index) => ({
+      id: `leaf-${index}`,
+      label: `Leaf ${index}`,
+      tone: 'neutral' as const,
+    }));
+    const { container } = render(
+      <FlowBlock
+        spec={{
+          title: 'Wide fan-out',
+          nodes: [{ id: 'hub', label: 'Hub', tone: 'neutral' }, ...leaves],
+          edges: leaves.map((leaf) => ({ from: 'hub', to: leaf.id, kind: 'flow' as const })),
+          groups: [],
+        }}
+      />,
+    );
+
+    const figure = container.querySelector('figure.markdown-flow');
+    expect(figure).toHaveClass('flow-wide-fanout');
+    const css = figure?.querySelector('style')?.textContent ?? '';
+    expect(css).toContain('@container (max-width: 48rem)');
+    expect(css).toContain('.flow-wide-fanout .flow-level');
+    expect(css).toContain('grid-template-columns: minmax(0, 1fr) !important');
+
+    // Three-column sample stays on the desktop grid until the narrow breakpoint.
+    const sample = render(<FlowBlock spec={FLOW_SAMPLE_SPEC} />);
+    expect(sample.container.querySelector('figure.markdown-flow')).not.toHaveClass(
+      'flow-wide-fanout',
+    );
+  });
+
   it('exposes a screen-reader summary of the edges', () => {
     const { container } = render(<FlowBlock spec={FLOW_SAMPLE_SPEC} />);
     const summary = container.querySelector('.sr-only');
@@ -157,11 +247,13 @@ describe('MarkdownRenderer flow fences', () => {
     expect(css).toContain('flex-direction: column');
     expect(css).toContain('flow-connectors::after');
 
-    // The stacked layout needs a target name on every branch label; the
-    // desktop label stays a single text node so existing queries are valid.
+    // The stacked layout needs both endpoint names on every chip; the desktop
+    // label stays a single text node so existing queries are valid.
     const simple = container.querySelector('.flow-edge-label[data-label="simple"]');
+    expect(simple).toHaveAttribute('data-source', 'Decision layer');
     expect(simple).toHaveAttribute('data-target', 'Small model');
     expect(simple).toHaveTextContent('simple');
+    expect(css).toContain('attr(data-source)');
 
     expect(container.querySelectorAll('.flow-card')).toHaveLength(FLOW_SAMPLE_SPEC.nodes.length);
     expect(container.querySelectorAll('.flow-card-text')).toHaveLength(FLOW_SAMPLE_SPEC.nodes.length);

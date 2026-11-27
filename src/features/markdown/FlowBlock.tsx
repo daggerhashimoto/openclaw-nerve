@@ -147,10 +147,12 @@ function FlowConnectors({
   segments,
   fromItems,
   toItems,
+  labels,
 }: {
   segments: FlowSegment[];
   fromItems: FlowLayoutItem[];
   toItems: FlowLayoutItem[];
+  labels: Map<string, string>;
 }) {
   if (segments.length === 0) return null;
 
@@ -189,6 +191,13 @@ function FlowConnectors({
         const fromX = centerOf(fromItems, segment.from);
         const toX = centerOf(toItems, segment.to);
         const lane = laneOf(index);
+        const targetItem = toItems.find((item) => item.id === segment.to);
+        const isRealTarget = targetItem !== undefined && targetItem.node !== null;
+        const sourceLabel = labels.get(segment.edge.from) ?? segment.edge.from;
+        const targetLabel = labels.get(segment.edge.to) ?? segment.edge.to;
+        const hasLabel = Boolean(segment.label);
+        const hasBranchChip =
+          !hasLabel && isRealTarget && segment.edge.kind === 'branch';
         return (
           <React.Fragment key={`edge-${index}`}>
             <span
@@ -199,13 +208,16 @@ function FlowConnectors({
                 top: lane,
               }}
             />
-            {segment.label && (
+            {(hasLabel || hasBranchChip) && (
               <span
-                className="flow-edge-label absolute -translate-x-1/2 -translate-y-1/2 max-w-[8rem] truncate rounded-[2px] border border-border bg-plate px-1.5 text-[0.65rem] leading-4 text-muted-foreground"
+                className={`flow-edge-label absolute -translate-x-1/2 -translate-y-1/2 max-w-[8rem] truncate rounded-[2px] border border-border bg-plate px-1.5 text-[0.65rem] leading-4 text-muted-foreground${
+                  hasLabel ? '' : ' flow-edge-label--branch-only'
+                }`}
                 style={{ left: `${(fromX + toX) / 2}%`, top: lane }}
-                title={segment.label}
+                title={segment.label ?? `${sourceLabel} → ${targetLabel}`}
                 data-label={segment.label}
-                data-target={toItems.find((item) => item.id === segment.to)?.node?.label ?? ''}
+                data-source={sourceLabel}
+                data-target={targetLabel}
               >
                 {segment.label}
               </span>
@@ -256,22 +268,29 @@ function FlowReturnRow({ edge, labels }: { edge: FlowEdgeSpec; labels: Map<strin
 }
 
 /**
- * Narrow-screen rules, scoped to the figure. They live here rather than in the
- * global sheet so the diagram is self-contained: below the breakpoint rows stop
- * being columns and become stacked cards, with branch labels listed above them.
- * This keeps every card inside the chat column instead of relying on a
- * horizontal scrollbar. Desktop rules are untouched.
+ * Responsive rules, scoped to the figure. They live here rather than in the
+ * global sheet so the diagram is self-contained.
+ *
+ * Two breakpoints keep cards readable:
+ * - below 27rem every row stacks into full-width cards, so the diagram never
+ *   needs a horizontal scrollbar in a narrow chat column;
+ * - below 48rem a row with many columns (5+) would squeeze cards to a sliver,
+ *   so the whole figure stacks even though the column itself is wider.
+ *
+ * In stacked mode each chip spells out `source → target`, including branch
+ * edges that have no label, so a fan-out cannot read as a linear chain. The
+ * desktop layout is untouched.
  */
-const FLOW_RESPONSIVE_CSS = `
-.markdown-flow { container-type: inline-size; }
-@container (max-width: 27rem) {
-  .markdown-flow .flow-level {
+const WIDE_FANOUT_COLUMNS = 5;
+
+const FLOW_STACK_RULES = (scope: string) => `
+  ${scope} .flow-level {
     grid-template-columns: minmax(0, 1fr) !important;
     gap: 0.375rem;
   }
-  .markdown-flow .flow-item { padding-inline: 0; }
-  .markdown-flow .flow-item:not(:has(.flow-card)) { display: none; }
-  .markdown-flow .flow-card {
+  ${scope} .flow-item { padding-inline: 0; }
+  ${scope} .flow-item:not(:has(.flow-card)) { display: none; }
+  ${scope} .flow-card {
     flex-direction: row;
     align-items: center;
     justify-content: flex-start;
@@ -279,13 +298,13 @@ const FLOW_RESPONSIVE_CSS = `
     padding: 0.625rem 0.75rem;
     text-align: left;
   }
-  .markdown-flow .flow-card > svg { flex: none; }
-  .markdown-flow .flow-card-text {
+  ${scope} .flow-card > svg { flex: none; }
+  ${scope} .flow-card-text {
     align-items: flex-start;
     gap: 0.125rem;
     text-align: left;
   }
-  .markdown-flow .flow-connectors {
+  ${scope} .flow-connectors {
     height: auto !important;
     display: flex;
     flex-direction: column;
@@ -293,9 +312,9 @@ const FLOW_RESPONSIVE_CSS = `
     gap: 0.25rem;
     padding: 0.375rem 0;
   }
-  .markdown-flow .flow-connectors > span:not(.flow-edge-label),
-  .markdown-flow .flow-connectors > svg { display: none; }
-  .markdown-flow .flow-edge-label {
+  ${scope} .flow-connectors > span:not(.flow-edge-label),
+  ${scope} .flow-connectors > svg { display: none; }
+  ${scope} .flow-edge-label {
     position: static;
     transform: none;
     translate: none;
@@ -306,11 +325,15 @@ const FLOW_RESPONSIVE_CSS = `
     line-height: 1.35;
     padding: 0.0625rem 0.4rem;
   }
-  .markdown-flow .flow-edge-label::after {
-    content: ' → ' attr(data-target);
+  ${scope} .flow-edge-label::after {
+    content: ' · ' attr(data-source) ' → ' attr(data-target);
     color: var(--color-muted-foreground);
   }
-  .markdown-flow .flow-connectors::after {
+  ${scope} .flow-edge-label--branch-only { display: inline; }
+  ${scope} .flow-edge-label--branch-only::after {
+    content: attr(data-source) ' → ' attr(data-target);
+  }
+  ${scope} .flow-connectors::after {
     content: '';
     width: 0;
     height: 0;
@@ -319,6 +342,14 @@ const FLOW_RESPONSIVE_CSS = `
     border-right: 4px solid transparent;
     border-top: 5px solid var(--color-muted-foreground);
   }
+`;
+
+const FLOW_RESPONSIVE_CSS = `
+.markdown-flow { container-type: inline-size; }
+.markdown-flow .flow-edge-label--branch-only { display: none; }
+@container (max-width: 27rem) {${FLOW_STACK_RULES('.markdown-flow')}
+}
+@container (max-width: 48rem) {${FLOW_STACK_RULES('.markdown-flow.flow-wide-fanout')}
 }
 `;
 
@@ -332,6 +363,7 @@ const FLOW_RESPONSIVE_CSS = `
 export function FlowBlock({ spec }: { spec: FlowSpec }) {
   const layout = layoutFlow(spec);
   const labels = new Map(spec.nodes.map((node) => [node.id, node.label]));
+  const hasWideFanout = layout.levels.some((level) => level.length >= WIDE_FANOUT_COLUMNS);
 
   const edgeSummary = spec.edges
     .map((edge) => {
@@ -345,7 +377,9 @@ export function FlowBlock({ spec }: { spec: FlowSpec }) {
     <figure
       role="group"
       aria-label={spec.title ?? spec.subtitle ?? 'Flow diagram'}
-      className="markdown-flow my-3 w-full max-w-full rounded-[4px] border border-border bg-plate p-3 text-left sm:p-4"
+      className={`markdown-flow my-3 w-full max-w-full rounded-[4px] border border-border bg-plate p-3 text-left sm:p-4${
+        hasWideFanout ? ' flow-wide-fanout' : ''
+      }`}
     >
       <style>{FLOW_RESPONSIVE_CSS}</style>
       {(spec.title || spec.subtitle) && (
@@ -372,6 +406,7 @@ export function FlowBlock({ spec }: { spec: FlowSpec }) {
                   segments={layout.segments[levelIndex - 1] ?? []}
                   fromItems={layout.levels[levelIndex - 1]}
                   toItems={level}
+                  labels={labels}
                 />
               ) : (
                 <div className="relative h-7" aria-hidden="true">

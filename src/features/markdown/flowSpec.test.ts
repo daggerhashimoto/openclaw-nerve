@@ -110,6 +110,23 @@ describe('parseFlowSpec', () => {
     ).toBe(false);
   });
 
+  it('rejects unknown fields instead of silently dropping them', () => {
+    const nodes = [
+      { id: 'a', label: 'A' },
+      { id: 'b', label: 'B' },
+    ];
+
+    const typo = parseValue({ nodes, egdes: [{ from: 'a', to: 'b' }] });
+    expect(typo.ok).toBe(false);
+    if (!typo.ok) expect(typo.error).toContain('unknown field "egdes"');
+
+    expect(parseValue({ nodes: [{ id: 'a', label: 'A', colour: 'red' }] }).ok).toBe(false);
+    expect(parseValue({ nodes, edges: [{ from: 'a', to: 'b', weight: 2 }] }).ok).toBe(false);
+    expect(parseValue({ nodes, groups: [{ label: 'G', nodes: ['a'], colour: 'red' }] }).ok).toBe(
+      false,
+    );
+  });
+
   it('rejects unknown edge kinds and unknown group members', () => {
     const nodes = [{ id: 'a', label: 'A' }];
     expect(parseValue({ nodes, edges: [{ from: 'a', to: 'a', kind: 'bogus' }] }).ok).toBe(false);

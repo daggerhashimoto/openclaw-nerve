@@ -35,8 +35,9 @@
  * - `groups` is optional; a caption is printed above the earliest row that
  *   contains one of its nodes. Grouping is annotation, not a layout constraint.
  * - `icon` and `tone` are cosmetic and degrade to no icon / neutral; an unknown
- *   icon or tone does not invalidate the block. Unknown structural fields fail
- *   the parse, and the caller falls back to a normal code block.
+ *   icon or tone does not invalidate the block. Unknown fields fail the parse
+ *   (a typo such as `egdes` is an error, not an empty edge list), and the
+ *   caller falls back to a normal code block.
  * - With no edges, nodes stack as a linear chain in declaration order.
  * - Cycles are allowed. Edges that would point back up the layout are treated
  *   as return links and listed beneath the diagram instead of being drawn
@@ -172,6 +173,16 @@ function fail(message: string): never {
   throw new FlowSpecError(message);
 }
 
+function assertKnownKeys(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  field: string,
+): void {
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) fail(`${field} has unknown field "${key}"`);
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -209,6 +220,7 @@ function normalizeIcon(value: unknown): FlowIconName | undefined {
 
 function validateFlowSpec(raw: unknown): FlowSpec {
   if (!isRecord(raw)) fail('Flow spec must be a JSON object');
+  assertKnownKeys(raw, ['title', 'subtitle', 'nodes', 'edges', 'groups'], 'Flow spec');
 
   const title = optionalString(raw.title, 'title', LIMITS.title);
   const subtitle = optionalString(raw.subtitle, 'subtitle', LIMITS.subtitle);
@@ -223,6 +235,7 @@ function validateFlowSpec(raw: unknown): FlowSpec {
   const ids = new Set<string>();
   const nodes: FlowNodeSpec[] = raw.nodes.map((value, index) => {
     if (!isRecord(value)) fail(`nodes[${index}] must be an object`);
+    assertKnownKeys(value, ['id', 'label', 'detail', 'icon', 'tone'], `nodes[${index}]`);
     const id = requiredString(value.id, `nodes[${index}].id`, LIMITS.id);
     if (id.includes('\u0000')) fail(`nodes[${index}].id contains an invalid character`);
     if (ids.has(id)) fail(`duplicate node id "${id}"`);
@@ -245,6 +258,7 @@ function validateFlowSpec(raw: unknown): FlowSpec {
     const seen = new Set<string>();
     edges = raw.edges.map((value, index) => {
       if (!isRecord(value)) fail(`edges[${index}] must be an object`);
+      assertKnownKeys(value, ['from', 'to', 'label', 'kind'], `edges[${index}]`);
       const from = requiredString(value.from, `edges[${index}].from`, LIMITS.id);
       const to = requiredString(value.to, `edges[${index}].to`, LIMITS.id);
       if (!ids.has(from)) fail(`edges[${index}].from references unknown node "${from}"`);
@@ -281,6 +295,7 @@ function validateFlowSpec(raw: unknown): FlowSpec {
 
     groups = raw.groups.map((value, index) => {
       if (!isRecord(value)) fail(`groups[${index}] must be an object`);
+      assertKnownKeys(value, ['label', 'nodes'], `groups[${index}]`);
       const label = requiredString(value.label, `groups[${index}].label`, LIMITS.groupLabel);
       if (!Array.isArray(value.nodes) || value.nodes.length === 0) {
         fail(`groups[${index}].nodes must be a non-empty array`);

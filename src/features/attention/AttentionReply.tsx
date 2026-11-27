@@ -28,6 +28,8 @@ export interface ReplyConfig {
   connected: boolean;
   /** The socket is on its way up (every page load starts here); not an outage. */
   connecting: boolean;
+  /** The display name of the agent a session belongs to, for items with no owner of their own. */
+  nameOf?: (sessionKey: string) => string | undefined;
 }
 
 /** The board box grows to about eight lines, the Reply field to about five, then scrolls. */

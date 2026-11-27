@@ -263,8 +263,16 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   const replyStore = useInlineReplies();
   const connecting = connectionState === 'connecting' || connectionState === 'reconnecting';
   const replies = useMemo<ReplyConfig>(
-    () => ({ store: replyStore, connected, connecting }),
-    [replyStore, connected, connecting],
+    () => ({
+      store: replyStore,
+      connected,
+      connecting,
+      nameOf: (key: string) => {
+        const id = getSessionAgentId(key);
+        return id ? agentNames.get(id) : undefined;
+      },
+    }),
+    [replyStore, connected, connecting, agentNames],
   );
   const askTarget: AskTarget | null = mainKey
     ? { sessionKey: mainKey, name: mainName, hue: mainId ? hueFor(mainId) : undefined }

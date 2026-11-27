@@ -22,6 +22,8 @@ export function useItemReply(
   const sessionKey = replies ? item.detail.sessionKey : undefined;
   const reply = useInlineReply(replies?.store, sessionKey, 'item');
   const [open, setOpen] = useState(false);
+  // A task with no owner still runs as some agent: name the reply after its session's agent
+  const name = view.ownerName ?? (sessionKey ? replies?.nameOf?.(sessionKey) : undefined);
   const enabled = Boolean(replies && sessionKey);
   return {
     fieldOpen: enabled && open,
@@ -32,7 +34,7 @@ export function useItemReply(
       <ReplyField
         config={replies}
         sessionKey={sessionKey}
-        name={view.ownerName}
+        name={name}
         compact={compact}
         onClose={() => setOpen(false)}
       />
@@ -40,7 +42,7 @@ export function useItemReply(
     panel: (compact: boolean, className?: string) => (replies && reply ? (
       <ReplyPanel
         reply={reply}
-        name={view.ownerName}
+        name={name}
         hue={view.hue}
         compact={compact}
         onOpen={onOpen}

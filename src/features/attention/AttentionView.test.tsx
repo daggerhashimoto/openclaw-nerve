@@ -941,6 +941,23 @@ describe('prompting from the brief', () => {
     expect(within(ask).queryByTestId('inline-reply')).toBeNull();
   });
 
+  it('a Reply on a task with no owner is named after its session agent', () => {
+    const failed = task({
+      id: 'f2',
+      title: 'Renew the certificate',
+      status: 'todo',
+      assignee: undefined,
+      result: undefined,
+      run: { sessionKey: `${MAIN.replace(/:main$/, '')}:subagent:renew`, startedAt: NOW - 3 * HOUR, endedAt: NOW - 2 * HOUR, status: 'error', error: 'DNS failed' },
+    });
+    setSources({ tasks: [failed] });
+    renderView();
+
+    const card = screen.getByRole('button', { name: 'Renew the certificate' }).closest('article, section')!;
+    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: 'Reply' }));
+    expect(within(card as HTMLElement).getByRole('textbox', { name: 'Reply to Kim' })).toBeInTheDocument();
+  });
+
   it('a card Reply sends into its own session and keeps the ranking', async () => {
     const failed = task({
       id: 'f1',

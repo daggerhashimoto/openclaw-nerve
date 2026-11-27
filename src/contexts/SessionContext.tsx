@@ -355,13 +355,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (res.status === 404) {
           // A deleted identity file must clear the old label, not look like a read
           // that can be retried forever without ever becoming a miss.
-          identityAttemptedAtRef.current[rootId] = Date.now();
           return { rootId, kind: 'miss' as const };
         }
         if (!res.ok) return null;
         const data = await res.json() as { ok?: boolean; content?: string };
         const identityName = typeof data.content === 'string' ? extractIdentityName(data.content) : null;
-        identityAttemptedAtRef.current[rootId] = Date.now();
         if (identityName && !isPlaceholderIdentityName(identityName)) {
           return { rootId, identityName, kind: 'hit' as const };
         }
@@ -374,6 +372,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (controller.signal.aborted) return;
       const resolved = results.filter((result): result is NonNullable<typeof result> => Boolean(result));
       if (resolved.length === 0) return;
+      // Only an applied read starts its retry window. A batch aborted because
+      // another root was still pending must not leave discarded roots stamped.
+      const attemptedAt = Date.now();
+      for (const result of resolved) identityAttemptedAtRef.current[result.rootId] = attemptedAt;
 
       setRootIdentityMisses((prev) => {
         let changed = false;
@@ -430,7 +432,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const rootId = getRootAgentId(sessionKey);
     if (!rootId) return session;
 
-    const candidate = rootId === 'main' ? agentName : resolvedIdentityNames[rootId];
+    const candidate = resolvedIdentityNames[rootId]
+      ?? (rootId === 'main' ? agentName : undefined);
     const identityName = candidate && !isPlaceholderIdentityName(candidate) ? candidate : undefined;
     if (rootId !== 'main' && !identityName) {
       if (!session.identityName) return session;

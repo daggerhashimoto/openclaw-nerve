@@ -136,8 +136,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // A 2026.9 gateway sends that end just before the chat final, so the final has to
   // be recognised as this run's own even though no run is active any more.
   const endedRunIdRef = useRef<string | null>(null);
-  // Bumped whenever a run begins on screen, so a history read sent before it
-  // cannot report it over.
+  // Bumped by every run frame on the open session and by every send: a history
+  // read can report the run on screen over only if nothing ran after it went out.
   const runEpochRef = useRef(0);
   const getRunEpoch = useCallback(() => runEpochRef.current, []);
   const runOverRef = useRef<() => void>(() => {});
@@ -521,13 +521,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
 
       const { type } = classified;
+      // Something is running on this session now, whatever an earlier read said.
+      runEpochRef.current += 1;
 
       // ── Agent events ────────────────────────────────────────────────────
       if (classified.source === 'agent') {
         const ap = classified.agentPayload!;
 
         if (type === 'lifecycle_start') {
-          runEpochRef.current += 1;
           // A newer run has begun, so a late final of the run that ended is obsolete.
           endedRunIdRef.current = null;
           // A lifecycle-only turn has no chat_started to begin it; clear the
@@ -620,7 +621,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setLastEventTimestamp(Date.now());
 
       const beginTurn = () => {
-        runEpochRef.current += 1;
         activeRunIdRef.current = runId;
         // Once a newer turn has begun, a late final of the run that ended is not this turn's.
         endedRunIdRef.current = null;
@@ -657,7 +657,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
         if (!isGeneratingRef.current) setIsGenerating(true);
         if (!activeRunIdRef.current) {
-          runEpochRef.current += 1;
           activeRunIdRef.current = runId;
           endedRunIdRef.current = null;
         }

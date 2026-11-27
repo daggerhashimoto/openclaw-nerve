@@ -41,7 +41,7 @@ interface UseChatRecoveryDeps {
   applyMessageWindow: (all: ChatMsg[], resetVisibleWindow?: boolean) => void;
   setStream: React.Dispatch<React.SetStateAction<ChatStreamState>>;
   onLatestHeartbeat?: (at: number | null) => void;
-  /** Counts runs begun on screen; a read is only evidence about runs begun before it. */
+  /** Counts run frames and sends on the open session; a read speaks only for the time before them. */
   getRunEpoch: () => number;
   /** Take the run on screen down: the gateway reports none going. */
   onRunOver: () => void;
@@ -115,7 +115,7 @@ export function useChatRecovery({
 
         // A run on screen whose end and final were lost (the connection dropped
         // as it finished) would otherwise stay on screen for good. The gateway's
-        // word counts only if no run began on screen after this read went out.
+        // word counts only if no run frame or send came after this read went out.
         const runOver = runActive === false
           && getRunEpoch() === runEpoch
           && (isGeneratingRef.current || activeRunIdRef.current !== null);

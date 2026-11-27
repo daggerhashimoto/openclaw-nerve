@@ -128,35 +128,48 @@ describe('ChatContext when a run ends while disconnected', () => {
   });
 
   it('keeps the run when the gateway reports it still going', async () => {
-    const { getChat, state, setConnection, streamThenDrop } = await setup();
+    const { getChat, state, held, setConnection, streamThenDrop } = await setup();
     await streamThenDrop();
 
     state.sessionInfo = { hasActiveRun: true };
+    state.hold = true;
     setConnection('connected');
+    await waitFor(() => expect(held).toHaveLength(1));
 
-    await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toContain('It is sunny and warm today.'));
+    // The recovery read itself answers (the reconnect's full load does not settle runs).
+    await act(async () => {
+      held[0]();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    await waitFor(() => expect(getChat().stream.isRecovering).toBeFalsy());
     expect(getChat().isGenerating).toBe(true);
   });
 
-  it('does not let an older read take down a run that began after it', async () => {
-    const { getChat, state, held, emit, chatFrame, setConnection, streamThenDrop } = await setup();
+  // How a newer run can first show itself while the read is out.
+  const newerRunFrames: Array<[string, string, Record<string, unknown>]> = [
+    ['a lifecycle start', 'agent', { stream: 'lifecycle', data: { phase: 'start' } }],
+    ['an agent state alone', 'agent', { state: 'thinking' }],
+    ['a status frame', 'chat', { state: 'status', seq: 1, phase: 'preparing_workspace' }],
+    ['a first delta', 'chat', { state: 'delta', seq: 1, deltaText: 'New', message: { role: 'assistant', content: [{ type: 'text', text: 'New' }], timestamp: NOW + 3_000 } }],
+  ];
+
+  it.each(newerRunFrames)('does not let an older read take down a run that began after it with %s', async (_label, event, frame) => {
+    const { getChat, state, held, emit, setConnection, streamThenDrop } = await setup();
     await streamThenDrop();
 
     // The recovery read goes out and the gateway answers it as the first run
-    // stood over; before the answer arrives, a new run begins on screen.
+    // stood over; before the answer arrives, a newer run shows on screen.
     state.sessionInfo = { hasActiveRun: false };
     state.hold = true;
     setConnection('connected');
     await waitFor(() => expect(held).toHaveLength(1));
-    emit('agent', { runId: 'run-2', sessionKey: SESSION, stream: 'lifecycle', data: { phase: 'start' } });
-    emit('chat', { ...chatFrame({ state: 'status', seq: 1 }), runId: 'run-2' });
+    emit(event, { runId: 'run-2', sessionKey: SESSION, ...frame });
 
     await act(async () => {
       held[0]();
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
-    // The reply the read carried comes in; the new run stays on screen.
-    await waitFor(() => expect(getChat().messages.map((m) => m.rawText)).toContain('It is sunny and warm today.'));
+    await waitFor(() => expect(getChat().stream.isRecovering).toBeFalsy());
     expect(getChat().isGenerating).toBe(true);
   });
 });

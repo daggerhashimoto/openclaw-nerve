@@ -141,6 +141,46 @@ afterEach(() => {
 });
 
 describe('AttentionView', () => {
+  function runningRow(title: string): HTMLElement {
+    return screen.getAllByTestId('attention-row').find((row) => row.textContent?.includes(title))!;
+  }
+
+  it('names a running subagent after its agent identity, never the starter template', () => {
+    sessionMock.mockReturnValue({
+      sessions: [
+        { key: 'agent:linus:main', identityName: 'Linus', updatedAt: NOW - HOUR },
+        { key: 'agent:linus:subagent:abc', label: 'Research worker', updatedAt: NOW - 10 * MINUTE },
+      ],
+      sessionsLoading: false,
+      agentStatus: {},
+      busyState: { 'agent:linus:subagent:abc': true },
+    } as never);
+    setSources();
+    renderView();
+
+    const row = runningRow('Research worker');
+    expect(row).toHaveTextContent('Linus');
+    expect(screen.queryByText(/pick something you like/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to the agent id when a root session carries placeholder identity text', () => {
+    sessionMock.mockReturnValue({
+      sessions: [
+        { key: 'agent:linus:main', identityName: '_ (pick something you like) _', updatedAt: NOW - HOUR },
+        { key: 'agent:linus:subagent:abc', label: 'Research worker', updatedAt: NOW - 10 * MINUTE },
+      ],
+      sessionsLoading: false,
+      agentStatus: {},
+      busyState: { 'agent:linus:subagent:abc': true },
+    } as never);
+    setSources();
+    renderView();
+
+    const row = runningRow('Research worker');
+    expect(row).toHaveTextContent('linus');
+    expect(screen.queryByText(/pick something you like/)).not.toBeInTheDocument();
+  });
+
   it('shows Start here with No evidence attached and opens the task', () => {
     setSources({ tasks: [task()] });
     const { onOpen } = renderView();

@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext } from '@/contexts/SessionContext';
-import { getSessionAgentId, getTopLevelAgentSessions, isTopLevelAgentSessionKey } from '@/features/sessions/sessionKeys';
+import { getSessionAgentId, getTopLevelAgentSessions, isPlaceholderIdentityName, isTopLevelAgentSessionKey } from '@/features/sessions/sessionKeys';
 import { useAgentHues } from '@/lib/agentColors';
 import { cn } from '@/lib/utils';
 import { getSessionKey } from '@/types';
@@ -221,7 +221,9 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
       const key = getSessionKey(session);
       if (!key || !isTopLevelAgentSessionKey(key)) continue;
       const id = getSessionAgentId(key);
-      if (id && session.identityName) names.set(id, session.identityName);
+      if (id && session.identityName && !isPlaceholderIdentityName(session.identityName)) {
+        names.set(id, session.identityName.trim());
+      }
     }
     return names;
   }, [sessions]);
@@ -232,7 +234,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   const mainId = mainKey ? getSessionAgentId(mainKey) : null;
   // 'Agent' is the session context's placeholder name until the server names the main agent.
   const identityName = mainSession?.identityName?.trim();
-  const mainName = identityName && identityName !== 'Agent' ? identityName : undefined;
+  const mainName = identityName && !isPlaceholderIdentityName(identityName) ? identityName : undefined;
 
   const ownerKey = useMemo(() => {
     const ids = new Set<string>();
@@ -246,7 +248,11 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   const { hueFor } = useAgentHues(ownerIds);
 
   const viewOf = (item: AttentionItem, order?: StableOrder): ItemView => {
-    const ownerName = item.ownerId ? agentNames.get(item.ownerId) ?? item.ownerId : undefined;
+    // Template text is not a name: an owner without a real identity is shown by its agent id.
+    const knownName = item.ownerId ? agentNames.get(item.ownerId) : undefined;
+    const ownerName = item.ownerId
+      ? (knownName && !isPlaceholderIdentityName(knownName) ? knownName : item.ownerId)
+      : undefined;
     return {
       reason: reasonFor(item, now, ownerName),
       ownerName,
@@ -269,7 +275,8 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
       connecting,
       nameOf: (key: string) => {
         const id = getSessionAgentId(key);
-        return id ? agentNames.get(id) : undefined;
+        const name = id ? agentNames.get(id) : undefined;
+        return name && !isPlaceholderIdentityName(name) ? name : id ?? undefined;
       },
     }),
     [replyStore, connected, connecting, agentNames],

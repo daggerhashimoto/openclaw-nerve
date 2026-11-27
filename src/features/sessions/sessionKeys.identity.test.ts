@@ -41,6 +41,14 @@ describe('extractIdentityName', () => {
   it('returns null when there is no Name field', () => {
     expect(extractIdentityName('- **Vibe:** calm')).toBeNull();
   });
+
+  it('treats "not set yet" as a placeholder', () => {
+    expect(extractIdentityName('- **Name:** not set yet')).toBeNull();
+  });
+
+  it('skips an empty Name and keeps scanning for a real one', () => {
+    expect(extractIdentityName('- **Name:**\n- **Name:** Linus')).toBe('Linus');
+  });
 });
 
 describe('isPlaceholderIdentityName', () => {
@@ -73,6 +81,17 @@ describe('getSessionDisplayLabel', () => {
 
   it('uses a real identity name when present', () => {
     const session = { key: 'agent:linus:main', identityName: 'Linus' };
+
+    expect(getSessionDisplayLabel(session, 'Kim')).toBe('Linus (linus)');
+  });
+
+  it('does not let an explicit placeholder label override the identity', () => {
+    const session = {
+      key: 'agent:linus:main',
+      label: '_(pick something you like)_',
+      displayName: 'not set yet',
+      identityName: 'Linus',
+    };
 
     expect(getSessionDisplayLabel(session, 'Kim')).toBe('Linus (linus)');
   });

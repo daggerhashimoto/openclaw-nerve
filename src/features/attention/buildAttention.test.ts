@@ -136,9 +136,16 @@ describe('buildAttention', () => {
     expect(all(brief)).toHaveLength(1);
   });
 
+  it('an update proposal that changes priority ranks at the requested one', () => {
+    const target = task({ id: 'deploy', title: 'Deploy the site', status: 'in-progress', priority: 'normal' });
+    const p = proposal({ type: 'update', payload: { id: 'deploy', priority: 'critical' } });
+    const brief = buildAttention(input({ tasks: [target], proposals: [p] }));
+    expect(brief.decide.find((i) => i.kind === 'proposal')?.priority).toBe('critical');
+  });
+
   it('pending proposal for an update takes the target task title and priority', () => {
     const target = task({ id: 'deploy', title: 'Deploy the site', status: 'in-progress', priority: 'high' });
-    const p = proposal({ type: 'update', payload: { id: 'deploy', status: 'review', priority: 'critical' } });
+    const p = proposal({ type: 'update', payload: { id: 'deploy', status: 'review' } });
     const brief = buildAttention(input({ tasks: [target], proposals: [p] }));
     const item = brief.decide.find((i) => i.kind === 'proposal');
     expect(item).toMatchObject({
@@ -151,7 +158,7 @@ describe('buildAttention', () => {
       open: { type: 'proposal', id: 'p1' },
     });
     expect(item?.detail.proposedBy).toBe('agent:kim');
-    expect(item?.detail.proposalChange).toBe('status, priority');
+    expect(item?.detail.proposalChange).toBe('status');
   });
 
   it('failed run in todo within 7 days is blocked; older or aborted is not', () => {

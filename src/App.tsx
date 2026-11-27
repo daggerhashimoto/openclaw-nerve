@@ -767,9 +767,14 @@ export default function App({ onLogout }: AppProps) {
     })
   ), [getWorkspaceSwitchLabel, requestWorkspaceTransition, setCurrentSession]);
 
+  // Picking a session (palette, Sessions list) from the brief should show it, so leave Attention once switched
   const handleSessionChange = useCallback((key: string) => {
-    void switchSession(key);
-  }, [switchSession]);
+    void switchSession(key).then((switched) => {
+      if (!switched || viewMode !== 'attention') return;
+      setActiveTab('chat');
+      setViewMode('chat');
+    });
+  }, [switchSession, viewMode, setActiveTab, setViewMode]);
 
   // Open an item from the brief at its source. Tasks and proposals need the board, so they do
   // nothing while kanban is hidden (the brief does not offer them then).

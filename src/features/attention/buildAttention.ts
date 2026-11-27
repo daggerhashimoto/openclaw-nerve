@@ -164,7 +164,8 @@ function proposalItem(proposal: KanbanProposal, tasks: KanbanTask[], status: Sou
   if (proposal.type === 'update') {
     const target = tasks.find((t) => t.id === payload.id);
     title = target?.title ?? payloadTitle ?? 'Task update';
-    priority = target?.priority ?? 'normal';
+    // A proposal that changes priority ranks at the requested one
+    if (!isTaskPriority(payload.priority)) priority = target?.priority ?? 'normal';
     const changed = UPDATE_FIELDS.filter((field) => field in payload);
     proposalChange = changed.length > 0 ? changed.join(', ') : undefined;
   }

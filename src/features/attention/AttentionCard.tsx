@@ -7,7 +7,8 @@ import type { AttentionItem, OpenTarget } from './types';
 
 const RESULT_EXCERPT = 240;
 
-const CARD = 'relative flex min-w-0 flex-col gap-2 rounded-[3px] px-3.5 py-3';
+// Long unbroken tokens (ids, paths) wrap instead of pushing the card wider than the screen
+const CARD = 'relative flex min-w-0 flex-col gap-2 rounded-[3px] px-3.5 py-3 [overflow-wrap:anywhere]';
 const META = 'font-mono text-[0.8rem] tabular text-muted-foreground';
 
 function excerpt(text: string): string {

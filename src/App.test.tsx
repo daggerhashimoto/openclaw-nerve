@@ -241,9 +241,14 @@ vi.mock('@/hooks/useKeyboardShortcuts', () => ({
   useKeyboardShortcuts: vi.fn(),
 }));
 
+const paletteSessionSelect = vi.hoisted(() => ({ current: null as ((key: string) => void) | null }));
+
 vi.mock('@/features/command-palette/commands', () => ({
   createCommands: () => [],
-  createSessionCommands: () => [],
+  createSessionCommands: (_sessions: unknown, _current: unknown, _agent: unknown, onSelect: (key: string) => void) => {
+    paletteSessionSelect.current = onSelect;
+    return [];
+  },
 }));
 
 vi.mock('@/features/file-browser', () => ({
@@ -1388,6 +1393,20 @@ describe('App attention landing and Back to Attention', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back to Attention' }));
 
     expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('attention');
+    expect(screen.queryByRole('button', { name: 'Back to Attention' })).not.toBeInTheDocument();
+  });
+
+  it('picking a session from the command palette while on the brief shows it in Chat', async () => {
+    setActiveFileTab.mockClear();
+    render(<App />);
+    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('attention');
+
+    act(() => paletteSessionSelect.current?.('agent:alpha:subagent:abc'));
+
+    await waitFor(() => expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('chat'));
+    expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:alpha:subagent:abc');
+    expect(setActiveFileTab).toHaveBeenCalledWith('chat');
+    // Not opened from a brief item, so there is no way back to offer
     expect(screen.queryByRole('button', { name: 'Back to Attention' })).not.toBeInTheDocument();
   });
 

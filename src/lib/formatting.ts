@@ -8,9 +8,12 @@ export function esc(s: string | null | undefined): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Format a timestamp as a human-readable relative time (e.g. "5m", "2h", "3d"). */
-export function timeAgo(ts: string | number | Date): string {
-  const diff = (Date.now() - new Date(ts).getTime()) / 1000;
+/**
+ * Format a timestamp as a human-readable relative time (e.g. "5m", "2h", "3d").
+ * Pass `now` to measure against a fixed clock instead of the current time.
+ */
+export function timeAgo(ts: string | number | Date, now: number = Date.now()): string {
+  const diff = (now - new Date(ts).getTime()) / 1000;
   if (diff < 60) return 'now';
   if (diff < 3600) return Math.floor(diff / 60) + 'm';
   if (diff < 86400) return Math.floor(diff / 3600) + 'h';

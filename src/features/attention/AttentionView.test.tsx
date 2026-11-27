@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KanbanTask } from '@/features/kanban/types';
 import type { KanbanProposal } from '@/features/kanban/hooks/useProposals';
@@ -234,7 +234,7 @@ describe('AttentionView', () => {
     const filled = startButtons.filter((button) => button.className.includes('bg-primary'));
     expect(filled).toHaveLength(1);
     expect(filled[0]).toHaveTextContent('Approve');
-    expect(startButtons.map((button) => button.textContent)).toEqual(['Approve', 'Request changes', 'Open review']);
+    expect(startButtons.map((button) => button.textContent)).toEqual(['Approve', 'Request changes', 'Open review', 'Reply']);
     for (const button of startButtons) expect(button.className).toContain('min-h-11');
     const rows = screen.getAllByTestId('attention-row');
     expect(rows.length).toBe(2);
@@ -826,7 +826,7 @@ describe('AttentionView', () => {
       renderView({ kanbanEnabled: false });
 
       const start = screen.getByRole('region', { name: 'Start here' });
-      expect(within(start).getAllByRole('button').map((button) => button.textContent)).toEqual(['Open review', 'Open session']);
+      expect(within(start).getAllByRole('button').map((button) => button.textContent)).toEqual(['Open review', 'Open session', 'Reply']);
       for (const name of ['Approve', 'Reject', 'Request changes', 'Retry', 'Stop']) {
         expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
       }
@@ -860,5 +860,198 @@ describe('AttentionView', () => {
       expect(calls()).toEqual([{ url: '/api/kanban/tasks/f1/execute', method: 'POST', body: {} }]);
       expect(onOpen).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('prompting from the brief', () => {
+  const MAIN = 'agent:main:main';
+  const handlers = new Set<(event: { type: 'event'; event: string; payload: unknown }) => void>();
+  const rpc = vi.fn(async (method: string, params: Record<string, unknown>) => (
+    method === 'chat.send' ? { runId: params.idempotencyKey, status: 'started' } : {}
+  ));
+  const subscribe = vi.fn((handler: (event: { type: 'event'; event: string; payload: unknown }) => void) => {
+    handlers.add(handler);
+    return () => { handlers.delete(handler); };
+  });
+  const setCurrentSession = vi.fn();
+
+  function emit(payload: Record<string, unknown>) {
+    act(() => {
+      for (const handler of [...handlers]) handler({ type: 'event', event: 'chat', payload });
+    });
+  }
+
+  function sends() {
+    return rpc.mock.calls.filter(([method]) => method === 'chat.send').map(([, params]) => params);
+  }
+
+  beforeEach(() => {
+    handlers.clear();
+    rpc.mockClear();
+    subscribe.mockClear();
+    setCurrentSession.mockClear();
+    gatewayMock.mockReturnValue({ connectionState: 'connected', rpc, subscribe } as never);
+    sessionMock.mockReturnValue({
+      sessions: [{ key: MAIN, identityName: 'Kim', updatedAt: NOW - HOUR }],
+      sessionsLoading: false,
+      agentStatus: {},
+      busyState: {},
+      currentSession: 'agent:forge:main',
+      setCurrentSession,
+    } as never);
+  });
+
+  it('the box sends to the main session and shows the reply under it', async () => {
+    const value = setSources({ tasks: [task()] });
+    const { onOpen } = renderView();
+
+    const box = screen.getByRole('textbox', { name: 'Ask Kim' });
+    expect(box).toHaveAttribute('placeholder', 'Ask Kim...');
+    fireEvent.change(box, { target: { value: 'What needs me first?' } });
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true });
+    expect(sends()).toHaveLength(0);
+    fireEvent.keyDown(box, { key: 'Enter' });
+
+    await waitFor(() => expect(sends()).toHaveLength(1));
+    expect(sends()[0]).toMatchObject({ sessionKey: MAIN, message: 'What needs me first?' });
+    expect(box).toHaveValue('');
+    const runId = sends()[0].idempotencyKey as string;
+
+    const ask = screen.getByRole('region', { name: 'Ask the agent' });
+    expect(within(ask).getByText('Working')).toBeInTheDocument();
+    expect(within(ask).getByRole('button', { name: 'Send' })).toBeDisabled();
+
+    emit({ sessionKey: MAIN, runId, state: 'delta', seq: 1, deltaText: 'Start with the **review**.' });
+    const reply = within(ask).getByTestId('inline-reply');
+    expect(within(reply).getByText('review').tagName).toBe('STRONG');
+    expect(within(reply).getByText('Writing')).toBeInTheDocument();
+
+    emit({ sessionKey: MAIN, runId, state: 'final', seq: 2, message: 'Start with the review.' });
+    expect(within(reply).getByText(/Replied at/)).toBeInTheDocument();
+    expect(within(reply).getByText('You: What needs me first?')).toBeInTheDocument();
+
+    fireEvent.click(within(reply).getByRole('button', { name: 'Open in chat' }));
+    expect(onOpen).toHaveBeenCalledWith({ type: 'session', key: MAIN });
+
+    // Sending is not an action on the brief: no refresh, no session switch.
+    expect(value.refresh).not.toHaveBeenCalled();
+    expect(setCurrentSession).not.toHaveBeenCalled();
+
+    fireEvent.click(within(reply).getByRole('button', { name: 'Dismiss' }));
+    expect(within(ask).queryByTestId('inline-reply')).toBeNull();
+  });
+
+  it('a card Reply sends into its own session and keeps the ranking', async () => {
+    const failed = task({
+      id: 'f1',
+      title: 'Rebuild the index',
+      status: 'todo',
+      result: undefined,
+      run: { sessionKey: 'agent:forge:subagent:rebuild', startedAt: NOW - 3 * HOUR, endedAt: NOW - 2 * HOUR, status: 'error', error: 'Tests failed' },
+    });
+    const value = setSources({ tasks: [task(), failed] });
+    const { onOpen } = renderView();
+    const before = cardTitles();
+
+    const card = screen.getByRole('button', { name: 'Rebuild the index' }).closest('article')!;
+    fireEvent.click(within(card).getByRole('button', { name: 'Reply' }));
+    const field = within(card).getByRole('textbox', { name: 'Reply to forge' });
+    expect(within(card).getByRole('button', { name: 'Send' })).toBeDisabled();
+    fireEvent.change(field, { target: { value: 'Why did the tests fail?' } });
+    fireEvent.click(within(card).getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => expect(sends()).toHaveLength(1));
+    expect(sends()[0]).toMatchObject({ sessionKey: 'agent:forge:subagent:rebuild', message: 'Why did the tests fail?' });
+    expect(onOpen).not.toHaveBeenCalled();
+
+    const runId = sends()[0].idempotencyKey as string;
+    emit({ sessionKey: 'agent:forge:subagent:rebuild', runId, state: 'final', seq: 1, message: 'A fixture was missing.' });
+    const reply = within(card).getByTestId('inline-reply');
+    expect(within(reply).getByText('A fixture was missing.')).toBeInTheDocument();
+    // The box shows nothing for a reply asked from a card.
+    expect(within(screen.getByRole('region', { name: 'Ask the agent' })).queryByTestId('inline-reply')).toBeNull();
+
+    fireEvent.click(within(reply).getByRole('button', { name: 'Open in chat' }));
+    expect(onOpen).toHaveBeenCalledWith({ type: 'session', key: 'agent:forge:subagent:rebuild' });
+    expect(cardTitles()).toEqual(before);
+    expect(value.refresh).not.toHaveBeenCalled();
+    expect(setCurrentSession).not.toHaveBeenCalled();
+  });
+
+  it('Start here Reply sends into the review run session', async () => {
+    setSources({ tasks: [task()] });
+    renderView();
+
+    const start = screen.getByRole('region', { name: 'Start here' });
+    fireEvent.click(within(start).getByRole('button', { name: 'Reply' }));
+    const field = within(start).getByRole('textbox', { name: 'Reply to forge' });
+    fireEvent.change(field, { target: { value: 'Did you rerun the full suite?' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() => expect(sends()).toHaveLength(1));
+    expect(sends()[0]).toMatchObject({ sessionKey: 'agent:forge:subagent:fix' });
+    expect(within(start).queryByRole('textbox')).toBeNull();
+    expect(within(start).getByTestId('inline-reply')).toBeInTheDocument();
+  });
+
+  it('a run error shows on the box with its reason', async () => {
+    setSources();
+    renderView();
+
+    const box = screen.getByRole('textbox', { name: 'Ask Kim' });
+    fireEvent.change(box, { target: { value: 'Hello' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await waitFor(() => expect(sends()).toHaveLength(1));
+
+    emit({ sessionKey: MAIN, runId: sends()[0].idempotencyKey, state: 'error', seq: 1, errorMessage: 'model overloaded' });
+    expect(screen.getByRole('alert')).toHaveTextContent('model overloaded');
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+    fireEvent.change(box, { target: { value: 'Try again' } });
+    expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
+  });
+
+  it('disconnected keeps sending off and says why', () => {
+    gatewayMock.mockReturnValue({ connectionState: 'disconnected', rpc, subscribe } as never);
+    setSources({ tasks: [task()] });
+    renderView();
+
+    const box = screen.getByRole('textbox', { name: 'Ask Kim' });
+    fireEvent.change(box, { target: { value: 'Anyone there?' } });
+    const ask = screen.getByRole('region', { name: 'Ask the agent' });
+    expect(within(ask).getByText('Not connected')).toBeInTheDocument();
+    expect(within(ask).getByRole('button', { name: 'Send' })).toBeDisabled();
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(sends()).toHaveLength(0);
+  });
+
+  it('while the socket is still coming up the box says Connecting', () => {
+    gatewayMock.mockReturnValue({ connectionState: 'connecting', rpc, subscribe } as never);
+    setSources();
+    renderView();
+
+    const ask = screen.getByRole('region', { name: 'Ask the agent' });
+    expect(within(ask).getByText('Connecting')).toBeInTheDocument();
+    expect(within(ask).getByRole('button', { name: 'Send' })).toBeDisabled();
+  });
+
+  it('falls back to the agent in the placeholder when the main agent has no name', () => {
+    sessionMock.mockReturnValue({
+      sessions: [{ key: MAIN, identityName: 'Agent', updatedAt: NOW - HOUR }],
+      sessionsLoading: false,
+      agentStatus: {},
+      busyState: {},
+    } as never);
+    setSources();
+    renderView();
+
+    expect(screen.getByRole('textbox', { name: 'Ask the agent' })).toHaveAttribute('placeholder', 'Ask the agent...');
+  });
+
+  it('phones keep the box with a 44px Send', () => {
+    setSources({ tasks: [task()] });
+    renderView({ compact: true });
+
+    const ask = screen.getByRole('region', { name: 'Ask the agent' });
+    expect(within(ask).getByRole('button', { name: 'Send' }).className).toContain('min-h-[44px]');
   });
 });

@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils';
 import { formatClock } from './briefCopy';
 import { ownedReason, paneFor, type ItemView } from './itemPresentation';
 import { ActionButton, ActionError, StopConfirm } from './AttentionActions';
+import type { ReplyConfig } from './AttentionReply';
+import { useItemReply } from './useItemReply';
 import { useItemActions, type AttentionActionsConfig } from './useAttentionActions';
 import type { AttentionItem, OpenTarget } from './types';
 
@@ -84,18 +86,21 @@ interface AttentionRowProps {
   onMarkSeen?: (item: AttentionItem) => void;
   /** Turns on the item's main action as a chip beside the row. Second actions stay on cards. */
   actions?: AttentionActionsConfig;
+  /** Shows a reply sent from this item's card. Rows offer no Reply of their own. */
+  replies?: ReplyConfig;
 }
 
 /**
  * One item as a row that opens its source. Its main action (Approve, Retry, Stop, Run now) is
  * a sibling of the open button, never inside it; Stop's confirm and any error take a line below.
  */
-export function AttentionRow({ item, view, compact, onOpen, onMarkSeen, actions }: AttentionRowProps) {
+export function AttentionRow({ item, view, compact, onOpen, onMarkSeen, actions, replies }: AttentionRowProps) {
   const pane = paneFor(item.kind);
   const sub = ownedReason(view.reason, view.ownerName);
   const state = useItemActions(item, actions);
   const primary = state.actions.primary;
   const confirmingStop = primary === 'stop' && state.confirming;
+  const replyPanel = useItemReply(item, view, replies, onOpen).panel(compact);
 
   return (
     <div className={cn('flex min-w-0 flex-col', compact && 'border-b border-border')}>
@@ -154,6 +159,7 @@ export function AttentionRow({ item, view, compact, onOpen, onMarkSeen, actions 
           {state.error && <ActionError message={state.error} />}
         </div>
       )}
+      {replyPanel && <div className={cn('pb-2', compact ? 'px-4' : 'px-1')}>{replyPanel}</div>}
     </div>
   );
 }

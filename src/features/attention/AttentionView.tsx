@@ -4,6 +4,10 @@
  * item actions (useAttentionActions); after one succeeds the sources are re-read, and the item
  * moves or leaves through the normal brief rather than by editing it here.
  *
+ * Prompts (the board's box and Reply on items) send into sessions and show replies in place
+ * (useInlineReplies). They never refresh the sources or touch the Chat view's session, so the
+ * ranking stays as it was.
+ *
  * Order is frozen per epoch (useStableOrder). An epoch starts once per activation or Refresh,
  * and only after every enabled source has answered since then, so a cold load ranks the real
  * data and a reopen does not baseline on the answers left over from the last look.
@@ -12,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext } from '@/contexts/SessionContext';
-import { getSessionAgentId, isTopLevelAgentSessionKey } from '@/features/sessions/sessionKeys';
+import { getSessionAgentId, getTopLevelAgentSessions, isTopLevelAgentSessionKey } from '@/features/sessions/sessionKeys';
 import { useAgentHues } from '@/lib/agentColors';
 import { cn } from '@/lib/utils';
 import { getSessionKey } from '@/types';
@@ -21,10 +25,12 @@ import { buildAttention } from './buildAttention';
 import { formatClock, reasonFor, sinceHeading, sourceLine, summarySentence } from './briefCopy';
 import { AttentionCard, StartHereCard } from './AttentionCard';
 import { AttentionRow, Clocked } from './AttentionRow';
+import { AskBox, type AskTarget, type ReplyConfig } from './AttentionReply';
 import type { ItemView } from './itemPresentation';
 import { useAttentionSources } from './useAttentionSources';
 import { useStableOrder, type StableOrder } from './useStableOrder';
 import type { AttentionActionsConfig } from './useAttentionActions';
+import { useInlineReplies } from './useInlineReplies';
 import type { AttentionItem, AttentionSource, OpenTarget, SourceStatus } from './types';
 
 type Polled = 'tasks' | 'proposals' | 'crons';
@@ -220,13 +226,22 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     return names;
   }, [sessions]);
 
+  // The box talks to the agent Chat opens by default: the first top-level agent, main first.
+  const mainSession = useMemo(() => getTopLevelAgentSessions(sessions)[0], [sessions]);
+  const mainKey = mainSession ? getSessionKey(mainSession) : '';
+  const mainId = mainKey ? getSessionAgentId(mainKey) : null;
+  // 'Agent' is the session context's placeholder name until the server names the main agent.
+  const identityName = mainSession?.identityName?.trim();
+  const mainName = identityName && identityName !== 'Agent' ? identityName : undefined;
+
   const ownerKey = useMemo(() => {
     const ids = new Set<string>();
     for (const list of [brief.decide, brief.blocked, brief.progress, brief.finished, brief.seen.blocked, brief.seen.finished]) {
       for (const item of list) if (item.ownerId) ids.add(item.ownerId);
     }
+    if (mainId) ids.add(mainId);
     return [...ids].sort().join('|');
-  }, [brief]);
+  }, [brief, mainId]);
   const ownerIds = useMemo(() => (ownerKey ? ownerKey.split('|') : []), [ownerKey]);
   const { hueFor } = useAgentHues(ownerIds);
 
@@ -244,6 +259,16 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   // After an action the sources are fetched again without a new epoch, so the rest of the
   // brief keeps its order and only the acted-on item moves or leaves.
   const actions = useMemo<AttentionActionsConfig>(() => ({ kanbanEnabled, onDone: refresh }), [kanbanEnabled, refresh]);
+
+  const replyStore = useInlineReplies();
+  const connecting = connectionState === 'connecting' || connectionState === 'reconnecting';
+  const replies = useMemo<ReplyConfig>(
+    () => ({ store: replyStore, connected, connecting }),
+    [replyStore, connected, connecting],
+  );
+  const askTarget: AskTarget | null = mainKey
+    ? { sessionKey: mainKey, name: mainName, hue: mainId ? hueFor(mainId) : undefined }
+    : null;
 
   const markSeen = useCallback((items: AttentionItem[]) => {
     setSeen(addSeen(items.map((item) => item.key)));
@@ -278,6 +303,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
           onOpen={onOpen}
           onMarkSeen={onMarkSeen}
           actions={actions}
+          replies={replies}
         />
       ))}
     </div>
@@ -311,6 +337,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
               compact={compact}
               onOpen={onOpen}
               actions={actions}
+              replies={replies}
             />
           </div>
           {then.length > 0 && (
@@ -326,6 +353,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
                       rank={index + 2}
                       onOpen={onOpen}
                       actions={actions}
+                      replies={replies}
                     />
                   ))}
                 </div>
@@ -363,6 +391,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
                 onOpen={onOpen}
                 onMarkSeen={markOneSeen}
                 actions={actions}
+                replies={replies}
                 className="flex-[1_1_300px]"
               />
             ))}
@@ -451,6 +480,14 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
               <Clocked text={sourceLine(brief, now)} />
             </p>
           </section>
+
+          <AskBox
+            config={replies}
+            target={askTarget}
+            loading={sessionsLoading && connected}
+            compact={compact}
+            onOpen={onOpen}
+          />
 
           {compact ? (
             <div className="flex flex-col gap-2">

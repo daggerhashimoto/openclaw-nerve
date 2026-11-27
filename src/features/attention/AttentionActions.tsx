@@ -6,25 +6,8 @@
 
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { variantClass, type Variant } from './actionStyles';
 import type { ActionId, ItemActionsState } from './useAttentionActions';
-
-export const PRIMARY_BUTTON = 'send-btn relative z-10 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-[3px] border-none bg-primary px-3.5 text-[0.867rem] font-semibold text-primary-foreground transition-[filter] duration-[120ms] hover:brightness-110 disabled:cursor-default disabled:opacity-50 disabled:hover:brightness-100';
-export const TEXT_BUTTON = 'relative z-10 cursor-pointer text-[0.867rem] text-foreground underline decoration-border underline-offset-4 hover:decoration-operator disabled:cursor-default disabled:opacity-50';
-const CHIP_BUTTON = 'shell-chip relative z-10 shrink-0 cursor-pointer text-[0.8rem] disabled:cursor-default disabled:opacity-50';
-
-type Variant = 'primary' | 'chip' | 'text';
-
-function variantClass(variant: Variant, compact: boolean): string {
-  switch (variant) {
-    case 'primary':
-      return cn(PRIMARY_BUTTON, compact ? 'min-h-11 w-full' : 'min-h-8');
-    case 'chip':
-      // `.shell-chip` sits outside the Tailwind layers, so the phone height needs `!` to win.
-      return cn(CHIP_BUTTON, compact && 'min-h-[44px]!');
-    case 'text':
-      return cn(TEXT_BUTTON, compact && 'min-h-11');
-  }
-}
 
 /** One action as a button. The label follows the request: "Approve", "Approving...", "Approved". */
 export function ActionButton({
@@ -147,18 +130,20 @@ export function ActionError({ message, className }: { message: string; className
 }
 
 /**
- * A card's action strip: the main action as a chip, a second one as text, and `trailing`
- * (Mark seen) at the right. Renders nothing when the item has neither.
+ * A card's action strip: the main action as a chip, a second one as text, `extra` (Reply)
+ * after them, and `trailing` (Mark seen) at the right. Renders nothing when the item has none.
  */
 export function CardActions({
   state,
+  extra,
   trailing,
 }: {
   state: ItemActionsState;
+  extra?: React.ReactNode;
   trailing?: React.ReactNode;
 }) {
   const { primary, secondary } = state.actions;
-  if (!primary && !trailing) return null;
+  if (!primary && !extra && !trailing) return null;
 
   if (state.noteOpen) {
     return (
@@ -176,6 +161,7 @@ export function CardActions({
         {confirmingStop && <StopConfirm state={state} compact={false} />}
         {primary && !confirmingStop && <ActionButton state={state} action={primary} variant="chip" compact={false} />}
         {secondary && !confirmingStop && <ActionButton state={state} action={secondary} variant="text" compact={false} />}
+        {!confirmingStop && extra}
         <span className="flex-1" />
         {trailing}
       </div>

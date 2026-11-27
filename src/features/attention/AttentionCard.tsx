@@ -3,7 +3,10 @@ import { cn } from '@/lib/utils';
 import { formatClock } from './briefCopy';
 import { KIND_WORD, paneFor, sourceTag, type ItemView } from './itemPresentation';
 import { MarkItemSeenButton, NewTag, ReasonText } from './AttentionRow';
-import { ActionButton, ActionError, CardActions, ChangesNote, PRIMARY_BUTTON, TEXT_BUTTON } from './AttentionActions';
+import { ActionButton, ActionError, CardActions, ChangesNote } from './AttentionActions';
+import { PRIMARY_BUTTON, TEXT_BUTTON } from './actionStyles';
+import type { ReplyConfig } from './AttentionReply';
+import { useItemReply } from './useItemReply';
 import { useItemActions, type AttentionActionsConfig } from './useAttentionActions';
 import type { AttentionItem, OpenTarget } from './types';
 
@@ -85,6 +88,8 @@ interface AttentionCardProps {
   onMarkSeen?: (item: AttentionItem) => void;
   /** Turns on the item's actions (Approve, Retry, Stop...). Without it the card only opens. */
   actions?: AttentionActionsConfig;
+  /** Turns on Reply for an item with a session. */
+  replies?: ReplyConfig;
   className?: string;
 }
 
@@ -92,8 +97,9 @@ interface AttentionCardProps {
  * A ranked card. The title is the button; its hit area covers the whole card. Actions and
  * Mark seen sit above that hit area, so they act without opening the source.
  */
-export function AttentionCard({ item, view, rank, onOpen, onMarkSeen, actions, className }: AttentionCardProps) {
+export function AttentionCard({ item, view, rank, onOpen, onMarkSeen, actions, replies, className }: AttentionCardProps) {
   const state = useItemActions(item, actions);
+  const reply = useItemReply(item, view, replies, onOpen);
   return (
     <article className={cn(CARD, 'nerve-task-card', item.freshness !== 'live' && 'opacity-80', className)}>
       <KindLine
@@ -116,12 +122,16 @@ export function AttentionCard({ item, view, rank, onOpen, onMarkSeen, actions, c
         </button>
       </h3>
       <CardDetail item={item} view={view} />
-      <CardActions
-        state={state}
-        trailing={onMarkSeen && (
-          <MarkItemSeenButton item={item} compact={false} onMarkSeen={onMarkSeen} className="relative z-10" />
-        )}
-      />
+      {reply.fieldOpen ? reply.field(false) : (
+        <CardActions
+          state={state}
+          extra={reply.button(false)}
+          trailing={onMarkSeen && (
+            <MarkItemSeenButton item={item} compact={false} onMarkSeen={onMarkSeen} className="relative z-10" />
+          )}
+        />
+      )}
+      {reply.panel(false)}
     </article>
   );
 }
@@ -133,6 +143,8 @@ interface StartHereCardProps {
   onOpen: (target: OpenTarget) => void;
   /** Turns on Approve and its second action. Without it the one button opens the source. */
   actions?: AttentionActionsConfig;
+  /** Turns on Reply when the item has a session. */
+  replies?: ReplyConfig;
 }
 
 /**
@@ -140,13 +152,15 @@ interface StartHereCardProps {
  * With actions the warm button is the decision (Approve) and opening the source is a text
  * button beside it, so phones still show exactly one filled button.
  */
-export function StartHereCard({ item, view, compact, onOpen, actions }: StartHereCardProps) {
+export function StartHereCard({ item, view, compact, onOpen, actions, replies }: StartHereCardProps) {
   const { detail } = item;
   const run = runLine(item);
   const sessionKey = detail.sessionKey;
   const openLabel = item.kind === 'proposal' ? 'Open proposal' : 'Open review';
   const state = useItemActions(item, actions);
   const { primary, secondary } = state.actions;
+  const reply = useItemReply(item, view, replies, onOpen);
+  const replyButton = reply.button(compact);
 
   const openButton = (
     <button
@@ -196,14 +210,17 @@ export function StartHereCard({ item, view, compact, onOpen, actions }: StartHer
       <div className="mt-1 flex flex-col gap-2 border-t border-border pt-3">
         {state.noteOpen ? (
           <ChangesNote state={state} submitVariant="primary" compact={compact} />
+        ) : reply.fieldOpen ? (
+          reply.field(compact)
         ) : (
           <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-2', compact && 'flex-col items-stretch')}>
             {primary ? <ActionButton state={state} action={primary} variant="primary" compact={compact} /> : openButton}
             {compact ? (
-              primary && (
+              (primary || replyButton) && (
                 <div className="flex flex-wrap items-center gap-x-4">
                   {secondary && <ActionButton state={state} action={secondary} variant="text" compact />}
-                  {openButton}
+                  {primary && openButton}
+                  {replyButton}
                 </div>
               )
             ) : (
@@ -211,12 +228,15 @@ export function StartHereCard({ item, view, compact, onOpen, actions }: StartHer
                 {secondary && <ActionButton state={state} action={secondary} variant="text" compact={false} />}
                 {primary && openButton}
                 {sessionButton}
+                {replyButton}
               </>
             )}
           </div>
         )}
         {state.error && <ActionError message={state.error} />}
+        {reply.panel(compact)}
       </div>
     </section>
   );
 }
+

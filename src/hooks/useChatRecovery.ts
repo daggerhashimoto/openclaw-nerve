@@ -41,6 +41,10 @@ interface UseChatRecoveryDeps {
   applyMessageWindow: (all: ChatMsg[], resetVisibleWindow?: boolean) => void;
   setStream: React.Dispatch<React.SetStateAction<ChatStreamState>>;
   onLatestHeartbeat?: (at: number | null) => void;
+  /** Counts runs begun on screen; a read is only evidence about runs begun before it. */
+  getRunEpoch: () => number;
+  /** Take the run on screen down: the gateway reports none going. */
+  onRunOver: () => void;
 }
 
 export function useChatRecovery({
@@ -53,6 +57,8 @@ export function useChatRecovery({
   applyMessageWindow,
   setStream,
   onLatestHeartbeat,
+  getRunEpoch,
+  onRunOver,
 }: UseChatRecoveryDeps) {
   const recoveryRef = useRef<RecoveryState>({ timer: null, inFlight: false, reason: null });
   // Generation counter: incremented on session switch and chat_final apply.
@@ -89,6 +95,8 @@ export function useChatRecovery({
 
       recoveryRef.current.inFlight = true;
       try {
+        const runEpoch = getRunEpoch();
+        let runActive: boolean | null = null;
         const recovered = await loadChatHistory({
           rpc,
           sessionKey: currentSessionRef.current,
@@ -96,18 +104,28 @@ export function useChatRecovery({
           onLatestHeartbeat: (at) => {
             if (capturedGeneration === recoveryGenerationRef.current) onLatestHeartbeat?.(at);
           },
+          onRunActive: (active) => {
+            runActive = active;
+          },
         });
 
         // Check generation again after async fetch — another session switch or
         // chat_final may have occurred while we were loading.
         if (capturedGeneration !== recoveryGenerationRef.current) return;
 
+        // A run on screen whose end and final were lost (the connection dropped
+        // as it finished) would otherwise stay on screen for good. The gateway's
+        // word counts only if no run began on screen after this read went out.
+        const runOver = runActive === false
+          && getRunEpoch() === runEpoch
+          && (isGeneratingRef.current || activeRunIdRef.current !== null);
+
         // When streaming is active, the recovered transcript may include the
         // partial assistant text that the streaming bubble is already showing.
         // Filter it out to avoid duplication, but keep thinking blocks so the
         // user can see reasoning in real time.
         const activeRun = activeRunIdRef.current;
-        const activeBuffer = activeRun
+        const activeBuffer = activeRun && !runOver
           ? runsRef.current.get(activeRun)?.bufferText || ''
           : '';
         const filtered = activeBuffer.length > 0
@@ -131,6 +149,7 @@ export function useChatRecovery({
 
         const merged = mergeRecoveredTail(getAllMessages(), filtered);
         applyMessageWindow(merged, false);
+        if (runOver) onRunOver();
       } catch (err) {
         console.debug('[ChatContext] Recovery failed:', err);
       } finally {
@@ -139,7 +158,7 @@ export function useChatRecovery({
         setStream(prev => ({ ...prev, isRecovering: false, recoveryReason: null }));
       }
     }, 180);
-  }, [applyMessageWindow, clearRecoveryTimer, rpc, currentSessionRef, activeRunIdRef, runsRef, getAllMessages, setStream, onLatestHeartbeat]);
+  }, [applyMessageWindow, clearRecoveryTimer, rpc, currentSessionRef, isGeneratingRef, activeRunIdRef, runsRef, getAllMessages, setStream, onLatestHeartbeat, getRunEpoch, onRunOver]);
 
   /** Increment the recovery generation counter (invalidates in-flight recoveries). */
   const incrementGeneration = useCallback(() => {

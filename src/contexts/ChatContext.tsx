@@ -136,6 +136,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // A 2026.9 gateway sends that end just before the chat final, so the final has to
   // be recognised as this run's own even though no run is active any more.
   const endedRunIdRef = useRef<string | null>(null);
+  // Bumped whenever a run begins on screen, so a history read sent before it
+  // cannot report it over.
+  const runEpochRef = useRef(0);
+  const getRunEpoch = useCallback(() => runEpochRef.current, []);
+  const runOverRef = useRef<() => void>(() => {});
+  const onRunOver = useCallback(() => runOverRef.current(), []);
   const voiceSendSeqRef = useRef(0);
   const voiceRunRef = useRef<{ runId: string } | null>(null);
   const lastGatewaySeqRef = useRef<number | null>(null);
@@ -177,6 +183,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     applyMessageWindow: msgHook.applyMessageWindow,
     setStream: streamHook.setStream,
     onLatestHeartbeat: recordHistoryHeartbeat,
+    getRunEpoch,
+    onRunOver,
   });
 
   const {
@@ -215,6 +223,30 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     handleCommittedTTS,
     clearVoiceMessage,
   } = ttsHook;
+
+  // A run whose end and final never arrived (lost with a dropped connection)
+  // comes down once a history read reports no run going on the session.
+  const settleLostRun = useCallback(() => {
+    const runId = activeRunIdRef.current;
+    const run = runId ? runsRef.current.get(runId) : undefined;
+    if (run) {
+      run.finalized = true;
+      run.bufferRaw = '';
+      run.bufferText = '';
+    }
+    activeRunIdRef.current = null;
+    endedRunIdRef.current = null;
+    setIsGenerating(false);
+    setProcessingStage(null);
+    setActivityLog([]);
+    setLastEventTimestamp(0);
+    clearStreamBuffer();
+    resetThinking();
+    pruneRunRegistry(runsRef.current, null);
+  }, [setProcessingStage, setActivityLog, setLastEventTimestamp, clearStreamBuffer, resetThinking]);
+  useEffect(() => {
+    runOverRef.current = settleLostRun;
+  }, [settleLostRun]);
 
   // ─── Reset transient state on session switch ──────────────────────────────
   useEffect(() => {
@@ -495,6 +527,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const ap = classified.agentPayload!;
 
         if (type === 'lifecycle_start') {
+          runEpochRef.current += 1;
           // A newer run has begun, so a late final of the run that ended is obsolete.
           endedRunIdRef.current = null;
           // A lifecycle-only turn has no chat_started to begin it; clear the
@@ -587,6 +620,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setLastEventTimestamp(Date.now());
 
       const beginTurn = () => {
+        runEpochRef.current += 1;
         activeRunIdRef.current = runId;
         // Once a newer turn has begun, a late final of the run that ended is not this turn's.
         endedRunIdRef.current = null;
@@ -623,6 +657,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
         if (!isGeneratingRef.current) setIsGenerating(true);
         if (!activeRunIdRef.current) {
+          runEpochRef.current += 1;
           activeRunIdRef.current = runId;
           endedRunIdRef.current = null;
         }
@@ -818,6 +853,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const { msg: userMsg, tempId } = buildUserMessage({ text, images, uploadPayload });
 
     incrementGeneration();
+    runEpochRef.current += 1;
 
     // Optimistic insert (functional updater to avoid read-then-write race)
     msgHook.setAllMessages(prev => [...prev, userMsg]);
@@ -839,6 +875,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         idempotencyKey,
       });
 
+      // A read the gateway took before it accepted this send cannot speak for its run.
+      runEpochRef.current += 1;
       if (ack.runId) {
         const run = getOrCreateRunState(runsRef.current, ack.runId, currentSessionRef.current);
         run.status = ack.status;

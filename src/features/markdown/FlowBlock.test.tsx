@@ -123,22 +123,50 @@ describe('MarkdownRenderer flow fences', () => {
     expect(screen.getByText('const x = 1;')).toBeInTheDocument();
   });
 
-  it('keeps branches aligned in a 375px-wide container via horizontal scroll', () => {
+  it('fits a 375px-wide container without a fixed minimum width or horizontal scroll', () => {
     const { container } = render(
       <div style={{ width: 375 }}>
         <MarkdownRenderer content={FLOW_SAMPLE_MARKDOWN} />
       </div>,
     );
     const figure = container.querySelector<HTMLElement>('figure.markdown-flow');
-    expect(figure).toHaveClass('overflow-x-auto');
+    expect(figure).not.toHaveClass('overflow-x-auto');
+    expect(figure?.querySelectorAll('[style*="min-width"]')).toHaveLength(0);
 
-    const inner = Array.from(figure?.children ?? []).find((child) => child.tagName === 'DIV') as HTMLElement;
-    expect(inner.style.minWidth).toBe('396px');
+    const grids = Array.from(figure?.querySelectorAll<HTMLElement>('.flow-level') ?? []);
+    expect(grids).toHaveLength(4);
+    grids.forEach((grid) => {
+      expect(grid.style.gridTemplateColumns).toContain('minmax(0, 1fr)');
+    });
 
-    const grids = Array.from(figure?.querySelectorAll<HTMLElement>('.grid') ?? []);
-    expect(grids.some((grid) => grid.style.gridTemplateColumns.includes('repeat(3'))).toBe(true);
     expect(screen.getByText('Deterministic')).toBeInTheDocument();
     expect(screen.getByText('Small model')).toBeInTheDocument();
     expect(screen.getByText('Strong model')).toBeInTheDocument();
+  });
+
+  it('ships a container-query stacking layout with labelled branch cards', () => {
+    const { container } = render(<FlowBlock spec={FLOW_SAMPLE_SPEC} />);
+    const figure = container.querySelector<HTMLElement>('figure.markdown-flow');
+    const css = figure?.querySelector('style')?.textContent ?? '';
+
+    expect(css).toContain('container-type: inline-size');
+    expect(css).toContain('@container (max-width: 27rem)');
+    expect(css).toContain('grid-template-columns: minmax(0, 1fr) !important');
+    expect(css).toContain('position: static');
+    expect(css).toContain('translate: none');
+    expect(css).toContain('flex-direction: column');
+    expect(css).toContain('flow-connectors::after');
+
+    // The stacked layout needs a target name on every branch label; the
+    // desktop label stays a single text node so existing queries are valid.
+    const simple = container.querySelector('.flow-edge-label[data-label="simple"]');
+    expect(simple).toHaveAttribute('data-target', 'Small model');
+    expect(simple).toHaveTextContent('simple');
+
+    expect(container.querySelectorAll('.flow-card')).toHaveLength(FLOW_SAMPLE_SPEC.nodes.length);
+    expect(container.querySelectorAll('.flow-card-text')).toHaveLength(FLOW_SAMPLE_SPEC.nodes.length);
+    const caption = container.querySelector('.flow-group-caption');
+    expect(caption).toHaveClass('min-w-0');
+    expect(caption).not.toHaveClass('shrink-0');
   });
 });

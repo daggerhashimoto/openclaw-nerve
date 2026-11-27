@@ -109,7 +109,7 @@ function FlowNodeCard({ node }: { node: FlowNodeSpec }) {
   const Icon = node.icon ? FLOW_ICONS[node.icon] : undefined;
 
   return (
-    <div className="flex h-full w-full min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-[4px] border border-border bg-raised px-2.5 py-3.5 text-center">
+    <div className="flow-card flex h-full w-full min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-[4px] border border-border bg-raised px-2.5 py-3.5 text-center">
       {Icon && (
         <Icon
           size={20}
@@ -118,14 +118,16 @@ function FlowNodeCard({ node }: { node: FlowNodeSpec }) {
           aria-hidden="true"
         />
       )}
-      <div className="min-w-0 text-[0.867rem] font-semibold leading-tight text-foreground break-words">
-        {node.label}
-      </div>
-      {node.detail && (
-        <div className="min-w-0 text-[0.75rem] leading-snug text-muted-foreground break-words">
-          {node.detail}
+      <div className="flow-card-text flex min-w-0 flex-col items-center gap-2">
+        <div className="min-w-0 text-[0.867rem] font-semibold leading-tight text-foreground break-words">
+          {node.label}
         </div>
-      )}
+        {node.detail && (
+          <div className="min-w-0 text-[0.75rem] leading-snug text-muted-foreground break-words">
+            {node.detail}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -174,7 +176,7 @@ function FlowConnectors({
   });
 
   return (
-    <div className="relative" style={{ height }} aria-hidden="true">
+    <div className="flow-connectors relative" style={{ height }} aria-hidden="true">
       {Array.from(sourceTrunks.entries()).map(([id, lane]) => (
         <span
           key={`source-${id}`}
@@ -199,9 +201,11 @@ function FlowConnectors({
             />
             {segment.label && (
               <span
-                className="absolute -translate-x-1/2 -translate-y-1/2 max-w-[8rem] truncate rounded-[2px] border border-border bg-plate px-1.5 text-[0.65rem] leading-4 text-muted-foreground"
+                className="flow-edge-label absolute -translate-x-1/2 -translate-y-1/2 max-w-[8rem] truncate rounded-[2px] border border-border bg-plate px-1.5 text-[0.65rem] leading-4 text-muted-foreground"
                 style={{ left: `${(fromX + toX) / 2}%`, top: lane }}
                 title={segment.label}
+                data-label={segment.label}
+                data-target={toItems.find((item) => item.id === segment.to)?.node?.label ?? ''}
               >
                 {segment.label}
               </span>
@@ -252,18 +256,82 @@ function FlowReturnRow({ edge, labels }: { edge: FlowEdgeSpec; labels: Map<strin
 }
 
 /**
+ * Narrow-screen rules, scoped to the figure. They live here rather than in the
+ * global sheet so the diagram is self-contained: below the breakpoint rows stop
+ * being columns and become stacked cards, with branch labels listed above them.
+ * This keeps every card inside the chat column instead of relying on a
+ * horizontal scrollbar. Desktop rules are untouched.
+ */
+const FLOW_RESPONSIVE_CSS = `
+.markdown-flow { container-type: inline-size; }
+@container (max-width: 27rem) {
+  .markdown-flow .flow-level {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 0.375rem;
+  }
+  .markdown-flow .flow-item { padding-inline: 0; }
+  .markdown-flow .flow-item:not(:has(.flow-card)) { display: none; }
+  .markdown-flow .flow-card {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.625rem;
+    padding: 0.625rem 0.75rem;
+    text-align: left;
+  }
+  .markdown-flow .flow-card > svg { flex: none; }
+  .markdown-flow .flow-card-text {
+    align-items: flex-start;
+    gap: 0.125rem;
+    text-align: left;
+  }
+  .markdown-flow .flow-connectors {
+    height: auto !important;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.375rem 0;
+  }
+  .markdown-flow .flow-connectors > span:not(.flow-edge-label),
+  .markdown-flow .flow-connectors > svg { display: none; }
+  .markdown-flow .flow-edge-label {
+    position: static;
+    transform: none;
+    translate: none;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 0.7rem;
+    line-height: 1.35;
+    padding: 0.0625rem 0.4rem;
+  }
+  .markdown-flow .flow-edge-label::after {
+    content: ' → ' attr(data-target);
+    color: var(--color-muted-foreground);
+  }
+  .markdown-flow .flow-connectors::after {
+    content: '';
+    width: 0;
+    height: 0;
+    margin-top: 0.125rem;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--color-muted-foreground);
+  }
+}
+`;
+
+/**
  * Render a validated flow spec as a theme-aware diagram.
  *
- * The figure scrolls horizontally rather than wrapping rows, which keeps every
- * branch and merge arrow aligned on narrow screens. Parse failures are handled
- * by the caller (MarkdownRenderer falls back to a normal code block).
+ * Rows are equal-width columns on desktop and stack into full-width cards in a
+ * narrow chat column, so no card is ever clipped by the bubble. Parse failures
+ * are handled by the caller (MarkdownRenderer falls back to a normal code block).
  */
 export function FlowBlock({ spec }: { spec: FlowSpec }) {
   const layout = layoutFlow(spec);
   const labels = new Map(spec.nodes.map((node) => [node.id, node.label]));
-
-  const maxColumns = layout.levels.reduce((max, level) => Math.max(max, level.length), 1);
-  const minWidth = maxColumns > 1 ? Math.min(maxColumns, 8) * 132 : undefined;
 
   const edgeSummary = spec.edges
     .map((edge) => {
@@ -277,8 +345,9 @@ export function FlowBlock({ spec }: { spec: FlowSpec }) {
     <figure
       role="group"
       aria-label={spec.title ?? spec.subtitle ?? 'Flow diagram'}
-      className="markdown-flow my-3 w-full max-w-full overflow-x-auto rounded-[4px] border border-border bg-plate p-3 text-left sm:p-4"
+      className="markdown-flow my-3 w-full max-w-full rounded-[4px] border border-border bg-plate p-3 text-left sm:p-4"
     >
+      <style>{FLOW_RESPONSIVE_CSS}</style>
       {(spec.title || spec.subtitle) && (
         <figcaption className="mb-3">
           {spec.title && (
@@ -294,7 +363,7 @@ export function FlowBlock({ spec }: { spec: FlowSpec }) {
         </figcaption>
       )}
 
-      <div style={minWidth ? { minWidth: `${minWidth}px` } : undefined}>
+      <div>
         {layout.levels.map((level, levelIndex) => (
           <React.Fragment key={`level-${levelIndex}`}>
             {levelIndex > 0 && (
@@ -320,9 +389,9 @@ export function FlowBlock({ spec }: { spec: FlowSpec }) {
               .map((group, groupIndex) => (
                 <div
                   key={`group-${levelIndex}-${groupIndex}`}
-                  className="mb-1.5 mt-1 flex items-center gap-2 px-1"
+                  className="flow-group mb-1.5 mt-1 flex items-center gap-2 px-1"
                 >
-                  <span className="shrink-0 text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  <span className="flow-group-caption min-w-0 break-words text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                     {group.label}
                   </span>
                   <span className="h-px min-w-4 flex-1 bg-border" aria-hidden="true" />
@@ -330,13 +399,13 @@ export function FlowBlock({ spec }: { spec: FlowSpec }) {
               ))}
 
             <div
-              className="grid items-stretch"
+              className="flow-level grid items-stretch"
               style={{ gridTemplateColumns: `repeat(${Math.max(level.length, 1)}, minmax(0, 1fr))` }}
             >
               {level.map((item) => (
                 <div
                   key={item.id}
-                  className={`flex min-w-0 items-stretch px-1.5 ${item.node ? 'py-0.5' : ''}`}
+                  className={`flow-item flex min-w-0 items-stretch px-1.5 ${item.node ? 'py-0.5' : ''}`}
                 >
                   {item.node ? (
                     <FlowNodeCard node={item.node} />

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 
 const hoisted = vi.hoisted(() => ({
   gatewayNames: {} as Record<string, string>,
@@ -68,9 +68,9 @@ describe('SessionContext identity source', () => {
       }
       if (url.startsWith('/api/sessions/hidden')) return json({ ok: true, sessions: [] });
       if (url.startsWith('/api/workspace/identity')) {
-        return hoisted.workspaceStatus === 404
-          ? json({ ok: false, error: 'not found' }, 404)
-          : json({ ok: true, content: `- **Name:** ${hoisted.workspaceName}` });
+        if (hoisted.workspaceStatus === 404) return json({ ok: false, error: 'not found' }, 404);
+        if (hoisted.workspaceStatus === 500) return json({ ok: false, error: 'down' }, 500);
+        return json({ ok: true, content: `- **Name:** ${hoisted.workspaceName}` });
       }
       throw new Error(`Unexpected fetch: ${url}`);
     }) as typeof globalThis.fetch;
@@ -82,5 +82,41 @@ describe('SessionContext identity source', () => {
     render(<SessionProvider><Labels /></SessionProvider>);
 
     await waitFor(() => expect(screen.getByText('Gateway Ops (ops)')).toBeInTheDocument());
+  });
+
+  it('clears a stale workspace name when the identity file becomes a 404', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    try {
+      render(<SessionProvider><Labels /></SessionProvider>);
+      await waitFor(() => expect(screen.getByText('Workspace Ops (ops)')).toBeInTheDocument());
+
+      hoisted.workspaceStatus = 404;
+      await act(async () => {
+        vi.advanceTimersByTime(5 * 60_000 + 1_000);
+      });
+
+      await waitFor(() => expect(screen.getByText('ops')).toBeInTheDocument());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries a failed workspace read after the retry window', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    try {
+      hoisted.workspaceStatus = 500;
+      render(<SessionProvider><Labels /></SessionProvider>);
+      await waitFor(() => expect(screen.getByText('ops')).toBeInTheDocument());
+
+      hoisted.workspaceStatus = 200;
+      hoisted.workspaceName = 'New Ops';
+      await act(async () => {
+        vi.advanceTimersByTime(60_000 + 1_000);
+      });
+
+      await waitFor(() => expect(screen.getByText('New Ops (ops)')).toBeInTheDocument());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -85,6 +85,13 @@ describe('getSessionDisplayLabel', () => {
     expect(getSessionDisplayLabel(session, 'Kim')).toBe('Linus (linus)');
   });
 
+  it('does not render a placeholder displayName on a channel session', () => {
+    expect(getSessionDisplayLabel({
+      key: 'agent:linus:direct:1',
+      displayName: 'not set yet',
+    })).not.toContain('not set yet');
+  });
+
   it('does not let an explicit placeholder label override the identity', () => {
     const session = {
       key: 'agent:linus:main',

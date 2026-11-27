@@ -199,6 +199,32 @@ describe('FlowBlock', () => {
     expect(Array.from(chips).map((chip) => chip.getAttribute('data-target'))).toEqual(['Charlie', 'Charlie']);
   });
 
+  it('shows stacked chips for independent parallel connections', () => {
+    const { container } = render(
+      <FlowBlock
+        spec={{
+          title: 'Parallel',
+          nodes: [
+            { id: 'a', label: 'Alpha', tone: 'neutral' },
+            { id: 'b', label: 'Bravo', tone: 'neutral' },
+            { id: 'c', label: 'Charlie', tone: 'neutral' },
+            { id: 'd', label: 'Delta', tone: 'neutral' },
+          ],
+          edges: [
+            { from: 'a', to: 'c', kind: 'flow' },
+            { from: 'b', to: 'd', kind: 'flow' },
+          ],
+          groups: [],
+        }}
+      />,
+    );
+
+    const chips = container.querySelectorAll('.flow-edge-label--branch-only');
+    expect(chips).toHaveLength(2);
+    expect(Array.from(chips).map((chip) => `${chip.getAttribute('data-source')}->${chip.getAttribute('data-target')}`))
+      .toEqual(['Alpha->Charlie', 'Bravo->Delta']);
+  });
+
   it('flags a pass-through-heavy row as a wide fan-out', () => {
     const sources = ['s1', 's2', 's3'];
     const targets = ['t1', 't2', 't3'];
@@ -255,6 +281,13 @@ describe('MarkdownRenderer flow fences', () => {
 
     expect(container.querySelector('figure.markdown-flow')).toBeNull();
     expect(container.querySelector('pre.hljs')?.textContent).toContain('"from":"a"');
+  });
+
+  it('keeps a flow-json fence on the code path', () => {
+    const { container } = render(<MarkdownRenderer content={'```flow-json\n{"nodes":[]}\n```'} />);
+
+    expect(container.querySelector('figure.markdown-flow')).toBeNull();
+    expect(container.querySelector('pre.hljs')).toBeTruthy();
   });
 
   it('leaves non-flow fences on the existing highlighted code path', () => {

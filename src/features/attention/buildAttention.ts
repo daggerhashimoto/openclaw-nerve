@@ -68,11 +68,12 @@ function freshnessOf(status: SourceStatus): AttentionItem['freshness'] {
 
 function sessionActivity(session: Session | undefined): number | undefined {
   if (!session) return undefined;
-  if (typeof session.updatedAt === 'number') return session.updatedAt;
-  const { lastActivity } = session;
-  if (typeof lastActivity === 'number') return lastActivity;
-  if (typeof lastActivity === 'string') return isoToMs(lastActivity);
-  return undefined;
+  const { updatedAt, lastActivity } = session;
+  const times = [
+    typeof updatedAt === 'number' ? updatedAt : undefined,
+    typeof lastActivity === 'number' ? lastActivity : typeof lastActivity === 'string' ? isoToMs(lastActivity) : undefined,
+  ].filter((t): t is number => typeof t === 'number' && Number.isFinite(t));
+  return times.length ? Math.max(...times) : undefined;
 }
 
 function taskItems(input: AttentionInput, sessionsByKey: Map<string, Session>): AttentionItem[] {

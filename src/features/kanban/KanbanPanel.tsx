@@ -69,8 +69,18 @@ export function KanbanPanel({
       setSelectedTask(match);
       consumedRef.current = initialTaskId;
       onInitialTaskConsumed?.();
+      return;
     }
-  }, [initialTaskId, tasks, onInitialTaskConsumed]);
+    if (loading) return;
+    // The board holds one page of tasks; fetch a task beyond it by id.
+    const requested = initialTaskId;
+    consumedRef.current = requested;
+    fetch(`/api/kanban/tasks/${encodeURIComponent(requested)}`)
+      .then((res) => (res.ok ? res.json() as Promise<KanbanTask> : null))
+      .then((task) => { if (consumedRef.current === requested && task?.id === requested) setSelectedTask(task); })
+      .catch(() => { /* leave the board as is */ })
+      .finally(() => onInitialTaskConsumed?.());
+  }, [initialTaskId, tasks, loading, onInitialTaskConsumed]);
 
   // The header opens the inbox and marks the proposal; consume once it is in the list, or once
   // the first load shows it is already resolved. A cleared ID makes the next request fresh.

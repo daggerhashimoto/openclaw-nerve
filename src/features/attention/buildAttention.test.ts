@@ -357,6 +357,21 @@ describe('buildAttention', () => {
     expect(brief.blocked).toHaveLength(0);
   });
 
+  it('uses the newest of updatedAt and lastActivity', () => {
+    const key = 'agent:kim:subagent:both';
+    const t = task({
+      status: 'in-progress',
+      updatedAt: NOW - 5 * HOUR,
+      run: run({ sessionKey: key }),
+    });
+    const brief = buildAttention(input({
+      tasks: [t],
+      sessions: [session({ key, updatedAt: NOW - 4 * HOUR, lastActivity: new Date(NOW - 60_000).toISOString() })],
+    }));
+    expect(brief.progress.map((i) => i.kind)).toEqual(['task-running']);
+    expect(brief.blocked).toHaveLength(0);
+  });
+
   it('an errored session linked to a finished task run still shows as session-failed', () => {
     const key = 'agent:kim:subagent:err';
     const since = NOW - 20 * 60_000;

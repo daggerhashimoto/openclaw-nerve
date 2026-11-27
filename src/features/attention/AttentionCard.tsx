@@ -170,7 +170,7 @@ export function StartHereCard({ item, view, compact, onOpen }: StartHereCardProp
         >
           {action}
         </button>
-        {sessionKey && (
+        {sessionKey && !compact && (
           <button
             type="button"
             onClick={() => onOpen({ type: 'session', key: sessionKey })}

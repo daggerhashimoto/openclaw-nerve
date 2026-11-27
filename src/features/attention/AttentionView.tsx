@@ -31,6 +31,8 @@ const POLLED: Polled[] = ['tasks', 'proposals', 'crons'];
 const TICK_MS = 30_000;
 const LOADING: SourceStatus = { state: 'loading' };
 const SESSIONS_LIVE: SourceStatus = { state: 'live' };
+/** Sessions during a known outage; the outage notice already speaks for it in section notes. */
+const SESSIONS_DISCONNECTED: SourceStatus = { state: 'error', error: 'not connected' };
 const RANKED = 'Ranked: deadlines, then priority, then age';
 const SESSION_CAVEAT = 'Session failures show from when this page opened.';
 
@@ -169,6 +171,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
 
   // While waiting, a source that has not answered since the gate was armed reads as loading,
   // so its old data is shown as stale and the brief can never read as clear.
+  const outage = !connected && link.lostAt !== null;
   const effectiveSources = useMemo<Record<AttentionSource, SourceStatus>>(() => {
     const pick = (source: Polled) => (
       !waiting || hasAnswered(polled[source], baseline?.[source]) ? polled[source] : LOADING
@@ -177,9 +180,9 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
       tasks: pick('tasks'),
       proposals: pick('proposals'),
       crons: pick('crons'),
-      sessions: sessionsLoading ? LOADING : SESSIONS_LIVE,
+      sessions: sessionsLoading ? LOADING : outage ? SESSIONS_DISCONNECTED : SESSIONS_LIVE,
     };
-  }, [polled, waiting, baseline, sessionsLoading]);
+  }, [polled, waiting, baseline, sessionsLoading, outage]);
 
   // Ages stay current with the tick and with the newest answer; ranking is frozen per epoch anyway.
   const now = Math.max(tick, ...POLLED.map((source) => polled[source].checkedAt ?? 0));
@@ -542,7 +545,9 @@ function SectionNotes({
   onOpen: (target: OpenTarget) => void;
 }) {
   const tasksOff = sources.tasks.state === 'off';
-  const errors = relevant.filter((source) => sources[source].state === 'error');
+  const errors = relevant.filter((source) => (
+    sources[source].state === 'error' && sources[source] !== SESSIONS_DISCONNECTED
+  ));
   const loading = relevant.filter((source) => (
     sources[source].state === 'loading' && !(source === 'proposals' && tasksOff)
   ));

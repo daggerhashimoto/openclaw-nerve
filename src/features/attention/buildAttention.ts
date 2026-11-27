@@ -125,8 +125,9 @@ function taskItems(input: AttentionInput, sessionsByKey: Map<string, Session>): 
     }
 
     if (run.status === 'running') {
-      const activity = sessionActivity(sessionsByKey.get(linkedKey ?? '')) ?? task.updatedAt;
-      const quiet = now - activity > GONE_QUIET_MS;
+      // Quiet time counts from this run's start, and only while session activity can be observed.
+      const activity = Math.max(run.startedAt, sessionActivity(sessionsByKey.get(linkedKey ?? '')) ?? task.updatedAt);
+      const quiet = sources.sessions.state === 'live' && now - activity > GONE_QUIET_MS;
       items.push({
         ...base,
         key: quiet ? `tasks:${task.id}:gone-quiet:${run.startedAt}` : `tasks:${task.id}:task-running`,
@@ -284,8 +285,10 @@ export function buildAttention(input: AttentionInput): AttentionBrief {
   if (tasksOn) {
     for (const task of input.tasks) {
       if (task.run?.status !== 'running') continue;
-      linkedKeys.add(task.run.sessionKey);
-      if (task.run.childSessionKey) linkedKeys.add(task.run.childSessionKey);
+      // An errored session stays out so it still shows as a session failure.
+      for (const key of [task.run.sessionKey, task.run.childSessionKey]) {
+        if (key && input.agentStatus[key]?.status !== 'ERROR') linkedKeys.add(key);
+      }
     }
   }
 

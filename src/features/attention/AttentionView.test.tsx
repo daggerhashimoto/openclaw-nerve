@@ -227,7 +227,8 @@ describe('AttentionView', () => {
     });
     const { onOpen } = renderView({ compact: true });
 
-    expect(screen.getByRole('region', { name: 'Start here' })).toBeInTheDocument();
+    const start = screen.getByRole('region', { name: 'Start here' });
+    expect(within(start).getAllByRole('button')).toHaveLength(1);
     const rows = screen.getAllByTestId('attention-row');
     expect(rows.length).toBe(2);
     for (const row of rows) {
@@ -280,6 +281,18 @@ describe('AttentionView', () => {
     rerenderWith({});
     expect(screen.getByText(hasText(/Not connected since/))).toBeInTheDocument();
     expect(screen.getByText('Fix the flaky retry test')).toBeInTheDocument();
+  });
+
+  it('after an outage, sessions are not treated as live and the brief cannot read as clear', () => {
+    setSources();
+    const { rerenderWith } = renderView();
+    expect(screen.getByText(hasText(/^Nothing needs you\./))).toBeInTheDocument();
+
+    gatewayMock.mockReturnValue({ connectionState: 'disconnected' });
+    rerenderWith({});
+    expect(screen.getByText(hasText(/Not connected since/))).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing needs you/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Sessions could not be read \(not connected\)/).length).toBeGreaterThan(0);
   });
 
   it('a page load before the socket connects is not an outage and takes sessions into the baseline', () => {

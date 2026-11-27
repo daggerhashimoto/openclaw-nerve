@@ -179,7 +179,7 @@ describe('buildAttention', () => {
   it('running task whose session is silent for 3h is gone quiet, not in progress', () => {
     const quietKey = 'agent:kim:subagent:quiet';
     const busyKey = 'agent:kim:subagent:busy';
-    const quiet = task({ id: 'quiet', status: 'in-progress', run: run({ sessionKey: quietKey }) });
+    const quiet = task({ id: 'quiet', status: 'in-progress', run: run({ sessionKey: quietKey, startedAt: NOW - 5 * HOUR }) });
     const busy = task({ id: 'busy', status: 'in-progress', run: run({ sessionKey: busyKey }) });
     const brief = buildAttention(input({
       tasks: [quiet, busy],
@@ -190,7 +190,7 @@ describe('buildAttention', () => {
     }));
     expect(brief.blocked.map((i) => i.sourceId)).toEqual(['quiet']);
     expect(brief.blocked[0].kind).toBe('gone-quiet');
-    expect(brief.blocked[0].key).toBe(`tasks:quiet:gone-quiet:${NOW - 2 * HOUR}`);
+    expect(brief.blocked[0].key).toBe(`tasks:quiet:gone-quiet:${NOW - 5 * HOUR}`);
     expect(brief.blocked[0].detail.quietSince).toBe(NOW - GONE_QUIET_MS - 60_000);
     expect(brief.progress.map((i) => i.sourceId)).toEqual(['busy']);
     expect(brief.progress[0].kind).toBe('task-running');
@@ -382,6 +382,38 @@ describe('buildAttention', () => {
     const brief = buildAttention(input({
       tasks: [done],
       sessions: [session({ key })],
+      agentStatus: { [key]: { status: 'ERROR', since } },
+    }));
+    expect(brief.blocked.map((i) => i.kind)).toEqual(['session-failed']);
+  });
+
+  it('counts quiet time from the run start, not older session activity', () => {
+    const key = 'agent:kim:subagent:fresh';
+    const t = task({ status: 'in-progress', updatedAt: NOW - 5 * HOUR, run: run({ sessionKey: key, startedAt: NOW - 60_000 }) });
+    const brief = buildAttention(input({ tasks: [t], sessions: [session({ key, updatedAt: NOW - 4 * HOUR })] }));
+    expect(brief.progress.map((i) => i.kind)).toEqual(['task-running']);
+    expect(brief.blocked).toHaveLength(0);
+  });
+
+  it('does not report gone quiet while sessions cannot be read', () => {
+    const key = 'agent:kim:subagent:dark';
+    const t = task({ status: 'in-progress', run: run({ sessionKey: key, startedAt: NOW - 5 * HOUR }) });
+    const brief = buildAttention(input({
+      tasks: [t],
+      sessions: [session({ key, updatedAt: NOW - 4 * HOUR })],
+      sources: { ...live(), sessions: { state: 'error' } },
+    }));
+    expect(brief.progress.map((i) => i.kind)).toEqual(['task-running']);
+    expect(brief.blocked).toHaveLength(0);
+  });
+
+  it('an errored session linked to a running task run shows as session-failed', () => {
+    const key = 'agent:kim:subagent:running-err';
+    const since = NOW - 10 * 60_000;
+    const t = task({ status: 'in-progress', run: run({ sessionKey: key, startedAt: NOW - 30 * 60_000 }) });
+    const brief = buildAttention(input({
+      tasks: [t],
+      sessions: [session({ key, updatedAt: NOW - 60_000 })],
       agentStatus: { [key]: { status: 'ERROR', since } },
     }));
     expect(brief.blocked.map((i) => i.kind)).toEqual(['session-failed']);

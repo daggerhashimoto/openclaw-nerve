@@ -92,6 +92,18 @@ describe('getSessionDisplayLabel', () => {
     })).not.toContain('not set yet');
   });
 
+  it('handles punctuation outside template emphasis', () => {
+    expect(isPlaceholderIdentityName('_(pick something you like)_.')).toBe(true);
+    expect(extractIdentityName('- **Name:** _(pick something you like)_.')).toBeNull();
+  });
+
+  it('uses the gateway identity for the main session when present', () => {
+    expect(getSessionDisplayLabel({
+      key: 'agent:main:main',
+      identityName: 'Nova',
+    }, 'Kim')).toBe('Nova (main)');
+  });
+
   it('does not let an explicit placeholder label override the identity', () => {
     const session = {
       key: 'agent:linus:main',

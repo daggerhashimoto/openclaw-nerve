@@ -168,13 +168,19 @@ const PLACEHOLDER_IDENTITY_NAMES = new Set([
 
 /** Strips the markdown emphasis and trailing punctuation a template wraps a value in. */
 function cleanIdentityValue(value: string): string {
-  return value
-    .replace(/\*\*|__/g, '')
-    .trim()
-    .replace(/^[*_`~]+|[*_`~]+$/g, '')
-    .trim()
-    .replace(/[.!?…]+$/g, '')
-    .trim();
+  let cleaned = value.replace(/\*\*|__/g, '').trim();
+  // Strip emphasis and sentence punctuation together, repeatedly: `_(name)_.`
+  // leaves the closing underscore on the first pass if punctuation runs last.
+  for (let pass = 0; pass < 3; pass += 1) {
+    const next = cleaned
+      .replace(/^[*_`~]+|[*_`~]+$/g, '')
+      .trim()
+      .replace(/[.!?…]+$/g, '')
+      .trim();
+    if (next === cleaned) break;
+    cleaned = next;
+  }
+  return cleaned;
 }
 
 /**
@@ -221,7 +227,7 @@ export function getSessionDisplayLabel(session: Session, agentName = 'Agent'): s
   if (sessionKey === 'agent:main:main') {
     const normalized = safeLabel?.toLowerCase();
     if (safeLabel && normalized !== 'main' && normalized !== 'heartbeat') return safeLabel;
-    return `${agentName} (main)`;
+    return `${identityName ?? agentName} (main)`;
   }
 
   if (isTopLevelAgentSessionKey(sessionKey)) {

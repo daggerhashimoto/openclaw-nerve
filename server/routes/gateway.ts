@@ -210,8 +210,15 @@ function bareModelId(ref: string): string {
  * Provider catalogs commonly reuse ids (`gpt-6-luna` on both `openai` and `opencode-go`), so a
  * bare-id match is only safe when it is unambiguous.
  */
-function uniqueBareMatch(catalogId: string, refs: Iterable<string>): string | undefined {
+function uniqueBareMatch(
+  catalogId: string,
+  refs: Iterable<string>,
+  catalogBareCounts?: ReadonlyMap<string, number>,
+): string | undefined {
   const bare = bareModelId(catalogId);
+  // A bare id shared by two provider rows is ambiguous even when only one of them
+  // appears in the config: enrichment must not bleed across catalog twins.
+  if ((catalogBareCounts?.get(bare) ?? 0) > 1) return undefined;
   const matches = new Set<string>();
   for (const ref of refs) {
     if (bareModelId(ref) === bare) matches.add(ref);
@@ -247,7 +254,8 @@ async function readConfigHints(): Promise<ModelConfigHints> {
     if (typeof primary === 'string' && normalizeModelRef(primary)) {
       hints.primary = normalizeModelRef(primary);
     }
-    for (const fallback of defaults?.model?.fallbacks || []) {
+    const fallbacks = Array.isArray(defaults?.model?.fallbacks) ? defaults.model.fallbacks : [];
+    for (const fallback of fallbacks) {
       if (typeof fallback === 'string' && normalizeModelRef(fallback)) {
         hints.fallbacks.push(normalizeModelRef(fallback));
       }
@@ -266,30 +274,45 @@ async function readConfigHints(): Promise<ModelConfigHints> {
   return hints;
 }
 
-function resolveCatalogRole(catalogId: string, hints: ModelConfigHints): GatewayModelInfo['role'] {
+function resolveCatalogRole(
+  catalogId: string,
+  hints: ModelConfigHints,
+  catalogBareCounts: ReadonlyMap<string, number>,
+  tags: readonly string[],
+): GatewayModelInfo['role'] {
   if (hints.primary === catalogId) return 'primary';
   if (hints.fallbacks.includes(catalogId)) return 'fallback';
+  if (tags.includes('default')) return 'primary';
+  if (tags.includes('fallback') || tags.some((tag) => /^fallback#\d+$/.test(tag))) return 'fallback';
 
-  const ref = uniqueBareMatch(catalogId, allConfigRefs(hints));
+  const ref = uniqueBareMatch(catalogId, allConfigRefs(hints), catalogBareCounts);
   if (!ref) return 'allowed';
   if (hints.primary === ref) return 'primary';
   if (hints.fallbacks.includes(ref)) return 'fallback';
   return 'allowed';
 }
 
-function findConfigAlias(catalogId: string, hints: ModelConfigHints): string | undefined {
+function findConfigAlias(
+  catalogId: string,
+  hints: ModelConfigHints,
+  catalogBareCounts: ReadonlyMap<string, number>,
+): string | undefined {
   const exact = hints.aliases.get(catalogId);
   if (exact) return exact;
 
-  // Ambiguity is judged against every configured ref, not just the aliased ones: a provider twin
+  // Ambiguity is judged against every configured ref and every catalog twin: a provider twin
   // without an alias must not inherit its sibling's alias.
-  const ref = uniqueBareMatch(catalogId, allConfigRefs(hints));
+  const ref = uniqueBareMatch(catalogId, allConfigRefs(hints), catalogBareCounts);
   return ref ? hints.aliases.get(ref) : undefined;
 }
 
-function configKnowsModel(catalogId: string, hints: ModelConfigHints): boolean {
+function configKnowsModel(
+  catalogId: string,
+  hints: ModelConfigHints,
+  catalogBareCounts: ReadonlyMap<string, number>,
+): boolean {
   if (hints.allowlisted.has(catalogId)) return true;
-  const ref = uniqueBareMatch(catalogId, hints.allowlisted);
+  const ref = uniqueBareMatch(catalogId, hints.allowlisted, catalogBareCounts);
   return ref !== undefined;
 }
 
@@ -339,6 +362,13 @@ function qualifyCatalogModel(provider: string, rawId: string): { id: string; pro
 function buildCatalogFromModelsList(rows: unknown[], hints: ModelConfigHints): GatewayModelInfo[] {
   const models: GatewayModelInfo[] = [];
   const seen = new Set<string>();
+  const catalogBareCounts = new Map<string, number>();
+  for (const rawRow of rows) {
+    if (!isRecord(rawRow) || typeof rawRow.id !== 'string') continue;
+    const provider = typeof rawRow.provider === 'string' ? rawRow.provider : '';
+    const { bareId } = qualifyCatalogModel(provider, rawRow.id.trim());
+    catalogBareCounts.set(bareId, (catalogBareCounts.get(bareId) ?? 0) + 1);
+  }
 
   for (const rawRow of rows) {
     if (!isRecord(rawRow)) continue;
@@ -357,15 +387,15 @@ function buildCatalogFromModelsList(rows: unknown[], hints: ModelConfigHints): G
     const tags = Array.isArray(row.tags)
       ? row.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
       : [];
-    const role = resolveCatalogRole(id, hints);
-    const alias = findConfigAlias(id, hints)
+    const role = resolveCatalogRole(id, hints, catalogBareCounts, tags);
+    const alias = findConfigAlias(id, hints, catalogBareCounts)
       || (typeof row.alias === 'string' && row.alias.trim() ? row.alias.trim() : undefined);
     const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : undefined;
     const thinkingLevels = normalizeCatalogThinkingLevels(row.thinkingLevels);
     const thinkingDefault = typeof row.thinkingDefault === 'string' && row.thinkingDefault.trim()
       ? row.thinkingDefault.trim().toLowerCase()
       : undefined;
-    const configured = tags.includes('configured') || role !== 'allowed' || configKnowsModel(id, hints);
+    const configured = tags.includes('configured') || role !== 'allowed' || configKnowsModel(id, hints, catalogBareCounts);
 
     models.push({
       id,
@@ -392,7 +422,7 @@ function buildCatalogFromModelsList(rows: unknown[], hints: ModelConfigHints): G
 async function getGatewayModelCatalog(): Promise<GatewayModelInfo[] | null> {
   let payload: unknown;
   try {
-    payload = await gatewayRpcCall('models.list', {}, MODEL_LIST_TIMEOUT_MS);
+    payload = await gatewayRpcCall('models.list', { includeDetails: true }, MODEL_LIST_TIMEOUT_MS);
   } catch (err) {
     console.warn('[gateway/models] models.list unavailable, falling back to config:', (err as Error).message);
     return null;

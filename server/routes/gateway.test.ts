@@ -369,7 +369,7 @@ describe('gateway routes', () => {
       });
       gatewayRpcImpl = (method, params) => {
         expect(method).toBe('models.list');
-        expect(params).toEqual({});
+        expect(params).toEqual({ includeDetails: true });
         return {
           models: [
             {
@@ -466,6 +466,37 @@ describe('gateway routes', () => {
         error: null,
         source: 'gateway',
       });
+    });
+
+    it('does not bleed aliases or roles across provider twins', async () => {
+      setDefaults();
+      process.env.OPENCLAW_CONFIG_PATH = '/tmp/openclaw.json';
+      readFileImpl = async () => JSON.stringify({
+        agents: {
+          defaults: {
+            model: { primary: 'opencode-go/glm-5' },
+            models: { 'opencode-go/glm-5': { alias: 'glm' } },
+          },
+        },
+      });
+      gatewayRpcImpl = () => ({
+        models: [
+          { id: 'glm-5', name: 'GLM 5', provider: 'openai', available: true },
+          { id: 'glm-5', name: 'GLM 5', provider: 'opencode-go', available: true },
+          { id: 'solo', name: 'Solo', provider: 'openai', available: true, tags: ['default'] },
+        ],
+      });
+
+      const app = buildApp();
+      const json = await (await app.request('/api/gateway/models')).json() as {
+        models: Array<{ id: string; label: string; alias?: string; configured: boolean; role: string }>;
+      };
+
+      expect(json.models).toEqual([
+        { id: 'openai/glm-5', label: 'GLM 5', provider: 'openai', configured: false, role: 'allowed', available: true },
+        { id: 'opencode-go/glm-5', label: 'glm', provider: 'opencode-go', alias: 'glm', configured: true, role: 'primary', available: true },
+        { id: 'openai/solo', label: 'Solo', provider: 'openai', configured: true, role: 'primary', available: true, tags: ['default'] },
+      ]);
     });
 
     it('returns the gateway catalog even when the OpenClaw config is unreadable', async () => {

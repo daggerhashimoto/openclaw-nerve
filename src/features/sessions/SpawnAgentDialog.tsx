@@ -159,7 +159,9 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
   const selectedModelEntry = useMemo<ModelEntry | null>(() => {
     if (fetchedModels.length === 0) return null;
     if (model === INHERITED_MODEL_VALUE || model === '') {
-      return fetchedModels.find((entry) => entry.role === 'primary') ?? fetchedModels[0];
+      // Without a known primary the inherited model's levels are unknown; do not
+      // pretend row 0 is what the spawned session will run.
+      return fetchedModels.find((entry) => entry.role === 'primary') ?? null;
     }
     return fetchedModels.find((entry) => entry.id === model) ?? null;
   }, [fetchedModels, model]);

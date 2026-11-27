@@ -876,6 +876,7 @@ export function groupToolMessages(msgs: ChatMsg[]): ChatMsg[] {
           rawText: t.rawText,
           preview: plainPreview || t.rawText.slice(0, 80),
           ...(t.toolResult !== undefined ? { result: t.toolResult } : {}),
+          ...(t.msgId ? { entryId: t.msgId } : {}),
         };
       });
       grouped.push({
@@ -1103,6 +1104,9 @@ export function transcriptRowId(msg: ChatMsg): string | null {
  * `onLatestHeartbeat` is called on every successful read with the newest
  * heartbeat time in this fetched window, or null when it has none.
  *
+ * `onRunActive` is called with whether the session had a run going when the
+ * gateway read the transcript, or null when the gateway does not say.
+ *
  * The caller is responsible for calling `setMessages(result)`.
  */
 export async function loadChatHistory(params: {
@@ -1110,12 +1114,17 @@ export async function loadChatHistory(params: {
   sessionKey: string;
   limit?: number;
   onLatestHeartbeat?: (at: number | null) => void;
+  onRunActive?: (active: boolean | null) => void;
 }): Promise<ChatMsg[]> {
-  const { rpc, sessionKey, limit = 100, onLatestHeartbeat } = params;
+  const { rpc, sessionKey, limit = 100, onLatestHeartbeat, onRunActive } = params;
 
   const res = await rpc('chat.history', { sessionKey, limit }) as ChatHistoryResponse;
   const msgs = res?.messages || [];
   onLatestHeartbeat?.(latestHeartbeatAt(msgs));
+  if (onRunActive) {
+    const reported = res?.sessionInfo?.hasActiveRun;
+    onRunActive(res?.inFlightRun ? true : typeof reported === 'boolean' ? reported : null);
+  }
 
   return processChatMessages(msgs, { sessionKey });
 }

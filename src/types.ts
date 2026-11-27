@@ -298,4 +298,8 @@ export interface SessionsListResponse {
 /** Chat history RPC response */
 export interface ChatHistoryResponse {
   messages?: ChatMessage[];
+  /** The session as the gateway saw it when it read the transcript (OpenClaw 2026.9+). */
+  sessionInfo?: { hasActiveRun?: boolean };
+  /** A run still in flight at that moment, when there is one. */
+  inFlightRun?: unknown;
 }

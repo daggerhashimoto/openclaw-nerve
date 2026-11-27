@@ -107,6 +107,18 @@ interface ChatContextValue {
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
+const TERMINAL_STREAM_EVENTS = new Set(['ignore', 'lifecycle_end', 'chat_final', 'chat_aborted', 'chat_error']);
+
+/** Whether a frame on the open session shows a run going on it. */
+function showsRunGoing(classified: NonNullable<ReturnType<typeof classifyStreamEvent>>): boolean {
+  if (TERMINAL_STREAM_EVENTS.has(classified.type)) return false;
+  if (classified.type === 'agent_state') {
+    const state = classified.agentPayload?.state || classified.agentPayload?.agentState;
+    return Boolean(state && isActiveAgentState(state));
+  }
+  return true;
+}
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { connectionState, rpc, subscribe } = useGateway();
   const { currentSession, sessions } = useSessionContext();
@@ -136,6 +148,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // A 2026.9 gateway sends that end just before the chat final, so the final has to
   // be recognised as this run's own even though no run is active any more.
   const endedRunIdRef = useRef<string | null>(null);
+  // Bumped by every run frame on the open session and by every send: a history
+  // read can report the run on screen over only if nothing ran after it went out.
+  const runEpochRef = useRef(0);
+  const getRunEpoch = useCallback(() => runEpochRef.current, []);
+  const runOverRef = useRef<() => void>(() => {});
+  const onRunOver = useCallback(() => runOverRef.current(), []);
   const voiceSendSeqRef = useRef(0);
   const voiceRunRef = useRef<{ runId: string } | null>(null);
   const lastGatewaySeqRef = useRef<number | null>(null);
@@ -177,6 +195,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     applyMessageWindow: msgHook.applyMessageWindow,
     setStream: streamHook.setStream,
     onLatestHeartbeat: recordHistoryHeartbeat,
+    getRunEpoch,
+    onRunOver,
   });
 
   const {
@@ -215,6 +235,34 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     handleCommittedTTS,
     clearVoiceMessage,
   } = ttsHook;
+
+  // A run whose end and final never arrived (lost with a dropped connection)
+  // comes down once a history read reports no run going on the session.
+  const settleLostRun = useCallback(() => {
+    const runId = activeRunIdRef.current;
+    const run = runId ? runsRef.current.get(runId) : undefined;
+    if (run) {
+      run.finalized = true;
+      run.bufferRaw = '';
+      run.bufferText = '';
+    }
+    activeRunIdRef.current = null;
+    endedRunIdRef.current = null;
+    setIsGenerating(false);
+    setProcessingStage(null);
+    setActivityLog([]);
+    setLastEventTimestamp(0);
+    clearStreamBuffer();
+    resetThinking();
+    pruneRunRegistry(runsRef.current, null);
+    // A history refresh that snapshotted before this run's terminal reply must not
+    // land after settlement and put the pre-final transcript back on screen.
+    runEpochRef.current += 1;
+    incrementGeneration();
+  }, [setProcessingStage, setActivityLog, setLastEventTimestamp, clearStreamBuffer, resetThinking, incrementGeneration]);
+  useEffect(() => {
+    runOverRef.current = settleLostRun;
+  }, [settleLostRun]);
 
   // ─── Reset transient state on session switch ──────────────────────────────
   useEffect(() => {
@@ -284,6 +332,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       historyRefreshRef.current = null;
       try {
         await historyLoadRef.current;
+        // The read happens now, so its snapshot can speak for every run frame up
+        // to now; a frame during the request still invalidates the answer.
+        const capturedRunEpoch = getRunEpoch();
         const seq = ++historyRefreshSeqRef.current;
         const recovered = await loadChatHistory({
           rpc,
@@ -296,13 +347,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (seq !== historyRefreshSeqRef.current) return;
         if (capturedSession !== currentSessionRef.current) return;
         if (capturedGeneration !== getGeneration()) return;
+        if (capturedRunEpoch !== getRunEpoch()) return;
         if (recovered.length > 0) {
           const merged = mergeRecoveredTail(getAllMessages(), recovered);
           applyMessageWindow(merged, false);
         }
       } catch { /* best-effort */ }
     }, 300);
-  }, [rpc, getGeneration, getAllMessages, applyMessageWindow, recordHistoryHeartbeat]);
+  }, [rpc, getGeneration, getRunEpoch, getAllMessages, applyMessageWindow, recordHistoryHeartbeat]);
 
   useEffect(() => {
     if (connectionState !== 'connected' || !currentSession) return;
@@ -489,6 +541,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
 
       const { type } = classified;
+      // A frame of a run still going means something is running now, whatever an
+      // earlier read said. Ignored frames, idle agent states and terminal frames
+      // (which settle their run themselves) say nothing about that.
+      if (showsRunGoing(classified)) runEpochRef.current += 1;
 
       // ── Agent events ────────────────────────────────────────────────────
       if (classified.source === 'agent') {
@@ -818,6 +874,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const { msg: userMsg, tempId } = buildUserMessage({ text, images, uploadPayload });
 
     incrementGeneration();
+    runEpochRef.current += 1;
 
     // Optimistic insert (functional updater to avoid read-then-write race)
     msgHook.setAllMessages(prev => [...prev, userMsg]);
@@ -839,6 +896,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         idempotencyKey,
       });
 
+      // A read the gateway took before it accepted this send cannot speak for its run.
+      runEpochRef.current += 1;
       if (ack.runId) {
         const run = getOrCreateRunState(runsRef.current, ack.runId, currentSessionRef.current);
         run.status = ack.status;

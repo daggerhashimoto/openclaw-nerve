@@ -61,12 +61,17 @@ class MockSpeechRecognition {
 // Mock MediaRecorder
 class MockMediaRecorder {
   static instances: MockMediaRecorder[] = [];
+  static isTypeSupported = vi.fn((type: string) => type.length > 0);
   state: 'inactive' | 'recording' | 'paused' = 'inactive';
+  mimeType: string;
+  options?: { mimeType: string };
   ondataavailable: ((e: { data: Blob }) => void) | null = null;
   onstop: (() => void) | null = null;
 
-  constructor(_stream: MediaStream, _options?: { mimeType: string }) {
-    void _stream; void _options;
+  constructor(_stream: MediaStream, options?: { mimeType: string }) {
+    void _stream;
+    this.options = options;
+    this.mimeType = options?.mimeType || 'audio/webm';
     MockMediaRecorder.instances.push(this);
   }
 
@@ -101,6 +106,7 @@ function mockWakeWordSupport(result: { supported: boolean; reason: 'mobile-web' 
 describe('useVoiceInput', () => {
   let mockRecognition: MockSpeechRecognition | null = null;
   let originalFetch: typeof fetch;
+  const originalMatchMedia = window.matchMedia;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -158,6 +164,7 @@ describe('useVoiceInput', () => {
     }) as typeof fetch;
 
     vi.clearAllMocks();
+    MockMediaRecorder.isTypeSupported.mockReset().mockReturnValue(true);
     localStorage.clear();
     mockWakeWordSupport({ supported: true, reason: null });
   });
@@ -165,6 +172,11 @@ describe('useVoiceInput', () => {
   afterEach(() => {
     vi.useRealTimers();
     globalThis.fetch = originalFetch;
+    if (originalMatchMedia) {
+      window.matchMedia = originalMatchMedia;
+    } else {
+      delete (window as unknown as { matchMedia?: typeof window.matchMedia }).matchMedia;
+    }
     delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition;
     delete (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
     delete (navigator as unknown as { permissions?: unknown }).permissions;
@@ -733,6 +745,167 @@ describe('useVoiceInput', () => {
 
       expect(onTranscription).toHaveBeenCalledWith('transcribed text');
       expect(hasTranscribeRequest(globalThis.fetch as Mock)).toBe(true);
+    });
+
+    it('falls back to backend transcription in browser mode when the recognizer produces no transcript', async () => {
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription, 'Agent', 'en', 0, 'browser'));
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      // No simulateResult: the recognizer exists but mobile Safari/PWA returned nothing.
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(onTranscription).toHaveBeenCalledWith('transcribed text');
+      expect(hasTranscribeRequest(globalThis.fetch as Mock)).toBe(true);
+    });
+
+    it('uploads audio/mp4 when WebM recording is unsupported (iOS Safari)', async () => {
+      MockMediaRecorder.isTypeSupported.mockImplementation((type: string) => type === 'audio/mp4');
+
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription, 'Agent', 'en', 0, 'local'));
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      const recorder = MockMediaRecorder.instances[0];
+      expect(recorder.options?.mimeType).toBe('audio/mp4');
+
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      const call = (globalThis.fetch as Mock).mock.calls.find(([url]) => url === '/api/transcribe');
+      const formData = call?.[1]?.body as FormData;
+      const file = formData.get('file') as File;
+      expect(file.name).toBe('audio.mp4');
+      expect(file.type).toBe('audio/mp4');
+      expect(onTranscription).toHaveBeenCalledWith('transcribed text');
+    });
+  });
+
+  describe('Mobile error handling', () => {
+    it('reports an actionable error when microphone permission is denied', async () => {
+      (navigator.mediaDevices.getUserMedia as Mock).mockRejectedValue(
+        new DOMException('denied', 'NotAllowedError'),
+      );
+
+      const { result } = renderHook(() => useVoiceInput(vi.fn()));
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      expect(result.current.voiceState).toBe('idle');
+      expect(result.current.error).toMatch(/Allow microphone access/);
+    });
+
+    it('reports an actionable error on an insecure origin without prompting for the mic', async () => {
+      const descriptor = Object.getOwnPropertyDescriptor(window, 'isSecureContext');
+      Object.defineProperty(window, 'isSecureContext', { configurable: true, value: false });
+
+      try {
+        const { result } = renderHook(() => useVoiceInput(vi.fn()));
+
+        await act(async () => {
+          result.current.startRecording();
+          await vi.runAllTimersAsync();
+        });
+
+        expect(result.current.error).toMatch(/secure HTTPS connection/i);
+        expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+      } finally {
+        if (descriptor) {
+          Object.defineProperty(window, 'isSecureContext', descriptor);
+        } else {
+          delete (window as unknown as { isSecureContext?: boolean }).isSecureContext;
+        }
+      }
+    });
+
+    it('reports an actionable error when MediaRecorder is missing', async () => {
+      delete (window as unknown as { MediaRecorder?: unknown }).MediaRecorder;
+
+      const { result } = renderHook(() => useVoiceInput(vi.fn()));
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      expect(result.current.error).toMatch(/cannot record audio/);
+      expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    });
+
+    it('exposes isStarting while the microphone permission prompt is pending', async () => {
+      let resolveStream: (stream: MediaStream) => void = () => {};
+      const pending = new Promise<MediaStream>((resolve) => {
+        resolveStream = resolve;
+      });
+      (navigator.mediaDevices.getUserMedia as Mock).mockReturnValue(pending);
+
+      const { result } = renderHook(() => useVoiceInput(vi.fn()));
+
+      act(() => {
+        void result.current.startRecording();
+      });
+
+      expect(result.current.isStarting).toBe(true);
+
+      await act(async () => {
+        resolveStream(new MockMediaStream() as unknown as MediaStream);
+        await vi.runAllTimersAsync();
+      });
+
+      expect(result.current.isStarting).toBe(false);
+      expect(result.current.voiceState).toBe('recording');
+    });
+    it('keeps Web Speech out of the recording path for MP4 recorders on coarse pointers (iOS)', async () => {
+      MockMediaRecorder.isTypeSupported.mockImplementation((type: string) => type === 'audio/mp4');
+      window.matchMedia = vi.fn((query: string) => ({
+        matches: true,
+        media: query,
+      })) as unknown as typeof window.matchMedia;
+
+      const onTranscription = vi.fn();
+      const { result } = renderHook(() => useVoiceInput(onTranscription, 'Agent', 'en', 0, 'local'));
+
+      await act(async () => {
+        result.current.startRecording();
+        await vi.runAllTimersAsync();
+      });
+
+      expect(MockMediaRecorder.instances[0].options?.mimeType).toBe('audio/mp4');
+      expect(MockSpeechRecognition.instances).toHaveLength(0);
+      expect(result.current.voiceState).toBe('recording');
+
+      act(() => {
+        result.current.stopAndTranscribe();
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(hasTranscribeRequest(globalThis.fetch as Mock)).toBe(true);
+      expect(onTranscription).toHaveBeenCalledWith('transcribed text');
     });
   });
 

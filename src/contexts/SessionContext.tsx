@@ -21,6 +21,7 @@ import {
   pickDefaultSessionKey,
   getRootAgentId,
   getSessionAgentId,
+  isPlaceholderIdentityName,
 } from '@/features/sessions/sessionKeys';
 
 const BUSY_STATES = new Set(['running', 'thinking', 'tool_use', 'delta', 'started']);
@@ -33,6 +34,12 @@ const MAIN_SESSION_KEY = 'agent:main:main';
 const SESSIONS_SPAWNED_LIMIT = 500;
 /** How long a reported missing sessions.json holds before the hidden cron list is asked again. */
 const HIDDEN_STORE_RECHECK_MS = 5 * 60_000;
+/** How often agent identities are re-read, so a rename reaches labels without a reload. */
+const IDENTITY_REFRESH_MS = 60_000;
+/** A workspace identity file stays fresh this long before it is read again. */
+const IDENTITY_FILE_TTL_MS = 5 * 60_000;
+/** A file with no usable Name is retried this often, in case it is filled in later. */
+const IDENTITY_FILE_RETRY_MS = 60_000;
 
 // A refresh keeps a row's old object unless one of these differs, so every field the agents
 // column, the fleet pane and the session info panel read has to be here (run state included).
@@ -113,6 +120,25 @@ export function findAgentRemovalInfo(answer: unknown, agentId: string): AgentRem
   return { path: own.path, isOnlyAgent };
 }
 
+/** Agent identity names from an agents.list answer, dropping empty and template stand-ins. */
+export function readAgentIdentityNames(answer: unknown): Record<string, string> {
+  const agents = (answer as { agents?: unknown } | null)?.agents;
+  if (!Array.isArray(agents)) return {};
+  const names: Record<string, string> = {};
+  for (const agent of agents) {
+    const record = agent as { id?: unknown; identity?: { name?: unknown } } | null;
+    const id = typeof record?.id === 'string' ? record.id.trim() : '';
+    const rawName = typeof record?.identity?.name === 'string' ? record.identity.name.trim() : '';
+    if (id && rawName && !isPlaceholderIdentityName(rawName)) names[id] = rawName;
+  }
+  return names;
+}
+
+function sameIdentityNames(a: Record<string, string>, b: Record<string, string>): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
+}
+
 interface SessionContextValue {
   sessions: Session[];
   sessionsLoading: boolean;
@@ -152,6 +178,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [defaultAgentWorkspaceRoot, setDefaultAgentWorkspaceRoot] = useState<string | null>(null);
   const [rootIdentityNames, setRootIdentityNames] = useState<Record<string, string>>({});
   const [rootIdentityMisses, setRootIdentityMisses] = useState<Record<string, true>>({});
+  // What agents.list reports, by agent id: the gateway's own view outranks a workspace file.
+  const [gatewayIdentityNames, setGatewayIdentityNames] = useState<Record<string, string>>({});
+  const identityAttemptedAtRef = useRef<Record<string, number>>({});
+  // Bumped by the poll and by a refresh, so identities are re-read without waiting for a reload.
+  const [identityRevision, setIdentityRevision] = useState(0);
   const [unreadSessionKeys, setUnreadSessionKeys] = useState<Set<string>>(new Set());
   const unreadSessionKeysRef = useRef(unreadSessionKeys);
   const soundEnabledRef = useRef(soundEnabled);
@@ -287,15 +318,48 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
   const sessionsRef = useRef(sessions);
   
-  // Update refs in effect to avoid render-time mutations
+  // Identities are re-read on a timer: a rename in config or in IDENTITY.md must not need a reload.
   useEffect(() => {
+    if (connectionState !== 'connected') return;
+    const iv = setInterval(() => setIdentityRevision((value) => value + 1), IDENTITY_REFRESH_MS);
+    return () => clearInterval(iv);
+  }, [connectionState]);
+
+  // agents.list reports the identity the gateway itself holds. It outranks a workspace file and
+  // reaches the labels without that file being fetched again.
+  useEffect(() => {
+    if (connectionState !== 'connected') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const names = readAgentIdentityNames(await rpc('agents.list', {}));
+        if (!cancelled) {
+          setGatewayIdentityNames((prev) => (sameIdentityNames(prev, names) ? prev : names));
+        }
+      } catch {
+        // Keep the names from the last answer; the workspace fallback still covers unknown agents.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [connectionState, identityRevision, rpc]);
+
+  // Workspace identity files are the fallback for agents the gateway does not register. A read
+  // stays fresh for a while and a missing Name is retried on a bounded interval, so a placeholder
+  // or an old name is never kept forever. Neither source may store template text.
+  useEffect(() => {
+    const now = Date.now();
     const rootAgentIds = Array.from(new Set(
       sessions
         .map((session) => getSessionKey(session))
         .filter(isTopLevelAgentSessionKey)
         .map((sessionKey) => getRootAgentId(sessionKey))
         .filter((rootId): rootId is string => Boolean(rootId) && rootId !== 'main'),
-    )).filter((rootId) => !rootIdentityNames[rootId] && !rootIdentityMisses[rootId]);
+    )).filter((rootId) => {
+      if (gatewayIdentityNames[rootId]) return false;
+      const attemptedAt = identityAttemptedAtRef.current[rootId] ?? 0;
+      const freshFor = rootIdentityNames[rootId] ? IDENTITY_FILE_TTL_MS : IDENTITY_FILE_RETRY_MS;
+      return now - attemptedAt >= freshFor;
+    });
 
     if (rootAgentIds.length === 0) return;
 
@@ -304,10 +368,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       try {
         const params = new URLSearchParams({ agentId: rootId });
         const res = await fetch(`/api/workspace/identity?${params.toString()}`, { signal: controller.signal });
+        if (res.status === 404) {
+          // A deleted identity file must clear the old label, not look like a read
+          // that can be retried forever without ever becoming a miss.
+          return { rootId, kind: 'miss' as const };
+        }
         if (!res.ok) return null;
         const data = await res.json() as { ok?: boolean; content?: string };
         const identityName = typeof data.content === 'string' ? extractIdentityName(data.content) : null;
-        if (identityName) return { rootId, identityName, kind: 'hit' as const };
+        if (identityName && !isPlaceholderIdentityName(identityName)) {
+          return { rootId, identityName, kind: 'hit' as const };
+        }
         return { rootId, kind: 'miss' as const };
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return null;
@@ -317,6 +388,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (controller.signal.aborted) return;
       const resolved = results.filter((result): result is NonNullable<typeof result> => Boolean(result));
       if (resolved.length === 0) return;
+      // Only an applied read starts its retry window. A batch aborted because
+      // another root was still pending must not leave discarded roots stamped.
+      const attemptedAt = Date.now();
+      for (const result of resolved) identityAttemptedAtRef.current[result.rootId] = attemptedAt;
 
       setRootIdentityMisses((prev) => {
         let changed = false;
@@ -339,10 +414,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const next = { ...prev };
         let changed = false;
         for (const result of resolved) {
-          if (result.kind !== 'hit') continue;
-          const { rootId, identityName } = result;
-          if (next[rootId] === identityName) continue;
-          next[rootId] = identityName;
+          if (result.kind === 'hit') {
+            if (next[result.rootId] === result.identityName) continue;
+            next[result.rootId] = result.identityName;
+            changed = true;
+            continue;
+          }
+          // A file that lost its name must not leave the old label behind.
+          if (next[result.rootId] === undefined) continue;
+          delete next[result.rootId];
           changed = true;
         }
         return changed ? next : prev;
@@ -350,7 +430,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     });
 
     return () => controller.abort();
-  }, [rootIdentityMisses, rootIdentityNames, sessions]);
+  }, [gatewayIdentityNames, identityRevision, rootIdentityMisses, rootIdentityNames, sessions]);
+
+  // A gateway name outranks a workspace file; either is dropped when it is only template text.
+  const resolvedIdentityNames = useMemo(() => {
+    const names = { ...rootIdentityNames };
+    for (const [rootId, name] of Object.entries(gatewayIdentityNames)) {
+      if (!isPlaceholderIdentityName(name)) names[rootId] = name;
+    }
+    return names;
+  }, [gatewayIdentityNames, rootIdentityNames]);
 
   const displaySessions = useMemo(() => sessions.map((session) => {
     const sessionKey = getSessionKey(session);
@@ -359,7 +448,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const rootId = getRootAgentId(sessionKey);
     if (!rootId) return session;
 
-    const identityName = rootId === 'main' ? agentName : rootIdentityNames[rootId];
+    const candidate = resolvedIdentityNames[rootId]
+      ?? (rootId === 'main' ? agentName : undefined);
+    const identityName = candidate && !isPlaceholderIdentityName(candidate) ? candidate : undefined;
     if (rootId !== 'main' && !identityName) {
       if (!session.identityName) return session;
       const rest = { ...session };
@@ -368,7 +459,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     if (!identityName || session.identityName === identityName) return session;
     return { ...session, identityName };
-  }), [agentName, rootIdentityNames, sessions]);
+  }), [agentName, resolvedIdentityNames, sessions]);
 
   useEffect(() => {
     sessionsRef.current = displaySessions;
@@ -1080,6 +1171,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
     setRootIdentityNames(withoutAgent);
     setRootIdentityMisses(withoutAgent);
+    setGatewayIdentityNames(withoutAgent);
+    delete identityAttemptedAtRef.current[agentId];
+    setIdentityRevision((value) => value + 1);
     await refreshSessions();
   }, [forgetDeletedSessions, refreshSessions, rpc]);
 

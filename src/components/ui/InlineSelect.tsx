@@ -123,7 +123,14 @@ export function InlineSelect({
 
     const spaceBelow = viewportHeight - rect.bottom - VIEWPORT_PADDING - 4;
     const spaceAbove = rect.top - VIEWPORT_PADDING - 4;
-    const shouldDropUp = dropUp || (naturalHeight > spaceBelow && spaceAbove > spaceBelow);
+    const preferredUp = dropUp || (naturalHeight > spaceBelow && spaceAbove > spaceBelow);
+    // A forced drop-up with no room above would render an invisible menu; flip to
+    // the roomier side. Auto placement already does this, but `dropUp` bypasses it.
+    const shouldDropUp = preferredUp && spaceAbove >= 48
+      ? true
+      : !preferredUp && spaceBelow >= 48
+        ? false
+        : spaceAbove > spaceBelow;
     const availableHeight = shouldDropUp ? spaceAbove : spaceBelow;
     // Never floor past the space the viewport actually offers: on a short
     // landscape viewport that would push the last options off-screen.

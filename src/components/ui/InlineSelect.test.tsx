@@ -270,7 +270,9 @@ describe('InlineSelect', () => {
 
     fireEvent.click(trigger);
     const listbox = screen.getByRole('listbox');
-    expect(Number.parseFloat(listbox.style.maxHeight)).toBeLessThanOrEqual(0);
+    // No room above, so the menu flips below instead of collapsing to 0px.
+    expect(listbox).toHaveAttribute('data-placement', 'bottom');
+    expect(Number.parseFloat(listbox.style.maxHeight)).toBeGreaterThan(0);
   });
 
   it('opens below the trigger when there is room', () => {

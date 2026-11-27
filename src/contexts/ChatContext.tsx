@@ -107,6 +107,18 @@ interface ChatContextValue {
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
+const TERMINAL_STREAM_EVENTS = new Set(['ignore', 'lifecycle_end', 'chat_final', 'chat_aborted', 'chat_error']);
+
+/** Whether a frame on the open session shows a run going on it. */
+function showsRunGoing(classified: NonNullable<ReturnType<typeof classifyStreamEvent>>): boolean {
+  if (TERMINAL_STREAM_EVENTS.has(classified.type)) return false;
+  if (classified.type === 'agent_state') {
+    const state = classified.agentPayload?.state || classified.agentPayload?.agentState;
+    return Boolean(state && isActiveAgentState(state));
+  }
+  return true;
+}
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { connectionState, rpc, subscribe } = useGateway();
   const { currentSession, sessions } = useSessionContext();
@@ -521,8 +533,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
 
       const { type } = classified;
-      // Something is running on this session now, whatever an earlier read said.
-      runEpochRef.current += 1;
+      // A frame of a run still going means something is running now, whatever an
+      // earlier read said. Ignored frames, idle agent states and terminal frames
+      // (which settle their run themselves) say nothing about that.
+      if (showsRunGoing(classified)) runEpochRef.current += 1;
 
       // ── Agent events ────────────────────────────────────────────────────
       if (classified.source === 'agent') {

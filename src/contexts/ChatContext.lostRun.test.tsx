@@ -145,6 +145,25 @@ describe('ChatContext when a run ends while disconnected', () => {
     expect(getChat().isGenerating).toBe(true);
   });
 
+  it('still takes the run down when only passive frames arrive while the read is out', async () => {
+    const { getChat, state, held, emit, setConnection, streamThenDrop } = await setup();
+    await streamThenDrop();
+
+    state.sessionInfo = { hasActiveRun: false };
+    state.hold = true;
+    setConnection('connected');
+    await waitFor(() => expect(held).toHaveLength(1));
+    emit('agent', { runId: RUN, sessionKey: SESSION, state: 'idle' });
+    emit('agent', { runId: RUN, sessionKey: SESSION, stream: 'compaction', data: {} });
+
+    await act(async () => {
+      held[0]();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    await waitFor(() => expect(getChat().isGenerating).toBe(false));
+    expect(getChat().stream.html).toBe('');
+  });
+
   // How a newer run can first show itself while the read is out.
   const newerRunFrames: Array<[string, string, Record<string, unknown>]> = [
     ['a lifecycle start', 'agent', { stream: 'lifecycle', data: { phase: 'start' } }],

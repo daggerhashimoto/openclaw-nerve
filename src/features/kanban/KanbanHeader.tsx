@@ -24,6 +24,8 @@ interface KanbanHeaderProps {
   pendingProposalCount?: number;
   onApproveProposal?: (id: string) => void;
   onRejectProposal?: (id: string) => void;
+  /** Open the proposal inbox with this proposal marked (set from outside the Tasks view). */
+  highlightProposalId?: string | null;
 }
 
 /**
@@ -40,9 +42,11 @@ export const KanbanHeader = memo(function KanbanHeader({
   pendingProposalCount = 0,
   onApproveProposal,
   onRejectProposal,
+  highlightProposalId,
 }: KanbanHeaderProps) {
   const [showFilters, setShowFilters] = useState(false);
   const [showInbox, setShowInbox] = useState(false);
+  const [markedProposalId, setMarkedProposalId] = useState<string | null>(null);
   const [searchValue, setSearchValue] = useState(filters.q);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const filtersRef = useRef(filters);
@@ -50,6 +54,20 @@ export const KanbanHeader = memo(function KanbanHeader({
 
   /* Keep filtersRef in sync (avoids stale closures in debounced search) */
   useEffect(() => { filtersRef.current = filters; });
+
+  /* Open the inbox for a proposal asked for from outside. The mark is kept here, so it
+     stays while the caller clears its request, and drops when the operator toggles the inbox. */
+  useEffect(() => {
+    if (!highlightProposalId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional sync from prop
+    setMarkedProposalId(highlightProposalId);
+    setShowInbox(true);
+  }, [highlightProposalId]);
+
+  const toggleInbox = useCallback(() => {
+    setMarkedProposalId(null);
+    setShowInbox((open) => !open);
+  }, []);
 
   /* Close inbox popover when clicking outside */
   useEffect(() => {
@@ -146,7 +164,7 @@ export const KanbanHeader = memo(function KanbanHeader({
           <div className="relative shrink-0" ref={inboxRef}>
             <button
               type="button"
-              onClick={() => setShowInbox(!showInbox)}
+              onClick={toggleInbox}
               className="shell-chip"
               data-active={showInbox ? 'true' : 'false'}
               title="Agent proposals"
@@ -168,6 +186,7 @@ export const KanbanHeader = memo(function KanbanHeader({
                 </div>
                 <ProposalInbox
                   proposals={proposals}
+                  highlightId={markedProposalId}
                   onApprove={(id) => onApproveProposal?.(id)}
                   onReject={(id) => onRejectProposal?.(id)}
                 />

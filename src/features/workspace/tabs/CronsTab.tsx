@@ -100,8 +100,10 @@ function fullTime(ts?: string): string | undefined {
 const menuItemClass =
   'flex min-h-[var(--row-unit)] w-full items-center gap-2 px-2.5 text-[0.867rem] text-foreground transition-colors duration-[120ms] hover:bg-raised max-sm:min-h-11';
 
-function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
+function CronRow({ job, focused, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   job: CronRowJob;
+  /** True while this row is the one asked for from outside the tab. */
+  focused: boolean;
   onToggle: (id: string, enabled: boolean) => void;
   onRun: (id: string) => Promise<boolean | undefined>;
   onDelete: (id: string) => void;
@@ -115,6 +117,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   const [actionsOpen, setActionsOpen] = useState(false);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const actionsRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
 
   // Cleanup delete confirmation timer
   useEffect(() => () => clearTimeout(deleteTimerRef.current), []);
@@ -142,13 +145,27 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
     };
   }, [actionsOpen]);
 
+  const showRuns = useCallback(async () => {
+    const r = await onFetchRuns(job.id);
+    setRuns(r);
+    setExpanded(true);
+  }, [job.id, onFetchRuns]);
+
   const handleExpand = useCallback(async () => {
-    if (!expanded) {
-      const r = await onFetchRuns(job.id);
-      setRuns(r);
+    if (expanded) {
+      setExpanded(false);
+      return;
     }
-    setExpanded(!expanded);
-  }, [expanded, job.id, onFetchRuns]);
+    await showRuns();
+  }, [expanded, showRuns]);
+
+  // Asked for from outside the tab: bring the row into view and open its history, once per focus
+  useEffect(() => {
+    if (!focused) return;
+    rowRef.current?.scrollIntoView?.({ block: 'start' });
+    void showRuns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires when focus lands on this row, not when showRuns changes
+  }, [focused]);
 
   const handleRun = useCallback(async () => {
     setRunning(true);
@@ -193,7 +210,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   const historyLabel = expanded ? 'Hide run history' : 'Show run history';
 
   return (
-    <div className="group relative transition-colors duration-[120ms] hover:bg-raised">
+    <div ref={rowRef} className="group relative transition-colors duration-[120ms] hover:bg-raised">
       <div className="flex min-h-[var(--row-unit)] items-center gap-2 pl-3 pr-1">
         <Pane state={paneState} label={paneStateLabel(paneState)} />
         <button
@@ -374,8 +391,13 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   );
 }
 
+interface CronsTabProps {
+  /** Expand and scroll to this cron row when it changes (the tab was opened from outside). */
+  focusCronId?: string | null;
+}
+
 /** Workspace tab listing cron jobs with create/edit/delete/toggle controls. */
-export function CronsTab() {
+export function CronsTab({ focusCronId = null }: CronsTabProps = {}) {
   const { jobs, isLoading, error, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
   const { refreshSessions } = useSessionContext();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -495,6 +517,7 @@ export function CronsTab() {
           <CronRow
             key={job.id}
             job={job}
+            focused={job.id === focusCronId}
             onToggle={toggleJob}
             onRun={handleRun}
             onDelete={deleteJob}

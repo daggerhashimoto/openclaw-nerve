@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TopBar } from './TopBar';
 
@@ -7,21 +7,20 @@ vi.mock('./NerveLogo', () => ({
   default: ({ static: still }: { static?: boolean }) => <div data-testid="nerve-logo" data-still={String(Boolean(still))} />,
 }));
 
+const baseProps: React.ComponentProps<typeof TopBar> = {
+  onSettings: vi.fn(),
+  agentLogEntries: [],
+  tokenData: null,
+  logGlow: false,
+  eventEntries: [],
+  eventsVisible: false,
+  logVisible: false,
+  viewMode: 'chat',
+  onViewModeChange: vi.fn(),
+};
+
 function renderTopBar(props: Partial<React.ComponentProps<typeof TopBar>> = {}) {
-  return render(
-    <TopBar
-      onSettings={vi.fn()}
-      agentLogEntries={[]}
-      tokenData={null}
-      logGlow={false}
-      eventEntries={[]}
-      eventsVisible={false}
-      logVisible={false}
-      viewMode="chat"
-      onViewModeChange={vi.fn()}
-      {...props}
-    />,
-  );
+  return render(<TopBar {...baseProps} {...props} />);
 }
 
 describe('TopBar', () => {
@@ -71,5 +70,53 @@ describe('TopBar', () => {
     renderTopBar();
 
     expect(screen.queryByRole('button', { name: /open command palette/i })).not.toBeInTheDocument();
+  });
+
+  it('openPanelRequest opens the workspace panel at compact layout', () => {
+    const props = { mobilePanelButtonsVisible: true, workspacePanel: <div data-testid="workspace-content" /> };
+    const { rerender } = renderTopBar(props);
+    const launcher = screen.getByRole('button', { name: /toggle workspace panel/i });
+    expect(launcher).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('workspace-content')).not.toBeInTheDocument();
+
+    rerender(
+      <TopBar {...baseProps} {...props} openPanelRequest={{ panel: 'workspace', nonce: 1 }} />,
+    );
+
+    expect(launcher).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('workspace-content')).toBeInTheDocument();
+
+    // The same nonce again is not a request; the launcher still closes the panel.
+    rerender(
+      <TopBar {...baseProps} {...props} openPanelRequest={{ panel: 'workspace', nonce: 1 }} />,
+    );
+    fireEvent.click(launcher);
+    expect(launcher).toHaveAttribute('aria-expanded', 'false');
+
+    // A new nonce opens it again, and an open panel stays open.
+    rerender(
+      <TopBar {...baseProps} {...props} openPanelRequest={{ panel: 'workspace', nonce: 2 }} />,
+    );
+    expect(launcher).toHaveAttribute('aria-expanded', 'true');
+    rerender(
+      <TopBar {...baseProps} {...props} openPanelRequest={{ panel: 'workspace', nonce: 3 }} />,
+    );
+    expect(launcher).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('does not replay an openPanelRequest it already applied when the bar mounts afresh', () => {
+    const props = {
+      mobilePanelButtonsVisible: true,
+      workspacePanel: <div data-testid="workspace-content" />,
+      openPanelRequest: { panel: 'workspace' as const, nonce: 50 },
+    };
+    const first = renderTopBar(props);
+    expect(screen.getByRole('button', { name: /toggle workspace panel/i })).toHaveAttribute('aria-expanded', 'true');
+    first.unmount();
+
+    // The compact top bar unmounts while hidden and mounts again with the request still set.
+    renderTopBar(props);
+
+    expect(screen.getByRole('button', { name: /toggle workspace panel/i })).toHaveAttribute('aria-expanded', 'false');
   });
 });

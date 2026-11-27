@@ -82,6 +82,10 @@ const PANEL_CONFIG: Record<Exclude<PanelId, null> | "default", PanelConfig> = {
   },
 };
 
+/** The last panel request the bar applied. Module scope, so a bar that mounts afresh (it is
+ *  unmounted while the compact top bar is hidden) does not replay a request already handled. */
+let lastOpenedPanelNonce: number | null = null;
+
 /** Props for {@link TopBar}. */
 interface TopBarProps {
   /** Callback to open the settings modal. */
@@ -119,6 +123,8 @@ interface TopBarProps {
   activity?: PaneState;
   /** The fleet in numbers, printed in words beside the wordmark. */
   fleet?: FleetCounts;
+  /** Open a compact-layout panel from outside. Each new `nonce` opens it once, as a tap on its launcher would. */
+  openPanelRequest?: { panel: "workspace"; nonce: number } | null;
 }
 
 const BRAND_PANE_LABEL: Record<PaneState, string | undefined> = {
@@ -151,6 +157,7 @@ export function TopBar({
   showKanbanView = true,
   activity = "off",
   fleet,
+  openPanelRequest,
 }: TopBarProps) {
   const [activePanel, setActivePanel] = useState<PanelId>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -159,6 +166,14 @@ export function TopBar({
   const togglePanel = useCallback((panel: PanelId) => {
     setActivePanel((prev) => (prev === panel ? null : panel));
   }, []);
+
+  // Open (never toggle closed) the panel a request names, once per nonce
+  useEffect(() => {
+    if (!openPanelRequest || openPanelRequest.nonce === lastOpenedPanelNonce) return;
+    lastOpenedPanelNonce = openPanelRequest.nonce;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-time sync from a request prop
+    setActivePanel(openPanelRequest.panel);
+  }, [openPanelRequest]);
 
   const isPanelAvailable = useCallback(
     (panel: PanelId) => {

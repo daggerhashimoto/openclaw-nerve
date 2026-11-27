@@ -1,15 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const hoisted = vi.hoisted(() => ({
   gatewayNames: {} as Record<string, string>,
   workspaceName: 'Workspace Ops',
   workspaceStatus: 200,
+  sessions: [{ key: 'agent:ops:main' }] as Array<{ key: string }>,
 }));
 
 const rpcMock = vi.hoisted(() => vi.fn(async (method: string) => {
   if (method === 'sessions.list') {
-    return { sessions: [{ key: 'agent:ops:main' }] };
+    return { sessions: [...hoisted.sessions] };
   }
   if (method === 'agents.list') {
     return {
@@ -45,6 +46,11 @@ function Labels() {
   );
 }
 
+function Refresh() {
+  const { refreshSessions } = useSessionContext();
+  return <button type="button" onClick={() => void refreshSessions()}>Refresh</button>;
+}
+
 function json(body: unknown, status = 200): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -58,6 +64,7 @@ describe('SessionContext identity source', () => {
     hoisted.gatewayNames = {};
     hoisted.workspaceName = 'Workspace Ops';
     hoisted.workspaceStatus = 200;
+    hoisted.sessions = [{ key: 'agent:ops:main' }];
     vi.clearAllMocks();
 
     globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
@@ -99,6 +106,38 @@ describe('SessionContext identity source', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('retries an aborted identity read immediately after a sessions change', async () => {
+    const baseFetch = globalThis.fetch;
+    let identityCalls = 0;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith('/api/workspace/identity')) {
+        identityCalls += 1;
+        if (identityCalls === 1) {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+            });
+          });
+        }
+        return json({ ok: true, content: '- **Name:** Retried' });
+      }
+      return baseFetch(input as RequestInfo, init);
+    }) as typeof globalThis.fetch;
+
+    render(<SessionProvider><Labels /><Refresh /></SessionProvider>);
+    await waitFor(() => expect(identityCalls).toBe(1));
+
+    // Force a changed session list so the identity effect re-runs and aborts the
+    // pending read. An aborted read must not stamp the retry window; the new
+    // effect run should fetch immediately.
+    hoisted.sessions = [{ key: 'agent:ops:main' }, { key: 'agent:ops2:main' }];
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => expect(screen.getByText('Retried (ops)')).toBeInTheDocument());
+    expect(identityCalls).toBeGreaterThan(1);
   });
 
   it('retries a failed workspace read after the retry window', async () => {

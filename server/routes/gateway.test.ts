@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 let execFileImpl: (...args: unknown[]) => void;
 let readFileImpl: (...args: unknown[]) => Promise<string>;
 let invokeGatewayImpl: (tool: string, args: Record<string, unknown>) => unknown;
+let gatewayRpcImpl: (method: string, params: Record<string, unknown>) => unknown;
 
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
@@ -37,6 +38,10 @@ vi.mock('../lib/openclaw-bin.js', () => ({
 
 vi.mock('../lib/gateway-client.js', () => ({
   invokeGatewayTool: vi.fn(async (tool: string, args: Record<string, unknown>) => invokeGatewayImpl(tool, args)),
+}));
+
+vi.mock('../lib/gateway-rpc.js', () => ({
+  gatewayRpcCall: vi.fn(async (method: string, params: Record<string, unknown>) => gatewayRpcImpl(method, params)),
 }));
 
 const socketMock = vi.hoisted(() => ({
@@ -108,6 +113,8 @@ describe('gateway routes', () => {
     };
     readFileImpl = async () => JSON.stringify(OPENCLAW_CONFIG);
     invokeGatewayImpl = () => ({});
+    // Most tests exercise the config fallback: pretend the gateway predates models.list.
+    gatewayRpcImpl = () => { throw new Error('Unknown method: models.list'); };
   }
 
   describe('GET /api/gateway/models', () => {
@@ -340,6 +347,187 @@ describe('gateway routes', () => {
         error: null,
         source: 'config',
       });
+    });
+
+    it('lists every model from the gateway models.list catalog with per-model effort levels', async () => {
+      setDefaults();
+      process.env.OPENCLAW_CONFIG_PATH = '/tmp/openclaw.json';
+      readFileImpl = async () => JSON.stringify({
+        agents: {
+          defaults: {
+            model: {
+              primary: 'openai/gpt-6-luna',
+              // Auth-profile suffixes on config refs must not break role matching.
+              fallbacks: ['opencode-go/jev-1.14@opencode-go:apikey'],
+            },
+            models: {
+              'openai/gpt-6-luna': {},
+              'opencode-go/jev-1.14': { alias: 'jev' },
+            },
+          },
+        },
+      });
+      gatewayRpcImpl = (method, params) => {
+        expect(method).toBe('models.list');
+        expect(params).toEqual({});
+        return {
+          models: [
+            {
+              id: 'gpt-6-luna',
+              name: 'GPT-6-Luna',
+              provider: 'openai',
+              available: true,
+              tags: ['default', 'configured'],
+              thinkingLevels: [
+                { id: 'low', label: 'low' },
+                { id: 'medium', label: 'medium' },
+                { id: 'high', label: 'high' },
+              ],
+              thinkingDefault: 'medium',
+            },
+            {
+              id: 'jev-1.14',
+              name: 'Jev 1.14',
+              provider: 'opencode-go',
+              available: true,
+              thinkingLevels: [
+                { id: 'off', label: 'off' },
+                { id: 'ultra', label: 'ultra' },
+              ],
+              thinkingDefault: 'off',
+            },
+            {
+              id: 'kimi-k3',
+              name: 'Kimi K3',
+              provider: 'opencode-go',
+              available: true,
+              thinkingLevels: [{ id: 'off' }, { id: 'max' }, { id: 'ultra' }],
+              thinkingDefault: 'off',
+            },
+            {
+              id: 'ghost-model',
+              name: 'Ghost',
+              provider: 'openai',
+              available: false,
+            },
+          ],
+        };
+      };
+
+      const app = buildApp();
+      const res = await app.request('/api/gateway/models');
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        models: [
+          {
+            id: 'openai/gpt-6-luna',
+            label: 'GPT-6-Luna',
+            provider: 'openai',
+            configured: true,
+            role: 'primary',
+            available: true,
+            tags: ['default', 'configured'],
+            thinkingLevels: [
+              { id: 'low', label: 'low' },
+              { id: 'medium', label: 'medium' },
+              { id: 'high', label: 'high' },
+            ],
+            thinkingDefault: 'medium',
+          },
+          {
+            id: 'opencode-go/jev-1.14',
+            label: 'jev',
+            provider: 'opencode-go',
+            alias: 'jev',
+            configured: true,
+            role: 'fallback',
+            available: true,
+            thinkingLevels: [
+              { id: 'off', label: 'off' },
+              { id: 'ultra', label: 'ultra' },
+            ],
+            thinkingDefault: 'off',
+          },
+          {
+            id: 'opencode-go/kimi-k3',
+            label: 'Kimi K3',
+            provider: 'opencode-go',
+            configured: false,
+            role: 'allowed',
+            available: true,
+            thinkingLevels: [
+              { id: 'off' },
+              { id: 'max' },
+              { id: 'ultra' },
+            ],
+            thinkingDefault: 'off',
+          },
+        ],
+        error: null,
+        source: 'gateway',
+      });
+    });
+
+    it('returns the gateway catalog even when the OpenClaw config is unreadable', async () => {
+      setDefaults();
+      readFileImpl = async () => {
+        throw new Error('ENOENT: no such file or directory');
+      };
+      gatewayRpcImpl = () => ({
+        models: [
+          { id: 'gpt-6-luna', name: 'GPT-6-Luna', provider: 'openai', available: true },
+        ],
+      });
+
+      const app = buildApp();
+      const res = await app.request('/api/gateway/models');
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        models: [
+          {
+            id: 'openai/gpt-6-luna',
+            label: 'GPT-6-Luna',
+            provider: 'openai',
+            configured: false,
+            role: 'allowed',
+            available: true,
+          },
+        ],
+        error: null,
+        source: 'gateway',
+      });
+    });
+
+    it('falls back to the config catalog when models.list fails on an older gateway', async () => {
+      setDefaults();
+      gatewayRpcImpl = () => {
+        throw new Error('Unknown method: models.list');
+      };
+
+      const app = buildApp();
+      const res = await app.request('/api/gateway/models');
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { models: Array<{ id: string }>; error: unknown; source: string };
+      expect(json.source).toBe('config');
+      expect(json.error).toBeNull();
+      expect(json.models.map((model) => model.id)).toEqual([
+        'zai/glm-4.7',
+        'openrouter/xiaomi/mimo-v2-pro',
+        'zai/glm-4.5',
+        'ollama/qwen2.5:7b-instruct-q5_K_M',
+      ]);
+    });
+
+    it('falls back to the config catalog when models.list returns no models', async () => {
+      setDefaults();
+      gatewayRpcImpl = () => ({ models: [] });
+
+      const app = buildApp();
+      const res = await app.request('/api/gateway/models');
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { models: Array<{ id: string }>; source: string };
+      expect(json.source).toBe('config');
+      expect(json.models[0]?.id).toBe('zai/glm-4.7');
     });
 
     it('returns an explicit error when the config has no configured models', async () => {

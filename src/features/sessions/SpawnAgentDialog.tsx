@@ -16,7 +16,7 @@ import type { InlineSelectOption } from '@/components/ui/InlineSelect';
 import { useSessionContext, type SpawnSessionOpts, type SubagentCleanupMode } from '@/contexts/SessionContext';
 import { getSessionKey } from '@/types';
 import { inheritedModelLabels } from '@/lib/inheritedModel';
-import { THINKING_LEVELS as CANONICAL_THINKING_LEVELS, type ThinkingLevel } from '@/lib/thinkingLevels';
+import { thinkingLevelsForSession, type ThinkingLevel } from '@/lib/thinkingLevels';
 import {
   getRootAgentSessionKey,
   getSessionDisplayLabel,
@@ -27,10 +27,6 @@ const INHERITED_THINKING_VALUE = 'thinkingDefault';
 
 type ThinkingSelection = typeof INHERITED_THINKING_VALUE | ThinkingLevel;
 
-const THINKING_LEVELS: InlineSelectOption[] = [
-  { value: INHERITED_THINKING_VALUE, label: 'Default' },
-  ...CANONICAL_THINKING_LEVELS.map((level) => ({ value: level, label: level })),
-];
 const AFTER_RUN_OPTIONS: InlineSelectOption[] = [
   { value: 'keep', label: 'Keep' },
   { value: 'delete', label: 'Delete' },
@@ -44,10 +40,25 @@ const CHOICE_POINTS = 'grid list-disc gap-x-4 gap-y-0.5 pl-4 text-[0.8rem] text-
 const SELECT_TRIGGER = 'w-full min-h-11 justify-between rounded-[3px] border-input bg-background px-2.5 py-1.5 font-sans text-[0.867rem] text-foreground sm:min-h-[2.133rem] sm:px-2.5 sm:py-0 sm:text-[0.867rem]';
 const SELECT_MENU = 'p-1';
 
-type ModelEntry = { id: string; alias?: string; role?: string };
+type ModelThinkingLevel = { id: string; label?: string };
+type ModelEntry = {
+  id: string;
+  alias?: string;
+  role?: string;
+  thinkingLevels?: ModelThinkingLevel[];
+  thinkingDefault?: string;
+};
 type ModelCatalogResponse = {
-  models?: Array<{ id: string; label?: string; alias?: string; role?: string }>;
+  models?: Array<{
+    id: string;
+    label?: string;
+    alias?: string;
+    role?: string;
+    thinkingLevels?: ModelThinkingLevel[];
+    thinkingDefault?: string;
+  }>;
   error?: string | null;
+  source?: string;
 };
 type SpawnMode = 'root' | 'subagent' | null;
 
@@ -102,7 +113,13 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
         const data = await res.json() as ModelCatalogResponse;
         if (cancelled) return;
         const models = Array.isArray(data.models)
-          ? data.models.map((entry) => ({ id: entry.id, alias: entry.alias || entry.label, role: entry.role }))
+          ? data.models.map((entry) => ({
+              id: entry.id,
+              alias: entry.alias || entry.label,
+              role: entry.role,
+              thinkingLevels: Array.isArray(entry.thinkingLevels) ? entry.thinkingLevels : undefined,
+              thinkingDefault: typeof entry.thinkingDefault === 'string' ? entry.thinkingDefault : undefined,
+            }))
           : [];
         setFetchedModels(models);
         setModelLoadError(typeof data.error === 'string' ? data.error : '');
@@ -137,6 +154,28 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
     return [{ value: '', label: 'No configured models' }];
   }, [modelOptions]);
 
+  // The gateway reports thinking levels per model. When the selection is inherited, the primary
+  // model defines them (the one the spawned session will actually run).
+  const selectedModelEntry = useMemo<ModelEntry | null>(() => {
+    if (fetchedModels.length === 0) return null;
+    if (model === INHERITED_MODEL_VALUE || model === '') {
+      return fetchedModels.find((entry) => entry.role === 'primary') ?? fetchedModels[0];
+    }
+    return fetchedModels.find((entry) => entry.id === model) ?? null;
+  }, [fetchedModels, model]);
+
+  const thinkingOptions = useMemo<InlineSelectOption[]>(() => {
+    const levels = thinkingLevelsForSession(selectedModelEntry);
+    return [
+      { value: INHERITED_THINKING_VALUE, label: 'Default' },
+      ...levels.map((level) => ({ value: level.id, label: level.label })),
+    ];
+  }, [selectedModelEntry]);
+
+  const thinkingDefaultHint = selectedModelEntry?.thinkingDefault
+    ? `Gateway default: ${selectedModelEntry.thinkingDefault}`
+    : undefined;
+
   const defaultModelId = useMemo(
     () => (fetchedModels.length > 0 ? INHERITED_MODEL_VALUE : ''),
     [fetchedModels],
@@ -153,6 +192,14 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
       setModel(defaultModelId);
     }
   }, [defaultModelId, fetchedModels, model]);
+
+  // A level the newly selected model does not offer must not leak into the spawn payload.
+  useEffect(() => {
+    if (thinking === INHERITED_THINKING_VALUE) return;
+    if (!thinkingOptions.some((option) => option.value === thinking)) {
+      setThinking(INHERITED_THINKING_VALUE);
+    }
+  }, [thinking, thinkingOptions]);
 
   useEffect(() => {
     if (!open) return;
@@ -471,8 +518,9 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
                   <InlineSelect
                     value={thinking}
                     onChange={(value) => setThinking(value as ThinkingSelection)}
-                    options={THINKING_LEVELS}
+                    options={thinkingOptions}
                     ariaLabel="Select thinking level"
+                    title={thinkingDefaultHint}
                     disabled={spawning}
                     triggerClassName={SELECT_TRIGGER}
                     menuClassName={SELECT_MENU}

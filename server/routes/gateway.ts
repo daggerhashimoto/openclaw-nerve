@@ -1,12 +1,16 @@
 /**
  * Gateway API Routes
  *
- * GET  /api/gateway/models       — Returns configured models from the active OpenClaw config.
+ * GET  /api/gateway/models       — Returns the gateway's model catalog (models.list RPC), with the
+ *                                  active OpenClaw config as fallback for older/unreachable gateways.
  * GET  /api/gateway/session-info — Returns the current session's runtime info (model, thinking level).
  * POST /api/gateway/session-patch — Change model/effort for a session via HTTP (reliable fallback).
  * POST /api/gateway/restart      — Restart the OpenClaw gateway service via `openclaw gateway restart`.
  *
- * Response (models):       { models: Array<{ id: string; label: string; provider: string; configured: true; role: string }>, error: string | null, source: 'config' }
+ * Response (models):       { models: Array<{ id: string; label: string; provider: string; alias?: string; configured: boolean; role: string;
+ *                                             available?: boolean; tags?: string[];
+ *                                             thinkingLevels?: Array<{ id: string; label?: string }>; thinkingDefault?: string }>,
+ *                            error: string | null, source: 'gateway' | 'config' }
  * Response (session-info): { model?: string; thinking?: string }
  * Response (session-patch): { ok: boolean; model?: string; thinking?: string; error?: string }
  * Response (restart):      { ok: boolean; output: string }
@@ -21,6 +25,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import { invokeGatewayTool } from '../lib/gateway-client.js';
+import { gatewayRpcCall } from '../lib/gateway-rpc.js';
 import { rateLimitGeneral, rateLimitRestart } from '../middleware/rate-limit.js';
 import { resolveOpenclawBin } from '../lib/openclaw-bin.js';
 import { config } from '../lib/config.js';
@@ -37,8 +42,16 @@ export interface GatewayModelInfo {
   label: string;
   provider: string;
   alias?: string;
-  configured: true;
+  configured: boolean;
   role: 'primary' | 'fallback' | 'allowed';
+  /** Whether the gateway currently considers the model usable (omitted when unknown). */
+  available?: boolean;
+  /** Gateway catalog tags such as `default` or `configured`. */
+  tags?: string[];
+  /** Thinking levels this specific model supports, as reported by `models.list`. */
+  thinkingLevels?: { id: string; label?: string }[];
+  /** The level an unset thinking level resolves to for this model. */
+  thinkingDefault?: string;
 }
 
 interface GatewaySessionSummary {
@@ -155,6 +168,243 @@ function readConfiguredModels(configData: OpenClawConfig): GatewayModelInfo[] {
   return models;
 }
 
+// ─── Model catalog via the gateway `models.list` RPC ──────────────────────────
+
+/** A row from the gateway's `models.list` response; fields are validated defensively. */
+interface GatewayModelsListRow {
+  id?: unknown;
+  name?: unknown;
+  provider?: unknown;
+  alias?: unknown;
+  available?: unknown;
+  tags?: unknown;
+  thinkingLevels?: unknown;
+  thinkingDefault?: unknown;
+}
+
+interface ModelConfigHints {
+  primary: string | null;
+  fallbacks: string[];
+  aliases: Map<string, string>;
+  allowlisted: Set<string>;
+}
+
+const THINKING_LEVEL_ID = /^[a-z][a-z0-9_-]*$/i;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Strip auth-profile suffixes (`model@provider:profile`) and surrounding whitespace. */
+function normalizeModelRef(value: string): string {
+  return value.trim().split('@')[0]?.trim() || '';
+}
+
+function bareModelId(ref: string): string {
+  const idx = ref.indexOf('/');
+  return idx >= 0 ? ref.slice(idx + 1) : ref;
+}
+
+/**
+ * Resolve a catalog id to a single config ref when only one config ref has that bare model id.
+ * Provider catalogs commonly reuse ids (`gpt-6-luna` on both `openai` and `opencode-go`), so a
+ * bare-id match is only safe when it is unambiguous.
+ */
+function uniqueBareMatch(catalogId: string, refs: Iterable<string>): string | undefined {
+  const bare = bareModelId(catalogId);
+  const matches = new Set<string>();
+  for (const ref of refs) {
+    if (bareModelId(ref) === bare) matches.add(ref);
+  }
+  return matches.size === 1 ? [...matches][0] : undefined;
+}
+
+function allConfigRefs(hints: ModelConfigHints): string[] {
+  return [
+    ...(hints.primary ? [hints.primary] : []),
+    ...hints.fallbacks,
+    ...hints.allowlisted,
+  ];
+}
+
+/**
+ * Config is only an enrichment source for the RPC catalog (aliases + roles). A missing or
+ * unreadable config must not hide models the gateway reports.
+ */
+async function readConfigHints(): Promise<ModelConfigHints> {
+  const hints: ModelConfigHints = {
+    primary: null,
+    fallbacks: [],
+    aliases: new Map(),
+    allowlisted: new Set(),
+  };
+
+  try {
+    const raw = await readFile(resolveOpenClawConfigPath(), 'utf8');
+    const configData = JSON5.parse(raw) as OpenClawConfig;
+    const defaults = configData.agents?.defaults;
+    const primary = defaults?.model?.primary;
+    if (typeof primary === 'string' && normalizeModelRef(primary)) {
+      hints.primary = normalizeModelRef(primary);
+    }
+    for (const fallback of defaults?.model?.fallbacks || []) {
+      if (typeof fallback === 'string' && normalizeModelRef(fallback)) {
+        hints.fallbacks.push(normalizeModelRef(fallback));
+      }
+    }
+    for (const [id, entry] of Object.entries(defaults?.models || {})) {
+      const ref = normalizeModelRef(id);
+      if (!ref) continue;
+      hints.allowlisted.add(ref);
+      const alias = normalizeAlias(entry);
+      if (alias) hints.aliases.set(ref, alias);
+    }
+  } catch {
+    // Config is optional when the gateway answers models.list.
+  }
+
+  return hints;
+}
+
+function resolveCatalogRole(catalogId: string, hints: ModelConfigHints): GatewayModelInfo['role'] {
+  if (hints.primary === catalogId) return 'primary';
+  if (hints.fallbacks.includes(catalogId)) return 'fallback';
+
+  const ref = uniqueBareMatch(catalogId, allConfigRefs(hints));
+  if (!ref) return 'allowed';
+  if (hints.primary === ref) return 'primary';
+  if (hints.fallbacks.includes(ref)) return 'fallback';
+  return 'allowed';
+}
+
+function findConfigAlias(catalogId: string, hints: ModelConfigHints): string | undefined {
+  const exact = hints.aliases.get(catalogId);
+  if (exact) return exact;
+
+  // Ambiguity is judged against every configured ref, not just the aliased ones: a provider twin
+  // without an alias must not inherit its sibling's alias.
+  const ref = uniqueBareMatch(catalogId, allConfigRefs(hints));
+  return ref ? hints.aliases.get(ref) : undefined;
+}
+
+function configKnowsModel(catalogId: string, hints: ModelConfigHints): boolean {
+  if (hints.allowlisted.has(catalogId)) return true;
+  const ref = uniqueBareMatch(catalogId, hints.allowlisted);
+  return ref !== undefined;
+}
+
+/** Canonicalise a gateway thinking-level list, dropping malformed placeholder entries. */
+function normalizeCatalogThinkingLevels(raw: unknown): { id: string; label?: string }[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+
+  const levels: { id: string; label?: string }[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    let id: string | undefined;
+    let label: string | undefined;
+    if (typeof entry === 'string') {
+      id = entry.trim();
+    } else if (isRecord(entry) && typeof entry.id === 'string') {
+      id = entry.id.trim();
+      if (typeof entry.label === 'string' && entry.label.trim()) label = entry.label.trim();
+    }
+    if (!id || !THINKING_LEVEL_ID.test(id)) continue;
+    const normalized = id.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    levels.push(label ? { id: normalized, label } : { id: normalized });
+  }
+
+  return levels.length > 0 ? levels : undefined;
+}
+
+/**
+ * `models.list` rows carry the bare model id plus its provider (`gpt-6-luna` + `openai`),
+ * while session APIs address models as `provider/model`. Normalise to the latter.
+ */
+function qualifyCatalogModel(provider: string, rawId: string): { id: string; provider: string; bareId: string } {
+  const trimmedProvider = provider.trim();
+  if (!trimmedProvider) {
+    const [head, ...rest] = rawId.split('/');
+    return rest.length > 0
+      ? { id: rawId, provider: head, bareId: rest.join('/') }
+      : { id: rawId, provider: 'unknown', bareId: rawId };
+  }
+  if (rawId.startsWith(`${trimmedProvider}/`)) {
+    return { id: rawId, provider: trimmedProvider, bareId: rawId.slice(trimmedProvider.length + 1) };
+  }
+  return { id: `${trimmedProvider}/${rawId}`, provider: trimmedProvider, bareId: rawId };
+}
+
+function buildCatalogFromModelsList(rows: unknown[], hints: ModelConfigHints): GatewayModelInfo[] {
+  const models: GatewayModelInfo[] = [];
+  const seen = new Set<string>();
+
+  for (const rawRow of rows) {
+    if (!isRecord(rawRow)) continue;
+    const row = rawRow as GatewayModelsListRow;
+    // Unavailable rows are not selectable; skip them unless the gateway omits the flag.
+    if (row.available === false) continue;
+
+    const rawId = typeof row.id === 'string' ? row.id.trim() : '';
+    if (!rawId) continue;
+
+    const provider = typeof row.provider === 'string' ? row.provider : '';
+    const { id, provider: resolvedProvider, bareId } = qualifyCatalogModel(provider, rawId);
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    const tags = Array.isArray(row.tags)
+      ? row.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+      : [];
+    const role = resolveCatalogRole(id, hints);
+    const alias = findConfigAlias(id, hints)
+      || (typeof row.alias === 'string' && row.alias.trim() ? row.alias.trim() : undefined);
+    const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : undefined;
+    const thinkingLevels = normalizeCatalogThinkingLevels(row.thinkingLevels);
+    const thinkingDefault = typeof row.thinkingDefault === 'string' && row.thinkingDefault.trim()
+      ? row.thinkingDefault.trim().toLowerCase()
+      : undefined;
+    const configured = tags.includes('configured') || role !== 'allowed' || configKnowsModel(id, hints);
+
+    models.push({
+      id,
+      label: alias || name || bareId,
+      provider: resolvedProvider,
+      ...(alias ? { alias } : {}),
+      configured,
+      role,
+      ...(typeof row.available === 'boolean' ? { available: row.available } : {}),
+      ...(tags.length > 0 ? { tags } : {}),
+      ...(thinkingLevels ? { thinkingLevels } : {}),
+      ...(thinkingDefault ? { thinkingDefault } : {}),
+    });
+  }
+
+  return models;
+}
+
+/**
+ * Read the live catalog from the gateway's `models.list` RPC.
+ * Returns null when the gateway is unreachable or predates the method, so callers can
+ * fall back to the config reader.
+ */
+async function getGatewayModelCatalog(): Promise<GatewayModelInfo[] | null> {
+  let payload: unknown;
+  try {
+    payload = await gatewayRpcCall('models.list', {}, MODEL_LIST_TIMEOUT_MS);
+  } catch (err) {
+    console.warn('[gateway/models] models.list unavailable, falling back to config:', (err as Error).message);
+    return null;
+  }
+
+  const rows = isRecord(payload) && Array.isArray(payload.models) ? payload.models : null;
+  if (!rows || rows.length === 0) return null;
+
+  const models = buildCatalogFromModelsList(rows, await readConfigHints());
+  return models.length > 0 ? models : null;
+}
+
 async function getModelCatalog(): Promise<{ models: GatewayModelInfo[]; error: string | null }> {
   const configPath = resolveOpenClawConfigPath();
 
@@ -175,6 +425,13 @@ async function getModelCatalog(): Promise<{ models: GatewayModelInfo[]; error: s
 }
 
 app.get('/api/gateway/models', rateLimitGeneral, async (c) => {
+  // Prefer the live gateway catalog: it covers every model enabled on the gateway, not just the
+  // ones named in agents.defaults.model / the allowlist, and carries per-model thinking levels.
+  const catalog = await getGatewayModelCatalog();
+  if (catalog) {
+    return c.json({ models: catalog, error: null, source: 'gateway' });
+  }
+
   const { models, error } = await getModelCatalog();
   return c.json({ models, error, source: 'config' });
 });

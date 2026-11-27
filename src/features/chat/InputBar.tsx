@@ -1,9 +1,10 @@
 import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { Mic, Paperclip, X, Loader2, ArrowUp, FileText, FolderOpen, Command } from 'lucide-react';
+import { Mic, Paperclip, X, Loader2, ArrowUp, FileText, FolderOpen, Command, Square } from 'lucide-react';
 import { Pane } from '@/components/ui/Pane';
 import type { TreeEntry } from '@/features/file-browser';
 import { fetchTreeListing } from '@/features/file-browser/utils/fetchTreeListing';
 import { useVoiceInput } from '@/features/voice/useVoiceInput';
+import { useCoarsePointer } from '@/features/voice/useCoarsePointer';
 import { useTabCompletion } from '@/hooks/useTabCompletion';
 import { useInputHistory } from '@/hooks/useInputHistory';
 import { useSessionContext } from '@/contexts/SessionContext';
@@ -645,16 +646,39 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   // A finished transcription goes out as its own message straight through onSend
   // (not handleSend, which reads the draft and staged attachments), so the draft,
   // attachments, history and slash state stay exactly as the user left them.
-  const { voiceState, interimTranscript, wakeWordEnabled, toggleWakeWord, error: voiceError, clearError: clearVoiceError } = useVoiceInput((text) => {
+  const { voiceState, isStarting: voiceIsStarting, interimTranscript, startRecording, stopAndTranscribe, discardRecording, wakeWordEnabled, toggleWakeWord, error: voiceError, clearError: clearVoiceError } = useVoiceInput((text) => {
     void onSend('[voice] ' + text);
   }, agentName, voiceLang, voicePhrasesVersion, effectiveSttInputMode);
+
+  // Phones and tablets have no Left-Shift key, so expose a visible mic control there.
+  const showVoiceControls = useCoarsePointer();
 
   // While voice records, the draft is locked: read-only, and neither Enter nor Send
   // can send it. Transcribing leaves it free: the voice message goes out on its own
   // and never touches the draft, and a stalled transcription must not hold it.
   const isRecording = voiceState === 'recording';
   const showSlashMenu = isSlashMenuOpen && !isRecording;
-  const voicePreviewText = liveTranscriptionPreview && isRecording ? interimTranscript : '';
+  // Mobile users get the interim transcript even with the desktop-only preview preference off.
+  const voicePreviewText = (liveTranscriptionPreview || showVoiceControls) && isRecording ? interimTranscript : '';
+
+  const handleVoiceButton = useCallback(() => {
+    if (voiceIsStarting) return;
+    if (voiceState === 'recording') {
+      stopAndTranscribe();
+      return;
+    }
+    if (voiceState === 'idle' || voiceState === 'listening') {
+      void startRecording();
+    }
+  }, [startRecording, stopAndTranscribe, voiceIsStarting, voiceState]);
+
+  const voiceButtonLabel = voiceIsStarting
+    ? 'Requesting microphone access'
+    : voiceState === 'transcribing'
+      ? 'Transcribing voice input'
+      : voiceState === 'recording'
+        ? 'Stop voice input and send'
+        : 'Start voice input';
 
   // Keep the selected slash command in view, also when the menu comes back after recording
   useEffect(() => {
@@ -1337,6 +1361,39 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             )}
             {/* Toolbar: quiet tools on the left, hint and Send on the right */}
             <div className="flex flex-wrap items-center gap-1 px-1 pb-1">
+              {showVoiceControls && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleVoiceButton}
+                    disabled={voiceIsStarting || voiceState === 'transcribing'}
+                    aria-label={voiceButtonLabel}
+                    aria-pressed={voiceState === 'recording'}
+                    data-active={voiceState === 'recording' ? 'true' : undefined}
+                    title={voiceButtonLabel}
+                    className={`shell-icon-button relative shrink-0 min-h-11 min-w-11 ${voiceState === 'recording' ? 'text-operator-text' : ''} disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    {voiceIsStarting || voiceState === 'transcribing' ? (
+                      <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                    ) : voiceState === 'recording' ? (
+                      <Square size={14} fill="currentColor" aria-hidden="true" />
+                    ) : (
+                      <Mic size={16} aria-hidden="true" />
+                    )}
+                  </button>
+                  {voiceState === 'recording' && (
+                    <button
+                      type="button"
+                      onClick={discardRecording}
+                      aria-label="Cancel voice recording"
+                      title="Cancel recording"
+                      className="shell-icon-button shrink-0 min-h-11 min-w-11 text-muted-foreground"
+                    >
+                      <X size={16} aria-hidden="true" />
+                    </button>
+                  )}
+                </>
+              )}
               <button
                 type="button"
                 onClick={openUploadFilesPicker}
@@ -1358,12 +1415,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                   <Command size={16} aria-hidden="true" />
                 </button>
               )}
-              {voiceState === 'recording' ? (
+              {!showVoiceControls && voiceState === 'recording' ? (
                 <span className="inline-flex shrink-0 items-center gap-1.5 px-1.5 text-operator-text">
                   <Pane state="operator" size="sm" label="Recording" />
                   <Mic size={14} aria-hidden="true" />
                 </span>
-              ) : voiceState === 'transcribing' ? (
+              ) : !showVoiceControls && voiceState === 'transcribing' ? (
                 <span className="inline-flex shrink-0 items-center gap-1.5 px-1.5 text-live-text">
                   <Pane state="live" size="sm" label="Transcribing" />
                   <Mic size={14} aria-hidden="true" />
@@ -1371,7 +1428,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               ) : null}
               <span className={`order-last basis-full px-2 pb-1 text-[0.8rem] text-muted-foreground sm:order-none sm:ml-auto sm:min-w-0 sm:flex-1 sm:basis-0 sm:truncate sm:pb-0 sm:text-right ${voiceState === 'recording' || voiceState === 'transcribing' ? '' : '[@media(pointer:coarse)]:hidden'}`}>
                 {voiceState === 'recording'
-                  ? 'Recording… Left Shift to send · Double Left Shift to discard'
+                  ? (showVoiceControls
+                    ? 'Recording… tap the mic to send'
+                    : 'Recording… Left Shift to send · Double Left Shift to discard')
                   : voiceState === 'transcribing'
                   ? 'Transcribing…'
                   : (

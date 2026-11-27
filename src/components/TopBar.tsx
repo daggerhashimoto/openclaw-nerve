@@ -108,7 +108,7 @@ interface TopBarProps {
   sessionsPanel?: ReactNode;
   /** Renderable Workspace panel content (compact mode). */
   workspacePanel?: ReactNode;
-  /** Current view mode (chat or kanban). */
+  /** Current view mode (attention, chat or kanban). */
   viewMode?: ViewMode;
   /** Callback to change the view mode. */
   onViewModeChange?: (mode: ViewMode) => void;
@@ -294,6 +294,17 @@ export function TopBar({
         {/* View mode toggle */}
         {onViewModeChange && (
           <div className="seg-track order-3 flex w-full items-center sm:order-none sm:w-auto">
+            <button
+              onClick={() => onViewModeChange("attention")}
+              title="Attention view"
+              aria-label="Switch to attention view"
+              aria-pressed={viewMode === "attention"}
+              data-active={viewMode === "attention"}
+              style={viewMode === "attention" ? { viewTransitionName: "seg-active" } : undefined}
+              className="shell-chip flex-1 sm:flex-none"
+            >
+              Attention
+            </button>
             <button
               onClick={() => onViewModeChange("chat")}
               title="Chat view"

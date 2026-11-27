@@ -167,3 +167,18 @@ describe('createCommands appearance', () => {
     expect(labels).toContain('Font: Nerve default');
   });
 });
+
+describe('createCommands view commands', () => {
+  it('palette offers Go to Attention', () => {
+    for (const canShowKanban of [true, false]) {
+      const onSetViewMode = vi.fn();
+      const cmds = createCommands({ ...noopActions(), onSetViewMode, canShowKanban });
+      const attention = cmds.find((c) => c.label === 'Go to Attention');
+      expect(attention).toBeDefined();
+      attention!.action();
+      expect(onSetViewMode).toHaveBeenCalledWith('attention');
+      expect(cmds.some((c) => c.label === 'Open Chat View')).toBe(true);
+      expect(cmds.some((c) => c.label === 'Open Tasks View')).toBe(canShowKanban);
+    }
+  });
+});

@@ -6,15 +6,18 @@
  * Dashboard data fetching is handled by useDashboardData.
  */
 import { flushSync } from 'react-dom';
+import { ArrowLeft } from 'lucide-react';
 import {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   useCallback,
   useMemo,
   useReducer,
   lazy,
   Suspense,
+  type UIEvent as ReactUIEvent,
 } from 'react';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext, type RemoveAgentOpts, type SpawnSessionOpts } from '@/contexts/SessionContext';
@@ -45,6 +48,10 @@ import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { DEFAULT_CHAT_PATH_LINKS_CONFIG, parseChatPathLinksConfig } from '@/features/chat/chatPathLinks';
 import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
 import { useEdgeSwipeToOpen } from '@/features/file-browser/hooks/useEdgeSwipeToOpen';
+import { AttentionView, type OpenTarget } from '@/features/attention';
+import { consumeIntroFlag } from '@/features/attention/attentionStorage';
+import { getInitialViewMode } from '@/features/attention/initialViewMode';
+import type { TabId } from '@/features/workspace/WorkspaceTabs';
 import { type BeadLinkTarget, type OpenBeadTab, buildBeadTabId } from '@/features/beads';
 import { isImageFile } from '@/features/file-browser/utils/fileTypes';
 import { buildAgentRootSessionKey, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
@@ -86,15 +93,25 @@ function buildWorkspaceSwitchErrorMessage(result: {
   return `Could not save ${fileLabel}. Resolve it before switching agents.`;
 }
 
-function getInitialViewMode(canShowKanban: boolean): ViewMode {
+/** Reads the saved view and consumes the one-time Attention intro flag. Call once per page load. */
+function readInitialViewMode(canShowKanban: boolean): ViewMode {
+  let saved: string | null = null;
   try {
-    const saved = localStorage.getItem('nerve:viewMode');
-    if (saved === 'kanban' && canShowKanban) return 'kanban';
+    saved = localStorage.getItem('nerve:viewMode');
   } catch {
     // ignore storage errors
   }
+  return getInitialViewMode(canShowKanban, { saved, introFresh: consumeIntroFlag() });
+}
 
-  return 'chat';
+/**
+ * Nonces for open requests sent to the workspace panel and the top bar. Both dedupe nonces in
+ * module scope across remounts, so one is never reused in the page's life.
+ */
+let lastOpenRequestNonce = Date.now();
+function nextOpenRequestNonce(): number {
+  lastOpenRequestNonce += 1;
+  return lastOpenRequestNonce;
 }
 
 export default function App({ onLogout }: AppProps) {
@@ -362,28 +379,49 @@ export default function App({ onLogout }: AppProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
 
-  // View mode state (chat | kanban), persisted to localStorage
-  const [viewMode, setViewModeRaw] = useState<ViewMode>(() => getInitialViewMode(kanbanVisible));
+  // View mode state (attention | chat | kanban), persisted to localStorage
+  const [viewMode, setViewModeRaw] = useState<ViewMode>(() => readInitialViewMode(kanbanVisible));
+  // Attention stays mounted once it has been shown, so its scroll and frozen order survive a visit elsewhere
+  const [attentionMounted, setAttentionMounted] = useState(() => viewMode === 'attention');
+  // Set when an item opened from the brief; the Back to Attention bar shows while it is set
+  const [cameFromAttention, setCameFromAttention] = useState(false);
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
+  const [workspaceFocusRequest, setWorkspaceFocusRequest] = useState<{ tab: TabId; cronId?: string; nonce: number } | null>(null);
+  const [topBarPanelRequest, setTopBarPanelRequest] = useState<{ panel: 'workspace'; nonce: number } | null>(null);
   const [openBeads, setOpenBeads] = useState<OpenBeadTab[]>([]);
   const setViewMode = useCallback((mode: ViewMode) => {
     const nextMode = mode === 'kanban' && !kanbanVisible ? 'chat' : mode;
+    const applyMode = () => {
+      setViewModeRaw(nextMode);
+      if (nextMode === 'attention') setAttentionMounted(true);
+    };
     // The view switch is a view transition (the lifted chip slides across its track, the room
     // cross-fades) where the browser supports it and the operator has not asked for reduced motion
     const doc = document as Document & { startViewTransition?: (update: () => void) => unknown };
     const reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (typeof doc.startViewTransition === 'function' && !reduceMotion) {
-      doc.startViewTransition(() => { flushSync(() => setViewModeRaw(nextMode)); });
+      doc.startViewTransition(() => { flushSync(applyMode); });
     } else {
-      setViewModeRaw(nextMode);
+      applyMode();
     }
 
-    if (nextMode === 'kanban' && isCompactLayout) {
+    // Full-area views (Attention, Tasks) close the compact file drawer
+    if (nextMode !== 'chat' && isCompactLayout) {
       setFileBrowserCollapsed(true);
     }
 
     try { localStorage.setItem('nerve:viewMode', nextMode); } catch { /* ignore */ }
   }, [isCompactLayout, kanbanVisible, setFileBrowserCollapsed]);
+  /** A view the operator chose directly (a view chip or the palette): the trip from the brief is over. */
+  const chooseViewMode = useCallback((mode: ViewMode) => {
+    setCameFromAttention(false);
+    setViewMode(mode);
+  }, [setViewMode]);
+  const backToAttention = useCallback(() => {
+    setCameFromAttention(false);
+    setViewMode('attention');
+  }, [setViewMode]);
   const openTaskInBoard = useCallback((taskId: string) => {
     setPendingTaskId(taskId);
     setViewMode('kanban');
@@ -582,11 +620,11 @@ export default function App({ onLogout }: AppProps) {
     onOpenSettings: openSettings,
     onRefreshSessions: refreshSessions,
     onRefreshMemory: refreshMemories,
-    onSetViewMode: setViewMode,
+    onSetViewMode: chooseViewMode,
     canShowKanban: kanbanVisible,
   }), [openSpawnDialog, handleReset, toggleSound, handleAbort, openSettings, openSearch,
     setTheme, setFont, setTtsProvider, handleToggleWakeWord, toggleEvents, toggleLog, toggleTelemetry,
-    refreshSessions, refreshMemories, setViewMode, kanbanVisible]);
+    refreshSessions, refreshMemories, chooseViewMode, kanbanVisible]);
 
   // Keyboard shortcut handlers with useCallback
   const handleOpenPalette = useCallback(() => setPaletteOpen(true), []);
@@ -727,6 +765,67 @@ export default function App({ onLogout }: AppProps) {
       setCurrentSession(key);
     });
   }, [getWorkspaceSwitchLabel, requestWorkspaceTransition, setCurrentSession]);
+
+  // Open an item from the brief at its source. Tasks and proposals need the board, so they do
+  // nothing while kanban is hidden (the brief does not offer them then).
+  const openCronsTab = useCallback((cronId?: string) => {
+    setViewMode('chat');
+    const nonce = nextOpenRequestNonce();
+    setWorkspaceFocusRequest({ tab: 'crons', cronId, nonce });
+    if (isCompactLayout) {
+      // The compact workspace panel opens from the top bar, so the bar must be on screen
+      setIsMobileTopBarHidden(false);
+      setTopBarPanelRequest({ panel: 'workspace', nonce });
+    }
+  }, [isCompactLayout, setViewMode]);
+
+  const handleAttentionOpen = useCallback((target: OpenTarget) => {
+    switch (target.type) {
+      case 'task':
+        if (!kanbanVisible) return;
+        openTaskInBoard(target.id);
+        break;
+      case 'proposal':
+        if (!kanbanVisible) return;
+        setPendingProposalId(target.id);
+        setViewMode('kanban');
+        break;
+      case 'cron':
+        openCronsTab(target.id);
+        break;
+      case 'session':
+        handleSessionChange(target.key);
+        setViewMode('chat');
+        break;
+      case 'source':
+        if (target.source === 'tasks') {
+          if (!kanbanVisible) return;
+          setViewMode('kanban');
+        } else {
+          openCronsTab();
+        }
+        break;
+    }
+    setCameFromAttention(true);
+  }, [handleSessionChange, kanbanVisible, openCronsTab, openTaskInBoard, setViewMode]);
+
+  // display: none drops an element's scroll offset in some browsers, so the brief's scroll is
+  // remembered here and put back each time the view shows again
+  const attentionScrollRef = useRef(0);
+  const attentionWrapRef = useRef<HTMLDivElement>(null);
+  const handleAttentionScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
+    const scroller = event.target;
+    // A hidden scroller has no height; whatever it reports then is not the operator's place
+    if (scroller !== event.currentTarget.firstElementChild || !(scroller instanceof HTMLElement) || scroller.clientHeight === 0) return;
+    attentionScrollRef.current = scroller.scrollTop;
+  }, []);
+  useLayoutEffect(() => {
+    if (viewMode !== 'attention') return;
+    const scroller = attentionWrapRef.current?.firstElementChild;
+    if (scroller instanceof HTMLElement && attentionScrollRef.current > 0) {
+      scroller.scrollTop = attentionScrollRef.current;
+    }
+  }, [viewMode]);
 
   const sessionCommands = useMemo(
     () => createSessionCommands(sessions, currentSession, agentName, handleSessionChange),
@@ -944,6 +1043,7 @@ export default function App({ onLogout }: AppProps) {
               remoteWorkspace={remoteWorkspace}
               onOpenBoard={() => setViewMode('kanban')}
               onOpenTask={openTaskInBoard}
+              focusRequest={workspaceFocusRequest}
             />
           </PanelErrorBoundary>
         </div>
@@ -988,18 +1088,21 @@ export default function App({ onLogout }: AppProps) {
           compact
           onOpenBoard={() => setViewMode('kanban')}
           onOpenTask={openTaskInBoard}
+          focusRequest={workspaceFocusRequest}
         />
       </PanelErrorBoundary>
     </Suspense>
   );
 
-  const showCompactFileBrowser = isCompactLayout && viewMode !== 'kanban' && !fileBrowserCollapsed;
+  // Attention and Tasks take the whole main area: no file column, chat or side panels
+  const fullAreaView = viewMode !== 'chat';
+  const showCompactFileBrowser = isCompactLayout && !fullAreaView && !fileBrowserCollapsed;
   const handleOpenCompactFileBrowserFromSwipe = useCallback(() => {
     setFileBrowserCollapsed(false);
   }, [setFileBrowserCollapsed]);
   const compactFileBrowserSwipeEnabled =
     isCompactLayout &&
-    viewMode !== 'kanban' &&
+    !fullAreaView &&
     fileBrowserCollapsed &&
     !paletteOpen;
   const compactFileBrowserSwipe = useEdgeSwipeToOpen({
@@ -1065,7 +1168,8 @@ export default function App({ onLogout }: AppProps) {
         </button>
       )}
       
-      {(!isCompactLayout || !isMobileTopBarHidden) && (
+      {/* The compact bar can be hidden from chat only; the full-area views always keep it, as it holds the view chips */}
+      {(!isCompactLayout || !isMobileTopBarHidden || fullAreaView) && (
         <TopBar
           onSettings={openSettings}
           agentLogEntries={agentLogEntries}
@@ -1078,11 +1182,12 @@ export default function App({ onLogout }: AppProps) {
           sessionsPanel={compactSessionsPanel}
           workspacePanel={compactWorkspacePanel}
           viewMode={viewMode}
-          onViewModeChange={setViewMode}
+          onViewModeChange={chooseViewMode}
           showKanbanView={kanbanVisible}
           performanceMode={performanceMode}
           activity={shellActivity}
           fleet={shellFleet}
+          openPanelRequest={topBarPanelRequest}
         />
       )}
 
@@ -1123,10 +1228,23 @@ export default function App({ onLogout }: AppProps) {
         </Suspense>
       </PanelErrorBoundary>
       
+      {cameFromAttention && viewMode !== 'attention' && (
+        <div className="flex shrink-0 items-center border-b border-border bg-card px-2 max-[900px]:min-h-[44px]">
+          <button
+            type="button"
+            onClick={backToAttention}
+            className="shell-icon-button px-2 text-foreground max-[900px]:min-h-[44px]"
+          >
+            <ArrowLeft size={14} aria-hidden="true" />
+            Back to Attention
+          </button>
+        </div>
+      )}
+
       <div className="nerve-shell-main flex-1 flex overflow-hidden min-h-0">
         {/* File tree: desktop inline, mobile drawer */}
         {!isCompactLayout && (
-          <div className={`nerve-col-left ${viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0 bg-background'}`}>
+          <div className={`nerve-col-left ${fullAreaView ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0 bg-background'}`}>
             <PanelErrorBoundary name="File Explorer">
               <FileTreePanel
                 workspaceAgentId={workspaceAgentId}
@@ -1183,19 +1301,41 @@ export default function App({ onLogout }: AppProps) {
          * in-progress voice recording / STT transcription survives tab switches.
          * See: https://github.com/.../issues/64
          */}
+        {/* Attention stays mounted after its first showing and is only hidden while another view is open */}
+        {attentionMounted && (
+          <div
+            ref={attentionWrapRef}
+            onScrollCapture={handleAttentionScroll}
+            className={`nerve-col-center boot-panel flex-1 min-w-0 min-h-0 overflow-hidden bg-background${viewMode === 'attention' ? '' : ' hidden'}`}
+          >
+            <PanelErrorBoundary name="Attention">
+              <AttentionView
+                active={viewMode === 'attention'}
+                compact={isCompactLayout}
+                kanbanEnabled={kanbanVisible}
+                onOpen={handleAttentionOpen}
+              />
+            </PanelErrorBoundary>
+          </div>
+        )}
         {viewMode === 'kanban' && (
           <div className="nerve-col-center boot-panel flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-background">
             <Suspense fallback={<div className="flex-1 flex items-center justify-center bg-background text-[0.8rem] text-muted-foreground">Loading…</div>}>
-              <KanbanPanel initialTaskId={pendingTaskId} onInitialTaskConsumed={() => setPendingTaskId(null)} />
+              <KanbanPanel
+                initialTaskId={pendingTaskId}
+                onInitialTaskConsumed={() => setPendingTaskId(null)}
+                initialProposalId={pendingProposalId}
+                onInitialProposalConsumed={() => setPendingProposalId(null)}
+              />
             </Suspense>
           </div>
         )}
         {isCompactLayout ? (
-          <div className={`nerve-col-center flex-1 min-w-0 min-h-0 overflow-hidden bg-background boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
+          <div className={`nerve-col-center flex-1 min-w-0 min-h-0 overflow-hidden bg-background boot-panel${fullAreaView ? ' hidden' : ''}`}>
             {chatContent}
           </div>
         ) : (
-          <div style={{ display: viewMode === 'kanban' ? 'none' : 'contents' }}>
+          <div style={{ display: fullAreaView ? 'none' : 'contents' }}>
             <ResizablePanels
               leftPercent={panelRatio}
               onResize={setPanelRatio}

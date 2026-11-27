@@ -66,6 +66,26 @@ describe('TopBar', () => {
     expect(screen.getByRole('button', { name: /switch to chat view/i })).toBeInTheDocument();
   });
 
+  it('TopBar renders Attention first and marks it pressed', () => {
+    const onViewModeChange = vi.fn();
+    renderTopBar({ viewMode: 'attention', onViewModeChange });
+
+    const chips = screen.getAllByRole('button', { name: /^switch to .* view$/i });
+    expect(chips.map((chip) => chip.textContent)).toEqual(['Attention', 'Chat', 'Tasks']);
+    expect(chips[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(chips[0]).toHaveAttribute('data-active', 'true');
+    expect(chips[1]).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(chips[0]);
+    expect(onViewModeChange).toHaveBeenCalledWith('attention');
+  });
+
+  it('keeps the Attention chip when kanban visibility is disabled', () => {
+    renderTopBar({ showKanbanView: false });
+
+    expect(screen.getByRole('button', { name: /switch to attention view/i })).toBeInTheDocument();
+  });
+
   it('does not render a top-bar Commands trigger', () => {
     renderTopBar();
 

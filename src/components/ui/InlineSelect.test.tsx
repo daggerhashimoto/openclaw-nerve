@@ -207,6 +207,72 @@ describe('InlineSelect', () => {
     expect(listbox.style.maxHeight).toBe('320px');
   });
 
+  it('captures the option value at press time so a swapped list cannot select a stale index', () => {
+    const onChange = vi.fn();
+    const first = [
+      { value: 'alpha', label: 'Alpha' },
+      { value: 'beta', label: 'Beta' },
+    ];
+    const second = [
+      { value: 'gamma', label: 'Gamma' },
+      { value: 'delta', label: 'Delta' },
+    ];
+
+    const { rerender } = render(
+      <InlineSelect value="alpha" onChange={onChange} options={first} ariaLabel="Model" />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Model' }));
+    const option = screen.getByRole('option', { name: 'Beta' });
+    touchDown(option);
+    rerender(<InlineSelect value="alpha" onChange={onChange} options={second} ariaLabel="Model" />);
+    fireEvent.pointerUp(screen.getByRole('option', { name: 'Delta' }), {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 41,
+      clientY: 321,
+    });
+
+    expect(onChange).toHaveBeenCalledWith('beta');
+  });
+
+  it('wires the trigger to the portaled listbox with aria-controls', () => {
+    renderSelect();
+    const trigger = screen.getByRole('button', { name: 'Thinking' });
+    const listbox = screen.getByRole('listbox');
+
+    expect(trigger).toHaveAttribute('aria-controls', listbox.id);
+    expect(listbox.id).toBeTruthy();
+  });
+
+  it('never floors the menu height past the space available', () => {
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(180);
+    render(
+      <InlineSelect
+        value="default"
+        onChange={vi.fn()}
+        options={THINKING_OPTIONS}
+        ariaLabel="Thinking"
+        dropUp
+      />,
+    );
+    const trigger = screen.getByRole('button', { name: 'Thinking' });
+    trigger.getBoundingClientRect = () => ({
+      top: 10,
+      bottom: 42,
+      left: 40,
+      right: 160,
+      width: 120,
+      height: 32,
+      x: 40,
+      y: 10,
+      toJSON: () => ({}),
+    }) as DOMRect;
+
+    fireEvent.click(trigger);
+    const listbox = screen.getByRole('listbox');
+    expect(Number.parseFloat(listbox.style.maxHeight)).toBeLessThanOrEqual(0);
+  });
+
   it('opens below the trigger when there is room', () => {
     vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(768);
     render(

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useId, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -33,13 +33,13 @@ interface InlineSelectProps {
 const TAP_SLOP = 8;
 const VIEWPORT_PADDING = 8;
 const MENU_MAX_HEIGHT = 320;
-const MENU_MIN_HEIGHT = 96;
 /** Window during which the compatibility click after a touch tap is swallowed. */
 const GHOST_CLICK_WINDOW_MS = 500;
 
 interface TouchPress {
   pointerId: number;
-  index: number;
+  /** Captured at press time: the option list can be replaced before release. */
+  value: string;
   startX: number;
   startY: number;
   moved: boolean;
@@ -82,6 +82,7 @@ export function InlineSelect({
 }: InlineSelectProps) {
   const [open, setOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const listboxId = useId();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const listboxRef = useRef<HTMLUListElement | null>(null);
   const listboxCleanupRef = useRef<(() => void) | null>(null);
@@ -124,10 +125,9 @@ export function InlineSelect({
     const spaceAbove = rect.top - VIEWPORT_PADDING - 4;
     const shouldDropUp = dropUp || (naturalHeight > spaceBelow && spaceAbove > spaceBelow);
     const availableHeight = shouldDropUp ? spaceAbove : spaceBelow;
-    const maxHeight = Math.max(
-      MENU_MIN_HEIGHT,
-      Math.min(MENU_MAX_HEIGHT, availableHeight),
-    );
+    // Never floor past the space the viewport actually offers: on a short
+    // landscape viewport that would push the last options off-screen.
+    const maxHeight = Math.max(0, Math.min(MENU_MAX_HEIGHT, availableHeight));
 
     setPlacement(shouldDropUp ? 'top' : 'bottom');
     setMenuStyle({
@@ -241,12 +241,13 @@ export function InlineSelect({
       event.stopPropagation();
       cleanup();
     };
-    // Any new gesture means the guard has done its job; a real tap that follows
-    // the selection must not be swallowed.
-    const onPointerDownCapture = () => cleanup();
+    // Any new gesture or key activation means the guard has done its job; a
+    // real tap/keyboard action that follows the selection must not be swallowed.
+    const disarm = () => cleanup();
     const cleanup = () => {
       document.removeEventListener('click', onClickCapture, true);
-      document.removeEventListener('pointerdown', onPointerDownCapture, true);
+      document.removeEventListener('pointerdown', disarm, true);
+      document.removeEventListener('keydown', disarm, true);
       window.clearTimeout(timer);
       if (ghostClickCleanupRef.current === cleanup) {
         ghostClickCleanupRef.current = null;
@@ -256,7 +257,8 @@ export function InlineSelect({
 
     ghostClickCleanupRef.current = cleanup;
     document.addEventListener('click', onClickCapture, true);
-    document.addEventListener('pointerdown', onPointerDownCapture, true);
+    document.addEventListener('pointerdown', disarm, true);
+    document.addEventListener('keydown', disarm, true);
   }, []);
 
   useEffect(() => () => ghostClickCleanupRef.current?.(), []);
@@ -325,7 +327,7 @@ export function InlineSelect({
       // decide on pointerup whether it was a tap.
       touchPressRef.current = {
         pointerId: event.pointerId,
-        index,
+        value: options[index].value,
         startX: event.clientX,
         startY: event.clientY,
         moved: false,
@@ -370,7 +372,7 @@ export function InlineSelect({
 
     event.preventDefault();
     suppressGhostClick();
-    selectOption(options[press.index].value);
+    selectOption(press.value);
   };
 
   const handleOptionPointerCancel = (event: React.PointerEvent<HTMLLIElement>) => {
@@ -387,6 +389,7 @@ export function InlineSelect({
   const menuContent = open && !disabled ? (
     <ul
       ref={attachListbox}
+      id={listboxId}
       role="listbox"
       aria-label={ariaLabel}
       data-placement={placement}
@@ -452,6 +455,7 @@ export function InlineSelect({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? listboxId : undefined}
         aria-activedescendant={activeDescendantId}
         disabled={disabled}
         title={title}

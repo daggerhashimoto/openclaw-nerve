@@ -1034,8 +1034,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // A refresh already in flight may hold sessions of this agent, also ones the list never showed.
     removedAgentsBeforeRefreshRef.current.set(agentId, refreshStartedRef.current);
     forgetDeletedSessions(sessionsRef.current.map(getSessionKey).filter(isTheAgents));
-    // Its pins and statuses go too, also those of sessions the list was not showing.
+    // Its pins, unread marks and statuses go too, also those of sessions the list was not showing.
     unpinSessionsMatching(isTheAgents);
+    if ([...unreadSessionKeysRef.current].some(isTheAgents)) {
+      const next = new Set([...unreadSessionKeysRef.current].filter((key) => !isTheAgents(key)));
+      unreadSessionKeysRef.current = next;
+      setUnreadSessionKeys(next);
+    }
     for (const key of Object.keys(doneTimeoutsRef.current)) {
       if (!isTheAgents(key)) continue;
       clearTimeout(doneTimeoutsRef.current[key]);

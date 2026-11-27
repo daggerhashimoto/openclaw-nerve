@@ -1016,11 +1016,12 @@ describe('SessionContext', () => {
     it('clears the statuses of the removed agent sessions', async () => {
       installRemoveGateway(OPS_TREE);
       function OpsStatus() {
-        const { agentStatus } = useSessionContext();
+        const { agentStatus, unreadSessions } = useSessionContext();
         return (
           <>
             <div data-testid="ops-status">{agentStatus['agent:ops:main']?.status ?? 'NONE'}</div>
             <div data-testid="gone-status">{agentStatus['agent:ops:subagent:gone']?.status ?? 'NONE'}</div>
+            <div data-testid="gone-unread">{String(Boolean(unreadSessions['agent:ops:subagent:gone']))}</div>
           </>
         );
       }
@@ -1037,6 +1038,7 @@ describe('SessionContext', () => {
       });
       expect(screen.getByTestId('ops-status').textContent).toBe('DONE');
       expect(screen.getByTestId('gone-status').textContent).toBe('DONE');
+      expect(screen.getByTestId('gone-unread').textContent).toBe('true');
 
       await act(async () => {
         screen.getByTestId('remove').click();
@@ -1046,6 +1048,7 @@ describe('SessionContext', () => {
       expect(onError).not.toHaveBeenCalled();
       expect(screen.getByTestId('ops-status').textContent).toBe('NONE');
       expect(screen.getByTestId('gone-status').textContent).toBe('NONE');
+      expect(screen.getByTestId('gone-unread').textContent).toBe('false');
     });
 
     it('keeps a child the list never showed out of an older refresh that lands after the removal', async () => {

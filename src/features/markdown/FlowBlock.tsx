@@ -372,13 +372,20 @@ export function FlowBlock({ spec }: { spec: FlowSpec }) {
   const layout = layoutFlow(spec);
   const labels = new Map(spec.nodes.map((node) => [node.id, node.label]));
   const hasWideFanout = layout.levels.some(
-    (level) => level.filter((item) => item.node !== null).length >= WIDE_FANOUT_COLUMNS,
+    (level) => level.some((item) => item.node !== null) && level.length >= WIDE_FANOUT_COLUMNS,
   );
+  // Count degrees over edges the layout actually draws, not return/cycle links
+  // that are rendered as footnotes.
+  const drawnEdges = new Set<string>();
+  for (const segments of layout.segments) {
+    for (const segment of segments) drawnEdges.add(`${segment.edge.from}\u0000${segment.edge.to}`);
+  }
   const outDegree = new Map<string, number>();
   const inDegree = new Map<string, number>();
-  for (const edge of spec.edges) {
-    outDegree.set(edge.from, (outDegree.get(edge.from) ?? 0) + 1);
-    inDegree.set(edge.to, (inDegree.get(edge.to) ?? 0) + 1);
+  for (const key of drawnEdges) {
+    const [from, to] = key.split('\u0000');
+    outDegree.set(from, (outDegree.get(from) ?? 0) + 1);
+    inDegree.set(to, (inDegree.get(to) ?? 0) + 1);
   }
 
   const edgeSummary = spec.edges

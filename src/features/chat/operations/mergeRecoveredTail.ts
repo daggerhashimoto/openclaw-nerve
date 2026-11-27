@@ -276,12 +276,22 @@ function withoutRecoveredEntries(kept: ChatMsg[], recoveredRows: ChatMsg[]): Cha
  */
 function restoreUnsentPrompts(merged: ChatMsg[], replaced: ChatMsg[], regionStart: number): ChatMsg[] {
   const kept = new Set(merged);
-  const lost = replaced.filter(
-    (msg) => isUnrecordedPrompt(msg) && !kept.has(msg) && !merged.some((row) => (
+  // A history row records one prompt only: with two prompts of the same text and
+  // no send keys, the row must collapse the first and let the second stay.
+  const claimable = new Set(merged.filter((row) => row.role === 'user'));
+  const lost: ChatMsg[] = [];
+  for (const msg of replaced) {
+    if (!isUnrecordedPrompt(msg) || kept.has(msg)) continue;
+    const recorded = merged.find((row) => claimable.has(row) && (
       recordsPrompt(row, msg)
       || (!msg.pending && !msg.failed && samePromptRow(row, msg))
-    )),
-  );
+    ));
+    if (recorded) {
+      claimable.delete(recorded);
+      continue;
+    }
+    lost.push(msg);
+  }
   if (lost.length === 0) return merged;
 
   const result = [...merged];
@@ -318,11 +328,18 @@ function restoreRowsAfterWindow(merged: ChatMsg[], previous: ChatMsg[], history:
   const present = new Set(merged);
   const ids = new Set(merged.map(transcriptRowId).filter(Boolean));
   // A live reply with no transcript id and history's copy are one row; keep the
-  // copy that carries the id. Rows that both carry ids are compared by id only,
-  // so two identical replies from different turns stay apart.
-  const assistantSignatures = new Set(merged
+  // copy that carries the id. The two clocks can differ by a few seconds (and a
+  // 30-second content bucket would miss a boundary), so compare the text and a
+  // short window rather than the bucket. Rows that both carry ids are compared
+  // by id only, so two identical replies from different turns stay apart.
+  const recordedReplies = merged
     .filter((msg) => msg.role === 'assistant' && transcriptRowId(msg) !== null)
-    .map(messageSignature));
+    .map((msg) => ({ text: (msg.rawText || '').trim(), at: msg.timestamp.getTime() }));
+  const isRecordedReply = (msg: ChatMsg) => {
+    const text = (msg.rawText || '').trim();
+    if (!text) return false;
+    return recordedReplies.some((row) => row.text === text && Math.abs(row.at - msg.timestamp.getTime()) < 10_000);
+  };
   const result = [...merged];
   for (const msg of previous.slice(firstNewer)) {
     // Prompts are restored separately, with the send-key and grace checks; a
@@ -333,12 +350,12 @@ function restoreRowsAfterWindow(merged: ChatMsg[], previous: ChatMsg[], history:
     if (present.has(msg)) continue;
     const id = transcriptRowId(msg);
     if (id && ids.has(id)) continue;
-    if (!id && msg.role === 'assistant' && assistantSignatures.has(messageSignature(msg))) continue;
+    if (!id && msg.role === 'assistant' && isRecordedReply(msg)) continue;
     result.push(msg);
     present.add(msg);
     if (id) {
       ids.add(id);
-      if (msg.role === 'assistant') assistantSignatures.add(messageSignature(msg));
+      if (msg.role === 'assistant') recordedReplies.push({ text: (msg.rawText || '').trim(), at: msg.timestamp.getTime() });
     }
   }
   return result;

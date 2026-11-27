@@ -328,11 +328,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (historyRefreshRef.current) clearTimeout(historyRefreshRef.current);
     const capturedSession = currentSessionRef.current;
     const capturedGeneration = getGeneration();
-    const capturedRunEpoch = getRunEpoch();
     historyRefreshRef.current = setTimeout(async () => {
       historyRefreshRef.current = null;
       try {
         await historyLoadRef.current;
+        // The read happens now, so its snapshot can speak for every run frame up
+        // to now; a frame during the request still invalidates the answer.
+        const capturedRunEpoch = getRunEpoch();
         const seq = ++historyRefreshSeqRef.current;
         const recovered = await loadChatHistory({
           rpc,

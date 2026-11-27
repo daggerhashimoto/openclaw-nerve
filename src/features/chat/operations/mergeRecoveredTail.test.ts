@@ -635,6 +635,41 @@ describe('mergeRecoveredTail', () => {
       expect(keepUnsentMessages(previous, history)).toEqual(history);
     });
 
+    it('collapses a live final with its history copy across a bucket boundary', () => {
+      // The copy was recorded at the end of one 30s bucket and the live frame
+      // arrived just after the next began; they are still one reply.
+      const boundary = Math.ceil(T / 30_000) * 30_000;
+      const previous = [
+        historyRow('user', 'Question', 'e1', boundary - 60_000),
+        liveRow('assistant', 'The answer.', boundary + 1000),
+      ];
+      const history = [
+        historyRow('user', 'Question', 'e1', boundary - 60_000),
+        historyRow('assistant', 'The answer.', 'e2', boundary - 1000),
+      ];
+
+      expect(texts(keepUnsentMessages(previous, history))).toEqual(['Question', 'The answer.']);
+    });
+
+    it('keeps the second of two same-text prompts when history holds one unkeyed row', () => {
+      const now = Date.now();
+      const previous = [
+        historyRow('user', 'Question', 'e1', now - 10_000),
+        localPrompt('Next', 'k1', now - 3_000, 'sent'),
+        localPrompt('Next', 'k2', now - 1_000, 'sent'),
+      ];
+      const history = [
+        historyRow('user', 'Question', 'e1', now - 10_000),
+        historyRow('user', 'Next', 'e2', now - 2_900),
+      ];
+
+      const result = keepUnsentMessages(previous, history);
+
+      // The unkeyed row records the first prompt; the second has no copy yet.
+      expect(texts(result)).toEqual(['Question', 'Next', 'Next']);
+      expect(result[2].tempId).toBe('k2');
+    });
+
     it('keeps a reply the older read did not hold yet', () => {
       // The read was handled before the reply was committed but answers last; the
       // screen must not go back to the pre-reply transcript.

@@ -10,6 +10,8 @@ import { hljs } from '@/lib/highlight';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { escapeRegex } from '@/lib/constants';
 import { CodeBlockActions } from './CodeBlockActions';
+import { FlowBlock } from './FlowBlock';
+import { parseFlowSpec } from './flowSpec';
 import { parseBeadLinkHref, type BeadLinkTarget } from '@/features/beads';
 import { renderInlinePathReferences } from './inlineReferences';
 import { remarkTexMath } from './remarkTexMath';
@@ -98,6 +100,10 @@ type HeadingProps = React.HTMLAttributes<HTMLHeadingElement> & MarkdownNodeProps
 };
 
 type ParagraphProps = React.HTMLAttributes<HTMLParagraphElement> & MarkdownNodeProps & {
+  children?: React.ReactNode;
+};
+
+type PreProps = React.HTMLAttributes<HTMLPreElement> & MarkdownNodeProps & {
   children?: React.ReactNode;
 };
 
@@ -369,6 +375,13 @@ function CodeBlock({ code, language, highlightedHtml }: {
   );
 }
 
+/** A ```flow fence renders a diagram when its JSON is valid, otherwise a code block. */
+function FlowFence({ code }: { code: string }) {
+  const parsed = parseFlowSpec(code);
+  if (!parsed.ok) return <CodeBlock code={code} language="flow" />;
+  return <FlowBlock spec={parsed.spec} />;
+}
+
 /** Render markdown content with syntax highlighting, search highlighting, inline path refs, and in-doc anchors. */
 export function MarkdownRenderer({
   content,
@@ -483,11 +496,29 @@ export function MarkdownRenderer({
         void node;
         return <th {...props}>{processChildren(children, childOptions)}</th>;
       },
+      // FlowBlock is a figure, not a code plate. Drop react-markdown's outer
+      // <pre> only for flow fences so its padding/background cannot wrap the
+      // diagram; every other fence keeps the default <pre>.
+      pre: ({ children, node, ...props }: PreProps) => {
+        void node;
+        const child = React.Children.toArray(children)[0];
+        const childClassName = React.isValidElement<{ className?: string }>(child)
+          ? child.props.className ?? ''
+          : '';
+        if (/\blanguage-flow\b/.test(childClassName)) {
+          return <>{children}</>;
+        }
+        return <pre {...props}>{children}</pre>;
+      },
       code: ({ className: codeClassName, children, ...props }: { className?: string; children?: React.ReactNode }) => {
         const match = /language-(\w+)/.exec(codeClassName || '');
         const lang = match ? match[1] : '';
         const codeString = String(children).replace(/\n$/, '');
         const inline = !codeClassName;
+
+        if (!inline && lang === 'flow') {
+          return <FlowFence code={codeString} />;
+        }
 
         if (!inline && lang) {
           try {

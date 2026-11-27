@@ -2,7 +2,7 @@ import { Pane } from '@/components/ui/Pane';
 import { cn } from '@/lib/utils';
 import { formatClock } from './briefCopy';
 import { KIND_WORD, paneFor, sourceTag, type ItemView } from './itemPresentation';
-import { NewTag, ReasonText } from './AttentionRow';
+import { MarkItemSeenButton, NewTag, ReasonText } from './AttentionRow';
 import type { AttentionItem, OpenTarget } from './types';
 
 const RESULT_EXCERPT = 240;
@@ -78,11 +78,13 @@ interface AttentionCardProps {
   /** Position in its section, 1-based. */
   rank: number;
   onOpen: (target: OpenTarget) => void;
+  /** Blocked and failed cards only: adds a Mark seen button that sits above the card's hit area. */
+  onMarkSeen?: (item: AttentionItem) => void;
   className?: string;
 }
 
 /** A ranked card. The title is the button; its hit area covers the whole card. */
-export function AttentionCard({ item, view, rank, onOpen, className }: AttentionCardProps) {
+export function AttentionCard({ item, view, rank, onOpen, onMarkSeen, className }: AttentionCardProps) {
   return (
     <article className={cn(CARD, 'nerve-task-card', item.freshness !== 'live' && 'opacity-80', className)}>
       <KindLine
@@ -105,6 +107,11 @@ export function AttentionCard({ item, view, rank, onOpen, className }: Attention
         </button>
       </h3>
       <CardDetail item={item} view={view} />
+      {onMarkSeen && (
+        <div className="flex justify-end">
+          <MarkItemSeenButton item={item} compact={false} onMarkSeen={onMarkSeen} className="relative z-10" />
+        </div>
+      )}
     </article>
   );
 }

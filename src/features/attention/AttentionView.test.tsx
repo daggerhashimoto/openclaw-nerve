@@ -219,7 +219,8 @@ describe('AttentionView', () => {
       expect(Number(match![1])).toBeGreaterThanOrEqual(44);
     }
 
-    fireEvent.click(screen.getByRole('button', { name: /Nightly backup/ }));
+    const backupRow = rows.find((row) => row.textContent?.includes('Nightly backup'));
+    fireEvent.click(backupRow!);
     expect(onOpen).toHaveBeenCalledWith({ type: 'cron', id: 'c2' });
   });
 
@@ -433,5 +434,90 @@ describe('AttentionView', () => {
     rerenderWith({});
     expect(cardTitles()).toEqual(['Earlier review', 'First review']);
     expect(screen.queryByText('New')).not.toBeInTheDocument();
+  });
+
+  describe('per-item Mark seen', () => {
+    function failedTask(overrides: Partial<KanbanTask> = {}): KanbanTask {
+      return task({
+        status: 'todo',
+        result: undefined,
+        run: {
+          sessionKey: 'agent:forge:subagent:fix',
+          startedAt: NOW - 3 * HOUR,
+          endedAt: NOW - 2 * HOUR,
+          status: 'error',
+          error: 'Tests failed',
+        },
+        ...overrides,
+      });
+    }
+
+    it('per-item Mark seen hides only that failure', () => {
+      setSources({
+        tasks: [
+          failedTask({ id: 'f1', title: 'Rebuild the index' }),
+          failedTask({ id: 'f2', title: 'Rotate the logs' }),
+        ],
+      });
+      renderView();
+
+      expect(screen.getByRole('button', { name: 'Rebuild the index' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Rotate the logs' })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Mark Rebuild the index seen' }));
+
+      expect(screen.queryByRole('button', { name: 'Rebuild the index' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Rotate the logs' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Mark Rotate the logs seen' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Seen (1)' })).toBeInTheDocument();
+      expect(JSON.parse(localStorage.getItem('nerve:attention:seen') ?? '[]')).toHaveLength(1);
+    });
+
+    it('per-item Mark seen does not open the item', () => {
+      setSources({
+        tasks: [failedTask({ id: 'f1', title: 'Rebuild the index' })],
+        crons: [cron()],
+      });
+      const { onOpen } = renderView();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Mark Rebuild the index seen' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Mark Morning brief seen' }));
+
+      expect(onOpen).not.toHaveBeenCalled();
+      // One Seen line in Blocked or failed, one in Recently finished.
+      expect(screen.getAllByRole('button', { name: 'Seen (1)' })).toHaveLength(2);
+      expect(screen.queryByText('Morning brief')).not.toBeInTheDocument();
+    });
+
+    it('is a 44px target on phone rows and absent from Decide now and In progress items', () => {
+      sessionMock.mockReturnValue({
+        sessions: [{ key: 'agent:kim:subagent:abc', label: 'Research worker', updatedAt: NOW - 10 * MINUTE }],
+        sessionsLoading: false,
+        agentStatus: {},
+        busyState: { 'agent:kim:subagent:abc': true },
+      });
+      setSources({
+        tasks: [
+          task(),
+          task({ id: 't2', title: 'Write the ship notes', resultAt: NOW - 30 * MINUTE }),
+          failedTask({ id: 'f1', title: 'Rebuild the index' }),
+        ],
+        crons: [cron()],
+      });
+      renderView({ compact: true });
+
+      expect(screen.getByText('Research worker')).toBeInTheDocument();
+      const marks = screen.getAllByRole('button', { name: /^Mark .+ seen$/ });
+      expect(marks.map((button) => button.getAttribute('aria-label')).sort()).toEqual([
+        'Mark Morning brief seen',
+        'Mark Rebuild the index seen',
+      ]);
+      for (const button of marks) {
+        expect(button.tagName).toBe('BUTTON');
+        expect(button).toHaveAttribute('type', 'button');
+        expect(button.className).toContain('min-h-[44px]');
+        expect(button.closest('[data-testid="attention-row"]')).toBeNull();
+      }
+    });
   });
 });

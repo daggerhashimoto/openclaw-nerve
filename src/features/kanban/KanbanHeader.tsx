@@ -114,7 +114,7 @@ export const KanbanHeader = memo(function KanbanHeader({
   return (
     <div className="shrink-0 border-b border-border">
       {/* Row 1: nameplate, words, actions */}
-      <div className="flex min-h-[2.933rem] flex-wrap items-center gap-x-3 gap-y-2 py-1.5 pl-4 pr-2">
+      <div className="relative flex min-h-[2.933rem] flex-wrap items-center gap-x-3 gap-y-2 py-1.5 pl-4 pr-2">
         <div className="flex min-w-0 items-center">
           <h1 className="nerve-nameplate text-foreground">Tasks</h1>
           {words && (
@@ -160,8 +160,10 @@ export const KanbanHeader = memo(function KanbanHeader({
             <Filter size={14} />
           </button>
 
-          {/* Agent proposals: the pane lights cantaloupe while any wait on you */}
-          <div className="relative shrink-0" ref={inboxRef}>
+          {/* Agent proposals: the pane lights cantaloupe while any wait on you. From sm up the
+              popover anchors to this wrapper; below sm it anchors to row 1 (full width), because the
+              wrapper sits mid-row there and a right-aligned popover would run off the left edge. */}
+          <div className="shrink-0 sm:relative" ref={inboxRef}>
             <button
               type="button"
               onClick={toggleInbox}
@@ -177,7 +179,7 @@ export const KanbanHeader = memo(function KanbanHeader({
             </button>
 
             {showInbox && (
-              <div className="absolute right-0 top-full z-50 mt-1 w-[min(380px,calc(100vw-1.067rem))] overflow-hidden rounded-[3px] border border-border bg-popover nerve-menu-shadow">
+              <div className="absolute top-full z-50 mt-1 overflow-hidden rounded-[3px] border border-border bg-popover nerve-menu-shadow max-sm:inset-x-2 sm:right-0 sm:w-[min(380px,calc(100vw-1.067rem))]">
                 <div className="flex min-h-[var(--row-unit)] items-center gap-2 border-b border-border px-3 text-[0.867rem] font-medium text-foreground">
                   <span>Agent proposals</span>
                   {proposalsWaiting && (

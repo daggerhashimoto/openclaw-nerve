@@ -253,10 +253,20 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   const disconnectedSince = connected ? null : link.lostAt;
   const disconnected = disconnectedSince !== null;
 
-  const renderRows = (items: AttentionItem[], order?: StableOrder) => (
+  // Blocked, failed and finished items can be marked seen one by one; the rest and the Seen lines cannot.
+  const markOneSeen = (item: AttentionItem) => markSeen([item]);
+
+  const renderRows = (items: AttentionItem[], order?: StableOrder, onMarkSeen?: (item: AttentionItem) => void) => (
     <div className={compact ? 'flex flex-col' : 'flex flex-col gap-0.5 pt-1'}>
       {items.map((item) => (
-        <AttentionRow key={item.key} item={item} view={viewOf(item, order)} compact={compact} onOpen={onOpen} />
+        <AttentionRow
+          key={item.key}
+          item={item}
+          view={viewOf(item, order)}
+          compact={compact}
+          onOpen={onOpen}
+          onMarkSeen={onMarkSeen}
+        />
       ))}
     </div>
   );
@@ -316,7 +326,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     >
       {notes('blocked')}
       {blocked.items.length > 0 ? (
-        compact ? renderRows(blocked.items, blocked) : (
+        compact ? renderRows(blocked.items, blocked, markOneSeen) : (
           <div className="flex flex-wrap items-stretch gap-3">
             {blocked.items.map((item, index) => (
               <AttentionCard
@@ -325,6 +335,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
                 view={viewOf(item, blocked)}
                 rank={index + 1}
                 onOpen={onOpen}
+                onMarkSeen={markOneSeen}
                 className="flex-[1_1_300px]"
               />
             ))}
@@ -354,7 +365,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     >
       {notes('finished')}
       {finished.items.length > 0
-        ? renderRows(finished.items, finished)
+        ? renderRows(finished.items, finished, markOneSeen)
         : <EmptyLine compact={compact} hidden={hasNotes(effectiveSources, 'finished')}>Nothing new has finished.</EmptyLine>}
       <SeenLine items={brief.seen.finished} compact={compact} render={(items) => renderRows(items)} />
     </Section>

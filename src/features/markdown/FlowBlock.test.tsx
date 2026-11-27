@@ -174,6 +174,53 @@ describe('FlowBlock', () => {
     );
   });
 
+  it('shows stacked chips for a default-kind merge', () => {
+    const { container } = render(
+      <FlowBlock
+        spec={{
+          title: 'Merge',
+          nodes: [
+            { id: 'a', label: 'Alpha', tone: 'neutral' },
+            { id: 'b', label: 'Bravo', tone: 'neutral' },
+            { id: 'c', label: 'Charlie', tone: 'neutral' },
+          ],
+          edges: [
+            { from: 'a', to: 'c', kind: 'flow' },
+            { from: 'b', to: 'c', kind: 'flow' },
+          ],
+          groups: [],
+        }}
+      />,
+    );
+
+    const chips = container.querySelectorAll('.flow-edge-label--branch-only');
+    expect(chips).toHaveLength(2);
+    expect(Array.from(chips).map((chip) => chip.getAttribute('data-source'))).toEqual(['Alpha', 'Bravo']);
+    expect(Array.from(chips).map((chip) => chip.getAttribute('data-target'))).toEqual(['Charlie', 'Charlie']);
+  });
+
+  it('flags a pass-through-heavy row as a wide fan-out', () => {
+    const sources = ['s1', 's2', 's3'];
+    const targets = ['t1', 't2', 't3'];
+    const nodes = [
+      ...sources.map((id) => ({ id, label: id.toUpperCase(), tone: 'neutral' as const })),
+      { id: 'mid', label: 'Intermediate card', tone: 'neutral' as const },
+      ...targets.map((id) => ({ id, label: id.toUpperCase(), tone: 'neutral' as const })),
+    ];
+    const edges = [
+      ...sources.flatMap((from) => targets.map((to) => ({ from, to, kind: 'flow' as const }))),
+      ...sources.map((from) => ({ from, to: 'mid', kind: 'flow' as const })),
+      ...targets.map((to) => ({ from: 'mid', to, kind: 'flow' as const })),
+    ];
+
+    const { container } = render(
+      <FlowBlock spec={{ title: 'Pass-through', nodes, edges, groups: [] }} />,
+    );
+
+    const figure = container.querySelector('figure.markdown-flow');
+    expect(figure).toHaveClass('flow-wide-fanout');
+  });
+
   it('exposes a screen-reader summary of the edges', () => {
     const { container } = render(<FlowBlock spec={FLOW_SAMPLE_SPEC} />);
     const summary = container.querySelector('.sr-only');

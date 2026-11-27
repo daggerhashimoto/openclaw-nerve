@@ -68,6 +68,8 @@ interface AppProps {
 
 interface PendingWorkspaceSwitch {
   targetLabel: string;
+  /** Set when the transition removes this agent: Discard then runs only after the removal succeeded. */
+  removingAgentId?: string;
   execute: () => Promise<void>;
   resolve: (didSwitch: boolean) => void;
   reject: (error: unknown) => void;
@@ -245,7 +247,7 @@ export default function App({ onLogout }: AppProps) {
     openFiles, activeTab, setActiveTab,
     openFile, closeFile, updateContent, saveFile, reloadFile,
     handleFileChanged, remapOpenPaths, closeOpenPathsByPrefix,
-    hasDirtyFiles, saveAllDirtyFiles, discardAllDirtyFiles,
+    hasDirtyFiles, saveAllDirtyFiles, discardAllDirtyFiles, discardDirtyFilesFor,
   } = useOpenFiles(workspaceAgentId);
 
   // Save with workspace-scoped conflict toast
@@ -635,10 +637,10 @@ export default function App({ onLogout }: AppProps) {
     targetSessionKey: string,
     targetLabel: string,
     execute: () => Promise<void>,
-    // Leaving the current workspace for good (its agent is being removed): guard whenever it is dirty.
-    options: { leavesCurrentWorkspace?: boolean } = {},
+    // Removing the current workspace's agent leaves it for good: guard whenever it is dirty.
+    options: { removingAgentId?: string } = {},
   ) => {
-    const guard = options.leavesCurrentWorkspace
+    const guard = options.removingAgentId
       ? hasDirtyFiles
       : shouldGuardWorkspaceSwitch(currentSession, targetSessionKey, hasDirtyFiles);
     if (!guard) {
@@ -651,6 +653,7 @@ export default function App({ onLogout }: AppProps) {
     return new Promise<boolean>((resolve, reject) => {
       setPendingWorkspaceSwitch({
         targetLabel,
+        removingAgentId: options.removingAgentId,
         execute,
         resolve,
         reject,
@@ -701,10 +704,12 @@ export default function App({ onLogout }: AppProps) {
     const pendingSwitch = pendingWorkspaceSwitch;
     setWorkspaceSwitchAction('discard');
     setWorkspaceSwitchError(null);
-    discardAllDirtyFiles();
+    // A removal can be refused; its agent's edits are dropped only once the gateway has accepted it.
+    if (!pendingSwitch.removingAgentId) discardAllDirtyFiles();
 
     try {
       await pendingSwitch.execute();
+      if (pendingSwitch.removingAgentId) discardDirtyFilesFor(pendingSwitch.removingAgentId);
       pendingSwitch.resolve(true);
       setPendingWorkspaceSwitch(null);
       setWorkspaceSwitchError(null);
@@ -715,7 +720,7 @@ export default function App({ onLogout }: AppProps) {
     } finally {
       setWorkspaceSwitchAction(null);
     }
-  }, [discardAllDirtyFiles, pendingWorkspaceSwitch, workspaceSwitchAction]);
+  }, [discardAllDirtyFiles, discardDirtyFilesFor, pendingWorkspaceSwitch, workspaceSwitchAction]);
 
   const handleSessionChange = useCallback((key: string) => {
     void requestWorkspaceTransition(key, getWorkspaceSwitchLabel(key), async () => {
@@ -759,7 +764,7 @@ export default function App({ onLogout }: AppProps) {
     const nextLabel = nextSessionKey ? getWorkspaceSwitchLabel(nextSessionKey) : 'another agent';
     const proceeded = await requestWorkspaceTransition(nextSessionKey, nextLabel, async () => {
       await removeAgent(agentId, opts);
-    }, { leavesCurrentWorkspace: true });
+    }, { removingAgentId: agentId });
     if (!proceeded) throw new Error('Nothing was removed: the unsaved workspace edits are still open.');
   }, [currentSession, getWorkspaceSwitchLabel, removeAgent, requestWorkspaceTransition, sessions]);
 

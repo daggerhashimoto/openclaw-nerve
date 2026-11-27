@@ -26,6 +26,7 @@ const {
   saveFileByAgent,
   saveAllDirtyFilesByAgent,
   discardAllDirtyFilesByAgent,
+  discardDirtyFilesFor,
   dirtyStateByAgent,
   reloadCalls,
   topBarRenderSnapshots,
@@ -78,6 +79,7 @@ const {
     alpha: vi.fn<[], void>(),
     bravo: vi.fn<[], void>(),
   };
+  const discardDirtyFilesFor = vi.fn<[string], void>();
   const dirtyStateByAgent: Record<string, boolean> = {
     alpha: false,
     bravo: false,
@@ -109,6 +111,7 @@ const {
     getDirtyFilePaths: vi.fn(() => (dirtyStateByAgent[agentId] ? ['shared.md'] : [])),
     saveAllDirtyFiles: saveAllDirtyFilesByAgent[agentId as keyof typeof saveAllDirtyFilesByAgent] ?? vi.fn().mockResolvedValue({ ok: true }),
     discardAllDirtyFiles: discardAllDirtyFilesByAgent[agentId as keyof typeof discardAllDirtyFilesByAgent] ?? vi.fn(),
+    discardDirtyFilesFor,
   }));
 
   return {
@@ -118,6 +121,7 @@ const {
     saveFileByAgent,
     saveAllDirtyFilesByAgent,
     discardAllDirtyFilesByAgent,
+    discardDirtyFilesFor,
     dirtyStateByAgent,
     reloadCalls,
     topBarRenderSnapshots,
@@ -867,9 +871,38 @@ describe('App workspace switch guard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard and switch' }));
 
     await waitFor(() => {
-      expect(discardAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
       expect(sessionContext.removeAgent).toHaveBeenCalledWith('alpha', { deleteFiles: false });
+      expect(discardDirtyFilesFor).toHaveBeenCalledWith('alpha');
     });
+    expect(discardAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
+  });
+
+  it('discards the removed agent edits only after the gateway accepted the removal', async () => {
+    const order: string[] = [];
+    discardDirtyFilesFor.mockReset().mockImplementation(() => { order.push('discard'); });
+    sessionContext.removeAgent.mockReset().mockImplementation(async () => { order.push('remove'); });
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove alpha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and switch' }));
+
+    await waitFor(() => expect(order).toEqual(['remove', 'discard']));
+    expect(discardDirtyFilesFor).toHaveBeenCalledWith('alpha');
+    expect(discardAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
+  });
+
+  it('keeps the edits when the gateway refuses a removal after Discard', async () => {
+    discardDirtyFilesFor.mockReset();
+    delete document.body.dataset.removeError;
+    sessionContext.removeAgent.mockReset().mockRejectedValue(new Error('Agent "alpha" owns the shared auth store and cannot be deleted.'));
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove alpha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and switch' }));
+
+    await waitFor(() => expect(document.body.dataset.removeError).toMatch(/owns the shared auth store/));
+    expect(discardDirtyFilesFor).not.toHaveBeenCalled();
+    expect(discardAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
   });
 
   it('does not guard removing another agent', async () => {

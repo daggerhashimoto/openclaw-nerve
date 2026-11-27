@@ -1882,6 +1882,55 @@ describe('useOpenFiles', () => {
     });
   });
 
+  it('discards the dirty files of a named agent after switching away from it, leaving the current agent alone', async () => {
+    const { mock } = createLocalStorageMock({
+      [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['draft.md']),
+      [getWorkspaceStorageKey('active-tab', 'main')]: 'draft.md',
+      [getWorkspaceStorageKey('open-files', 'research')]: JSON.stringify(['notes.md']),
+      [getWorkspaceStorageKey('active-tab', 'research')]: 'notes.md',
+    });
+    vi.stubGlobal('localStorage', mock);
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = getRequestUrl(input);
+      const path = url.searchParams.get('path');
+      const agentId = url.searchParams.get('agentId') || 'main';
+      if (url.pathname === '/api/files/read' && path === 'draft.md' && agentId === 'main') {
+        return createJsonResponse({ ok: true, content: 'main original', mtime: 11 });
+      }
+      if (url.pathname === '/api/files/read' && path === 'notes.md' && agentId === 'research') {
+        return createJsonResponse({ ok: true, content: 'research original', mtime: 22 });
+      }
+      return createJsonResponse({ ok: false, error: 'Not found' }, { ok: false, status: 404 });
+    });
+
+    const { result, rerender } = renderHook(
+      ({ agentId }) => useOpenFiles(agentId),
+      { initialProps: { agentId: 'main' } },
+    );
+    await waitFor(() => expect(result.current.openFiles[0]).toMatchObject({ path: 'draft.md', dirty: false }));
+    act(() => {
+      result.current.updateContent('draft.md', 'main unsaved draft');
+    });
+
+    rerender({ agentId: 'research' });
+    await waitFor(() => expect(result.current.openFiles[0]).toMatchObject({ path: 'notes.md', content: 'research original' }));
+    act(() => {
+      result.current.updateContent('notes.md', 'research unsaved draft');
+    });
+
+    act(() => {
+      result.current.discardDirtyFilesFor('main');
+    });
+    expect(result.current.openFiles[0]).toMatchObject({ path: 'notes.md', content: 'research unsaved draft', dirty: true });
+
+    rerender({ agentId: 'main' });
+    await waitFor(() => {
+      expect(result.current.openFiles[0]).toMatchObject({ path: 'draft.md', content: 'main original', dirty: false });
+      expect(result.current.hasDirtyFiles).toBe(false);
+    });
+  });
+
   it('keeps recent save suppression scoped when two agents share the same relative path', async () => {
     const { mock } = createLocalStorageMock({
       [getWorkspaceStorageKey('open-files', 'main')]: JSON.stringify(['shared.md']),

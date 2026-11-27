@@ -878,8 +878,9 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     collectDirtyFilePaths(visibleOpenFiles, visibleDirtyFilePaths)
   ), [visibleDirtyFilePaths, visibleOpenFiles]);
 
-  const discardAllDirtyFiles = useCallback(() => {
-    const requestAgentId = agentIdRef.current;
+  /** Drops the unsaved edits of one agent's files, whether or not that agent is the one shown. */
+  const discardDirtyFilesFor = useCallback((agentIdToDiscard: string) => {
+    const requestAgentId = normalizeAgentId(agentIdToDiscard);
     const dirtyPaths = new Set(collectDirtyFilePaths(
       openFilesRef.current,
       [...(dirtyFilesByAgentRef.current.get(requestAgentId)?.keys() ?? [])],
@@ -902,6 +903,10 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
       return next;
     });
   }, [rememberDirtyFiles, setDirtyFilesForAgent]);
+
+  const discardAllDirtyFiles = useCallback(() => {
+    discardDirtyFilesFor(agentIdRef.current);
+  }, [discardDirtyFilesFor]);
 
   const saveAllDirtyFiles = useCallback(async (): Promise<{ ok: boolean; failedPath?: string; conflict?: boolean }> => {
     const requestAgentId = agentIdRef.current;
@@ -935,5 +940,6 @@ export function useOpenFiles(agentId = DEFAULT_AGENT_ID) {
     getDirtyFilePaths,
     saveAllDirtyFiles,
     discardAllDirtyFiles,
+    discardDirtyFilesFor,
   };
 }

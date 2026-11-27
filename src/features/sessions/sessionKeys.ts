@@ -161,6 +161,7 @@ export function getTopLevelAgentSessions(sessions: Session[]): Session[] {
 const PLACEHOLDER_IDENTITY_NAMES = new Set([
   'pick something you like',
   'your name',
+  'not set yet',
   'agent',
   'name',
 ]);
@@ -200,7 +201,7 @@ export function extractIdentityName(content: string): string | null {
     const match = line.match(/^\s*(?:[-*]\s*)?Name\s*:\s*(.*)$/i);
     if (!match) continue;
     const name = cleanIdentityValue(match[1]);
-    if (!name || isPlaceholderIdentityName(name)) return null;
+    if (!name || isPlaceholderIdentityName(name)) continue;
     return name;
   }
   return null;
@@ -213,21 +214,24 @@ export function getSessionDisplayLabel(session: Session, agentName = 'Agent'): s
     ? session.identityName.trim()
     : undefined;
   const explicitLabel = session.label?.trim();
+  const safeLabel = explicitLabel && !isPlaceholderIdentityName(explicitLabel) ? explicitLabel : undefined;
+  const displayName = session.displayName?.trim();
+  const safeDisplayName = displayName && !isPlaceholderIdentityName(displayName) ? displayName : undefined;
 
   if (sessionKey === 'agent:main:main') {
-    const normalized = explicitLabel?.toLowerCase();
-    if (explicitLabel && normalized !== 'main' && normalized !== 'heartbeat') return explicitLabel;
+    const normalized = safeLabel?.toLowerCase();
+    if (safeLabel && normalized !== 'main' && normalized !== 'heartbeat') return safeLabel;
     return `${agentName} (main)`;
   }
 
   if (isTopLevelAgentSessionKey(sessionKey)) {
-    if (explicitLabel) return explicitLabel;
+    if (safeLabel) return safeLabel;
     if (identityName && rootId) return `${identityName} (${rootId})`;
     if (rootId) return rootId;
   }
 
-  if (explicitLabel) return explicitLabel;
-  if (session.displayName?.trim()) return session.displayName.trim();
+  if (safeLabel) return safeLabel;
+  if (safeDisplayName) return safeDisplayName;
 
   if (isCronSessionKey(sessionKey)) {
     return `Cron ${sessionKey.split(':')[3]?.slice(0, 8) || ''}`.trim();

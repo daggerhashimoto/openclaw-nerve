@@ -347,16 +347,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     if (rootAgentIds.length === 0) return;
 
-    for (const rootId of rootAgentIds) identityAttemptedAtRef.current[rootId] = now;
-
     const controller = new AbortController();
     void Promise.all(rootAgentIds.map(async (rootId) => {
       try {
         const params = new URLSearchParams({ agentId: rootId });
         const res = await fetch(`/api/workspace/identity?${params.toString()}`, { signal: controller.signal });
+        if (res.status === 404) {
+          // A deleted identity file must clear the old label, not look like a read
+          // that can be retried forever without ever becoming a miss.
+          identityAttemptedAtRef.current[rootId] = Date.now();
+          return { rootId, kind: 'miss' as const };
+        }
         if (!res.ok) return null;
         const data = await res.json() as { ok?: boolean; content?: string };
         const identityName = typeof data.content === 'string' ? extractIdentityName(data.content) : null;
+        identityAttemptedAtRef.current[rootId] = Date.now();
         if (identityName && !isPlaceholderIdentityName(identityName)) {
           return { rootId, identityName, kind: 'hit' as const };
         }

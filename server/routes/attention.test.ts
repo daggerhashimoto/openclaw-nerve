@@ -77,9 +77,10 @@ describe('attention routes', () => {
 
   it('dedupes keys and caps how many are answered', async () => {
     const app = await buildApp();
-    const keys = Array.from({ length: 20 }, (_, i) => `agent:main:s${i}`);
+    // Today asks for every chat of the day in one call.
+    const keys = Array.from({ length: 60 }, (_, i) => `agent:main:s${i}`);
     const res = await (await post(app, { sessionKeys: [...keys, keys[0]] })).json() as { summaries: Record<string, unknown> };
-    expect(Object.keys(res.summaries)).toHaveLength(12);
+    expect(Object.keys(res.summaries)).toHaveLength(50);
   });
 
   describe('day summary', () => {

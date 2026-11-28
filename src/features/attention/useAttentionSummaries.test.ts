@@ -86,4 +86,17 @@ describe('useAttentionSummaries', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(result.current).toEqual({});
   });
+
+  it('passes whose turn it is through, and drops malformed turn fields', async () => {
+    fetchMock.mockResolvedValue(respond(200, { summaries: {
+      a: { status: 'ready', text: 'A.', lastSpeaker: 'agent', lastAt: 5, asksOperator: true },
+      b: { status: 'ready', text: 'B.', lastSpeaker: 'robot', lastAt: 'soon', asksOperator: 'yes' },
+    } }));
+    const { result } = renderHook(() => useAttentionSummaries({ active: true, sessionKeys: ['a', 'b'], signal: '1' }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current).toEqual({
+      a: { status: 'ready', text: 'A.', lastSpeaker: 'agent', lastAt: 5, asksOperator: true },
+      b: { status: 'ready', text: 'B.' },
+    });
+  });
 });

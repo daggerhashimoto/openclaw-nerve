@@ -1,16 +1,23 @@
 /**
- * Today: what happened in the operator's day so far, beside the Now brief in the Attention view.
- * A facts strip and a short model-written paragraph, then Done today (newest first, every task,
- * merged pull request, cron run and finished subagent) and Chats today (every session active
- * since local midnight, subagents under their parent). Both sections open on desktop and start
- * collapsed on phones, with their counts showing.
+ * Today: the operator's day so far, beside the Now board in the Attention view. A heading, one
+ * quiet line of facts that filter or jump to their rows, and a short model-written paragraph;
+ * then the board's grid: Chats today in the wide column and Done today in the rail.
  *
- * Read-only except for the operator's own messages: a row's Nudge or Reply sends into its
- * session through the brief's reply store, and a finished subagent's row asks its parent.
- * Each source fails on its own and is named; a day with a source missing never reads complete.
+ * Chats today come first. Each chat row says what it is about (the first sentence of its "What
+ * happened", whole) and whose turn it is: Waiting on you when the Now board holds the session
+ * against the operator or its agent's last message asks them something, Working while a run is
+ * active. Subagents sit under their parent with how they ended. Every chat's summary is asked in
+ * one request; the server answers cached ones cheaply.
  *
- * While any row is open the order is frozen (useStableOrder), so rows arriving from a poll are
- * appended and marked New instead of pushing the open row away; closing every row re-sorts.
+ * Done today is a timeline: crons still failing pinned on top with Run now, then tasks (with the
+ * pull requests they merged), then cron failures that recovered as one line each, then every
+ * successful cron run folded into one quiet line. Finished rows keep a dark pane; the agent's
+ * hue is on its name only.
+ *
+ * Writes are the operator's own: Run now and Pause through Now's item actions, and Reply, Nudge
+ * or Ask into a session through the board's reply store. Sources fail on their own and are
+ * named. Open rows and the filter live while the view is mounted; open sections are remembered
+ * per browser. While any row is open the order is frozen (useStableOrder).
  */
 
 import { useMemo, useState, useSyncExternalStore } from 'react';
@@ -22,21 +29,24 @@ import { useAgentHues, nameHueStyle } from '@/lib/agentColors';
 import { timeAgo } from '@/lib/formatting';
 import { cn } from '@/lib/utils';
 import type { GranularAgentState, Session } from '@/types';
-import { formatClock } from '../briefCopy';
+import { formatClock, formatDayClock } from '../briefCopy';
 import { Clocked, NewTag } from '../textBits';
 import { WhatHappened } from '../AttentionCard';
+import { ActionButton, ActionError, ActionStrip } from '../AttentionActions';
 import { ReplyButton, ReplyField, ReplyPanel, type ReplyConfig } from '../AttentionReply';
-import { variantClass } from '../actionStyles';
+import { TEXT_BUTTON, variantClass } from '../actionStyles';
 import { useInlineReply } from '../useInlineReplies';
 import { useAttentionSummaries, type ThreadSummary } from '../useAttentionSummaries';
+import { useItemActions, type AttentionActionsConfig } from '../useAttentionActions';
 import { useStableOrder } from '../useStableOrder';
-import type { OpenTarget, SourceStatus } from '../types';
+import type { AttentionItem, OpenTarget, SourceStatus } from '../types';
 import {
   buildDay,
   dayFacts,
+  firstSentence,
   flattenChats,
-  groupByHour,
   startOfLocalDay,
+  turnOf,
   type ChatRow,
   type DayRow,
   type DaySource,
@@ -44,6 +54,7 @@ import {
 } from './buildDay';
 import { useCronRuns } from './useCronRuns';
 import { useDaySummary } from './useDaySummary';
+import { useTodaySections, type TodaySection } from './todaySections';
 
 const SOURCE_NAMES: Record<DaySource, string> = {
   tasks: 'Tasks',
@@ -51,15 +62,23 @@ const SOURCE_NAMES: Record<DaySource, string> = {
   cronRuns: 'Cron runs',
   sessions: 'Sessions',
 };
-const SECTION_SOURCES: Record<'done' | 'chats', DaySource[]> = {
-  done: ['tasks', 'crons', 'cronRuns', 'sessions'],
+const SECTION_SOURCES: Record<TodaySection, DaySource[]> = {
+  done: ['tasks', 'crons', 'cronRuns'],
   chats: ['sessions'],
 };
-const DETAIL_MAX = 600;
 /** The summaries route answers this many keys per request. */
-const MAX_SUMMARY_KEYS = 12;
+export const MAX_SUMMARY_KEYS = 50;
 /** The paragraph is asked again this often while the view is open; cached answers are cheap. */
 const SUMMARY_REASK_MS = 5 * 60_000;
+/** Chats are asked again when their activity moves past a minute, not on every update. */
+const ACTIVITY_STEP_MS = 60_000;
+
+/** Pane width, and the row gaps at the desk and on phones, for detail that lines up with titles. */
+const PANE_REM = 0.667;
+const GAP_REM = { desk: 0.625, phone: 0.75 };
+const TIME_REM = 2.75;
+
+export type TodayFilter = 'done' | 'merged' | 'failing' | null;
 
 export interface TodayViewProps {
   active: boolean;
@@ -75,6 +94,8 @@ export interface TodayViewProps {
   needsReply: ReadonlyMap<string, string>;
   agentNames: ReadonlyMap<string, string>;
   replies: ReplyConfig;
+  /** Now's item actions; without them Run now refreshes the view when it lands. */
+  actions?: AttentionActionsConfig;
   /** Set while the gateway is lost; the view's notice already says so. */
   disconnectedSince: number | null;
   onOpen: (target: OpenTarget) => void;
@@ -86,11 +107,6 @@ export interface TodayViewProps {
 function joinWords(words: string[]): string {
   if (words.length <= 1) return words[0] ?? '';
   return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
-}
-
-function excerpt(text: string, max = DETAIL_MAX): string {
-  const trimmed = text.trim();
-  return trimmed.length > max ? `${trimmed.slice(0, max).trimEnd()}...` : trimmed;
 }
 
 function dayHeading(now: number): string {
@@ -105,16 +121,22 @@ function ago(ts: number, now: number): string {
   return age === 'now' ? 'just now' : `${age} ago`;
 }
 
-/** Sources that keep the day from reading complete, in words. */
+function duration(ms: number): string {
+  if (ms < 1_000) return `${Math.round(ms)}ms`;
+  const seconds = Math.round(ms / 1_000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return seconds % 60 ? `${minutes}m ${seconds % 60}s` : `${minutes}m`;
+}
+
+/** Sources that keep the day from reading complete, in words. Empty on a normal day. */
 function gapSentences(sources: Record<DaySource, SourceStatus>, hidden: (source: DaySource) => boolean): string[] {
   const all = Object.keys(SOURCE_NAMES) as DaySource[];
   const errors = all.filter((source) => sources[source].state === 'error' && !hidden(source));
-  const loading = all.filter((source) => sources[source].state === 'loading');
   const out: string[] = [];
   if (errors.length > 0) {
     out.push(`${joinWords(errors.map((source) => SOURCE_NAMES[source]))} could not be read, so this day may be incomplete.`);
   }
-  if (loading.length > 0) out.push(`Loading ${joinWords(loading.map((source) => SOURCE_NAMES[source].toLowerCase()))}.`);
   if (sources.tasks.state === 'off') out.push('Tasks are turned off, so done tasks and merged pull requests are not counted.');
   return out;
 }
@@ -132,6 +154,7 @@ export function TodayView({
   needsReply,
   agentNames,
   replies,
+  actions,
   disconnectedSince,
   onOpen,
   onRefresh,
@@ -166,12 +189,13 @@ export function TodayView({
     || (source === 'sessions' && disconnectedSince !== null)
   );
 
+  const allChats = useMemo(() => flattenChats(day.chats), [day.chats]);
   const agentIdsKey = useMemo(() => {
     const ids = new Set<string>();
-    for (const row of day.done) if (row.agentId) ids.add(row.agentId);
-    for (const row of flattenChats(day.chats)) if (row.agentId) ids.add(row.agentId);
+    for (const row of [...day.failing, ...day.done, ...day.cronsOk]) if (row.agentId) ids.add(row.agentId);
+    for (const row of allChats) if (row.agentId) ids.add(row.agentId);
     return [...ids].sort().join('|');
-  }, [day]);
+  }, [day, allChats]);
   const agentIds = useMemo(() => (agentIdsKey ? agentIdsKey.split('|') : []), [agentIdsKey]);
   const { hueFor } = useAgentHues(agentIds);
 
@@ -193,43 +217,44 @@ export function TodayView({
   const liveDoneEpoch = `live:${day.done.map((row) => row.key).join('|')}`;
   const liveChatsEpoch = `live:${day.chats.map((row) => row.key).join('|')}`;
   const [frozen, setFrozen] = useState<{ done: string; chats: string } | null>(null);
-  // Only rows still in the day hold the order; a row that left (a job's runs folding into one)
-  // does not keep it frozen.
-  const openCount = useMemo(() => {
-    const present = new Set([
-      ...day.done.map((row) => `done:${row.key}`),
-      ...flattenChats(day.chats).map((row) => `chat:${row.key}`),
-    ]);
-    return [...expanded].filter((key) => present.has(key)).length;
-  }, [day, expanded]);
+  const presentKeys = useMemo(() => new Set([
+    ...[...day.failing, ...day.done, ...day.cronsOk].map((row) => `done:${row.key}`),
+    ...allChats.map((row) => `chat:${row.key}`),
+  ]), [day, allChats]);
+  // Only rows still in the day hold the order.
+  const openCount = [...expanded].filter((key) => presentKeys.has(key)).length;
   const holding = openCount > 0 && frozen !== null;
   const done = useStableOrder(day.done, holding ? frozen.done : liveDoneEpoch);
   const chats = useStableOrder(day.chats, holding ? frozen.chats : liveChatsEpoch);
 
-  const toggle = (key: string) => {
-    if (openCount === 0) setFrozen({ done: liveDoneEpoch, chats: liveChatsEpoch });
+  const setRowOpen = (key: string, open: boolean) => {
+    if (open === expanded.has(key)) return;
+    if (open && openCount === 0) setFrozen({ done: liveDoneEpoch, chats: liveChatsEpoch });
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (open) next.add(key);
+      else next.delete(key);
       return next;
     });
   };
+  const toggle = (key: string) => setRowOpen(key, !expanded.has(key));
 
-  const [openSections, setOpenSections] = useState(() => ({ done: !compact, chats: !compact }));
-  const toggleSection = (section: 'done' | 'chats') => setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  const sections = useTodaySections(compact);
+  const [okOpen, setOkOpen] = useState(false);
+  const [filter, setFilter] = useState<TodayFilter>(null);
 
   // Which row a reply was sent from, per target session, so only that row shows it.
   const [sentFrom, setSentFrom] = useState<Record<string, string>>({});
   const markSent = (sessionKey: string, rowKey: string) => setSentFrom((prev) => ({ ...prev, [sessionKey]: rowKey }));
 
-  // "What happened" only for open rows, read lazily.
+  // Every chat's summary and turn, plus open task rows' threads, in one request.
   const summaryKeys = useMemo(() => {
     const keys: string[] = [];
     for (const row of day.done) if (expanded.has(`done:${row.key}`) && row.sessionKey) keys.push(row.sessionKey);
-    for (const row of flattenChats(day.chats)) if (expanded.has(`chat:${row.key}`)) keys.push(row.key);
+    for (const row of allChats) keys.push(row.key);
     return [...new Set(keys)].slice(0, MAX_SUMMARY_KEYS);
-  }, [day, expanded]);
+  }, [day.done, allChats, expanded]);
+  const chatsSignal = allChats.map((row) => `${row.key}:${Math.floor(row.lastActivity / ACTIVITY_STEP_MS)}:${row.running ? 1 : 0}`).join('|');
   const repliesEnded = useSyncExternalStore(
     replies.store.subscribe,
     () => summaryKeys.map((key) => replies.store.get(key)?.endedAt ?? '').join('|'),
@@ -237,70 +262,70 @@ export function TodayView({
   const threadSummaries = useAttentionSummaries({
     active,
     sessionKeys: summaryKeys,
-    signal: `${refreshSignal}|${repliesEnded}`,
+    signal: `${refreshSignal}|${repliesEnded}|${chatsSignal}`,
   });
 
-  const liveChecked = (['tasks', 'crons'] as const)
-    .map((source) => daySources[source])
-    .filter((status) => status.state === 'live' && typeof status.checkedAt === 'number')
-    .map((status) => status.checkedAt as number);
-  const checkedAt = liveChecked.length > 0 ? Math.min(...liveChecked) : undefined;
+  // Run now and Pause go through Now's actions; alone, Today refreshes once one lands.
+  const kanbanEnabled = sources.tasks.state !== 'off';
+  const fallbackActions = useMemo<AttentionActionsConfig>(() => ({ kanbanEnabled, onDone: () => onRefresh() }), [kanbanEnabled, onRefresh]);
+  const itemActions = actions ?? fallbackActions;
+
   const gaps = gapSentences(daySources, hiddenNote);
+  const rowProps: RowCommon = { compact, now, replies, onOpen, hueFor, nameOf: replies.nameOf, onSent: markSent, sentFrom, actions: itemActions };
 
-  const rowProps = { compact, now, replies, onOpen, hueFor, nameOf: replies.nameOf, onSent: markSent, sentFrom };
+  // Filters narrow the rows to what a fact counts.
+  // Chats matter most: only the failing filter narrows them.
+  const shownChats = filter === 'failing' ? pruneChats(chats.items, (row) => row.failing) : chats.items;
+  const shownFailing = filter === null || filter === 'failing' ? day.failing : [];
+  const shownDone = filter === 'failing'
+    ? []
+    : done.items.filter((row) => filter === null || (row.kind === 'task' && (filter === 'done' || (row.prs?.length ?? 0) > 0)));
+  const showOk = filter === null && day.cronsOk.length > 0;
 
-  const doneSection = (
-    <DaySection
-      id="today-done"
-      title="Done today"
-      count={day.done.length}
-      open={openSections.done}
-      onToggle={() => toggleSection('done')}
-      compact={compact}
-    >
-      <TodayNotes sources={daySources} relevant={SECTION_SOURCES.done} hidden={hiddenNote} compact={compact} onOpen={onOpen} />
-      {done.items.length > 0 ? (
-        <div className={compact ? 'flex flex-col' : 'flex flex-col gap-0.5'}>
-          {groupByHour(done.items).map((group, index) => (
-            <div key={group.label ?? index} className="flex flex-col">
-              {group.label && (
-                <div className={cn('font-mono text-[0.733rem] tabular text-muted-foreground', compact ? 'px-4 pb-1 pt-3' : 'px-1 pb-0.5 pt-2')}>
-                  {group.label}
-                </div>
-              )}
-              {group.rows.map((row) => (
-                <DoneRowView
-                  key={row.key}
-                  row={row}
-                  isNew={done.newKeys.has(row.key)}
-                  open={expanded.has(`done:${row.key}`)}
-                  onToggle={() => toggle(`done:${row.key}`)}
-                  summary={row.sessionKey ? threadSummaries[row.sessionKey] : undefined}
-                  {...rowProps}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <Empty compact={compact} hidden={hasNotes(daySources, 'done', hiddenNote)}>Nothing has finished yet today.</Empty>
-      )}
-    </DaySection>
+  const jump = (section: TodaySection) => {
+    sections.set(section, true);
+    // After the section renders open.
+    requestAnimationFrame(() => document.getElementById(`today-${section}`)?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }));
+  };
+  const applyFilter = (next: TodayFilter) => {
+    const value = filter === next ? null : next;
+    setFilter(value);
+    if (value === 'failing') {
+      if (day.failing.length > 0) jump('done');
+      if (day.stats.failing > day.failing.length) sections.set('chats', true);
+    } else if (value) {
+      jump('done');
+    }
+  };
+
+  const { stats } = day;
+  const factItems: Array<{ id: 'chats' | Exclude<TodayFilter, null>; n: number; word: string; tone?: 'error' }> = [
+    { id: 'chats', n: stats.sessions, word: stats.sessions === 1 ? 'chat' : 'chats' },
+    { id: 'done', n: stats.done, word: 'done' },
+    ...(stats.merged > 0 ? [{ id: 'merged' as const, n: stats.merged, word: 'merged' }] : []),
+    ...(stats.failing > 0 ? [{ id: 'failing' as const, n: stats.failing, word: 'failing', tone: 'error' as const }] : []),
+  ];
+
+  const clearFilter = filter && (
+    <button type="button" onClick={() => setFilter(null)} className={cn(variantClass('text', compact), 'text-[0.8rem]')}>
+      Show all
+    </button>
   );
 
   const chatsSection = (
     <DaySection
       id="today-chats"
       title="Chats today"
-      count={day.stats.sessions}
-      open={openSections.chats}
-      onToggle={() => toggleSection('chats')}
+      count={stats.sessions}
+      open={sections.open.chats}
+      onToggle={() => sections.toggle('chats')}
       compact={compact}
+      trailing={filter === 'failing' ? clearFilter : null}
     >
       <TodayNotes sources={daySources} relevant={SECTION_SOURCES.chats} hidden={hiddenNote} compact={compact} onOpen={onOpen} />
-      {chats.items.length > 0 ? (
+      {shownChats.length > 0 ? (
         <div className={compact ? 'flex flex-col' : 'flex flex-col gap-0.5'}>
-          {chats.items.map((row) => (
+          {shownChats.map((row) => (
             <ChatRowView
               key={row.key}
               row={row}
@@ -308,32 +333,83 @@ export function TodayView({
               newKeys={chats.newKeys}
               expanded={expanded}
               onToggle={toggle}
+              setOpen={setRowOpen}
               summaries={threadSummaries}
               {...rowProps}
             />
           ))}
         </div>
-      ) : (
+      ) : filter === null ? (
         <Empty compact={compact} hidden={hasNotes(daySources, 'chats', hiddenNote)}>No chats yet today.</Empty>
+      ) : (
+        <Empty compact={compact} hidden={false}>No chat is failing.</Empty>
       )}
     </DaySection>
   );
 
-  const { stats } = day;
-  const factItems = [
-    { n: String(stats.sessions), word: stats.sessions === 1 ? 'session' : 'sessions' },
-    { n: String(stats.done), word: 'done' },
-    { n: String(stats.merged), word: 'merged' },
-    { n: `${stats.cronOk}${stats.cronPartial ? '+' : ''}`, word: stats.cronOk === 1 && !stats.cronPartial ? 'cron run ok' : 'cron runs ok' },
-  ];
+  const doneCount = day.failing.length + day.done.length;
+  const nothingDone = doneCount === 0 && day.cronsOk.length === 0;
+  const doneSection = (
+    <DaySection
+      id="today-done"
+      title="Done today"
+      count={doneCount}
+      open={sections.open.done}
+      onToggle={() => sections.toggle('done')}
+      compact={compact}
+      trailing={filter && filter !== 'failing' ? clearFilter : filter === 'failing' && day.failing.length > 0 ? clearFilter : null}
+    >
+      <TodayNotes sources={daySources} relevant={SECTION_SOURCES.done} hidden={hiddenNote} compact={compact} onOpen={onOpen} />
+      {nothingDone ? (
+        <Empty compact={compact} hidden={hasNotes(daySources, 'done', hiddenNote)}>Nothing has finished yet today.</Empty>
+      ) : (
+        <div className={compact ? 'flex flex-col' : 'flex flex-col gap-0.5'}>
+          {shownFailing.map((row) => (
+            <FailingCronRow
+              key={row.key}
+              row={row}
+              item={row.item!}
+              open={expanded.has(`done:${row.key}`)}
+              onToggle={() => toggle(`done:${row.key}`)}
+              {...rowProps}
+            />
+          ))}
+          {shownDone.map((row, index) => (
+            <DoneRowView
+              key={row.key}
+              row={row}
+              showTime={index === 0 || formatClock(shownDone[index - 1].at) !== formatClock(row.at)}
+              isNew={done.newKeys.has(row.key)}
+              open={expanded.has(`done:${row.key}`)}
+              onToggle={() => toggle(`done:${row.key}`)}
+              summary={row.sessionKey ? threadSummaries[row.sessionKey] : undefined}
+              {...rowProps}
+            />
+          ))}
+          {showOk && (
+            <CronsOk
+              rows={day.cronsOk}
+              runs={stats.cronOk}
+              partial={stats.cronPartial}
+              open={okOpen}
+              onToggle={() => setOkOpen((prev) => !prev)}
+              expanded={expanded}
+              onToggleRow={toggle}
+              common={rowProps}
+            />
+          )}
+          {filter !== null && shownFailing.length === 0 && shownDone.length === 0 && (
+            <Empty compact={compact} hidden={false}>
+              {filter === 'failing' ? 'No cron is failing.' : filter === 'merged' ? 'Nothing merged yet today.' : 'No task done yet today.'}
+            </Empty>
+          )}
+        </div>
+      )}
+    </DaySection>
+  );
 
   return (
-    <div
-      className={cn(
-        'flex w-full flex-col',
-        compact ? 'gap-4 pb-8' : 'gap-6 pb-6',
-      )}
-    >
+    <div className={cn('flex w-full flex-col', compact ? 'gap-4 pb-8' : 'gap-6 pb-6')}>
       <section aria-label="Today summary" className={cn('flex flex-col gap-1.5', compact && 'px-4')}>
         <div className="flex items-start gap-3">
           <h1 className={cn('m-0 font-semibold leading-tight text-foreground', compact ? 'text-[1.333rem]' : 'text-[1.2rem]')}>
@@ -344,21 +420,27 @@ export function TodayView({
             Refresh
           </button>
         </div>
-        <p data-testid="today-facts" className="m-0 flex flex-wrap gap-x-1.5 text-[0.867rem] text-muted-foreground">
+        <p data-testid="today-facts" className="m-0 flex flex-wrap items-center gap-x-1.5 text-[0.867rem] text-muted-foreground">
           {factItems.map((fact, index) => (
-            <span key={fact.word} className="whitespace-nowrap">
-              {index > 0 && <span aria-hidden="true">{'· '}</span>}
-              <span className="font-mono tabular text-foreground">{fact.n}</span>
-              {` ${fact.word}`}
+            <span key={fact.id} className="inline-flex items-center whitespace-nowrap">
+              {index > 0 && <span aria-hidden="true" className="pr-1.5">·</span>}
+              <button
+                type="button"
+                data-testid={`today-fact-${fact.id}`}
+                aria-pressed={fact.id === 'chats' ? undefined : filter === fact.id}
+                onClick={() => (fact.id === 'chats' ? jump('chats') : applyFilter(fact.id))}
+                className={cn(
+                  TEXT_BUTTON,
+                  'decoration-transparent hover:decoration-operator',
+                  compact && 'inline-block min-h-11 leading-[2.75rem]',
+                  filter === fact.id && 'text-foreground decoration-foreground',
+                )}
+              >
+                <span className={cn('font-mono tabular', fact.tone === 'error' ? 'text-destructive' : 'text-foreground')}>{fact.n}</span>
+                {` ${fact.word}`}
+              </button>
             </span>
           ))}
-          {stats.cronFailed > 0 && (
-            <span className="whitespace-nowrap">
-              <span aria-hidden="true">{'· '}</span>
-              <span className="font-mono tabular text-destructive">{stats.cronFailed}</span>
-              {' failed'}
-            </span>
-          )}
         </p>
         {summary?.text ? (
           <p data-testid="today-paragraph" className="m-0 max-w-[72ch] text-[1rem] leading-relaxed text-foreground">
@@ -367,34 +449,29 @@ export function TodayView({
         ) : summary?.status === 'pending' ? (
           <p className="m-0 text-[0.867rem] text-muted-foreground" role="status">Summarizing the day...</p>
         ) : null}
-        <p className="m-0 max-w-[90ch] text-[0.8rem] leading-normal text-muted-foreground">
-          <Clocked
-            text={[
-              checkedAt !== undefined ? `Checked ${formatClock(checkedAt)}.` : '',
-              ...gaps,
-              stats.cronPartial ? 'Some crons ran more often than their history shows, so cron counts are at least these.' : '',
-            ].filter(Boolean).join(' ')}
-          />
-        </p>
+        {gaps.length > 0 && (
+          <p className="m-0 max-w-[90ch] text-[0.8rem] leading-normal text-muted-foreground">{gaps.join(' ')}</p>
+        )}
       </section>
 
-      {compact ? (
-        <div className="flex flex-col gap-2">
-          {chatsSection}
-          {doneSection}
-        </div>
-      ) : (
-        // Chats lead: the wide column is theirs, Done today sits beside them.
-        <div className="flex flex-wrap items-start gap-6">
-          <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-6">{chatsSection}</div>
-          <div className="flex min-w-0 flex-[1_1_360px] flex-col gap-6">{doneSection}</div>
-        </div>
-      )}
+      {/* The board's grid: Chats in the wide column, Done in the rail; one column on phones. */}
+      <div className={cn('attention-grid items-start', compact && 'gap-y-2!')}>
+        <div className="flex min-w-0 flex-col">{chatsSection}</div>
+        <div className="flex min-w-0 flex-col">{doneSection}</div>
+      </div>
     </div>
   );
 }
 
-function hasNotes(sources: Record<DaySource, SourceStatus>, section: 'done' | 'chats', hidden: (source: DaySource) => boolean): boolean {
+/** Rows that match, with the parents that lead to them. */
+function pruneChats(rows: ChatRow[], match: (row: ChatRow) => boolean): ChatRow[] {
+  return rows.flatMap((row) => {
+    const children = pruneChats(row.children, match);
+    return match(row) || children.length > 0 ? [{ ...row, children }] : [];
+  });
+}
+
+function hasNotes(sources: Record<DaySource, SourceStatus>, section: TodaySection, hidden: (source: DaySource) => boolean): boolean {
   return SECTION_SOURCES[section].some((source) => {
     const state = sources[source].state;
     return state === 'loading' || (state === 'error' && !hidden(source)) || (section === 'done' && source === 'tasks' && state === 'off');
@@ -408,6 +485,7 @@ function DaySection({
   open,
   onToggle,
   compact,
+  trailing,
   children,
 }: {
   id: string;
@@ -416,30 +494,34 @@ function DaySection({
   open: boolean;
   onToggle: () => void;
   compact: boolean;
+  trailing?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-3">
-      <h2 className="m-0 border-b border-border text-[0.867rem] font-semibold text-foreground">
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={`${id}-body`}
-          onClick={onToggle}
-          className={cn(
-            'flex w-full cursor-pointer items-center gap-x-2 text-left hover:bg-raised focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
-            compact ? 'min-h-11 px-4' : 'min-h-7',
-          )}
-        >
-          <ChevronRight
-            size={14}
-            aria-hidden="true"
-            className={cn('shrink-0 text-muted-foreground transition-transform duration-[120ms]', open && 'rotate-90')}
-          />
-          <span id={id}>{title}</span>
-          <span data-testid={`${id}-count`} className="font-mono text-[0.8rem] font-normal tabular text-muted-foreground">{count}</span>
-        </button>
-      </h2>
+    <section id={id} aria-labelledby={`${id}-title`} className="flex min-w-0 scroll-mt-4 flex-col gap-3">
+      <div className="flex items-center gap-3 border-b border-border">
+        <h2 className="m-0 min-w-0 flex-1 text-[0.867rem] font-semibold text-foreground">
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={`${id}-body`}
+            onClick={onToggle}
+            className={cn(
+              'flex w-full cursor-pointer items-center gap-x-2 text-left hover:bg-raised focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
+              compact ? 'min-h-11 px-4' : 'min-h-7',
+            )}
+          >
+            <ChevronRight
+              size={14}
+              aria-hidden="true"
+              className={cn('shrink-0 text-muted-foreground transition-transform duration-[120ms]', open && 'rotate-90')}
+            />
+            <span id={`${id}-title`}>{title}</span>
+            <span data-testid={`${id}-count`} className="font-mono text-[0.8rem] font-normal tabular text-muted-foreground">{count}</span>
+          </button>
+        </h2>
+        {trailing && <span className={cn('shrink-0', compact && 'pr-4')}>{trailing}</span>}
+      </div>
       {open && <div id={`${id}-body`} className="flex min-w-0 flex-col gap-3">{children}</div>}
     </section>
   );
@@ -508,69 +590,81 @@ interface RowCommon {
   nameOf?: (sessionKey: string) => string | undefined;
   onSent: (sessionKey: string, rowKey: string) => void;
   sentFrom: Record<string, string>;
+  actions: AttentionActionsConfig;
 }
 
-function rowButtonClass(compact: boolean, depth = 0) {
-  return cn(
-    'flex min-w-0 flex-1 cursor-pointer items-center text-left transition-colors duration-[120ms] hover:bg-raised focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
-    compact ? 'min-h-[60px] gap-3 py-2 pr-4' : 'min-h-[44px] gap-2.5 rounded-[3px] py-2 pr-1',
-    compact ? (depth > 0 ? 'pl-9' : 'pl-4') : (depth > 0 ? 'pl-7' : 'pl-1'),
+const ROW_BUTTON = 'flex min-w-0 flex-1 cursor-pointer items-start text-left transition-colors duration-[120ms] hover:bg-raised focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring';
+
+/** Left padding of a row's toggle, in rem: phones pad 16px, the desk 4px; nesting adds an indent. */
+function rowInset(compact: boolean, depth = 0): number {
+  return (compact ? 1 : 0.25) + depth * (compact ? 1.25 : 1.5);
+}
+
+/** Where the title starts, so an open row's detail lines up with it. */
+function titleInset(compact: boolean, { time, depth = 0 }: { time: boolean; depth?: number }): number {
+  const gap = compact ? GAP_REM.phone : GAP_REM.desk;
+  return rowInset(compact, depth) + (time ? TIME_REM + gap : 0) + PANE_REM + gap;
+}
+
+function rowButtonClass(compact: boolean) {
+  return cn(ROW_BUTTON, compact ? 'min-h-[60px] gap-3 py-2.5 pr-4' : 'min-h-[44px] gap-2.5 rounded-[3px] py-2 pr-1');
+}
+
+function Chevron({ open, compact }: { open: boolean; compact: boolean }) {
+  // The whole row opens on a phone, so the chevron gives its width back to the text.
+  if (compact) return null;
+  return (
+    <ChevronRight
+      size={16}
+      aria-hidden="true"
+      className={cn('mt-0.5 shrink-0 text-muted-foreground transition-transform duration-[120ms]', open && 'rotate-90')}
+    />
   );
 }
 
-function sessionStatusWord(status: string | undefined): string {
-  switch (status) {
-    case 'timeout':
-      return 'timed out';
-    case 'killed':
-      return 'was stopped';
-    case 'interrupted':
-      return 'was interrupted';
-    case 'failed':
-      return 'failed';
-    default:
-      return 'finished';
-  }
+/** The time column: printed once when rows in a row share a minute. */
+function TimeCell({ at, show }: { at: number; show: boolean }) {
+  return (
+    <span className="w-[2.75rem] shrink-0 pt-px font-mono text-[0.8rem] tabular text-muted-foreground" aria-hidden={!show}>
+      {show ? formatClock(at) : ''}
+    </span>
+  );
 }
 
-function doneSub(row: DayRow, ownerName: string | undefined): string {
-  const owner = ownerName ? ` · ${ownerName}` : '';
-  switch (row.kind) {
-    case 'task':
-      return `Task done${owner}`;
-    case 'pr':
-      return `${row.detail ?? 'Pull request'}${owner}`;
-    case 'cron':
-      if (row.failed) return 'Cron failed';
-      if (row.runs) return `Cron ran ${row.runs.ok}${row.runs.partial ? '+' : ''} times, last at ${formatClock(row.at)}`;
-      return 'Cron ran';
-    case 'session':
-      return `Subagent ${sessionStatusWord(row.status)}${owner}`;
-  }
+function PaneSlot({ children }: { children: React.ReactNode }) {
+  // Lines the pane up with the first line of text.
+  return <span className="flex h-[1.3rem] shrink-0 items-center">{children}</span>;
 }
 
-/** The way to message from a row: Ask <parent> for an ended session, else Reply or Nudge. */
-function composerWords(target: ReplyTarget, needs: boolean, name: string | undefined) {
+/** The way to message from a row: Reply when it waits on the operator, Ask <parent> for an ended session, else Nudge. */
+function composerWords(target: ReplyTarget, waiting: boolean, name: string | undefined) {
   if (target.ask) return { label: name ? `Ask ${name}` : 'Ask the parent', verb: 'Ask' };
-  return needs ? { label: 'Reply', verb: 'Reply to' } : { label: 'Nudge', verb: 'Nudge' };
+  return waiting ? { label: 'Reply', verb: 'Reply to' } : { label: 'Nudge', verb: 'Nudge' };
 }
 
+/**
+ * A row's message control. Closed, it is the Reply outline button on a row that waits on the
+ * operator (the same main action as Now) and muted text (Nudge, Ask) otherwise; open, the field.
+ */
 function Composer({
   rowKey,
   target,
-  needs,
+  waiting,
+  composing,
+  setComposing,
   common,
 }: {
   rowKey: string;
   target: ReplyTarget;
-  needs: boolean;
+  waiting: boolean;
+  composing: boolean;
+  setComposing: (value: boolean) => void;
   common: RowCommon;
 }) {
   const { replies, compact, nameOf, onSent } = common;
-  const [open, setOpen] = useState(false);
   const name = nameOf?.(target.sessionKey);
-  const words = composerWords(target, needs, name);
-  if (open) {
+  const words = composerWords(target, waiting, name);
+  if (composing) {
     return (
       <ReplyField
         config={replies}
@@ -580,8 +674,15 @@ function Composer({
         context={target.context}
         verb={words.verb}
         onSent={() => onSent(target.sessionKey, rowKey)}
-        onClose={() => setOpen(false)}
+        onClose={() => setComposing(false)}
       />
+    );
+  }
+  if (waiting && !target.ask) {
+    return (
+      <button type="button" onClick={() => setComposing(true)} className={variantClass('outline', compact)}>
+        Reply
+      </button>
     );
   }
   return (
@@ -590,18 +691,18 @@ function Composer({
       sessionKey={target.sessionKey}
       compact={compact}
       label={words.label}
-      onClick={() => setOpen(true)}
+      onClick={() => setComposing(true)}
     />
   );
 }
 
 /** The reply sent from this row, while it is the latest one for the target session. */
-function RowReply({ rowKey, target, common, hue }: { rowKey: string; target?: ReplyTarget; common: RowCommon; hue?: string }) {
+function RowReply({ rowKey, target, common, hue, inset }: { rowKey: string; target?: ReplyTarget; common: RowCommon; hue?: string; inset: number }) {
   const { replies, compact, onOpen, nameOf, sentFrom } = common;
   const reply = useInlineReply(replies.store, target?.sessionKey, 'item');
   if (!target || !reply || sentFrom[target.sessionKey] !== rowKey) return null;
   return (
-    <div className={cn('pb-2', compact ? 'px-4' : 'px-1')}>
+    <div className={cn('pb-2', compact ? 'pr-4' : 'pr-1')} style={{ paddingLeft: `${inset}rem` }}>
       <ReplyPanel
         reply={reply}
         name={nameOf?.(target.sessionKey)}
@@ -614,8 +715,119 @@ function RowReply({ rowKey, target, common, hue }: { rowKey: string; target?: Re
   );
 }
 
+function OwnerName({ name, hue }: { name: string; hue?: string }) {
+  return (
+    <span className={cn('font-medium', hue ? 'name-hued' : 'text-foreground')} style={nameHueStyle(hue)}>{name}</span>
+  );
+}
+
+function Detail({ inset, compact, children }: { inset: number; compact: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      data-testid="today-row-detail"
+      className={cn('flex min-w-0 flex-col gap-2 pb-3 [overflow-wrap:anywhere]', compact ? 'pr-4' : 'pr-1')}
+      style={{ paddingLeft: `${inset}rem` }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** A cron run's facts for an open cron row: its last output, how long it took, and the next run. */
+function CronFacts({ row, now }: { row: DayRow; now: number }) {
+  const cron = row.cron;
+  if (!cron) return null;
+  const latest = cron.latest;
+  const output = latest?.summary;
+  const line = [
+    latest ? `Last run ${formatDayClock(latest.at, now)}` : undefined,
+    latest?.durationMs !== undefined ? `took ${duration(latest.durationMs)}` : undefined,
+    cron.nextRun !== undefined ? `next ${formatDayClock(cron.nextRun, now)}` : cron.enabled ? undefined : 'paused',
+  ].filter(Boolean).join(' · ');
+  return (
+    <>
+      {cron.error && (cron.failing || cron.failedAt.length > 0) && (
+        <p className="m-0 whitespace-pre-wrap break-words font-mono text-[0.8rem] text-destructive">{cron.error}</p>
+      )}
+      {output && <p data-testid="today-cron-output" className="m-0 max-w-[72ch] whitespace-pre-wrap text-[0.867rem] leading-relaxed text-foreground">{output}</p>}
+      {line && <p className="m-0 text-[0.8rem] text-muted-foreground"><Clocked text={line} /></p>}
+    </>
+  );
+}
+
+function FailingCronRow({
+  row,
+  item,
+  open,
+  onToggle,
+  ...common
+}: RowCommon & { row: DayRow; item: AttentionItem; open: boolean; onToggle: () => void }) {
+  const { compact, now, onOpen, actions } = common;
+  const state = useItemActions(item, actions);
+  const primary = state.actions.primary;
+  const failures = row.cron?.failedAt.length ?? 0;
+  const sub = [
+    `Failed ${formatDayClock(row.at, now)}`,
+    failures > 1 ? `${failures} times today` : undefined,
+  ].filter(Boolean).join(' · ');
+  const openCron = (
+    <button type="button" onClick={() => onOpen({ type: 'cron', id: row.cronId! })} className={variantClass('text', compact)}>Open cron</button>
+  );
+
+  return (
+    <div data-testid="today-failing" className={cn('flex min-w-0 flex-col', compact && 'border-b border-border')}>
+      <div className={cn('flex min-w-0 items-center gap-2', compact ? 'pr-4' : 'pr-1')}>
+        <button
+          type="button"
+          data-testid="today-row"
+          aria-expanded={open}
+          onClick={onToggle}
+          className={cn(rowButtonClass(compact), compact && 'pr-0')}
+          style={{ paddingLeft: `${rowInset(compact)}rem` }}
+        >
+          <TimeCell at={row.at} show />
+          <PaneSlot><Pane state="error" label="Failed" /></PaneSlot>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className={cn('min-w-0 text-foreground', compact ? 'text-[1rem] leading-snug' : 'text-[0.867rem]')}>{row.title}</span>
+            <span className={cn('min-w-0 text-destructive', compact ? 'text-[0.867rem]' : 'text-[0.8rem]')}><Clocked text={sub} /></span>
+          </span>
+          <Chevron open={open} compact={compact} />
+        </button>
+        {primary && !open && <ActionButton state={state} action={primary} variant="outline" compact={compact} />}
+      </div>
+      {open && (
+        <Detail inset={titleInset(compact, { time: true })} compact={compact}>
+          <CronFacts row={row} now={now} />
+          <ActionStrip state={state} compact={compact} extra={openCron} />
+        </Detail>
+      )}
+      {!open && state.error && (
+        <div className="pb-2" style={{ paddingLeft: `${titleInset(compact, { time: true })}rem` }}>
+          <ActionError message={state.error} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The line under a finished row's title. */
+function doneSub(row: DayRow, now: number): string {
+  if (row.kind === 'task') {
+    const prs = row.prs ?? [];
+    return prs.length > 0 ? `merged ${prs.map((pr) => `#${pr.number}`).join(', ')}` : 'Task done';
+  }
+  const cron = row.cron;
+  if (!cron) return 'Cron ran';
+  const failed = cron.failedAt.map((at) => formatClock(at));
+  const failedWords = failed.length > 3 ? `${failed.length} times, last ${failed.at(-1)}` : joinWords(failed);
+  if (!cron.enabled) return `Failed ${failedWords}, now paused`;
+  if (cron.recoveredAt !== undefined) return `Failed ${failedWords}, recovered ${formatDayClock(cron.recoveredAt, now)}`;
+  return `Failed ${failedWords}, fine since`;
+}
+
 function DoneRowView({
   row,
+  showTime,
   isNew,
   open,
   onToggle,
@@ -623,48 +835,58 @@ function DoneRowView({
   ...common
 }: RowCommon & {
   row: DayRow;
+  showTime: boolean;
   isNew: boolean;
   open: boolean;
   onToggle: () => void;
   summary?: ThreadSummary;
 }) {
-  const { compact, onOpen, hueFor, nameOf } = common;
+  const { compact, now, onOpen, hueFor, nameOf } = common;
+  const [composing, setComposing] = useState(false);
   const hue = row.agentId ? hueFor(row.agentId) : undefined;
-  const ownerName = row.agentId ? nameOf?.(`agent:${row.agentId}:main`) ?? row.agentId : undefined;
-  const pane = row.failed
-    ? { state: 'error' as const, label: 'Failed' }
-    : { state: 'off' as const, label: 'Finished' };
+  const ownerName = row.kind === 'task' && row.agentId ? nameOf?.(`agent:${row.agentId}:main`) ?? row.agentId : undefined;
   const linkClass = variantClass('text', compact);
   const rowKey = `done:${row.key}`;
+  const inset = titleInset(compact, { time: true });
 
   return (
     <div className={cn('flex min-w-0 flex-col', compact && 'border-b border-border')}>
-      <button type="button" data-testid="today-row" aria-expanded={open} onClick={onToggle} className={rowButtonClass(compact)}>
-        <span className="w-[2.75rem] shrink-0 font-mono text-[0.8rem] tabular text-muted-foreground">{formatClock(row.at)}</span>
-        <Pane state={pane.state} hue={pane.state === 'off' ? hue : undefined} label={pane.label} />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className={cn('min-w-0 flex-1 truncate text-foreground', compact ? 'text-[1rem]' : 'text-[0.867rem]')}>{row.title}</span>
+      <button
+        type="button"
+        data-testid="today-row"
+        aria-expanded={open}
+        onClick={onToggle}
+        className={rowButtonClass(compact)}
+        style={{ paddingLeft: `${rowInset(compact)}rem` }}
+      >
+        <TimeCell at={row.at} show={showTime} />
+        {/* Finished work keeps a dark pane; the agent's hue is on its name. */}
+        <PaneSlot><Pane state="off" label="Finished" /></PaneSlot>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex min-w-0 items-start gap-2">
+            <span className={cn('min-w-0 flex-1 text-foreground', compact ? 'text-[1rem] leading-snug' : 'text-[0.867rem]')}>{row.title}</span>
             {isNew && <NewTag />}
           </span>
-          <span className={cn('min-w-0 truncate', row.failed ? 'text-destructive' : 'text-muted-foreground', compact ? 'text-[0.867rem]' : 'text-[0.8rem]')}>
-            <Clocked text={doneSub(row, ownerName)} />
+          <span className={cn('min-w-0 text-muted-foreground', compact ? 'text-[0.867rem]' : 'text-[0.8rem]')}>
+            {ownerName && <><OwnerName name={ownerName} hue={hue} />{' · '}</>}
+            <Clocked text={doneSub(row, now)} />
           </span>
         </span>
-        <ChevronRight size={16} aria-hidden="true" className={cn('shrink-0 text-muted-foreground transition-transform duration-[120ms]', open && 'rotate-90')} />
+        <Chevron open={open} compact={compact} />
       </button>
       {open && (
-        <div data-testid="today-row-detail" className={cn('flex min-w-0 flex-col gap-2 pb-3 [overflow-wrap:anywhere]', compact ? 'pl-4 pr-4' : 'pl-[3.6rem] pr-1')}>
-          {row.detail && row.kind !== 'pr' && (
-            row.failed
-              ? <p className="m-0 break-words font-mono text-[0.8rem] text-destructive">{excerpt(row.detail)}</p>
-              : <p className="m-0 whitespace-pre-wrap text-[0.867rem] leading-relaxed text-foreground">{excerpt(row.detail)}</p>
+        <Detail inset={inset} compact={compact}>
+          {row.kind === 'cron' && <CronFacts row={row} now={now} />}
+          {row.detail && (
+            <p className="m-0 max-w-[72ch] whitespace-pre-wrap text-[0.867rem] leading-relaxed text-foreground">{row.detail}</p>
           )}
           <WhatHappened summary={summary} />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            {row.href && (
-              <a href={row.href} target="_blank" rel="noopener noreferrer" className={cn(linkClass, 'inline-flex items-center')}>Open PR</a>
-            )}
+            {(row.prs ?? []).filter((pr) => pr.href).map((pr) => (
+              <a key={pr.number} href={pr.href} target="_blank" rel="noopener noreferrer" className={cn(linkClass, 'inline-flex items-center')}>
+                {`Open PR #${pr.number}`}
+              </a>
+            ))}
             {row.taskId && (
               <button type="button" onClick={() => onOpen({ type: 'task', id: row.taskId! })} className={linkClass}>Open task</button>
             )}
@@ -674,13 +896,105 @@ function DoneRowView({
             {row.sessionKey && (
               <button type="button" onClick={() => onOpen({ type: 'session', key: row.sessionKey! })} className={linkClass}>Open in chat</button>
             )}
-            {row.target && <Composer rowKey={rowKey} target={row.target} needs={false} common={common} />}
+            {row.target && !composing && (
+              <Composer rowKey={rowKey} target={row.target} waiting={false} composing={false} setComposing={setComposing} common={common} />
+            )}
           </div>
-        </div>
+          {row.target && composing && (
+            <Composer rowKey={rowKey} target={row.target} waiting={false} composing setComposing={setComposing} common={common} />
+          )}
+        </Detail>
       )}
-      <RowReply rowKey={rowKey} target={row.target} common={common} hue={hue} />
+      <RowReply rowKey={rowKey} target={row.target} common={common} hue={hue} inset={inset} />
     </div>
   );
+}
+
+/** Every successful cron run in one quiet line; it opens to a row per job. */
+function CronsOk({
+  rows,
+  runs,
+  partial,
+  open,
+  onToggle,
+  expanded,
+  onToggleRow,
+  common,
+}: {
+  rows: DayRow[];
+  runs: number;
+  partial: boolean;
+  open: boolean;
+  onToggle: () => void;
+  expanded: ReadonlySet<string>;
+  onToggleRow: (key: string) => void;
+  common: RowCommon;
+}) {
+  const { compact, now } = common;
+  const label = `${runs}${partial ? '+' : ''} cron ${runs === 1 && !partial ? 'run' : 'runs'} ok`;
+  return (
+    <div data-testid="today-crons-ok" className={cn('flex min-w-0 flex-col', compact && 'border-b border-border')}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className={cn(ROW_BUTTON, 'items-center text-[0.8rem] text-muted-foreground', compact ? 'min-h-11 gap-3 pr-4' : 'min-h-7 gap-2.5 rounded-[3px] pr-1')}
+        style={{ paddingLeft: `${titleInset(compact, { time: true })}rem` }}
+      >
+        <span className="min-w-0 flex-1">{label}</span>
+        <ChevronRight size={14} aria-hidden="true" className={cn('shrink-0 transition-transform duration-[120ms]', open && 'rotate-90')} />
+      </button>
+      {open && rows.map((row, index) => {
+        const rowOpen = expanded.has(`done:${row.key}`);
+        const count = row.cron?.okRuns ?? 0;
+        return (
+          <div key={row.key} className="flex min-w-0 flex-col">
+            <button
+              type="button"
+              data-testid="today-cron-ok-row"
+              aria-expanded={rowOpen}
+              onClick={() => onToggleRow(`done:${row.key}`)}
+              className={rowButtonClass(compact)}
+              style={{ paddingLeft: `${rowInset(compact)}rem` }}
+            >
+              <TimeCell at={row.at} show={index === 0 || formatClock(rows[index - 1].at) !== formatClock(row.at)} />
+              <PaneSlot><Pane state="off" label="Ran fine" /></PaneSlot>
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className={cn('min-w-0 text-foreground', compact ? 'text-[1rem] leading-snug' : 'text-[0.867rem]')}>{row.title}</span>
+                <span className={cn('min-w-0 text-muted-foreground', compact ? 'text-[0.867rem]' : 'text-[0.8rem]')}>
+                  {`${count}${row.cron?.partial ? '+' : ''} ${count === 1 && !row.cron?.partial ? 'run' : 'runs'} ok`}
+                </span>
+              </span>
+              <Chevron open={rowOpen} compact={compact} />
+            </button>
+            {rowOpen && (
+              <Detail inset={titleInset(compact, { time: true })} compact={compact}>
+                <CronFacts row={row} now={now} />
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <button type="button" onClick={() => common.onOpen({ type: 'cron', id: row.cronId! })} className={variantClass('text', compact)}>Open cron</button>
+                </div>
+              </Detail>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function endWord(status: string): string {
+  switch (status) {
+    case 'timeout':
+      return 'Timed out';
+    case 'killed':
+      return 'Stopped';
+    case 'interrupted':
+      return 'Interrupted';
+    case 'failed':
+      return 'Failed';
+    default:
+      return 'Finished';
+  }
 }
 
 function ChatRowView({
@@ -689,6 +1003,7 @@ function ChatRowView({
   newKeys,
   expanded,
   onToggle,
+  setOpen,
   summaries,
   ...common
 }: RowCommon & {
@@ -697,67 +1012,119 @@ function ChatRowView({
   newKeys: ReadonlySet<string>;
   expanded: ReadonlySet<string>;
   onToggle: (key: string) => void;
+  setOpen: (key: string, open: boolean) => void;
   summaries: Record<string, ThreadSummary>;
 }) {
   const { compact, now, onOpen, hueFor } = common;
+  const [composing, setComposing] = useState(false);
   const hue = row.agentId ? hueFor(row.agentId) : undefined;
   const rowKey = `chat:${row.key}`;
   const open = expanded.has(rowKey);
+  const summary = summaries[row.key];
+  const turn = turnOf(row, summary);
+  const inset = titleInset(compact, { time: false, depth });
+
   let pane: { state: 'operator' | 'live' | 'error' | 'off'; label: string };
   if (row.running) pane = { state: 'live', label: 'Running' };
   else if (row.failed) pane = { state: 'error', label: 'Failed' };
-  else if (row.needs) pane = { state: 'operator', label: 'Waiting on you' };
+  else if (turn === 'waiting') pane = { state: 'operator', label: 'Waiting on you' };
   else pane = { state: 'off', label: row.ended ? 'Finished' : 'Idle' };
 
-  const sub = [
-    row.channel,
-    row.running ? 'running' : row.ended ? (row.failed ? 'ended' : 'finished') : undefined,
-    ago(row.lastActivity, now),
-  ].filter(Boolean).join(' · ');
+  const gist = summary?.text ? firstSentence(summary.text) : undefined;
+  // An ended subagent says how it ended; anything else says when it last moved.
+  const endLine = row.end ? `${endWord(row.end.status)} ${formatDayClock(row.end.at, now)}` : undefined;
+  // The desk prints the time beside the name; a phone says the age here instead.
+  const age = compact && !endLine && turn !== 'working' ? ago(row.lastActivity, now) : undefined;
+  const meta = [row.needs ? `${row.needs} on Now` : undefined, endLine, age].filter(Boolean).join(' · ');
+  const waiting = turn === 'waiting';
+  const replyFirst = waiting && !row.target.ask;
+
+  const startReply = () => {
+    setOpen(rowKey, true);
+    setComposing(true);
+  };
 
   return (
     <div className="flex min-w-0 flex-col">
-      <div className={cn('flex min-w-0 flex-col', compact && 'border-b border-border')}>
-        <button type="button" data-testid="today-chat" aria-expanded={open} onClick={() => onToggle(rowKey)} className={rowButtonClass(compact, depth)}>
-          <Pane state={pane.state} hue={pane.state === 'off' ? hue : undefined} label={pane.label} />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="flex min-w-0 items-center gap-2">
-              <span
-                className={cn(
-                  'min-w-0 flex-1 truncate',
-                  compact ? 'text-[1rem]' : 'text-[0.867rem]',
-                  row.topLevel && hue ? 'name-hued font-medium' : 'text-foreground',
+      <div data-testid="today-chat-row" className={cn('flex min-w-0 flex-col', compact && 'border-b border-border')}>
+        <div className={cn('flex min-w-0 items-center gap-2', compact ? 'pr-4' : 'pr-1')}>
+          <button
+            type="button"
+            data-testid="today-chat"
+            aria-expanded={open}
+            onClick={() => onToggle(rowKey)}
+            className={cn(rowButtonClass(compact), compact && 'pr-0')}
+            style={{ paddingLeft: `${rowInset(compact, depth)}rem` }}
+          >
+            {/* Idle chats keep their family hue; finished runs go dark. */}
+            <PaneSlot><Pane state={pane.state} hue={pane.state === 'off' && !row.ended ? hue : undefined} label={pane.label} /></PaneSlot>
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="flex min-w-0 items-baseline gap-x-2">
+                <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+                  <span
+                    className={cn(
+                      'min-w-0 font-medium',
+                      compact ? 'text-[1rem] leading-snug' : 'text-[0.867rem]',
+                      row.topLevel && hue ? 'name-hued' : 'text-foreground',
+                    )}
+                    style={row.topLevel ? nameHueStyle(hue) : undefined}
+                  >
+                    {row.title}
+                  </span>
+                  {row.channel && <span className="text-[0.8rem] text-muted-foreground">{row.channel}</span>}
+                  {newKeys.has(row.key) && <NewTag />}
+                </span>
+                {turn && (
+                  <span data-testid="today-turn" className={cn('shrink-0 text-[0.8rem]', waiting ? 'text-operator-text' : 'text-live-text')}>
+                    {waiting ? 'Waiting on you' : 'Working'}
+                  </span>
                 )}
-                style={row.topLevel ? nameHueStyle(hue) : undefined}
-              >
-                {row.title}
+                {!compact && (
+                  <span className={cn('shrink-0 font-mono text-[0.733rem] tabular', row.running ? 'text-live-text' : 'text-muted-foreground')}>
+                    {formatClock(row.lastActivity)}
+                  </span>
+                )}
               </span>
-              {newKeys.has(row.key) && <NewTag />}
-              {row.needs && <span className="shrink-0 text-[0.8rem] text-operator-text">Needs you</span>}
-              {!compact && (
-                <span className={cn('shrink-0 font-mono text-[0.733rem] tabular', row.running ? 'text-live-text' : 'text-muted-foreground')}>
-                  {formatClock(row.lastActivity)}
+              {/* The first sentence of what happened, whole; the open row shows all of it. */}
+              {gist && !open && (
+                <span data-testid="today-gist" className={cn('min-w-0 leading-snug text-foreground', compact ? 'text-[0.933rem]' : 'text-[0.867rem]')}>
+                  {gist}
+                </span>
+              )}
+              {!gist && !open && row.end?.error && (
+                <span className="min-w-0 font-mono text-[0.8rem] text-destructive">{row.end.error}</span>
+              )}
+              {meta && (
+                <span className={cn('min-w-0 text-muted-foreground', compact ? 'text-[0.8rem]' : 'text-[0.733rem]')}>
+                  <Clocked text={meta} />
                 </span>
               )}
             </span>
-            <span className={cn('min-w-0 truncate text-muted-foreground', compact ? 'text-[0.867rem]' : 'text-[0.8rem]')}>
-              {row.needs ? `${row.needs} · ${sub}` : sub}
-            </span>
-          </span>
-          <ChevronRight size={16} aria-hidden="true" className={cn('shrink-0 text-muted-foreground transition-transform duration-[120ms]', open && 'rotate-90')} />
-        </button>
+            <Chevron open={open} compact={compact} />
+          </button>
+          {replyFirst && !open && (
+            <button type="button" onClick={startReply} className={variantClass('outline', compact)}>Reply</button>
+          )}
+        </div>
         {open && (
-          <div data-testid="today-row-detail" className={cn('flex min-w-0 flex-col gap-2 pb-3 [overflow-wrap:anywhere]', compact ? (depth > 0 ? 'pl-9 pr-4' : 'pl-4 pr-4') : (depth > 0 ? 'pl-12 pr-1' : 'pl-7 pr-1'))}>
-            <WhatHappened summary={summaries[row.key]} />
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <button type="button" onClick={() => onOpen({ type: 'session', key: row.key })} className={variantClass('text', compact)}>
-                Open in chat
-              </button>
-              <Composer rowKey={rowKey} target={row.target} needs={Boolean(row.needs)} common={common} />
-            </div>
-          </div>
+          <Detail inset={inset} compact={compact}>
+            {row.end?.error && <p className="m-0 whitespace-pre-wrap break-words font-mono text-[0.8rem] text-destructive">{row.end.error}</p>}
+            <WhatHappened summary={summary} />
+            {composing ? (
+              <Composer rowKey={rowKey} target={row.target} waiting={waiting} composing setComposing={setComposing} common={common} />
+            ) : (
+              // Reply leads when the chat waits on the operator; otherwise Open in chat, then Nudge or Ask.
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                {replyFirst && <Composer rowKey={rowKey} target={row.target} waiting composing={false} setComposing={setComposing} common={common} />}
+                <button type="button" onClick={() => onOpen({ type: 'session', key: row.key })} className={variantClass('text', compact)}>
+                  Open in chat
+                </button>
+                {!replyFirst && <Composer rowKey={rowKey} target={row.target} waiting={false} composing={false} setComposing={setComposing} common={common} />}
+              </div>
+            )}
+          </Detail>
         )}
-        <RowReply rowKey={rowKey} target={row.target} common={common} hue={hue} />
+        <RowReply rowKey={rowKey} target={row.target} common={common} hue={hue} inset={inset} />
       </div>
       {row.children.map((child) => (
         <ChatRowView
@@ -767,6 +1134,7 @@ function ChatRowView({
           newKeys={newKeys}
           expanded={expanded}
           onToggle={onToggle}
+          setOpen={setOpen}
           summaries={summaries}
           {...common}
         />

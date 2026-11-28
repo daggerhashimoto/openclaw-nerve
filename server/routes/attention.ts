@@ -2,10 +2,12 @@
  * Attention API Routes
  *
  * POST /api/attention/summaries  { sessionKeys: string[] }
- *   -> { summaries: { [sessionKey]: { status: 'ready' | 'pending' | 'error' | 'empty', text?, updatedAt? } } }
+ *   -> { summaries: { [sessionKey]: { status: 'ready' | 'pending' | 'error' | 'empty', text?, updatedAt?,
+ *        lastSpeaker?: 'operator' | 'agent', lastAt?, asksOperator? } } }
  *
- * "What happened" lines for the board's cards. Cached answers are cheap; a thread with new
- * messages comes back `pending` while it is summarized in the background, so the client polls.
+ * "What happened" for the board's cards and Today's chats, with whose turn it is. Cached
+ * answers are cheap; a thread with new messages comes back `pending` while it is summarized in
+ * the background, so the client polls.
  * See {@link createAttentionSummaries}.
  *
  * POST /api/attention/day-summary  { facts: DayFacts }
@@ -32,11 +34,11 @@ import {
   type DaySummary,
 } from '../lib/attention-day-summary.js';
 
-/** Keys answered per request; the board shows only a handful of cards. */
-export const MAX_SUMMARY_KEYS = 12;
+/** Keys answered per request: every chat Today lists, plus the open rows. */
+export const MAX_SUMMARY_KEYS = 50;
 
 const bodySchema = z.object({
-  sessionKeys: z.array(z.string().trim().min(1).max(512)).max(50),
+  sessionKeys: z.array(z.string().trim().min(1).max(512)).max(80),
 });
 
 const line = z.string().trim().max(300);

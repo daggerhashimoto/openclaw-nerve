@@ -49,9 +49,9 @@ describe('buildDayPrompt', () => {
     expect(prompt).toContain('do not say anything is open or waiting unless the facts show it');
     expect(prompt).toContain('Do not add names, numbers or events that are not listed');
     expect(prompt).toContain('No markdown');
-    expect(prompt).toContain('3 sessions active, 2 things done, 1 pull requests merged, 0 cron runs failed');
+    expect(prompt).toContain('3 sessions active, 2 things done, 1 pull requests merged, 0 cron jobs failing');
     expect(prompt).not.toContain('cron runs ok');
-    expect(prompt).toContain('do not mention cron jobs that ran fine');
+    expect(prompt).toContain('do not mention cron jobs that ran fine or that recovered');
     expect(prompt).toContain('14:56 PR #458 merged (Render flow cards)');
     expect(prompt).toContain('Kim, telegram, needs reply (Review)');
     expect(prompt).toContain('Not read: cron runs.');

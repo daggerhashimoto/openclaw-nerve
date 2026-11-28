@@ -11,6 +11,11 @@ export interface ThreadSummary {
   status: 'ready' | 'pending' | 'error' | 'empty';
   text?: string;
   updatedAt?: number;
+  /** Who wrote the thread's newest text message. */
+  lastSpeaker?: 'operator' | 'agent';
+  lastAt?: number;
+  /** The agent spoke last and asked the operator something. */
+  asksOperator?: boolean;
 }
 
 export const SUMMARIES_URL = '/api/attention/summaries';
@@ -23,12 +28,15 @@ const STATUSES = new Set<ThreadSummary['status']>(['ready', 'pending', 'error', 
 
 function readSummary(value: unknown): ThreadSummary | null {
   if (!value || typeof value !== 'object') return null;
-  const { status, text, updatedAt } = value as Record<string, unknown>;
+  const { status, text, updatedAt, lastSpeaker, lastAt, asksOperator } = value as Record<string, unknown>;
   if (typeof status !== 'string' || !STATUSES.has(status as ThreadSummary['status'])) return null;
   return {
     status: status as ThreadSummary['status'],
     ...(typeof text === 'string' && text.trim() ? { text: text.trim() } : {}),
     ...(typeof updatedAt === 'number' ? { updatedAt } : {}),
+    ...(lastSpeaker === 'operator' || lastSpeaker === 'agent' ? { lastSpeaker } : {}),
+    ...(typeof lastAt === 'number' ? { lastAt } : {}),
+    ...(typeof asksOperator === 'boolean' ? { asksOperator } : {}),
   };
 }
 

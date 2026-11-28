@@ -6,10 +6,13 @@
  * `NERVE_ATTENTION_SUMMARY_MODEL` (`provider/model`), or the thread's agent default when unset.
  *
  * Each thread is read with `chat.history` on every request; its fingerprint is the id of the
- * newest user or assistant text message. A cached summary for that fingerprint is returned as
- * is. Otherwise a generation is queued (one per thread at a time, at most two at once) and the
- * caller gets `pending` with the previous text, if any, until it lands. A failed or timed-out
- * generation is recorded and retried only after a back-off, not on every poll.
+ * newest user or assistant text message. Every answer read from the history also says whose turn
+ * it is: who spoke last, when, and whether the agent's last message asks the operator something
+ * (see {@link asksOperator}). These are read fresh each time, never cached with the text. A
+ * cached summary for that fingerprint is returned as is. Otherwise a generation is queued (one
+ * per thread at a time, at most two at once) and the caller gets `pending` with the previous
+ * text, if any, until it lands. A failed or timed-out generation is recorded and retried only
+ * after a back-off, not on every poll.
  *
  * Ready summaries live in memory and in `${NERVE_DATA_DIR:-~/.nerve}/attention/summaries.json`.
  * @module
@@ -26,6 +29,12 @@ export interface SummaryResult {
   status: SummaryStatus;
   text?: string;
   updatedAt?: number;
+  /** Who wrote the newest text message: the operator (user) or the agent (assistant). */
+  lastSpeaker?: 'operator' | 'agent';
+  /** When that message was written, in ms, when the history says. */
+  lastAt?: number;
+  /** The newest text message is the agent's and asks the operator something. */
+  asksOperator?: boolean;
 }
 
 export type RpcCall = (
@@ -65,7 +74,7 @@ export const SUMMARY_CONCURRENCY = 2;
 export const SUMMARY_TARGET_CHARS = 450;
 export const SUMMARY_MAX_CHARS = 600;
 /** Bumped when the prompt changes, so summaries written under the old one are redone. */
-const SUMMARY_VERSION = 'v2';
+const SUMMARY_VERSION = 'v3';
 const HISTORY_TIMEOUT_MS = 10_000;
 const MESSAGE_MAX_CHARS = 500;
 const TRANSCRIPT_MAX_CHARS = 6_000;
@@ -87,10 +96,18 @@ interface HistoryMessage {
   __openclaw?: { id?: string; seq?: number };
 }
 
+export interface Turn {
+  lastSpeaker: 'operator' | 'agent';
+  lastAt?: number;
+  asksOperator: boolean;
+}
+
 export interface Transcript {
   text: string;
   /** Changes when a new user or assistant text message arrives; tool-only activity does not. */
   fingerprint: string;
+  /** Whose turn it is, from the newest text message. */
+  turn: Turn;
 }
 
 const TOOL_CALL_TYPES = new Set(['toolCall', 'tool_use', 'toolUse', 'functionCall']);
@@ -118,6 +135,38 @@ function squash(text: string, max: number): string {
   return flat.length > max ? `${flat.slice(0, max).trimEnd()}...` : flat;
 }
 
+function timestampMs(value: HistoryMessage['timestamp']): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value < 1e12 ? value * 1000 : value;
+  if (typeof value === 'string' && value) {
+    const ms = Date.parse(value);
+    return Number.isFinite(ms) ? ms : undefined;
+  }
+  return undefined;
+}
+
+/** Phrases that hand the turn to the operator even without a question mark. */
+const REQUEST_RE = /\b(let me know|please (confirm|review|approve|decide|choose|advise|check)|(should|shall) i\b|do you want|would you like|want me to|your call|up to you|waiting (for|on) (you|your)|need(s)? your (input|answer|approval|decision|go-ahead)|which (one|option) (do|would|should) you)/i;
+
+/**
+ * Whether an agent message asks the operator something: one of its last three sentences ends
+ * with a question mark, or its closing lines make an explicit request ("let me know", "should
+ * I", "want me to"). Code, quotes and links are ignored, so a `?` inside them does not count.
+ */
+export function asksOperator(text: string): boolean {
+  const prose = text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/^\s*>.*$/gm, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!prose) return false;
+  const tail = prose.slice(-600);
+  const sentences = tail.split(/(?<=[.!?])\s+/).map((part) => part.trim()).filter(Boolean);
+  if (sentences.slice(-3).some((sentence) => /\?["')\]]*$/.test(sentence))) return true;
+  return REQUEST_RE.test(sentences.slice(-3).join(' '));
+}
+
 function markerOf(message: HistoryMessage, index: number): string {
   const meta = message.__openclaw;
   if (meta?.id) return meta.id;
@@ -135,7 +184,7 @@ export function buildTranscript(messages: unknown): Transcript | null {
   if (!Array.isArray(messages)) return null;
   const lines: string[] = [];
   let pendingTools: string[] = [];
-  let lastText: { marker: string; length: number } | null = null;
+  let lastText: { marker: string; length: number; turn: Turn } | null = null;
 
   const flushTools = () => {
     if (pendingTools.length === 0) return;
@@ -146,7 +195,8 @@ export function buildTranscript(messages: unknown): Transcript | null {
 
   (messages as HistoryMessage[]).forEach((message, index) => {
     if (!message || (message.role !== 'user' && message.role !== 'assistant')) return;
-    const text = squash(blockText(message.content, message.text), MESSAGE_MAX_CHARS);
+    const raw = blockText(message.content, message.text);
+    const text = squash(raw, MESSAGE_MAX_CHARS);
     if (message.role === 'assistant' && !text) {
       pendingTools.push(...toolNames(message.content));
       return;
@@ -154,11 +204,17 @@ export function buildTranscript(messages: unknown): Transcript | null {
     if (!text) return;
     flushTools();
     lines.push(`${message.role === 'user' ? 'User' : 'Agent'}: ${text}`);
-    lastText = { marker: markerOf(message, index), length: text.length };
+    const agent = message.role === 'assistant';
+    lastText = {
+      marker: markerOf(message, index),
+      length: text.length,
+      // Read from the whole message: the question usually closes it, past the transcript cut.
+      turn: { lastSpeaker: agent ? 'agent' : 'operator', lastAt: timestampMs(message.timestamp), asksOperator: agent && asksOperator(raw) },
+    };
   });
   flushTools();
 
-  const newest = lastText as { marker: string; length: number } | null;
+  const newest = lastText as { marker: string; length: number; turn: Turn } | null;
   if (!newest) return null;
 
   // Keep the newest lines that fit.
@@ -170,7 +226,9 @@ export function buildTranscript(messages: unknown): Transcript | null {
     kept.unshift(line);
     size += line.length + 1;
   }
-  return { text: kept.join('\n'), fingerprint: `${SUMMARY_VERSION}:${newest.marker}:${newest.length}` };
+  const turn: Turn = { lastSpeaker: newest.turn.lastSpeaker, asksOperator: newest.turn.asksOperator };
+  if (newest.turn.lastAt !== undefined) turn.lastAt = newest.turn.lastAt;
+  return { text: kept.join('\n'), fingerprint: `${SUMMARY_VERSION}:${newest.marker}:${newest.length}`, turn };
 }
 
 // ── Model run ────────────────────────────────────────────────────────
@@ -179,6 +237,7 @@ export function buildPrompt(transcript: string): string {
   return [
     'You summarize an agent chat thread for its operator, who has not read it.',
     `Write a complete summary in at most ${SUMMARY_TARGET_CHARS} characters, as two to four plain sentences: what was asked, what the agent did, and where it stands now, including anything waiting on the operator.`,
+    'The first sentence is shown alone in a list, so it must stand on its own: say what the thread is about and where it stands.',
     'Every sentence must be finished; fit the limit by choosing what matters, not by trailing off.',
     'No markdown, no lists, no preamble, and do not quote the transcript.',
     '',
@@ -434,18 +493,20 @@ export function createAttentionSummaries(options: AttentionSummariesOptions): At
       return cached ? { status: 'ready', ...previous } : { status: 'error' };
     }
     if (!transcript) return { status: 'empty' };
-    if (cached?.fingerprint === transcript.fingerprint) return { status: 'ready', ...previous };
-    if (inFlight.has(sessionKey)) return { status: 'pending', ...previous };
+    // Whose turn it is comes from this read, whatever the state of the text.
+    const known = { ...previous, ...transcript.turn };
+    if (cached?.fingerprint === transcript.fingerprint) return { status: 'ready', ...known };
+    if (inFlight.has(sessionKey)) return { status: 'pending', ...known };
 
     const failed = errors.get(sessionKey);
-    if (failed && now() < failed.retryAt) return { status: cached ? 'ready' : 'error', ...previous };
+    if (failed && now() < failed.retryAt) return { status: cached ? 'ready' : 'error', ...known };
     // Too soon after the last summary: keep the old text and let the client poll past the interval.
-    if (cached && now() - cached.updatedAt < minIntervalMs) return { status: 'pending', ...previous };
+    if (cached && now() - cached.updatedAt < minIntervalMs) return { status: 'pending', ...known };
 
     inFlight.add(sessionKey);
     queue.push({ sessionKey, fingerprint: transcript.fingerprint, transcript: transcript.text });
     pump();
-    return { status: 'pending', ...previous };
+    return { status: 'pending', ...known };
   };
 
   return {

@@ -4,7 +4,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  asksOperator,
   buildAgentParams,
+  buildPrompt,
   buildTranscript,
   cleanSummary,
   createAttentionSummaries,
@@ -60,7 +62,7 @@ describe('buildTranscript', () => {
       { role: 'custom', content: [{ type: 'text', text: 'internal' }] },
     ]);
     expect(transcript?.text).toBe('User: Fix the login bug\nAgent used tools: exec, read\nAgent: Fixed it and opened a PR.');
-    expect(transcript?.fingerprint).toBe('v2:e:25');
+    expect(transcript?.fingerprint).toBe('v3:e:25');
   });
 
   it('does not change the fingerprint for tool-only activity after the last text', () => {
@@ -76,6 +78,51 @@ describe('buildTranscript', () => {
     expect(long!.text.endsWith('...')).toBe(true);
     expect(buildTranscript([{ role: 'assistant', content: [{ type: 'toolCall', name: 'exec' }] }])).toBeNull();
     expect(buildTranscript(undefined)).toBeNull();
+  });
+});
+
+describe('whose turn it is', () => {
+  it('says the agent spoke last, when, and whether it asked the operator something', () => {
+    const asked = buildTranscript([
+      { ...msg('user', 'Can you clean up the deploy script?', 'a'), timestamp: 1_000 },
+      { ...msg('assistant', `${'I rewrote the script and checked it on staging. '.repeat(20)}Should I ship it to production now?`, 'b'), timestamp: 1_764_300_000_000 },
+    ]);
+    // The question sits past the 500 characters the transcript keeps of a message.
+    expect(asked?.turn).toEqual({ lastSpeaker: 'agent', lastAt: 1_764_300_000_000, asksOperator: true });
+
+    const told = buildTranscript([msg('user', 'Ship it', 'a'), msg('assistant', 'Shipped as v1.6.1.', 'b')]);
+    expect(told?.turn).toEqual({ lastSpeaker: 'agent', asksOperator: false });
+
+    const waiting = buildTranscript([msg('assistant', 'Want me to retry?', 'a'), { ...msg('user', 'Yes, retry once', 'b'), timestamp: '2026-11-28T10:00:00Z' }]);
+    expect(waiting?.turn).toEqual({ lastSpeaker: 'operator', lastAt: Date.parse('2026-11-28T10:00:00Z'), asksOperator: false });
+  });
+
+  it('reads a request without a question mark, and ignores question marks in code and links', () => {
+    expect(asksOperator('Two options are ready. Let me know which one to merge.')).toBe(true);
+    expect(asksOperator('Draft is up. Please review the copy before I send it.')).toBe(true);
+    expect(asksOperator('Fixed. The query was `SELECT * FROM t WHERE a = ?`')).toBe(false);
+    expect(asksOperator('Done, see https://example.com/search?q=1')).toBe(false);
+    expect(asksOperator('Asked the API "is it up?" and it said yes. All green.')).toBe(false);
+    expect(asksOperator('All tests pass. Merged #458.')).toBe(false);
+  });
+
+  it('answers the turn with every status, read fresh while the text is cached', async () => {
+    const gw = fakeGateway();
+    gw.histories.set('k', [msg('user', 'Do it', '1'), msg('assistant', 'Did it. Anything else?', '2')]);
+    const service = createAttentionSummaries({ rpc: gw.rpc });
+    expect((await service.get(['k'])).k).toMatchObject({ status: 'pending', lastSpeaker: 'agent', asksOperator: true });
+    await flush();
+    gw.runs[0].deferred.resolve(final('It did it and asked for more.'));
+    await service.whenIdle();
+    expect((await service.get(['k'])).k).toMatchObject({ status: 'ready', asksOperator: true });
+
+    // The operator answers; the turn moves at once even though the summary is not redone yet.
+    gw.histories.set('k', [msg('user', 'Do it', '1'), msg('assistant', 'Did it. Anything else?', '2'), msg('user', 'No, thanks', '3')]);
+    expect((await service.get(['k'])).k).toMatchObject({ lastSpeaker: 'operator', asksOperator: false, text: 'It did it and asked for more.' });
+  });
+
+  it('asks the model for a first sentence that stands alone', () => {
+    expect(buildPrompt('User: hi')).toContain('The first sentence is shown alone in a list');
   });
 });
 
@@ -151,7 +198,9 @@ describe('createAttentionSummaries', () => {
     gw.histories.set('agent:main:a', [msg('user', 'Do it', '1'), msg('assistant', 'Did it', '2')]);
     const service = createAttentionSummaries({ rpc: gw.rpc, model: () => 'opencode-go/deepseek-v4.1-flash' });
 
-    expect(await service.get(['agent:main:a'])).toEqual({ 'agent:main:a': { status: 'pending' } });
+    expect(await service.get(['agent:main:a'])).toEqual({
+      'agent:main:a': { status: 'pending', lastSpeaker: 'agent', asksOperator: false },
+    });
     await flush();
     expect(gw.runs).toHaveLength(1);
     expect(gw.runs[0].options).toEqual({ expectFinal: true });
@@ -258,13 +307,13 @@ describe('createAttentionSummaries', () => {
     gw.runs[0].deferred.reject(new Error('invalid agent params: unexpected property modelRun'));
     await service.whenIdle();
 
-    expect((await service.get(['k'])).k).toEqual({ status: 'error' });
+    expect((await service.get(['k'])).k).toMatchObject({ status: 'error' });
     clock += 60_000;
-    expect((await service.get(['k'])).k).toEqual({ status: 'error' });
+    expect((await service.get(['k'])).k).toMatchObject({ status: 'error' });
     expect(gw.runs).toHaveLength(1);
 
     clock += 300_000;
-    expect((await service.get(['k'])).k).toEqual({ status: 'pending' });
+    expect((await service.get(['k'])).k).toMatchObject({ status: 'pending' });
     await flush();
     expect(gw.runs).toHaveLength(2);
     gw.runs[1].deferred.resolve(final('Recovered.'));
@@ -284,7 +333,7 @@ describe('createAttentionSummaries', () => {
 
     await vi.advanceTimersByTimeAsync(90_000);
     await service.whenIdle();
-    expect((await service.get(['k'])).k).toEqual({ status: 'error' });
+    expect((await service.get(['k'])).k).toMatchObject({ status: 'error' });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('timed out'));
   });
 

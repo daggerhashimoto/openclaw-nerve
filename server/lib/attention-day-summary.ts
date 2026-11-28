@@ -36,6 +36,7 @@ export interface DayFacts {
     merged: number;
     /** Ignored: successful cron runs are not part of the day paragraph. */
     cronOk?: number;
+    /** Cron jobs whose latest run failed; a failure a later run recovered is not counted. */
     cronFailed: number;
   };
   /** Newest first, one short line each. */
@@ -72,13 +73,13 @@ export function buildDayPrompt(facts: DayFacts): string {
   const lines = [
     'You write a short note for the operator of a team of AI agents about their day so far.',
     'Write at most three short plain sentences, under 60 words in all.',
-    'Lead with what needs the operator (failures first), then what got done. Only failed cron runs are listed; do not mention cron jobs that ran fine.',
+    'Lead with what needs the operator (failures first), then what got done. Only cron jobs still failing are listed; do not mention cron jobs that ran fine or that recovered.',
     'Leave out anything that is zero; do not say that nothing was done or merged.',
     'Use only the facts below. Do not add names, numbers or events that are not listed, and do not say anything is open or waiting unless the facts show it. If a source was not read, do not guess about it.',
     'No markdown, no lists, no headings and no preamble.',
     '',
     `Day: ${facts.day}`,
-    `Counts: ${counts.sessions} sessions active, ${counts.done} things done, ${counts.merged} pull requests merged, ${counts.cronFailed} cron runs failed.`,
+    `Counts: ${counts.sessions} sessions active, ${counts.done} things done, ${counts.merged} pull requests merged, ${counts.cronFailed} cron jobs failing.`,
   ];
   if (facts.missing.length > 0) lines.push(`Not read: ${facts.missing.join(', ')}.`);
   lines.push('', 'Done today, newest first:', ...(facts.done.length > 0 ? facts.done : ['(nothing)']));

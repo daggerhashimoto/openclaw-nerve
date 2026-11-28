@@ -3,14 +3,15 @@ import type { KanbanTask } from '@/features/kanban/types';
 import type { CronJob } from '@/features/workspace/hooks/useCrons';
 import type { Session } from '@/types';
 import type { SourceStatus } from '../types';
+import { buildAttention } from '../buildAttention';
 import {
-  CRON_FOLD_AFTER,
   CRON_RUNS_LIMIT,
   buildDay,
+  cronLatestState,
+  firstSentence,
   flattenChats,
   channelOf,
   dayFacts,
-  groupByHour,
   localDayKey,
   mergedPrs,
   prMentions,
@@ -116,7 +117,8 @@ describe('done tasks', () => {
     const fresh = task({ id: 'fresh', updatedAt: at(10, 11), completedAt: undefined, feedback: [{ at: at(9, 30), by: 'agent:linus', note: 'Shipped' }] });
     const day = buildDay(input({ tasks: [old, fresh] }));
     expect(day.done.filter((r) => r.kind === 'task').map((r) => r.taskId)).toEqual(['fresh']);
-    expect(day.done.some((r) => r.kind === 'pr')).toBe(false);
+    expect(day.done.some((r) => r.prs)).toBe(false);
+    expect(day.stats.merged).toBe(0);
   });
 
   it('lists tasks that reached done today with their result, else the newest note', () => {
@@ -171,11 +173,10 @@ describe('task owners', () => {
     });
     expect(taskAgent(card)).toBe('linus');
     const day = buildDay(input({ tasks: [card] }));
-    for (const row of day.done) {
-      expect(row.agentId).toBe('linus');
-      expect(row.target).toMatchObject({ sessionKey: 'agent:linus:main', ask: false });
-    }
-    expect(day.done.map((row) => row.kind).sort()).toEqual(['pr', 'task']);
+    // One row: the merge it made is part of the task, not a row of its own.
+    expect(day.done).toHaveLength(1);
+    expect(day.done[0]).toMatchObject({ agentId: 'linus', prs: [{ number: 456, at: at(10) }] });
+    expect(day.done[0].target).toMatchObject({ sessionKey: 'agent:linus:main', ask: false });
   });
 
   it('prefers the assignee, then the run, then the source session, then who created it', () => {
@@ -235,55 +236,117 @@ describe('pull requests', () => {
         task({ id: 'old', title: 'Yesterday merge', updatedAt: at(9), feedback: [note(400, MIDNIGHT - HOUR)] }),
       ],
     }));
-    const prs = day.done.filter((row) => row.kind === 'pr');
-    expect(prs.map((row) => [row.title, row.at])).toEqual([['PR #458 merged', at(14, 56)]]);
-    expect(prs[0].href).toBeUndefined();
+    const withPrs = day.done.filter((row) => row.prs);
+    expect(withPrs.map((row) => [row.taskId, row.prs])).toEqual([['flow', [{ number: 458, at: at(14, 56) }]]]);
     expect(day.stats.merged).toBe(1);
     expect(day.stats.done).toBe(3);
   });
 });
 
 describe('cron runs', () => {
-  it('lists today\'s ok and failed runs, skips skipped ones and yesterday\'s', () => {
+  it('pins a job whose latest run failed, with the item Now acts on, and counts it once', () => {
     const day = buildDay(input({
-      crons: [cron()],
+      crons: [cron({ nextRun: new Date(at(16)).toISOString() })],
       cronRuns: {
         c1: [
           run(at(13), 'error', { error: 'AccessDenied' }),
           run(at(12), 'skipped'),
+          run(at(11), 'error', { error: 'Timeout' }),
           run(at(7), 'ok', { summary: 'Brief sent' }),
           run(MIDNIGHT - HOUR, 'ok'),
         ],
       },
     }));
-    expect(day.done.map((row) => [row.kind, row.at, row.failed, row.detail])).toEqual([
-      ['cron', at(13), true, 'AccessDenied'],
-      ['cron', at(7), false, 'Brief sent'],
-    ]);
-    expect(day.stats).toMatchObject({ cronOk: 1, cronFailed: 1, cronPartial: false });
+    expect(day.failing).toHaveLength(1);
+    expect(day.failing[0]).toMatchObject({
+      at: at(13),
+      failed: true,
+      cron: { failing: true, failedAt: [at(11), at(13)], okRuns: 1, error: 'AccessDenied', nextRun: at(16) },
+      item: { kind: 'cron-failed', sourceId: 'c1', open: { type: 'cron', id: 'c1' } },
+    });
+    // Not repeated as a line of its own.
+    expect(day.done).toEqual([]);
+    expect(day.cronsOk.map((row) => row.cron?.okRuns)).toEqual([1]);
+    expect(day.stats).toMatchObject({ cronOk: 1, cronFailed: 1, failing: 1, cronPartial: false });
   });
 
-  it('folds a job that ran often into one row, and marks a run list cut at the limit as partial', () => {
+  it('shows a failure a later run recovered as one line, not as failing', () => {
+    const day = buildDay(input({
+      crons: [cron({ lastRun: new Date(at(12, 3)).toISOString(), lastStatus: 'ok' })],
+      cronRuns: { c1: [run(at(12, 3), 'ok', { summary: 'Brief sent', durationMs: 4_200 }), run(at(9), 'error', { error: 'AccessDenied' }), run(at(7))] },
+    }));
+    expect(day.failing).toEqual([]);
+    expect(day.done).toHaveLength(1);
+    expect(day.done[0]).toMatchObject({ kind: 'cron', at: at(12, 3), failed: false, cron: { failing: false, failedAt: [at(9)], recoveredAt: at(12, 3), error: 'AccessDenied' } });
+    expect(day.stats).toMatchObject({ cronFailed: 0, failing: 0, cronOk: 2 });
+    expect(dayFacts(day, []).done).toEqual([]);
+  });
+
+  it('uses the job\'s own last status when its history is not newer, as Now does', () => {
+    // Failed yesterday and not run since: still failing.
+    const stale = cron({ id: 'old', lastRun: new Date(MIDNIGHT - HOUR).toISOString(), lastStatus: 'error', lastError: 'Gone' });
+    // A paused job that failed today is a line, not failing.
+    const paused = cron({ id: 'paused', enabled: false, lastRun: new Date(at(9)).toISOString(), lastStatus: 'error' });
+    const day = buildDay(input({ crons: [stale, paused], cronRuns: { paused: [run(at(9), 'error')] } }));
+    expect(day.failing.map((row) => [row.cronId, row.cron?.error])).toEqual([['old', 'Gone']]);
+    expect(day.done.map((row) => [row.cronId, row.cron?.enabled])).toEqual([['paused', false]]);
+    expect(cronLatestState(stale, [])).toMatchObject({ failed: true, fromHistory: false });
+  });
+
+  it('fails the same crons as the Now board on the same data', () => {
+    const crons = [
+      cron({ id: 'a' }),
+      cron({ id: 'b', lastStatus: 'error', lastRun: new Date(at(8)).toISOString() }),
+      cron({ id: 'c', lastStatus: 'error', lastRun: new Date(MIDNIGHT - HOUR).toISOString() }),
+      cron({ id: 'd', enabled: false, lastStatus: 'error' }),
+      cron({ id: 'e', lastStatus: 'ok', lastRun: new Date(at(7)).toISOString() }),
+    ];
+    const cronRuns = {
+      a: [run(at(13), 'error'), run(at(7))],
+      b: [run(at(9)), run(at(8), 'error')],
+      e: [run(at(7)), run(at(6), 'error')],
+    };
+    const day = buildDay(input({ crons, cronRuns }));
+    const brief = buildAttention({
+      now: NOW,
+      lastLook: null,
+      seen: new Set(),
+      tasks: [],
+      proposals: [],
+      crons,
+      cronRuns,
+      sessions: [],
+      agentStatus: {},
+      busyState: {},
+      sources: { tasks: { state: 'live' }, proposals: { state: 'live' }, crons: { state: 'live' }, sessions: { state: 'live' } },
+    });
+    const nowFailing = brief.blocked.filter((item) => item.kind === 'cron-failed');
+    expect(day.failing.map((row) => row.cronId).sort()).toEqual(nowFailing.map((item) => item.sourceId).sort());
+    expect(day.failing.map((row) => row.item?.key).sort()).toEqual(nowFailing.map((item) => item.key).sort());
+  });
+
+  it('folds good runs into a row per job, marking a run list cut at the limit as partial', () => {
     const many = Array.from({ length: CRON_RUNS_LIMIT }, (_, i) => run(at(14, 55) - i * 5 * MINUTE));
-    const some = Array.from({ length: CRON_FOLD_AFTER + 1 }, (_, i) => run(at(6) + i * HOUR));
+    const some = [run(at(6)), run(at(7))];
     const day = buildDay(input({
       crons: [cron({ id: 'watch', name: 'nerve-pr-merge-watch' }), cron({ id: 'hourly', name: 'Hourly sync' })],
       cronRuns: { watch: many, hourly: some },
     }));
-    const watch = day.done.find((row) => row.cronId === 'watch');
-    expect(day.done.filter((row) => row.cronId === 'watch')).toHaveLength(1);
-    expect(watch).toMatchObject({ key: 'cron:watch:ok', at: at(14, 55), runs: { ok: CRON_RUNS_LIMIT, partial: true } });
-    expect(day.done.find((row) => row.cronId === 'hourly')?.runs).toEqual({ ok: CRON_FOLD_AFTER + 1, partial: false });
-    expect(day.stats).toMatchObject({ cronOk: CRON_RUNS_LIMIT + CRON_FOLD_AFTER + 1, cronPartial: true });
+    expect(day.cronsOk.map((row) => [row.title, row.at, row.cron?.okRuns, row.cron?.partial])).toEqual([
+      ['nerve-pr-merge-watch', at(14, 55), CRON_RUNS_LIMIT, true],
+      ['Hourly sync', at(7), 2, false],
+    ]);
+    expect(day.done).toEqual([]);
+    expect(day.stats).toMatchObject({ cronOk: CRON_RUNS_LIMIT + 2, cronPartial: true });
   });
 
-  it('attaches the job\'s cron session for its summary', () => {
+  it('attaches the job\'s cron session and its newest run for the open row', () => {
     const day = buildDay(input({
       crons: [cron({ id: 'e2e5' })],
-      cronRuns: { e2e5: [run(at(7))] },
+      cronRuns: { e2e5: [run(at(7), 'ok', { summary: 'Sent', durationMs: 1_500 })] },
       sessions: [{ key: 'agent:main:cron:e2e5', updatedAt: at(7) }],
     }));
-    expect(day.done[0]).toMatchObject({ sessionKey: 'agent:main:cron:e2e5', agentId: 'main' });
+    expect(day.cronsOk[0]).toMatchObject({ sessionKey: 'agent:main:cron:e2e5', agentId: 'main', cron: { latest: { summary: 'Sent', durationMs: 1_500 } } });
     expect(day.chats).toEqual([]);
   });
 });
@@ -324,34 +387,26 @@ describe('sessions that ended', () => {
       .toEqual({ at: at(14), status: 'failed', failed: true });
   });
 
-  it('lists each ended subagent as its own row that asks its parent', () => {
+  it('nests ended subagents under their parent chat with how they ended, never in Done', () => {
     const day = buildDay(input({
       sessions: [
         { key: 'agent:forge:main', updatedAt: at(14) },
         subagent(),
-        subagent({ key: 'agent:forge:subagent:docs', label: 'docs', status: 'killed', endedAt: at(12), lastRunError: 'Stopped by operator' }),
+        subagent({ key: 'agent:forge:subagent:docs', label: 'docs', status: 'killed', endedAt: at(12), updatedAt: at(12), lastRunError: 'Stopped by operator' }),
         subagent({ key: 'agent:forge:subagent:old', label: 'old', endedAt: MIDNIGHT - HOUR, updatedAt: MIDNIGHT - HOUR }),
       ],
     }));
-    const sessions = day.done.filter((row) => row.kind === 'session');
-    expect(sessions.map((row) => [row.title, row.status, row.failed])).toEqual([
-      ['fix-retry', 'done', false],
-      ['docs', 'killed', true],
+    expect(day.done).toEqual([]);
+    const children = day.chats[0].children;
+    expect(children.map((row) => [row.title, row.end])).toEqual([
+      ['fix-retry', { at: at(13, 40), status: 'done' }],
+      ['docs', { at: at(12), status: 'killed', error: 'Stopped by operator' }],
     ]);
-    expect(sessions[0].target).toMatchObject({ sessionKey: 'agent:forge:main', ask: true });
-    expect(sessions[0].target?.context).toContain('the subagent "fix-retry" (agent:forge:subagent:fix), which finished at');
-    expect(sessions[1].detail).toBe('Stopped by operator');
-    // A killed run ended but was not done.
-    expect(day.stats.done).toBe(1);
-  });
-
-  it('folds a subagent into the done task that ran it', () => {
-    const day = buildDay(input({
-      tasks: [task({ run: { sessionKey: 'agent:forge:main', childSessionKey: 'agent:forge:subagent:fix', startedAt: at(13), endedAt: at(13, 40), status: 'done' } })],
-      sessions: [subagent()],
-    }));
-    expect(day.done.map((row) => row.kind)).toEqual(['task']);
-    expect(day.done[0].sessionKey).toBe('agent:forge:subagent:fix');
+    expect(children[0].target).toMatchObject({ sessionKey: 'agent:forge:main', ask: true });
+    expect(children[0].target.context).toContain('the subagent "fix-retry" (agent:forge:subagent:fix), which finished at');
+    expect(children.every((row) => row.spawned && row.ended)).toBe(true);
+    // Done counts tasks only.
+    expect(day.stats.done).toBe(0);
   });
 
   it('a done task whose run session ended asks that session\'s parent', () => {
@@ -401,7 +456,6 @@ describe('chats today', () => {
     }));
     const titles = flattenChats(day.chats).map((row) => row.title);
     expect(titles).toEqual(['Forge', 'Forge', 'Check the backup log']);
-    expect(day.done.find((row) => row.kind === 'session')?.title).toBe('Check the backup log');
     for (const title of [...titles, ...day.done.map((row) => row.title)]) expect(title).not.toMatch(/agent:|kb-/);
   });
 
@@ -413,14 +467,13 @@ describe('chats today', () => {
 });
 
 describe('ordering, sources and facts', () => {
-  it('orders every kind newest first', () => {
+  it('puts tasks first, newest first, then cron lines', () => {
     const day = buildDay(input({
-      tasks: [task({ updatedAt: at(9) })],
-      crons: [cron()],
-      cronRuns: { c1: [run(at(11))] },
-      sessions: [{ key: 'agent:forge:subagent:x', label: 'x', spawnedBy: 'agent:forge:main', status: 'done', endedAt: at(10), updatedAt: at(10) }],
+      tasks: [task({ id: 'a', updatedAt: at(9) }), task({ id: 'b', updatedAt: at(8) })],
+      crons: [cron({ lastRun: new Date(at(11)).toISOString() })],
+      cronRuns: { c1: [run(at(11)), run(at(10), 'error')] },
     }));
-    expect(day.done.map((row) => row.kind)).toEqual(['cron', 'session', 'task']);
+    expect(day.done.map((row) => row.key)).toEqual(['task:a', 'task:b', 'cron:c1:failed']);
   });
 
   it('leaves out what an off source would have given', () => {
@@ -431,38 +484,41 @@ describe('ordering, sources and facts', () => {
 
   it('builds compact facts with the missing sources named and no times on chat lines', () => {
     const day = buildDay(input({
-      tasks: [task({ title: 'Ship it', updatedAt: at(14, 12) })],
+      tasks: [task({ title: 'Ship it', updatedAt: at(14, 12), feedback: [{ at: at(14, 10), by: 'agent:forge', note: 'Merged #458 as 5edad4f.' }] })],
       sessions: [{ key: 'agent:main:main', updatedAt: at(14) }],
     }));
     const facts = dayFacts(day, ['cron runs']);
     expect(facts).toMatchObject({
       day: '2026-11-28',
-      counts: { sessions: 1, done: 1, merged: 0, cronFailed: 0 },
+      counts: { sessions: 1, done: 1, merged: 1, cronFailed: 0 },
       chats: ['Kim'],
       missing: ['cron runs'],
     });
-    expect(facts.done).toEqual([expect.stringMatching(/^\d\d:\d\d Task done: Ship it$/)]);
+    expect(facts.done).toEqual(['14:12 Task done: Ship it', '14:10 PR #458 merged (Ship it)']);
   });
 
-  it('tells the paragraph only about cron runs that failed', () => {
+  it('tells the paragraph only about crons still failing, first', () => {
     const day = buildDay(input({
-      crons: [cron({ id: 'c1', name: 'Nightly backup' })],
+      tasks: [task({ title: 'Ship it', updatedAt: at(14) })],
+      crons: [cron({ id: 'c1', name: 'Nightly backup' }), cron({ id: 'c2', name: 'Morning brief' })],
       cronRuns: {
         c1: [run(at(13), 'error', { error: 'AccessDenied' }), run(at(7), 'ok', { summary: 'Brief sent' })],
+        c2: [run(at(12)), run(at(8), 'error')],
       },
     }));
     const facts = dayFacts(day, []);
-    expect(facts.done).toEqual([expect.stringMatching(/^\d\d:\d\d Cron Nightly backup failed$/)]);
+    expect(facts.done).toEqual(['13:00 Cron Nightly backup failed', '14:00 Task done: Ship it']);
     expect(facts.counts).not.toHaveProperty('cronOk');
     expect(facts.counts.cronFailed).toBe(1);
   });
 });
 
-describe('groupByHour', () => {
-  it('leaves a short list ungrouped and groups a long one by local hour', () => {
-    const rows = (times: number[]) => times.map((t) => ({ at: t }));
-    expect(groupByHour(rows([at(14), at(13)]), 8)).toEqual([{ label: null, rows: rows([at(14), at(13)]) }]);
-    const groups = groupByHour(rows([at(14, 50), at(14, 10), at(13, 5), at(9)]), 3);
-    expect(groups.map((group) => [group.label, group.rows.length])).toEqual([['14:00', 2], ['13:00', 1], ['09:00', 1]]);
+describe('firstSentence', () => {
+  it('ends at a sentence end, not inside versions, abbreviations or refs', () => {
+    expect(firstSentence('Kim shipped v1.6.0 to the VPS. Then it checked the logs.')).toBe('Kim shipped v1.6.0 to the VPS.');
+    expect(firstSentence('Forge fixed tests, e.g. the retry one, and opened PR #460. It waits on review.')).toBe('Forge fixed tests, e.g. the retry one, and opened PR #460.');
+    expect(firstSentence('Should it merge now? You asked it to wait.')).toBe('Should it merge now?');
+    expect(firstSentence('One sentence without an end')).toBe('One sentence without an end');
+    expect(firstSentence('It said "done." Then it stopped.')).toBe('It said "done."');
   });
 });

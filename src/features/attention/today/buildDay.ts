@@ -1,12 +1,18 @@
 /**
- * The Today digest's normalizer: tasks, crons, their runs and sessions turned into what finished
- * today and which chats were active today. Pure: the day is the viewer's local day around
- * `input.now`, and every time comes from the input.
+ * The Today digest's normalizer: tasks, crons, their runs and sessions turned into the chats of
+ * the day and what got done. Pure: the day is the viewer's local day around `input.now`, and
+ * every time comes from the input.
  *
- * Done today holds a row per task that reached done, per pull request a done task says merged,
- * per cron run (ok runs of a job that ran many times fold into one row), and per spawned session
- * (a subagent) whose run ended. Top-level and channel chats are ongoing, never "done"; they and
- * the subagents are listed under Chats today instead.
+ * Chats today holds every session active today, subagents nested under their parent (an ended
+ * subagent carries how it ended). Nothing in Chats is repeated in Done.
+ *
+ * Done today holds, in this order:
+ * - failing: cron jobs whose latest run failed, by the same rule as Now (`cronLatestState`),
+ *   pinned while they stay failing, each with the item Now's actions run on;
+ * - done: tasks that reached done today, newest first, each with the pull requests it merged
+ *   today; then crons that failed today but no longer fail, one line per job ("failed 09:00,
+ *   recovered 12:03");
+ * - cronsOk: successful cron runs, folded into one quiet line with a row per job.
  */
 
 import type { KanbanTask, TaskActor } from '@/features/kanban/types';
@@ -24,16 +30,13 @@ import { isGranularLive } from '@/lib/paneState';
 import { getSessionKey, type GranularAgentState, type Session } from '@/types';
 import { formatClock } from '../briefCopy';
 import { channelOf, sessionDisplayName } from '../sessionNames';
-import type { SourceStatus } from '../types';
+import type { AttentionItem, SourceStatus } from '../types';
+import type { ThreadSummary } from '../useAttentionSummaries';
 
 export { channelOf };
 
 /** `/api/crons/:id/runs` answers at most this many runs per job. */
 export const CRON_RUNS_LIMIT = 10;
-/** A job with more ok runs than this today shows them as one row. */
-export const CRON_FOLD_AFTER = 3;
-/** Done lists longer than this are grouped by hour. */
-export const GROUP_BY_HOUR_AFTER = 8;
 
 const ENDED_STATUSES = new Set(['done', 'failed', 'interrupted', 'killed', 'timeout']);
 const FAILED_END_STATUSES = new Set(['failed', 'interrupted', 'killed', 'timeout']);
@@ -43,7 +46,7 @@ const PR_REF_RE = /(?:^|[^\w&/])#(\d{1,6})\b/g;
 const MERGED_RE = /\bmerged\b/i;
 
 export type DaySource = 'tasks' | 'crons' | 'cronRuns' | 'sessions';
-export type DayKind = 'task' | 'pr' | 'cron' | 'session';
+export type DayKind = 'task' | 'cron';
 
 /** One cron run as `/api/crons/:id/runs` reports it, normalized. */
 export interface CronRunEntry {
@@ -63,25 +66,50 @@ export interface ReplyTarget {
   context?: string;
 }
 
+export interface MergedPr {
+  number: number;
+  href?: string;
+  at: number;
+}
+
+/** What a cron row knows about its job today. */
+export interface CronDay {
+  /** The latest run failed and the job is enabled: the same rule as Now's Failing. */
+  failing: boolean;
+  enabled: boolean;
+  /** Today's failed runs, oldest first. */
+  failedAt: number[];
+  /** The first good run after today's last failure, when the job is no longer failing. */
+  recoveredAt?: number;
+  /** Today's good runs, and whether the run list was cut short inside today. */
+  okRuns: number;
+  partial: boolean;
+  /** The newest run read, for the open row's output and duration. */
+  latest?: CronRunEntry;
+  nextRun?: number;
+  /** The newest failure's error. */
+  error?: string;
+}
+
 export interface DayRow {
   key: string;
   at: number;
   kind: DayKind;
   title: string;
-  /** Result text, the newest note, a cron run's summary or error. */
+  /** A task's result or newest note. */
   detail?: string;
-  /** A pull request's URL, only when the text carried one. */
-  href?: string;
+  /** Pull requests a done task merged today. */
+  prs?: MergedPr[];
   /** The session whose thread the row's "What happened" reads. */
   sessionKey?: string;
   agentId?: string;
   taskId?: string;
   cronId?: string;
+  /** A failing cron: the pane is red. */
   failed: boolean;
-  /** A session's run status word (done, failed, killed...). */
-  status?: string;
-  /** Folded cron runs: how many, and whether the run list was cut short. */
-  runs?: { ok: number; partial: boolean };
+  cron?: CronDay;
+  /** The item Now's actions run on (Run now, Pause), for failing crons. */
+  item?: AttentionItem;
   target?: ReplyTarget;
 }
 
@@ -92,10 +120,17 @@ export interface ChatRow {
   channel?: string;
   lastActivity: number;
   topLevel: boolean;
+  /** Started by another session (a subagent): its "user" is the parent agent, not the operator. */
+  spawned: boolean;
   running: boolean;
+  /** Failing now, as Now counts it: the gateway reports the session in error. */
+  failing: boolean;
+  /** Failing now, or ended failed. */
   failed: boolean;
   /** A spawned session whose run ended: replies go to its parent. */
   ended: boolean;
+  /** How and when an ended run ended. */
+  end?: { at: number; status: string; error?: string };
   /** What the Now brief holds against this session (Review, Run failed...). */
   needs?: string;
   target: ReplyTarget;
@@ -103,13 +138,17 @@ export interface ChatRow {
 }
 
 export interface DayStats {
+  /** Chats active today, subagents included. */
   sessions: number;
-  /** Tasks done and subagents that finished cleanly. */
+  /** Tasks that reached done today. */
   done: number;
   merged: number;
   cronOk: number;
+  /** Cron jobs failing now. A failure a later run recovered is not counted. */
   cronFailed: number;
-  /** A job's run list was cut at the limit inside today, so the cron counts are at least these. */
+  /** Failing crons and failing chats: what the facts strip calls failing. */
+  failing: number;
+  /** A job's run list was cut at the limit inside today, so the ok count is at least this. */
   cronPartial: boolean;
 }
 
@@ -134,8 +173,12 @@ export interface Day {
   /** `YYYY-MM-DD` of the viewer's local day. */
   dayKey: string;
   stats: DayStats;
-  /** Newest first. */
+  /** Failing crons, newest failure first. */
+  failing: DayRow[];
+  /** Tasks newest first, then recovered and paused cron failures newest first. */
   done: DayRow[];
+  /** Successful cron runs, a row per job, newest first. */
+  cronsOk: DayRow[];
   chats: ChatRow[];
 }
 
@@ -191,12 +234,6 @@ export function prMentions(text: string): PrMention[] {
 }
 
 /**
- * The pull requests a done task says were merged, each at the time of the text that says so.
- * A note counts when it says "merged" and names the PR (`Merged #456 as 8a0b787`,
- * `Merge watch: #458 merged as ...`); a full pull link in the task's own result counts too,
- * since the task was closed on it. Mentions without the word ("PR #456 awaiting approval") do not.
- */
-/**
  * When a done task was finished. `updatedAt` is not used: reordering a column re-stamps every
  * card in it, so an old card would look finished today. Cards from before `completedAt` existed
  * fall back to their result time, then their newest note.
@@ -208,6 +245,12 @@ export function doneTimeOf(task: KanbanTask): number | undefined {
   return notes.length ? Math.max(...notes) : undefined;
 }
 
+/**
+ * The pull requests a done task says were merged, each at the time of the text that says so.
+ * A note counts when it says "merged" and names the PR (`Merged #456 as 8a0b787`,
+ * `Merge watch: #458 merged as ...`); a full pull link in the task's own result counts too,
+ * since the task was closed on it. Mentions without the word ("PR #456 awaiting approval") do not.
+ */
 export function mergedPrs(task: KanbanTask, doneAt: number): Array<PrMention & { at: number }> {
   const out = new Map<number, PrMention & { at: number }>();
   const add = (mention: PrMention, at: number) => {
@@ -231,6 +274,42 @@ export function mergedPrs(task: KanbanTask, doneAt: number): Array<PrMention & {
     if (known && !known.href && mention.href) out.set(mention.number, { ...known, repo: mention.repo, href: mention.href });
   }
   return [...out.values()];
+}
+
+// ── Crons ────────────────────────────────────────────────────────────
+
+export interface CronLatest {
+  /** The latest run failed. */
+  failed: boolean;
+  ok: boolean;
+  /** When that latest run ran. */
+  at?: number;
+  /** The run history's newest run is newer than the job's own last run. */
+  fromHistory: boolean;
+  newest?: CronRunEntry;
+  error?: string;
+}
+
+/**
+ * A job's latest state, the rule Now's Failing uses: skipped runs do not count, and the run
+ * history overrides the job's own last status only when its newest run is later. A failure
+ * followed by a good run is not failing.
+ */
+export function cronLatestState(job: CronJob, runs: CronRunEntry[] | undefined): CronLatest {
+  const lastRun = isoToMs(job.lastRun);
+  const sorted = [...(runs ?? [])]
+    .filter((entry) => entry.status.toLowerCase() !== 'skipped')
+    .sort((a, b) => b.at - a.at);
+  const newest = sorted[0];
+  const fromHistory = newest !== undefined && (lastRun === undefined || newest.at > lastRun);
+  return {
+    failed: fromHistory ? isFailedCronStatus(newest.status) : isFailedCronStatus(job.lastStatus),
+    ok: fromHistory ? isOkCronStatus(newest.status) : isOkCronStatus(job.lastStatus),
+    at: fromHistory ? newest.at : lastRun,
+    fromHistory,
+    newest,
+    error: (fromHistory ? newest.error : undefined) ?? job.lastError,
+  };
 }
 
 // ── Sessions ─────────────────────────────────────────────────────────
@@ -360,61 +439,54 @@ export function buildDay(input: DayInput): Day {
     return { sessionKey: key, ask: false, context };
   };
 
-  const done: DayRow[] = [];
-  const linkedSessions = new Set<string>();
-
-  // Tasks and the pull requests they merged.
+  // Tasks, each with the pull requests it merged today. A PR several cards mention goes to the
+  // card whose note merged it last.
+  const tasks: DayRow[] = [];
+  let merged = 0;
   if (sourceOn('tasks')) {
-    const prRows = new Map<number, DayRow>();
+    const prOwner = new Map<number, { taskId: string; pr: MergedPr }>();
+    const doneTasks: Array<{ task: KanbanTask; at: number }> = [];
     for (const task of input.tasks) {
       if (task.status !== 'done') continue;
       const at = doneTimeOf(task);
       if (at === undefined || !today(at)) continue;
+      doneTasks.push({ task, at });
+      for (const pr of mergedPrs(task, at)) {
+        if (!today(pr.at)) continue;
+        const existing = prOwner.get(pr.number);
+        if (existing && (existing.pr.at >= pr.at || (existing.pr.href && !pr.href))) continue;
+        prOwner.set(pr.number, { taskId: task.id, pr: { number: pr.number, href: pr.href ?? existing?.pr.href, at: pr.at } });
+      }
+    }
+    merged = prOwner.size;
+    for (const { task, at } of doneTasks) {
       const run = task.run;
       const runKey = run ? run.childSessionKey ?? run.sessionKey : undefined;
-      if (run?.sessionKey) linkedSessions.add(run.sessionKey);
-      if (run?.childSessionKey) linkedSessions.add(run.childSessionKey);
       const agentId = taskAgent(task, runKey);
       const replyKey = run?.sessionKey ?? task.sourceSessionKey ?? (agentId ? `agent:${agentId}:main` : undefined);
-      const context = `About the task "${task.title}", done at ${formatClock(at)}.`;
-      const target = replyKey ? targetFor(replyKey, context) : undefined;
-      done.push({
+      const prs = [...prOwner.values()].filter((entry) => entry.taskId === task.id).map((entry) => entry.pr).sort((a, b) => a.number - b.number);
+      tasks.push({
         key: `task:${task.id}`,
         at,
         kind: 'task',
         title: task.title,
         detail: task.result?.trim() || newestNote(task),
+        ...(prs.length > 0 ? { prs } : {}),
         sessionKey: runKey,
         agentId,
         taskId: task.id,
         failed: false,
-        target,
+        target: replyKey ? targetFor(replyKey, `About the task "${task.title}", done at ${formatClock(at)}.`) : undefined,
       });
-      for (const pr of mergedPrs(task, at)) {
-        if (!today(pr.at)) continue;
-        const existing = prRows.get(pr.number);
-        if (existing && (existing.at >= pr.at || (existing.href && !pr.href))) continue;
-        prRows.set(pr.number, {
-          key: `pr:${pr.number}`,
-          at: pr.at,
-          kind: 'pr',
-          title: `PR #${pr.number} merged`,
-          detail: task.title,
-          href: pr.href ?? existing?.href,
-          sessionKey: runKey,
-          agentId,
-          taskId: task.id,
-          failed: false,
-          target: replyKey ? targetFor(replyKey, `About PR #${pr.number} for the task "${task.title}".`) : undefined,
-        });
-      }
     }
-    done.push(...prRows.values());
   }
+  tasks.sort((a, b) => b.at - a.at || a.key.localeCompare(b.key));
 
-  // Cron runs: failures each, ok runs each unless the job ran often.
+  // Crons: failing ones pinned, today's other failures as one line per job, good runs folded.
+  const failing: DayRow[] = [];
+  const cronLines: DayRow[] = [];
+  const cronsOk: DayRow[] = [];
   let cronOk = 0;
-  let cronFailed = 0;
   let cronPartial = false;
   if (sourceOn('crons')) {
     const cronSessionOf = (jobId: string) => {
@@ -424,62 +496,79 @@ export function buildDay(input: DayInput): Day {
       return undefined;
     };
     for (const job of input.crons) {
-      const entries = input.cronRuns[job.id];
-      if (!entries) continue;
-      const todays = entries.filter((entry) => today(entry.at));
+      const entries = input.cronRuns[job.id] ?? [];
+      const latest = cronLatestState(job, entries);
+      const todays = entries.filter((entry) => today(entry.at)).sort((a, b) => a.at - b.at);
       const oldest = entries.length > 0 ? Math.min(...entries.map((entry) => entry.at)) : undefined;
       const partial = entries.length >= CRON_RUNS_LIMIT && oldest !== undefined && oldest >= dayStart;
-      if (partial) cronPartial = true;
-      const ok = todays.filter((entry) => isOkCronStatus(entry.status)).sort((a, b) => b.at - a.at);
-      const failed = todays.filter((entry) => isFailedCronStatus(entry.status));
-      cronOk += ok.length;
-      cronFailed += failed.length;
-      const title = job.name || job.label || job.id;
+      const ok = todays.filter((entry) => isOkCronStatus(entry.status));
+      const failures = todays.filter((entry) => isFailedCronStatus(entry.status) && entry.status.toLowerCase() !== 'skipped');
+      const isFailing = job.enabled && latest.failed;
+      if (!isFailing && failures.length === 0 && ok.length === 0) continue;
+
       const sessionKey = cronSessionOf(job.id);
-      const base = { kind: 'cron' as const, title, cronId: job.id, agentId: sessionKey ? getSessionAgentId(sessionKey) ?? undefined : undefined };
-      for (const entry of failed) {
-        done.push({ ...base, key: `cron:${job.id}:${entry.at}`, at: entry.at, detail: entry.error || entry.summary, failed: true, sessionKey: entry.sessionKey ?? sessionKey });
-      }
-      if (ok.length > CRON_FOLD_AFTER || (partial && ok.length > 0)) {
-        done.push({
+      const lastFailure = failures.at(-1);
+      const recoveredAt = !latest.failed && lastFailure
+        ? ok.find((entry) => entry.at > lastFailure.at)?.at
+        : undefined;
+      const cron: CronDay = {
+        failing: isFailing,
+        enabled: job.enabled,
+        failedAt: failures.map((entry) => entry.at),
+        ...(recoveredAt !== undefined ? { recoveredAt } : {}),
+        okRuns: ok.length,
+        partial: partial && ok.length > 0,
+        latest: latest.newest,
+        nextRun: isoToMs(job.nextRun),
+        error: lastFailure?.error ?? (isFailing ? latest.error : undefined),
+      };
+      const title = job.name || job.label || job.id;
+      const base = {
+        kind: 'cron' as const,
+        title,
+        cronId: job.id,
+        agentId: sessionKey ? getSessionAgentId(sessionKey) ?? undefined : undefined,
+        sessionKey: latest.newest?.sessionKey ?? sessionKey,
+        cron,
+      };
+
+      if (isFailing) {
+        const failedAt = latest.at ?? now;
+        failing.push({
           ...base,
-          key: `cron:${job.id}:ok`,
-          at: ok[0].at,
-          detail: ok.find((entry) => entry.summary)?.summary,
-          failed: false,
-          runs: { ok: ok.length, partial },
-          sessionKey: ok[0].sessionKey ?? sessionKey,
+          key: `cron:${job.id}:failing`,
+          at: failedAt,
+          failed: true,
+          item: {
+            // Now's key for the same failure, so both views act on one item.
+            key: `crons:${job.id}:cron-failed:${job.lastRun ?? new Date(failedAt).toISOString()}`,
+            source: 'crons',
+            sourceId: job.id,
+            kind: 'cron-failed',
+            section: 'blocked',
+            title,
+            updatedAt: failedAt,
+            deadline: cron.nextRun,
+            priority: 'normal',
+            freshness: input.sources.crons.state === 'live' ? 'live' : 'stale',
+            open: { type: 'cron', id: job.id },
+            detail: { error: cron.error, nextRun: cron.nextRun },
+          },
         });
-      } else {
-        for (const entry of ok) {
-          done.push({ ...base, key: `cron:${job.id}:${entry.at}`, at: entry.at, detail: entry.summary, failed: false, sessionKey: entry.sessionKey ?? sessionKey });
-        }
+      } else if (lastFailure) {
+        cronLines.push({ ...base, key: `cron:${job.id}:failed`, at: recoveredAt ?? lastFailure.at, failed: false });
+      }
+
+      if (ok.length > 0) {
+        cronOk += ok.length;
+        if (cron.partial) cronPartial = true;
+        cronsOk.push({ ...base, key: `cron:${job.id}:ok`, at: ok.at(-1)!.at, failed: false });
       }
     }
   }
-
-  // Spawned sessions that ended today, unless a done task already stands for them.
-  if (sourceOn('sessions')) {
-    for (const [key, end] of ends) {
-      if (!today(end.at) || linkedSessions.has(key)) continue;
-      const session = sessionsByKey.get(key)!;
-      const parent = parentKeyOf(session);
-      done.push({
-        key: `session:${key}`,
-        at: end.at,
-        kind: 'session',
-        title: sessionTitle(session, input),
-        detail: end.failed ? session.lastRunError?.trim() || undefined : undefined,
-        sessionKey: key,
-        agentId: getSessionAgentId(key) ?? undefined,
-        failed: end.failed,
-        status: end.status,
-        target: parent ? targetFor(key, undefined) : undefined,
-      });
-    }
-  }
-
-  done.sort((a, b) => b.at - a.at || a.key.localeCompare(b.key));
+  failing.sort((a, b) => b.at - a.at || a.key.localeCompare(b.key));
+  cronLines.sort((a, b) => b.at - a.at || a.key.localeCompare(b.key));
+  cronsOk.sort((a, b) => b.at - a.at || a.key.localeCompare(b.key));
 
   // Chats active today, subagents under their parent.
   const chatRows = new Map<string, ChatRow>();
@@ -491,6 +580,8 @@ export function buildDay(input: DayInput): Day {
       if (!today(activity)) continue;
       const end = ends.get(key);
       const granular = input.agentStatus[key];
+      const running = isRunning(session, input);
+      const failingNow = !running && granular?.status === 'ERROR';
       chatRows.set(key, {
         key,
         title: sessionTitle(session, input),
@@ -498,9 +589,12 @@ export function buildDay(input: DayInput): Day {
         channel: channelOf(session),
         lastActivity: activity,
         topLevel: isTopLevelAgentSessionKey(key),
-        running: isRunning(session, input),
-        failed: granular?.status === 'ERROR' || Boolean(end?.failed),
+        spawned: isSpawnedSession(session),
+        running,
+        failing: failingNow,
+        failed: failingNow || Boolean(end?.failed),
         ended: Boolean(end),
+        ...(end ? { end: { at: end.at, status: end.status, ...(end.failed && session.lastRunError?.trim() ? { error: session.lastRunError.trim() } : {}) } } : {}),
         needs: input.needsReply.get(key),
         target: targetFor(key, undefined),
         children: [],
@@ -523,50 +617,61 @@ export function buildDay(input: DayInput): Day {
   sortTree(roots);
   // Top-level agent chats first, then any chat whose parent was not active today.
   const chats = [...roots.filter((row) => row.topLevel), ...roots.filter((row) => !row.topLevel)];
+  const failingChats = [...chatRows.values()].filter((row) => row.failing).length;
 
   return {
     dayStart,
     dayKey: localDayKey(now),
     stats: {
       sessions: chatRows.size,
-      done: done.filter((row) => row.kind === 'task' || (row.kind === 'session' && !row.failed)).length,
-      merged: done.filter((row) => row.kind === 'pr').length,
+      done: tasks.length,
+      merged,
       cronOk,
-      cronFailed,
+      cronFailed: failing.length,
+      failing: failing.length + failingChats,
       cronPartial,
     },
-    done,
+    failing,
+    done: [...tasks, ...cronLines],
+    cronsOk,
     chats,
   };
-}
-
-export interface HourGroup<T> {
-  /** `14:00`, or null when the list is short enough to show ungrouped. */
-  label: string | null;
-  rows: T[];
-}
-
-/** Consecutive rows in the same local hour, once the list is longer than `after`. */
-export function groupByHour<T extends { at: number }>(rows: T[], after = GROUP_BY_HOUR_AFTER): HourGroup<T>[] {
-  if (rows.length <= after) return [{ label: null, rows }];
-  const groups: HourGroup<T>[] = [];
-  for (const row of rows) {
-    const label = `${String(new Date(row.at).getHours()).padStart(2, '0')}:00`;
-    const last = groups[groups.length - 1];
-    if (last && last.label === label) last.rows.push(row);
-    else groups.push({ label, rows: [row] });
-  }
-  return groups;
 }
 
 export function flattenChats(rows: ChatRow[]): ChatRow[] {
   return rows.flatMap((row) => [row, ...flattenChats(row.children)]);
 }
 
+/** Whose turn a chat is: Waiting on you, Working, or no marker. */
+export type TurnMarker = 'waiting' | 'working' | null;
+
 /**
- * The day's compact facts for the paragraph: counts, a short line per done row and per chat,
- * and the sources that were not read. Chat lines carry no times, so the facts only change when
- * something new happens.
+ * Whose turn a chat is. Waiting on you when the Now board holds the session against the
+ * operator; Working while a run is active; Waiting on you again when the thread's newest
+ * message is the agent's and asks the operator something. A subagent's "user" is its parent
+ * agent, so a spawned session never waits on the operator from its own thread.
+ */
+export function turnOf(row: ChatRow, summary: ThreadSummary | undefined): TurnMarker {
+  if (row.needs) return 'waiting';
+  if (row.running) return 'working';
+  if (!row.spawned && !row.ended && summary?.lastSpeaker === 'agent' && summary.asksOperator) return 'waiting';
+  return null;
+}
+
+/**
+ * The first sentence of a summary, whole: it ends at `.`, `!` or `?` followed by a space and a
+ * capital (or the end of the text), so "v1.6.0", "e.g. this" and "PR #460." do not cut it.
+ */
+export function firstSentence(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  const match = /^.+?[.!?]["')\]]*(?=\s+["'([]?[A-Z0-9]|$)/.exec(flat);
+  return match ? match[0] : flat;
+}
+
+/**
+ * The day's compact facts for the paragraph: counts, a short line per thing done and per chat,
+ * and the sources that were not read. Successful and recovered cron runs are left out. Chat
+ * lines carry no times, so the facts only change when something new happens.
  */
 export function dayFacts(day: Day, missing: string[]): {
   day: string;
@@ -576,25 +681,16 @@ export function dayFacts(day: Day, missing: string[]): {
   missing: string[];
 } {
   const clip = (text: string) => (text.length > 200 ? `${text.slice(0, 197).trimEnd()}...` : text);
-  // Cron runs that went fine are routine; the paragraph hears only about failed ones.
-  const doneLines = day.done.filter((row) => row.kind !== 'cron' || row.failed).map((row) => {
-    const clock = formatClock(row.at);
-    switch (row.kind) {
-      case 'task':
-        return clip(`${clock} Task done: ${flatten(row.title)}`);
-      case 'pr':
-        return clip(`${clock} ${row.title} (${flatten(row.detail ?? '')})`);
-      case 'session':
-        return clip(`${clock} Subagent ${flatten(row.title)} ${row.failed ? `ended ${row.status}` : 'finished'}`);
-      case 'cron':
-        return clip(`${clock} Cron ${flatten(row.title)} failed`);
-    }
-  });
+  const failingLines = day.failing.map((row) => clip(`${formatClock(row.at)} Cron ${flatten(row.title)} failed`));
+  const taskLines = day.done.filter((row) => row.kind === 'task').flatMap((row) => [
+    clip(`${formatClock(row.at)} Task done: ${flatten(row.title)}`),
+    ...(row.prs ?? []).map((pr) => clip(`${formatClock(pr.at)} PR #${pr.number} merged (${flatten(row.title)})`)),
+  ]);
   const chatLines = flattenChats(day.chats).map((row) => clip([
     flatten(row.title),
     row.channel,
     row.running ? 'running' : undefined,
-    row.ended ? 'finished' : undefined,
+    row.failing ? 'failed' : row.ended ? (row.end && FAILED_END_STATUSES.has(row.end.status) ? `ended ${row.end.status}` : 'finished') : undefined,
     row.needs ? `needs the operator (${row.needs})` : undefined,
   ].filter(Boolean).join(', ')));
   return {
@@ -605,7 +701,7 @@ export function dayFacts(day: Day, missing: string[]): {
       merged: day.stats.merged,
       cronFailed: day.stats.cronFailed,
     },
-    done: doneLines.slice(0, 40),
+    done: [...failingLines, ...taskLines].slice(0, 40),
     chats: chatLines.slice(0, 30),
     missing,
   };

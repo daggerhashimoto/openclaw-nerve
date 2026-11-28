@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KanbanTask } from '@/features/kanban/types';
@@ -7,6 +8,10 @@ import type { OpenTarget, SourceStatus } from '../types';
 import type { ThreadSummary } from '../useAttentionSummaries';
 import { setAttentionSegment } from '../attentionSegment';
 import { AttentionView } from '../AttentionView';
+import { createInlineReplies } from '../useInlineReplies';
+import type { AttentionActionsConfig } from '../useAttentionActions';
+import { TodayView, type TodayViewProps } from './TodayView';
+import { TODAY_SECTIONS_KEY } from './todaySections';
 
 const NOW = new Date(2026, 10, 28, 15, 0).getTime();
 const HOUR = 3_600_000;
@@ -139,6 +144,7 @@ function stubFetch(plan: FetchPlan = {}) {
       if (entries === 'fail') return reply({ ok: false, error: 'gateway down' }, false);
       return reply({ ok: true, result: { entries } });
     }
+    if (/^\/api\/crons\/[^/]+\/run$/.exec(url)) return reply({ ok: true });
     if (url === '/api/attention/day-summary') {
       if (plan.day === 'fail') return reply({}, false);
       return reply({ summary: plan.day ?? { status: 'error' } });
@@ -165,9 +171,61 @@ function section(name: string) {
 }
 
 function rowFor(text: string) {
-  return [...screen.getAllByTestId('today-row'), ...screen.queryAllByTestId('today-chat')]
+  return [...screen.queryAllByTestId('today-row'), ...screen.queryAllByTestId('today-chat'), ...screen.queryAllByTestId('today-cron-ok-row')]
     .find((row) => row.textContent?.includes(text)) as HTMLElement;
 }
+
+/** The row's own block: its toggle, its open detail and its reply. */
+function blockOf(row: HTMLElement) {
+  return (row.closest('[data-testid="today-chat-row"]') ?? row.closest('[data-testid="today-failing"]') ?? row.parentElement) as HTMLElement;
+}
+
+const NAMES = new Map([['main', 'Kim'], ['forge', 'Forge'], ['linus', 'Linus']]);
+const LIVE_SOURCES = { tasks: live(), crons: live(), sessions: live() };
+
+/** Today on its own, as the Attention view hands it its data. */
+function Harness(props: Partial<TodayViewProps>) {
+  const [store] = useState(() => createInlineReplies({ rpc, subscribe } as unknown as Parameters<typeof createInlineReplies>[0]));
+  const replies = {
+    store,
+    connected: true,
+    connecting: false,
+    nameOf: (key: string) => NAMES.get(key.split(':')[1]) ?? key.split(':')[1],
+  };
+  return (
+    <TodayView
+      active
+      compact={false}
+      now={NOW}
+      tasks={[]}
+      crons={[]}
+      sources={LIVE_SOURCES}
+      sessions={[]}
+      agentStatus={{}}
+      busyState={{}}
+      needsReply={new Map()}
+      agentNames={NAMES}
+      replies={replies}
+      disconnectedSince={null}
+      onOpen={() => {}}
+      onRefresh={() => {}}
+      refreshSignal={0}
+      {...props}
+    />
+  );
+}
+
+function renderToday(props: Partial<TodayViewProps> = {}) {
+  const onOpen = vi.fn<(target: OpenTarget) => void>();
+  const onRefresh = vi.fn();
+  const all = { onOpen, onRefresh, ...props };
+  const utils = render(<Harness {...all} />);
+  return { ...utils, onOpen, onRefresh, rerenderToday: (next: Partial<TodayViewProps>) => utils.rerender(<Harness {...all} {...next} />) };
+}
+
+const summaries = (map: Record<string, ThreadSummary>) => (args: SummariesArgs) => (
+  Object.fromEntries(args.sessionKeys.filter((key) => map[key]).map((key) => [key, map[key]]))
+);
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -199,7 +257,8 @@ describe('Now | Today switch', () => {
     openToday();
     expect(localStorage.getItem(SEGMENT_KEY)).toBe('today');
     expect(screen.getByRole('heading', { level: 1, name: 'Today, Sat 28 Nov' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { level: 2, name: 'Waiting on you' })).toBeNull();
+    // Whether Now stays mounted behind Today is the view's business; the tabs say which shows.
+    expect(screen.getByRole('button', { name: 'Now' })).toHaveAttribute('aria-pressed', 'false');
     first.unmount();
 
     renderView();
@@ -232,38 +291,39 @@ describe('Now | Today switch', () => {
   });
 });
 
-describe('Today', () => {
-  beforeEach(() => {
-    localStorage.setItem(SEGMENT_KEY, 'today');
-  });
-
-  it('shows the facts strip and the paragraph from the server', async () => {
+describe('Today: facts and paragraph', () => {
+  it('shows one line of facts, without cron runs ok, and a recovered failure is not failing', async () => {
     const fetchMock = stubFetch({
-      runs: { c1: [{ ts: at(7), status: 'ok' }, { ts: at(8), status: 'error', error: 'AccessDenied' }] },
-      day: { status: 'ready', text: 'Forge fixed the retry test and the morning brief failed once.' },
+      runs: {
+        c1: [{ ts: at(12, 3), status: 'ok' }, { ts: at(9), status: 'error', error: 'AccessDenied' }],
+        c2: [{ ts: at(13), status: 'error', error: 'Timeout' }],
+      },
+      day: { status: 'ready', text: 'The nightly backup is failing. Forge fixed the retry test.' },
     });
-    setSessions([FORGE_MAIN]);
-    setSources({
+    renderToday({
+      sessions: [FORGE_MAIN],
       tasks: [task(), task({ id: 't2', title: 'Ship notes', feedback: [{ at: at(14, 20), by: 'agent:forge', note: 'Merged #458 as 5edad4f.' }], updatedAt: at(14, 20) })],
-      crons: [cron()],
+      crons: [cron({ lastRun: new Date(at(12, 3)).toISOString() }), cron({ id: 'c2', name: 'Nightly backup', lastRun: new Date(at(13)).toISOString(), lastStatus: 'error' })],
     });
-    renderView();
 
-    const facts = await screen.findByTestId('today-facts');
-    await waitFor(() => expect(facts).toHaveTextContent('1 session· 2 done· 1 merged· 1 cron run ok· 1 failed'));
-    expect(await screen.findByTestId('today-paragraph')).toHaveTextContent('Forge fixed the retry test');
+    const facts = screen.getByTestId('today-facts');
+    await waitFor(() => expect(facts).toHaveTextContent('1 chat·2 done·1 merged·1 failing'));
+    expect(facts).not.toHaveTextContent('cron');
+    expect(await screen.findByTestId('today-paragraph')).toHaveTextContent('The nightly backup is failing.');
+    // No checked time on a normal day.
+    expect(screen.queryByText(/Checked/)).toBeNull();
 
     const dayCall = fetchMock.mock.calls.find(([url]) => url === '/api/attention/day-summary');
     const body = JSON.parse(String((dayCall as unknown as [string, RequestInit])[1].body)) as { facts: { day: string; counts: unknown; done: string[] } };
-    expect(body.facts.day).toBe('2026-11-28');
     expect(body.facts.counts).toEqual({ sessions: 1, done: 2, merged: 1, cronFailed: 1 });
+    expect(body.facts.done[0]).toBe('13:00 Cron Nightly backup failed');
     expect(body.facts.done).toContain('14:20 PR #458 merged (Ship notes)');
+    expect(body.facts.done.join('\n')).not.toContain('Morning brief');
   });
 
   it('shows the facts alone when the paragraph cannot be written', async () => {
     stubFetch({ day: { status: 'error' } });
-    setSources({ tasks: [task()] });
-    renderView();
+    renderToday({ tasks: [task()] });
     await waitFor(() => expect(screen.getByTestId('today-facts')).toHaveTextContent('1 done'));
     expect(screen.queryByTestId('today-paragraph')).toBeNull();
     expect(screen.queryByText('Summarizing the day...')).toBeNull();
@@ -271,79 +331,304 @@ describe('Today', () => {
 
   it('does not ask for the paragraph while a source is still loading', async () => {
     const fetchMock = stubFetch({ day: { status: 'ready', text: 'Never asked.' } });
-    setSources({ sources: { tasks: { state: 'loading' }, proposals: live(), crons: live() } });
-    renderView();
+    renderToday({ sources: { ...LIVE_SOURCES, tasks: { state: 'loading' } } });
     expect(within(section('Done today')).getByText('Loading tasks.')).toBeInTheDocument();
     await act(async () => { await Promise.resolve(); });
     expect(fetchMock.mock.calls.some(([url]) => url === '/api/attention/day-summary')).toBe(false);
   });
 
-  it('desktop shows both sections open; phones start them collapsed with counts', () => {
-    setSessions([FORGE_MAIN]);
-    setSources({ tasks: [task()] });
-    const desktop = renderView();
-    expect(within(section('Done today')).getAllByTestId('today-row')).toHaveLength(1);
-    // Chats today leads; Done today follows it.
-    expect(section('Chats today').compareDocumentPosition(section('Done today')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    desktop.unmount();
+  it('filters Done to what a fact counts, and the same fact clears it', async () => {
+    stubFetch({ runs: { c2: [{ ts: at(13), status: 'error', error: 'Timeout' }] } });
+    renderToday({
+      sessions: [FORGE_MAIN],
+      tasks: [task(), task({ id: 't2', title: 'Ship notes', feedback: [{ at: at(14, 20), by: 'agent:forge', note: 'Merged #458 as 5edad4f.' }], updatedAt: at(14, 20) })],
+      crons: [cron({ id: 'c2', name: 'Nightly backup', lastRun: new Date(at(13)).toISOString(), lastStatus: 'error' })],
+    });
+    await screen.findByTestId('today-failing');
+    const titles = () => within(section('Done today')).queryAllByTestId('today-row').map((row) => row.textContent ?? '');
 
-    renderView({ compact: true });
+    const merged = screen.getByTestId('today-fact-merged');
+    fireEvent.click(merged);
+    expect(merged).toHaveAttribute('aria-pressed', 'true');
+    expect(titles()).toEqual([expect.stringContaining('Ship notes')]);
+
+    fireEvent.click(screen.getByTestId('today-fact-failing'));
+    expect(titles()).toEqual([expect.stringContaining('Nightly backup')]);
+    expect(screen.getByTestId('today-fact-failing')).toHaveAttribute('aria-pressed', 'true');
+    expect(merged).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(screen.getByTestId('today-fact-failing'));
+    expect(titles()).toHaveLength(3);
+
+    fireEvent.click(screen.getByTestId('today-fact-done'));
+    expect(titles()).toEqual([expect.stringContaining('Ship notes'), expect.stringContaining('Fix the flaky retry test')]);
+    // Chats are never hidden by a Done filter.
+    expect(within(section('Chats today')).getAllByTestId('today-chat')).toHaveLength(1);
+    fireEvent.click(within(section('Done today')).getByRole('button', { name: 'Show all' }));
+    expect(titles()).toHaveLength(3);
+  });
+
+  it('the chats fact opens Chats today and jumps to it', () => {
+    localStorage.setItem(TODAY_SECTIONS_KEY, JSON.stringify({ desk: { chats: false } }));
+    renderToday({ sessions: [FORGE_MAIN] });
+    expect(within(section('Chats today')).queryAllByTestId('today-chat')).toHaveLength(0);
+    fireEvent.click(screen.getByTestId('today-fact-chats'));
+    expect(within(section('Chats today')).getAllByTestId('today-chat')).toHaveLength(1);
+  });
+});
+
+describe('Today: sections', () => {
+  it('puts Chats in the wide column and Done in the rail, both open at the desk', () => {
+    renderToday({ sessions: [FORGE_MAIN], tasks: [task()] });
+    const grid = section('Chats today').closest('.attention-grid') as HTMLElement;
+    expect(grid).not.toBeNull();
+    expect(grid.contains(section('Done today'))).toBe(true);
+    expect(section('Chats today').compareDocumentPosition(section('Done today')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(section('Done today')).getAllByTestId('today-row')).toHaveLength(1);
+    expect(within(section('Chats today')).getAllByTestId('today-chat')).toHaveLength(1);
+  });
+
+  it('opens Chats and collapses Done on phones, with counts and 44px targets', () => {
+    renderToday({ compact: true, sessions: [FORGE_MAIN], tasks: [task()] });
+    expect(within(section('Chats today')).getAllByTestId('today-chat')).toHaveLength(1);
     const done = section('Done today');
     const header = within(done).getByRole('button', { expanded: false });
     expect(header.className).toContain('min-h-11');
     expect(within(done).getByTestId('today-done-count')).toHaveTextContent('1');
-    expect(within(section('Chats today')).getByTestId('today-chats-count')).toHaveTextContent('1');
-    expect(screen.queryAllByTestId('today-row')).toHaveLength(0);
+    expect(within(done).queryAllByTestId('today-row')).toHaveLength(0);
 
     fireEvent.click(header);
     const rows = within(done).getAllByTestId('today-row');
     expect(rows).toHaveLength(1);
-    const height = rows[0].className.match(/min-h-\[(\d+)px\]/);
-    expect(Number(height![1])).toBeGreaterThanOrEqual(44);
+    expect(Number(rows[0].className.match(/min-h-\[(\d+)px\]/)![1])).toBeGreaterThanOrEqual(44);
   });
 
-  it('opens a row in place with its result, its thread summary and a Nudge, asking summaries only then', () => {
-    summariesMock.mockImplementation(({ sessionKeys }) => (
-      sessionKeys.includes('agent:forge:main') ? { 'agent:forge:main': { status: 'ready', text: 'Forge patched the backoff.' } } : {}
-    ));
-    setSessions([FORGE_MAIN]);
-    setSources({ tasks: [task()] });
-    const { onOpen } = renderView();
-    expect(summariesMock.mock.calls.at(-1)![0].sessionKeys).toEqual([]);
+  it('remembers a toggled section per layout across reloads, and survives storage that throws', () => {
+    const phone = renderToday({ compact: true, tasks: [task()] });
+    fireEvent.click(within(section('Done today')).getByRole('button', { expanded: false }));
+    expect(JSON.parse(localStorage.getItem(TODAY_SECTIONS_KEY)!)).toEqual({ phone: { done: true } });
+    phone.unmount();
 
-    const row = rowFor('Fix the flaky retry test');
-    expect(row).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(row);
-    expect(row).toHaveAttribute('aria-expanded', 'true');
-    expect(summariesMock.mock.calls.at(-1)![0].sessionKeys).toEqual(['agent:forge:main']);
+    const again = renderToday({ compact: true, tasks: [task()] });
+    expect(within(section('Done today')).getAllByTestId('today-row')).toHaveLength(1);
+    again.unmount();
 
-    const detail = within(row.parentElement as HTMLElement).getByTestId('today-row-detail');
-    expect(within(detail).getByText('Patched the retry backoff and reran the suite.')).toBeInTheDocument();
-    expect(within(detail).getByText('Forge patched the backoff.')).toBeInTheDocument();
-    fireEvent.click(within(detail).getByRole('button', { name: 'Open task' }));
-    expect(onOpen).toHaveBeenCalledWith({ type: 'task', id: 't1' });
+    // The desk keeps its own default.
+    const desk = renderToday({ tasks: [task()] });
+    fireEvent.click(within(section('Chats today')).getByRole('button', { expanded: true }));
+    desk.unmount();
+    expect(JSON.parse(localStorage.getItem(TODAY_SECTIONS_KEY)!)).toEqual({ phone: { done: true }, desk: { chats: false } });
 
-    fireEvent.click(within(detail).getByRole('button', { name: 'Nudge' }));
-    expect(within(detail).getByRole('textbox', { name: 'Nudge Forge' })).toBeInTheDocument();
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
+    renderToday({ compact: true, tasks: [task()] });
+    const done = section('Done today');
+    expect(within(done).queryAllByTestId('today-row')).toHaveLength(0);
+    fireEvent.click(within(done).getByRole('button', { expanded: false }));
+    expect(within(done).getAllByTestId('today-row')).toHaveLength(1);
+    getItem.mockRestore();
+    setItem.mockRestore();
   });
 
-  it('a card worked through notes alone nudges the agent who wrote them', async () => {
-    setSessions([{ key: 'agent:linus:main', identityName: 'Linus', updatedAt: at(14) }]);
-    setSources({
+  it('keeps open rows while it stays mounted', () => {
+    const view = renderToday({ tasks: [task()] });
+    fireEvent.click(rowFor('Fix the flaky retry test'));
+    view.rerenderToday({ active: false });
+    view.rerenderToday({ active: true });
+    expect(rowFor('Fix the flaky retry test')).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
+describe('Today: chats', () => {
+  const KIM: Session = { key: 'agent:main:main', channel: 'telegram', updatedAt: at(14, 50) };
+  const TUNA: Session = { key: 'agent:main:telegram:tuna:direct:42', channel: 'telegram', updatedAt: at(14, 40) };
+
+  it('asks every chat\'s summary in one call', () => {
+    renderToday({ sessions: [KIM, FORGE_MAIN, SUBAGENT, TUNA] });
+    const keys = summariesMock.mock.calls.at(-1)![0].sessionKeys;
+    expect([...keys].sort()).toEqual(['agent:forge:main', 'agent:forge:subagent:fix', 'agent:main:main', 'agent:main:telegram:tuna:direct:42']);
+  });
+
+  it('says what each chat is about in its first whole sentence, and whose turn it is', () => {
+    const long = `Kim rewrote the deploy script for v1.6.0, moved the health check behind the restart and tested it on staging twice, so the rollback path is covered. ${'It also cleaned the logs. '.repeat(10)}Should it ship to production now?`;
+    summariesMock.mockImplementation(summaries({
+      'agent:main:main': { status: 'ready', text: long, lastSpeaker: 'agent', asksOperator: true },
+      'agent:forge:main': { status: 'ready', text: 'Forge is fixing the retry test. It is still running.', lastSpeaker: 'operator', asksOperator: false },
+      'agent:forge:subagent:fix': { status: 'ready', text: 'Patched the backoff. Want me to also bump the timeout?', lastSpeaker: 'agent', asksOperator: true },
+      'agent:main:telegram:tuna:direct:42': { status: 'ready', text: 'Tuna asked about dinner. Kim answered.', lastSpeaker: 'agent', asksOperator: false },
+    }));
+    renderToday({
+      sessions: [KIM, { ...FORGE_MAIN, hasActiveRun: true }, SUBAGENT, TUNA],
+    });
+    const chat = (text: string) => rowFor(text);
+
+    const kim = chat('Kim');
+    expect(within(kim).getByTestId('today-gist')).toHaveTextContent(/^Kim rewrote the deploy script for v1\.6\.0, .* so the rollback path is covered\.$/);
+    expect(within(kim).getByTestId('today-turn')).toHaveTextContent('Waiting on you');
+    expect(within(kim).getByText('telegram')).toBeInTheDocument();
+
+    expect(within(chat('Forge')).getByTestId('today-turn')).toHaveTextContent('Working');
+    // A subagent's question is to its parent agent, and it has ended.
+    const sub = chat('fix-retry');
+    expect(within(sub).queryByTestId('today-turn')).toBeNull();
+    expect(sub).toHaveTextContent('Finished 13:40');
+    // The agent answered without asking anything: no marker.
+    const tuna = chat('Tuna asked about dinner.');
+    expect(tuna).toHaveTextContent('Kim on telegram');
+    expect(within(tuna).queryByTestId('today-turn')).toBeNull();
+  });
+
+  it('marks a chat the Now board holds as waiting, naming why, without a row of its own', () => {
+    renderToday({ sessions: [FORGE_MAIN], needsReply: new Map([['agent:forge:main', 'Review']]) });
+    const row = rowFor('Forge');
+    expect(within(row).getByTestId('today-turn')).toHaveTextContent('Waiting on you');
+    expect(row).toHaveTextContent('Review on Now');
+    expect(screen.getAllByTestId('today-chat')).toHaveLength(1);
+    expect(screen.queryAllByTestId('today-row')).toHaveLength(0);
+  });
+
+  it('opens to the whole summary, and Reply on a waiting chat sends into it', async () => {
+    const text = 'Kim drafted the release notes. It wants a yes before posting them. Should it post?';
+    summariesMock.mockImplementation(summaries({ 'agent:main:main': { status: 'ready', text, lastSpeaker: 'agent', asksOperator: true } }));
+    const { onOpen } = renderToday({ sessions: [KIM] });
+    const block = blockOf(rowFor('Kim'));
+    fireEvent.click(within(block).getByRole('button', { name: 'Reply' }));
+    const detail = within(block).getByTestId('today-row-detail');
+    expect(within(detail).getByText(text)).toBeInTheDocument();
+    expect(within(block).queryByTestId('today-gist')).toBeNull();
+    const field = within(detail).getByRole('textbox', { name: 'Reply to Kim' });
+    fireEvent.change(field, { target: { value: 'Yes, post them.' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(rpc.mock.calls.some(([method]) => method === 'chat.send')).toBe(true));
+    const send = rpc.mock.calls.find(([method]) => method === 'chat.send')![1];
+    expect(send.sessionKey).toBe('agent:main:main');
+    expect(String(send.message)).toBe('Yes, post them.');
+    expect(within(block).getByTestId('inline-reply')).toBeInTheDocument();
+
+    fireEvent.click(within(detail).getByRole('button', { name: 'Open in chat' }));
+    expect(onOpen).toHaveBeenCalledWith({ type: 'session', key: 'agent:main:main' });
+  });
+
+  it('nests a finished subagent under its parent, asks the parent, and never repeats it in Done', async () => {
+    renderToday({ sessions: [FORGE_MAIN, SUBAGENT] });
+    const chats = within(section('Chats today')).getAllByTestId('today-chat');
+    expect(chats.map((row) => row.textContent)).toEqual([expect.stringContaining('Forge'), expect.stringContaining('fix-retry')]);
+    expect(within(section('Done today')).queryAllByTestId('today-row')).toHaveLength(0);
+    expect(within(section('Done today')).getByText('Nothing has finished yet today.')).toBeInTheDocument();
+
+    const sub = rowFor('fix-retry');
+    fireEvent.click(sub);
+    const detail = within(blockOf(sub)).getByTestId('today-row-detail');
+    fireEvent.click(within(detail).getByRole('button', { name: 'Ask Forge' }));
+    const field = within(detail).getByRole('textbox', { name: 'Ask Forge' });
+    fireEvent.change(field, { target: { value: 'Did it pass on CI?' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(rpc.mock.calls.some(([method]) => method === 'chat.send')).toBe(true));
+    const send = rpc.mock.calls.find(([method]) => method === 'chat.send')![1];
+    expect(send.sessionKey).toBe('agent:forge:main');
+    expect(String(send.message)).toMatch(/^About the subagent "fix-retry" \(agent:forge:subagent:fix\), which finished at 13:40\.\n\nDid it pass on CI\?$/);
+    expect(screen.getAllByTestId('inline-reply')).toHaveLength(1);
+  });
+});
+
+describe('Today: done', () => {
+  it('pins a failing cron with Run now, which runs through the actions it is given', async () => {
+    const fetchMock = stubFetch({ runs: { c2: [{ ts: at(13), status: 'error', error: 'Timeout', summary: 'Gave up after 3 tries', durationMs: 65_000 }] } });
+    const onDone = vi.fn();
+    const actions: AttentionActionsConfig = { kanbanEnabled: true, onDone };
+    renderToday({
+      tasks: [task({ updatedAt: at(14, 30) })],
+      crons: [cron({ id: 'c2', name: 'Nightly backup', lastRun: new Date(at(13)).toISOString(), lastStatus: 'error', nextRun: new Date(at(16)).toISOString() })],
+      actions,
+    });
+    const failing = await screen.findByTestId('today-failing');
+    const rows = within(section('Done today')).getAllByTestId('today-row');
+    expect(rows[0]).toHaveTextContent('Nightly backup');
+    expect(rows[0]).toHaveTextContent('Failed 13:00');
+
+    fireEvent.click(within(failing).getByRole('button', { name: 'Run now' }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ kind: 'cron-failed', sourceId: 'c2' }), 'run-cron'));
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/crons/c2/run')).toBe(true);
+
+    fireEvent.click(rows[0]);
+    const detail = within(failing).getByTestId('today-row-detail');
+    expect(detail).toHaveTextContent('Timeout');
+    expect(detail).toHaveTextContent('Gave up after 3 tries');
+    expect(detail).toHaveTextContent('Last run 13:00 · took 1m 5s · next 16:00');
+    expect(within(detail).getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+  });
+
+  it('without actions from the view, Run now refreshes Today when it lands', async () => {
+    stubFetch({ runs: { c2: [{ ts: at(13), status: 'error' }] } });
+    const { onRefresh } = renderToday({
+      crons: [cron({ id: 'c2', name: 'Nightly backup', lastRun: new Date(at(13)).toISOString(), lastStatus: 'error' })],
+    });
+    fireEvent.click(within(await screen.findByTestId('today-failing')).getByRole('button', { name: 'Run now' }));
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it('shows a failure that recovered as one quiet line', async () => {
+    stubFetch({ runs: { c1: [{ ts: at(12, 3), status: 'ok' }, { ts: at(9), status: 'error', error: 'AccessDenied' }] } });
+    renderToday({ crons: [cron({ lastRun: new Date(at(12, 3)).toISOString() })] });
+    await waitFor(() => expect(rowFor('Morning brief')).toBeDefined());
+    expect(screen.queryByTestId('today-failing')).toBeNull();
+    const rows = within(section('Done today')).getAllByTestId('today-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent('Failed 09:00, recovered 12:03');
+    expect(rows[0].querySelector('[data-state]')).toHaveAttribute('data-state', 'off');
+  });
+
+  it('folds successful cron runs into one line that opens to a row per job with its last run', async () => {
+    stubFetch({
+      runs: {
+        c1: [{ ts: at(7), status: 'ok', summary: 'Brief sent to Telegram', durationMs: 4_200 }, { ts: at(6), status: 'ok' }],
+        c3: [{ ts: at(14), status: 'ok' }],
+      },
+    });
+    renderToday({
+      crons: [cron({ nextRun: new Date(at(19)).toISOString() }), cron({ id: 'c3', name: 'Merge watch', lastRun: new Date(at(14)).toISOString() })],
+    });
+    const fold = await screen.findByTestId('today-crons-ok');
+    const toggle = within(fold).getByRole('button', { name: '3 cron runs ok' });
+    expect(within(fold).queryAllByTestId('today-cron-ok-row')).toHaveLength(0);
+    fireEvent.click(toggle);
+    const jobs = within(fold).getAllByTestId('today-cron-ok-row');
+    expect(jobs.map((row) => row.textContent)).toEqual([expect.stringContaining('Merge watch1 run ok'), expect.stringContaining('Morning brief2 runs ok')]);
+    fireEvent.click(jobs[1]);
+    const detail = within(fold).getByTestId('today-row-detail');
+    expect(within(detail).getByTestId('today-cron-output')).toHaveTextContent('Brief sent to Telegram');
+    expect(detail).toHaveTextContent('Last run 07:00 · took 4s · next 19:00');
+  });
+
+  it('prints a shared time once and lines an open row\'s detail up with its title', () => {
+    renderToday({
+      tasks: [task({ id: 'a', title: 'First', updatedAt: at(14, 12) }), task({ id: 'b', title: 'Second', updatedAt: at(14, 12) }), task({ id: 'c', title: 'Third', updatedAt: at(11) })],
+    });
+    const rows = within(section('Done today')).getAllByTestId('today-row');
+    const clocks = rows.map((row) => row.querySelector('.font-mono')?.textContent);
+    expect(clocks).toEqual(['14:12', '', '11:00']);
+    fireEvent.click(rows[0]);
+    const detail = within(blockOf(rows[0])).getByTestId('today-row-detail');
+    // 4px row inset + time column + gap + pane + gap.
+    expect(detail.style.paddingLeft).toBe(`${0.25 + 2.75 + 0.625 + 0.667 + 0.625}rem`);
+  });
+
+  it('a task carries the pull requests it merged, and Nudge goes to its agent', async () => {
+    renderToday({
+      sessions: [{ key: 'agent:linus:main', identityName: 'Linus', updatedAt: at(14) }],
       tasks: [task({
         assignee: undefined,
         run: undefined,
         result: undefined,
-        feedback: [{ at: at(14, 12), by: 'agent:linus', note: 'Merged #456 as 8a0b787. Closing card.' }],
+        feedback: [{ at: at(14, 12), by: 'agent:linus', note: 'Merged #456 as 8a0b787 (https://github.com/acme/app/pull/456). Closing card.' }],
       })],
     });
-    renderView();
-    expect(rowFor('PR #456 merged')).toHaveTextContent('Fix the flaky retry test · Linus');
-    const row = rowFor('Task done');
-    expect(row).toHaveTextContent('Task done · Linus');
+    const row = rowFor('Fix the flaky retry test');
+    expect(row).toHaveTextContent('Linus · merged #456');
+    expect(within(section('Done today')).getAllByTestId('today-row')).toHaveLength(1);
     fireEvent.click(row);
-    const detail = within(row.parentElement as HTMLElement).getByTestId('today-row-detail');
-    expect(within(detail).getByText('Merged #456 as 8a0b787. Closing card.')).toBeInTheDocument();
+    const detail = within(blockOf(row)).getByTestId('today-row-detail');
+    expect(within(detail).getByRole('link', { name: 'Open PR #456' })).toHaveAttribute('href', 'https://github.com/acme/app/pull/456');
     fireEvent.click(within(detail).getByRole('button', { name: 'Nudge' }));
     const field = within(detail).getByRole('textbox', { name: 'Nudge Linus' });
     fireEvent.change(field, { target: { value: 'Is the device test done?' } });
@@ -354,52 +639,24 @@ describe('Today', () => {
     expect(String(send.message)).toBe('About the task "Fix the flaky retry test", done at 14:12.\n\nIs the device test done?');
   });
 
-  it('a finished subagent asks its parent, with a line about the subagent', async () => {
-    setSessions([FORGE_MAIN, SUBAGENT]);
-    setSources();
-    renderView();
-
-    const row = rowFor('fix-retry');
-    expect(row).toHaveTextContent('Subagent finished');
+  it('asks the thread summary of an open task row with the chats', () => {
+    summariesMock.mockImplementation(summaries({ 'agent:forge:main': { status: 'ready', text: 'Forge patched the backoff.' } }));
+    renderToday({ tasks: [task()] });
+    expect(summariesMock.mock.calls.at(-1)![0].sessionKeys).toEqual([]);
+    const row = rowFor('Fix the flaky retry test');
     fireEvent.click(row);
-    const detail = within(row.parentElement as HTMLElement).getByTestId('today-row-detail');
-    fireEvent.click(within(detail).getByRole('button', { name: 'Ask Forge' }));
-    const field = within(detail).getByRole('textbox', { name: 'Ask Forge' });
-    fireEvent.change(field, { target: { value: 'Did it pass on CI?' } });
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    await waitFor(() => expect(rpc.mock.calls.some(([method]) => method === 'chat.send')).toBe(true));
-    const send = rpc.mock.calls.find(([method]) => method === 'chat.send')![1];
-    expect(send.sessionKey).toBe('agent:forge:main');
-    expect(String(send.message)).toMatch(/^About the subagent "fix-retry" \(agent:forge:subagent:fix\), which finished at 13:40\.\n\nDid it pass on CI\?$/);
-    // The reply shows under the row it was sent from, and only there.
-    expect(within(row.parentElement as HTMLElement).getByTestId('inline-reply')).toBeInTheDocument();
-    expect(screen.getAllByTestId('inline-reply')).toHaveLength(1);
-  });
-
-  it('lists chats with subagents under their parent and marks the ones that need the operator', () => {
-    setSessions([FORGE_MAIN, SUBAGENT]);
-    setSources({ tasks: [task({ status: 'review', run: { sessionKey: 'agent:forge:main', startedAt: at(13), endedAt: at(14), status: 'done' } })] });
-    renderView();
-    const chats = within(section('Chats today')).getAllByTestId('today-chat');
-    expect(chats.map((row) => row.textContent?.split('·')[0])).toEqual([
-      expect.stringContaining('Forge'),
-      expect.stringContaining('fix-retry'),
-    ]);
-    expect(chats[0]).toHaveTextContent('Needs you');
-    expect(chats[0]).toHaveTextContent('Review');
-    fireEvent.click(chats[0]);
-    const detail = within(chats[0].parentElement as HTMLElement).getByTestId('today-row-detail');
-    expect(within(detail).getByRole('button', { name: 'Reply' })).toBeInTheDocument();
+    expect(summariesMock.mock.calls.at(-1)![0].sessionKeys).toEqual(['agent:forge:main']);
+    const detail = within(blockOf(row)).getByTestId('today-row-detail');
+    expect(within(detail).getByText('Patched the retry backoff and reran the suite.')).toBeInTheDocument();
+    expect(within(detail).getByText('Forge patched the backoff.')).toBeInTheDocument();
   });
 
   it('names each source that could not be read and never reads as an empty day', async () => {
     stubFetch({ runs: { c1: 'fail' } });
-    setSources({
+    const { onOpen } = renderToday({
       crons: [cron()],
-      sources: { tasks: { state: 'error', error: 'HTTP 500' }, proposals: live(), crons: live() },
+      sources: { ...LIVE_SOURCES, tasks: { state: 'error', error: 'HTTP 500' } },
     });
-    const { onOpen } = renderView();
     const done = section('Done today');
     expect(within(done).getByText('Tasks could not be read (HTTP 500).')).toBeInTheDocument();
     expect(await within(done).findByText('Cron runs could not be read (Morning brief).')).toBeInTheDocument();
@@ -410,24 +667,19 @@ describe('Today', () => {
   });
 
   it('says a quiet day is quiet once every source has answered', () => {
-    setSources();
-    renderView();
+    renderToday();
     expect(within(section('Done today')).getByText('Nothing has finished yet today.')).toBeInTheDocument();
     expect(within(section('Chats today')).getByText('No chats yet today.')).toBeInTheDocument();
   });
 
   it('keeps an open row in place when a newer row arrives, and re-sorts once it closes', () => {
-    setSources({ tasks: [task({ id: 'a', title: 'Older task', updatedAt: at(10) })] });
-    const { rerender } = renderView();
+    const view = renderToday({ tasks: [task({ id: 'a', title: 'Older task', updatedAt: at(10) })] });
     fireEvent.click(rowFor('Older task'));
-
-    setSources({ tasks: [task({ id: 'a', title: 'Older task', updatedAt: at(10) }), task({ id: 'b', title: 'Newer task', updatedAt: at(14) })] });
-    rerender(<AttentionView active compact={false} kanbanEnabled onOpen={vi.fn()} />);
+    view.rerenderToday({ tasks: [task({ id: 'a', title: 'Older task', updatedAt: at(10) }), task({ id: 'b', title: 'Newer task', updatedAt: at(14) })] });
     const titles = () => screen.getAllByTestId('today-row').map((row) => row.textContent ?? '');
     expect(titles()[0]).toContain('Older task');
     expect(titles()[1]).toContain('Newer task');
     expect(titles()[1]).toContain('New');
-
     fireEvent.click(rowFor('Older task'));
     expect(titles()[0]).toContain('Newer task');
   });
@@ -443,5 +695,27 @@ describe('Today with the gateway lost', () => {
     view.rerender(<AttentionView active compact={false} kanbanEnabled onOpen={vi.fn()} />);
     expect(screen.getByText(/Not connected since/)).toBeInTheDocument();
     expect(within(section('Done today')).getAllByTestId('today-row')).toHaveLength(1);
+  });
+});
+
+describe('Today: failing on a phone', () => {
+  it('the failing fact opens both sections when a cron and a chat are failing', async () => {
+    localStorage.setItem(TODAY_SECTIONS_KEY, JSON.stringify({ phone: { chats: false } }));
+    stubFetch({ runs: { c2: [{ ts: at(13), status: 'error' }] } });
+    renderToday({
+      compact: true,
+      sessions: [FORGE_MAIN, { ...SUBAGENT, status: undefined, endedAt: undefined }],
+      agentStatus: { 'agent:forge:subagent:fix': { status: 'ERROR', since: at(14) } },
+      crons: [cron({ id: 'c2', name: 'Nightly backup', lastRun: new Date(at(13)).toISOString(), lastStatus: 'error' })],
+    });
+    const failing = screen.getByTestId('today-fact-failing');
+    expect(failing).toHaveTextContent('2 failing');
+    fireEvent.click(failing);
+    expect(within(section('Done today')).getAllByTestId('today-row')).toHaveLength(1);
+    // The failing chat shows under its parent.
+    expect(within(section('Chats today')).getAllByTestId('today-chat').map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Forge'),
+      expect.stringContaining('fix-retry'),
+    ]);
   });
 });

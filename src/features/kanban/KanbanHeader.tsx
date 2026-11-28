@@ -24,6 +24,8 @@ interface KanbanHeaderProps {
   pendingProposalCount?: number;
   onApproveProposal?: (id: string) => void;
   onRejectProposal?: (id: string) => void;
+  /** Open the proposal inbox with this proposal marked (set from outside the Tasks view). */
+  highlightProposalId?: string | null;
 }
 
 /**
@@ -40,9 +42,11 @@ export const KanbanHeader = memo(function KanbanHeader({
   pendingProposalCount = 0,
   onApproveProposal,
   onRejectProposal,
+  highlightProposalId,
 }: KanbanHeaderProps) {
   const [showFilters, setShowFilters] = useState(false);
   const [showInbox, setShowInbox] = useState(false);
+  const [markedProposalId, setMarkedProposalId] = useState<string | null>(null);
   const [searchValue, setSearchValue] = useState(filters.q);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const filtersRef = useRef(filters);
@@ -50,6 +54,20 @@ export const KanbanHeader = memo(function KanbanHeader({
 
   /* Keep filtersRef in sync (avoids stale closures in debounced search) */
   useEffect(() => { filtersRef.current = filters; });
+
+  /* Open the inbox for a proposal asked for from outside. The mark is kept here, so it
+     stays while the caller clears its request, and drops when the operator toggles the inbox. */
+  useEffect(() => {
+    if (!highlightProposalId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional sync from prop
+    setMarkedProposalId(highlightProposalId);
+    setShowInbox(true);
+  }, [highlightProposalId]);
+
+  const toggleInbox = useCallback(() => {
+    setMarkedProposalId(null);
+    setShowInbox((open) => !open);
+  }, []);
 
   /* Close inbox popover when clicking outside */
   useEffect(() => {
@@ -96,7 +114,7 @@ export const KanbanHeader = memo(function KanbanHeader({
   return (
     <div className="shrink-0 border-b border-border">
       {/* Row 1: nameplate, words, actions */}
-      <div className="flex min-h-[2.933rem] flex-wrap items-center gap-x-3 gap-y-2 py-1.5 pl-4 pr-2">
+      <div className="relative flex min-h-[2.933rem] flex-wrap items-center gap-x-3 gap-y-2 py-1.5 pl-4 pr-2">
         <div className="flex min-w-0 items-center">
           <h1 className="nerve-nameplate text-foreground">Tasks</h1>
           {words && (
@@ -142,11 +160,13 @@ export const KanbanHeader = memo(function KanbanHeader({
             <Filter size={14} />
           </button>
 
-          {/* Agent proposals: the pane lights cantaloupe while any wait on you */}
-          <div className="relative shrink-0" ref={inboxRef}>
+          {/* Agent proposals: the pane lights cantaloupe while any wait on you. From sm up the
+              popover anchors to this wrapper; below sm it anchors to row 1 (full width), because the
+              wrapper sits mid-row there and a right-aligned popover would run off the left edge. */}
+          <div className="shrink-0 sm:relative" ref={inboxRef}>
             <button
               type="button"
-              onClick={() => setShowInbox(!showInbox)}
+              onClick={toggleInbox}
               className="shell-chip"
               data-active={showInbox ? 'true' : 'false'}
               title="Agent proposals"
@@ -159,7 +179,7 @@ export const KanbanHeader = memo(function KanbanHeader({
             </button>
 
             {showInbox && (
-              <div className="absolute right-0 top-full z-50 mt-1 w-[min(380px,calc(100vw-1.067rem))] overflow-hidden rounded-[3px] border border-border bg-popover nerve-menu-shadow">
+              <div className="absolute top-full z-50 mt-1 overflow-hidden rounded-[3px] border border-border bg-popover nerve-menu-shadow max-sm:inset-x-2 sm:right-0 sm:w-[min(380px,calc(100vw-1.067rem))]">
                 <div className="flex min-h-[var(--row-unit)] items-center gap-2 border-b border-border px-3 text-[0.867rem] font-medium text-foreground">
                   <span>Agent proposals</span>
                   {proposalsWaiting && (
@@ -168,6 +188,7 @@ export const KanbanHeader = memo(function KanbanHeader({
                 </div>
                 <ProposalInbox
                   proposals={proposals}
+                  highlightId={markedProposalId}
                   onApprove={(id) => onApproveProposal?.(id)}
                   onReject={(id) => onRejectProposal?.(id)}
                 />

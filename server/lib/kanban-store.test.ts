@@ -1500,3 +1500,47 @@ describe('default path and legacy migration', () => {
     expect(result.items[0].title).toBe('Rich legacy task');
   });
 });
+
+describe('completedAt', () => {
+  it('is stamped when a task enters done and cleared when it leaves', async () => {
+    const task = await createSampleTask({ title: 'Finish', status: 'todo' });
+    const done = await store.updateTask(task.id, task.version, { status: 'done' });
+    expect(typeof done.completedAt).toBe('number');
+
+    const reopened = await store.updateTask(done.id, done.version, { status: 'todo' });
+    expect(reopened.completedAt).toBeUndefined();
+  });
+
+  it('is stamped on approve', async () => {
+    const task = await createSampleTask({ title: 'Review me', status: 'review' });
+    const approved = await store.approveTask(task.id);
+    expect(approved.status).toBe('done');
+    expect(typeof approved.completedAt).toBe('number');
+  });
+
+  it('is not moved by reordering a done column or by later edits', async () => {
+    const a = await createSampleTask({ title: 'A', status: 'todo' });
+    const b = await createSampleTask({ title: 'B', status: 'todo' });
+    const aDone = await store.updateTask(a.id, a.version, { status: 'done' });
+    const stamped = aDone.completedAt;
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 60 * 60 * 1000);
+    try {
+      const bDone = await store.updateTask(b.id, b.version, { status: 'done' });
+      await store.reorderTask(bDone.id, bDone.version, 'done', 0);
+      const edited = await store.updateTask(a.id, (await store.getTask(a.id)).version, { title: 'A, renamed' });
+      expect(edited.completedAt).toBe(stamped);
+      const after = await store.getTask(a.id);
+      expect(after.completedAt).toBe(stamped);
+      expect(after.updatedAt).toBeGreaterThan(stamped!);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('is stamped when a card is dragged into done', async () => {
+    const task = await createSampleTask({ title: 'Drag', status: 'todo' });
+    const moved = await store.reorderTask(task.id, task.version, 'done', 0);
+    expect(typeof moved.completedAt).toBe('number');
+  });
+});

@@ -7,12 +7,12 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
  * off, so idle rows and facade windows still say which family they belong to.
  * Subagents and cron children take lighter shades of their parent's hue.
  *
- * Hues are assigned once per agent id on first sight, least-used first, with the
- * main agent pinned to cantaloupe, and remembered in localStorage so they never
- * shuffle. The operator can override any of them.
+ * Cantaloupe is the operator's light and never an agent's, so it is not in the
+ * palette (the main agent included). Each agent id has a preferred hue derived from
+ * the id itself, so every device agrees; a clash falls to the least-used hue. Picks are
+ * remembered in localStorage so they never shuffle. The operator can override any of them.
  */
 export const AGENT_HUES = [
-  { hex: '#FFA567', name: 'Cantaloupe' },
   { hex: '#7CC99A', name: 'Mint' },
   { hex: '#B9A7FF', name: 'Lilac' },
   { hex: '#7FD1C7', name: 'Aqua' },
@@ -21,10 +21,12 @@ export const AGENT_HUES = [
   { hex: '#6FC3F7', name: 'Sky' },
 ] as const;
 
+/** The operator's cantaloupe, which older builds gave the main agent. Stored picks of it are dropped. */
+const OPERATOR_HEX = '#ffa567';
+
 export type AgentHueHex = (typeof AGENT_HUES)[number]['hex'];
 
 const STORAGE_KEY = 'nerve:agent-colors';
-const MAIN_AGENT_ID = 'main';
 
 type Assignments = Readonly<Record<string, string>>;
 
@@ -37,7 +39,8 @@ function readStored(): Assignments {
     if (!parsed || typeof parsed !== 'object') return {};
     const out: Record<string, string> = {};
     for (const [id, hex] of Object.entries(parsed as Record<string, unknown>)) {
-      if (typeof hex === 'string' && /^#[0-9a-fA-F]{6}$/.test(hex)) out[id] = hex;
+      // A remembered cantaloupe (the old pin for main) is forgotten, so the agent takes a free hue.
+      if (typeof hex === 'string' && /^#[0-9a-fA-F]{6}$/.test(hex) && hex.toLowerCase() !== OPERATOR_HEX) out[id] = hex;
     }
     return out;
   } catch {
@@ -69,36 +72,40 @@ function getSnapshot(): Assignments {
   return assignments;
 }
 
+/** A stable palette slot for an agent id, the same on every device. */
+export function preferredHueIndex(id: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < id.length; i += 1) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % AGENT_HUES.length;
+}
+
 /**
  * Pure planner: extend `existing` with hues for every id in `ids` that lacks one.
- * Main takes cantaloupe when it is free; everyone else takes the least-used hue,
- * ties broken by palette order. Deterministic for a given input order, so the
- * first paint can show the same hue the store will remember.
+ * Each id first tries its own preferred hue (derived from the id, so a phone and a desk
+ * agree without sharing storage); if that hue is already used more than the least-used
+ * one, it takes the least-used hue instead, searching from its preferred slot. Ids are
+ * planned in sorted order, so the result does not depend on which view saw them first.
  */
 export function planAssignments(existing: Assignments, ids: readonly string[]): Assignments {
   const next: Record<string, string> = { ...existing };
   const counts = new Map<string, number>(AGENT_HUES.map((hue) => [hue.hex, 0]));
   for (const hex of Object.values(next)) counts.set(hex, (counts.get(hex) ?? 0) + 1);
-  const cantaloupe = AGENT_HUES[0].hex;
 
-  for (const id of ids) {
+  for (const id of [...new Set(ids)].sort()) {
     if (next[id]) continue;
-    let pick: string | undefined;
-    if (id === MAIN_AGENT_ID && (counts.get(cantaloupe) ?? 0) === 0) {
-      pick = cantaloupe;
-    } else {
-      // Cantaloupe stays reserved for main until main has a hue, whichever id shows up first.
-      const reserve = next[MAIN_AGENT_ID] ? 0 : 1;
-      let best = Number.POSITIVE_INFINITY;
-      for (const hue of AGENT_HUES) {
-        const used = (counts.get(hue.hex) ?? 0) + (hue.hex === cantaloupe ? reserve : 0);
-        if (used < best) {
-          best = used;
-          pick = hue.hex;
-        }
+    const least = Math.min(...AGENT_HUES.map((hue) => counts.get(hue.hex) ?? 0));
+    const start = preferredHueIndex(id);
+    let pick: string = AGENT_HUES[start].hex;
+    for (let step = 0; step < AGENT_HUES.length; step += 1) {
+      const hue = AGENT_HUES[(start + step) % AGENT_HUES.length];
+      if ((counts.get(hue.hex) ?? 0) === least) {
+        pick = hue.hex;
+        break;
       }
     }
-    if (!pick) pick = AGENT_HUES[0].hex;
     next[id] = pick;
     counts.set(pick, (counts.get(pick) ?? 0) + 1);
   }
@@ -107,7 +114,7 @@ export function planAssignments(existing: Assignments, ids: readonly string[]): 
 
 /** Operator override: remember a hue for one agent. */
 export function setAgentHue(agentId: string, hex: string): void {
-  if (assignments[agentId] === hex) return;
+  if (assignments[agentId] === hex || hex.toLowerCase() === OPERATOR_HEX) return;
   commit({ ...assignments, [agentId]: hex });
 }
 

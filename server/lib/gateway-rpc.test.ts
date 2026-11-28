@@ -89,6 +89,12 @@ describe('gateway-rpc (persistent WebSocket)', () => {
         // RPC call
         try {
           const result = rpcHandler(msg.method, msg.params);
+          // A handler can answer with several frames on the same id (an ack, then the final).
+          const frames = (result as { __frames?: unknown[] } | null)?.__frames;
+          if (Array.isArray(frames)) {
+            for (const payload of frames) ws.send(JSON.stringify({ type: 'res', id: msg.id, ok: true, payload }));
+            return;
+          }
           ws.send(JSON.stringify({ type: 'res', id: msg.id, ok: true, payload: result }));
         } catch (err) {
           ws.send(JSON.stringify({
@@ -186,6 +192,20 @@ describe('gateway-rpc (persistent WebSocket)', () => {
 
       const result = await gatewayRpcCall('test.method', { foo: 'bar' });
       expect(result).toEqual({ result: 'ok' });
+    });
+
+    it('resolves with the accepted ack when the final is not expected', async () => {
+      rpcHandler = () => ({ __frames: [{ status: 'accepted', runId: 'r1' }, { status: 'ok', result: { payloads: [] } }] });
+      const result = await gatewayRpcCall('agent', {});
+      expect(result).toEqual({ status: 'accepted', runId: 'r1' });
+    });
+
+    it('waits past the accepted ack for the final response when expectFinal is set', async () => {
+      rpcHandler = () => ({
+        __frames: [{ status: 'accepted', runId: 'r1' }, { status: 'ok', result: { payloads: [{ text: 'done' }] } }],
+      });
+      const result = await gatewayRpcCall('agent', {}, 5_000, { expectFinal: true });
+      expect(result).toEqual({ status: 'ok', result: { payloads: [{ text: 'done' }] } });
     });
 
     it('rejects on RPC error response', async () => {

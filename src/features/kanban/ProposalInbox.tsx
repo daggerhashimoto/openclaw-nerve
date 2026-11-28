@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from 'react';
+import { memo, useState, useEffect, useRef } from 'react';
 import { Check, X } from 'lucide-react';
 import { Pane } from '@/components/ui/Pane';
 import type { KanbanProposal } from './hooks/useProposals';
@@ -59,14 +59,22 @@ function ProposalSummary({ proposal }: { proposal: KanbanProposal }) {
 /* Single proposal row: a cantaloupe pane (it waits on you), the summary, Approve and Reject */
 function ProposalRow({
   proposal,
+  highlighted,
   onApprove,
   onReject,
 }: {
   proposal: KanbanProposal;
+  highlighted: boolean;
   onApprove: (id: string) => void | Promise<void>;
   onReject: (id: string) => void | Promise<void>;
 }) {
   const [acting, setActing] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  /* A proposal opened from outside the inbox scrolls into view once, when its row appears */
+  useEffect(() => {
+    if (highlighted) rowRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [highlighted]);
 
   const handleApprove = async () => {
     setActing(true);
@@ -87,7 +95,13 @@ function ProposalRow({
   };
 
   return (
-    <div className="flex items-start gap-2 border-b border-border py-2 pl-3 pr-1 last:border-b-0">
+    <div
+      ref={rowRef}
+      data-highlighted={highlighted ? 'true' : undefined}
+      className={`flex items-start gap-2 border-b border-border py-2 pl-3 pr-1 last:border-b-0 ${
+        highlighted ? 'ring-1 ring-inset ring-operator/60' : ''
+      }`}
+    >
       <Pane state="operator" size="sm" label="Waiting on you" className="mt-[5px]" />
       <ProposalSummary proposal={proposal} />
       <div className="flex shrink-0 items-center gap-0.5">
@@ -123,12 +137,15 @@ interface ProposalInboxProps {
   proposals: KanbanProposal[];
   onApprove: (id: string) => void | Promise<void>;
   onReject: (id: string) => void | Promise<void>;
+  /** The proposal to mark and scroll to, when the inbox was opened for one. */
+  highlightId?: string | null;
 }
 
 export const ProposalInbox = memo(function ProposalInbox({
   proposals,
   onApprove,
   onReject,
+  highlightId = null,
 }: ProposalInboxProps) {
   if (proposals.length === 0) {
     return (
@@ -144,6 +161,7 @@ export const ProposalInbox = memo(function ProposalInbox({
         <ProposalRow
           key={p.id}
           proposal={p}
+          highlighted={p.id === highlightId}
           onApprove={onApprove}
           onReject={onReject}
         />

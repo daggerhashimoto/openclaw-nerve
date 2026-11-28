@@ -14,21 +14,9 @@ import { CronDialog } from './CronDialog';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { Pane } from '@/components/ui/Pane';
 import { paneStateLabel, type PaneState } from '@/lib/paneState';
+import { isFailedCronStatus, isOkCronStatus } from '../cronStatus';
 
 type CronRowJob = CronJob;
-
-const OK_STATUSES = new Set(['success', 'ok', 'finished']);
-
-function isOkStatus(status?: string): boolean {
-  return Boolean(status) && OK_STATUSES.has(status!.toLowerCase());
-}
-
-/** A run that did not happen (a skipped heartbeat) is quiet, not broken. */
-function isFailedStatus(status?: string): boolean {
-  if (!status) return false;
-  const normalized = status.toLowerCase();
-  return !OK_STATUSES.has(normalized) && normalized !== 'skipped';
-}
 
 function everyPhrase(count: number, unit: string): string {
   return count === 1 ? `Every ${unit}` : `Every ${count} ${unit}s`;
@@ -112,8 +100,12 @@ function fullTime(ts?: string): string | undefined {
 const menuItemClass =
   'flex min-h-[var(--row-unit)] w-full items-center gap-2 px-2.5 text-[0.867rem] text-foreground transition-colors duration-[120ms] hover:bg-raised max-sm:min-h-11';
 
-function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
+function CronRow({ job, focused, focusKey, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   job: CronRowJob;
+  /** True while this row is the one asked for from outside the tab. */
+  focused: boolean;
+  /** Changes with each request for this row, so asking again re-opens and re-scrolls it. */
+  focusKey?: number;
   onToggle: (id: string, enabled: boolean) => void;
   onRun: (id: string) => Promise<boolean | undefined>;
   onDelete: (id: string) => void;
@@ -127,6 +119,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   const [actionsOpen, setActionsOpen] = useState(false);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const actionsRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
 
   // Cleanup delete confirmation timer
   useEffect(() => () => clearTimeout(deleteTimerRef.current), []);
@@ -154,13 +147,27 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
     };
   }, [actionsOpen]);
 
+  const showRuns = useCallback(async () => {
+    const r = await onFetchRuns(job.id);
+    setRuns(r);
+    setExpanded(true);
+  }, [job.id, onFetchRuns]);
+
   const handleExpand = useCallback(async () => {
-    if (!expanded) {
-      const r = await onFetchRuns(job.id);
-      setRuns(r);
+    if (expanded) {
+      setExpanded(false);
+      return;
     }
-    setExpanded(!expanded);
-  }, [expanded, job.id, onFetchRuns]);
+    await showRuns();
+  }, [expanded, showRuns]);
+
+  // Asked for from outside the tab: bring the row into view and open its history, once per request
+  useEffect(() => {
+    if (!focused) return;
+    rowRef.current?.scrollIntoView?.({ block: 'start' });
+    void showRuns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires when a request lands on this row, not when showRuns changes
+  }, [focused, focusKey]);
 
   const handleRun = useCallback(async () => {
     setRunning(true);
@@ -188,7 +195,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   }, [confirmingDelete, job.id, onDelete]);
 
   const name = job.name || job.label || job.id;
-  const lastOk = isOkStatus(job.lastStatus);
+  const lastOk = isOkCronStatus(job.lastStatus);
   // Detect delivery-only failures: task ran but delivery failed
   const errorLower = job.lastError?.toLowerCase() ?? '';
   const isDeliveryFailure = !lastOk && (
@@ -198,14 +205,14 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   );
   const taskSucceeded = lastOk || isDeliveryFailure;
   // Light temperature: an enabled job whose last run broke keeps a red pane until it runs clean
-  const broken = job.enabled && (isFailedStatus(job.lastStatus) || isDeliveryFailure);
+  const broken = job.enabled && (isFailedCronStatus(job.lastStatus) || isDeliveryFailure);
   const executionLabel = job.payloadKind === 'agentTurn' ? 'Private session' : 'Main thread event';
   const paneState: PaneState = running ? 'live' : broken ? 'error' : 'off';
   const schedule = humanSchedule(job);
   const historyLabel = expanded ? 'Hide run history' : 'Show run history';
 
   return (
-    <div className="group relative transition-colors duration-[120ms] hover:bg-raised">
+    <div ref={rowRef} className="group relative transition-colors duration-[120ms] hover:bg-raised">
       <div className="flex min-h-[var(--row-unit)] items-center gap-2 pl-3 pr-1">
         <Pane state={paneState} label={paneStateLabel(paneState)} />
         <button
@@ -358,7 +365,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
             </div>
           )}
           {runs.map((r, i) => {
-            const runPane: PaneState = isFailedStatus(r.status) ? 'error' : 'off';
+            const runPane: PaneState = isFailedCronStatus(r.status) ? 'error' : 'off';
             return (
               <div key={i}>
                 <div className="flex min-h-[var(--row-unit)] min-w-0 items-center gap-2 text-muted-foreground">
@@ -386,8 +393,15 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   );
 }
 
+interface CronsTabProps {
+  /** Expand and scroll to this cron row when it changes (the tab was opened from outside). */
+  focusCronId?: string | null;
+  /** Changes with each request, so asking for the same cron again expands and scrolls to it again. */
+  focusNonce?: number;
+}
+
 /** Workspace tab listing cron jobs with create/edit/delete/toggle controls. */
-export function CronsTab() {
+export function CronsTab({ focusCronId = null, focusNonce }: CronsTabProps = {}) {
   const { jobs, isLoading, error, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
   const { refreshSessions } = useSessionContext();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -396,7 +410,7 @@ export function CronsTab() {
 
   const toolbarSummary = useMemo(() => {
     const enabledJobs = jobs.filter((job) => job.enabled);
-    const failedCount = enabledJobs.filter((job) => isFailedStatus(job.lastStatus)).length;
+    const failedCount = enabledJobs.filter((job) => isFailedCronStatus(job.lastStatus)).length;
     const nextJob = enabledJobs
       .filter((job) => job.nextRun)
       .sort((a, b) => new Date(a.nextRun as string).getTime() - new Date(b.nextRun as string).getTime())[0];
@@ -507,6 +521,8 @@ export function CronsTab() {
           <CronRow
             key={job.id}
             job={job}
+            focused={job.id === focusCronId}
+            focusKey={focusCronId === job.id ? focusNonce : undefined}
             onToggle={toggleJob}
             onRun={handleRun}
             onDelete={deleteJob}

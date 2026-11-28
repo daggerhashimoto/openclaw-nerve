@@ -17,7 +17,6 @@ colors:
   signal-red: "#FF5A5A"
   pane-off: "#161D2C"
   pane-edge: "#263044"
-  identity-cantaloupe: "#FFA567"
   identity-mint: "#7CC99A"
   identity-lilac: "#B9A7FF"
   identity-aqua: "#7FD1C7"
@@ -465,12 +464,14 @@ Workbench, Workbench Night (`wb-*`), the same roles on a graphite drafting sheet
 Workbench Paper (`wb-paper-*`), the source theme of Ruled Workbench: a pale paper frame (`wb-paper`), a near-white room (`wb-paper-panel`), Plate (`wb-paper-plate`), white popovers and off panes (`wb-paper-white`), Raised (`wb-paper-raised`), drawn rules (`wb-paper-rule`), field edges darkened to 3:1 (`wb-paper-field-edge`), graphite ink and muted text (`wb-paper-ink`, `wb-paper-muted`), a pane edge (`wb-paper-pane-edge`), the operator plate warmed by 14% cantaloupe (`wb-paper-operator-plate`), the Send label (`wb-paper-send-label`), and the node and key edges (`wb-paper-node-edge`, `wb-paper-key-edge`).
 
 ### Identity
-Seven hues name agent families, not states, identically in both worlds: Cantaloupe (`identity-cantaloupe`, reserved for the main agent), Mint, Lilac, Aqua, Rose, Lemon and Sky (`identity-*`). A family's hue is assigned on first sight, least-used first, remembered in the browser, and adjustable by the operator from a root row's actions. Subagents and cron children take lighter shades of the parent hue (62% and 44% of the hue mixed toward white). Neither blue (Electric Blue or Workbench Cobalt) is in this list, so an idle blue family can never be mistaken for work in progress.
+Six hues name agent families, not states, identically in both worlds: Mint, Lilac, Aqua, Rose, Lemon and Sky (`identity-*`). Cantaloupe is the operator's light and never an agent's, the main agent included, so a warm name or pane always means the operator or work waiting on them; a browser that remembered cantaloupe for an agent forgets it and the agent takes a free hue. A family's hue is assigned on first sight, least-used first, remembered in the browser, and adjustable by the operator from a root row's actions. Subagents and cron children take lighter shades of the parent hue (62% and 44% of the hue mixed toward white). Neither blue (Electric Blue or Workbench Cobalt) is in this list, so an idle blue family can never be mistaken for work in progress.
 
 ### Named Rules
 **The Light Temperature Rule.** In every world, blue is agent work, cantaloupe is the operator and anything waiting on the operator, red is error, and nothing else is coloured. A surface that is not reporting one of those three states is a neutral. Family hues are identity, not state: they sit on idle panes, on names, on the header band and on the open row, and a pane that is lit always shows the state colour.
 
-**The Identity Rule.** Every agent family owns one of seven hues (main is pinned to Cantaloupe; children take a lighter shade of their root's hue), assigned on first sight and operator-pickable from a root row. The hue stays on at idle: 84% of it fills the family's off panes (70% in the frame), the agent's name takes it in the display face (darkened 42% toward ink on the paper themes), the chat header band takes a 9% tint (14% on paper) and the open room's row a 14% tint over Raised. Blue is never an identity hue, and a lit pane always shows the state colour, so identity and state never trade places.
+**The Identity Rule.** Every agent family owns one of six hues (never Cantaloupe, which is the operator's; children take a lighter shade of their root's hue), assigned on first sight and operator-pickable from a root row. The hue stays on at idle: 84% of it fills the family's off panes (70% in the frame) except in history lists (The Dark History Rule), the agent's name takes it in the display face (darkened 42% toward ink on the paper themes), the chat header band takes a 9% tint (14% on paper) and the open room's row a 14% tint over Raised. Blue is never an identity hue, and a lit pane always shows the state colour, so identity and state never trade places.
+
+**The Dark History Rule.** A list of finished work (Done today, Since you looked, a finished subagent under its parent) keeps every pane dark: Pane Off with its edge, no family hue in the glass. The family hue moves to the agent's name on the row, so who did it still reads at a glance while nothing in the list looks lit. Only a row whose state still matters lights its pane: a cron still failing or a run that ended in failure shows red, a chat waiting on the operator shows Cantaloupe.
 
 **The Window Rule.** The composer is the operator's next window. At rest it is a quiet plate with a dark pane in the gutter; while the operator is in it (focus, or text already typed) it warms to the operator plate with a warm edge (an edge light in Night light, a 55% cantaloupe rule in Workbench) and the pane lights Cantaloupe, so the turn being written looks like the turns already sent. The side-column editors are windows too: the memory editor and the config editor sit on Plate and, while the operator is in them, warm the same way while the small pane in their status line lights Cantaloupe; no focus ring.
 
@@ -507,7 +508,7 @@ Quattro ships regular and bold only, so in Workbench the 500 roles (UI, Label) r
 ### Named Rules
 **The Names Rule.** The display face (Geist in Night light, Plex Serif in Workbench) is used only for agent or speaker names. The wordmark has its own mono lockup. Headings, labels and buttons stay in the reading face.
 
-**The Sentence Case Rule.** Every label, header, chip and button is sentence case in both worlds. No eyebrows, no kickers above headings, no letterspaced capitals; Workbench's uppercase eyebrows from the landing page are not adopted.
+**The Sentence Case Rule.** Every label, header, chip and button is sentence case in both worlds. No eyebrows, no kickers above headings, no letterspaced capitals; Workbench's uppercase eyebrows from the landing page are not adopted. A kicker includes the run-in label: text never opens with "What happened:", "Result:" or "Summary:" ahead of what it is; the place it sits says what it is.
 
 **The Tight Hand Rule.** In Workbench, Quattro body and control text tracks -0.025em; code, measures, dividers, the fleet in words, the editor and names keep normal tracking. An explicit tracking utility still wins.
 
@@ -590,7 +591,7 @@ The room's sign that the open session is working: a faint segmented equalizer ri
 
 ### Buttons
 - **Shape:** tight corners (3px), 1px transparent border reserved for outline and secondary variants, 120ms transition on background, border, colour and filter, 1px downward press on active.
-- **Primary (Send):** Cantaloupe fill with a dark label (Midnight in Night, Graphite in Workbench Night, the ink of the paper theme), 600 weight at 0.867rem, 0 by 0.875rem padding, 2rem tall (2.75rem on touch viewports). Hover raises brightness 10%; a sent message flashes it brighter for 200ms; a send error shakes it 2px. It is the one warm control on the screen. In Workbench it is a key: a 2px pressed lower edge in Key Edge at rest, which drops on hover, and a press settles to 99% scale.
+- **Primary (Send):** Cantaloupe fill with a dark label (Midnight in Night, Graphite in Workbench Night, the ink of the paper theme), 600 weight at 0.867rem, 0 by 0.875rem padding, 2rem tall (2.75rem on touch viewports). Hover raises brightness 10%; a sent message flashes it brighter for 200ms; a send error shakes it 2px. It is the one warm control on the screen; on a decision screen, where Send is not the point, the warm fill moves to the one decision the operator should make first (The One Warm Control Rule). In Workbench it is a key: a 2px pressed lower edge in Key Edge at rest, which drops on hover, and a press settles to 99% scale.
 - **Hover / Focus:** every variant takes a 2px Cantaloupe outline offset 1px on focus-visible. Disabled drops to 50% opacity.
 - **Outline:** transparent fill, input edge stroke (Field Edge in Workbench), primary text, Raised on hover. **Ghost:** no stroke, secondary text, Raised fill and primary text on hover. **Destructive:** red fill with a dark label. **Link:** in prose, the live text tone with an underline at 38% that fills on hover; in chrome, primary text underlined in Pane Edge.
 - **Toolbar button:** row-unit tall, rule stroke, primary text; active state takes Raised fill and a Pane Edge stroke.
@@ -637,8 +638,21 @@ The room's sign that the open session is working: a faint segmented equalizer ri
 - **Wordmark:** lowercase `nerve` in IBM Plex Mono 400 at 1.333rem and -0.02em in every theme (the self-hosted Nerve Wordmark face), primary text colour, after the Nerve mark and followed by the 12x17 fleet pane.
 - **Nerve mark:** an orange (#FF8C32) hub and six nodes on a pointy-top hexagon, fixed in every theme (`src/components/NerveLogo.tsx`). 33px and up draws synapse gaps, the hexagon ring and lit cores; 32px and below uses the bold cut (solid spokes, no ring). It animates with CSS only, never in performance mode or under reduced motion. The tab icon is the bold cut on a dark square (`public/favicon.svg`), static.
 
+### Attention (Now and Today)
+The operator's catch-up surface in the centre room, a Now | Today tab pair on its heading row. At the desk both views use one grid once the room is 54rem wide: a wide work column and a 22rem rail with a 24px gap (`.attention-grid`, `minmax(0, 1fr) 22rem`); phones stack it in one column. Rows are the list row idiom (44px at the desk, 60px on phones), open in place, and while any row is open the order holds still.
+
+- **Now (an urgency board):** the heading is the counts in words with the numbers in mono ("1 failing · 3 to decide · 2 working": red, operator and live text), and says "Nothing needs you" when that is true. Failing comes first and holds only what is failing by its latest state (a cron whose newest run failed, a failed task or session), each with Retry or Run now inline. Waiting on you follows: the top decision sits on the Start here plate (the operator plate, the board's one warm surface, carrying the only warm filled button), and every other decision is a row that opens in place to what happened in its thread, its evidence, every action and Reply. The rail holds the Agents strip (each agent's current work in a line, for how long, quiet runs with Stop) and Since you looked (collapsed, finished items only, never a successful cron run, one Mark all seen). The Ask box docks at the bottom of the work column like the chat composer. An action applies at once and leaves an undo receipt in the item's place ("Approved 'Rotate the API keys' · Undo 5s"); the request goes out when the window closes, and what was handled is listed at the bottom of Now. Items are named in words (an agent, a task title, a cron job), never by session key.
+- **Today (the day so far):** the heading is the date with Refresh; under it one quiet line of facts in muted text with mono numbers ("9 chats · 3 done · 1 merged · 1 failing"), each a text button that filters its rows or jumps to them, and a short model-written paragraph that leads with failures and never mentions cron runs that went fine. Chats today takes the wide column and leads (open on phones too): every chat active today with its real name, channel, the first sentence of its summary shown whole, and a turn marker at the right, "Waiting on you" in operator text when the Now board holds it or its agent's last message asks the operator something (with Reply as its outline action), "Working" in live text while it runs, nothing otherwise. Subagents nest under their parent with how they ended. Done today takes the rail (collapsed on phones): crons still failing pinned on top with Run now, then tasks with the pull requests they merged, then a failure that recovered as one line ("Failed 09:00, recovered 12:03"), then every successful cron run folded into one quiet line ("18 cron runs ok") that opens to a row per job. It is a timeline: a mono time column printed once when rows share a minute, no hour headers, and an open row's detail starts on the title's edge. Nothing on Today repeats a row: a subagent lives only under its chat, a merged pull request only on its task. Open sections are remembered per browser.
+
 ### Tool row
 One 28px line of mono text at 0.8rem: a small pane (live while running, off when done, red when failed), the verb in primary text capped at 45% width, the arguments in the secondary colour, and a right-aligned tabular measure that turns the live text tone while live. Expandable rows take Raised on hover and focus and end with a 14px chevron in the secondary colour. Identical in both worlds apart from the faces.
+
+### Named Rules
+**The One Warm Control Rule.** A screen has one warm filled control. In the chat it is Send; on a decision screen it is the decision the operator should make first (the Start here plate's main action on Now). Every other action on that screen, however important, is an outline button or text, so the eye lands once.
+
+**The Action Tier Rule.** In lists an item's main action is an outline button (field edge, primary text, 28px at the desk, 44px on phones), every second action is muted underlined text, and opening the item's source is text too. A chip is never an item's main action; chips stay for quiet view controls like Refresh.
+
+**The Default Chrome Rule.** Source, freshness and ranking chrome ("Checked 14:16", "Ranked by...", a live source named live) appears only when it is not the default: a source that could not be read, a source turned off, a count that is a floor. A normal view carries no meta line at all.
 
 ## Do's and Don'ts
 
@@ -660,7 +674,9 @@ One 28px line of mono text at 0.8rem: a small pane (live while running, off when
 - **Do** hold agent prose to the 72em reading measure and let code, tables and charts take the column.
 - **Do** set timestamps, counts, durations, models and code in the world's mono (Atkinson Hyperlegible Mono or IBM Plex Mono) with tabular numerals.
 - **Do** keep corners between 1px and 4px; 6px is only for the floating command palette shell, and the Workbench room sheet is 2px.
-- **Do** make Send the one warm control on a screen: Cantaloupe fill, dark label, 3px radius; in Workbench it carries the 2px pressed lower edge.
+- **Do** make Send the one warm control on a screen: Cantaloupe fill, dark label, 3px radius; in Workbench it carries the 2px pressed lower edge. On a decision screen the warm fill belongs to the first decision instead, and nothing else is warm (The One Warm Control Rule).
+- **Do** give a list item's main action an outline button and every other action muted underlined text (The Action Tier Rule).
+- **Do** keep panes dark in history lists and put the family hue on the agent's name (The Dark History Rule).
 - **Do** pin the Workbench room sheet and login window with the four diamond corner nodes, and nothing else.
 - **Do** use Workbench's lifted cobalt and the 3:1 field edges on Workbench surfaces (The Lifted Cobalt Rule).
 - **Do** give every pane without adjacent text an accessible label (Running, Waiting on you, Failed, Idle).
@@ -668,7 +684,9 @@ One 28px line of mono text at 0.8rem: a small pane (live while running, off when
 ### Don't:
 - **Don't** colour anything that is not reporting agent work, operator ownership, an error, a link, code syntax or an agent family's identity; no decorative accents or coloured side rails.
 - **Don't** pulse, breathe or animate a shadow; in Night the only glow is a lit pane's bloom (The Bloom Rule), Workbench has none, and the only blinking element is the streaming cursor pane, which stops under reduced motion.
-- **Don't** add scanlines, HUD chrome, letterspaced uppercase labels, eyebrows or kickers above headings in either world; Workbench's landing-page eyebrows stay on the landing page.
+- **Don't** add scanlines, HUD chrome, letterspaced uppercase labels, eyebrows, kickers above headings or run-in labels ("What happened:") in either world; Workbench's landing-page eyebrows stay on the landing page.
+- **Don't** give an agent the Cantaloupe hue, the main agent included; warm always means the operator or work waiting on them.
+- **Don't** show checked times, source names or ranking notes on a normal view; chrome appears only when something is not the default (The Default Chrome Rule).
 - **Don't** use glass, blur or decorative gradients; the room light (Night) and the cool wash (Workbench) are the only gradients, the bloom is the only zero-offset shadow, and only floating surfaces cast an offset shadow.
 - **Don't** draw a border around a Night light plate; there, borders belong to inputs, outline buttons and hairline dividers.
 - **Don't** carry one world's material into the other: no edge light, bloom, room light or blur in Workbench, and no printed offset, grain, corner nodes or Plex faces in Night light.

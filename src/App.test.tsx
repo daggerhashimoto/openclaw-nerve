@@ -32,6 +32,7 @@ const {
   topBarRenderSnapshots,
   tabRenderSnapshots,
   addWorkspacePathSpy,
+  setActiveFileTab,
   useOpenFilesMock,
 } = vi.hoisted(() => {
   const settingsContext = {
@@ -92,11 +93,12 @@ const {
     saveToastPath: string | null;
   }> = [];
   const addWorkspacePathSpy = vi.fn();
+  const setActiveFileTab = vi.fn();
 
   const useOpenFilesMock = vi.fn((agentId: string) => ({
     openFiles: [{ path: 'shared.md', name: 'shared.md', content: 'draft', savedContent: 'draft', dirty: dirtyStateByAgent[agentId] ?? false }],
     activeTab: 'shared.md',
-    setActiveTab: vi.fn(),
+    setActiveTab: setActiveFileTab,
     openFile: vi.fn(),
     closeFile: vi.fn(),
     updateContent: vi.fn(),
@@ -127,6 +129,7 @@ const {
     topBarRenderSnapshots,
     tabRenderSnapshots,
     addWorkspacePathSpy,
+    setActiveFileTab,
     useOpenFilesMock,
   };
 });
@@ -238,9 +241,14 @@ vi.mock('@/hooks/useKeyboardShortcuts', () => ({
   useKeyboardShortcuts: vi.fn(),
 }));
 
+const paletteSessionSelect = vi.hoisted(() => ({ current: null as ((key: string) => void) | null }));
+
 vi.mock('@/features/command-palette/commands', () => ({
   createCommands: () => [],
-  createSessionCommands: () => [],
+  createSessionCommands: (_sessions: unknown, _current: unknown, _agent: unknown, onSelect: (key: string) => void) => {
+    paletteSessionSelect.current = onSelect;
+    return [];
+  },
 }));
 
 vi.mock('@/features/file-browser', () => ({
@@ -297,10 +305,12 @@ vi.mock('@/components/TopBar', () => ({
     showKanbanView,
     viewMode,
     onSettings,
+    onViewModeChange,
   }: {
     showKanbanView?: boolean;
     viewMode?: string;
     onSettings?: () => void;
+    onViewModeChange?: (mode: 'attention' | 'chat' | 'kanban') => void;
   }) => {
     topBarRenderSnapshots.push({ showKanbanView, viewMode } as { showKanbanView?: boolean; viewMode?: string });
     return (
@@ -308,10 +318,30 @@ vi.mock('@/components/TopBar', () => ({
         <div data-testid="topbar-show-kanban">{String(showKanbanView ?? true)}</div>
         <div data-testid="topbar-view-mode">{viewMode ?? 'chat'}</div>
         <button type="button" onClick={() => onSettings?.()}>Open settings</button>
+        <button type="button" onClick={() => onViewModeChange?.('chat')}>Chat chip</button>
       </div>
     );
   },
 }));
+
+vi.mock('@/features/attention', () => ({
+  AttentionView: ({ active, onOpen }: {
+    active: boolean;
+    onOpen: (target: { type: string; [key: string]: unknown }) => void;
+  }) => (
+    <div data-testid="attention-view" data-active={String(active)}>
+      <button type="button" onClick={() => onOpen({ type: 'session', key: 'agent:alpha:main' })}>Open attention session</button>
+      <button type="button" onClick={() => onOpen({ type: 'session', key: 'agent:bravo:main' })}>Open attention other agent</button>
+      <button type="button" onClick={() => onOpen({ type: 'proposal', id: 'p1' })}>Open attention proposal</button>
+    </div>
+  ),
+}));
+
+/** Pins the landing view to chat for tests about the chat room (a cold load lands on Attention). */
+function seedChatLanding() {
+  localStorage.setItem('nerve:viewMode', 'chat');
+  localStorage.setItem('nerve:attention:introduced', '1');
+}
 
 vi.mock('@/components/StatusBar', () => ({
   StatusBar: () => null,
@@ -483,6 +513,7 @@ afterEach(() => {
 describe('App save toast workspace scoping', () => {
   beforeEach(() => {
     localStorage.clear();
+    seedChatLanding();
     sessionContext.currentSession = 'agent:alpha:main';
     sessionContext.setCurrentSession.mockReset();
     sessionContext.spawnSession.mockReset();
@@ -681,6 +712,7 @@ describe('App save toast workspace scoping', () => {
 describe('App bead tab workspace scoping', () => {
   beforeEach(() => {
     localStorage.clear();
+    seedChatLanding();
     sessionContext.currentSession = 'agent:alpha:main';
     sessionContext.setCurrentSession.mockReset();
     dirtyStateByAgent.alpha = false;
@@ -747,6 +779,7 @@ describe('App bead tab workspace scoping', () => {
 describe('App workspace switch guard', () => {
   beforeEach(() => {
     localStorage.clear();
+    seedChatLanding();
     sessionContext.currentSession = 'agent:alpha:main';
     uploadConfigState.fileReferenceEnabled = true;
     sessionContext.setCurrentSession.mockReset();
@@ -995,6 +1028,7 @@ function expectFileBrowserDrawerClosed() {
 describe('App kanban visibility gating', () => {
   beforeEach(() => {
     localStorage.clear();
+    seedChatLanding();
     settingsContext.kanbanVisible = true;
     settingsContext.commandPaletteButtonVisible = true;
     topBarRenderSnapshots.length = 0;
@@ -1243,6 +1277,7 @@ describe('App names the agent, not the session, in the open room', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    seedChatLanding();
     resetAgentHues();
     settingsContext.kanbanVisible = true;
     settingsContext.commandPaletteButtonVisible = true;
@@ -1320,5 +1355,107 @@ describe('App names the agent, not the session, in the open room', () => {
       sessionName: '',
       agentHue: shadeFor(AGENT_HUES[0].hex, 1),
     });
+  });
+});
+
+describe('App attention landing and Back to Attention', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    settingsContext.kanbanVisible = true;
+    sessionContext.currentSession = 'agent:alpha:main';
+    sessionContext.setCurrentSession.mockReset();
+    dirtyStateByAgent.alpha = false;
+    dirtyStateByAgent.bravo = false;
+    mockViewport(false);
+  });
+
+  it('lands on attention on a cold load', () => {
+    render(<App />);
+
+    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('attention');
+    expect(screen.getByTestId('attention-view')).toHaveAttribute('data-active', 'true');
+    expect(screen.queryByRole('button', { name: 'Back to Attention' })).not.toBeInTheDocument();
+  });
+
+  it('opens a session from the brief on the Chat tab and comes back to it', async () => {
+    setActiveFileTab.mockClear();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open attention session' }));
+
+    await waitFor(() => expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('chat'));
+    expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:alpha:main');
+    // An open file tab must not hide the transcript
+    expect(setActiveFileTab).toHaveBeenCalledWith('chat');
+    // The brief stays mounted, only hidden
+    expect(screen.getByTestId('attention-view')).toHaveAttribute('data-active', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Attention' }));
+
+    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('attention');
+    expect(screen.queryByRole('button', { name: 'Back to Attention' })).not.toBeInTheDocument();
+  });
+
+  it('picking a session from the command palette while on the brief shows it in Chat', async () => {
+    setActiveFileTab.mockClear();
+    render(<App />);
+    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('attention');
+
+    act(() => paletteSessionSelect.current?.('agent:alpha:subagent:abc'));
+
+    await waitFor(() => expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('chat'));
+    expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:alpha:subagent:abc');
+    expect(setActiveFileTab).toHaveBeenCalledWith('chat');
+    // Not opened from a brief item, so there is no way back to offer
+    expect(screen.queryByRole('button', { name: 'Back to Attention' })).not.toBeInTheDocument();
+  });
+
+  it('stays on the brief when the unsaved-workspace dialog is cancelled, and leaves it once confirmed', async () => {
+    dirtyStateByAgent.alpha = true;
+    saveAllDirtyFilesByAgent.alpha.mockResolvedValue({ ok: true });
+    setActiveFileTab.mockClear();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open attention other agent' }));
+    expect(screen.getByText('Unsaved workspace edits')).toBeInTheDocument();
+    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('attention');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByText('Unsaved workspace edits')).not.toBeInTheDocument());
+
+    expect(sessionContext.setCurrentSession).not.toHaveBeenCalled();
+    expect(setActiveFileTab).not.toHaveBeenCalled();
+    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('attention');
+    expect(screen.queryByRole('button', { name: 'Back to Attention' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open attention other agent' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save and switch' }));
+
+    await waitFor(() => expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('chat'));
+    expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:bravo:main');
+    expect(setActiveFileTab).toHaveBeenCalledWith('chat');
+    expect(screen.getByRole('button', { name: 'Back to Attention' })).toBeInTheDocument();
+  });
+
+  it('opens a proposal in the board, and choosing a view chip ends the trip from the brief', () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open attention proposal' }));
+    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('kanban');
+    expect(screen.getByRole('button', { name: 'Back to Attention' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chat chip' }));
+    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('chat');
+    expect(screen.queryByRole('button', { name: 'Back to Attention' })).not.toBeInTheDocument();
+  });
+
+  it('does nothing for a proposal while kanban is hidden', () => {
+    settingsContext.kanbanVisible = false;
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open attention proposal' }));
+
+    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('attention');
+    expect(screen.queryByRole('button', { name: 'Back to Attention' })).not.toBeInTheDocument();
   });
 });

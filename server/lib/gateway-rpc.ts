@@ -54,6 +54,17 @@ interface PendingCall {
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  /** Keep waiting past an `accepted` ack for the second, final response on the same id. */
+  expectFinal: boolean;
+}
+
+export interface GatewayRpcOptions {
+  /**
+   * Methods such as `agent` first answer `{ status: 'accepted' }` and later send the run's
+   * result on the same request id. With this set the call resolves with that final response,
+   * and the timeout covers the whole wait.
+   */
+  expectFinal?: boolean;
 }
 
 let ws: WebSocket | null = null;
@@ -219,6 +230,7 @@ function ensureConnection(): void {
       // Handle RPC responses
       if (msg.type === 'res' && pending.has(msg.id)) {
         const call = pending.get(msg.id)!;
+        if (call.expectFinal && msg.ok !== false && msg.payload?.status === 'accepted') return;
         pending.delete(msg.id);
         clearTimeout(call.timer);
         if (msg.ok === false) {
@@ -275,6 +287,7 @@ export async function gatewayRpcCall(
   method: string,
   params: Record<string, unknown>,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  options: GatewayRpcOptions = {},
 ): Promise<unknown> {
   // Ensure connection exists
   ensureConnection();
@@ -292,7 +305,7 @@ export async function gatewayRpcCall(
       reject(new Error(`Gateway RPC timeout after ${timeoutMs}ms calling ${method}`));
     }, timeoutMs);
 
-    pending.set(reqId, { resolve, reject, timer });
+    pending.set(reqId, { resolve, reject, timer, expectFinal: options.expectFinal === true });
 
     const sent = wsSend(JSON.stringify({ type: 'req', id: reqId, method, params }));
     if (!sent) {

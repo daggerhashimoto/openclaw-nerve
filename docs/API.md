@@ -22,6 +22,7 @@ Nerve exposes a REST + SSE API served by [Hono](https://hono.dev/) on the config
 - [Agent log](#agent-log)
 - [Gateway](#gateway)
 - [Sessions](#sessions)
+- [Attention](#attention)
 - [Channels](#channels)
 - [Workspace files](#workspace-files)
 - [Cron jobs](#cron-jobs)
@@ -1499,6 +1500,68 @@ After the spawn the server polls the child session every 5 seconds (for about an
 |--------|-----------|
 | 400 | Invalid JSON (`Invalid JSON body`) or a schema violation (`<field>: <message>`, joined with `; `) |
 | 500 | The spawn failed (gateway error, or `Timed out waiting for the new subagent session to appear` in `marker` mode) |
+
+---
+
+## Attention
+
+### `POST /api/attention/summaries`
+
+"What happened" summaries of agent threads for the Attention board's cards and Start here. For each session key Nerve reads the thread with `chat.history` (last 40 messages) and returns a cached summary when the newest user or assistant text message is unchanged. Otherwise it starts a one-shot model run in the background (gateway `agent` with `modelRun: true` and `promptMode: "none"` in a throwaway explicit session, so the summarized thread gets nothing) and answers `pending`; poll again. At most two summaries run at once, each is cut off after 90 seconds, and a failed one is retried after 5 minutes. A thread that keeps changing is summarized again at most once a minute; until then it answers `pending` with the previous text. The model is `NERVE_ATTENTION_SUMMARY_MODEL`, or the thread agent's default model when it is unset. Ready summaries are kept in `${NERVE_DATA_DIR:-~/.nerve}/attention/summaries.json`.
+
+**Request body:**
+
+```json
+{ "sessionKeys": ["agent:main:subagent:abc"] }
+```
+
+At most 50 keys are accepted and the first 12 distinct keys are answered.
+
+**Response:**
+
+```json
+{
+  "summaries": {
+    "agent:main:subagent:abc": { "status": "ready", "text": "You asked for a retry fix. The agent patched it and it waits for your review.", "updatedAt": 1795856335163 }
+  }
+}
+```
+
+`status` is `ready`, `pending` (being summarized; `text` holds the previous summary, if any), `error` (the thread could not be read or the last run failed) or `empty` (no user or assistant text yet).
+
+**Rate limit:** General (60/min)
+
+---
+
+### `POST /api/attention/day-summary`
+
+The paragraph at the top of the Attention view's Today digest: two or three plain sentences about the day so far, from the day's compact facts the client sends. The facts are fingerprinted; the same facts return the cached text. New facts start one background one-shot model run (the same `agent` call and `NERVE_ATTENTION_SUMMARY_MODEL` as the thread summaries, run as the main agent in a throwaway explicit session) and answer `pending`; poll again. Within 10 minutes of the last text, new facts answer `ready` with that text, and the next request after the interval writes a new one. A failed run is retried after 5 minutes; until then the answer is `error` (or `ready` with the last text). Texts are kept per day in `${NERVE_DATA_DIR:-~/.nerve}/attention/day-summary.json`, the newest 14 days.
+
+**Request body:**
+
+```json
+{
+  "facts": {
+    "day": "2026-11-28",
+    "counts": { "sessions": 9, "done": 7, "merged": 6, "cronOk": 12, "cronFailed": 1 },
+    "done": ["18:36 PR #458 merged (Render flow visualizations in chat)", "16:33 Task done: Address PR 452 findings"],
+    "chats": ["Linus, cli", "Kim, telegram, needs reply (Review)"],
+    "missing": []
+  }
+}
+```
+
+`day` is the viewer's local day (`YYYY-MM-DD`). `done` and `chats` hold at most 60 lines of at most 300 characters; `missing` names sources the client could not read, and the model is told not to guess about them.
+
+**Response:**
+
+```json
+{ "summary": { "status": "ready", "text": "Six pull requests merged today and the merge watch is closing their cards. Kim is waiting on your review.", "updatedAt": 1795856335163 } }
+```
+
+`status` is `ready`, `pending` (being written; `text` holds the previous text for the day, if any) or `error` (the last run failed and no text exists yet).
+
+**Rate limit:** General (60/min)
 
 ---
 

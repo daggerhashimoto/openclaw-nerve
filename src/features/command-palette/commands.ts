@@ -6,7 +6,7 @@ import type { Session } from '@/types';
 import { getSessionKey } from '@/types';
 import { getRootAgentId, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
 
-export type ViewMode = 'chat' | 'kanban';
+export type ViewMode = 'attention' | 'chat' | 'kanban';
 
 export interface CommandActions {
   onNewSession: () => void;
@@ -26,6 +26,8 @@ export interface CommandActions {
   onRefreshSessions: () => void;
   onRefreshMemory: () => void;
   onSetViewMode?: (mode: ViewMode) => void;
+  /** Opens the Attention view on its Today digest. */
+  onOpenToday?: () => void;
   canShowKanban?: boolean;
 }
 
@@ -177,6 +179,30 @@ export function createCommands(actions: CommandActions): Command[] {
       category: 'voice',
       keywords: ['wake', 'voice', 'microphone', 'hey'],
     },
+    // View commands: Attention and Chat stay when kanban is hidden; navigation sorts just before the kanban group
+    ...(actions.onSetViewMode ? [
+      {
+        id: 'open-attention',
+        label: 'Go to Attention',
+        action: () => actions.onSetViewMode!('attention'),
+        category: 'navigation' as const,
+        keywords: ['attention', 'brief', 'inbox', 'needs', 'home', 'view'],
+      },
+      ...(actions.onOpenToday ? [{
+        id: 'open-today',
+        label: 'Go to Today',
+        action: actions.onOpenToday,
+        category: 'navigation' as const,
+        keywords: ['today', 'day', 'digest', 'done', 'summary', 'attention', 'view'],
+      }] : []),
+      {
+        id: 'open-chat',
+        label: 'Open Chat View',
+        action: () => actions.onSetViewMode!('chat'),
+        category: 'navigation' as const,
+        keywords: ['chat', 'conversation', 'view'],
+      },
+    ] : []),
     // Kanban commands
     ...(actions.onSetViewMode && actions.canShowKanban !== false ? [
       {
@@ -185,13 +211,6 @@ export function createCommands(actions: CommandActions): Command[] {
         action: () => actions.onSetViewMode!('kanban'),
         category: 'kanban' as const,
         keywords: ['kanban', 'board', 'tasks', 'view'],
-      },
-      {
-        id: 'open-chat',
-        label: 'Open Chat View',
-        action: () => actions.onSetViewMode!('chat'),
-        category: 'kanban' as const,
-        keywords: ['chat', 'conversation', 'view'],
       },
       {
         id: 'create-kanban-task',

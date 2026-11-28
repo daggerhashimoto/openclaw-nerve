@@ -137,6 +137,10 @@ function getInitialTab(canShowKanban: boolean): TabId {
   return 'memory';
 }
 
+/** The last focus request this panel applied. Module scope, so a panel that mounts afresh (the compact
+ *  one does on every open) does not replay a request that is still set but already handled. */
+let lastAppliedFocusNonce: number | null = null;
+
 interface WorkspacePanelProps {
   workspaceAgentId: string;
   memories: Memory[];
@@ -150,6 +154,8 @@ interface WorkspacePanelProps {
   onOpenBoard?: () => void;
   /** Open a specific task in the full board view. */
   onOpenTask?: (taskId: string) => void;
+  /** Switch to a tab from outside (and, for crons, focus one row). Each new `nonce` is applied once. */
+  focusRequest?: { tab: TabId; cronId?: string; nonce: number } | null;
 }
 
 export function WorkspacePanel({
@@ -161,6 +167,7 @@ export function WorkspacePanel({
   compact = false,
   onOpenBoard,
   onOpenTask,
+  focusRequest,
 }: WorkspacePanelProps) {
   const { kanbanVisible } = useSettings();
   const [activeTab, setActiveTab] = useState<TabId>(() => getInitialTab(kanbanVisible));
@@ -180,6 +187,20 @@ export function WorkspacePanel({
       localStorage.setItem(STORAGE_KEY, tab);
     } catch { /* ignore */ }
   }, []);
+
+  // The cron is handed to CronsTab in the same render that shows the tab, so its row can scroll
+  const [focusCronId, setFocusCronId] = useState<string | null>(null);
+  // Each request has its own nonce, so asking for the same cron again lands again
+  const [focusNonce, setFocusNonce] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!focusRequest || focusRequest.nonce === lastAppliedFocusNonce) return;
+    lastAppliedFocusNonce = focusRequest.nonce;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-time sync from a request prop
+    handleTabChange(focusRequest.tab);
+    setFocusCronId(focusRequest.tab === 'crons' ? focusRequest.cronId ?? null : null);
+    setFocusNonce(focusRequest.nonce);
+  }, [focusRequest, handleTabChange]);
 
   useEffect(() => {
     if (kanbanVisible) return;
@@ -226,7 +247,7 @@ export function WorkspacePanel({
         </div>
         <div className={activeTab === 'crons' ? 'h-full' : 'hidden'} hidden={activeTab !== 'crons'} role="tabpanel" id="workspace-tabpanel-crons" aria-labelledby="workspace-tab-crons">
           {visitedTabs.has('crons') && (
-            <CronsTab />
+            <CronsTab focusCronId={focusCronId} focusNonce={focusNonce} />
           )}
         </div>
         <div className={activeTab === 'config' ? 'h-full' : 'hidden'} hidden={activeTab !== 'config'} role="tabpanel" id="workspace-tabpanel-config" aria-labelledby="workspace-tab-config">

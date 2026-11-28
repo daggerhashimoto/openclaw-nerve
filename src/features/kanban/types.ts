@@ -38,6 +38,8 @@ export interface TaskFeedback {
 
 export interface TaskRunLink {
   sessionKey: string;
+  /** Worker session spawned for the run, when it differs from sessionKey. */
+  childSessionKey?: string;
   sessionId?: string;
   runId?: string;
   startedAt: number;
@@ -63,6 +65,8 @@ export interface KanbanTask {
   run?: TaskRunLink;
   result?: string;
   resultAt?: number;
+  /** When the task last moved into done (older cards may not have it). */
+  completedAt?: number;
   model?: string;
   thinking?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'adaptive' | 'max' | 'ultra';
   dueAt?: number;

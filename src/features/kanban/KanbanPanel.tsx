@@ -12,13 +12,22 @@ interface KanbanPanelProps {
   initialTaskId?: string | null;
   /** Called after the initial task drawer has been opened (to clear the ID). */
   onInitialTaskConsumed?: () => void;
+  /** If set, open the proposal inbox with this proposal marked. */
+  initialProposalId?: string | null;
+  /** Called once the proposal has been shown (to clear the ID). */
+  onInitialProposalConsumed?: () => void;
 }
 
 /**
  * Main Kanban panel — replaces the placeholder from Wave 1.
  * Full board with header, columns, create dialog, and detail drawer.
  */
-export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPanelProps = {}) {
+export function KanbanPanel({
+  initialTaskId,
+  onInitialTaskConsumed,
+  initialProposalId,
+  onInitialProposalConsumed,
+}: KanbanPanelProps = {}) {
   const {
     tasks,
     loading,
@@ -42,6 +51,7 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
   const {
     proposals,
     pendingCount: pendingProposalCount,
+    loading: proposalsLoading,
     approveProposal,
     rejectProposal,
   } = useProposals();
@@ -59,8 +69,32 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
       setSelectedTask(match);
       consumedRef.current = initialTaskId;
       onInitialTaskConsumed?.();
+      return;
     }
-  }, [initialTaskId, tasks, onInitialTaskConsumed]);
+    if (loading) return;
+    // The board holds one page of tasks; fetch a task beyond it by id.
+    const requested = initialTaskId;
+    consumedRef.current = requested;
+    fetch(`/api/kanban/tasks/${encodeURIComponent(requested)}`)
+      .then((res) => (res.ok ? res.json() as Promise<KanbanTask> : null))
+      .then((task) => { if (consumedRef.current === requested && task?.id === requested) setSelectedTask(task); })
+      .catch(() => { /* leave the board as is */ })
+      .finally(() => onInitialTaskConsumed?.());
+  }, [initialTaskId, tasks, loading, onInitialTaskConsumed]);
+
+  // The header opens the inbox and marks the proposal; consume once it is in the list, or once
+  // the first load shows it is already resolved. A cleared ID makes the next request fresh.
+  const proposalConsumedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialProposalId) {
+      proposalConsumedRef.current = null;
+      return;
+    }
+    if (initialProposalId === proposalConsumedRef.current) return;
+    if (proposalsLoading && !proposals.some((p) => p.id === initialProposalId)) return;
+    proposalConsumedRef.current = initialProposalId;
+    onInitialProposalConsumed?.();
+  }, [initialProposalId, proposals, proposalsLoading, onInitialProposalConsumed]);
 
   /* ── Card click → open drawer ── */
   const handleCardClick = useCallback((task: KanbanTask) => {
@@ -106,6 +140,7 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
         pendingProposalCount={pendingProposalCount}
         onApproveProposal={async (id) => { await approveProposal(id); await fetchTasks(); }}
         onRejectProposal={async (id) => { await rejectProposal(id); }}
+        highlightProposalId={initialProposalId}
       />
 
       {/* Board body */}

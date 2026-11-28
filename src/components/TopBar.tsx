@@ -82,6 +82,10 @@ const PANEL_CONFIG: Record<Exclude<PanelId, null> | "default", PanelConfig> = {
   },
 };
 
+/** The last panel request the bar applied. Module scope, so a bar that mounts afresh (it is
+ *  unmounted while the compact top bar is hidden) does not replay a request already handled. */
+let lastOpenedPanelNonce: number | null = null;
+
 /** Props for {@link TopBar}. */
 interface TopBarProps {
   /** Callback to open the settings modal. */
@@ -104,7 +108,7 @@ interface TopBarProps {
   sessionsPanel?: ReactNode;
   /** Renderable Workspace panel content (compact mode). */
   workspacePanel?: ReactNode;
-  /** Current view mode (chat or kanban). */
+  /** Current view mode (attention, chat or kanban). */
   viewMode?: ViewMode;
   /** Callback to change the view mode. */
   onViewModeChange?: (mode: ViewMode) => void;
@@ -119,6 +123,8 @@ interface TopBarProps {
   activity?: PaneState;
   /** The fleet in numbers, printed in words beside the wordmark. */
   fleet?: FleetCounts;
+  /** Open a compact-layout panel from outside. Each new `nonce` opens it once, as a tap on its launcher would. */
+  openPanelRequest?: { panel: "workspace"; nonce: number } | null;
 }
 
 const BRAND_PANE_LABEL: Record<PaneState, string | undefined> = {
@@ -151,6 +157,7 @@ export function TopBar({
   showKanbanView = true,
   activity = "off",
   fleet,
+  openPanelRequest,
 }: TopBarProps) {
   const [activePanel, setActivePanel] = useState<PanelId>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -159,6 +166,14 @@ export function TopBar({
   const togglePanel = useCallback((panel: PanelId) => {
     setActivePanel((prev) => (prev === panel ? null : panel));
   }, []);
+
+  // Open (never toggle closed) the panel a request names, once per nonce
+  useEffect(() => {
+    if (!openPanelRequest || openPanelRequest.nonce === lastOpenedPanelNonce) return;
+    lastOpenedPanelNonce = openPanelRequest.nonce;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-time sync from a request prop
+    setActivePanel(openPanelRequest.panel);
+  }, [openPanelRequest]);
 
   const isPanelAvailable = useCallback(
     (panel: PanelId) => {
@@ -279,6 +294,17 @@ export function TopBar({
         {/* View mode toggle */}
         {onViewModeChange && (
           <div className="seg-track order-3 flex w-full items-center sm:order-none sm:w-auto">
+            <button
+              onClick={() => onViewModeChange("attention")}
+              title="Attention view"
+              aria-label="Switch to attention view"
+              aria-pressed={viewMode === "attention"}
+              data-active={viewMode === "attention"}
+              style={viewMode === "attention" ? { viewTransitionName: "seg-active" } : undefined}
+              className="shell-chip flex-1 sm:flex-none"
+            >
+              Attention
+            </button>
             <button
               onClick={() => onViewModeChange("chat")}
               title="Chat view"

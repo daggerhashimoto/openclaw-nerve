@@ -78,6 +78,14 @@ describe('timeAgo', () => {
     const ts = new Date(Date.now() - 7200_000).toISOString(); // 2 hours ago
     expect(timeAgo(ts)).toBe('2h');
   });
+
+  it('should measure against a given now instead of the clock', () => {
+    const now = Date.parse('2030-06-01T12:00:00Z');
+    expect(timeAgo(now - 30_000, now)).toBe('now');
+    expect(timeAgo(now - 5 * 60_000, now)).toBe('5m');
+    expect(timeAgo(now - 3 * 3_600_000, now)).toBe('3h');
+    expect(timeAgo(now - 2 * 86_400_000, now)).toBe('2d');
+  });
 });
 
 describe('fmtTokens', () => {

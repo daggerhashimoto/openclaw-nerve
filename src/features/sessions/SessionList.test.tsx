@@ -79,14 +79,14 @@ describe('SessionList empty state', () => {
       { sessionKey: 'agent:main:subagent:scan', label: 'Scan' },
       { sessionKey: 'agent:ops:main', label: 'Ops' },
     ];
-    const [cantaloupe, mint, lilac] = AGENT_HUES.map((hue) => hue.hex);
+    const [mint, lilac, aqua] = AGENT_HUES.map((hue) => hue.hex);
 
     const { container } = renderSessionList({ sessions });
 
     // Rows in tree order: Main, its subagent Scan (a lighter shade), then Ops
     const rowHues = () => Array.from(container.querySelectorAll<HTMLElement>('.pane-hued'))
       .map((pane) => pane.style.getPropertyValue('--pane-hue'));
-    expect(rowHues()).toEqual([cantaloupe, `color-mix(in srgb, ${cantaloupe} 62%, white)`, mint]);
+    expect(rowHues()).toEqual([mint, `color-mix(in srgb, ${mint} 62%, white)`, lilac]);
 
     // Root rows offer a colour action; children do not
     const colourButtons = screen.getAllByRole('button', { name: 'Agent colour' });
@@ -95,10 +95,10 @@ describe('SessionList empty state', () => {
     fireEvent.click(colourButtons[1]);
     const swatches = within(screen.getByRole('group', { name: 'Agent colour' })).getAllByRole('button');
     expect(swatches).toHaveLength(AGENT_HUES.length);
-    fireEvent.click(within(screen.getByRole('group', { name: 'Agent colour' })).getByRole('button', { name: 'Lilac' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Agent colour' })).getByRole('button', { name: 'Aqua' }));
 
-    expect(rowHues()[2]).toBe(lilac);
-    expect(JSON.parse(localStorage.getItem('nerve:agent-colors') ?? '{}')).toMatchObject({ main: cantaloupe, ops: lilac });
+    expect(rowHues()[2]).toBe(aqua);
+    expect(JSON.parse(localStorage.getItem('nerve:agent-colors') ?? '{}')).toMatchObject({ main: mint, ops: aqua });
   });
 
   it('shows the loading skeleton when loading and all sessions are filtered out', () => {

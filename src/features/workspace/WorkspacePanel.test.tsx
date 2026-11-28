@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspacePanel } from './WorkspacePanel';
 
@@ -21,7 +21,9 @@ vi.mock('./WorkspaceTabs', () => ({
 }));
 
 vi.mock('./tabs', () => ({
-  CronsTab: () => <div data-testid="crons-tab" />,
+  CronsTab: ({ focusCronId, focusNonce }: { focusCronId?: string | null; focusNonce?: number }) => (
+    <div data-testid="crons-tab" data-focus-cron={focusCronId ?? ''} data-focus-nonce={focusNonce ?? ''} />
+  ),
   ConfigTab: ({ agentId }: { agentId: string }) => {
     configTabRenderLog.push({ agentId });
     return <div data-testid="config-tab">config:{agentId}</div>;
@@ -101,5 +103,78 @@ describe('WorkspacePanel', () => {
     );
 
     expect(screen.getByTestId('active-tab')).toHaveTextContent('kanban');
+  });
+
+  it('focusRequest for crons selects the Crons tab', () => {
+    const props = { workspaceAgentId: 'alpha', memories: [], onRefreshMemories: vi.fn() };
+    const { rerender } = render(<WorkspacePanel {...props} />);
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('memory');
+
+    rerender(<WorkspacePanel {...props} focusRequest={{ tab: 'crons', cronId: 'cron-7', nonce: 101 }} />);
+
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('crons');
+    expect(screen.getByTestId('crons-tab')).toHaveAttribute('data-focus-cron', 'cron-7');
+  });
+
+  it('applies a focusRequest that is already set when the panel mounts', () => {
+    render(
+      <WorkspacePanel
+        workspaceAgentId="alpha"
+        memories={[]}
+        onRefreshMemories={vi.fn()}
+        focusRequest={{ tab: 'crons', cronId: 'cron-7', nonce: 102 }}
+      />,
+    );
+
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('crons');
+    expect(screen.getByTestId('crons-tab')).toHaveAttribute('data-focus-cron', 'cron-7');
+  });
+
+  it('does not replay a focusRequest it already applied when the panel mounts afresh', () => {
+    const props = {
+      workspaceAgentId: 'alpha',
+      memories: [],
+      onRefreshMemories: vi.fn(),
+      focusRequest: { tab: 'crons' as const, cronId: 'cron-7', nonce: 105 },
+    };
+    const first = render(<WorkspacePanel {...props} />);
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('crons');
+    first.unmount();
+
+    // The compact panel mounts again on the next open, with the same request still set.
+    localStorage.setItem('nerve-workspace-tab', 'memory');
+    render(<WorkspacePanel {...props} />);
+
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('memory');
+    expect(screen.queryByTestId('crons-tab')).not.toBeInTheDocument();
+  });
+
+  it('applies a focusRequest once per nonce, so the operator can move on', () => {
+    const props = { workspaceAgentId: 'alpha', memories: [], onRefreshMemories: vi.fn() };
+    const { rerender } = render(
+      <WorkspacePanel {...props} focusRequest={{ tab: 'crons', cronId: 'cron-7', nonce: 103 }} />,
+    );
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('crons');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Config' }));
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('config');
+
+    rerender(<WorkspacePanel {...props} focusRequest={{ tab: 'crons', cronId: 'cron-7', nonce: 103 }} />);
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('config');
+
+    rerender(<WorkspacePanel {...props} focusRequest={{ tab: 'crons', cronId: 'cron-7', nonce: 104 }} />);
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('crons');
+  });
+
+  it('forwards each request nonce to the Crons tab, even for the same cron', () => {
+    const props = { workspaceAgentId: 'alpha', memories: [], onRefreshMemories: vi.fn() };
+    const { rerender } = render(
+      <WorkspacePanel {...props} focusRequest={{ tab: 'crons', cronId: 'cron-7', nonce: 106 }} />,
+    );
+    expect(screen.getByTestId('crons-tab')).toHaveAttribute('data-focus-nonce', '106');
+
+    rerender(<WorkspacePanel {...props} focusRequest={{ tab: 'crons', cronId: 'cron-7', nonce: 107 }} />);
+    expect(screen.getByTestId('crons-tab')).toHaveAttribute('data-focus-cron', 'cron-7');
+    expect(screen.getByTestId('crons-tab')).toHaveAttribute('data-focus-nonce', '107');
   });
 });

@@ -1,23 +1,22 @@
 /**
- * The Attention brief: what needs the operator, ranked, each item opening its source.
- * It reads the polled sources and the session context. The only writes are the operator's own
- * item actions (useAttentionActions); after one succeeds the sources are re-read, and the item
- * moves or leaves through the normal brief rather than by editing it here.
+ * The Attention view. Now is an urgency board: a heading that is the count of what is failing,
+ * what waits on the operator and who is working; then Failing, Waiting on you (the top decision
+ * on the warm Start here plate, the rest as rows that open in place), the Agents strip and Since
+ * you looked; and the Ask box docked at the bottom. Today (TodayView) is the day digest.
  *
- * Prompts (the board's box and Reply on items) send into sessions and show replies in place
- * (useInlineReplies). They never refresh the sources or touch the Chat view's session, so the
- * ranking stays as it was.
+ * It reads the polled sources, the session context, cron run history and the gateway's exec
+ * approvals. The only writes are the operator's own item actions (useAttentionActions); after
+ * one succeeds the sources are re-read, and the item moves or leaves through the normal brief.
  *
- * Cards and Start here carry a "What happened" line for their session (useAttentionSummaries);
- * rows do not. It is read-only and the board renders the same without it.
+ * Prompts (the Ask box and Reply on items) send into sessions and show replies in place
+ * (useInlineReplies). They never refresh the sources or touch the Chat view's session.
  *
  * Order is frozen per epoch (useStableOrder). An epoch starts once per activation or Refresh,
  * and only after every enabled source has answered since then, so a cold load ranks the real
- * data and a reopen does not baseline on the answers left over from the last look.
+ * data and a reopen does not baseline on the answers left over from the last look. Approvals
+ * are pinned first; the Start here plate keeps its item for the epoch while it is still there.
  *
- * A sticky Now | Today switch sits on top. Now is this brief; Today (TodayView) is the day
- * digest, built from the same polled sources, sessions and reply store. The choice is
- * remembered per browser (attentionSegment).
+ * The Now | Today choice is remembered per browser (attentionSegment).
  */
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
@@ -28,11 +27,15 @@ import { useAgentHues } from '@/lib/agentColors';
 import { cn } from '@/lib/utils';
 import { getSessionKey } from '@/types';
 import { addSeen, readLastLook, readSeen, writeLastLook } from './attentionStorage';
-import { buildAttention } from './buildAttention';
-import { formatClock, reasonFor, sinceHeading, sourceLine, summarySentence } from './briefCopy';
-import { AttentionCard, StartHereCard } from './AttentionCard';
-import { AttentionRow, Clocked } from './AttentionRow';
+import { buildAttention, FIRST_RUN_WINDOW_MS } from './buildAttention';
+import { buildAgents } from './buildAgents';
+import { checkedAt as checkedAtOf, failingItems, formatClock, gapSentences, headline, NOT_CONNECTED, reasonFor } from './briefCopy';
+import { StartHerePlate } from './AttentionCard';
+import { AttentionRow } from './AttentionRow';
+import { AgentsStrip } from './AgentsStrip';
+import { Clocked } from './textBits';
 import { AskBox, type AskTarget, type ReplyConfig } from './AttentionReply';
+import { variantClass } from './actionStyles';
 import type { ItemView } from './itemPresentation';
 import { useAttentionSources } from './useAttentionSources';
 import { useStableOrder, type StableOrder } from './useStableOrder';
@@ -40,9 +43,11 @@ import type { AttentionActionsConfig } from './useAttentionActions';
 import { useInlineReplies } from './useInlineReplies';
 import { useAttentionSummaries } from './useAttentionSummaries';
 import { useAttentionSegment, type AttentionSegment } from './attentionSegment';
+import { useExecApprovals } from './execApprovals';
 import { KIND_WORD } from './itemPresentation';
 import { TodayView } from './today/TodayView';
-import type { AttentionItem, AttentionSource, OpenTarget, SourceStatus } from './types';
+import { useCronRuns } from './today/useCronRuns';
+import type { AttentionItem, AttentionSource, AttentionSources, OpenTarget, SourceStatus } from './types';
 
 type Polled = 'tasks' | 'proposals' | 'crons';
 type PolledStatuses = Record<Polled, SourceStatus>;
@@ -51,23 +56,27 @@ const POLLED: Polled[] = ['tasks', 'proposals', 'crons'];
 const TICK_MS = 30_000;
 const LOADING: SourceStatus = { state: 'loading' };
 const SESSIONS_LIVE: SourceStatus = { state: 'live' };
-/** Sessions during a known outage; the outage notice already speaks for it in section notes. */
-const SESSIONS_DISCONNECTED: SourceStatus = { state: 'error', error: 'not connected' };
-const RANKED = 'Ranked: deadlines, then priority, then age';
-const SESSION_CAVEAT = 'Session failures show from when this page opened.';
+/** A socket-fed source during a known outage; the outage notice already speaks for it. */
+const DISCONNECTED: SourceStatus = { state: 'error', error: NOT_CONNECTED };
+const RANKED = 'Ranked: approvals first, then deadlines, priority and age';
+/** The summaries route answers this many keys per request. */
+const MAX_SUMMARY_KEYS = 12;
 
 const SOURCE_NAMES: Record<AttentionSource, string> = {
   tasks: 'Tasks',
   proposals: 'Proposals',
   crons: 'Crons',
   sessions: 'Sessions',
+  approvals: 'Approvals',
 };
 
+type SectionId = 'failing' | 'decide' | 'agents' | 'finished';
+
 /** Which sources feed each section, for its loading and error notes. */
-const SECTION_SOURCES: Record<'decide' | 'blocked' | 'progress' | 'finished', AttentionSource[]> = {
-  decide: ['tasks', 'proposals'],
-  blocked: ['tasks', 'crons', 'sessions'],
-  progress: ['tasks', 'sessions'],
+const SECTION_SOURCES: Record<SectionId, AttentionSource[]> = {
+  failing: ['tasks', 'crons', 'sessions'],
+  decide: ['tasks', 'proposals', 'approvals'],
+  agents: ['sessions'],
   finished: ['tasks', 'crons'],
 };
 
@@ -106,6 +115,25 @@ function joinWords(words: string[]): string {
   return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
 }
 
+function statusOf(sources: AttentionSources, source: AttentionSource): SourceStatus {
+  return (source === 'approvals' ? sources.approvals : sources[source]) ?? { state: 'off' };
+}
+
+/**
+ * The plate's item for the epoch: the first decision when the epoch starts, kept while it is
+ * still waiting, so a decision that arrives mid-look never swaps the warm button under the
+ * pointer. When the plate's item leaves, the next decision takes it.
+ */
+function usePlateKey(keys: string[], epoch: number | string): string | undefined {
+  const [state, setState] = useState<{ epoch: number | string; key: string | undefined }>(() => ({ epoch, key: keys[0] }));
+  let current = state;
+  if (state.epoch !== epoch || state.key === undefined || !keys.includes(state.key)) {
+    current = { epoch, key: keys[0] };
+  }
+  if (current.epoch !== state.epoch || current.key !== state.key) setState(current);
+  return current.key;
+}
+
 export interface AttentionViewProps {
   /** The view is on screen; sources poll only while it is. */
   active: boolean;
@@ -118,7 +146,8 @@ export interface AttentionViewProps {
 export function AttentionView({ active, compact, kanbanEnabled, onOpen }: AttentionViewProps) {
   const { tasks, proposals, crons, sources: polled, refresh } = useAttentionSources({ active, kanbanEnabled });
   const { sessions, sessionsLoading, agentStatus, busyState } = useSessionContext();
-  const { connectionState } = useGateway();
+  const gateway = useGateway();
+  const { connectionState } = gateway;
   const connected = connectionState === 'connected';
   const [segment, setSegment] = useAttentionSegment();
   const showToday = segment === 'today';
@@ -127,11 +156,15 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   const [prevActive, setPrevActive] = useState(active);
   const [gate, setGate] = useState<Gate>(() => ({ armed: active, baseline: null, awaitSessions: false }));
   const [epoch, setEpoch] = useState(0);
-  // Read once per page session: hopping to a source and back must not reset "since you left".
+  // Read once per page session: hopping to a source and back must not reset "since you looked".
   const [lastLook] = useState(() => readLastLook());
+  // The window cron run history is read for; fixed for the page session so a tick does not re-read it.
+  const [runWindow] = useState(() => lastLook ?? Date.now() - FIRST_RUN_WINDOW_MS);
   const [seen, setSeen] = useState<ReadonlySet<string>>(() => readSeen());
   const [tick, setTick] = useState(() => Date.now());
   const [link, setLink] = useState<Link>(() => ({ seen: connected ? 'connected' : 'none', lostAt: null }));
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [sinceOpen, setSinceOpen] = useState(false);
 
   // Activation and the answer gate are derived during render, as useStableOrder does, so no
   // render ever shows a reopened brief baselined on the previous look's answers.
@@ -192,10 +225,14 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     });
   }, [connectionState]);
 
+  const approvals = useExecApprovals({ active, connected, signal: refreshSignal });
+  // Run history only serves Now (failing crons that recovered); Today reads its own.
+  const cronRuns = useCronRuns({ active: active && !showToday, crons, cronsStatus: polled.crons, dayStart: runWindow });
+
   // While waiting, a source that has not answered since the gate was armed reads as loading,
   // so its old data is shown as stale and the brief can never read as clear.
   const outage = !connected && link.lostAt !== null;
-  const effectiveSources = useMemo<Record<AttentionSource, SourceStatus>>(() => {
+  const effectiveSources = useMemo<AttentionSources>(() => {
     const pick = (source: Polled) => (
       !waiting || hasAnswered(polled[source], baseline?.[source]) ? polled[source] : LOADING
     );
@@ -203,9 +240,10 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
       tasks: pick('tasks'),
       proposals: pick('proposals'),
       crons: pick('crons'),
-      sessions: sessionsLoading ? LOADING : outage ? SESSIONS_DISCONNECTED : SESSIONS_LIVE,
+      sessions: sessionsLoading ? LOADING : outage ? DISCONNECTED : SESSIONS_LIVE,
+      approvals: approvals.status.state === 'off' ? approvals.status : outage ? DISCONNECTED : approvals.status,
     };
-  }, [polled, waiting, baseline, sessionsLoading, outage]);
+  }, [polled, waiting, baseline, sessionsLoading, outage, approvals.status]);
 
   // Ages stay current with the tick and with the newest answer; ranking is frozen per epoch anyway.
   const now = Math.max(tick, ...POLLED.map((source) => polled[source].checkedAt ?? 0));
@@ -217,16 +255,28 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     tasks,
     proposals,
     crons,
+    cronRuns: cronRuns.runs,
+    approvals: approvals.approvals,
     sessions,
     agentStatus,
     busyState,
     sources: effectiveSources,
-  }), [now, lastLook, seen, tasks, proposals, crons, sessions, agentStatus, busyState, effectiveSources]);
+  }), [now, lastLook, seen, tasks, proposals, crons, cronRuns.runs, approvals.approvals, sessions, agentStatus, busyState, effectiveSources]);
 
-  const decide = useStableOrder(brief.decide, currentEpoch);
+  // Approvals hold an agent, so they stay first even when they arrive mid-epoch. Their first
+  // answer lands just after the polled sources on a cold load; it joins the baseline (no New,
+  // and the plate may still move to it) instead of reading as an arrival.
+  const approvalsSettled = approvals.status.state !== 'loading' || !connected;
+  const approvalItems = useMemo(() => brief.decide.filter((item) => item.kind === 'approval'), [brief]);
+  const otherDecisions = useMemo(() => brief.decide.filter((item) => item.kind !== 'approval'), [brief]);
+  const decideEpoch = `${currentEpoch}:${approvalsSettled ? 'settled' : 'loading'}`;
+  const approvalOrder = useStableOrder(approvalItems, decideEpoch);
+  const decisionOrder = useStableOrder(otherDecisions, currentEpoch);
+  const decide = useMemo(() => [...approvalOrder.items, ...decisionOrder.items], [approvalOrder, decisionOrder]);
+  const decideNew = useMemo(() => new Set([...approvalOrder.newKeys, ...decisionOrder.newKeys]), [approvalOrder, decisionOrder]);
   const blocked = useStableOrder(brief.blocked, currentEpoch);
-  const progress = useStableOrder(brief.progress, currentEpoch);
   const finished = useStableOrder(brief.finished, currentEpoch);
+  const plateKey = usePlateKey(decide.map((item) => item.key), decideEpoch);
 
   // Owners: agent ids, named by their main session's identity when it has one.
   const agentNames = useMemo(() => {
@@ -242,6 +292,12 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     return names;
   }, [sessions]);
 
+  const agents = useMemo(
+    () => buildAgents({ brief, sessions, agentStatus, busyState, agentNames, now }),
+    [brief, sessions, agentStatus, busyState, agentNames, now],
+  );
+  const working = agents.filter((line) => line.state !== 'idle').length;
+
   // The box talks to the agent Chat opens by default: the first top-level agent, main first.
   const mainSession = useMemo(() => getTopLevelAgentSessions(sessions)[0], [sessions]);
   const mainKey = mainSession ? getSessionKey(mainSession) : '';
@@ -255,13 +311,14 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     for (const list of [brief.decide, brief.blocked, brief.progress, brief.finished, brief.seen.blocked, brief.seen.finished]) {
       for (const item of list) if (item.ownerId) ids.add(item.ownerId);
     }
+    for (const line of agents) if (line.agentId) ids.add(line.agentId);
     if (mainId) ids.add(mainId);
     return [...ids].sort().join('|');
-  }, [brief, mainId]);
+  }, [brief, agents, mainId]);
   const ownerIds = useMemo(() => (ownerKey ? ownerKey.split('|') : []), [ownerKey]);
   const { hueFor } = useAgentHues(ownerIds);
 
-  const viewOf = (item: AttentionItem, order?: StableOrder): ItemView => {
+  const viewOf = (item: AttentionItem, newKeys?: ReadonlySet<string>): ItemView => {
     // Template text is not a name: an owner without a real identity is shown by its agent id.
     const knownName = item.ownerId ? agentNames.get(item.ownerId) : undefined;
     const ownerName = item.ownerId
@@ -272,13 +329,22 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
       ownerName,
       hue: item.ownerId ? hueFor(item.ownerId) : undefined,
       // Nothing is "New" until the epoch has a real baseline.
-      isNew: !hideNew && Boolean(order?.newKeys.has(item.key)),
+      isNew: !hideNew && Boolean(newKeys?.has(item.key)),
     };
   };
 
   // After an action the sources are fetched again without a new epoch, so the rest of the
-  // brief keeps its order and only the acted-on item moves or leaves.
-  const actions = useMemo<AttentionActionsConfig>(() => ({ kanbanEnabled, onDone: refresh }), [kanbanEnabled, refresh]);
+  // board keeps its order and only the acted-on item moves or leaves.
+  const reloadApprovals = approvals.reload;
+  const actions = useMemo<AttentionActionsConfig>(() => ({
+    kanbanEnabled,
+    rpc: gateway.rpc,
+    connected,
+    onDone: (item) => {
+      if (item.kind === 'approval') reloadApprovals();
+      else refresh();
+    },
+  }), [kanbanEnabled, refresh, reloadApprovals, gateway.rpc, connected]);
 
   const replyStore = useInlineReplies();
   const connecting = connectionState === 'connecting' || connectionState === 'reconnecting';
@@ -302,6 +368,16 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   const markSeen = useCallback((items: AttentionItem[]) => {
     setSeen(addSeen(items.map((item) => item.key)));
   }, []);
+  const markOneSeen = (item: AttentionItem) => markSeen([item]);
+
+  const toggle = useCallback((item: AttentionItem) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.key)) next.delete(item.key);
+      else next.add(item.key);
+      return next;
+    });
+  }, []);
 
   const onRefresh = () => {
     setGate({ armed: true, baseline: polled, awaitSessions: false });
@@ -319,30 +395,26 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     return out;
   }, [brief]);
 
-  const liveChecked = POLLED
-    .filter((source) => effectiveSources[source].state === 'live')
-    .map((source) => effectiveSources[source].checkedAt)
-    .filter((checkedAt): checkedAt is number => typeof checkedAt === 'number');
-  const checkedAt = liveChecked.length > 0 ? Math.min(...liveChecked) : undefined;
-  const checkedClock = formatClock(checkedAt ?? now);
+  const checkedAt = checkedAtOf(brief, now);
+  const checkedClock = formatClock(checkedAt);
   const allClear = brief.allClear && !waiting && connected;
   const disconnectedSince = connected ? null : link.lostAt;
-  const disconnected = disconnectedSince !== null;
 
-  // Blocked, failed and finished items can be marked seen one by one; the rest and the Seen lines cannot.
-  const markOneSeen = (item: AttentionItem) => markSeen([item]);
+  const plate = allClear ? undefined : decide.find((item) => item.key === plateKey);
+  const rows = decide.filter((item) => item !== plate);
+  const failing = failingItems(blocked.items);
+  const seenFailing = failingItems(brief.seen.blocked);
 
-  const [start, ...then] = decide.items;
-
-  // Summaries for the items shown as cards: Start here always, Then and Blocked only off phones
-  // (phones show those as rows). Asked again on Refresh, when a card's event changes, and when
-  // a reply in one of the sessions finishes.
-  const cardItems = allClear ? [] : [start, ...(compact ? [] : [...then, ...blocked.items])];
-  const cardSessions = cardItems.flatMap((item) => (item?.detail.sessionKey ? [`${item.detail.sessionKey}@${item.updatedAt}`] : []));
-  const cardSessionsId = cardSessions.join('\n');
+  // Summaries for the plate and every open row, read lazily. Asked again on Refresh, when an
+  // item's event changes, and when a reply in one of the sessions finishes.
+  const summaryEntries: string[] = [];
+  for (const item of [plate, ...[...failing, ...rows, ...finished.items, ...brief.seen.finished, ...seenFailing].filter((entry) => expanded.has(entry.key))]) {
+    if (item?.detail.sessionKey) summaryEntries.push(`${item.detail.sessionKey}@${item.updatedAt}`);
+  }
+  const summaryId = [...new Set(summaryEntries)].slice(0, MAX_SUMMARY_KEYS).join('\n');
   const summaryKeys = useMemo(
-    () => (cardSessionsId ? cardSessionsId.split('\n').map((entry) => entry.slice(0, entry.lastIndexOf('@'))) : []),
-    [cardSessionsId],
+    () => (summaryId ? summaryId.split('\n').map((entry) => entry.slice(0, entry.lastIndexOf('@'))) : []),
+    [summaryId],
   );
   const repliesEnded = useSyncExternalStore(
     replyStore.subscribe,
@@ -351,28 +423,38 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   const summaries = useAttentionSummaries({
     active: active && !showToday,
     sessionKeys: summaryKeys,
-    signal: `${currentEpoch}|${cardSessionsId}|${repliesEnded}`,
+    signal: `${currentEpoch}|${summaryId}|${repliesEnded}`,
   });
   const summaryOf = (item: AttentionItem) => (item.detail.sessionKey ? summaries[item.detail.sessionKey] : undefined);
 
-  const renderRows = (items: AttentionItem[], order?: StableOrder, onMarkSeen?: (item: AttentionItem) => void) => (
-    <div className={compact ? 'flex flex-col' : 'flex flex-col gap-0.5 pt-1'}>
+  const renderRows = (
+    items: AttentionItem[],
+    order: StableOrder | { newKeys: ReadonlySet<string> } | undefined,
+    options: { onMarkSeen?: (item: AttentionItem) => void; placement?: 'row' | 'detail'; history?: boolean } = {},
+  ) => (
+    <div className={compact ? 'flex flex-col' : 'flex flex-col gap-0.5'}>
       {items.map((item) => (
         <AttentionRow
           key={item.key}
           item={item}
-          view={viewOf(item, order)}
+          view={viewOf(item, order?.newKeys)}
+          now={now}
           compact={compact}
+          open={expanded.has(item.key)}
+          onToggle={toggle}
           onOpen={onOpen}
-          onMarkSeen={onMarkSeen}
+          onMarkSeen={options.onMarkSeen}
+          markSeenPlacement={options.placement}
           actions={actions}
           replies={replies}
+          summary={expanded.has(item.key) ? summaryOf(item) : undefined}
+          history={options.history}
         />
       ))}
     </div>
   );
 
-  const notes = (section: keyof typeof SECTION_SOURCES) => (
+  const notes = (section: SectionId) => (
     <SectionNotes
       sources={effectiveSources}
       relevant={SECTION_SOURCES[section]}
@@ -382,112 +464,51 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     />
   );
 
+  const failingSection = (failing.length > 0 || seenFailing.length > 0 || hasNotes(effectiveSources, 'failing')) && (
+    <Section
+      id="attention-failing"
+      title="Failing"
+      count={failing.length}
+      compact={compact}
+      aside={failing.length > 1 ? (
+        <button type="button" onClick={() => markSeen(failing)} className={cn(variantClass('text', compact), 'text-[0.8rem]')}>
+          Mark all seen
+        </button>
+      ) : undefined}
+    >
+      {notes('failing')}
+      {failing.length > 0 && renderRows(failing, blocked, { onMarkSeen: markOneSeen, placement: compact ? 'detail' : 'row' })}
+      <SeenLine items={seenFailing} compact={compact} render={(items) => renderRows(items, undefined)} />
+    </Section>
+  );
+
   const decideSection = (
-    <Section id="attention-decide" title="Decide now" count={String(decide.items.length)} compact={compact}
-      aside={<span className="text-[0.8rem] text-muted-foreground">{compact ? 'Ranked' : RANKED}</span>}
+    <Section
+      id="attention-decide"
+      title="Waiting on you"
+      count={decide.length}
+      countTitle={RANKED}
+      compact={compact}
     >
       {notes('decide')}
-      {start ? (
-        <>
-          <div className={cn('text-[0.8rem] text-muted-foreground', compact && 'px-4')}>Start here</div>
-          <div className={compact ? 'px-3' : undefined}>
-            <StartHereCard
-              key={start.key}
-              item={start}
-              view={viewOf(start, decide)}
-              compact={compact}
-              onOpen={onOpen}
-              actions={actions}
-              replies={replies}
-              summary={summaryOf(start)}
-            />
-          </div>
-          {then.length > 0 && (
-            <>
-              <div className={cn('mt-1 text-[0.8rem] text-muted-foreground', compact && 'px-4')}>Then</div>
-              {compact ? renderRows(then, decide) : (
-                <div className="flex flex-col gap-3">
-                  {then.map((item, index) => (
-                    <AttentionCard
-                      key={item.key}
-                      item={item}
-                      view={viewOf(item, decide)}
-                      rank={index + 2}
-                      onOpen={onOpen}
-                      actions={actions}
-                      replies={replies}
-                      summary={summaryOf(item)}
-                    />
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </>
-      ) : (
+      {plate && (
+        <div className={compact ? 'px-3' : undefined}>
+          <StartHerePlate
+            key={plate.key}
+            item={plate}
+            view={viewOf(plate, decideNew)}
+            compact={compact}
+            onOpen={onOpen}
+            actions={actions}
+            replies={replies}
+            summary={summaryOf(plate)}
+          />
+        </div>
+      )}
+      {rows.length > 0 && renderRows(rows, { newKeys: decideNew })}
+      {decide.length === 0 && (
         <EmptyLine compact={compact} hidden={hasNotes(effectiveSources, 'decide')}>Nothing to decide.</EmptyLine>
       )}
-    </Section>
-  );
-
-  const blockedSection = (
-    <Section id="attention-blocked" title="Blocked or failed" count={String(blocked.items.length)} compact={compact}
-      aside={(
-        <>
-          {!compact && <span className="text-[0.8rem] text-muted-foreground">{RANKED}</span>}
-          {blocked.items.length > 0 && (
-            <MarkSeenButton compact={compact} onClick={() => markSeen(blocked.items)} />
-          )}
-        </>
-      )}
-    >
-      {notes('blocked')}
-      {blocked.items.length > 0 ? (
-        compact ? renderRows(blocked.items, blocked, markOneSeen) : (
-          <div className="flex flex-wrap items-stretch gap-3">
-            {blocked.items.map((item, index) => (
-              <AttentionCard
-                key={item.key}
-                item={item}
-                view={viewOf(item, blocked)}
-                rank={index + 1}
-                onOpen={onOpen}
-                onMarkSeen={markOneSeen}
-                actions={actions}
-                replies={replies}
-                summary={summaryOf(item)}
-                className="flex-[1_1_300px]"
-              />
-            ))}
-          </div>
-        )
-      ) : (
-        <EmptyLine compact={compact} hidden={hasNotes(effectiveSources, 'blocked')}>Nothing blocked or failed.</EmptyLine>
-      )}
-      <SeenLine items={brief.seen.blocked} compact={compact} render={(items) => renderRows(items)} />
-    </Section>
-  );
-
-  const progressSection = (
-    <Section id="attention-progress" title="In progress" count={String(progress.items.length)} compact={compact}>
-      {notes('progress')}
-      {progress.items.length > 0
-        ? renderRows(progress.items, progress)
-        : <EmptyLine compact={compact} hidden={hasNotes(effectiveSources, 'progress')}>Nothing running.</EmptyLine>}
-    </Section>
-  );
-
-  const finishedSection = (
-    <Section id="attention-finished" title="Recently finished" count={`${finished.items.length} unseen`} compact={compact}
-      aside={finished.items.length > 0
-        ? <MarkSeenButton compact={compact} onClick={() => markSeen(finished.items)} />
-        : undefined}
-    >
-      {notes('finished')}
-      {finished.items.length > 0
-        ? renderRows(finished.items, finished, markOneSeen)
-        : <EmptyLine compact={compact} hidden={hasNotes(effectiveSources, 'finished')}>Nothing new has finished.</EmptyLine>}
-      <SeenLine items={brief.seen.finished} compact={compact} render={(items) => renderRows(items)} />
     </Section>
   );
 
@@ -496,24 +517,113 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
       <p className={cn('m-0 text-[1rem] text-foreground', compact && 'px-4')}>
         <Clocked text={`Nothing needs you. Checked tasks, proposals and crons at ${checkedClock}.`} />
       </p>
-      <p className={cn('m-0 text-[0.8rem] text-muted-foreground', compact && 'px-4')}>{SESSION_CAVEAT}</p>
       {/* Failures marked seen stay visible as a collapsed count; they are not gone. */}
-      <SeenLine items={brief.seen.blocked} compact={compact} render={(items) => renderRows(items)} />
+      <SeenLine items={seenFailing} compact={compact} render={(items) => renderRows(items, undefined)} />
     </section>
   );
 
-  const notConnectedNote = disconnectedSince !== null && (
-    <p className={cn('cockpit-note m-0', compact && 'mx-3')} role="status">
-      <Clocked text={`Not connected since ${formatClock(disconnectedSince)}. Showing the last known state.`} />
-    </p>
+  const agentsSection = (
+    <Section id="attention-agents" title="Agents" count={working > 0 ? working : undefined} countLabel="working" compact={compact}>
+      {notes('agents')}
+      {agents.length > 0 ? (
+        <AgentsStrip lines={agents} now={now} compact={compact} hueFor={hueFor} onOpen={onOpen} actions={actions} />
+      ) : (
+        <EmptyLine compact={compact} hidden={hasNotes(effectiveSources, 'agents') || sessionsLoading}>No agents yet.</EmptyLine>
+      )}
+    </Section>
   );
 
+  const sinceClock = formatClock(brief.since);
+  const finishedCount = finished.items.length;
+  const sinceSection = (
+    <section aria-labelledby="attention-since" className="flex min-w-0 flex-col gap-2">
+      <div className={cn('flex flex-wrap items-center gap-x-3 border-b border-border', compact ? 'min-h-11 px-4' : 'min-h-7')}>
+        <h2 id="attention-since" title={`Since ${sinceClock}`} className="m-0 text-[0.867rem] font-semibold text-foreground">
+          Since you looked
+        </h2>
+        {finishedCount > 0 ? (
+          <button
+            type="button"
+            aria-expanded={sinceOpen}
+            aria-controls="attention-since-list"
+            onClick={() => setSinceOpen((value) => !value)}
+            className={cn('inline-flex cursor-pointer items-center gap-1 text-[0.8rem] text-muted-foreground hover:text-foreground', compact && 'min-h-11')}
+          >
+            <span className="font-mono tabular text-foreground">{finishedCount}</span>
+            {' finished'}
+            <span aria-hidden="true" className={cn('inline-block transition-transform duration-[120ms]', sinceOpen && 'rotate-90')}>›</span>
+          </button>
+        ) : (
+          <span className="text-[0.8rem] text-muted-foreground">
+            {hasNotes(effectiveSources, 'finished') ? '' : 'Nothing new'}
+          </span>
+        )}
+        <span className="flex-1" />
+        {finishedCount > 0 && (
+          <button type="button" onClick={() => markSeen(finished.items)} className={cn(variantClass('text', compact), 'text-[0.8rem]')}>
+            Mark all seen
+          </button>
+        )}
+      </div>
+      {notes('finished')}
+      {sinceOpen && finishedCount > 0 && (
+        <div id="attention-since-list">
+          {renderRows(finished.items, finished, { onMarkSeen: markOneSeen, placement: 'row', history: true })}
+        </div>
+      )}
+      <SeenLine items={brief.seen.finished} compact={compact} render={(items) => renderRows(items, undefined, { history: true })} />
+    </section>
+  );
+
+  const { parts, text: headlineText } = headline(brief, working);
+  // Loading is said in the sections it holds back; the heading line keeps the lasting gaps.
+  const gaps = gapSentences(brief, { loading: false });
+
   return (
-    <div className="h-full min-h-0 overflow-y-auto overscroll-contain bg-background">
-      <SegmentSwitch segment={segment} onChange={setSegment} compact={compact} />
-      {showToday ? (
-        <>
-          {notConnectedNote && <div className={cn('mx-auto w-full max-w-[1320px] pt-2', !compact && 'px-7')}>{notConnectedNote}</div>}
+    <div className="attention-board h-full min-h-0 overflow-y-auto overscroll-contain bg-background" data-compact={compact}>
+      <div className={cn('mx-auto flex min-h-full w-full max-w-[1320px] flex-col', !compact && 'px-7')}>
+        <header className={cn('flex flex-col gap-1', compact ? 'px-4 pb-3 pt-3' : 'pb-5 pt-4')}>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+            {showToday ? <span className="flex-1" /> : (
+              <h1
+                data-testid="attention-headline"
+                aria-label={headlineText}
+                className={cn('m-0 min-w-0 flex-1 font-semibold leading-tight text-foreground', compact ? 'text-[1.133rem]' : 'text-[1.2rem]')}
+              >
+                {parts.length > 0 ? parts.map((part, index) => (
+                  <span key={part.word} className="whitespace-nowrap">
+                    {index > 0 && <span aria-hidden="true" className="px-1.5 font-normal text-muted-foreground">·</span>}
+                    <span className={cn('font-mono tabular', part.tone === 'error' ? 'text-destructive' : part.tone === 'operator' ? 'text-operator-text' : 'text-live-text')}>
+                      {part.n}
+                    </span>
+                    {` ${part.word}`}
+                  </span>
+                )) : headlineText}
+              </h1>
+            )}
+            <SegmentTabs segment={segment} onChange={setSegment} compact={compact} />
+            {!showToday && (
+              <>
+                <span className="font-mono text-[0.733rem] tabular text-muted-foreground" title={`Checked ${checkedClock}`}>
+                  {checkedClock}
+                </span>
+                <button type="button" onClick={onRefresh} className={cn('shell-chip shrink-0', compact && 'min-h-11')}>
+                  Refresh
+                </button>
+              </>
+            )}
+          </div>
+          {!showToday && gaps.length > 0 && (
+            <p className="m-0 max-w-[90ch] text-[0.8rem] leading-normal text-muted-foreground">{gaps.join(' ')}</p>
+          )}
+          {disconnectedSince !== null && (
+            <p className="cockpit-note m-0 mt-1" role="status">
+              <Clocked text={`Not connected since ${formatClock(disconnectedSince)}. Showing the last known state.`} />
+            </p>
+          )}
+        </header>
+
+        {showToday ? (
           <TodayView
             active={active}
             compact={compact}
@@ -532,100 +642,43 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
             onRefresh={onRefresh}
             refreshSignal={refreshSignal}
           />
-        </>
-      ) : (
-      <div
-        className={cn(
-          'mx-auto flex w-full max-w-[1320px] flex-col',
-          compact ? 'gap-4 pb-8 pt-2' : 'gap-6 px-7 pb-6 pt-4',
-        )}
-      >
-        {notConnectedNote}
-
-        <div className={cn('flex flex-col', compact ? 'gap-4' : 'gap-6', disconnected && 'opacity-60')}>
-          <section aria-label="Summary" className={cn('flex flex-col gap-1.5', compact && 'px-4')}>
-            <div className="flex items-start gap-3">
-              <h1 className={cn('m-0 font-semibold leading-tight text-foreground', compact ? 'text-[1.333rem]' : 'text-[1.2rem]')}>
-                <Clocked text={sinceHeading(brief, lastLook, now)} />
-              </h1>
-              <span className="flex-1" />
-              <button
-                type="button"
-                onClick={onRefresh}
-                className={cn('shell-chip shrink-0', compact && 'min-h-11')}
-              >
-                Refresh
-              </button>
-            </div>
-            {!allClear && (
-              <p className="m-0 max-w-[72ch] text-[1rem] leading-relaxed text-foreground">
-                <Clocked
-                  text={brief.allClear
-                    ? 'Nothing needed you in the last known state.'
-                    : summarySentence(brief, now)}
-                />
-              </p>
-            )}
-            <p className="m-0 max-w-[90ch] text-[0.8rem] leading-normal text-muted-foreground">
-              <Clocked text={sourceLine(brief, now)} />
-            </p>
-          </section>
-
-          <AskBox
-            config={replies}
-            target={askTarget}
-            loading={sessionsLoading && connected}
-            compact={compact}
-            onOpen={onOpen}
-          />
-
-          {compact ? (
-            <div className="flex flex-col gap-2">
-              {allClear ? allClearBlock : (
-                <>
-                  {decideSection}
-                  {blockedSection}
-                  {progressSection}
-                </>
-              )}
-              {finishedSection}
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-start gap-6">
-              <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-6">
+        ) : (
+          <>
+            <div className={cn('attention-grid flex-1 items-start', compact ? 'pb-4' : 'pb-6')}>
+              <div className={cn('flex min-w-0 flex-col', compact ? 'gap-5' : 'gap-7')}>
                 {allClear ? allClearBlock : (
                   <>
+                    {failingSection}
                     {decideSection}
-                    {blockedSection}
                   </>
                 )}
               </div>
-              <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-6">
-                {!allClear && progressSection}
-                {finishedSection}
+              <div className={cn('flex min-w-0 flex-col', compact ? 'gap-5' : 'gap-7')}>
+                {agentsSection}
+                {sinceSection}
               </div>
             </div>
-          )}
-
-          {checkedAt !== undefined && (
-            <p
-              className={cn(
-                'm-0 border-t border-border pt-3 text-[0.8rem] text-muted-foreground',
-                compact && 'mx-4',
-              )}
-            >
-              <Clocked text={`That is everything the live sources reported at ${checkedClock}.`} />
-            </p>
-          )}
-        </div>
+            {/* The Ask box docks at the bottom of the work column, like the chat composer. */}
+            <div className="attention-grid pointer-events-none sticky bottom-0 z-20">
+              <div className={cn('pointer-events-auto bg-background', compact ? 'px-3 pb-3 pt-2' : 'pb-4 pt-2')}>
+                <AskBox
+                  config={replies}
+                  target={askTarget}
+                  loading={sessionsLoading && connected}
+                  compact={compact}
+                  onOpen={onOpen}
+                />
+              </div>
+            </div>
+          </>
+        )}
       </div>
-      )}
     </div>
   );
 }
 
-/** Now | Today, sticky at the top of the view so it stays in reach while either scrolls. */
-function SegmentSwitch({
+/** Now | Today: a small tab control on the heading row, not a full-width switch. */
+function SegmentTabs({
   segment,
   onChange,
   compact,
@@ -640,19 +693,15 @@ function SegmentSwitch({
       aria-pressed={segment === value}
       data-active={segment === value}
       onClick={() => onChange(value)}
-      className={cn('shell-chip flex-1 sm:flex-none', compact && 'min-h-[44px]!')}
+      className={cn('shell-chip', compact && 'min-h-[44px]! px-3!')}
     >
       {label}
     </button>
   );
   return (
-    <div className="sticky top-0 z-30 bg-background">
-      <div className={cn('mx-auto w-full max-w-[1320px]', compact ? 'px-3 py-2' : 'px-7 pb-1 pt-4')}>
-        <div role="group" aria-label="Attention view" className={cn('seg-track', compact && 'flex w-full')}>
-          {option('now', 'Now')}
-          {option('today', 'Today')}
-        </div>
-      </div>
+    <div role="group" aria-label="Attention view" className="seg-track shrink-0">
+      {option('now', 'Now')}
+      {option('today', 'Today')}
     </div>
   );
 }
@@ -661,27 +710,31 @@ function Section({
   id,
   title,
   count,
+  countLabel,
+  countTitle,
   aside,
   compact,
   children,
 }: {
   id: string;
   title: string;
-  count: string;
+  count?: number;
+  countLabel?: string;
+  /** How the section is ordered, on hover over the count. */
+  countTitle?: string;
   aside?: React.ReactNode;
   compact: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-3">
-      <div
-        className={cn(
-          'flex flex-wrap items-center gap-x-2 border-b border-border',
-          compact ? 'min-h-11 px-4' : 'min-h-7',
-        )}
-      >
+    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-2">
+      <div className={cn('flex flex-wrap items-center gap-x-2 border-b border-border', compact ? 'min-h-11 px-4' : 'min-h-7')}>
         <h2 id={id} className="m-0 text-[0.867rem] font-semibold text-foreground">{title}</h2>
-        <span className="font-mono text-[0.8rem] tabular text-muted-foreground">{count}</span>
+        {count !== undefined && (
+          <span data-testid={`${id}-count`} title={countTitle} className="font-mono text-[0.8rem] tabular text-muted-foreground">
+            {countLabel ? `${count} ${countLabel}` : count}
+          </span>
+        )}
         <span className="flex-1" />
         {aside}
       </div>
@@ -690,28 +743,17 @@ function Section({
   );
 }
 
-function MarkSeenButton({ compact, onClick }: { compact: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn('shell-chip text-[0.8rem]', compact && 'min-h-11')}
-    >
-      Mark seen
-    </button>
-  );
-}
-
 function EmptyLine({ compact, hidden, children }: { compact: boolean; hidden: boolean; children: React.ReactNode }) {
   if (hidden) return null;
   return <p className={cn('m-0 text-[0.867rem] text-muted-foreground', compact && 'px-4')}>{children}</p>;
 }
 
-/** Sources that keep a section from being trusted as empty: loading, unreadable, or (for Decide now) off. */
-function hasNotes(sources: Record<AttentionSource, SourceStatus>, section: keyof typeof SECTION_SOURCES): boolean {
+/** Sources that keep a section from being trusted as empty: loading, unreadable, or (for decisions) off. */
+function hasNotes(sources: AttentionSources, section: SectionId): boolean {
   return SECTION_SOURCES[section].some((source) => {
-    const state = sources[source].state;
-    return state === 'loading' || state === 'error' || (section === 'decide' && state === 'off');
+    const status = statusOf(sources, source);
+    if (source === 'approvals' && status.state === 'off') return false;
+    return status.state === 'loading' || status.state === 'error' || (section === 'decide' && status.state === 'off');
   });
 }
 
@@ -722,18 +764,19 @@ function SectionNotes({
   compact,
   onOpen,
 }: {
-  sources: Record<AttentionSource, SourceStatus>;
+  sources: AttentionSources;
   relevant: AttentionSource[];
   showOff: boolean;
   compact: boolean;
   onOpen: (target: OpenTarget) => void;
 }) {
   const tasksOff = sources.tasks.state === 'off';
-  const errors = relevant.filter((source) => (
-    sources[source].state === 'error' && sources[source] !== SESSIONS_DISCONNECTED
-  ));
+  const errors = relevant.filter((source) => {
+    const status = statusOf(sources, source);
+    return status.state === 'error' && status.error !== NOT_CONNECTED;
+  });
   const loading = relevant.filter((source) => (
-    sources[source].state === 'loading' && !(source === 'proposals' && tasksOff)
+    statusOf(sources, source).state === 'loading' && !(source === 'proposals' && tasksOff)
   ));
   const off = showOff && tasksOff;
   if (errors.length === 0 && loading.length === 0 && !off) return null;
@@ -741,21 +784,18 @@ function SectionNotes({
   return (
     <div className={cn('flex flex-col gap-1 text-[0.867rem] text-muted-foreground', compact && 'px-4')}>
       {errors.map((source) => {
-        const error = sources[source].error?.trim();
-        const panel = source === 'crons' ? 'crons' : 'tasks';
+        const error = statusOf(sources, source).error?.trim();
+        const panel = source === 'crons' ? 'crons' : source === 'tasks' || source === 'proposals' ? 'tasks' : null;
         return (
           <p key={source} className="m-0 flex flex-wrap items-center gap-x-2">
             <span className="text-foreground">
               {error ? `${SOURCE_NAMES[source]} could not be read (${error}).` : `${SOURCE_NAMES[source]} could not be read.`}
             </span>
-            {source !== 'sessions' && (
+            {panel && (
               <button
                 type="button"
                 onClick={() => onOpen({ type: 'source', source: panel })}
-                className={cn(
-                  'cursor-pointer text-foreground underline decoration-border underline-offset-4 hover:decoration-operator',
-                  compact && 'min-h-11',
-                )}
+                className={variantClass('text', compact)}
               >
                 {panel === 'crons' ? 'Open Crons' : 'Open Tasks'}
               </button>

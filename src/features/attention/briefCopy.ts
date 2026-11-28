@@ -1,26 +1,26 @@
 /**
- * Words for the Attention brief: the summary sentence, the source line, the
- * heading and the per-card reason. Pure: every time comes from the arguments.
+ * Words for the Now board: the heading in counts, the notes about sources that are not live,
+ * and each item's reason. Pure: every time comes from the arguments.
  * Nothing here calls agent-reported work verified or approved.
  */
 
 import { timeAgo } from '@/lib/formatting';
 import type { AttentionBrief, AttentionItem, AttentionSource } from './types';
 
-const SOURCE_ORDER: AttentionSource[] = ['tasks', 'proposals', 'crons', 'sessions'];
-// Sessions are not listed as live; the session caveat covers them.
-const LISTED_AS_LIVE: AttentionSource[] = ['tasks', 'proposals', 'crons'];
+const SOURCE_ORDER: AttentionSource[] = ['tasks', 'proposals', 'approvals', 'crons', 'sessions'];
 const SOURCE_NAMES: Record<AttentionSource, string> = {
   tasks: 'Tasks',
   proposals: 'Proposals',
   crons: 'Crons',
   sessions: 'Sessions',
+  approvals: 'Approvals',
 };
-const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
-const SESSION_CAVEAT = 'session failures show from when this page opened';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-type SourceState = AttentionBrief['sources'][AttentionSource]['state'];
+type SourceState = 'loading' | 'live' | 'error' | 'off';
+
+/** The error a socket-fed source carries while the gateway is lost. */
+export const NOT_CONNECTED = 'not connected';
 
 /** Local 24-hour `HH:MM`. */
 export function formatClock(ts: number): string {
@@ -43,21 +43,13 @@ export function formatDayClock(ts: number, now: number): string {
   return sameLocalDay(ts, now) ? clock : `${WEEKDAYS[new Date(ts).getDay()]} ${clock}`;
 }
 
-/** `at HH:MM` when `ts` is today, otherwise `Sat 07:57`: reads after "since you left" and "fails again". */
+/** `at HH:MM` when `ts` is today, otherwise `Sat 07:57`. */
 function atDayClock(ts: number, now: number): string {
   return sameLocalDay(ts, now) ? `at ${formatClock(ts)}` : formatDayClock(ts, now);
 }
 
-function countWord(n: number): string {
-  return n >= 0 && n < NUMBER_WORDS.length ? NUMBER_WORDS[n] : String(n);
-}
-
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-function counted(n: number, one: string, many: string): string {
-  return `${countWord(n)} ${n === 1 ? one : many}`;
 }
 
 function joinWords(words: string[]): string {
@@ -71,9 +63,10 @@ function nameList(sources: AttentionSource[], capitalizeFirst = true): string {
   return capitalizeFirst ? capitalize(text) : text;
 }
 
-/** Proposals live on the task board, so they are off whenever tasks are. */
+/** Proposals live on the task board, so they are off whenever tasks are. Approvals missing are off. */
 function stateOf(brief: AttentionBrief, source: AttentionSource): SourceState {
   if (source === 'proposals' && brief.sources.tasks.state === 'off') return 'off';
+  if (source === 'approvals') return brief.sources.approvals?.state ?? 'off';
   return brief.sources[source].state;
 }
 
@@ -81,25 +74,10 @@ function sourcesIn(brief: AttentionBrief, state: SourceState, among = SOURCE_ORD
   return among.filter((source) => stateOf(brief, source) === state);
 }
 
-/** Off sources to name; proposals are folded into "Tasks are turned off". */
+/** Off sources worth naming: proposals fold into "Tasks are turned off", and approvals a gateway lacks are not news. */
 function offSources(brief: AttentionBrief): AttentionSource[] {
-  const off = sourcesIn(brief, 'off');
+  const off = sourcesIn(brief, 'off').filter((source) => source !== 'approvals');
   return brief.sources.tasks.state === 'off' ? off.filter((source) => source !== 'proposals') : off;
-}
-
-function readError(brief: AttentionBrief, source: AttentionSource): string {
-  const error = brief.sources[source].error?.trim();
-  return error
-    ? `${SOURCE_NAMES[source]} could not be read (${error}).`
-    : `${SOURCE_NAMES[source]} could not be read.`;
-}
-
-/** The time the brief is as fresh as: the stalest live source, else now. */
-function checkedClock(brief: AttentionBrief, live: AttentionSource[], now: number): string {
-  const times = live
-    .map((source) => brief.sources[source].checkedAt)
-    .filter((checkedAt): checkedAt is number => typeof checkedAt === 'number');
-  return formatClock(times.length > 0 ? Math.min(...times) : now);
 }
 
 /** "5m ago", or "just now" inside the first minute. */
@@ -108,94 +86,87 @@ function ago(ts: number, now: number): string {
   return age === 'now' ? 'just now' : `${age} ago`;
 }
 
-export function sinceHeading(brief: AttentionBrief, lastLook: number | null, now: number): string {
-  // brief.since is the window the brief was built for; it equals lastLook when one exists.
-  return lastLook === null ? 'In the last 24 hours' : `Since you left ${atDayClock(brief.since, now)}`;
+/** The time the board is as fresh as: the stalest live polled source, else now. */
+export function checkedAt(brief: AttentionBrief, now: number): number {
+  const times = (['tasks', 'proposals', 'crons'] as const)
+    .filter((source) => stateOf(brief, source) === 'live')
+    .map((source) => brief.sources[source].checkedAt)
+    .filter((at): at is number => typeof at === 'number');
+  return times.length > 0 ? Math.min(...times) : now;
 }
 
-export function sourceLine(brief: AttentionBrief, now: number): string {
-  const live = sourcesIn(brief, 'live', LISTED_AS_LIVE);
-  const parts: string[] = [];
-
-  if (live.length > 0) {
-    parts.push(
-      `Checked ${checkedClock(brief, live, now)}. ${nameList(live)} are live; ${SESSION_CAVEAT}.`,
-    );
-  }
-  for (const source of sourcesIn(brief, 'error')) parts.push(readError(brief, source));
-  const loading = sourcesIn(brief, 'loading');
-  if (loading.length > 0) parts.push(`Loading ${nameList(loading, false)}.`);
-  const off = offSources(brief);
-  if (off.length > 0) parts.push(`${nameList(off)} are turned off.`);
-  if (live.length === 0) parts.push(capitalize(`${SESSION_CAVEAT}.`));
-
-  return parts.join(' ');
+export interface HeadlinePart {
+  n: number;
+  word: string;
+  tone: 'error' | 'operator' | 'live';
 }
 
-/** What is missing from the brief, in words; empty when every source is live. */
-function gapSentences(brief: AttentionBrief): string[] {
+/** Failures that need the operator: everything blocked except runs that only went quiet. */
+export function failingItems(items: AttentionItem[]): AttentionItem[] {
+  return items.filter((item) => item.kind !== 'gone-quiet');
+}
+
+/**
+ * The board's heading in counts: failing, to decide, working. Only counts above zero are named.
+ * With none, the heading says nothing needs the operator only when the brief is all clear.
+ */
+export function headline(brief: AttentionBrief, working: number): { parts: HeadlinePart[]; text: string } {
+  const parts: HeadlinePart[] = [];
+  const failing = failingItems(brief.blocked).length;
+  if (failing > 0) parts.push({ n: failing, word: 'failing', tone: 'error' });
+  if (brief.decide.length > 0) parts.push({ n: brief.decide.length, word: 'to decide', tone: 'operator' });
+  if (working > 0) parts.push({ n: working, word: 'working', tone: 'live' });
+  if (parts.length > 0) return { parts, text: parts.map((part) => `${part.n} ${part.word}`).join(' · ') };
+  return { parts, text: brief.allClear ? 'Nothing needs you' : 'Nothing to show' };
+}
+
+/** What keeps the board from being complete, in words; empty when every source is live. */
+export function gapSentences(brief: AttentionBrief, { loading: sayLoading = true }: { loading?: boolean } = {}): string[] {
   const sentences: string[] = [];
-  const errors = sourcesIn(brief, 'error');
+  // A lost gateway is told by the board's own notice, not once per source.
+  const errors = sourcesIn(brief, 'error').filter((source) => brief.sources[source]?.error !== NOT_CONNECTED);
   if (errors.length > 0) sentences.push(`${nameList(errors)} could not be read, so this may be incomplete.`);
   const loading = sourcesIn(brief, 'loading');
-  if (loading.length > 0) sentences.push(`Still loading ${nameList(loading, false)}.`);
+  if (sayLoading && loading.length > 0) sentences.push(`Loading ${nameList(loading, false)}.`);
   const off = offSources(brief);
   if (off.length > 0) sentences.push(`${nameList(off)} are turned off.`);
   return sentences;
 }
 
-/** The failing cron that runs again soonest, if any run is still ahead. */
-function soonestCronRun(brief: AttentionBrief, now: number): { title: string; nextRun: number } | null {
-  let soonest: { title: string; nextRun: number } | null = null;
-  for (const item of brief.blocked) {
-    const nextRun = item.detail.nextRun;
-    if (item.kind !== 'cron-failed' || nextRun === undefined || nextRun <= now) continue;
-    if (!soonest || nextRun < soonest.nextRun) soonest = { title: item.title, nextRun };
+/** The kind of an item in a word, for its meta line. */
+export function kindWord(item: AttentionItem): string {
+  switch (item.kind) {
+    case 'approval':
+      return 'Approval';
+    case 'review':
+      return 'Review';
+    case 'proposal':
+      return item.detail.proposalChange ? `Proposal, changes ${item.detail.proposalChange}` : 'Proposal';
+    case 'task-failed':
+      return 'Run failed';
+    case 'cron-failed':
+      return 'Cron failed';
+    case 'session-failed':
+      return 'Session failed';
+    case 'gone-quiet':
+      return 'Gone quiet';
+    case 'task-running':
+    case 'session-running':
+      return 'Running';
+    case 'task-finished':
+      return 'Run finished';
+    case 'cron-recovered':
+      return 'Cron recovered';
   }
-  return soonest;
-}
-
-function needsSentence(brief: AttentionBrief): string | null {
-  const decisions = brief.decide.length;
-  const quiet = brief.blocked.filter((item) => item.kind === 'gone-quiet').length;
-  const failures = brief.blocked.length - quiet;
-
-  const phrases: { count: number; text: string }[] = [];
-  if (decisions > 0) phrases.push({ count: decisions, text: counted(decisions, 'decision', 'decisions') });
-  if (failures > 0) phrases.push({ count: failures, text: counted(failures, 'failure', 'failures') });
-  if (quiet > 0) phrases.push({ count: quiet, text: counted(quiet, 'quiet task', 'quiet tasks') });
-  if (phrases.length === 0) return null;
-
-  const single = phrases.length === 1 && phrases[0].count === 1;
-  return capitalize(`${joinWords(phrases.map((phrase) => phrase.text))} ${single ? 'needs' : 'need'} you.`);
-}
-
-export function summarySentence(brief: AttentionBrief, now: number): string {
-  if (brief.allClear) return 'Nothing needs you.';
-
-  const sentences: string[] = [];
-  const gap = gapSentences(brief);
-  const needs = needsSentence(brief);
-
-  if (needs) {
-    sentences.push(needs);
-    const cron = soonestCronRun(brief, now);
-    if (cron) sentences.push(`${cron.title} fails again ${atDayClock(cron.nextRun, now)} unless fixed.`);
-  } else if (gap.length === 0) {
-    sentences.push('Nothing is waiting on you.');
-  }
-
-  if (!needs && brief.progress.length > 0) {
-    const n = brief.progress.length;
-    sentences.push(capitalize(`${countWord(n)} ${n === 1 ? 'item is' : 'items are'} in progress.`));
-  }
-
-  sentences.push(...gap);
-  return sentences.join(' ');
 }
 
 export function reasonFor(item: AttentionItem, now: number, ownerName?: string): string {
   switch (item.kind) {
+    case 'approval': {
+      const expires = item.detail.expiresAt;
+      const asked = `Asked ${ago(item.updatedAt, now)}`;
+      return expires !== undefined && expires > now ? `${asked} · expires ${atDayClock(expires, now)}` : asked;
+    }
     case 'review':
       return `Ready ${ago(item.updatedAt, now)} · ${ownerName ? `${ownerName} says done` : 'Waiting for your review'}`;
     case 'proposal':
@@ -220,7 +191,10 @@ export function reasonFor(item: AttentionItem, now: number, ownerName?: string):
     }
     case 'task-finished':
       return `Run finished ${ago(item.updatedAt, now)}`;
-    case 'cron-finished':
-      return `Last run finished ${ago(item.updatedAt, now)}`;
+    case 'cron-recovered': {
+      const failedAt = item.detail.failedAt;
+      const failed = failedAt !== undefined ? `Failed ${formatDayClock(failedAt, now)}, ` : 'Failed, ';
+      return `${failed}recovered ${formatDayClock(item.updatedAt, now)}`;
+    }
   }
 }

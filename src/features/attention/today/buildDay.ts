@@ -23,7 +23,10 @@ import {
 import { isGranularLive } from '@/lib/paneState';
 import { getSessionKey, type GranularAgentState, type Session } from '@/types';
 import { formatClock } from '../briefCopy';
+import { channelOf, sessionDisplayName } from '../sessionNames';
 import type { SourceStatus } from '../types';
+
+export { channelOf };
 
 /** `/api/crons/:id/runs` answers at most this many runs per job. */
 export const CRON_RUNS_LIMIT = 10;
@@ -286,23 +289,6 @@ export function sessionEnd(session: Session, input: DayInput): { at: number; sta
   return null;
 }
 
-/** The channel a chat runs on: the row's channel, its last one, or its participants' plugin. */
-export function channelOf(session: Session): string | undefined {
-  if (session.channel) return session.channel;
-  if (session.lastChannel) return session.lastChannel;
-  const origin = (session as { origin?: { provider?: unknown } }).origin;
-  if (typeof origin?.provider === 'string' && origin.provider) return origin.provider;
-  for (const participant of session.participants ?? []) {
-    const pluginId = participant?.identity?.pluginId;
-    if (pluginId) return pluginId;
-  }
-  for (const participant of session.participants ?? []) {
-    const id = participant?.identity?.id;
-    if (participant?.identity?.type === 'observation' && id && /^[a-z]+$/.test(id)) return id;
-  }
-  return undefined;
-}
-
 function agentName(agentId: string | undefined, input: DayInput): string | undefined {
   return agentId ? input.agentNames.get(agentId) ?? agentId : undefined;
 }
@@ -310,13 +296,8 @@ function agentName(agentId: string | undefined, input: DayInput): string | undef
 function sessionTitle(session: Session, input: DayInput): string {
   const key = getSessionKey(session);
   const agentId = getSessionAgentId(key) ?? undefined;
-  if (isTopLevelAgentSessionKey(key)) return agentName(agentId, input) ?? session.label ?? key;
-  const label = session.label?.trim() || session.displayName?.trim();
-  if (label) return label;
-  const name = agentName(agentId, input);
-  const channel = channelOf(session);
-  if (name && channel) return `${name} on ${channel}`;
-  return name ?? key;
+  if (isTopLevelAgentSessionKey(key)) return agentName(agentId, input) ?? session.label ?? 'Agent';
+  return sessionDisplayName(key, input);
 }
 
 /** Counted as a chat: anything people or agents talk in. Crons and summary runs are not. */

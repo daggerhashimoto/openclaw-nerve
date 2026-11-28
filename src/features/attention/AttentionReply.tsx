@@ -1,7 +1,6 @@
 /**
- * Prompting from the brief: the board's own box (to the main agent's main session), the Reply
- * field on items that have a session, and the reply shown under either while it streams.
- * Everything here is `relative z-10` so it sits above a card's full-card open hit area.
+ * Prompting from the board: the docked Ask box (to the main agent's main session), the Reply
+ * field on items that have a session, and the reply shown with either while it streams.
  */
 
 import { useLayoutEffect, useRef, useState } from 'react';
@@ -86,8 +85,9 @@ export interface AskTarget {
 }
 
 /**
- * The board's own input: an operator window at the top of the brief that sends to the main
- * agent's main session, with its reply right under it.
+ * The board's own input, docked at the bottom like the chat composer: one line at rest that
+ * grows while the operator is in it, sending to the main agent's main session. Its reply shows
+ * above it, so the input stays where the thumb is.
  */
 export function AskBox({
   config,
@@ -114,14 +114,25 @@ export function AskBox({
 
   const name = target?.name;
   const placeholder = name ? `Ask ${name}...` : 'Ask the agent...';
-  let status: string;
+  // The placeholder already names who is asked; the line speaks only when something is off.
+  let status: string | null = null;
   if (!target) status = loading ? 'Loading agents' : 'No agent to ask yet';
   else if (!config.connected) status = config.connecting ? 'Connecting' : 'Not connected';
   else if (busy) status = name ? `Waiting for ${name}` : 'Waiting for the reply';
-  else status = name ? `${name}, main session` : 'Main session';
 
   return (
-    <section aria-label="Ask the agent" className={cn('flex max-w-[90ch] flex-col gap-2', compact && 'px-3')}>
+    <section aria-label="Ask the agent" className="flex min-w-0 flex-col gap-2">
+      {reply && (
+        <ReplyPanel
+          reply={reply}
+          name={name}
+          hue={target?.hue}
+          compact={compact}
+          onOpen={onOpen}
+          onDismiss={() => config.store.dismiss(reply.sessionKey)}
+          className="max-h-[40vh] overflow-y-auto"
+        />
+      )}
       <form
         className="nerve-window-frame"
         onSubmit={(event) => {
@@ -129,7 +140,8 @@ export function AskBox({
           submit();
         }}
       >
-        <div className="nerve-window rounded-[3px]">
+        <div className="nerve-window flex items-end gap-2 rounded-[3px] py-1 pl-3 pr-1">
+          <Pane state="off" size="sm" className="nerve-window-pane mb-3 shrink-0" />
           <textarea
             ref={inputRef}
             rows={1}
@@ -140,39 +152,22 @@ export function AskBox({
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onKeyDown}
             className={cn(
-              'block w-full resize-none border-0 bg-transparent px-3 pb-1 pt-2.5 leading-[1.55] text-foreground outline-none placeholder:text-muted-foreground',
+              'block min-w-0 flex-1 resize-none border-0 bg-transparent py-2 leading-[1.55] text-foreground outline-none placeholder:text-muted-foreground',
+              // At rest one line; while the operator is in it the box opens to about three.
+              'focus:min-h-[4.6rem]',
               // Phones get 16px so focusing the box does not zoom the page.
               compact ? 'text-[16px]' : 'text-[0.867rem]',
             )}
           />
-          <div className="flex items-center gap-3 px-3 pb-2 pt-1">
-            <span className="flex min-w-0 items-center gap-2 text-[0.8rem] text-muted-foreground">
-              <Pane state="off" size="sm" className="nerve-window-pane" />
-              <span className="truncate" role="status">{status}</span>
-            </span>
-            <span className="flex-1" />
-            {!compact && (
-              <span className="flex shrink-0 items-center gap-1.5 text-[0.8rem] text-muted-foreground">
-                <kbd className="cockpit-kbd">Enter</kbd>
-                <span>send</span>
-              </span>
-            )}
-            <button type="submit" disabled={!ready} className={variantClass('chip', compact)}>
+          <span className="mb-1 flex shrink-0 items-center gap-2">
+            {status && <span className="text-[0.8rem] text-muted-foreground" role="status">{status}</span>}
+            {!compact && !status && <kbd className="cockpit-kbd">Enter</kbd>}
+            <button type="submit" disabled={!ready} className={variantClass('outline', compact)}>
               Send
             </button>
-          </div>
+          </span>
         </div>
       </form>
-      {reply && (
-        <ReplyPanel
-          reply={reply}
-          name={name}
-          hue={target?.hue}
-          compact={compact}
-          onOpen={onOpen}
-          onDismiss={() => config.store.dismiss(reply.sessionKey)}
-        />
-      )}
     </section>
   );
 }
@@ -273,7 +268,7 @@ export function ReplyField({
         )}
       />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <button type="submit" disabled={!ready} className={variantClass('chip', compact)}>
+        <button type="submit" disabled={!ready} className={variantClass('outline', compact)}>
           Send
         </button>
         <button type="button" onClick={onClose} className={variantClass('text', compact)}>

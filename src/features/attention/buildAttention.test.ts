@@ -265,12 +265,98 @@ describe('buildAttention', () => {
     expect(brief.blocked[0].detail).toMatchObject({ error: 'disk full', nextRun: NOW + 18 * HOUR });
   });
 
-  it('successful cron run after lastLook is finished; before lastLook is not', () => {
+  it('successful cron runs are never listed on Now', () => {
     const after = cron({ id: 'after', name: 'Morning brief', lastStatus: 'ok', lastRun: new Date(NOW - HOUR).toISOString() });
     const before = cron({ id: 'before', lastStatus: 'success', lastRun: new Date(NOW - 10 * HOUR).toISOString() });
     const brief = buildAttention(input({ crons: [after, before] }));
-    expect(brief.finished.map((i) => i.sourceId)).toEqual(['after']);
-    expect(brief.finished[0].kind).toBe('cron-finished');
+    expect(all(brief)).toEqual([]);
+    expect(brief.allClear).toBe(true);
+  });
+
+  it('a cron failure followed by a later good run is not failing, and reads as recovered since the last look', () => {
+    const job = cron({ lastStatus: 'error', lastError: 'disk full', lastRun: new Date(NOW - 5 * HOUR).toISOString() });
+    const cronRuns = {
+      c1: [
+        { at: NOW - 5 * HOUR, status: 'error', error: 'disk full' },
+        { at: NOW - 2 * HOUR, status: 'ok' },
+        { at: NOW - HOUR, status: 'ok' },
+      ],
+    };
+    const brief = buildAttention(input({ crons: [job], cronRuns }));
+    expect(brief.blocked).toEqual([]);
+    expect(brief.finished).toHaveLength(1);
+    expect(brief.finished[0]).toMatchObject({
+      kind: 'cron-recovered',
+      section: 'finished',
+      title: 'Nightly backup',
+      updatedAt: NOW - 2 * HOUR,
+      detail: { failedAt: NOW - 5 * HOUR, error: 'disk full' },
+    });
+  });
+
+  it('a cron whose newest run failed is failing even when an older one recovered', () => {
+    const job = cron({ lastStatus: 'ok', lastRun: new Date(NOW - 3 * HOUR).toISOString() });
+    const cronRuns = { c1: [{ at: NOW - 3 * HOUR, status: 'ok' }, { at: NOW - HOUR, status: 'error', error: 'timeout' }] };
+    const brief = buildAttention(input({ crons: [job], cronRuns }));
+    expect(brief.blocked.map((i) => i.kind)).toEqual(['cron-failed']);
+    expect(brief.blocked[0].detail.error).toBe('timeout');
+    expect(brief.finished).toEqual([]);
+  });
+
+  it('a failure before the last look that recovered is not news', () => {
+    const job = cron({ lastStatus: 'ok', lastRun: new Date(NOW - HOUR).toISOString() });
+    const cronRuns = { c1: [{ at: NOW - 10 * HOUR, status: 'error' }, { at: NOW - HOUR, status: 'ok' }] };
+    expect(buildAttention(input({ crons: [job], cronRuns })).finished).toEqual([]);
+  });
+
+  it('exec approvals rank first among decisions, carry their command, and expire', () => {
+    const approvals = [
+      { id: 'a1', command: 'rm -rf build', cwd: '/srv/app', agentId: 'kim', sessionKey: 'agent:kim:main', decisions: ['allow-once', 'allow-always', 'deny'] as const, createdAt: NOW - 60_000, expiresAt: NOW + 30 * 60_000 },
+      { id: 'a2', command: 'old', decisions: ['allow-once', 'deny'] as const, createdAt: NOW - HOUR, expiresAt: NOW - 1 },
+    ].map((a) => ({ ...a, decisions: [...a.decisions] }));
+    const brief = buildAttention(input({
+      tasks: [task({ status: 'review', priority: 'critical', dueAt: NOW - HOUR })],
+      approvals,
+      sources: { ...live(), approvals: { state: 'live', checkedAt: NOW } },
+    }));
+    expect(brief.decide.map((i) => i.kind)).toEqual(['approval', 'review']);
+    expect(brief.decide[0]).toMatchObject({
+      key: 'approvals:a1:approval',
+      title: 'rm -rf build',
+      ownerId: 'kim',
+      open: { type: 'session', key: 'agent:kim:main' },
+      detail: { command: 'rm -rf build', cwd: '/srv/app', decisions: ['allow-once', 'allow-always', 'deny'] },
+    });
+  });
+
+  it('a gateway without approvals does not hold the all clear; approvals loading or unreadable do', () => {
+    expect(buildAttention(input({ sources: { ...live(), approvals: { state: 'off' } } })).allClear).toBe(true);
+    expect(buildAttention(input()).allClear).toBe(true);
+    expect(buildAttention(input({ sources: { ...live(), approvals: { state: 'loading' } } })).allClear).toBe(false);
+    expect(buildAttention(input({ sources: { ...live(), approvals: { state: 'error', error: 'boom' } } })).allClear).toBe(false);
+  });
+
+  it('a review carries the pull request links in its result and notes', () => {
+    const t = task({
+      status: 'review',
+      result: 'Opened https://github.com/acme/app/pull/460 for review.',
+      feedback: [{ at: NOW - HOUR, by: 'agent:kim', note: 'See also https://github.com/acme/app/pull/461' }],
+    });
+    const [item] = buildAttention(input({ tasks: [t] })).decide;
+    expect(item.detail.links).toEqual([
+      { label: 'PR #460', href: 'https://github.com/acme/app/pull/460' },
+      { label: 'PR #461', href: 'https://github.com/acme/app/pull/461' },
+    ]);
+    expect(buildAttention(input({ tasks: [task({ status: 'review', result: 'Fixed #12.' })] })).decide[0].detail.links).toBeUndefined();
+  });
+
+  it('a running session is named in words, never by its key', () => {
+    const brief = buildAttention(input({
+      tasks: [task({ id: 'renew-certs', title: 'Renew the certificates', status: 'done' })],
+      sessions: [session({ key: 'agent:kim:subagent:x1', label: 'kb-renew-certs-1795864537794' })],
+      busyState: { 'agent:kim:subagent:x1': true },
+    }));
+    expect(brief.progress[0].title).toBe('Renew the certificates');
   });
 
   it('review task is not also finished', () => {

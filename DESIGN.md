@@ -17,7 +17,6 @@ colors:
   signal-red: "#FF5A5A"
   pane-off: "#161D2C"
   pane-edge: "#263044"
-  identity-cantaloupe: "#FFA567"
   identity-mint: "#7CC99A"
   identity-lilac: "#B9A7FF"
   identity-aqua: "#7FD1C7"
@@ -465,12 +464,12 @@ Workbench, Workbench Night (`wb-*`), the same roles on a graphite drafting sheet
 Workbench Paper (`wb-paper-*`), the source theme of Ruled Workbench: a pale paper frame (`wb-paper`), a near-white room (`wb-paper-panel`), Plate (`wb-paper-plate`), white popovers and off panes (`wb-paper-white`), Raised (`wb-paper-raised`), drawn rules (`wb-paper-rule`), field edges darkened to 3:1 (`wb-paper-field-edge`), graphite ink and muted text (`wb-paper-ink`, `wb-paper-muted`), a pane edge (`wb-paper-pane-edge`), the operator plate warmed by 14% cantaloupe (`wb-paper-operator-plate`), the Send label (`wb-paper-send-label`), and the node and key edges (`wb-paper-node-edge`, `wb-paper-key-edge`).
 
 ### Identity
-Seven hues name agent families, not states, identically in both worlds: Cantaloupe (`identity-cantaloupe`, reserved for the main agent), Mint, Lilac, Aqua, Rose, Lemon and Sky (`identity-*`). A family's hue is assigned on first sight, least-used first, remembered in the browser, and adjustable by the operator from a root row's actions. Subagents and cron children take lighter shades of the parent hue (62% and 44% of the hue mixed toward white). Neither blue (Electric Blue or Workbench Cobalt) is in this list, so an idle blue family can never be mistaken for work in progress.
+Six hues name agent families, not states, identically in both worlds: Mint, Lilac, Aqua, Rose, Lemon and Sky (`identity-*`). Cantaloupe is the operator's light and never an agent's, the main agent included, so a warm name or pane always means the operator or work waiting on them; a browser that remembered cantaloupe for an agent forgets it and the agent takes a free hue. A family's hue is assigned on first sight, least-used first, remembered in the browser, and adjustable by the operator from a root row's actions. Subagents and cron children take lighter shades of the parent hue (62% and 44% of the hue mixed toward white). Neither blue (Electric Blue or Workbench Cobalt) is in this list, so an idle blue family can never be mistaken for work in progress.
 
 ### Named Rules
 **The Light Temperature Rule.** In every world, blue is agent work, cantaloupe is the operator and anything waiting on the operator, red is error, and nothing else is coloured. A surface that is not reporting one of those three states is a neutral. Family hues are identity, not state: they sit on idle panes, on names, on the header band and on the open row, and a pane that is lit always shows the state colour.
 
-**The Identity Rule.** Every agent family owns one of seven hues (main is pinned to Cantaloupe; children take a lighter shade of their root's hue), assigned on first sight and operator-pickable from a root row. The hue stays on at idle: 84% of it fills the family's off panes (70% in the frame), the agent's name takes it in the display face (darkened 42% toward ink on the paper themes), the chat header band takes a 9% tint (14% on paper) and the open room's row a 14% tint over Raised. Blue is never an identity hue, and a lit pane always shows the state colour, so identity and state never trade places.
+**The Identity Rule.** Every agent family owns one of six hues (never Cantaloupe, which is the operator's; children take a lighter shade of their root's hue), assigned on first sight and operator-pickable from a root row. The hue stays on at idle: 84% of it fills the family's off panes (70% in the frame), the agent's name takes it in the display face (darkened 42% toward ink on the paper themes), the chat header band takes a 9% tint (14% on paper) and the open room's row a 14% tint over Raised. Blue is never an identity hue, and a lit pane always shows the state colour, so identity and state never trade places.
 
 **The Window Rule.** The composer is the operator's next window. At rest it is a quiet plate with a dark pane in the gutter; while the operator is in it (focus, or text already typed) it warms to the operator plate with a warm edge (an edge light in Night light, a 55% cantaloupe rule in Workbench) and the pane lights Cantaloupe, so the turn being written looks like the turns already sent. The side-column editors are windows too: the memory editor and the config editor sit on Plate and, while the operator is in them, warm the same way while the small pane in their status line lights Cantaloupe; no focus ring.
 

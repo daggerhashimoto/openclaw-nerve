@@ -5,6 +5,7 @@
  */
 
 import { useState } from 'react';
+import { resolveApproval, type ApprovalDecision } from './execApprovals';
 import type { AttentionItem } from './types';
 
 export type ActionId =
@@ -15,7 +16,10 @@ export type ActionId =
   | 'retry'
   | 'stop'
   | 'run-cron'
-  | 'pause-cron';
+  | 'pause-cron'
+  | 'allow-once'
+  | 'allow-always'
+  | 'deny';
 
 interface ActionCopy {
   label: string;
@@ -34,11 +38,22 @@ export const ACTION_COPY: Record<ActionId, ActionCopy> = {
   stop: { label: 'Stop', pending: 'Stopping...', done: 'Stopped', verb: 'stop' },
   'run-cron': { label: 'Run now', pending: 'Starting...', done: 'Started', verb: 'run' },
   'pause-cron': { label: 'Pause', pending: 'Pausing...', done: 'Paused', verb: 'pause' },
+  'allow-once': { label: 'Allow', pending: 'Allowing...', done: 'Allowed', verb: 'allow' },
+  'allow-always': { label: 'Allow always', pending: 'Allowing...', done: 'Allowed always', verb: 'allow always' },
+  deny: { label: 'Deny', pending: 'Denying...', done: 'Denied', verb: 'deny' },
+};
+
+const APPROVAL_DECISIONS: Partial<Record<ActionId, ApprovalDecision>> = {
+  'allow-once': 'allow-once',
+  'allow-always': 'allow-always',
+  deny: 'deny',
 };
 
 export interface ItemActionSet {
   primary: ActionId | null;
   secondary: ActionId | null;
+  /** Further choices, shown only where the item opens in full (an approval's Allow always). */
+  more?: ActionId[];
 }
 
 const NONE: ItemActionSet = { primary: null, secondary: null };
@@ -46,6 +61,14 @@ const NONE: ItemActionSet = { primary: null, secondary: null };
 /** What the operator can do to an item from the brief. Sessions and finishes have no actions yet. */
 export function actionsFor(item: AttentionItem, kanbanEnabled: boolean): ItemActionSet {
   switch (item.kind) {
+    case 'approval': {
+      const decisions = item.detail.decisions ?? ['allow-once', 'deny'];
+      return {
+        primary: decisions.includes('allow-once') ? 'allow-once' : null,
+        secondary: decisions.includes('deny') ? 'deny' : null,
+        more: decisions.includes('allow-always') ? ['allow-always'] : [],
+      };
+    }
     case 'review':
       return kanbanEnabled ? { primary: 'approve', secondary: 'request-changes' } : NONE;
     case 'proposal':
@@ -85,10 +108,14 @@ async function cronPost(url: string, body?: unknown): Promise<void> {
   if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 }
 
+type Rpc = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+
 /** Sends one action to the item's source. Throws with the server's error text on failure. */
-export async function postAction(item: AttentionItem, action: ActionId, note?: string): Promise<void> {
+export async function postAction(item: AttentionItem, action: ActionId, note?: string, rpc?: Rpc): Promise<void> {
   const id = encodeURIComponent(item.sourceId);
   const trimmed = note?.trim();
+  const decision = APPROVAL_DECISIONS[action];
+  if (decision) return resolveApproval(rpc, item.sourceId, decision);
   switch (action) {
     case 'approve':
       return kanbanPost(`/api/kanban/tasks/${id}/approve`, trimmed ? { note: trimmed } : {});
@@ -108,6 +135,8 @@ export async function postAction(item: AttentionItem, action: ActionId, note?: s
     case 'pause-cron':
       // The route reads `enabled` from the body and treats a missing body as enabling.
       return cronPost(`/api/crons/${id}/toggle`, { enabled: false });
+    default:
+      throw new Error('Unknown action');
   }
 }
 
@@ -139,7 +168,11 @@ export interface ItemActionsState {
 export interface AttentionActionsConfig {
   kanbanEnabled: boolean;
   /** Called after a request succeeds, to re-read the sources. */
-  onDone: () => void;
+  onDone: (item: AttentionItem, action: ActionId) => void;
+  /** The gateway socket, for exec approval decisions. */
+  rpc?: Rpc;
+  /** The socket is up; approval decisions wait for it. */
+  connected?: boolean;
 }
 
 /**
@@ -159,18 +192,20 @@ export function useItemActions(item: AttentionItem, config: AttentionActionsConf
   const actions = config ? actionsFor(item, config.kanbanEnabled) : NONE;
   // Run now leaves the cron failed until its run reports, so the item stays under the same key.
   const locked = busy !== null || (done !== null && done !== 'run-cron');
-  const isLocked = (action: ActionId) => locked || done === action;
+  // Approval decisions go over the socket, so they wait while it is down.
+  const offline = item.kind === 'approval' && config?.connected === false;
+  const isLocked = (action: ActionId) => locked || done === action || offline;
 
   const run = async (action: ActionId) => {
     if (isLocked(action) || !config) return;
     setBusy(action);
     setError(null);
     try {
-      await postAction(item, action, action === 'request-changes' ? note : undefined);
+      await postAction(item, action, action === 'request-changes' ? note : undefined, config.rpc);
       setDone(action);
       setConfirming(false);
       setNoteOpen(false);
-      config.onDone();
+      config.onDone(item, action);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Could not ${ACTION_COPY[action].verb}: ${message}`);

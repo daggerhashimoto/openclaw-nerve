@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { buildAttention } from './buildAttention';
 import {
+  checkedAt,
   formatClock,
   formatDayClock,
+  gapSentences,
+  headline,
+  NOT_CONNECTED,
   reasonFor,
-  sinceHeading,
-  sourceLine,
-  summarySentence,
 } from './briefCopy';
 import type {
   AttentionBrief,
@@ -25,7 +26,7 @@ const NOW = at(8, 22);
 const MINUTE = 60_000;
 const HOUR = 3_600_000;
 
-function live(): Record<AttentionSource, SourceStatus> {
+function live(): Record<Exclude<AttentionSource, 'approvals'>, SourceStatus> {
   return {
     tasks: { state: 'live', checkedAt: NOW },
     proposals: { state: 'live', checkedAt: NOW },
@@ -117,268 +118,71 @@ describe('formatDayClock', () => {
   });
 });
 
-describe('summarySentence', () => {
-  it('summary names counts in words', () => {
-    expect(summarySentence(
-      brief({ decide: many(2), blocked: many(1, { kind: 'task-failed', section: 'blocked' }) }),
-      NOW,
-    )).toBe('Two decisions and one failure need you.');
-
-    expect(summarySentence(brief({ decide: many(1) }), NOW)).toBe('One decision needs you.');
-
-    expect(summarySentence(
-      brief({
-        decide: many(1),
-        blocked: [
-          ...many(1, { kind: 'task-failed', section: 'blocked' }),
-          ...many(1, { kind: 'session-failed', section: 'blocked', source: 'sessions' }),
-          ...many(1, { kind: 'gone-quiet', section: 'blocked' }),
-        ],
-      }),
-      NOW,
-    )).toBe('One decision, two failures and one quiet task need you.');
-
-    expect(summarySentence(brief({ decide: many(9) }), NOW)).toBe('Nine decisions need you.');
-    expect(summarySentence(brief({ decide: many(12) }), NOW)).toBe('12 decisions need you.');
+describe('headline', () => {
+  it('counts failing, to decide and working, naming only counts above zero', () => {
+    expect(headline(brief({
+      decide: many(5),
+      blocked: many(2, { kind: 'task-failed', section: 'blocked' }),
+    }), 3).text).toBe('2 failing · 5 to decide · 3 working');
+    expect(headline(brief({ decide: many(1) }), 0).text).toBe('1 to decide');
+    expect(headline(brief({ decide: many(1) }), 2).parts.map((part) => part.tone)).toEqual(['operator', 'live']);
   });
 
-  it('summary adds the next failing cron run', () => {
-    const tomorrow = at(2, 0, 1);
-    const sentence = summarySentence(
-      brief({ blocked: [failingCron('Nightly backup', tomorrow)] }),
-      NOW,
-    );
-    expect(sentence).toBe('One failure needs you. Nightly backup fails again Sat 02:00 unless fixed.');
+  it('does not count a run that only went quiet as failing', () => {
+    const quiet = many(1, { kind: 'gone-quiet', section: 'blocked' });
+    expect(headline(brief({ blocked: quiet }), 1).text).toBe('1 working');
   });
 
-  it('summary says "at HH:MM" when the next run is later today', () => {
-    const sentence = summarySentence(
-      brief({ blocked: [failingCron('Nightly backup', at(23, 30))] }),
-      NOW,
-    );
-    expect(sentence).toBe('One failure needs you. Nightly backup fails again at 23:30 unless fixed.');
-  });
-
-  it('summary names the soonest next run and skips crons without an upcoming one', () => {
-    const sentence = summarySentence(
-      brief({
-        blocked: [
-          failingCron('Weekly report', at(5, 30, 1)),
-          failingCron('Nightly backup', at(2, 0, 1)),
-          failingCron('Stale one', NOW - HOUR),
-          failingCron('Unscheduled'),
-        ],
-      }),
-      NOW,
-    );
-    expect(sentence).toBe('Four failures need you. Nightly backup fails again Sat 02:00 unless fixed.');
-
-    expect(summarySentence(
-      brief({ blocked: [failingCron('Unscheduled')] }),
-      NOW,
-    )).toBe('One failure needs you.');
-  });
-
-  it('all-clear summary only when brief.allClear', () => {
-    expect(summarySentence(brief({ allClear: true }), NOW)).toBe('Nothing needs you.');
-
-    const loading = summarySentence(
-      brief({ sources: { ...live(), crons: { state: 'loading' } } }),
-      NOW,
-    );
-    expect(loading).toBe('Still loading crons.');
+  it('says nothing needs you only when the brief is all clear', () => {
+    expect(headline(brief({ allClear: true }), 0).text).toBe('Nothing needs you');
+    const loading = headline(brief({ sources: { ...live(), crons: { state: 'loading' } } }), 0).text;
     expect(loading).not.toContain('Nothing needs you');
+  });
+});
 
-    const errored = summarySentence(
-      brief({ sources: { ...live(), crons: { state: 'error', error: 'HTTP 502' } } }),
-      NOW,
-    );
-    expect(errored).toBe('Crons could not be read, so this may be incomplete.');
-    expect(errored).not.toContain('Nothing needs you');
-
-    const off = summarySentence(
-      brief({ sources: { ...live(), tasks: { state: 'off' }, proposals: { state: 'off' } } }),
-      NOW,
-    );
-    expect(off).toBe('Tasks are turned off.');
-    expect(off).not.toContain('Nothing needs you');
+describe('gapSentences', () => {
+  it('is empty when every source is live, and when a gateway has no approvals', () => {
+    expect(gapSentences(brief())).toEqual([]);
+    expect(gapSentences(brief({ sources: { ...live(), approvals: { state: 'off' } } }))).toEqual([]);
   });
 
-  it('summary names a source gap beside the counts', () => {
-    expect(summarySentence(
-      brief({ decide: many(1), sources: { ...live(), crons: { state: 'error', error: 'HTTP 502' } } }),
-      NOW,
-    )).toBe('One decision needs you. Crons could not be read, so this may be incomplete.');
-
-    expect(summarySentence(
-      brief({
-        decide: many(1),
-        sources: { ...live(), tasks: { state: 'loading' }, proposals: { state: 'loading' }, crons: { state: 'loading' } },
-      }),
-      NOW,
-    )).toBe('One decision needs you. Still loading tasks, proposals and crons.');
+  it('names sources that are loading, unreadable or off', () => {
+    expect(gapSentences(brief({ sources: { ...live(), crons: { state: 'error', error: 'HTTP 502' } } })))
+      .toEqual(['Crons could not be read, so this may be incomplete.']);
+    expect(gapSentences(brief({ sources: { ...live(), tasks: { state: 'loading' }, proposals: { state: 'loading' } } })))
+      .toEqual(['Loading tasks and proposals.']);
+    expect(gapSentences(brief({ sources: { ...live(), tasks: { state: 'off' } } })))
+      .toEqual(['Tasks are turned off.']);
+    expect(gapSentences(brief({ sources: { ...live(), approvals: { state: 'error', error: 'boom' } } })))
+      .toEqual(['Approvals could not be read, so this may be incomplete.']);
   });
 
-  it('summary says nothing is waiting only when every source is live', () => {
-    expect(summarySentence(brief({ progress: many(2, { kind: 'task-running', section: 'progress' }) }), NOW))
-      .toBe('Nothing is waiting on you. Two items are in progress.');
-    expect(summarySentence(brief({ progress: many(1, { kind: 'task-running', section: 'progress' }) }), NOW))
-      .toBe('Nothing is waiting on you. One item is in progress.');
+  it('leaves a lost gateway to the outage notice', () => {
+    expect(gapSentences(brief({ sources: { ...live(), sessions: { state: 'error', error: NOT_CONNECTED } } }))).toEqual([]);
+  });
+});
 
-    const gap = summarySentence(
-      brief({
-        progress: many(1, { kind: 'task-running', section: 'progress' }),
-        sources: { ...live(), crons: { state: 'error', error: 'HTTP 502' } },
-      }),
-      NOW,
-    );
-    expect(gap).toBe('One item is in progress. Crons could not be read, so this may be incomplete.');
-    expect(gap).not.toContain('Nothing is waiting');
+describe('checkedAt', () => {
+  it('reads the check time from the stalest live polled source and falls back to now', () => {
+    expect(checkedAt(brief({ sources: { ...live(), crons: { state: 'live', checkedAt: at(8, 21) } } }), NOW)).toBe(at(8, 21));
+    expect(checkedAt(brief({ sources: { ...live(), tasks: { state: 'loading' }, proposals: { state: 'loading' }, crons: { state: 'loading' } } }), NOW)).toBe(NOW);
   });
 
-  it('summarizes a brief built by buildAttention', () => {
+  it('agrees with a brief built by buildAttention', () => {
     const built = buildAttention({
       now: NOW,
       lastLook: NOW - 8 * HOUR,
       seen: new Set<string>(),
-      tasks: [{
-        id: 't1',
-        title: 'Fix the backup',
-        status: 'review',
-        priority: 'normal',
-        createdBy: 'operator',
-        createdAt: NOW - 24 * HOUR,
-        updatedAt: NOW - HOUR,
-        version: 1,
-        labels: [],
-        columnOrder: 0,
-        feedback: [],
-      }],
-      proposals: [{
-        id: 'p1',
-        type: 'create',
-        payload: { title: 'Write release notes' },
-        proposedBy: 'agent:kim',
-        proposedAt: NOW - 3 * HOUR,
-        status: 'pending',
-        version: 1,
-      }],
-      crons: [{
-        id: 'c1',
-        name: 'Nightly backup',
-        enabled: true,
-        scheduleKind: 'cron',
-        schedule: '0 2 * * *',
-        payloadKind: 'agentTurn',
-        lastStatus: 'error',
-        lastRun: new Date(NOW - 6 * HOUR).toISOString(),
-        nextRun: new Date(at(2, 0, 1)).toISOString(),
-      }],
+      tasks: [],
+      proposals: [],
+      crons: [],
       sessions: [],
       agentStatus: {},
       busyState: {},
       sources: live(),
     });
-    expect(summarySentence(built, NOW))
-      .toBe('Two decisions and one failure need you. Nightly backup fails again Sat 02:00 unless fixed.');
-    expect(sourceLine(built, NOW)).toBe(
-      'Checked 08:22. Tasks, proposals and crons are live; session failures show from when this page opened.',
-    );
-  });
-});
-
-describe('sourceLine', () => {
-  it('states the live sources and the session limit', () => {
-    expect(sourceLine(brief(), NOW)).toBe(
-      'Checked 08:22. Tasks, proposals and crons are live; session failures show from when this page opened.',
-    );
-  });
-
-  it('reads the check time from the stalest live source and falls back to now', () => {
-    expect(sourceLine(
-      brief({ sources: { ...live(), crons: { state: 'live', checkedAt: at(8, 21) } } }),
-      NOW,
-    )).toBe('Checked 08:21. Tasks, proposals and crons are live; session failures show from when this page opened.');
-
-    expect(sourceLine(
-      brief({
-        sources: {
-          tasks: { state: 'live' },
-          proposals: { state: 'live' },
-          crons: { state: 'live' },
-          sessions: { state: 'live' },
-        },
-      }),
-      NOW,
-    )).toBe('Checked 08:22. Tasks, proposals and crons are live; session failures show from when this page opened.');
-  });
-
-  it('source line names an errored source and tasks off', () => {
-    const errored = sourceLine(
-      brief({ sources: { ...live(), crons: { state: 'error', error: 'HTTP 502' } } }),
-      NOW,
-    );
-    expect(errored).toBe(
-      'Checked 08:22. Tasks and proposals are live; session failures show from when this page opened. '
-      + 'Crons could not be read (HTTP 502).',
-    );
-
-    const off = sourceLine(
-      brief({ sources: { ...live(), tasks: { state: 'off' }, proposals: { state: 'off' } } }),
-      NOW,
-    );
-    expect(off).toBe(
-      'Checked 08:22. Crons are live; session failures show from when this page opened. Tasks are turned off.',
-    );
-
-    const both = sourceLine(
-      brief({
-        sources: {
-          ...live(),
-          tasks: { state: 'off' },
-          proposals: { state: 'off' },
-          crons: { state: 'error', error: 'HTTP 502' },
-        },
-      }),
-      NOW,
-    );
-    expect(both).toBe(
-      'Crons could not be read (HTTP 502). Tasks are turned off. Session failures show from when this page opened.',
-    );
-  });
-
-  it('names an errored source without a message and a source still loading', () => {
-    expect(sourceLine(
-      brief({ sources: { ...live(), crons: { state: 'error' } } }),
-      NOW,
-    )).toContain('Crons could not be read.');
-
-    expect(sourceLine(
-      brief({
-        sources: {
-          tasks: { state: 'loading' },
-          proposals: { state: 'loading' },
-          crons: { state: 'loading' },
-          sessions: { state: 'live' },
-        },
-      }),
-      NOW,
-    )).toBe('Loading tasks, proposals and crons. Session failures show from when this page opened.');
-  });
-});
-
-describe('sinceHeading', () => {
-  it('names the clock time of the last look when it was today', () => {
-    expect(sinceHeading(brief({ since: at(7, 45) }), at(7, 45), NOW)).toBe('Since you left at 07:45');
-  });
-
-  it('adds the weekday when the last look was on another day', () => {
-    // at(23, 40, -1) is 2026-11-26, a Thursday.
-    expect(sinceHeading(brief({ since: at(23, 40, -1) }), at(23, 40, -1), NOW)).toBe('Since you left Thu 23:40');
-  });
-
-  it('heading falls back to the last 24 hours', () => {
-    expect(sinceHeading(brief({ since: NOW - 24 * HOUR }), null, NOW)).toBe('In the last 24 hours');
+    expect(formatClock(checkedAt(built, NOW))).toBe('08:22');
+    expect(headline(built, 0).text).toBe('Nothing needs you');
   });
 });
 
@@ -432,13 +236,16 @@ describe('reasonFor', () => {
     expect(reasonFor(item({ kind: 'session-running', updatedAt: NOW - 5 * MINUTE }), NOW)).toBe('Running for 5m');
     expect(reasonFor(item({ kind: 'session-running', updatedAt: NOW - 5_000 }), NOW)).toBe('Just started');
     expect(reasonFor(item({ kind: 'task-finished', updatedAt: NOW - HOUR }), NOW)).toBe('Run finished 1h ago');
-    expect(reasonFor(item({ kind: 'cron-finished', updatedAt: NOW - HOUR }), NOW)).toBe('Last run finished 1h ago');
+    expect(reasonFor(item({ kind: 'cron-recovered', updatedAt: at(12, 3), detail: { failedAt: at(9, 0) } }), at(13, 0)))
+      .toBe('Failed 09:00, recovered 12:03');
+    expect(reasonFor(item({ kind: 'approval', updatedAt: NOW - 2 * MINUTE, detail: { expiresAt: at(8, 52) } }), NOW))
+      .toBe('Asked 2m ago · expires at 08:52');
   });
 
   it('reason strings never say verified or approved', () => {
     const kinds: AttentionKind[] = [
       'review', 'proposal', 'task-failed', 'gone-quiet', 'cron-failed',
-      'session-failed', 'task-running', 'session-running', 'task-finished', 'cron-finished',
+      'session-failed', 'task-running', 'session-running', 'task-finished', 'cron-recovered', 'approval',
     ];
     for (const kind of kinds) {
       for (const owner of [undefined, 'Kim']) {
@@ -457,16 +264,13 @@ describe('reasonFor', () => {
 });
 
 describe('copy hygiene', () => {
-  it('summary, source line and heading never say verified or approved', () => {
+  it('headline, notes and reasons never say verified or approved, and use no dashes', () => {
     const texts = [
-      summarySentence(brief({ allClear: true }), NOW),
-      summarySentence(brief({ decide: many(2), blocked: many(2, { kind: 'task-failed', section: 'blocked' }) }), NOW),
-      summarySentence(brief({ blocked: [failingCron('Nightly backup', at(2, 0, 1))] }), NOW),
+      headline(brief({ allClear: true }), 0).text,
+      headline(brief({ decide: many(2), blocked: many(2, { kind: 'task-failed', section: 'blocked' }) }), 1).text,
+      headline(brief(), 0).text,
       reasonFor(failingCron('Nightly backup', at(2, 0, 1)), NOW),
-      sourceLine(brief({ sources: { ...live(), crons: { state: 'error', error: 'HTTP 502' } } }), NOW),
-      sinceHeading(brief({ since: NOW - HOUR }), NOW - HOUR, NOW),
-      sinceHeading(brief({ since: at(23, 40, -1) }), at(23, 40, -1), NOW),
-      sinceHeading(brief(), null, NOW),
+      ...gapSentences(brief({ sources: { ...live(), crons: { state: 'error', error: 'HTTP 502' }, tasks: { state: 'loading' } } })),
     ];
     for (const text of texts) {
       expect(text).not.toMatch(/verified|approved/i);

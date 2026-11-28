@@ -1,9 +1,10 @@
-/** Shared words for Attention cards and rows: the kind word, the pane each kind lights, the source tag. */
+/** Shared words for Attention rows: the kind word, the pane each kind lights, and the per-item view data. */
 
 import type { PaneState } from '@/lib/paneState';
 import type { AttentionItem, AttentionKind } from './types';
 
 export const KIND_WORD: Record<AttentionKind, string> = {
+  approval: 'Approval',
   review: 'Review',
   proposal: 'Proposal',
   'task-failed': 'Run failed',
@@ -13,12 +14,13 @@ export const KIND_WORD: Record<AttentionKind, string> = {
   'task-running': 'Running',
   'session-running': 'Session running',
   'task-finished': 'Run finished',
-  'cron-finished': 'Cron finished',
+  'cron-recovered': 'Cron recovered',
 };
 
-/** Review and proposal wait on the operator, failures are red, running is blue, the rest is dark. */
+/** Decisions wait on the operator, failures are red, running is blue, finished history is dark. */
 export function paneFor(kind: AttentionKind): { state: PaneState; label: string } {
   switch (kind) {
+    case 'approval':
     case 'review':
     case 'proposal':
       return { state: 'operator', label: 'Waiting on you' };
@@ -32,23 +34,33 @@ export function paneFor(kind: AttentionKind): { state: PaneState; label: string 
     case 'session-running':
       return { state: 'live', label: 'Running' };
     case 'task-finished':
-    case 'cron-finished':
+    case 'cron-recovered':
       return { state: 'off', label: 'Finished' };
   }
 }
 
-/** Where the card came from and how fresh that source is: "tasks · live". */
-export function sourceTag(item: AttentionItem): string {
-  return `${item.source} · ${item.freshness}`;
+/** "Open review", "Open proposal": the explicit way to the item's source. */
+export function openLabel(item: AttentionItem): string {
+  switch (item.open?.type) {
+    case 'task':
+      return item.kind === 'review' ? 'Open review' : 'Open task';
+    case 'proposal':
+      return 'Open proposal';
+    case 'cron':
+      return 'Open cron';
+    case 'session':
+      return 'Open in chat';
+    default:
+      return 'Open';
+  }
 }
 
-/** The reason line with the owner named: reasons that do not say who get "owner · " in front. */
-export function ownedReason(reason: string, ownerName?: string): string {
-  if (!ownerName || reason.includes(ownerName)) return reason;
-  return `${ownerName} · ${reason}`;
+/** Freshness is said only when it is not the default: a stale item reads "stale". */
+export function freshnessNote(item: AttentionItem): string | null {
+  return item.freshness === 'live' ? null : item.freshness;
 }
 
-/** Per-item display data the view computes once and hands to cards and rows. */
+/** Per-item display data the view computes once and hands to rows and the plate. */
 export interface ItemView {
   reason: string;
   ownerName?: string;

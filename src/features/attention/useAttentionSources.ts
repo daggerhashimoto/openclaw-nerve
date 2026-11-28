@@ -12,7 +12,7 @@ import type { KanbanProposal } from '@/features/kanban/hooks/useProposals';
 import { normalizeCronJob, type CronJob } from '@/features/workspace/hooks/useCrons';
 import type { AttentionSource, SourceStatus } from './types';
 
-type PolledSource = Exclude<AttentionSource, 'sessions'>;
+type PolledSource = Exclude<AttentionSource, 'sessions' | 'approvals'>;
 
 const TASKS_URL = '/api/kanban/tasks?limit=200';
 const PROPOSALS_URL = '/api/kanban/proposals?status=pending';

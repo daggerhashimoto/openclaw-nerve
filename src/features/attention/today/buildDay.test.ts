@@ -7,6 +7,7 @@ import {
   CRON_FOLD_AFTER,
   CRON_RUNS_LIMIT,
   buildDay,
+  flattenChats,
   channelOf,
   dayFacts,
   groupByHour,
@@ -387,6 +388,21 @@ describe('chats today', () => {
     expect(day.chats[1].children[0].target).toMatchObject({ sessionKey: 'agent:forge:main', ask: true });
     expect(day.chats[0].target).toEqual({ sessionKey: 'agent:main:main', ask: false, context: undefined });
     expect(day.stats.sessions).toBe(4);
+  });
+
+  it('names kanban runs after their task and never shows a raw key or kb label', () => {
+    const day = buildDay(input({
+      tasks: [task({ id: 'attention-test-check-the-backu', title: 'Check the backup log', status: 'review' })],
+      sessions: [
+        { key: 'agent:forge:main', label: 'Forge', updatedAt: at(10) },
+        { key: 'agent:forge:subagent:q1', label: 'kb-attention-test-check-the-backu-1795864537734', spawnedBy: 'agent:forge:main', status: 'done', endedAt: at(13), updatedAt: at(13) },
+        { key: 'agent:forge:subagent:q2', label: 'kb-gone-task-1795864537734', spawnedBy: 'agent:forge:main', status: 'running', updatedAt: at(14) },
+      ],
+    }));
+    const titles = flattenChats(day.chats).map((row) => row.title);
+    expect(titles).toEqual(['Forge', 'Forge', 'Check the backup log']);
+    expect(day.done.find((row) => row.kind === 'session')?.title).toBe('Check the backup log');
+    for (const title of [...titles, ...day.done.map((row) => row.title)]) expect(title).not.toMatch(/agent:|kb-/);
   });
 
   it('names a channel from the row, its last channel or its participants', () => {

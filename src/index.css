@@ -808,14 +808,36 @@ html[data-theme="light"] {
   box-shadow: var(--plate-shadow);
 }
 /* The operator's plate: the whole turn (name, time, body) on warm ground with a warm
-   edge light and a faint warm frame, so operator turns read apart from agent prose at a glance */
+   edge light and a faint warm frame, so operator turns read apart from agent prose at a glance.
+   It carries its own warm ground (the operator plate token), so it reads warm over `.plate` too. */
 .plate-operator {
+  background-color: var(--color-message-user);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--color-operator) 42%, transparent),
     inset 0 0 0 1px color-mix(in srgb, var(--color-operator) 16%, transparent);
 }
 html[data-theme="light"] .plate-operator {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-operator) 55%, var(--border));
+}
+
+/* The Attention board: the work column and a 22rem rail with a 24px gap once the room is wide
+   enough, one column below that and always on phones (left column first, then the rail). Today
+   can share the same grid. */
+.attention-board {
+  container-type: inline-size;
+}
+.attention-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+@container (min-width: 54rem) {
+  .attention-grid {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+  }
+}
+.attention-board[data-compact="true"] .attention-grid {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* Tool rows stack on one plate, separated by hairlines */

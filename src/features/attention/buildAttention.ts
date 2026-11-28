@@ -10,11 +10,16 @@ import { isFailedCronStatus, isOkCronStatus } from '@/features/workspace/cronSta
 import { getSessionAgentId, isTopLevelAgentSessionKey } from '@/features/sessions/sessionKeys';
 import { isGranularLive } from '@/lib/paneState';
 import { getSessionKey, type Session } from '@/types';
+import type { CronRunEntry } from './today/buildDay';
+import { prMentions } from './today/buildDay';
+import type { ExecApproval } from './execApprovals';
+import { sessionDisplayName } from './sessionNames';
 import type {
   AttentionBrief,
   AttentionInput,
   AttentionItem,
   AttentionSource,
+  EvidenceLink,
   SourceStatus,
 } from './types';
 
@@ -23,6 +28,7 @@ export const FAILURE_WINDOW_MS = 7 * 86_400_000;
 export const FIRST_RUN_WINDOW_MS = 86_400_000;
 
 const PRIORITY_RANK: Record<TaskPriority, number> = { critical: 0, high: 1, normal: 2, low: 3 };
+const OFF: SourceStatus = { state: 'off' };
 const FAILED_TASK_STATUSES = new Set(['backlog', 'todo']);
 const CLOSED_TASK_STATUSES = new Set(['done', 'cancelled']);
 // Fields the server applies from an update proposal.
@@ -55,6 +61,15 @@ function isoToMs(value?: string): number | undefined {
   if (!value) return undefined;
   const ms = Date.parse(value);
   return Number.isFinite(ms) ? ms : undefined;
+}
+
+/** Pull request links a task's result and notes carry; bare `#123` without a link is left out. */
+function taskLinks(task: KanbanTask): EvidenceLink[] | undefined {
+  const texts = [task.result ?? '', ...(task.feedback ?? []).map((note) => note?.note ?? '')].join('\n');
+  const links = prMentions(texts)
+    .filter((mention) => mention.href)
+    .map((mention) => ({ label: `PR #${mention.number}`, href: mention.href! }));
+  return links.length > 0 ? links : undefined;
 }
 
 /** An errored source still contributes the data the hook kept, shown as stale; only off does not. */
@@ -103,7 +118,7 @@ function taskItems(input: AttentionInput, sessionsByKey: Map<string, Session>): 
         kind: 'review',
         section: 'decide',
         updatedAt: task.resultAt ?? run?.endedAt ?? task.updatedAt,
-        detail: { result: task.result, runStatus: run?.status, runEndedAt: run?.endedAt, sessionKey: linkedKey },
+        detail: { result: task.result, runStatus: run?.status, runEndedAt: run?.endedAt, sessionKey: linkedKey, links: taskLinks(task) },
       });
       continue;
     }
@@ -147,7 +162,7 @@ function taskItems(input: AttentionInput, sessionsByKey: Map<string, Session>): 
         kind: 'task-finished',
         section: 'finished',
         updatedAt: run.endedAt,
-        detail: { result: task.result, runStatus: run.status, runEndedAt: run.endedAt, sessionKey: linkedKey },
+        detail: { result: task.result, runStatus: run.status, runEndedAt: run.endedAt, sessionKey: linkedKey, links: taskLinks(task) },
       });
     }
   }
@@ -186,7 +201,18 @@ function proposalItem(proposal: KanbanProposal, tasks: KanbanTask[], status: Sou
   };
 }
 
-function cronItems(crons: CronJob[], since: number, now: number, status: SourceStatus): AttentionItem[] {
+/**
+ * A failing cron while its latest run failed, and a recovered one when a failure since the last
+ * look was followed by a good run. The run history, when read, overrides the job's own last
+ * status: a failure followed by a later good run is not failing. Good runs are not listed.
+ */
+function cronItems(
+  crons: CronJob[],
+  runsByJob: Record<string, CronRunEntry[]> | undefined,
+  since: number,
+  now: number,
+  status: SourceStatus,
+): AttentionItem[] {
   const items: AttentionItem[] = [];
   for (const job of crons) {
     if (!job.enabled) continue;
@@ -200,28 +226,79 @@ function cronItems(crons: CronJob[], since: number, now: number, status: SourceS
       freshness: freshnessOf(status),
       open: { type: 'cron' as const, id: job.id },
     };
-    if (isFailedCronStatus(job.lastStatus)) {
+    const runs = [...(runsByJob?.[job.id] ?? [])]
+      .filter((entry) => entry.status.toLowerCase() !== 'skipped')
+      .sort((a, b) => b.at - a.at);
+    const newest = runs[0];
+    const newestIsLater = newest !== undefined && (lastRun === undefined || newest.at > lastRun);
+    const latestOk = newestIsLater ? isOkCronStatus(newest.status) : isOkCronStatus(job.lastStatus);
+    const latestFailed = newestIsLater ? isFailedCronStatus(newest.status) : isFailedCronStatus(job.lastStatus);
+
+    if (latestFailed) {
+      const failedAt = newestIsLater ? newest.at : lastRun;
       items.push({
         ...base,
-        key: `crons:${job.id}:cron-failed:${job.lastRun ?? ''}`,
+        // The job's own last run names the failure, so reading the history never re-keys it.
+        key: `crons:${job.id}:cron-failed:${job.lastRun ?? new Date(newest.at).toISOString()}`,
         kind: 'cron-failed',
         section: 'blocked',
-        updatedAt: lastRun ?? now,
+        updatedAt: failedAt ?? now,
         deadline: nextRun,
-        detail: { error: job.lastError, nextRun },
+        detail: { error: (newestIsLater ? newest.error : undefined) ?? job.lastError, nextRun },
       });
-    } else if (isOkCronStatus(job.lastStatus) && lastRun !== undefined && lastRun > since) {
-      items.push({
-        ...base,
-        key: `crons:${job.id}:cron-finished:${job.lastRun}`,
-        kind: 'cron-finished',
-        section: 'finished',
-        updatedAt: lastRun,
-        detail: { nextRun },
-      });
+      continue;
     }
+    if (!latestOk || runs.length === 0) continue;
+    // The newest failure since the last look that a good run came after.
+    const okAt = newestIsLater ? newest.at : lastRun ?? newest.at;
+    const failure = runs.find((entry) => isFailedCronStatus(entry.status) && entry.at > since && entry.at < okAt);
+    if (!failure) continue;
+    // Runs are newest first, so the last good run after the failure is the first to recover it.
+    const recoveredAt = runs.filter((entry) => isOkCronStatus(entry.status) && entry.at > failure.at).at(-1)?.at ?? okAt;
+    items.push({
+      ...base,
+      key: `crons:${job.id}:cron-recovered:${failure.at}`,
+      kind: 'cron-recovered',
+      section: 'finished',
+      updatedAt: recoveredAt,
+      detail: { error: failure.error, failedAt: failure.at, nextRun },
+    });
   }
   return items;
+}
+
+/** Pending exec approvals: they hold an agent until the operator answers, so they rank first. */
+function approvalItems(approvals: ExecApproval[], input: AttentionInput, status: SourceStatus): AttentionItem[] {
+  const { now } = input;
+  return approvals
+    .filter((approval) => approval.expiresAt === undefined || approval.expiresAt > now)
+    .map((approval) => ({
+      key: `approvals:${approval.id}:approval`,
+      source: 'approvals' as const,
+      sourceId: approval.id,
+      kind: 'approval' as const,
+      section: 'decide' as const,
+      title: (approval.preview ?? approval.command).split('\n')[0],
+      ownerId: approval.agentId ?? (approval.sessionKey ? getSessionAgentId(approval.sessionKey) ?? undefined : undefined),
+      updatedAt: approval.createdAt,
+      deadline: approval.expiresAt,
+      priority: 'high' as const,
+      freshness: freshnessOf(status),
+      open: approval.sessionKey ? { type: 'session' as const, key: approval.sessionKey } : null,
+      detail: {
+        sessionKey: approval.sessionKey,
+        command: approval.command,
+        commandPreview: approval.preview,
+        sessionName: approval.sessionKey
+          ? sessionDisplayName(approval.sessionKey, { tasks: input.tasks, crons: input.crons, sessions: input.sessions })
+          : undefined,
+        cwd: approval.cwd,
+        host: approval.host,
+        decisions: approval.decisions,
+        warning: approval.warning,
+        expiresAt: approval.expiresAt,
+      },
+    }));
 }
 
 function sessionItems(input: AttentionInput, linkedKeys: ReadonlySet<string>): AttentionItem[] {
@@ -234,7 +311,7 @@ function sessionItems(input: AttentionInput, linkedKeys: ReadonlySet<string>): A
     const base = {
       source: 'sessions' as const,
       sourceId: key,
-      title: session.label || session.displayName || session.identityName || key,
+      title: sessionDisplayName(key, { tasks: input.tasks, crons: input.crons, sessions: input.sessions }),
       ownerId: getSessionAgentId(key) ?? undefined,
       priority: 'normal' as const,
       freshness,
@@ -268,7 +345,8 @@ function sinceOf(input: AttentionInput): number {
 }
 
 export function buildAttention(input: AttentionInput): AttentionBrief {
-  const { now, sources, seen } = input;
+  const { now, seen } = input;
+  const sources = { ...input.sources, approvals: input.sources.approvals ?? OFF };
   const since = sinceOf(input);
   const tasksOn = contributes(sources.tasks);
   // Proposals live on the task board, so tasks turned off hides them too.
@@ -300,11 +378,15 @@ export function buildAttention(input: AttentionInput): AttentionBrief {
         .filter((p) => p.status === 'pending')
         .map((p) => proposalItem(p, input.tasks, sources.proposals))
       : []),
-    ...(contributes(sources.crons) ? cronItems(input.crons, since, now, sources.crons) : []),
+    ...(contributes(sources.crons) ? cronItems(input.crons, input.cronRuns, since, now, sources.crons) : []),
+    ...(contributes(sources.approvals) ? approvalItems(input.approvals ?? [], input, sources.approvals) : []),
     ...(contributes(sources.sessions) ? sessionItems(input, linkedKeys) : []),
   ];
 
-  const decide = rankItems(items.filter((i) => i.section === 'decide'), now);
+  const decide = [
+    ...rankItems(items.filter((i) => i.kind === 'approval'), now),
+    ...rankItems(items.filter((i) => i.section === 'decide' && i.kind !== 'approval'), now),
+  ];
   const decideIds = new Set(decide.map((i) => `${i.source}:${i.sourceId}`));
   const blockedAll = rankItems(items.filter((i) => i.section === 'blocked'), now);
   const progress = rankItems(items.filter((i) => i.section === 'progress'), now);
@@ -312,7 +394,10 @@ export function buildAttention(input: AttentionInput): AttentionBrief {
     .filter((i) => i.section === 'finished' && !decideIds.has(`${i.source}:${i.sourceId}`))
     .sort((a, b) => b.updatedAt - a.updatedAt || a.key.localeCompare(b.key));
 
-  const allLive = (Object.keys(sources) as AttentionSource[]).every((s) => sources[s].state === 'live');
+  // A gateway without exec approvals has nothing to hold back; every other source must be live.
+  const allLive = (Object.keys(sources) as AttentionSource[]).every((s) => (
+    sources[s].state === 'live' || (s === 'approvals' && sources[s].state === 'off')
+  ));
 
   const blocked = blockedAll.filter((i) => !seen.has(i.key));
 

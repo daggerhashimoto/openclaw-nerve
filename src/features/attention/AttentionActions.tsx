@@ -1,7 +1,6 @@
 /**
- * The controls behind an item's actions, in the brief's existing styles: the warm Send button
- * (Start here only), the quiet chip (cards and rows) and the underlined text button.
- * Every control is `relative z-10` so it sits above a card's full-card open hit area.
+ * The controls behind an item's actions, in the board's tiers: the warm button (Start here
+ * only), the outline button (a row's main action) and muted underlined text (the rest).
  */
 
 import { Input } from '@/components/ui/input';
@@ -50,7 +49,7 @@ export function StopConfirm({ state, compact }: { state: ItemActionsState; compa
           event.stopPropagation();
           void state.run('stop');
         }}
-        className={variantClass('chip', compact)}
+        className={variantClass('outline', compact)}
       >
         {state.busy === 'stop' ? state.labelOf('stop') : 'Confirm'}
       </button>
@@ -76,7 +75,7 @@ export function ChangesNote({
   compact,
 }: {
   state: ItemActionsState;
-  submitVariant: 'primary' | 'chip';
+  submitVariant: 'primary' | 'outline';
   compact: boolean;
 }) {
   const close = () => {
@@ -130,25 +129,27 @@ export function ActionError({ message, className }: { message: string; className
 }
 
 /**
- * A card's action strip: the main action as a chip, a second one as text, `extra` (Reply)
- * after them, and `trailing` (Mark seen) at the right. Renders nothing when the item has none.
+ * An item's full action set where it opens in full: the main action as an outline button, the
+ * second and any further ones as text, `extra` (Reply, Open) after them and `trailing` (Mark
+ * seen) at the right. Stop's confirm and Request changes' note take the strip's place.
  */
-export function CardActions({
+export function ActionStrip({
   state,
+  compact,
   extra,
   trailing,
 }: {
   state: ItemActionsState;
+  compact: boolean;
   extra?: React.ReactNode;
   trailing?: React.ReactNode;
 }) {
-  const { primary, secondary } = state.actions;
-  if (!primary && !extra && !trailing) return null;
+  const { primary, secondary, more = [] } = state.actions;
 
   if (state.noteOpen) {
     return (
       <div className="flex flex-col gap-2">
-        <ChangesNote state={state} submitVariant="chip" compact={false} />
+        <ChangesNote state={state} submitVariant="outline" compact={compact} />
         {state.error && <ActionError message={state.error} />}
       </div>
     );
@@ -158,11 +159,16 @@ export function CardActions({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        {confirmingStop && <StopConfirm state={state} compact={false} />}
-        {primary && !confirmingStop && <ActionButton state={state} action={primary} variant="chip" compact={false} />}
-        {secondary && !confirmingStop && <ActionButton state={state} action={secondary} variant="text" compact={false} />}
-        {!confirmingStop && extra}
-        <span className="flex-1" />
+        {confirmingStop && <StopConfirm state={state} compact={compact} />}
+        {!confirmingStop && (
+          <>
+            {primary && <ActionButton state={state} action={primary} variant="outline" compact={compact} />}
+            {secondary && <ActionButton state={state} action={secondary} variant="text" compact={compact} />}
+            {more.map((action) => <ActionButton key={action} state={state} action={action} variant="text" compact={compact} />)}
+            {extra}
+          </>
+        )}
+        {trailing && <span className="flex-1" />}
         {trailing}
       </div>
       {state.error && <ActionError message={state.error} />}

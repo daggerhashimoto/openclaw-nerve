@@ -1,31 +1,35 @@
+/**
+ * The Start here plate (the one warm surface on the board, for the top decision) and the parts
+ * an item shows when it opens in full: what happened in its thread, and the evidence its own
+ * data carries.
+ */
+
 import { Pane } from '@/components/ui/Pane';
+import { nameHueStyle } from '@/lib/agentColors';
 import { cn } from '@/lib/utils';
-import { formatClock } from './briefCopy';
-import { KIND_WORD, paneFor, sourceTag, type ItemView } from './itemPresentation';
-import { MarkItemSeenButton, NewTag, ReasonText } from './AttentionRow';
-import { ActionButton, ActionError, CardActions, ChangesNote } from './AttentionActions';
-import { PRIMARY_BUTTON, TEXT_BUTTON } from './actionStyles';
+import { formatClock, kindWord } from './briefCopy';
+import { freshnessNote, openLabel, paneFor, type ItemView } from './itemPresentation';
+import { Clocked, NewTag } from './textBits';
+import { ActionButton, ActionError, ChangesNote, StopConfirm } from './AttentionActions';
+import { PRIMARY_BUTTON, TEXT_BUTTON, variantClass } from './actionStyles';
 import type { ReplyConfig } from './AttentionReply';
 import { useItemReply } from './useItemReply';
 import { useItemActions, type AttentionActionsConfig } from './useAttentionActions';
 import type { AttentionItem, OpenTarget } from './types';
 import type { ThreadSummary } from './useAttentionSummaries';
 
-const RESULT_EXCERPT = 240;
+/** Long unbroken tokens (ids, paths) wrap instead of pushing the plate wider than the screen. */
+const WRAP = '[overflow-wrap:anywhere]';
 
-// Long unbroken tokens (ids, paths) wrap instead of pushing the card wider than the screen
-const CARD = 'relative flex min-w-0 flex-col gap-2 rounded-[3px] px-3.5 py-3 [overflow-wrap:anywhere]';
-const META = 'font-mono text-[0.8rem] tabular text-muted-foreground';
-
-function excerpt(text: string): string {
+function excerpt(text: string, max: number): string {
   const trimmed = text.trim();
-  return trimmed.length > RESULT_EXCERPT ? `${trimmed.slice(0, RESULT_EXCERPT).trimEnd()}...` : trimmed;
+  return trimmed.length > max ? `${trimmed.slice(0, max).trimEnd()}...` : trimmed;
 }
 
 /** "Run finished at 06:52", in words that never claim the work was checked. */
 function runLine(item: AttentionItem): string | null {
   const { runStatus, runEndedAt } = item.detail;
-  if (!runStatus) return null;
+  if (!runStatus || item.kind === 'task-failed') return null;
   const at = runEndedAt !== undefined ? ` at ${formatClock(runEndedAt)}` : '';
   switch (runStatus) {
     case 'done':
@@ -39,228 +43,188 @@ function runLine(item: AttentionItem): string | null {
   }
 }
 
-/** The one line under the title that says what the source knows. */
-function CardDetail({ item, view }: { item: AttentionItem; view: ItemView }) {
-  const { detail } = item;
-  if (detail.error) {
-    return <p className="m-0 break-words font-mono text-[0.8rem] text-destructive">{detail.error}</p>;
-  }
-  if (item.kind === 'proposal' && detail.proposalChange) {
-    return <p className="m-0 text-[0.867rem] text-muted-foreground">Changes {detail.proposalChange}</p>;
-  }
-  if (item.kind === 'gone-quiet' && detail.quietSince !== undefined) {
-    const who = view.ownerName ?? 'The agent';
-    return (
-      <p className="m-0 text-[0.867rem] text-muted-foreground">
-        <ReasonText
-          text={`${who} has not touched it since ${formatClock(detail.quietSince)}.`}
-          ownerName={view.ownerName}
-          hue={view.hue}
-        />
-      </p>
-    );
-  }
-  return null;
-}
-
 /**
- * What happened in the item's thread, from the summaries endpoint. Nothing shows until the
- * server has answered for the session, and nothing on an error or an empty thread, so a board
- * without summaries looks as it always did. A summary being refreshed keeps its old text.
+ * What happened in the item's thread, from the summaries endpoint, in full. Nothing shows until
+ * the server has answered for the session, and nothing on an error or an empty thread. A summary
+ * being refreshed keeps its old text.
  */
 export function WhatHappened({ summary }: { summary?: ThreadSummary }) {
   if (!summary) return null;
   if (summary.text) {
-    return (
-      <p className="m-0 text-[0.867rem] leading-relaxed text-muted-foreground">
-        <span className="font-semibold text-foreground">What happened: </span>
-        {summary.text}
-      </p>
-    );
+    return <p className="m-0 max-w-[72ch] text-[0.933rem] leading-relaxed text-foreground">{summary.text}</p>;
   }
   if (summary.status !== 'pending') return null;
   return (
     <p className="m-0 text-[0.867rem] leading-relaxed text-muted-foreground" aria-busy="true">
-      <span className="font-semibold text-foreground">What happened: </span>
       Summarizing...
     </p>
   );
 }
 
-function KindLine({ item, view, lead }: { item: AttentionItem; view: ItemView; lead: React.ReactNode }) {
-  const pane = paneFor(item.kind);
+/** An exec approval's full command, where it would run, which session asks, and the gateway's warning. */
+export function CommandBlock({ item }: { item: AttentionItem }) {
+  const { command, cwd, host, warning, sessionName } = item.detail;
+  if (!command) return null;
+  const where = [cwd ? `in ${cwd}` : '', host ? `on ${host}` : '', sessionName ? `from ${sessionName}` : ''].filter(Boolean).join(' ');
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.8rem]">
-      <Pane state={pane.state} hue={pane.state === 'off' ? view.hue : undefined} label={pane.label} />
-      {lead}
-      <span className="min-w-0 text-muted-foreground">
-        <ReasonText text={view.reason} ownerName={view.ownerName} hue={view.hue} />
-      </span>
-      {view.isNew && <NewTag />}
-      <span className="flex-1" />
-      <span className={META}>{sourceTag(item)}</span>
+    <div className={cn('flex min-w-0 flex-col gap-1', WRAP)}>
+      <pre className="m-0 whitespace-pre-wrap rounded-[3px] bg-background px-2.5 py-2 font-mono text-[0.8rem] leading-relaxed text-foreground">{command}</pre>
+      {where && <p className="m-0 font-mono text-[0.733rem] text-muted-foreground">{where}</p>}
+      {warning && <p className="m-0 text-[0.8rem] text-foreground">{warning}</p>}
     </div>
   );
 }
 
-interface AttentionCardProps {
-  item: AttentionItem;
-  view: ItemView;
-  /** Position in its section, 1-based. */
-  rank: number;
-  onOpen: (target: OpenTarget) => void;
-  /** Blocked and failed cards only: adds a Mark seen button that sits above the card's hit area. */
-  onMarkSeen?: (item: AttentionItem) => void;
-  /** Turns on the item's actions (Approve, Retry, Stop...). Without it the card only opens. */
-  actions?: AttentionActionsConfig;
-  /** Turns on Reply for an item with a session. */
-  replies?: ReplyConfig;
-  /** What happened in the item's session, when the board has a summary for it. */
-  summary?: ThreadSummary;
-  className?: string;
-}
-
 /**
- * A ranked card. The title is the button; its hit area covers the whole card. Actions and
- * Mark seen sit above that hit area, so they act without opening the source.
+ * The item's own evidence: the result text, pull request links in its result and notes, the run
+ * line and its run session. Nothing at all when it carries none.
  */
-export function AttentionCard({ item, view, rank, onOpen, onMarkSeen, actions, replies, summary, className }: AttentionCardProps) {
-  const state = useItemActions(item, actions);
-  const reply = useItemReply(item, view, replies, onOpen);
+export function Evidence({
+  item,
+  compact,
+  onOpen,
+  max = 600,
+}: {
+  item: AttentionItem;
+  compact: boolean;
+  onOpen: (target: OpenTarget) => void;
+  max?: number;
+}) {
+  const { detail } = item;
+  const run = runLine(item);
+  const sessionKey = item.kind !== 'approval' && item.open?.type !== 'session' ? detail.sessionKey : undefined;
+  const links = detail.links ?? [];
+  const linkClass = cn(TEXT_BUTTON, compact && 'inline-flex min-h-11 items-center');
+  if (!detail.result && links.length === 0 && !run && !sessionKey) return null;
   return (
-    <article className={cn(CARD, 'nerve-task-card', item.freshness !== 'live' && 'opacity-80', className)}>
-      <KindLine
-        item={item}
-        view={view}
-        lead={(
-          <>
-            <span className={META}>{rank}</span>
-            <span className="font-semibold text-foreground">{KIND_WORD[item.kind]}</span>
-          </>
-        )}
-      />
-      <h3 className="m-0 text-[1rem] font-semibold leading-snug text-foreground">
-        <button
-          type="button"
-          onClick={() => onOpen(item.open)}
-          className="cursor-pointer text-left after:absolute after:inset-0 after:rounded-[3px] after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-ring"
-        >
-          {item.title}
-        </button>
-      </h3>
-      <CardDetail item={item} view={view} />
-      <WhatHappened summary={summary} />
-      {reply.fieldOpen ? reply.field(false) : (
-        <CardActions
-          state={state}
-          extra={reply.button(false)}
-          trailing={onMarkSeen && (
-            <MarkItemSeenButton item={item} compact={false} onMarkSeen={onMarkSeen} className="relative z-10" />
-          )}
-        />
+    <div data-testid="attention-evidence" className={cn('flex min-w-0 flex-col gap-1.5', WRAP)}>
+      {detail.result && (
+        <p className="m-0 max-w-[72ch] whitespace-pre-wrap border-l-2 border-border pl-3 text-[0.867rem] leading-relaxed text-muted-foreground">
+          {excerpt(detail.result, max)}
+        </p>
       )}
-      {reply.panel(false)}
-    </article>
+      {(links.length > 0 || run || sessionKey) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {run && <span className="font-mono text-[0.8rem] tabular text-muted-foreground"><Clocked text={run} /></span>}
+          {links.map((link) => (
+            <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer" className={linkClass}>
+              {link.label}
+            </a>
+          ))}
+          {sessionKey && (
+            <button type="button" onClick={() => onOpen({ type: 'session', key: sessionKey })} className={linkClass}>
+              Run session
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
-interface StartHereCardProps {
+/** The one line under a failure or proposal title that its source knows. */
+export function ItemDetail({ item, full }: { item: AttentionItem; full?: boolean }) {
+  const { detail } = item;
+  if (detail.error && item.kind !== 'cron-recovered') {
+    return (
+      // Collapsed, the red pane already says failed; the one-line error stays quiet so a list of failures is not a wall of red.
+      <p className={cn('m-0 font-mono text-[0.8rem]', full ? 'whitespace-pre-wrap break-words text-destructive' : 'truncate text-muted-foreground')}>
+        {detail.error}
+      </p>
+    );
+  }
+  if (item.kind === 'cron-recovered' && detail.error && full) {
+    return <p className="m-0 whitespace-pre-wrap break-words font-mono text-[0.8rem] text-muted-foreground">{detail.error}</p>;
+  }
+  return null;
+}
+
+interface StartHereProps {
   item: AttentionItem;
   view: ItemView;
   compact: boolean;
   onOpen: (target: OpenTarget) => void;
-  /** Turns on Approve and its second action. Without it the one button opens the source. */
+  /** Turns on the decision and its second action. Without it the warm button opens the source. */
   actions?: AttentionActionsConfig;
   /** Turns on Reply when the item has a session. */
   replies?: ReplyConfig;
-  /** What happened in the item's session, when the board has a summary for it. */
   summary?: ThreadSummary;
 }
 
 /**
- * The top decision: what the source already has, no evidence claims, and one warm button.
- * With actions the warm button is the decision (Approve) and opening the source is a text
- * button beside it, so phones still show exactly one filled button.
+ * The top decision on a warm plate: the title with its agent, what happened in full, the
+ * evidence, and one warm button. The decision is the warm button; Reject, Reply and Open are
+ * text beside it, so the screen has exactly one filled control.
  */
-export function StartHereCard({ item, view, compact, onOpen, actions, replies, summary }: StartHereCardProps) {
-  const { detail } = item;
-  const run = runLine(item);
-  const sessionKey = detail.sessionKey;
-  const openLabel = item.kind === 'proposal' ? 'Open proposal' : 'Open review';
+export function StartHerePlate({ item, view, compact, onOpen, actions, replies, summary }: StartHereProps) {
   const state = useItemActions(item, actions);
-  const { primary, secondary } = state.actions;
+  const { primary, secondary, more = [] } = state.actions;
   const reply = useItemReply(item, view, replies, onOpen);
   const replyButton = reply.button(compact);
+  const open = item.open;
+  const stale = freshnessNote(item);
+  const pane = paneFor(item.kind);
+  const confirmingStop = primary === 'stop' && state.confirming;
 
-  const openButton = (
+  const openButton = open && (
     <button
       type="button"
-      onClick={() => onOpen(item.open)}
-      className={primary
-        ? cn(TEXT_BUTTON, compact && 'min-h-11')
-        : cn(PRIMARY_BUTTON, compact ? 'min-h-11 w-full' : 'min-h-8')}
+      onClick={() => onOpen(open)}
+      className={primary ? variantClass('text', compact) : cn(PRIMARY_BUTTON, compact ? 'min-h-11 w-full' : 'min-h-8')}
     >
-      {openLabel}
-    </button>
-  );
-  const sessionButton = sessionKey && !compact && (
-    <button
-      type="button"
-      onClick={() => onOpen({ type: 'session', key: sessionKey })}
-      className={TEXT_BUTTON}
-    >
-      Open session
+      {openLabel(item)}
     </button>
   );
 
   return (
     <section
       aria-label="Start here"
-      className={cn(CARD, 'plate plate-operator gap-2.5 px-4 py-4', item.freshness !== 'live' && 'opacity-80')}
+      className={cn('plate plate-operator flex min-w-0 flex-col gap-2.5 px-4 py-3.5', WRAP)}
     >
-      <KindLine
-        item={item}
-        view={view}
-        lead={<span className="font-semibold text-foreground">{KIND_WORD[item.kind]}</span>}
-      />
-      <h3 className="m-0 text-[1.2rem] font-semibold leading-tight text-foreground">{item.title}</h3>
-
-      {detail.result && (
-        <p className="m-0 border-l-2 border-border pl-3 text-[0.867rem] leading-relaxed text-muted-foreground">
-          {excerpt(detail.result)}
-        </p>
-      )}
-      <CardDetail item={item} view={view} />
-      <WhatHappened summary={summary} />
-
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-[0.867rem] text-muted-foreground">
-        {run && <span className="font-mono text-[0.8rem] tabular">{run}</span>}
-        <span>No evidence attached</span>
+      <div className="flex min-w-0 items-start gap-3">
+        <Pane state={pane.state} label={pane.label} className="mt-[0.3rem] shrink-0" />
+        <h3 className={cn('m-0 min-w-0 flex-1 font-semibold leading-snug text-foreground', compact ? 'text-[1.067rem]' : 'text-[1.133rem]', item.kind === 'approval' && 'font-mono text-[0.933rem]')}>
+          {item.title}
+        </h3>
+        {view.ownerName && (
+          <span
+            className={cn('shrink-0 font-display font-semibold', view.hue ? 'name-hued' : 'text-foreground')}
+            style={nameHueStyle(view.hue)}
+          >
+            {view.ownerName}
+          </span>
+        )}
       </div>
+      <p className="m-0 flex flex-wrap items-center gap-x-1.5 text-[0.8rem] text-muted-foreground">
+        <span>{kindWord(item)}</span>
+        <span aria-hidden="true">·</span>
+        <Clocked text={view.reason} />
+        {stale && <span className="text-foreground">· {stale}</span>}
+        {view.isNew && <NewTag />}
+      </p>
 
-      <div className="mt-1 flex flex-col gap-2 border-t border-border pt-3">
+      {item.kind === 'approval' && <CommandBlock item={item} />}
+      <ItemDetail item={item} full />
+      <WhatHappened summary={summary} />
+      <Evidence item={item} compact={compact} onOpen={onOpen} max={480} />
+
+      <div className="mt-0.5 flex flex-col gap-2">
         {state.noteOpen ? (
           <ChangesNote state={state} submitVariant="primary" compact={compact} />
         ) : reply.fieldOpen ? (
           reply.field(compact)
+        ) : confirmingStop ? (
+          <StopConfirm state={state} compact={compact} />
         ) : (
           <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-2', compact && 'flex-col items-stretch')}>
             {primary ? <ActionButton state={state} action={primary} variant="primary" compact={compact} /> : openButton}
-            {compact ? (
-              (primary || replyButton) && (
-                <div className="flex flex-wrap items-center gap-x-4">
-                  {secondary && <ActionButton state={state} action={secondary} variant="text" compact />}
-                  {primary && openButton}
-                  {replyButton}
-                </div>
-              )
-            ) : (
-              <>
-                {secondary && <ActionButton state={state} action={secondary} variant="text" compact={false} />}
-                {primary && openButton}
-                {sessionButton}
+            {(secondary || more.length > 0 || replyButton || (primary && openButton)) && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                {secondary && <ActionButton state={state} action={secondary} variant="text" compact={compact} />}
+                {more.map((action) => <ActionButton key={action} state={state} action={action} variant="text" compact={compact} />)}
                 {replyButton}
-              </>
+                {primary && openButton}
+              </div>
             )}
           </div>
         )}
@@ -270,4 +234,3 @@ export function StartHereCard({ item, view, compact, onOpen, actions, replies, s
     </section>
   );
 }
-

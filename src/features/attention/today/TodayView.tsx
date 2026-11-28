@@ -23,7 +23,7 @@ import { timeAgo } from '@/lib/formatting';
 import { cn } from '@/lib/utils';
 import type { GranularAgentState, Session } from '@/types';
 import { formatClock } from '../briefCopy';
-import { Clocked, NewTag } from '../AttentionRow';
+import { Clocked, NewTag } from '../textBits';
 import { WhatHappened } from '../AttentionCard';
 import { ReplyButton, ReplyField, ReplyPanel, type ReplyConfig } from '../AttentionReply';
 import { variantClass } from '../actionStyles';
@@ -330,9 +330,8 @@ export function TodayView({
   return (
     <div
       className={cn(
-        'mx-auto flex w-full max-w-[1320px] flex-col',
-        compact ? 'gap-4 pb-8 pt-2' : 'gap-6 px-7 pb-6 pt-4',
-        disconnectedSince !== null && 'opacity-60',
+        'flex w-full flex-col',
+        compact ? 'gap-4 pb-8' : 'gap-6 pb-6',
       )}
     >
       <section aria-label="Today summary" className={cn('flex flex-col gap-1.5', compact && 'px-4')}>

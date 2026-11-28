@@ -134,9 +134,83 @@ function hasText(text: string | RegExp) {
   );
 }
 
-function cardTitles(): string[] {
-  return screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent ?? '');
+/** The decisions in board order: the Start here plate, then the rows under it. */
+function decideTitles(): string[] {
+  const section = screen.getByRole('region', { name: 'Waiting on you' });
+  const plate = within(section).queryByRole('heading', { level: 3 });
+  const rows = within(section).queryAllByTestId('attention-row-title').map((title) => title.textContent ?? '');
+  return [...(plate ? [plate.textContent ?? ''] : []), ...rows];
 }
+
+/** The whole row (toggle, actions, open detail) whose title is `title`. */
+function itemOf(title: string): HTMLElement {
+  const titleEl = screen.getAllByTestId('attention-row-title').find((el) => el.textContent === title);
+  if (!titleEl) throw new Error(`No row titled ${title}`);
+  return titleEl.closest('[data-testid="attention-item"]') as HTMLElement;
+}
+
+function toggleOf(title: string): HTMLElement {
+  return within(itemOf(title)).getByTestId('attention-row');
+}
+
+function failedTask(overrides: Partial<KanbanTask> = {}): KanbanTask {
+  return task({
+    id: 'f1',
+    title: 'Rebuild the index',
+    status: 'todo',
+    result: undefined,
+    run: {
+      sessionKey: 'agent:forge:subagent:fix',
+      startedAt: NOW - 3 * HOUR,
+      endedAt: NOW - 2 * HOUR,
+      status: 'error',
+      error: 'Tests failed',
+    },
+    ...overrides,
+  });
+}
+
+function runningTask(overrides: Partial<KanbanTask> = {}): KanbanTask {
+  return task({
+    id: 'r1',
+    title: 'Index the archive',
+    status: 'in-progress',
+    result: undefined,
+    updatedAt: NOW - 10 * MINUTE,
+    run: { sessionKey: 'agent:forge:subagent:index', startedAt: NOW - 10 * MINUTE, status: 'running' },
+    ...overrides,
+  });
+}
+
+function proposal(overrides: Partial<KanbanProposal> = {}): KanbanProposal {
+  return {
+    id: 'p1',
+    type: 'create',
+    payload: { title: 'Write release notes' },
+    proposedBy: 'agent:kim',
+    proposedAt: NOW - 3 * HOUR,
+    status: 'pending',
+    version: 1,
+    ...overrides,
+  };
+}
+
+function finishedTask(overrides: Partial<KanbanTask> = {}): KanbanTask {
+  return task({
+    id: 'd1',
+    title: 'Write the changelog',
+    status: 'in-progress',
+    result: 'Wrote it.',
+    run: { sessionKey: 'agent:forge:subagent:log', startedAt: NOW - 2 * HOUR, endedAt: NOW - HOUR, status: 'done' },
+    ...overrides,
+  });
+}
+
+const FLEET = [
+  { key: 'agent:forge:main', identityName: 'Forge', updatedAt: NOW - HOUR },
+  { key: 'agent:kim:main', identityName: 'Kim', updatedAt: NOW - HOUR },
+  { key: 'agent:tuna:main', identityName: 'Tuna', updatedAt: NOW - HOUR },
+];
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -154,11 +228,51 @@ afterEach(() => {
 });
 
 describe('AttentionView', () => {
-  function runningRow(title: string): HTMLElement {
-    return screen.getAllByTestId('attention-row').find((row) => row.textContent?.includes(title))!;
-  }
+  it('heads the board with counts, then Failing, Waiting on you, Agents and Since you looked in that order', () => {
+    sessionMock.mockReturnValue({
+      sessions: FLEET,
+      sessionsLoading: false,
+      agentStatus: {},
+      busyState: {},
+    } as never);
+    setSources({
+      tasks: [task(), task({ id: 't2', title: 'Second review', resultAt: NOW - 20 * MINUTE }), failedTask(), runningTask(), finishedTask()],
+      crons: [cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error', lastError: 'AccessDenied' })],
+    });
+    renderView();
 
-  it('names a running subagent after its agent identity, never the starter template', () => {
+    expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('2 failing · 2 to decide · 1 working');
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
+    expect(headings).toEqual(['Failing', 'Waiting on you', 'Agents', 'Since you looked']);
+    // Now | Today sits on the heading row, with the checked time and Refresh.
+    expect(screen.getByRole('group', { name: 'Attention view' })).toBeInTheDocument();
+    expect(screen.getByTitle(`Checked ${formatClock(NOW)}`)).toBeInTheDocument();
+    // The Ask box docks after the board.
+    const ask = screen.getByRole('region', { name: 'Ask the agent' });
+    const since = screen.getByRole('region', { name: 'Since you looked' });
+    expect(since.compareDocumentPosition(ask) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // No "In the last 24 hours", no always-on caveat, no kickers.
+    expect(screen.queryByText(/In the last 24 hours/)).toBeNull();
+    expect(screen.queryByText(/session failures show from when this page opened/i)).toBeNull();
+    expect(screen.queryByText('Then')).toBeNull();
+    expect(screen.queryByText(/^Ranked/)).toBeNull();
+    expect(screen.getByTestId('attention-decide-count')).toHaveAttribute('title', expect.stringMatching(/^Ranked: /));
+  });
+
+  it('says where things come from only when a source is not live', () => {
+    setSources({ tasks: [task()], crons: [cron({ lastStatus: 'error', lastRun: new Date(NOW - HOUR).toISOString() })] });
+    const { unmount } = renderView();
+    expect(screen.queryByText(/tasks · live|crons · live|proposals · live/)).toBeNull();
+    expect(screen.queryByText(/stale/)).toBeNull();
+    unmount();
+
+    setSources({ tasks: [task()], sources: { ...allLive(), tasks: { state: 'error', error: 'HTTP 503' } } });
+    renderView();
+    expect(screen.getByText('Tasks could not be read, so this may be incomplete.')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Start here' })).getByText(/stale/)).toBeInTheDocument();
+  });
+
+  it('names a running subagent in words, under its agent in the Agents strip', () => {
     sessionMock.mockReturnValue({
       sessions: [
         { key: 'agent:linus:main', identityName: 'Linus', updatedAt: NOW - HOUR },
@@ -171,9 +285,11 @@ describe('AttentionView', () => {
     setSources();
     renderView();
 
-    const row = runningRow('Research worker');
-    expect(row).toHaveTextContent('Linus');
+    const [line] = screen.getAllByTestId('agent-line');
+    expect(line).toHaveTextContent('Linus');
+    expect(line).toHaveTextContent('Research worker');
     expect(screen.queryByText(/pick something you like/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/agent:linus/)).toBeNull();
   });
 
   it('falls back to the agent id when a root session carries placeholder identity text', () => {
@@ -189,25 +305,183 @@ describe('AttentionView', () => {
     setSources();
     renderView();
 
-    const row = runningRow('Research worker');
-    expect(row).toHaveTextContent('linus');
+    expect(screen.getAllByTestId('agent-line')[0]).toHaveTextContent('linus');
     expect(screen.queryByText(/pick something you like/)).not.toBeInTheDocument();
   });
 
-  it('shows Start here with No evidence attached and opens the task', () => {
-    setSources({ tasks: [task()] });
+  it('lists every agent with what it is doing, working first, and opens its main chat', () => {
+    sessionMock.mockReturnValue({
+      sessions: [
+        ...FLEET,
+        { key: 'agent:kim:telegram:direct:9', channel: 'telegram', updatedAt: NOW - MINUTE },
+        { key: 'agent:forge:subagent:x1', label: 'kb-r1-1795864537794', updatedAt: NOW - MINUTE },
+      ],
+      sessionsLoading: false,
+      agentStatus: {},
+      busyState: { 'agent:kim:telegram:direct:9': true },
+    } as never);
+    setSources({ tasks: [runningTask({ run: { sessionKey: 'agent:forge:subagent:x1', startedAt: NOW - 32 * MINUTE, status: 'running' } })] });
+    const { onOpen } = renderView();
+
+    const lines = screen.getAllByTestId('agent-line');
+    expect(lines.map((line) => line.getAttribute('data-state'))).toEqual(['working', 'working', 'idle']);
+    expect(lines[0]).toHaveTextContent('Forge');
+    expect(lines[0]).toHaveTextContent('Index the archive');
+    expect(lines[0]).toHaveTextContent('32m');
+    expect(lines[1]).toHaveTextContent('Kim');
+    expect(lines[1]).toHaveTextContent('replying on Telegram');
+    expect(lines[2]).toHaveTextContent('Tuna');
+    expect(lines[2]).toHaveTextContent('idle');
+    for (const line of lines) expect(line.textContent).not.toMatch(/agent:|kb-/);
+    // Names are set in the names face, in the agent's hue.
+    expect(within(lines[0]).getByText('Forge').className).toContain('font-display');
+    expect(within(lines[0]).getByText('Forge').className).toContain('name-hued');
+
+    fireEvent.click(within(lines[1]).getByRole('button', { name: "Open Kim's chat" }));
+    expect(onOpen).toHaveBeenCalledWith({ type: 'session', key: 'agent:kim:main' });
+  });
+
+  it('a quiet task run is marked on its agent and can be stopped with a confirm', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    sessionMock.mockReturnValue({ sessions: FLEET, sessionsLoading: false, agentStatus: {}, busyState: {} } as never);
+    const value = setSources({
+      tasks: [runningTask({ updatedAt: NOW - 5 * HOUR, run: { sessionKey: 'agent:forge:subagent:index', startedAt: NOW - 5 * HOUR, status: 'running' } })],
+    });
+    const { onOpen } = renderView();
+
+    const line = screen.getAllByTestId('agent-line')[0];
+    expect(line).toHaveAttribute('data-state', 'quiet');
+    expect(line).toHaveTextContent('quiet 5h');
+    // Gone quiet is not a failure.
+    expect(screen.queryByRole('region', { name: 'Failing' })).toBeNull();
+
+    fireEvent.click(within(line).getByRole('button', { name: 'Stop' }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(within(line).getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
+    expect(fetchMock.mock.calls.map(([url]) => url)).toContain('/api/kanban/tasks/r1/abort');
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('Start here is a warm plate with the full summary, real evidence and the agent name', () => {
+    sessionMock.mockReturnValue({ sessions: FLEET, sessionsLoading: false, agentStatus: {}, busyState: {} } as never);
+    summariesMock.mockImplementation(() => ({ 'agent:forge:subagent:fix': { status: 'ready', text: 'You asked for a retry fix. Forge patched it and waits for review.' } }));
+    setSources({ tasks: [task({ result: 'Patched the retry backoff. https://github.com/acme/app/pull/460' })] });
     const { onOpen } = renderView();
 
     const start = screen.getByRole('region', { name: 'Start here' });
-    expect(within(start).getByText('Fix the flaky retry test')).toBeInTheDocument();
-    expect(within(start).getByText('No evidence attached')).toBeInTheDocument();
+    expect(start.className).toContain('plate-operator');
+    expect(within(start).getByRole('heading', { level: 3 })).toHaveTextContent('Fix the flaky retry test');
+    expect(within(start).getByText('Forge')).toHaveClass('font-display');
+    const summary = within(start).getByText('You asked for a retry fix. Forge patched it and waits for review.');
+    expect(summary.className).toContain('text-foreground');
+    expect(summary.className).toContain('max-w-[72ch]');
+    expect(within(start).queryByText(/What happened/)).toBeNull();
+    expect(within(start).queryByText('No evidence attached')).toBeNull();
     expect(within(start).getByText(/Patched the retry backoff/)).toBeInTheDocument();
+    expect(within(start).getByRole('link', { name: 'PR #460' })).toHaveAttribute('href', 'https://github.com/acme/app/pull/460');
 
     fireEvent.click(within(start).getByRole('button', { name: 'Open review' }));
     expect(onOpen).toHaveBeenCalledWith({ type: 'task', id: 't1' });
-
-    fireEvent.click(within(start).getByRole('button', { name: 'Open session' }));
+    fireEvent.click(within(start).getByRole('button', { name: 'Run session' }));
     expect(onOpen).toHaveBeenCalledWith({ type: 'session', key: 'agent:forge:subagent:fix' });
+  });
+
+  it('shows no evidence line when an item carries none', () => {
+    setSources({ proposals: [proposal()] });
+    renderView();
+    const start = screen.getByRole('region', { name: 'Start here' });
+    expect(within(start).queryByTestId('attention-evidence')).toBeNull();
+    expect(within(start).queryByText('No evidence attached')).toBeNull();
+  });
+
+  it('action tiers: one warm button on the plate, outline main actions on rows, muted text for the rest', () => {
+    setSources({
+      tasks: [task(), task({ id: 't2', title: 'Second review', resultAt: NOW - 20 * MINUTE }), failedTask()],
+    });
+    renderView();
+
+    const start = screen.getByRole('region', { name: 'Start here' });
+    const approve = within(start).getByRole('button', { name: 'Approve' });
+    expect(approve.className).toContain('bg-primary');
+    const reject = within(start).getByRole('button', { name: 'Request changes' });
+    expect(reject.className).toContain('text-muted-foreground');
+    expect(reject.className).toContain('underline');
+    expect(reject.className).not.toContain('bg-primary');
+
+    const filled = screen.getAllByRole('button').filter((button) => button.className.includes('bg-primary'));
+    expect(filled).toEqual([approve]);
+
+    for (const title of ['Second review', 'Rebuild the index']) {
+      const main = within(itemOf(title)).getByRole('button', { name: title === 'Second review' ? 'Approve' : 'Retry' });
+      expect(main.className).toContain('border-input');
+      expect(main.className).toContain('text-foreground');
+      expect(main.className).not.toContain('shell-chip');
+      expect(main.className).not.toContain('bg-primary');
+    }
+    // A failure keeps Open beside its main action.
+    expect(within(itemOf('Rebuild the index')).getByRole('button', { name: 'Open task' }).className).toContain('underline');
+  });
+
+  it('rows open in place with the summary, evidence, every action, Reply and an explicit Open', () => {
+    summariesMock.mockImplementation(() => ({ 'agent:forge:subagent:second': { status: 'ready', text: 'Forge tidied the changelog.' } }));
+    setSources({
+      tasks: [
+        task(),
+        task({
+          id: 't2',
+          title: 'Second review',
+          resultAt: NOW - 20 * MINUTE,
+          result: 'Tidied the changelog.',
+          run: { sessionKey: 'agent:forge:subagent:second', startedAt: NOW - HOUR, endedAt: NOW - 20 * MINUTE, status: 'done' },
+        }),
+      ],
+    });
+    const { onOpen } = renderView();
+
+    const toggle = toggleOf('Second review');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(itemOf('Second review')).queryByTestId('attention-row-detail')).toBeNull();
+    // Collapsed: title, then agent, age and kind; the main action stays in reach.
+    expect(itemOf('Second review')).toHaveTextContent('forge · 20m · Review');
+
+    fireEvent.click(toggle);
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const detail = within(itemOf('Second review')).getByTestId('attention-row-detail');
+    expect(within(detail).getByText('Forge tidied the changelog.')).toBeInTheDocument();
+    expect(within(detail).getByText('Tidied the changelog.')).toBeInTheDocument();
+    expect(within(detail).getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(within(detail).getByRole('button', { name: 'Request changes' })).toBeInTheDocument();
+    expect(within(detail).getByRole('button', { name: 'Reply' })).toBeInTheDocument();
+    fireEvent.click(within(detail).getByRole('button', { name: 'Open review' }));
+    expect(onOpen).toHaveBeenCalledWith({ type: 'task', id: 't2' });
+
+    fireEvent.click(toggle);
+    expect(within(itemOf('Second review')).queryByTestId('attention-row-detail')).toBeNull();
+  });
+
+  it('rows open in place on phones too, with 44px targets', () => {
+    setSources({ tasks: [task(), task({ id: 't2', title: 'Second review', resultAt: NOW - 20 * MINUTE }), failedTask()] });
+    const { onOpen } = renderView({ compact: true });
+
+    for (const row of screen.getAllByTestId('attention-row')) {
+      expect(row.tagName).toBe('BUTTON');
+      expect(row.className).toContain('min-h-[60px]');
+    }
+    expect(within(itemOf('Second review')).getByRole('button', { name: 'Approve' }).className).toContain('min-h-[44px]');
+    fireEvent.click(toggleOf('Rebuild the index'));
+    expect(onOpen).not.toHaveBeenCalled();
+    const detail = within(itemOf('Rebuild the index')).getByTestId('attention-row-detail');
+    expect(within(detail).getByRole('button', { name: 'Mark Rebuild the index seen' })).toBeInTheDocument();
+
+    // On phones Start here has one filled button, the decision; the rest are text buttons.
+    const start = screen.getByRole('region', { name: 'Start here' });
+    const startButtons = within(start).getAllByRole('button');
+    expect(startButtons.filter((button) => button.className.includes('bg-primary')).map((b) => b.textContent)).toEqual(['Approve']);
+    expect(startButtons.map((button) => button.textContent)).toEqual(['Run session', 'Approve', 'Request changes', 'Reply', 'Open review']);
+    for (const button of startButtons) expect(button.className).toContain('min-h-11');
   });
 
   it('empty state only when every source is live', () => {
@@ -216,7 +490,7 @@ describe('AttentionView', () => {
     expect(
       screen.getByText(hasText(`Nothing needs you. Checked tasks, proposals and crons at ${formatClock(NOW)}.`)),
     ).toBeInTheDocument();
-    expect(screen.getAllByText(/session failures show from when this page opened/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('Nothing needs you');
     unmount();
 
     setSources({ sources: { ...allLive(), crons: { state: 'loading' } } });
@@ -230,24 +504,6 @@ describe('AttentionView', () => {
     expect(screen.queryByText(/Nothing needs you/)).not.toBeInTheDocument();
   });
 
-  it('shows the footer only once a live source has reported, with that time', () => {
-    const loading: Record<Polled, SourceStatus> = {
-      tasks: { state: 'loading' },
-      proposals: { state: 'loading' },
-      crons: { state: 'loading' },
-    };
-    setSources({ sources: loading });
-    const { rerenderWith } = renderView();
-    expect(screen.queryByText(hasText(/That is everything the live sources reported/))).not.toBeInTheDocument();
-
-    const checkedAt = NOW - 4 * MINUTE;
-    setSources({ sources: { ...loading, tasks: { state: 'live', checkedAt } } });
-    rerenderWith({});
-    expect(
-      screen.getByText(hasText(`That is everything the live sources reported at ${formatClock(checkedAt)}.`)),
-    ).toBeInTheDocument();
-  });
-
   it('errored crons source shows its message and an Open Crons link', () => {
     setSources({ sources: { ...allLive(), crons: { state: 'error', error: 'HTTP 502' } } });
     const { onOpen } = renderView();
@@ -258,54 +514,65 @@ describe('AttentionView', () => {
     expect(onOpen).toHaveBeenCalledWith({ type: 'source', source: 'crons' });
   });
 
-  it('Mark seen collapses finished items into the Seen line', () => {
-    setSources({ crons: [cron()] });
+  it('a failing cron is listed; one whose later run went fine is not, and reads as recovered since you looked', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/crons/c2/runs') {
+        return new Response(JSON.stringify({
+          ok: true,
+          result: { entries: [{ ts: NOW - 5 * HOUR, status: 'error', error: 'AccessDenied' }, { ts: NOW - 2 * HOUR, status: 'ok' }] },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true, result: { entries: [] } }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    setSources({
+      crons: [
+        cron({ id: 'c1', name: 'Morning brief', lastStatus: 'ok', lastRun: new Date(NOW - HOUR).toISOString() }),
+        cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error', lastError: 'AccessDenied', lastRun: new Date(NOW - 5 * HOUR).toISOString() }),
+      ],
+    });
     renderView();
 
-    expect(screen.getByText('Morning brief')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark seen' }));
+    // Before the history answers, the job's own last status says failing.
+    expect(within(screen.getByRole('region', { name: 'Failing' })).getByText('Nightly backup')).toBeInTheDocument();
 
-    expect(screen.queryByText('Morning brief')).not.toBeInTheDocument();
-    const seenLine = screen.getByRole('button', { name: 'Seen (1)' });
-    expect(seenLine).toHaveAttribute('aria-expanded', 'false');
-    expect(JSON.parse(localStorage.getItem('nerve:attention:seen') ?? '[]')).toHaveLength(1);
-
-    fireEvent.click(seenLine);
-    expect(screen.getByText('Morning brief')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Failing' })).toBeNull());
+    const since = screen.getByRole('region', { name: 'Since you looked' });
+    fireEvent.click(within(since).getByRole('button', { name: /1 finished/ }));
+    expect(within(since).getByText('Nightly backup')).toBeInTheDocument();
+    expect(within(since).getByText(hasText(`Failed ${formatClock(NOW - 5 * HOUR)}, recovered ${formatClock(NOW - 2 * HOUR)}`))).toBeInTheDocument();
+    // A successful cron run is not news on Now.
+    expect(screen.queryByText('Morning brief')).toBeNull();
   });
 
-  it('compact renders rows with 44px or taller targets', () => {
-    setSources({
-      tasks: [task(), task({ id: 't2', title: 'Write the ship notes', resultAt: NOW - 30 * MINUTE })],
-      crons: [cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error', lastError: 'AccessDenied' })],
-    });
-    const { onOpen } = renderView({ compact: true });
+  it('Since you looked is one collapsed line with a count, Mark all seen, and per-row Mark seen', () => {
+    setSources({ tasks: [finishedTask(), finishedTask({ id: 'd2', title: 'Prune the cache', run: { sessionKey: 'agent:forge:subagent:p', startedAt: NOW - 3 * HOUR, endedAt: NOW - 2 * HOUR, status: 'done' } })] });
+    renderView();
 
-    // On phones Start here has one filled button, the decision; the rest are text buttons.
-    const start = screen.getByRole('region', { name: 'Start here' });
-    const startButtons = within(start).getAllByRole('button');
-    const filled = startButtons.filter((button) => button.className.includes('bg-primary'));
-    expect(filled).toHaveLength(1);
-    expect(filled[0]).toHaveTextContent('Approve');
-    expect(startButtons.map((button) => button.textContent)).toEqual(['Approve', 'Request changes', 'Open review', 'Reply']);
-    for (const button of startButtons) expect(button.className).toContain('min-h-11');
-    const rows = screen.getAllByTestId('attention-row');
-    expect(rows.length).toBe(2);
-    for (const row of rows) {
-      expect(row.tagName).toBe('BUTTON');
-      const match = row.className.match(/min-h-\[(\d+)px\]/);
-      expect(match).not.toBeNull();
-      expect(Number(match![1])).toBeGreaterThanOrEqual(44);
-    }
+    const since = screen.getByRole('region', { name: 'Since you looked' });
+    const count = within(since).getByRole('button', { name: /2 finished/ });
+    expect(count).toHaveAttribute('aria-expanded', 'false');
+    expect(within(since).queryByText('Write the changelog')).toBeNull();
 
-    const backupRow = rows.find((row) => row.textContent?.includes('Nightly backup'));
-    fireEvent.click(backupRow!);
-    expect(onOpen).toHaveBeenCalledWith({ type: 'cron', id: 'c2' });
+    fireEvent.click(count);
+    expect(within(since).getByText('Write the changelog')).toBeInTheDocument();
+    // Finished history is dark: no family hue in the pane.
+    expect(within(itemOf('Write the changelog')).getByRole('img', { name: 'Finished' })).not.toHaveClass('pane-hued');
+    const mark = within(itemOf('Write the changelog')).getByRole('button', { name: 'Mark Write the changelog seen' });
+    expect(mark.className).toContain('group-hover:opacity-100');
+    fireEvent.click(mark);
+    expect(within(since).queryByText('Write the changelog')).toBeNull();
+    expect(within(since).getByRole('button', { name: 'Seen (1)' })).toBeInTheDocument();
+
+    fireEvent.click(within(since).getByRole('button', { name: 'Mark all seen' }));
+    expect(within(since).queryByText('Prune the cache')).toBeNull();
+    expect(within(since).getByRole('button', { name: 'Seen (2)' })).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('nerve:attention:seen') ?? '[]')).toHaveLength(2);
   });
 
-  it('disconnected shows last brief with the not connected line', () => {
+  it('disconnected keeps the board readable, says since when, and never shows the all clear', () => {
     setSources({ tasks: [task()] });
-    const { rerenderWith } = renderView();
+    const { rerenderWith, container } = renderView();
     expect(screen.queryByText(hasText(/Not connected since/))).not.toBeInTheDocument();
 
     vi.setSystemTime(NOW + 7 * MINUTE);
@@ -317,6 +584,9 @@ describe('AttentionView', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Fix the flaky retry test')).toBeInTheDocument();
     expect(screen.queryByText(/Nothing needs you/)).not.toBeInTheDocument();
+    expect(container.querySelector('.opacity-60')).toBeNull();
+    // Kanban actions go over HTTP and stay available.
+    expect(within(screen.getByRole('region', { name: 'Start here' })).getByRole('button', { name: 'Approve' })).toBeEnabled();
   });
 
   it('disconnected never shows the all clear', () => {
@@ -352,7 +622,7 @@ describe('AttentionView', () => {
     rerenderWith({});
     expect(screen.getByText(hasText(/Not connected since/))).toBeInTheDocument();
     expect(screen.queryByText(/Nothing needs you/)).not.toBeInTheDocument();
-    expect(screen.getAllByText(/Sessions could not be read \(not connected\)/).length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('Nothing to show');
   });
 
   it('a page load before the socket connects is not an outage and takes sessions into the baseline', () => {
@@ -369,7 +639,7 @@ describe('AttentionView', () => {
 
     gatewayMock.mockReturnValue({ connectionState: 'connected' });
     sessionMock.mockReturnValue({
-      sessions: [{ key: 'agent:kim:subagent:abc', label: 'Research worker', updatedAt: NOW - 10 * MINUTE }],
+      sessions: [{ key: 'agent:kim:main', identityName: 'Kim' }, { key: 'agent:kim:subagent:abc', label: 'Research worker', updatedAt: NOW - 10 * MINUTE }],
       sessionsLoading: false,
       agentStatus: {},
       busyState: { 'agent:kim:subagent:abc': true },
@@ -380,7 +650,7 @@ describe('AttentionView', () => {
     expect(screen.queryByText('New')).not.toBeInTheDocument();
     expect(screen.queryByText(hasText(/Not connected since/))).not.toBeInTheDocument();
 
-    // The baseline now holds the session, so a later arrival is the only New item.
+    // The baseline now holds the board, so a later arrival is the only New item.
     setSources({ tasks: [task(), task({ id: 't9', title: 'Later review', resultAt: NOW - MINUTE })] });
     rerenderWith({});
     expect(screen.getAllByText('New')).toHaveLength(1);
@@ -396,15 +666,14 @@ describe('AttentionView', () => {
     expect(localStorage.getItem('nerve:attention:lastLook')).toBe(String(NOW + 5 * MINUTE));
   });
 
-  it('keeps Since you left across leaving the view and coming back in one page session', () => {
+  it('keeps the last look across leaving the view and coming back in one page session', () => {
     localStorage.setItem('nerve:attention:lastLook', String(NOW - 5 * HOUR));
     setSources();
     const { rerenderWith } = renderView();
 
-    const heading = () => screen.getByRole('heading', { level: 1 }).textContent;
-    const before = heading();
-    expect(before).toMatch(/^Since you left /);
-    expect(before).toContain(formatClock(NOW - 5 * HOUR));
+    const since = () => screen.getByRole('heading', { level: 2, name: 'Since you looked' }).getAttribute('title');
+    const before = since();
+    expect(before).toBe(`Since ${formatClock(NOW - 5 * HOUR)}`);
 
     vi.setSystemTime(NOW + 5 * MINUTE);
     rerenderWith({ active: false });
@@ -412,31 +681,19 @@ describe('AttentionView', () => {
     expect(localStorage.getItem('nerve:attention:lastLook')).toBe(String(NOW + 5 * MINUTE));
     rerenderWith({ active: true });
 
-    expect(heading()).toBe(before);
+    expect(since()).toBe(before);
   });
 
   it('marking every failure seen keeps a Seen count in the all-clear block', () => {
-    setSources({
-      tasks: [task({
-        status: 'todo',
-        result: undefined,
-        run: {
-          sessionKey: 'agent:forge:subagent:fix',
-          startedAt: NOW - 3 * HOUR,
-          endedAt: NOW - 2 * HOUR,
-          status: 'error',
-          error: 'Tests failed',
-        },
-      })],
-    });
-    renderView();
+    setSources({ tasks: [failedTask({ title: 'Fix the flaky retry test' })] });
+    renderView({ compact: false });
 
-    expect(screen.getByRole('heading', { name: 'Blocked or failed' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Failing' })).toBeInTheDocument();
     expect(screen.queryByText(/Nothing needs you/)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark seen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Fix the flaky retry test seen' }));
 
     expect(screen.getByText(hasText(/Nothing needs you\. Checked/))).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Blocked or failed' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Failing' })).not.toBeInTheDocument();
     const seenLine = screen.getByRole('button', { name: 'Seen (1)' });
     expect(seenLine).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('Fix the flaky retry test')).not.toBeInTheDocument();
@@ -459,13 +716,11 @@ describe('AttentionView', () => {
     expect(screen.queryByText(/Nothing needs you/)).not.toBeInTheDocument();
     expect(screen.queryByText('New')).not.toBeInTheDocument();
 
-    // Tasks answer first with only the newer review.
     setSources({ tasks: [newer], sources: { ...loading, tasks: live() } });
     rerenderWith({});
     expect(screen.queryByText(/Nothing needs you/)).not.toBeInTheDocument();
     expect(screen.queryByText('New')).not.toBeInTheDocument();
 
-    // The rest answer, and the older review ranks first.
     setSources({ tasks: [newer, older], sources: allLive() });
     rerenderWith({});
     const start = screen.getByRole('region', { name: 'Start here' });
@@ -479,25 +734,23 @@ describe('AttentionView', () => {
     const status = allLive();
     setSources({ tasks: [first, second], sources: status });
     const { rerenderWith } = renderView();
-    expect(cardTitles()).toEqual(['First review', 'Second review']);
+    expect(decideTitles()).toEqual(['First review', 'Second review']);
 
     rerenderWith({ active: false });
 
-    // Reopened with the previous answers still in place; a new older item arrives but nothing re-ranks.
     const earlier = task({ id: 't3', title: 'Earlier review', resultAt: NOW - 3 * HOUR });
     setSources({ tasks: [first, second, earlier], sources: status });
     rerenderWith({ active: true });
-    expect(cardTitles()).toEqual(['First review', 'Second review', 'Earlier review']);
+    expect(decideTitles()).toEqual(['First review', 'Second review', 'Earlier review']);
     expect(screen.queryByText('New')).not.toBeInTheDocument();
 
-    // Fresh answers land: the brief re-ranks as a new baseline.
     setSources({ tasks: [first, second, earlier], sources: allLive() });
     rerenderWith({});
-    expect(cardTitles()).toEqual(['Earlier review', 'First review', 'Second review']);
+    expect(decideTitles()).toEqual(['Earlier review', 'First review', 'Second review']);
     expect(screen.queryByText('New')).not.toBeInTheDocument();
   });
 
-  it('tags items that arrive while the brief is open as New, at the end', () => {
+  it('tags items that arrive while the board is open as New, at the end, and keeps the plate', () => {
     const first = task({ id: 't1', title: 'First review', resultAt: NOW - HOUR });
     setSources({ tasks: [first] });
     const { rerenderWith } = renderView();
@@ -505,7 +758,7 @@ describe('AttentionView', () => {
     const earlier = task({ id: 't3', title: 'Earlier review', resultAt: NOW - 3 * HOUR });
     setSources({ tasks: [first, earlier] });
     rerenderWith({});
-    expect(cardTitles()).toEqual(['First review', 'Earlier review']);
+    expect(decideTitles()).toEqual(['First review', 'Earlier review']);
     expect(screen.getByText('New')).toBeInTheDocument();
   });
 
@@ -523,26 +776,11 @@ describe('AttentionView', () => {
 
     setSources({ tasks: [first, earlier], sources: allLive(), refresh: value.refresh });
     rerenderWith({});
-    expect(cardTitles()).toEqual(['Earlier review', 'First review']);
+    expect(decideTitles()).toEqual(['Earlier review', 'First review']);
     expect(screen.queryByText('New')).not.toBeInTheDocument();
   });
 
   describe('per-item Mark seen', () => {
-    function failedTask(overrides: Partial<KanbanTask> = {}): KanbanTask {
-      return task({
-        status: 'todo',
-        result: undefined,
-        run: {
-          sessionKey: 'agent:forge:subagent:fix',
-          startedAt: NOW - 3 * HOUR,
-          endedAt: NOW - 2 * HOUR,
-          status: 'error',
-          error: 'Tests failed',
-        },
-        ...overrides,
-      });
-    }
-
     it('per-item Mark seen hides only that failure', () => {
       setSources({
         tasks: [
@@ -552,65 +790,38 @@ describe('AttentionView', () => {
       });
       renderView();
 
-      expect(screen.getByRole('button', { name: 'Rebuild the index' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Rotate the logs' })).toBeInTheDocument();
+      expect(itemOf('Rebuild the index')).toBeInTheDocument();
+      expect(itemOf('Rotate the logs')).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole('button', { name: 'Mark Rebuild the index seen' }));
 
-      expect(screen.queryByRole('button', { name: 'Rebuild the index' })).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Rotate the logs' })).toBeInTheDocument();
+      expect(screen.queryAllByTestId('attention-row-title').map((el) => el.textContent)).toEqual(['Rotate the logs']);
       expect(screen.getByRole('button', { name: 'Mark Rotate the logs seen' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Seen (1)' })).toBeInTheDocument();
       expect(JSON.parse(localStorage.getItem('nerve:attention:seen') ?? '[]')).toHaveLength(1);
     });
 
     it('per-item Mark seen does not open the item', () => {
-      setSources({
-        tasks: [failedTask({ id: 'f1', title: 'Rebuild the index' })],
-        crons: [cron()],
-      });
+      setSources({ tasks: [failedTask({ id: 'f1', title: 'Rebuild the index' }), finishedTask()] });
       const { onOpen } = renderView();
 
       fireEvent.click(screen.getByRole('button', { name: 'Mark Rebuild the index seen' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Mark Morning brief seen' }));
+      fireEvent.click(screen.getByRole('button', { name: /1 finished/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Mark Write the changelog seen' }));
 
       expect(onOpen).not.toHaveBeenCalled();
-      // One Seen line in Blocked or failed, one in Recently finished.
+      // One Seen line under Failing (now in the all-clear block), one under Since you looked.
       expect(screen.getAllByRole('button', { name: 'Seen (1)' })).toHaveLength(2);
-      expect(screen.queryByText('Morning brief')).not.toBeInTheDocument();
     });
 
-    it('is a 44px target on phone rows and absent from Decide now and In progress items', () => {
-      sessionMock.mockReturnValue({
-        sessions: [{ key: 'agent:kim:subagent:abc', label: 'Research worker', updatedAt: NOW - 10 * MINUTE }],
-        sessionsLoading: false,
-        agentStatus: {},
-        busyState: { 'agent:kim:subagent:abc': true },
-      });
-      setSources({
-        tasks: [
-          task(),
-          task({ id: 't2', title: 'Write the ship notes', resultAt: NOW - 30 * MINUTE }),
-          failedTask({ id: 'f1', title: 'Rebuild the index' }),
-        ],
-        crons: [cron()],
-      });
-      renderView({ compact: true });
-
-      expect(screen.getByText('Research worker')).toBeInTheDocument();
-      const marks = screen.getAllByRole('button', { name: /^Mark .+ seen$/ });
-      expect(marks.map((button) => button.getAttribute('aria-label')).sort()).toEqual([
-        'Mark Morning brief seen',
-        'Mark Rebuild the index seen',
-      ]);
-      for (const button of marks) {
-        expect(button.tagName).toBe('BUTTON');
-        expect(button).toHaveAttribute('type', 'button');
-        expect(button.className).toContain('min-h-[44px]');
-        expect(button.closest('[data-testid="attention-row"]')).toBeNull();
-      }
+    it('is absent from decisions', () => {
+      setSources({ tasks: [task(), task({ id: 't2', title: 'Write the ship notes', resultAt: NOW - 30 * MINUTE })] });
+      renderView();
+      fireEvent.click(toggleOf('Write the ship notes'));
+      expect(screen.queryByRole('button', { name: /^Mark .+ seen$/ })).toBeNull();
     });
   });
+
   describe('item actions', () => {
     const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>();
 
@@ -625,63 +836,13 @@ describe('AttentionView', () => {
     });
 
     function calls() {
-      return fetchMock.mock.calls.map(([url, init]) => ({
-        url,
-        method: init?.method,
-        body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
-      }));
-    }
-
-    function failedTask(overrides: Partial<KanbanTask> = {}): KanbanTask {
-      return task({
-        id: 'f1',
-        title: 'Rebuild the index',
-        status: 'todo',
-        result: undefined,
-        run: {
-          sessionKey: 'agent:forge:subagent:fix',
-          startedAt: NOW - 3 * HOUR,
-          endedAt: NOW - 2 * HOUR,
-          status: 'error',
-          error: 'Tests failed',
-        },
-        ...overrides,
-      });
-    }
-
-    function runningTask(overrides: Partial<KanbanTask> = {}): KanbanTask {
-      return task({
-        id: 'r1',
-        title: 'Index the archive',
-        status: 'in-progress',
-        result: undefined,
-        updatedAt: NOW - 10 * MINUTE,
-        run: { sessionKey: 'agent:forge:subagent:index', startedAt: NOW - 10 * MINUTE, status: 'running' },
-        ...overrides,
-      });
-    }
-
-    function proposal(overrides: Partial<KanbanProposal> = {}): KanbanProposal {
-      return {
-        id: 'p1',
-        type: 'create',
-        payload: { title: 'Write release notes' },
-        proposedBy: 'agent:kim',
-        proposedAt: NOW - 3 * HOUR,
-        status: 'pending',
-        version: 1,
-        ...overrides,
-      };
-    }
-
-    function cardOf(title: string): HTMLElement {
-      return screen.getByRole('button', { name: title }).closest('article')!;
-    }
-
-    function rowOf(title: string): HTMLElement {
-      const row = screen.getAllByTestId('attention-row').find((button) => button.textContent?.includes(title));
-      // The row's own line, then the line under it for Stop's confirm and errors.
-      return row!.parentElement!.parentElement!;
+      return fetchMock.mock.calls
+        .filter(([url]) => !/\/api\/crons\/[^/]+\/runs$/.test(url) && url !== '/api/attention/summaries')
+        .map(([url, init]) => ({
+          url,
+          method: init?.method,
+          body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+        }));
     }
 
     it('Approve on Start here posts the approval, shows progress and refreshes without opening', async () => {
@@ -714,7 +875,7 @@ describe('AttentionView', () => {
       const field = within(start).getByRole('textbox', { name: 'What needs to change' });
       const send = within(start).getByRole('button', { name: 'Request changes' });
       expect(send).toBeDisabled();
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(calls()).toEqual([]);
 
       fireEvent.change(field, { target: { value: 'Cover the timeout path' } });
       fireEvent.click(send);
@@ -736,10 +897,10 @@ describe('AttentionView', () => {
 
       expect(within(start).queryByRole('textbox')).not.toBeInTheDocument();
       expect(within(start).getByRole('button', { name: 'Approve' })).toBeEnabled();
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(calls()).toEqual([]);
     });
 
-    it('a failed action shows the server error on the card and re-enables the buttons', async () => {
+    it('a failed action shows the server error on the plate and re-enables the buttons', async () => {
       fetchMock.mockImplementationOnce(async () => respond(400, { error: 'invalid_transition', details: 'Task is not in review' }));
       const value = setSources({ tasks: [task()] });
       renderView();
@@ -753,17 +914,18 @@ describe('AttentionView', () => {
       expect(value.refresh).not.toHaveBeenCalled();
     });
 
-    it('a pending proposal can be approved or rejected from its card', async () => {
+    it('a pending proposal can be approved from its row, or rejected once opened', async () => {
       const value = setSources({
         tasks: [task({ resultAt: NOW - 5 * HOUR })],
         proposals: [proposal(), proposal({ id: 'p2', payload: { title: 'Prune old branches' }, proposedAt: NOW - 2 * HOUR })],
       });
       const { onOpen } = renderView();
 
-      fireEvent.click(within(cardOf('Write release notes')).getByRole('button', { name: 'Approve' }));
+      fireEvent.click(within(itemOf('Write release notes')).getByRole('button', { name: 'Approve' }));
       await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
 
-      fireEvent.click(within(cardOf('Prune old branches')).getByRole('button', { name: 'Reject' }));
+      fireEvent.click(toggleOf('Prune old branches'));
+      fireEvent.click(within(itemOf('Prune old branches')).getByRole('button', { name: 'Reject' }));
       await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(2));
 
       expect(calls()).toEqual([
@@ -773,66 +935,32 @@ describe('AttentionView', () => {
       expect(onOpen).not.toHaveBeenCalled();
     });
 
-    it('a failed run can be retried from its card', async () => {
+    it('a failed run can be retried from its row', async () => {
       const value = setSources({ tasks: [failedTask()] });
       const { onOpen } = renderView();
 
-      fireEvent.click(within(cardOf('Rebuild the index')).getByRole('button', { name: 'Retry' }));
+      fireEvent.click(within(itemOf('Rebuild the index')).getByRole('button', { name: 'Retry' }));
 
       await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
       expect(calls()).toEqual([{ url: '/api/kanban/tasks/f1/execute', method: 'POST', body: {} }]);
-      expect(within(cardOf('Rebuild the index')).getByRole('button', { name: 'Started' })).toBeDisabled();
+      expect(within(itemOf('Rebuild the index')).getByRole('button', { name: 'Started' })).toBeDisabled();
       expect(onOpen).not.toHaveBeenCalled();
     });
 
-    it('Stop on a running row needs the confirm step', async () => {
-      const value = setSources({ tasks: [runningTask()] });
-      const { onOpen } = renderView();
-
-      fireEvent.click(within(rowOf('Index the archive')).getByRole('button', { name: 'Stop' }));
-      expect(fetchMock).not.toHaveBeenCalled();
-      expect(within(rowOf('Index the archive')).getByText('Stop run?')).toBeInTheDocument();
-
-      fireEvent.click(within(rowOf('Index the archive')).getByRole('button', { name: 'Cancel' }));
-      expect(within(rowOf('Index the archive')).queryByText('Stop run?')).not.toBeInTheDocument();
-      expect(fetchMock).not.toHaveBeenCalled();
-
-      fireEvent.click(within(rowOf('Index the archive')).getByRole('button', { name: 'Stop' }));
-      fireEvent.click(within(rowOf('Index the archive')).getByRole('button', { name: 'Confirm' }));
-
-      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
-      expect(calls()).toEqual([{ url: '/api/kanban/tasks/r1/abort', method: 'POST', body: {} }]);
-      expect(onOpen).not.toHaveBeenCalled();
-    });
-
-    it('Stop on a gone-quiet card needs the confirm step', async () => {
-      const value = setSources({
-        tasks: [runningTask({ updatedAt: NOW - 5 * HOUR, run: { startedAt: NOW - 5 * HOUR, status: 'running' } })],
-      });
-      const { onOpen } = renderView();
-      const card = cardOf('Index the archive');
-
-      fireEvent.click(within(card).getByRole('button', { name: 'Stop' }));
-      expect(fetchMock).not.toHaveBeenCalled();
-      fireEvent.click(within(card).getByRole('button', { name: 'Confirm' }));
-
-      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
-      expect(calls()).toEqual([{ url: '/api/kanban/tasks/r1/abort', method: 'POST', body: {} }]);
-      expect(onOpen).not.toHaveBeenCalled();
-    });
-
-    it('a failed cron can be run now or paused from its card', async () => {
+    it('a failed cron can be run now from its row or paused once opened', async () => {
       const crons = [
         cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error', lastError: 'AccessDenied' }),
         cron({ id: 'c3', name: 'Weekly digest', lastStatus: 'error', lastError: 'Timeout' }),
       ];
       const value = setSources({ crons });
       const { onOpen } = renderView();
+      expect(itemOf('Nightly backup')).toHaveTextContent('AccessDenied');
 
-      fireEvent.click(within(cardOf('Nightly backup')).getByRole('button', { name: 'Run now' }));
+      fireEvent.click(within(itemOf('Nightly backup')).getByRole('button', { name: 'Run now' }));
       await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
 
-      fireEvent.click(within(cardOf('Weekly digest')).getByRole('button', { name: 'Pause' }));
+      fireEvent.click(toggleOf('Weekly digest'));
+      fireEvent.click(within(itemOf('Weekly digest')).getByRole('button', { name: 'Pause' }));
       await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(2));
 
       expect(calls()).toEqual([
@@ -842,31 +970,32 @@ describe('AttentionView', () => {
       expect(onOpen).not.toHaveBeenCalled();
     });
 
-    it('after Run now the cron card stays and Pause still works', async () => {
+    it('after Run now the cron row stays and Pause still works', async () => {
       const value = setSources({ crons: [cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error' })] });
       renderView();
-      const card = cardOf('Nightly backup');
 
-      fireEvent.click(within(card).getByRole('button', { name: 'Run now' }));
-      expect(await within(card).findByRole('button', { name: 'Started' })).toBeDisabled();
-      expect(within(card).getByRole('button', { name: 'Pause' })).toBeEnabled();
+      fireEvent.click(within(itemOf('Nightly backup')).getByRole('button', { name: 'Run now' }));
+      expect(await within(itemOf('Nightly backup')).findByRole('button', { name: 'Started' })).toBeDisabled();
+      fireEvent.click(toggleOf('Nightly backup'));
+      expect(within(itemOf('Nightly backup')).getByRole('button', { name: 'Pause' })).toBeEnabled();
 
-      fireEvent.click(within(card).getByRole('button', { name: 'Pause' }));
+      fireEvent.click(within(itemOf('Nightly backup')).getByRole('button', { name: 'Pause' }));
       await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(2));
-      expect(within(card).getByRole('button', { name: 'Paused' })).toBeDisabled();
+      expect(within(itemOf('Nightly backup')).getByRole('button', { name: 'Paused' })).toBeDisabled();
       expect(calls().map((call) => call.url)).toEqual(['/api/crons/c2/run', '/api/crons/c2/toggle']);
     });
 
-    it('a failed cron run shows the gateway error on the card', async () => {
-      fetchMock.mockImplementationOnce(async () => respond(502, { ok: false, error: 'gateway down' }));
+    it('a failed cron run shows the gateway error on the row', async () => {
+      fetchMock.mockImplementation(async (url: string) => (
+        url === '/api/crons/c2/run' ? respond(502, { ok: false, error: 'gateway down' }) : respond(200, { ok: true })
+      ));
       const value = setSources({ crons: [cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error' })] });
       renderView();
-      const card = cardOf('Nightly backup');
 
-      fireEvent.click(within(card).getByRole('button', { name: 'Run now' }));
+      fireEvent.click(within(itemOf('Nightly backup')).getByRole('button', { name: 'Run now' }));
 
-      expect(await within(card).findByRole('alert')).toHaveTextContent('Could not run: gateway down');
-      expect(within(card).getByRole('button', { name: 'Run now' })).toBeEnabled();
+      expect(await within(itemOf('Nightly backup')).findByRole('alert')).toHaveTextContent('Could not run: gateway down');
+      expect(within(itemOf('Nightly backup')).getByRole('button', { name: 'Run now' })).toBeEnabled();
       expect(value.refresh).not.toHaveBeenCalled();
     });
 
@@ -879,39 +1008,168 @@ describe('AttentionView', () => {
       renderView({ kanbanEnabled: false });
 
       const start = screen.getByRole('region', { name: 'Start here' });
-      expect(within(start).getAllByRole('button').map((button) => button.textContent)).toEqual(['Open review', 'Open session', 'Reply']);
+      expect(within(start).getAllByRole('button').map((button) => button.textContent)).toEqual(['Run session', 'Open review', 'Reply']);
       for (const name of ['Approve', 'Reject', 'Request changes', 'Retry', 'Stop']) {
         expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
       }
       expect(screen.getByRole('button', { name: 'Run now' })).toBeInTheDocument();
     });
 
-    it('session items have no actions', () => {
+    it('session failures have no actions, only Open', () => {
       sessionMock.mockReturnValue({
         sessions: [{ key: 'agent:kim:subagent:abc', label: 'Research worker', updatedAt: NOW - 10 * MINUTE }],
         sessionsLoading: false,
-        agentStatus: {},
-        busyState: { 'agent:kim:subagent:abc': true },
-      });
+        agentStatus: { 'agent:kim:subagent:abc': { status: 'ERROR', since: NOW - MINUTE } },
+        busyState: {},
+      } as never);
       setSources();
       renderView();
 
-      expect(within(rowOf('Research worker')).getAllByRole('button')).toHaveLength(1);
+      const buttons = within(itemOf('Research worker')).getAllByRole('button').map((button) => button.textContent);
+      expect(buttons).toEqual([expect.stringContaining('Research worker'), 'Open in chat', 'Mark seen']);
+    });
+  });
+
+  describe('exec approvals', () => {
+    const MAIN = 'agent:kim:main';
+    const APPROVAL = {
+      id: 'ap_1',
+      approvalKind: 'exec',
+      createdAtMs: NOW - 2 * MINUTE,
+      expiresAtMs: NOW + 28 * MINUTE,
+      request: {
+        command: 'rm -rf build',
+        cwd: '/srv/app',
+        agentId: 'kim',
+        sessionKey: MAIN,
+        allowedDecisions: ['allow-once', 'allow-always', 'deny'],
+      },
+    };
+    const handlers = new Set<(event: { type: 'event'; event: string; payload: unknown }) => void>();
+    const subscribe = (handler: (event: { type: 'event'; event: string; payload: unknown }) => void) => {
+      handlers.add(handler);
+      return () => { handlers.delete(handler); };
+    };
+
+    function gatewayWith(rpc: (method: string, params?: Record<string, unknown>) => Promise<unknown>) {
+      gatewayMock.mockReturnValue({ connectionState: 'connected', rpc, subscribe } as never);
+    }
+
+    beforeEach(() => {
+      handlers.clear();
+      sessionMock.mockReturnValue({ sessions: [{ key: MAIN, identityName: 'Kim' }], sessionsLoading: false, agentStatus: {}, busyState: {} } as never);
     });
 
-    it('phone rows carry the main action as a 44px chip beside the row', async () => {
-      const value = setSources({ tasks: [task({ resultAt: NOW - 5 * HOUR }), failedTask(), runningTask()] });
-      const { onOpen } = renderView({ compact: true });
+    it('lists pending approvals first, with the command, the agent and Allow, Deny and Allow always', async () => {
+      const rpc = vi.fn(async (method: string) => (method === 'exec.approval.list' ? [APPROVAL] : {}));
+      gatewayWith(rpc);
+      setSources({ tasks: [task({ priority: 'critical' })] });
+      renderView();
 
-      const retry = within(rowOf('Rebuild the index')).getByRole('button', { name: 'Retry' });
-      expect(retry.className).toContain('min-h-[44px]');
-      expect(retry.closest('[data-testid="attention-row"]')).toBeNull();
-      expect(within(rowOf('Index the archive')).getByRole('button', { name: 'Stop' }).className).toContain('min-h-[44px]');
+      const plate = () => screen.getByRole('region', { name: 'Start here' });
+      await waitFor(() => expect(within(plate()).getByRole('heading', { level: 3 })).toHaveTextContent('rm -rf build'));
+      const start = plate();
+      expect(within(start).getByText('Kim')).toBeInTheDocument();
+      expect(within(start).getByText('in /srv/app from Kim')).toBeInTheDocument();
+      expect(within(start).getByRole('button', { name: 'Allow' }).className).toContain('bg-primary');
+      expect(within(start).getByRole('button', { name: 'Deny' })).toBeInTheDocument();
+      expect(within(start).getByRole('button', { name: 'Allow always' })).toBeInTheDocument();
+      expect(decideTitles()).toEqual(['rm -rf build', 'Fix the flaky retry test']);
+      expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('2 to decide');
+    });
 
-      fireEvent.click(retry);
-      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
-      expect(calls()).toEqual([{ url: '/api/kanban/tasks/f1/execute', method: 'POST', body: {} }]);
-      expect(onOpen).not.toHaveBeenCalled();
+    it('Allow and Deny resolve with the right decision over the socket', async () => {
+      const rpc = vi.fn(async (method: string) => (method === 'exec.approval.list' ? [APPROVAL, { ...APPROVAL, id: 'ap_2', createdAtMs: NOW - MINUTE, request: { ...APPROVAL.request, command: 'git push --force' } }] : {}));
+      gatewayWith(rpc);
+      setSources();
+      renderView();
+
+      await waitFor(() => expect(within(screen.getByRole('region', { name: 'Start here' })).getByRole('heading', { level: 3 })).toHaveTextContent('rm -rf build'));
+      const start = screen.getByRole('region', { name: 'Start here' });
+      fireEvent.click(within(start).getByRole('button', { name: 'Allow' }));
+      await waitFor(() => expect(rpc).toHaveBeenCalledWith('exec.approval.resolve', { id: 'ap_1', decision: 'allow-once' }));
+
+      fireEvent.click(toggleOf('git push --force'));
+      fireEvent.click(within(itemOf('git push --force')).getByRole('button', { name: 'Deny' }));
+      await waitFor(() => expect(rpc).toHaveBeenCalledWith('exec.approval.resolve', { id: 'ap_2', decision: 'deny' }));
+    });
+
+    it('a request event adds an approval and a resolved event reads the list again', async () => {
+      let pending: unknown[] = [];
+      const rpc = vi.fn(async (method: string) => (method === 'exec.approval.list' ? pending : {}));
+      gatewayWith(rpc);
+      setSources();
+      renderView();
+      await waitFor(() => expect(rpc).toHaveBeenCalledWith('exec.approval.list', {}));
+      expect(screen.queryByRole('region', { name: 'Start here' })).toBeNull();
+
+      act(() => {
+        for (const handler of [...handlers]) handler({ type: 'event', event: 'exec.approval.requested', payload: APPROVAL });
+      });
+      expect(within(screen.getByRole('region', { name: 'Start here' })).getByRole('heading', { level: 3 })).toHaveTextContent('rm -rf build');
+
+      pending = [];
+      act(() => {
+        for (const handler of [...handlers]) handler({ type: 'event', event: 'exec.approval.resolved', payload: { id: 'ap_1', decision: 'deny' } });
+      });
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'Start here' })).toBeNull());
+    });
+
+    it('an approval that arrives mid-look leads the rows under the plate, tagged New, without taking the plate', async () => {
+      const rpc = vi.fn(async (method: string) => (method === 'exec.approval.list' ? [] : {}));
+      gatewayWith(rpc);
+      setSources({ tasks: [task(), task({ id: 't2', title: 'Second review', resultAt: NOW - 20 * MINUTE })] });
+      renderView();
+      await waitFor(() => expect(rpc).toHaveBeenCalledWith('exec.approval.list', {}));
+      await waitFor(() => expect(decideTitles()).toEqual(['Fix the flaky retry test', 'Second review']));
+
+      act(() => {
+        for (const handler of [...handlers]) handler({ type: 'event', event: 'exec.approval.requested', payload: APPROVAL });
+      });
+      expect(decideTitles()).toEqual(['Fix the flaky retry test', 'rm -rf build', 'Second review']);
+      expect(within(itemOf('rm -rf build')).getByText('New')).toBeInTheDocument();
+      expect(within(itemOf('rm -rf build')).getByRole('button', { name: 'Allow' }).className).toContain('border-input');
+    });
+
+    it('a row whose title is only the preview keeps Allow until the full command shows', async () => {
+      const long = { ...APPROVAL, request: { ...APPROVAL.request, command: 'rm -rf /srv/app/build /srv/app/cache', commandPreview: 'rm -rf build' } };
+      const rpc = vi.fn(async (method: string) => (method === 'exec.approval.list' ? [] : {}));
+      gatewayWith(rpc);
+      setSources({ tasks: [task()] });
+      renderView();
+      await waitFor(() => expect(rpc).toHaveBeenCalledWith('exec.approval.list', {}));
+      await waitFor(() => expect(decideTitles()).toEqual(['Fix the flaky retry test']));
+      act(() => {
+        for (const handler of [...handlers]) handler({ type: 'event', event: 'exec.approval.requested', payload: long });
+      });
+      expect(within(itemOf('rm -rf build')).queryByRole('button', { name: 'Allow' })).toBeNull();
+      fireEvent.click(toggleOf('rm -rf build'));
+      expect(within(itemOf('rm -rf build')).getByText('rm -rf /srv/app/build /srv/app/cache')).toBeInTheDocument();
+      expect(within(itemOf('rm -rf build')).getByRole('button', { name: 'Allow' })).toBeInTheDocument();
+    });
+
+    it('a gateway without approvals leaves the board as it was, all clear included', async () => {
+      const rpc = vi.fn(async (method: string) => {
+        if (method === 'exec.approval.list') throw new Error('unknown method: exec.approval.list');
+        return {};
+      });
+      gatewayWith(rpc);
+      setSources();
+      renderView();
+      await waitFor(() => expect(screen.getByText(hasText(/Nothing needs you\. Checked/))).toBeInTheDocument());
+      expect(screen.queryByText(/Approvals/)).toBeNull();
+    });
+
+    it('an approvals read that fails for another reason is said, and holds the all clear', async () => {
+      const rpc = vi.fn(async (method: string) => {
+        if (method === 'exec.approval.list') throw new Error('Timeout');
+        return {};
+      });
+      gatewayWith(rpc);
+      setSources();
+      renderView();
+      expect(await screen.findByText('Approvals could not be read (Timeout).')).toBeInTheDocument();
+      expect(screen.queryByText(/Nothing needs you/)).toBeNull();
     });
   });
 });
@@ -1006,12 +1264,13 @@ describe('prompting from the brief', () => {
     setSources({ tasks: [failed] });
     renderView();
 
-    const card = screen.getByRole('button', { name: 'Renew the certificate' }).closest('article, section')!;
-    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: 'Reply' }));
-    expect(within(card as HTMLElement).getByRole('textbox', { name: 'Reply to Kim' })).toBeInTheDocument();
+    fireEvent.click(toggleOf('Renew the certificate'));
+    const row = itemOf('Renew the certificate');
+    fireEvent.click(within(row).getByRole('button', { name: 'Reply' }));
+    expect(within(row).getByRole('textbox', { name: 'Reply to Kim' })).toBeInTheDocument();
   });
 
-  it('a card Reply sends into its own session and keeps the ranking', async () => {
+  it('a row Reply sends into its own session and keeps the ranking', async () => {
     const failed = task({
       id: 'f1',
       title: 'Rebuild the index',
@@ -1019,16 +1278,17 @@ describe('prompting from the brief', () => {
       result: undefined,
       run: { sessionKey: 'agent:forge:subagent:rebuild', startedAt: NOW - 3 * HOUR, endedAt: NOW - 2 * HOUR, status: 'error', error: 'Tests failed' },
     });
-    const value = setSources({ tasks: [task(), failed] });
+    const value = setSources({ tasks: [task(), task({ id: 't2', title: 'Second review', resultAt: NOW - 20 * MINUTE }), failed] });
     const { onOpen } = renderView();
-    const before = cardTitles();
+    const before = decideTitles();
 
-    const card = screen.getByRole('button', { name: 'Rebuild the index' }).closest('article')!;
-    fireEvent.click(within(card).getByRole('button', { name: 'Reply' }));
-    const field = within(card).getByRole('textbox', { name: 'Reply to forge' });
-    expect(within(card).getByRole('button', { name: 'Send' })).toBeDisabled();
+    fireEvent.click(toggleOf('Rebuild the index'));
+    const row = itemOf('Rebuild the index');
+    fireEvent.click(within(row).getByRole('button', { name: 'Reply' }));
+    const field = within(row).getByRole('textbox', { name: 'Reply to forge' });
+    expect(within(row).getByRole('button', { name: 'Send' })).toBeDisabled();
     fireEvent.change(field, { target: { value: 'Why did the tests fail?' } });
-    fireEvent.click(within(card).getByRole('button', { name: 'Send' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Send' }));
 
     await waitFor(() => expect(sends()).toHaveLength(1));
     expect(sends()[0]).toMatchObject({ sessionKey: 'agent:forge:subagent:rebuild', message: 'Why did the tests fail?' });
@@ -1036,14 +1296,14 @@ describe('prompting from the brief', () => {
 
     const runId = sends()[0].idempotencyKey as string;
     emit({ sessionKey: 'agent:forge:subagent:rebuild', runId, state: 'final', seq: 1, message: 'A fixture was missing.' });
-    const reply = within(card).getByTestId('inline-reply');
+    const reply = within(itemOf('Rebuild the index')).getByTestId('inline-reply');
     expect(within(reply).getByText('A fixture was missing.')).toBeInTheDocument();
-    // The box shows nothing for a reply asked from a card.
+    // The box shows nothing for a reply asked from a row.
     expect(within(screen.getByRole('region', { name: 'Ask the agent' })).queryByTestId('inline-reply')).toBeNull();
 
     fireEvent.click(within(reply).getByRole('button', { name: 'Open in chat' }));
     expect(onOpen).toHaveBeenCalledWith({ type: 'session', key: 'agent:forge:subagent:rebuild' });
-    expect(cardTitles()).toEqual(before);
+    expect(decideTitles()).toEqual(before);
     expect(value.refresh).not.toHaveBeenCalled();
     expect(setCurrentSession).not.toHaveBeenCalled();
   });
@@ -1117,6 +1377,14 @@ describe('prompting from the brief', () => {
     expect(screen.getByRole('textbox', { name: 'Ask the agent' })).toHaveAttribute('placeholder', 'Ask the agent...');
   });
 
+  it('the box docks at the bottom, one line at rest', () => {
+    setSources({ tasks: [task()] });
+    renderView();
+    const ask = screen.getByRole('region', { name: 'Ask the agent' });
+    expect(ask.closest('.sticky')).not.toBeNull();
+    expect(within(ask).getByRole('textbox', { name: 'Ask Kim' })).toHaveAttribute('rows', '1');
+  });
+
   it('phones keep the box with a 44px Send', () => {
     setSources({ tasks: [task()] });
     renderView({ compact: true });
@@ -1159,20 +1427,27 @@ describe('What happened summaries', () => {
     return [...calls[calls.length - 1][0].sessionKeys].sort();
   }
 
-  it('asks only for the sessions of Start here and the cards, not rows', () => {
+  it('asks only for Start here until a row is opened, then for that row too', () => {
     setSources({ tasks: board() });
     renderView();
-    expect(lastKeys()).toEqual([FAILED, REVIEW, THEN].sort());
+    expect(lastKeys()).toEqual([REVIEW]);
     expect(summariesMock.mock.calls.at(-1)![0].active).toBe(true);
+
+    fireEvent.click(toggleOf('Rebuild the index'));
+    expect(lastKeys()).toEqual([FAILED, REVIEW].sort());
+    fireEvent.click(toggleOf('Tidy the changelog'));
+    expect(lastKeys()).toEqual([FAILED, REVIEW, THEN].sort());
+    // A running task lives on its agent's line, not as a row.
+    expect(lastKeys()).not.toContain(RUNNING);
   });
 
-  it('on phones asks only for Start here', () => {
+  it('on phones asks the same way', () => {
     setSources({ tasks: board() });
     renderView({ compact: true });
     expect(lastKeys()).toEqual([REVIEW]);
   });
 
-  it('shows ready text on Start here and a card, and Summarizing while pending', () => {
+  it('shows ready text in full on Start here and an open row, and Summarizing while pending', () => {
     summariesMock.mockImplementation(() => ({
       [REVIEW]: { status: 'ready', text: 'You asked for a retry fix. Forge patched it and waits for review.' },
       [THEN]: { status: 'pending' },
@@ -1183,10 +1458,11 @@ describe('What happened summaries', () => {
 
     const start = screen.getByRole('region', { name: 'Start here' });
     expect(within(start).getByText(/Forge patched it and waits for review/)).toBeInTheDocument();
-    const thenCard = screen.getByRole('button', { name: 'Tidy the changelog' }).closest('article')!;
-    expect(within(thenCard).getByText(/Summarizing\.\.\./)).toBeInTheDocument();
-    const failedCard = screen.getByRole('button', { name: 'Rebuild the index' }).closest('article')!;
-    expect(within(failedCard).queryByText(/What happened/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Summarizing\.\.\./)).toBeNull();
+    fireEvent.click(toggleOf('Tidy the changelog'));
+    expect(within(itemOf('Tidy the changelog')).getByText(/Summarizing\.\.\./)).toBeInTheDocument();
+    fireEvent.click(toggleOf('Rebuild the index'));
+    expect(within(itemOf('Rebuild the index')).queryByText(/Summarizing/)).toBeNull();
   });
 
   it('keeps the old text while a summary is refreshed and says nothing for an empty thread', () => {
@@ -1196,9 +1472,9 @@ describe('What happened summaries', () => {
     }));
     setSources({ tasks: board() });
     renderView();
+    fireEvent.click(toggleOf('Tidy the changelog'));
     expect(screen.getByText(/Earlier summary\./)).toBeInTheDocument();
     expect(screen.queryByText(/Summarizing/)).not.toBeInTheDocument();
-    expect(screen.getAllByText(/What happened/)).toHaveLength(1);
   });
 
   it('asks for nothing when the brief is all clear', () => {

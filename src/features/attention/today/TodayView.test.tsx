@@ -194,12 +194,12 @@ describe('Now | Today switch', () => {
     setSources({ tasks: [task({ status: 'review' })] });
     const first = renderView();
     expect(screen.getByRole('button', { name: 'Now' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('heading', { level: 2, name: 'Decide now' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Waiting on you' })).toBeInTheDocument();
 
     openToday();
     expect(localStorage.getItem(SEGMENT_KEY)).toBe('today');
     expect(screen.getByRole('heading', { level: 1, name: 'Today, Sat 28 Nov' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { level: 2, name: 'Decide now' })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Waiting on you' })).toBeNull();
     first.unmount();
 
     renderView();
@@ -207,7 +207,7 @@ describe('Now | Today switch', () => {
     expect(screen.getByRole('heading', { level: 2, name: /^Done today/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Now' }));
     expect(localStorage.getItem(SEGMENT_KEY)).toBe('now');
-    expect(screen.getByRole('heading', { level: 2, name: 'Decide now' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Waiting on you' })).toBeInTheDocument();
   });
 
   it('follows a request from outside the view, as the palette sends', () => {

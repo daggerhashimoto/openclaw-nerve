@@ -47,6 +47,35 @@ function lastCall() {
   };
 }
 
+describe('approval actions', () => {
+  it('offers Allow, Deny and, when the gateway allows it, Allow always, with kanban on or off', () => {
+    const approval = item('approval', { source: 'approvals', detail: { decisions: ['allow-once', 'allow-always', 'deny'] } });
+    expect(actionsFor(approval, false)).toEqual({ primary: 'allow-once', secondary: 'deny', more: ['allow-always'] });
+    const once = item('approval', { source: 'approvals', detail: { decisions: ['allow-once', 'deny'] } });
+    expect(actionsFor(once, true)).toEqual({ primary: 'allow-once', secondary: 'deny', more: [] });
+  });
+
+  it('resolves over the socket with the gateway decision, never over HTTP', async () => {
+    const rpc = vi.fn(async () => ({}));
+    const approval = item('approval', { source: 'approvals', sourceId: 'ap_1' });
+    await postAction(approval, 'allow-once', undefined, rpc);
+    await postAction(approval, 'allow-always', undefined, rpc);
+    await postAction(approval, 'deny', undefined, rpc);
+    expect(rpc.mock.calls).toEqual([
+      ['exec.approval.resolve', { id: 'ap_1', decision: 'allow-once' }],
+      ['exec.approval.resolve', { id: 'ap_1', decision: 'allow-always' }],
+      ['exec.approval.resolve', { id: 'ap_1', decision: 'deny' }],
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('waits for the socket before a decision can be sent', () => {
+    const approval = item('approval', { source: 'approvals', detail: { decisions: ['allow-once', 'deny'] } });
+    const { result } = renderHook(() => useItemActions(approval, { kanbanEnabled: true, onDone: vi.fn(), connected: false }));
+    expect(result.current.isLocked('allow-once')).toBe(true);
+  });
+});
+
 describe('actionsFor', () => {
   it('maps each kind to its actions', () => {
     expect(actionsFor(item('review'), true)).toEqual({ primary: 'approve', secondary: 'request-changes' });
@@ -55,7 +84,7 @@ describe('actionsFor', () => {
     expect(actionsFor(item('task-running'), true)).toEqual({ primary: 'stop', secondary: null });
     expect(actionsFor(item('gone-quiet'), true)).toEqual({ primary: 'stop', secondary: null });
     expect(actionsFor(item('cron-failed'), true)).toEqual({ primary: 'run-cron', secondary: 'pause-cron' });
-    for (const kind of ['session-failed', 'session-running', 'task-finished', 'cron-finished'] as const) {
+    for (const kind of ['session-failed', 'session-running', 'task-finished', 'cron-recovered'] as const) {
       expect(actionsFor(item(kind), true)).toEqual({ primary: null, secondary: null });
     }
   });

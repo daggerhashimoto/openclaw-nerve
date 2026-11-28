@@ -26,6 +26,8 @@ export interface CommandActions {
   onRefreshSessions: () => void;
   onRefreshMemory: () => void;
   onSetViewMode?: (mode: ViewMode) => void;
+  /** Opens the Attention view on its Today digest. */
+  onOpenToday?: () => void;
   canShowKanban?: boolean;
 }
 
@@ -186,6 +188,13 @@ export function createCommands(actions: CommandActions): Command[] {
         category: 'navigation' as const,
         keywords: ['attention', 'brief', 'inbox', 'needs', 'home', 'view'],
       },
+      ...(actions.onOpenToday ? [{
+        id: 'open-today',
+        label: 'Go to Today',
+        action: actions.onOpenToday,
+        category: 'navigation' as const,
+        keywords: ['today', 'day', 'digest', 'done', 'summary', 'attention', 'view'],
+      }] : []),
       {
         id: 'open-chat',
         label: 'Open Chat View',

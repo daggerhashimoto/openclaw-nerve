@@ -181,4 +181,15 @@ describe('createCommands view commands', () => {
       expect(cmds.some((c) => c.label === 'Open Tasks View')).toBe(canShowKanban);
     }
   });
+
+  it('palette offers Go to Today when the app can open it', () => {
+    const onOpenToday = vi.fn();
+    const without = createCommands({ ...noopActions(), onSetViewMode: vi.fn() });
+    expect(without.some((c) => c.label === 'Go to Today')).toBe(false);
+    const cmds = createCommands({ ...noopActions(), onSetViewMode: vi.fn(), onOpenToday });
+    const today = cmds.find((c) => c.label === 'Go to Today');
+    expect(today?.category).toBe('navigation');
+    today!.action();
+    expect(onOpenToday).toHaveBeenCalledTimes(1);
+  });
 });

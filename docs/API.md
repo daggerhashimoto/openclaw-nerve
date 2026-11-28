@@ -1533,6 +1533,38 @@ At most 50 keys are accepted and the first 12 distinct keys are answered.
 
 ---
 
+### `POST /api/attention/day-summary`
+
+The paragraph at the top of the Attention view's Today digest: two or three plain sentences about the day so far, from the day's compact facts the client sends. The facts are fingerprinted; the same facts return the cached text. New facts start one background one-shot model run (the same `agent` call and `NERVE_ATTENTION_SUMMARY_MODEL` as the thread summaries, run as the main agent in a throwaway explicit session) and answer `pending`; poll again. Within 10 minutes of the last text, new facts answer `ready` with that text, and the next request after the interval writes a new one. A failed run is retried after 5 minutes; until then the answer is `error` (or `ready` with the last text). Texts are kept per day in `${NERVE_DATA_DIR:-~/.nerve}/attention/day-summary.json`, the newest 14 days.
+
+**Request body:**
+
+```json
+{
+  "facts": {
+    "day": "2026-11-28",
+    "counts": { "sessions": 9, "done": 7, "merged": 6, "cronOk": 12, "cronFailed": 1 },
+    "done": ["18:36 PR #458 merged (Render flow visualizations in chat)", "16:33 Task done: Address PR 452 findings"],
+    "chats": ["Linus, cli", "Kim, telegram, needs reply (Review)"],
+    "missing": []
+  }
+}
+```
+
+`day` is the viewer's local day (`YYYY-MM-DD`). `done` and `chats` hold at most 60 lines of at most 300 characters; `missing` names sources the client could not read, and the model is told not to guess about them.
+
+**Response:**
+
+```json
+{ "summary": { "status": "ready", "text": "Six pull requests merged today and the merge watch is closing their cards. Kim is waiting on your review.", "updatedAt": 1795856335163 } }
+```
+
+`status` is `ready`, `pending` (being written; `text` holds the previous text for the day, if any) or `error` (the last run failed and no text exists yet).
+
+**Rate limit:** General (60/min)
+
+---
+
 ## Channels
 
 ### `GET /api/channels`

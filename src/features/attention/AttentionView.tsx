@@ -14,6 +14,10 @@
  * Order is frozen per epoch (useStableOrder). An epoch starts once per activation or Refresh,
  * and only after every enabled source has answered since then, so a cold load ranks the real
  * data and a reopen does not baseline on the answers left over from the last look.
+ *
+ * A sticky Now | Today switch sits on top. Now is this brief; Today (TodayView) is the day
+ * digest, built from the same polled sources, sessions and reply store. The choice is
+ * remembered per browser (attentionSegment).
  */
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
@@ -35,6 +39,9 @@ import { useStableOrder, type StableOrder } from './useStableOrder';
 import type { AttentionActionsConfig } from './useAttentionActions';
 import { useInlineReplies } from './useInlineReplies';
 import { useAttentionSummaries } from './useAttentionSummaries';
+import { useAttentionSegment, type AttentionSegment } from './attentionSegment';
+import { KIND_WORD } from './itemPresentation';
+import { TodayView } from './today/TodayView';
 import type { AttentionItem, AttentionSource, OpenTarget, SourceStatus } from './types';
 
 type Polled = 'tasks' | 'proposals' | 'crons';
@@ -113,6 +120,9 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   const { sessions, sessionsLoading, agentStatus, busyState } = useSessionContext();
   const { connectionState } = useGateway();
   const connected = connectionState === 'connected';
+  const [segment, setSegment] = useAttentionSegment();
+  const showToday = segment === 'today';
+  const [refreshSignal, setRefreshSignal] = useState(0);
 
   const [prevActive, setPrevActive] = useState(active);
   const [gate, setGate] = useState<Gate>(() => ({ armed: active, baseline: null, awaitSessions: false }));
@@ -295,8 +305,19 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
 
   const onRefresh = () => {
     setGate({ armed: true, baseline: polled, awaitSessions: false });
+    setRefreshSignal((n) => n + 1);
     refresh();
   };
+
+  // What the brief holds against each session, for Today's chat rows.
+  const needsReply = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const item of [...brief.decide, ...brief.blocked]) {
+      const key = item.detail.sessionKey;
+      if (key && !out.has(key)) out.set(key, KIND_WORD[item.kind]);
+    }
+    return out;
+  }, [brief]);
 
   const liveChecked = POLLED
     .filter((source) => effectiveSources[source].state === 'live')
@@ -328,7 +349,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     () => summaryKeys.map((key) => replyStore.get(key)?.endedAt ?? '').join('|'),
   );
   const summaries = useAttentionSummaries({
-    active,
+    active: active && !showToday,
     sessionKeys: summaryKeys,
     signal: `${currentEpoch}|${cardSessionsId}|${repliesEnded}`,
   });
@@ -481,19 +502,45 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     </section>
   );
 
+  const notConnectedNote = disconnectedSince !== null && (
+    <p className={cn('cockpit-note m-0', compact && 'mx-3')} role="status">
+      <Clocked text={`Not connected since ${formatClock(disconnectedSince)}. Showing the last known state.`} />
+    </p>
+  );
+
   return (
     <div className="h-full min-h-0 overflow-y-auto overscroll-contain bg-background">
+      <SegmentSwitch segment={segment} onChange={setSegment} compact={compact} />
+      {showToday ? (
+        <>
+          {notConnectedNote && <div className={cn('mx-auto w-full max-w-[1320px] pt-2', !compact && 'px-7')}>{notConnectedNote}</div>}
+          <TodayView
+            active={active}
+            compact={compact}
+            now={now}
+            tasks={tasks}
+            crons={crons}
+            sources={effectiveSources}
+            sessions={sessions}
+            agentStatus={agentStatus}
+            busyState={busyState}
+            needsReply={needsReply}
+            agentNames={agentNames}
+            replies={replies}
+            disconnectedSince={disconnectedSince}
+            onOpen={onOpen}
+            onRefresh={onRefresh}
+            refreshSignal={refreshSignal}
+          />
+        </>
+      ) : (
       <div
         className={cn(
           'mx-auto flex w-full max-w-[1320px] flex-col',
-          compact ? 'gap-4 pb-8 pt-4' : 'gap-6 px-7 pb-6 pt-6',
+          compact ? 'gap-4 pb-8 pt-2' : 'gap-6 px-7 pb-6 pt-4',
         )}
       >
-        {disconnectedSince !== null && (
-          <p className={cn('cockpit-note m-0', compact && 'mx-3')} role="status">
-            <Clocked text={`Not connected since ${formatClock(disconnectedSince)}. Showing the last known state.`} />
-          </p>
-        )}
+        {notConnectedNote}
 
         <div className={cn('flex flex-col', compact ? 'gap-4' : 'gap-6', disconnected && 'opacity-60')}>
           <section aria-label="Summary" className={cn('flex flex-col gap-1.5', compact && 'px-4')}>
@@ -570,6 +617,40 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
               <Clocked text={`That is everything the live sources reported at ${checkedClock}.`} />
             </p>
           )}
+        </div>
+      </div>
+      )}
+    </div>
+  );
+}
+
+/** Now | Today, sticky at the top of the view so it stays in reach while either scrolls. */
+function SegmentSwitch({
+  segment,
+  onChange,
+  compact,
+}: {
+  segment: AttentionSegment;
+  onChange: (segment: AttentionSegment) => void;
+  compact: boolean;
+}) {
+  const option = (value: AttentionSegment, label: string) => (
+    <button
+      type="button"
+      aria-pressed={segment === value}
+      data-active={segment === value}
+      onClick={() => onChange(value)}
+      className={cn('shell-chip flex-1 sm:flex-none', compact && 'min-h-[44px]!')}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="sticky top-0 z-30 bg-background">
+      <div className={cn('mx-auto w-full max-w-[1320px]', compact ? 'px-3 py-2' : 'px-7 pb-1 pt-4')}>
+        <div role="group" aria-label="Attention view" className={cn('seg-track', compact && 'flex w-full')}>
+          {option('now', 'Now')}
+          {option('today', 'Today')}
         </div>
       </div>
     </div>

@@ -183,11 +183,14 @@ export function ReplyButton({
   sessionKey,
   compact,
   onClick,
+  label = 'Reply',
 }: {
   config: ReplyConfig;
   sessionKey: string;
   compact: boolean;
   onClick: () => void;
+  /** The Today digest says Nudge, or Ask <parent> for a finished subagent. */
+  label?: string;
 }) {
   const busy = useReplyBusy(config.store, sessionKey);
   return (
@@ -200,7 +203,7 @@ export function ReplyButton({
       }}
       className={variantClass('text', compact)}
     >
-      Reply
+      {label}
     </button>
   );
 }
@@ -212,21 +215,33 @@ export function ReplyField({
   name,
   compact,
   onClose,
+  context,
+  verb = 'Reply to',
+  onSent,
 }: {
   config: ReplyConfig;
   sessionKey: string;
   name?: string;
   compact: boolean;
   onClose: () => void;
+  /** A line sent ahead of the operator's text, so the agent knows what the message is about. */
+  context?: string;
+  /** Placeholder verb: "Reply to", "Nudge", "Ask". */
+  verb?: string;
+  onSent?: () => void;
 }) {
   const busy = useReplyBusy(config.store, sessionKey);
   const { draft, setDraft, inputRef, submit, onKeyDown } = useComposer(FIELD_MAX_PX, (text) => {
-    const sent = startSend(config, sessionKey, busy, text, 'item');
-    if (sent) onClose();
+    const message = context && text.trim() ? `${context}\n\n${text.trim()}` : text;
+    const sent = startSend(config, sessionKey, busy, message, 'item');
+    if (sent) {
+      onSent?.();
+      onClose();
+    }
     return sent;
   });
   const ready = canSend(config, sessionKey, busy, draft);
-  const placeholder = name ? `Reply to ${name}...` : 'Reply to the agent...';
+  const placeholder = name ? `${verb} ${name}...` : `${verb} the agent...`;
 
   return (
     <form

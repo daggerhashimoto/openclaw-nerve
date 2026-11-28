@@ -49,6 +49,7 @@ import { DEFAULT_CHAT_PATH_LINKS_CONFIG, parseChatPathLinksConfig } from '@/feat
 import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
 import { useEdgeSwipeToOpen } from '@/features/file-browser/hooks/useEdgeSwipeToOpen';
 import { AttentionView, type OpenTarget } from '@/features/attention';
+import { setAttentionSegment } from '@/features/attention/attentionSegment';
 import { consumeIntroFlag } from '@/features/attention/attentionStorage';
 import { getInitialViewMode } from '@/features/attention/initialViewMode';
 import type { TabId } from '@/features/workspace/WorkspaceTabs';
@@ -603,6 +604,11 @@ export default function App({ onLogout }: AppProps) {
 
   const openSpawnDialog = useCallback(() => setSpawnDialogOpen(true), []);
 
+  const openToday = useCallback(() => {
+    setAttentionSegment('today');
+    chooseViewMode('attention');
+  }, [chooseViewMode]);
+
   const staticCommands = useMemo(() => createCommands({
     onNewSession: openSpawnDialog,
     onResetSession: handleReset,
@@ -621,10 +627,11 @@ export default function App({ onLogout }: AppProps) {
     onRefreshSessions: refreshSessions,
     onRefreshMemory: refreshMemories,
     onSetViewMode: chooseViewMode,
+    onOpenToday: openToday,
     canShowKanban: kanbanVisible,
   }), [openSpawnDialog, handleReset, toggleSound, handleAbort, openSettings, openSearch,
     setTheme, setFont, setTtsProvider, handleToggleWakeWord, toggleEvents, toggleLog, toggleTelemetry,
-    refreshSessions, refreshMemories, chooseViewMode, kanbanVisible]);
+    refreshSessions, refreshMemories, chooseViewMode, openToday, kanbanVisible]);
 
   // Keyboard shortcut handlers with useCallback
   const handleOpenPalette = useCallback(() => setPaletteOpen(true), []);

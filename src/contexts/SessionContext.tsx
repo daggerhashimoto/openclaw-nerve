@@ -46,7 +46,7 @@ const IDENTITY_FILE_RETRY_MS = 60_000;
 const DIFFED_SESSION_FIELDS = [
   'state', 'agentState', 'status', 'busy', 'processing', 'updatedAt',
   'totalTokens', 'inputTokens', 'outputTokens', 'contextTokens', 'model', 'thinking', 'thinkingLevel', 'thinkingDefault',
-  'label', 'displayName', 'channel', 'parentSessionKey', 'parentId',
+  'label', 'displayName', 'channel', 'parentSessionKey', 'parentId', 'endedAt',
 ] as const satisfies readonly (keyof Session)[];
 
 /** `sessions.list` rebuilds these arrays every poll; compare their contents, not references. */

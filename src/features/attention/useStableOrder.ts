@@ -2,21 +2,21 @@ import { useMemo, useState } from 'react';
 import type { AttentionItem } from './types';
 
 interface OrderState {
-  epoch: number;
+  epoch: number | string;
   /** Item keys in the order the operator first saw them, later arrivals appended. */
   order: string[];
   /** Keys present when the epoch began; every other key in `order` arrived later. */
   baseline: ReadonlySet<string>;
 }
 
-export interface StableOrder {
-  items: AttentionItem[];
+export interface StableOrder<T extends { key: string } = AttentionItem> {
+  items: T[];
   newKeys: ReadonlySet<string>;
 }
 
-const keysOf = (items: AttentionItem[]): string[] => items.map((item) => item.key);
+const keysOf = (items: { key: string }[]): string[] => items.map((item) => item.key);
 
-function startEpoch(items: AttentionItem[], epoch: number): OrderState {
+function startEpoch(items: { key: string }[], epoch: number | string): OrderState {
   const order = keysOf(items);
   return { epoch, order, baseline: new Set(order) };
 }
@@ -27,7 +27,7 @@ function startEpoch(items: AttentionItem[], epoch: number): OrderState {
  * reported in `newKeys`; items that leave the input are dropped. A new `epoch` (the view being
  * opened again, or an explicit refresh) takes the incoming ranked order as the new baseline.
  */
-export function useStableOrder(items: AttentionItem[], epoch: number): StableOrder {
+export function useStableOrder<T extends { key: string } = AttentionItem>(items: T[], epoch: number | string): StableOrder<T> {
   const [state, setState] = useState<OrderState>(() => startEpoch(items, epoch));
 
   // Derived state is adjusted during render, not in an effect, so a render never shows an order
@@ -44,7 +44,7 @@ export function useStableOrder(items: AttentionItem[], epoch: number): StableOrd
 
   return useMemo(() => {
     const byKey = new Map(items.map((item) => [item.key, item] as const));
-    const ordered: AttentionItem[] = [];
+    const ordered: T[] = [];
     const newKeys = new Set<string>();
     for (const key of current.order) {
       const item = byKey.get(key);

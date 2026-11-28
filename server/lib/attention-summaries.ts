@@ -241,7 +241,7 @@ export function readAgentOutput(response: unknown): string {
 }
 
 /** Plain text for the card: markdown marks and labels removed, dashes made commas, length capped. */
-export function cleanSummary(raw: string): string {
+export function cleanSummary(raw: string, maxChars = SUMMARY_MAX_CHARS): string {
   let text = raw
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/[*_`#>]+/g, '')
@@ -249,12 +249,45 @@ export function cleanSummary(raw: string): string {
     .replace(/\s*[–—]\s*/g, ', ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (text.length > SUMMARY_MAX_CHARS) {
-    const cut = text.slice(0, SUMMARY_MAX_CHARS);
+  if (text.length > maxChars) {
+    const cut = text.slice(0, maxChars);
     const space = cut.lastIndexOf(' ');
-    text = `${(space > SUMMARY_MAX_CHARS / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, '')}...`;
+    text = `${(space > maxChars / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, '')}...`;
   }
   return text;
+}
+
+/**
+ * One one-shot model run as `sessionKey`'s agent, raced against `timeoutMs`: the cleaned text,
+ * or a thrown error for a failed, empty or timed-out run.
+ */
+export async function runOneShot(
+  rpc: RpcCall,
+  { sessionKey, prompt, modelRef, timeoutMs, maxChars = SUMMARY_MAX_CHARS, what = 'Summary' }: {
+    sessionKey: string;
+    prompt: string;
+    modelRef: string | undefined;
+    timeoutMs: number;
+    maxChars?: number;
+    what?: string;
+  },
+): Promise<string> {
+  const params = buildAgentParams(sessionKey, prompt, modelRef);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} timed out after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs);
+  });
+  try {
+    const response = await Promise.race([
+      rpc('agent', params, timeoutMs + 5_000, { expectFinal: true }),
+      timeout,
+    ]);
+    const text = cleanSummary(readAgentOutput(response), maxChars);
+    if (!text) throw new Error('The model returned no text');
+    return text;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ── Service ──────────────────────────────────────────────────────────
@@ -347,24 +380,12 @@ export function createAttentionSummaries(options: AttentionSummariesOptions): At
     for (const resolve of waiters) resolve();
   };
 
-  const generate = async (job: Job): Promise<string> => {
-    const params = buildAgentParams(job.sessionKey, buildPrompt(job.transcript), model());
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`Summary timed out after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs);
-    });
-    try {
-      const response = await Promise.race([
-        rpc('agent', params, timeoutMs + 5_000, { expectFinal: true }),
-        timeout,
-      ]);
-      const text = cleanSummary(readAgentOutput(response));
-      if (!text) throw new Error('The model returned no text');
-      return text;
-    } finally {
-      clearTimeout(timer);
-    }
-  };
+  const generate = (job: Job): Promise<string> => runOneShot(rpc, {
+    sessionKey: job.sessionKey,
+    prompt: buildPrompt(job.transcript),
+    modelRef: model(),
+    timeoutMs,
+  });
 
   const pump = () => {
     while (running < concurrency && queue.length > 0) {

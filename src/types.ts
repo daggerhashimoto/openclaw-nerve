@@ -42,6 +42,17 @@ export interface Session {
   channel?: string;
   kind?: string;
   displayName?: string;
+  /** Run lifecycle from sessions.list: the latest run's start and end, and whether one is active. */
+  startedAt?: number;
+  endedAt?: number;
+  hasActiveRun?: boolean;
+  lastRunError?: string;
+  lastActivityAt?: number;
+  /** The session that spawned this one (subagents). */
+  spawnedBy?: string;
+  createdVia?: string;
+  lastChannel?: string;
+  participants?: { identity?: { type?: string; pluginId?: string | null; id?: string } }[];
 }
 
 /** Extract the canonical key from a Session object (handles API inconsistency). */

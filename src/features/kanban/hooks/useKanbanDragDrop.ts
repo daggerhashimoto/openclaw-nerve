@@ -50,6 +50,17 @@ export function computeColumnInsertIndex(
 }
 
 /**
+ * True when the pointer is inside the fixed column header. Cards scrolled
+ * under the header keep unclipped rects, so without this a header drop can
+ * target a hidden card or count it into the insertion index.
+ */
+export function isHeaderHit(columnNode: HTMLElement | null, pointerY: number): boolean {
+  const header = columnNode?.querySelector<HTMLElement>('[data-kanban-column-header]');
+  if (!header) return false;
+  return pointerY <= header.getBoundingClientRect().bottom;
+}
+
+/**
  * Read the collision list into a column intent. A card under the pointer wins
  * (it is first in `pointerWithin`'s corner-distance order), so only a bare
  * column collision — a gap, header, empty lane, or below the last card — gets
@@ -189,6 +200,23 @@ export function useKanbanDragDrop({
    * column), where it used to let a tall neighbouring lane win the drop — an
    * empty Review column lost to the Done lane beside it. */
   const collisionDetection = useCallback<CollisionDetection>((args) => {
+    const pointer = args.pointerCoordinates;
+    if (pointer) {
+      // A header drop belongs to the column and goes to its top, even when a
+      // card scrolled under the header still has a rect around the pointer.
+      for (const column of activeColumns) {
+        const rect = args.droppableRects.get(column);
+        if (!rect) continue;
+        if (pointer.x < rect.left || pointer.x > rect.right || pointer.y < rect.top || pointer.y > rect.bottom) continue;
+        const container = args.droppableContainers.find((c) => String(c.id) === column);
+        if (isHeaderHit(container?.node.current ?? null, pointer.y)) {
+          dropIntentRef.current = { column, index: 0 };
+          return [{ id: column }];
+        }
+        break;
+      }
+    }
+
     const pointerCollisions = pointerWithin(args);
     dropIntentRef.current = resolveColumnIntent(pointerCollisions, args, tasks, activeColumns);
     if (pointerCollisions.length === 0) return closestCorners(args);

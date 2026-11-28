@@ -43,7 +43,10 @@ export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardCl
       }`}
       data-status={status}
     >
-      <div className="flex min-h-[var(--row-unit)] shrink-0 items-center gap-2 border-b border-border px-3">
+      <div
+        data-kanban-column-header
+        className="flex min-h-[var(--row-unit)] shrink-0 items-center gap-2 border-b border-border px-3"
+      >
         <span className={`min-w-0 flex-1 truncate text-[0.867rem] font-semibold ${quiet ? 'text-muted-foreground' : 'text-foreground'}`}>
           {displayLabel}
         </span>

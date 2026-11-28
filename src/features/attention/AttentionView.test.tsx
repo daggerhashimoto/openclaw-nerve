@@ -6,6 +6,7 @@ import type { CronJob } from '@/features/workspace/hooks/useCrons';
 import type { Session } from '@/types';
 import { formatClock } from './briefCopy';
 import type { OpenTarget, SourceStatus } from './types';
+import type { ThreadSummary } from './useAttentionSummaries';
 import { AttentionView } from './AttentionView';
 
 const NOW = Date.UTC(2026, 10, 27, 8, 22);
@@ -31,6 +32,16 @@ const sessionMock = vi.fn(() => ({
 }));
 const gatewayMock = vi.fn(() => ({ connectionState: 'connected' as string }));
 
+interface SummariesArgs {
+  active: boolean;
+  sessionKeys: string[];
+  signal: string;
+}
+const summariesMock = vi.fn<(args: SummariesArgs) => Record<string, ThreadSummary>>(() => ({}));
+
+vi.mock('./useAttentionSummaries', () => ({
+  useAttentionSummaries: (args: SummariesArgs) => summariesMock(args),
+}));
 vi.mock('./useAttentionSources', () => ({
   useAttentionSources: () => sourcesMock(),
 }));
@@ -133,6 +144,8 @@ beforeEach(() => {
   localStorage.clear();
   sessionMock.mockReturnValue({ sessions: [], sessionsLoading: false, agentStatus: {}, busyState: {} });
   gatewayMock.mockReturnValue({ connectionState: 'connected' });
+  summariesMock.mockReset();
+  summariesMock.mockImplementation(() => ({}));
 });
 
 afterEach(() => {
@@ -1110,5 +1123,87 @@ describe('prompting from the brief', () => {
 
     const ask = screen.getByRole('region', { name: 'Ask the agent' });
     expect(within(ask).getByRole('button', { name: 'Send' }).className).toContain('min-h-[44px]');
+  });
+});
+
+describe('What happened summaries', () => {
+  const REVIEW = 'agent:forge:subagent:review';
+  const THEN = 'agent:forge:subagent:then';
+  const FAILED = 'agent:forge:subagent:failed';
+  const RUNNING = 'agent:forge:subagent:running';
+
+  function board() {
+    return [
+      task({ id: 't1', title: 'Fix the flaky retry test', priority: 'high', run: { sessionKey: REVIEW, startedAt: NOW - 3 * HOUR, endedAt: NOW - 90 * MINUTE, status: 'done' } }),
+      task({ id: 't2', title: 'Tidy the changelog', run: { sessionKey: THEN, startedAt: NOW - 3 * HOUR, endedAt: NOW - 80 * MINUTE, status: 'done' } }),
+      task({
+        id: 'f1',
+        title: 'Rebuild the index',
+        status: 'todo',
+        result: undefined,
+        run: { sessionKey: FAILED, startedAt: NOW - 3 * HOUR, endedAt: NOW - 2 * HOUR, status: 'error', error: 'Tests failed' },
+      }),
+      task({
+        id: 'r1',
+        title: 'Index the archive',
+        status: 'in-progress',
+        result: undefined,
+        updatedAt: NOW - 10 * MINUTE,
+        run: { sessionKey: RUNNING, startedAt: NOW - 10 * MINUTE, status: 'running' },
+      }),
+    ];
+  }
+
+  function lastKeys(): string[] {
+    const calls = summariesMock.mock.calls;
+    return [...calls[calls.length - 1][0].sessionKeys].sort();
+  }
+
+  it('asks only for the sessions of Start here and the cards, not rows', () => {
+    setSources({ tasks: board() });
+    renderView();
+    expect(lastKeys()).toEqual([FAILED, REVIEW, THEN].sort());
+    expect(summariesMock.mock.calls.at(-1)![0].active).toBe(true);
+  });
+
+  it('on phones asks only for Start here', () => {
+    setSources({ tasks: board() });
+    renderView({ compact: true });
+    expect(lastKeys()).toEqual([REVIEW]);
+  });
+
+  it('shows ready text on Start here and a card, and Summarizing while pending', () => {
+    summariesMock.mockImplementation(() => ({
+      [REVIEW]: { status: 'ready', text: 'You asked for a retry fix. Forge patched it and waits for review.' },
+      [THEN]: { status: 'pending' },
+      [FAILED]: { status: 'error' },
+    }));
+    setSources({ tasks: board() });
+    renderView();
+
+    const start = screen.getByRole('region', { name: 'Start here' });
+    expect(within(start).getByText(/Forge patched it and waits for review/)).toBeInTheDocument();
+    const thenCard = screen.getByRole('button', { name: 'Tidy the changelog' }).closest('article')!;
+    expect(within(thenCard).getByText(/Summarizing\.\.\./)).toBeInTheDocument();
+    const failedCard = screen.getByRole('button', { name: 'Rebuild the index' }).closest('article')!;
+    expect(within(failedCard).queryByText(/What happened/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the old text while a summary is refreshed and says nothing for an empty thread', () => {
+    summariesMock.mockImplementation(() => ({
+      [REVIEW]: { status: 'pending', text: 'Earlier summary.' },
+      [THEN]: { status: 'empty' },
+    }));
+    setSources({ tasks: board() });
+    renderView();
+    expect(screen.getByText(/Earlier summary\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Summarizing/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/What happened/)).toHaveLength(1);
+  });
+
+  it('asks for nothing when the brief is all clear', () => {
+    setSources();
+    renderView();
+    expect(lastKeys()).toEqual([]);
   });
 });

@@ -9,6 +9,7 @@ import type { ReplyConfig } from './AttentionReply';
 import { useItemReply } from './useItemReply';
 import { useItemActions, type AttentionActionsConfig } from './useAttentionActions';
 import type { AttentionItem, OpenTarget } from './types';
+import type { ThreadSummary } from './useAttentionSummaries';
 
 const RESULT_EXCERPT = 240;
 
@@ -62,6 +63,30 @@ function CardDetail({ item, view }: { item: AttentionItem; view: ItemView }) {
   return null;
 }
 
+/**
+ * What happened in the item's thread, from the summaries endpoint. Nothing shows until the
+ * server has answered for the session, and nothing on an error or an empty thread, so a board
+ * without summaries looks as it always did. A summary being refreshed keeps its old text.
+ */
+export function WhatHappened({ summary }: { summary?: ThreadSummary }) {
+  if (!summary) return null;
+  if (summary.text) {
+    return (
+      <p className="m-0 line-clamp-3 text-[0.867rem] leading-relaxed text-muted-foreground">
+        <span className="font-semibold text-foreground">What happened: </span>
+        {summary.text}
+      </p>
+    );
+  }
+  if (summary.status !== 'pending') return null;
+  return (
+    <p className="m-0 text-[0.867rem] leading-relaxed text-muted-foreground" aria-busy="true">
+      <span className="font-semibold text-foreground">What happened: </span>
+      Summarizing...
+    </p>
+  );
+}
+
 function KindLine({ item, view, lead }: { item: AttentionItem; view: ItemView; lead: React.ReactNode }) {
   const pane = paneFor(item.kind);
   return (
@@ -90,6 +115,8 @@ interface AttentionCardProps {
   actions?: AttentionActionsConfig;
   /** Turns on Reply for an item with a session. */
   replies?: ReplyConfig;
+  /** What happened in the item's session, when the board has a summary for it. */
+  summary?: ThreadSummary;
   className?: string;
 }
 
@@ -97,7 +124,7 @@ interface AttentionCardProps {
  * A ranked card. The title is the button; its hit area covers the whole card. Actions and
  * Mark seen sit above that hit area, so they act without opening the source.
  */
-export function AttentionCard({ item, view, rank, onOpen, onMarkSeen, actions, replies, className }: AttentionCardProps) {
+export function AttentionCard({ item, view, rank, onOpen, onMarkSeen, actions, replies, summary, className }: AttentionCardProps) {
   const state = useItemActions(item, actions);
   const reply = useItemReply(item, view, replies, onOpen);
   return (
@@ -122,6 +149,7 @@ export function AttentionCard({ item, view, rank, onOpen, onMarkSeen, actions, r
         </button>
       </h3>
       <CardDetail item={item} view={view} />
+      <WhatHappened summary={summary} />
       {reply.fieldOpen ? reply.field(false) : (
         <CardActions
           state={state}
@@ -145,6 +173,8 @@ interface StartHereCardProps {
   actions?: AttentionActionsConfig;
   /** Turns on Reply when the item has a session. */
   replies?: ReplyConfig;
+  /** What happened in the item's session, when the board has a summary for it. */
+  summary?: ThreadSummary;
 }
 
 /**
@@ -152,7 +182,7 @@ interface StartHereCardProps {
  * With actions the warm button is the decision (Approve) and opening the source is a text
  * button beside it, so phones still show exactly one filled button.
  */
-export function StartHereCard({ item, view, compact, onOpen, actions, replies }: StartHereCardProps) {
+export function StartHereCard({ item, view, compact, onOpen, actions, replies, summary }: StartHereCardProps) {
   const { detail } = item;
   const run = runLine(item);
   const sessionKey = detail.sessionKey;
@@ -201,6 +231,7 @@ export function StartHereCard({ item, view, compact, onOpen, actions, replies }:
         </p>
       )}
       <CardDetail item={item} view={view} />
+      <WhatHappened summary={summary} />
 
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-[0.867rem] text-muted-foreground">
         {run && <span className="font-mono text-[0.8rem] tabular">{run}</span>}

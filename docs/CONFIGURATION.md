@@ -172,6 +172,7 @@ Nerve injects `GATEWAY_TOKEN` on the server side, so the injection never sends i
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AGENT_NAME` | `Agent` | Display name shown in the UI and server info |
+| `NERVE_ATTENTION_SUMMARY_MODEL` | *(empty)* | `provider/model` for the Attention board's "What happened" summaries, e.g. `opencode-go/deepseek-v4.1-flash`. Each summary is a one-shot model run that adds nothing to the summarized thread. Empty uses the thread agent's default model. |
 
 ```bash
 AGENT_NAME=Friday
@@ -310,7 +311,7 @@ REPLICATE_BASE_URL=https://api.replicate.com/v1
 | `OPENCLAW_BIN` | auto-detected | Path to the `openclaw` binary, used for gateway restart and skills. Without it, Nerve checks next to the running Node binary, Homebrew and system paths, then falls back to `openclaw` on `PATH`. |
 | `CODEX_DIR` | `.codex` | Codex CLI directory, relative to your home directory. Nerve reads `auth.json` and `sessions/` from it for the Codex usage limits display. |
 | `BD_BIN` | auto-detected | Path to the Beads `bd` binary used to show bead details. Without it, Nerve checks `~/.local/bin`, `~/.npm-global/bin`, `~/.volta/bin` and `~/.bun/bin`, then falls back to `bd` on `PATH`. |
-| `NERVE_DATA_DIR` | `~/.nerve` | Where Nerve keeps its device identity (`device-identity.json`) and Kanban data (`kanban/`). Setup reads (or creates) the device identity here when pre-pairing. Model files, voice phrases and updater state stay under `~/.nerve` regardless. |
+| `NERVE_DATA_DIR` | `~/.nerve` | Where Nerve keeps its device identity (`device-identity.json`), Kanban data (`kanban/`) and the Attention board's thread summaries (`attention/summaries.json`). Setup reads (or creates) the device identity here when pre-pairing. Model files, voice phrases and updater state stay under `~/.nerve` regardless. |
 | `NERVE_WORKSPACE_REMOTE` | `false` | Set to `true` to treat agent workspaces as remote: the file and config panels go through gateway RPC instead of the local disk, the Memory panel shows a "Sandboxed workspace" notice instead of its list (manage memories on the gateway host), file watching is off, and binary previews and file mutations (rename, move, trash) are unavailable. Without it, Nerve treats a workspace as remote when its directory does not exist locally. |
 
 ### File paths

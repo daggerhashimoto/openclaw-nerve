@@ -8,12 +8,15 @@
  * (useInlineReplies). They never refresh the sources or touch the Chat view's session, so the
  * ranking stays as it was.
  *
+ * Cards and Start here carry a "What happened" line for their session (useAttentionSummaries);
+ * rows do not. It is read-only and the board renders the same without it.
+ *
  * Order is frozen per epoch (useStableOrder). An epoch starts once per activation or Refresh,
  * and only after every enabled source has answered since then, so a cold load ranks the real
  * data and a reopen does not baseline on the answers left over from the last look.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { getSessionAgentId, getTopLevelAgentSessions, isPlaceholderIdentityName, isTopLevelAgentSessionKey } from '@/features/sessions/sessionKeys';
@@ -31,6 +34,7 @@ import { useAttentionSources } from './useAttentionSources';
 import { useStableOrder, type StableOrder } from './useStableOrder';
 import type { AttentionActionsConfig } from './useAttentionActions';
 import { useInlineReplies } from './useInlineReplies';
+import { useAttentionSummaries } from './useAttentionSummaries';
 import type { AttentionItem, AttentionSource, OpenTarget, SourceStatus } from './types';
 
 type Polled = 'tasks' | 'proposals' | 'crons';
@@ -307,6 +311,29 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   // Blocked, failed and finished items can be marked seen one by one; the rest and the Seen lines cannot.
   const markOneSeen = (item: AttentionItem) => markSeen([item]);
 
+  const [start, ...then] = decide.items;
+
+  // Summaries for the items shown as cards: Start here always, Then and Blocked only off phones
+  // (phones show those as rows). Asked again on Refresh, when a card's event changes, and when
+  // a reply in one of the sessions finishes.
+  const cardItems = allClear ? [] : [start, ...(compact ? [] : [...then, ...blocked.items])];
+  const cardSessions = cardItems.flatMap((item) => (item?.detail.sessionKey ? [`${item.detail.sessionKey}@${item.updatedAt}`] : []));
+  const cardSessionsId = cardSessions.join('\n');
+  const summaryKeys = useMemo(
+    () => (cardSessionsId ? cardSessionsId.split('\n').map((entry) => entry.slice(0, entry.lastIndexOf('@'))) : []),
+    [cardSessionsId],
+  );
+  const repliesEnded = useSyncExternalStore(
+    replyStore.subscribe,
+    () => summaryKeys.map((key) => replyStore.get(key)?.endedAt ?? '').join('|'),
+  );
+  const summaries = useAttentionSummaries({
+    active,
+    sessionKeys: summaryKeys,
+    signal: `${currentEpoch}|${cardSessionsId}|${repliesEnded}`,
+  });
+  const summaryOf = (item: AttentionItem) => (item.detail.sessionKey ? summaries[item.detail.sessionKey] : undefined);
+
   const renderRows = (items: AttentionItem[], order?: StableOrder, onMarkSeen?: (item: AttentionItem) => void) => (
     <div className={compact ? 'flex flex-col' : 'flex flex-col gap-0.5 pt-1'}>
       {items.map((item) => (
@@ -334,8 +361,6 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     />
   );
 
-  const [start, ...then] = decide.items;
-
   const decideSection = (
     <Section id="attention-decide" title="Decide now" count={String(decide.items.length)} compact={compact}
       aside={<span className="text-[0.8rem] text-muted-foreground">{compact ? 'Ranked' : RANKED}</span>}
@@ -353,6 +378,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
               onOpen={onOpen}
               actions={actions}
               replies={replies}
+              summary={summaryOf(start)}
             />
           </div>
           {then.length > 0 && (
@@ -369,6 +395,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
                       onOpen={onOpen}
                       actions={actions}
                       replies={replies}
+                      summary={summaryOf(item)}
                     />
                   ))}
                 </div>
@@ -407,6 +434,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
                 onMarkSeen={markOneSeen}
                 actions={actions}
                 replies={replies}
+                summary={summaryOf(item)}
                 className="flex-[1_1_300px]"
               />
             ))}

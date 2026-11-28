@@ -88,6 +88,9 @@ export const config = {
   // Paths (configurable via env, with OpenClaw defaults)
   dist: path.join(PROJECT_ROOT, 'dist'),
   agentLogPath: path.join(PROJECT_ROOT, 'agent-log.json'),
+  // Work reports pushed by other machines (Mac reporter).
+  workReportsDir: process.env.NERVE_WORK_REPORTS_DIR || path.join(HOME, '.openclaw', 'nerve', 'work-reports'),
+  reporterToken: process.env.NERVE_REPORTER_TOKEN || '',
   fileBrowserRoot: process.env.FILE_BROWSER_ROOT || '',
   // Invalid / non-integer / non-positive values fall back to the default so a
   // typo like FILE_BROWSER_MAX_TREE_ENTRIES=abc cannot silently clamp every

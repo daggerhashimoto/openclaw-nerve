@@ -37,6 +37,11 @@ export const authMiddleware = createMiddleware(async (c, next) => {
   // Public API routes — always accessible
   if (PUBLIC_ROUTES.some(route => c.req.path === route)) return next();
 
+  // Work-report routes authenticate in-route: a bearer token for reporter
+  // machines, the session cookie for the UI. They cannot use this middleware
+  // because the reporter has no cookie.
+  if (c.req.path.startsWith('/api/work/')) return next();
+
   // Check session cookie
   const token = getCookie(c, SESSION_COOKIE_NAME);
   if (!token) {

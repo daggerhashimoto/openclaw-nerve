@@ -34,6 +34,7 @@ Nerve exposes a REST + SSE API served by [Hono](https://hono.dev/) on the config
 - [Codex limits](#codex-limits)
 - [Claude Code limits](#claude-code-limits)
 - [Kanban](#kanban)
+- [Work reports](#work-reports)
 - [WebSocket proxy](#websocket-proxy)
 - [Error handling](#error-handling)
 - [Rate limiting](#rate-limiting)
@@ -3371,6 +3372,59 @@ Each column:
 
 ---
 
+## Work reports
+
+Reports pushed by other machines (the Mac reporter). They are stored as one JSONL file per UTC day under `~/.openclaw/nerve/work-reports`, with a side index that makes a queued retry idempotent.
+
+These routes authenticate in-route rather than through the session middleware: a bearer token (`NERVE_REPORTER_TOKEN`) for reporter machines, or the normal signed session cookie for the UI. `POST` always requires the bearer token. When `NERVE_REPORTER_TOKEN` is empty the ingest route answers `503` and stores nothing.
+
+### `POST /api/work/reports`
+
+Headers: `Authorization: Bearer <NERVE_REPORTER_TOKEN>`.
+
+```json
+{
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "at": "2026-11-28T10:00:00.000Z",
+  "workstream": "nerve",
+  "agent": { "kind": "claude-code", "sessionId": "abc", "model": "opus" },
+  "repo": {
+    "path": "/Users/shaun/nerve",
+    "branch": "master",
+    "commit": "5edad4f...",
+    "dirty": true,
+    "changedFiles": 2,
+    "ahead": 0,
+    "behind": 0
+  },
+  "outcome": { "summary": "Rebased and pushed", "status": "completed" },
+  "observed": [{ "kind": "test", "text": "npm test — 3337 passed", "ok": true }],
+  "links": { "pr": "https://github.com/owner/repo/pull/1" }
+}
+```
+
+`outcome` is what the session claims; `observed` is what the reporter itself saw. The two are never merged. Returns `201` with `{ ok, id, duplicate: false, storedAt }`, or `200` with `duplicate: true` when that `id` was already stored.
+
+Errors: `400` invalid payload, `401` bad token, `503` reporter not configured.
+
+### `GET /api/work/reports`
+
+Query: `since` (ISO), `until` (ISO), `workstream`, `limit` (1–500, default 100). Newest first. Requires the bearer token or a session cookie.
+
+### `GET /api/work/reports/summary`
+
+Aggregates reports for a brief: counts by workstream and status, repository count, dirty repositories, and observed tests/builds/commits/pushes/PRs. Default window is the last 24 hours.
+
+### `GET /api/work/ping`
+
+Reporter handshake. `200` when the bearer token matches, `401` otherwise.
+
+### `GET /install/mac-reporter.sh` and `GET /install/nerve-report.mjs`
+
+Serve the installer and CLI so a new machine needs one command. Public by design: neither file contains a secret, and the installer requires the token as an argument.
+
+---
+
 ## WebSocket proxy
 
 Browsers do not talk to the gateway directly. They connect to Nerve at `/ws?target=<gateway-ws-url>` (for example `ws://127.0.0.1:18789/ws`), and Nerve relays the traffic, injecting its device identity and, for trusted clients connecting to the gateway in `GATEWAY_URL`, the gateway token during the connect handshake (see [Connect defaults](#connect-defaults)).
@@ -3455,7 +3509,7 @@ Applied to all requests in order:
 3. **CORS**: an origin is allowed when it is a loopback host or listed in `ALLOWED_ORIGINS`; credentials are allowed (see [CONFIGURATION.md](./CONFIGURATION.md))
 4. **Security headers**: CSP, HSTS (production only), X-Frame-Options and others (see [SECURITY.md](./SECURITY.md))
 5. **Body limit**: about 13 MB (12 MiB plus 1 MiB) maximum body on `/api/*` routes, enforced before authentication
-6. **Authentication**: with `NERVE_AUTH=true`, requires a valid session cookie on `/api/*` except the public routes (`/api/auth/login`, `/api/auth/logout`, `/api/auth/status`, `/api/version`) and `/health`
+6. **Authentication**: with `NERVE_AUTH=true`, requires a valid session cookie on `/api/*` except the public routes (`/api/auth/login`, `/api/auth/logout`, `/api/auth/status`, `/api/version`) and `/health`; `/api/work/*` authenticates in-route (bearer token or cookie)
 7. **Compression**: gzip/deflate on all routes except `/api/events` (SSE) and `/api/files/raw`
 8. **Cache headers**: `no-cache` for API routes and `/health`, immutable for hashed assets
 

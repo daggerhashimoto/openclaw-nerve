@@ -50,6 +50,7 @@ import uploadConfigRoutes from './routes/upload-config.js';
 import uploadReferenceRoutes from './routes/upload-reference.js';
 import kanbanRoutes from './routes/kanban.js';
 import beadsRoutes from './routes/beads.js';
+import workReportsRoutes from './routes/work-reports.js';
 // activity routes removed — tab dropped from workspace panel
 
 const app = new Hono();
@@ -93,6 +94,7 @@ const routes = [
   gatewayRoutes, connectDefaultsRoutes,
   workspaceRoutes, cronsRoutes, sessionsRoutes, chatMediaRoutes, skillsRoutes, filesRoutes, apiKeysRoutes,
   voicePhrasesRoutes, fileBrowserRoutes, uploadConfigRoutes, uploadReferenceRoutes, channelsRoutes, kanbanRoutes, beadsRoutes,
+  workReportsRoutes,
 ];
 for (const route of routes) app.route('/', route);
 

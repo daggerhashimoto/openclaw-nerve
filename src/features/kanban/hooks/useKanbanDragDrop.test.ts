@@ -5,6 +5,7 @@ import type { KanbanTask } from '../types';
 import {
   applyTaskMove,
   computeColumnInsertIndex,
+  isHeaderHit,
   resolveColumnIntent,
   resolveDropIndex,
 } from './useKanbanDragDrop';
@@ -410,5 +411,29 @@ describe('resolveColumnIntent', () => {
 
     expect(pointerWithin(args)).toEqual([]);
     expect(resolveColumnIntent([], args, [task('a', 'review', 0)], COLUMNS)).toBeNull();
+  });
+});
+
+describe('isHeaderHit', () => {
+  function columnWithHeader(bottom: number): HTMLElement {
+    const column = document.createElement('div');
+    const header = document.createElement('div');
+    header.setAttribute('data-kanban-column-header', '');
+    header.getBoundingClientRect = () =>
+      ({ top: 0, bottom, left: 0, right: 300, width: 300, height: bottom, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    column.appendChild(header);
+    return column;
+  }
+
+  it('treats a pointer in the fixed header as a header hit', () => {
+    expect(isHeaderHit(columnWithHeader(48), 10)).toBe(true);
+  });
+
+  it('leaves a pointer inside the scrolling list to the card logic', () => {
+    expect(isHeaderHit(columnWithHeader(48), 60)).toBe(false);
+  });
+
+  it('is false without a column node', () => {
+    expect(isHeaderHit(null, 10)).toBe(false);
   });
 });

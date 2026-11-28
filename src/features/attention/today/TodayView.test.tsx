@@ -256,7 +256,7 @@ describe('Today', () => {
     const dayCall = fetchMock.mock.calls.find(([url]) => url === '/api/attention/day-summary');
     const body = JSON.parse(String((dayCall as unknown as [string, RequestInit])[1].body)) as { facts: { day: string; counts: unknown; done: string[] } };
     expect(body.facts.day).toBe('2026-11-28');
-    expect(body.facts.counts).toEqual({ sessions: 1, done: 2, merged: 1, cronOk: 1, cronFailed: 1 });
+    expect(body.facts.counts).toEqual({ sessions: 1, done: 2, merged: 1, cronFailed: 1 });
     expect(body.facts.done).toContain('14:20 PR #458 merged (Ship notes)');
   });
 

@@ -49,7 +49,9 @@ describe('buildDayPrompt', () => {
     expect(prompt).toContain('do not say anything is open or waiting unless the facts show it');
     expect(prompt).toContain('Do not add names, numbers or events that are not listed');
     expect(prompt).toContain('No markdown');
-    expect(prompt).toContain('3 sessions active, 2 things done, 1 pull requests merged, 4 cron runs ok, 0 cron runs failed');
+    expect(prompt).toContain('3 sessions active, 2 things done, 1 pull requests merged, 0 cron runs failed');
+    expect(prompt).not.toContain('cron runs ok');
+    expect(prompt).toContain('do not mention cron jobs that ran fine');
     expect(prompt).toContain('14:56 PR #458 merged (Render flow cards)');
     expect(prompt).toContain('Kim, telegram, needs reply (Review)');
     expect(prompt).toContain('Not read: cron runs.');
@@ -125,7 +127,7 @@ describe('createDaySummary', () => {
     runs[0].resolve(ok('First text.'));
     await service.whenIdle();
 
-    const changed = facts({ counts: { ...facts().counts, cronOk: 5 } });
+    const changed = facts({ counts: { ...facts().counts, sessions: 5 } });
     clock += DAY_SUMMARY_MIN_INTERVAL_MS - 1;
     expect(await service.get(changed)).toEqual({ status: 'ready', text: 'First text.', updatedAt: 1_000_000 });
     expect(runs).toHaveLength(1);

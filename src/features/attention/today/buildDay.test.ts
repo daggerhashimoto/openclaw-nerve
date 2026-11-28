@@ -421,11 +421,24 @@ describe('ordering, sources and facts', () => {
     const facts = dayFacts(day, ['cron runs']);
     expect(facts).toMatchObject({
       day: '2026-11-28',
-      counts: { sessions: 1, done: 1, merged: 0, cronOk: 0, cronFailed: 0 },
+      counts: { sessions: 1, done: 1, merged: 0, cronFailed: 0 },
       chats: ['Kim'],
       missing: ['cron runs'],
     });
     expect(facts.done).toEqual([expect.stringMatching(/^\d\d:\d\d Task done: Ship it$/)]);
+  });
+
+  it('tells the paragraph only about cron runs that failed', () => {
+    const day = buildDay(input({
+      crons: [cron({ id: 'c1', name: 'Nightly backup' })],
+      cronRuns: {
+        c1: [run(at(13), 'error', { error: 'AccessDenied' }), run(at(7), 'ok', { summary: 'Brief sent' })],
+      },
+    }));
+    const facts = dayFacts(day, []);
+    expect(facts.done).toEqual([expect.stringMatching(/^\d\d:\d\d Cron Nightly backup failed$/)]);
+    expect(facts.counts).not.toHaveProperty('cronOk');
+    expect(facts.counts.cronFailed).toBe(1);
   });
 });
 

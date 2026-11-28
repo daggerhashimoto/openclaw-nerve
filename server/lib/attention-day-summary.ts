@@ -34,7 +34,8 @@ export interface DayFacts {
     sessions: number;
     done: number;
     merged: number;
-    cronOk: number;
+    /** Ignored: successful cron runs are not part of the day paragraph. */
+    cronOk?: number;
     cronFailed: number;
   };
   /** Newest first, one short line each. */
@@ -71,13 +72,13 @@ export function buildDayPrompt(facts: DayFacts): string {
   const lines = [
     'You write a short note for the operator of a team of AI agents about their day so far.',
     'Write at most three short plain sentences, under 60 words in all.',
-    'Lead with what needs the operator (failures first), then what got done. Mention routine cron runs only as a count, never one by one.',
+    'Lead with what needs the operator (failures first), then what got done. Only failed cron runs are listed; do not mention cron jobs that ran fine.',
     'Leave out anything that is zero; do not say that nothing was done or merged.',
     'Use only the facts below. Do not add names, numbers or events that are not listed, and do not say anything is open or waiting unless the facts show it. If a source was not read, do not guess about it.',
     'No markdown, no lists, no headings and no preamble.',
     '',
     `Day: ${facts.day}`,
-    `Counts: ${counts.sessions} sessions active, ${counts.done} things done, ${counts.merged} pull requests merged, ${counts.cronOk} cron runs ok, ${counts.cronFailed} cron runs failed.`,
+    `Counts: ${counts.sessions} sessions active, ${counts.done} things done, ${counts.merged} pull requests merged, ${counts.cronFailed} cron runs failed.`,
   ];
   if (facts.missing.length > 0) lines.push(`Not read: ${facts.missing.join(', ')}.`);
   lines.push('', 'Done today, newest first:', ...(facts.done.length > 0 ? facts.done : ['(nothing)']));
@@ -86,7 +87,10 @@ export function buildDayPrompt(facts: DayFacts): string {
 }
 
 export function fingerprintFacts(facts: DayFacts): string {
-  return createHash('sha256').update(JSON.stringify(facts)).digest('hex').slice(0, 32);
+  // Successful cron runs are not part of the paragraph, so they must not trigger a rewrite.
+  const counts = { ...facts.counts };
+  delete counts.cronOk;
+  return createHash('sha256').update(JSON.stringify({ ...facts, counts })).digest('hex').slice(0, 32);
 }
 
 /**

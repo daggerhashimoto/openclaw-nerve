@@ -47,7 +47,8 @@ const factsSchema = z.object({
     sessions: count,
     done: count,
     merged: count,
-    cronOk: count,
+    // Older pages still send it; successful cron runs are left out of the paragraph.
+    cronOk: count.optional(),
     cronFailed: count,
   }),
   done: z.array(line).max(60),

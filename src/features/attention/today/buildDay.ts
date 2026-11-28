@@ -589,13 +589,14 @@ export function flattenChats(rows: ChatRow[]): ChatRow[] {
  */
 export function dayFacts(day: Day, missing: string[]): {
   day: string;
-  counts: { sessions: number; done: number; merged: number; cronOk: number; cronFailed: number };
+  counts: { sessions: number; done: number; merged: number; cronFailed: number };
   done: string[];
   chats: string[];
   missing: string[];
 } {
   const clip = (text: string) => (text.length > 200 ? `${text.slice(0, 197).trimEnd()}...` : text);
-  const doneLines = day.done.map((row) => {
+  // Cron runs that went fine are routine; the paragraph hears only about failed ones.
+  const doneLines = day.done.filter((row) => row.kind !== 'cron' || row.failed).map((row) => {
     const clock = formatClock(row.at);
     switch (row.kind) {
       case 'task':
@@ -605,8 +606,7 @@ export function dayFacts(day: Day, missing: string[]): {
       case 'session':
         return clip(`${clock} Subagent ${flatten(row.title)} ${row.failed ? `ended ${row.status}` : 'finished'}`);
       case 'cron':
-        if (row.runs) return clip(`Cron ${flatten(row.title)} ran ${row.runs.ok}${row.runs.partial ? '+' : ''} times ok`);
-        return clip(`${clock} Cron ${flatten(row.title)} ${row.failed ? 'failed' : 'ran ok'}`);
+        return clip(`${clock} Cron ${flatten(row.title)} failed`);
     }
   });
   const chatLines = flattenChats(day.chats).map((row) => clip([
@@ -622,7 +622,6 @@ export function dayFacts(day: Day, missing: string[]): {
       sessions: day.stats.sessions,
       done: day.stats.done,
       merged: day.stats.merged,
-      cronOk: day.stats.cronOk,
       cronFailed: day.stats.cronFailed,
     },
     done: doneLines.slice(0, 40),

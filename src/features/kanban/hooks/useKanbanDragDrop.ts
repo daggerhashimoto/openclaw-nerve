@@ -375,6 +375,10 @@ export function useKanbanDragDrop({
         intent,
       });
 
+      // Apply the final order first: a cross-column preview can leave the card
+      // in a different local slot even when the resolved index matches the snapshot.
+      setTasksOptimistic((prev) => applyTaskMove(prev, activeId, targetColumn, targetIndex));
+
       // Compare against the snapshot, not the optimistic state: a column drop
       // may already have moved the card during onDragOver and still need an API call.
       const originalIndex = (snapshotRef.current ?? [])
@@ -385,9 +389,6 @@ export function useKanbanDragDrop({
         snapshotRef.current = null;
         return;
       }
-
-      // Apply the final order in local state (idempotent if onDragOver already did it)
-      setTasksOptimistic((prev) => applyTaskMove(prev, activeId, targetColumn, targetIndex));
 
       // Call API — rollback on failure
       try {

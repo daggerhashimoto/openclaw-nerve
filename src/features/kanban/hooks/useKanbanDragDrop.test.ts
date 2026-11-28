@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { pointerWithin } from '@dnd-kit/core';
+import type { CollisionDetection } from '@dnd-kit/core';
 import type { KanbanTask } from '../types';
-import { applyTaskMove, computeColumnInsertIndex, resolveDropIndex } from './useKanbanDragDrop';
+import {
+  applyTaskMove,
+  computeColumnInsertIndex,
+  resolveColumnIntent,
+  resolveDropIndex,
+} from './useKanbanDragDrop';
 import type { ColumnDropIntent } from './useKanbanDragDrop';
 
 const COLUMNS = ['todo', 'in-progress', 'review', 'done'];
@@ -294,5 +301,114 @@ describe('resolveDropIndex', () => {
 
     expect(index).toBe(1);
     expect(ids(applyTaskMove(afterOver, 'c', 'review', index), 'review')).toEqual(['a', 'c', 'b']);
+  });
+});
+
+type Args = Parameters<CollisionDetection>[0];
+
+function domRect(left: number, top: number, width: number, height: number): DOMRect {
+  return {
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    x: left,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+function collisionArgs(
+  pointer: { x: number; y: number } | null,
+  rects: Record<string, DOMRect>,
+): Args {
+  return {
+    active: { id: 'c' } as Args['active'],
+    collisionRect: domRect(0, 0, 100, 20),
+    droppableRects: new Map(Object.entries(rects)) as Args['droppableRects'],
+    droppableContainers: Object.keys(rects).map((id) => ({ id })) as Args['droppableContainers'],
+    pointerCoordinates: pointer,
+  };
+}
+
+describe('resolveColumnIntent', () => {
+  it('resolves an empty lane to index 0', () => {
+    const args = collisionArgs({ x: 100, y: 100 }, { review: domRect(0, 0, 300, 400) });
+    const collisions = pointerWithin(args);
+
+    expect(collisions.map((c) => c.id)).toEqual(['review']);
+    expect(resolveColumnIntent(collisions, args, [task('c', 'todo', 0)], COLUMNS)).toEqual({
+      column: 'review',
+      index: 0,
+    });
+  });
+
+  it('resolves a gap between two cards to the insertion index', () => {
+    const tasks = [task('a', 'review', 0), task('b', 'review', 1)];
+    const args = collisionArgs({ x: 100, y: 24 }, {
+      review: domRect(0, 0, 300, 400),
+      a: domRect(0, 0, 300, 20),
+      b: domRect(0, 30, 300, 20),
+    });
+    const collisions = pointerWithin(args);
+
+    expect(collisions.map((c) => c.id)).toEqual(['review']);
+    expect(resolveColumnIntent(collisions, args, tasks, COLUMNS)).toEqual({
+      column: 'review',
+      index: 1,
+    });
+  });
+
+  it('leaves a card under the pointer alone', () => {
+    const tasks = [task('a', 'review', 0), task('b', 'review', 1)];
+    const args = collisionArgs({ x: 100, y: 10 }, {
+      review: domRect(0, 0, 300, 400),
+      a: domRect(0, 0, 300, 20),
+      b: domRect(0, 30, 300, 20),
+    });
+    const collisions = pointerWithin(args);
+
+    expect(collisions[0].id).toBe('a');
+    expect(resolveColumnIntent(collisions, args, tasks, COLUMNS)).toBeNull();
+  });
+
+  it('resolves a header drop to the top', () => {
+    const tasks = [task('a', 'review', 0), task('b', 'review', 1)];
+    const args = collisionArgs({ x: 100, y: 25 }, {
+      review: domRect(0, 0, 300, 400),
+      a: domRect(0, 60, 300, 20),
+      b: domRect(0, 90, 300, 20),
+    });
+
+    expect(resolveColumnIntent(pointerWithin(args), args, tasks, COLUMNS)).toEqual({
+      column: 'review',
+      index: 0,
+    });
+  });
+
+  it('resolves below the last card to append', () => {
+    const tasks = [task('a', 'review', 0), task('b', 'review', 1)];
+    const args = collisionArgs({ x: 100, y: 100 }, {
+      review: domRect(0, 0, 300, 400),
+      a: domRect(0, 0, 300, 20),
+      b: domRect(0, 30, 300, 20),
+    });
+
+    expect(resolveColumnIntent(pointerWithin(args), args, tasks, COLUMNS)).toEqual({
+      column: 'review',
+      index: 2,
+    });
+  });
+
+  it('has no intent without pointer coordinates (keyboard)', () => {
+    const args = collisionArgs(null, {
+      review: domRect(0, 0, 300, 400),
+      a: domRect(0, 0, 300, 20),
+    });
+
+    expect(pointerWithin(args)).toEqual([]);
+    expect(resolveColumnIntent([], args, [task('a', 'review', 0)], COLUMNS)).toBeNull();
   });
 });

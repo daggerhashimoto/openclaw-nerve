@@ -8,55 +8,120 @@ import {
   closestCorners,
   pointerWithin,
 } from '@dnd-kit/core';
-import type { Collision, CollisionDetection, DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
+import type { CollisionDetection, DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import type { KanbanTask, TaskStatus } from '../types';
 import { COLUMNS } from '../types';
 
+/** A column drop resolved from the pointer, kept alongside the collision result. */
+export interface ColumnDropIntent {
+  column: string;
+  index: number;
+}
 
 /**
- * `pointerWithin` reports the column when the pointer sits in a gap between
- * two cards, and a column drop appends. Resolve that case to the nearest card
- * inside the same column so a gap keeps its insertion position instead of
- * jumping the card to the end.
+ * Where the pointer sits among a column's cards, as an insertion index from
+ * `0` to `cards.length`. A column target carries no card id, so derive the
+ * index from the pointer: count the cards whose midpoint is above it and stop
+ * at the first card below. That keeps a drop in the `gap-1.5` between two
+ * cards between them, a drop below the last card at the end, and a drop on the
+ * header at the top.
  */
-export function refineColumnCollisions(
-  collisions: Collision[],
-  args: Parameters<CollisionDetection>[0],
-  columns: readonly string[],
-): Collision[] {
-  const columnIds = new Set(columns);
-  const pointer = args.pointerCoordinates;
-  if (!pointer) return collisions;
+export function computeColumnInsertIndex(
+  tasks: KanbanTask[],
+  column: string,
+  droppableRects: ReadonlyMap<string | number, { top: number; height: number }>,
+  pointerY: number,
+  activeId: string,
+): number {
+  let index = 0;
+  const cards = tasks
+    .filter((t) => t.status === column && t.id !== activeId)
+    .sort((a, b) => a.columnOrder - b.columnOrder);
 
-  return collisions.map((collision) => {
-    const id = String(collision.id);
-    if (!columnIds.has(id)) return collision;
+  for (const card of cards) {
+    const rect = droppableRects.get(card.id);
+    if (!rect) continue;
+    if (pointerY <= rect.top + rect.height / 2) break;
+    index += 1;
+  }
 
-    const columnRect = args.droppableRects.get(collision.id);
-    if (!columnRect) return collision;
+  return index;
+}
 
-    let best: { container: (typeof args.droppableContainers)[number]; distance: number } | null = null;
-    for (const container of args.droppableContainers) {
-      if (columnIds.has(String(container.id))) continue;
-      const rect = args.droppableRects.get(container.id);
-      if (!rect) continue;
-      // Only cards that belong to this column: their rect sits inside it.
-      if (rect.top < columnRect.top || rect.bottom > columnRect.bottom) continue;
-      if (rect.left < columnRect.left - 1 || rect.right > columnRect.right + 1) continue;
+/** Move a task to `targetIndex` within `targetColumn` and renumber that column. */
+export function applyTaskMove(
+  tasks: KanbanTask[],
+  activeId: string,
+  targetColumn: TaskStatus,
+  targetIndex: number,
+): KanbanTask[] {
+  const moved = tasks.find((t) => t.id === activeId);
+  if (!moved) return tasks;
 
-      const dx = Math.max(rect.left - pointer.x, 0, pointer.x - rect.right);
-      const dy = Math.max(rect.top - pointer.y, 0, pointer.y - rect.bottom);
-      const distance = dx * dx + dy * dy;
-      if (!best || distance < best.distance) best = { container, distance };
+  const ordered = tasks
+    .filter((t) => t.status === targetColumn && t.id !== activeId)
+    .sort((a, b) => a.columnOrder - b.columnOrder);
+  const clamped = Math.max(0, Math.min(targetIndex, ordered.length));
+  ordered.splice(clamped, 0, moved);
+
+  const orderMap = new Map<string, number>();
+  ordered.forEach((t, i) => orderMap.set(t.id, i));
+
+  return tasks.map((t) => {
+    if (t.id === activeId) {
+      return { ...t, status: targetColumn, columnOrder: clamped };
     }
-
-    if (!best) return collision;
-    return {
-      id: best.container.id,
-      data: { droppableContainer: best.container, value: best.distance },
-    };
+    if (t.status === targetColumn && orderMap.has(t.id)) {
+      return { ...t, columnOrder: orderMap.get(t.id)! };
+    }
+    return t;
   });
+}
+
+/**
+ * Turn the live drop target into the index the API expects. A column target
+ * uses the pointer-derived intent, so gaps and empty lanes keep their place;
+ * a card target keeps the sortable semantics. Without a pointer (keyboard
+ * drag) a column target appends.
+ */
+export function resolveDropIndex(params: {
+  activeId: string;
+  overId: string;
+  targetColumn: TaskStatus;
+  columnTasks: KanbanTask[];
+  originalTask: KanbanTask;
+  activeColumns: readonly string[];
+  intent: ColumnDropIntent | null;
+}): number {
+  const { activeId, overId, targetColumn, columnTasks, originalTask, activeColumns, intent } = params;
+
+  if (activeId === overId) {
+    const current = columnTasks.findIndex((t) => t.id === activeId);
+    return current < 0 ? 0 : current;
+  }
+
+  if (activeColumns.includes(overId)) {
+    const otherCount = columnTasks.filter((t) => t.id !== activeId).length;
+    if (intent && intent.column === overId) {
+      return Math.max(0, Math.min(intent.index, otherCount));
+    }
+    return otherCount;
+  }
+
+  const overIndex = columnTasks.findIndex((t) => t.id === overId);
+  const activeIndex = columnTasks.findIndex((t) => t.id === activeId);
+
+  if (originalTask.status === targetColumn && activeIndex >= 0 && overIndex >= 0) {
+    const reordered = arrayMove(
+      columnTasks.map((t) => t.id),
+      activeIndex,
+      overIndex,
+    );
+    return reordered.indexOf(activeId);
+  }
+
+  return overIndex >= 0 ? overIndex : columnTasks.length;
 }
 
 interface UseKanbanDragDropOptions {
@@ -85,6 +150,9 @@ export function useKanbanDragDrop({
   // Snapshot of tasks before a drag starts — used for rollback on error
   const snapshotRef = useRef<KanbanTask[] | null>(null);
 
+  // Exact insertion slot when the pointer is over a column rather than a card
+  const dropIntentRef = useRef<ColumnDropIntent | null>(null);
+
   /* ── Collision detection ──
    * Pointer-first: a drop belongs to the column under the cursor. Corner
    * distance is only a fallback (keyboard drags, or a pointer outside every
@@ -92,9 +160,31 @@ export function useKanbanDragDrop({
    * empty Review column lost to the Done lane beside it. */
   const collisionDetection = useCallback<CollisionDetection>((args) => {
     const pointerCollisions = pointerWithin(args);
-    if (pointerCollisions.length === 0) return closestCorners(args);
-    return refineColumnCollisions(pointerCollisions, args, activeColumns);
-  }, [activeColumns]);
+    if (pointerCollisions.length === 0) {
+      dropIntentRef.current = null;
+      return closestCorners(args);
+    }
+
+    const firstId = String(pointerCollisions[0].id);
+    const pointer = args.pointerCoordinates;
+    if (pointer && activeColumns.includes(firstId)) {
+      // A column under the pointer: remember the exact slot for drag over/end.
+      dropIntentRef.current = {
+        column: firstId,
+        index: computeColumnInsertIndex(
+          tasks,
+          firstId,
+          args.droppableRects,
+          pointer.y,
+          String(args.active.id),
+        ),
+      };
+    } else {
+      dropIntentRef.current = null;
+    }
+
+    return pointerCollisions;
+  }, [activeColumns, tasks]);
 
   /* ── Sensors ── */
   const pointerSensor = useSensor(PointerSensor, {
@@ -123,6 +213,7 @@ export function useKanbanDragDrop({
     (event: DragStartEvent) => {
       const task = tasks.find((t) => t.id === event.active.id);
       if (!task) return;
+      dropIntentRef.current = null;
       setActiveTask(task);
       snapshotRef.current = tasks.map((t) => ({ ...t })); // deep-ish clone
     },
@@ -151,9 +242,15 @@ export function useKanbanDragDrop({
           .filter((t) => t.status === toColumn && t.id !== activeId)
           .sort((a, b) => a.columnOrder - b.columnOrder);
 
-        // Find index to insert at: if over is a task, insert at its index; else append
+        // Find index to insert at: a pointer-resolved column slot, the index
+        // of an over card, or append when only the column is known (keyboard).
         let newIndex = destTasks.length;
-        if (!activeColumns.includes(overId)) {
+        if (activeColumns.includes(overId)) {
+          const intent = dropIntentRef.current;
+          if (intent && intent.column === overId) {
+            newIndex = Math.max(0, Math.min(intent.index, destTasks.length));
+          }
+        } else {
           const overIndex = destTasks.findIndex((t) => t.id === overId);
           if (overIndex >= 0) newIndex = overIndex;
         }
@@ -203,6 +300,7 @@ export function useKanbanDragDrop({
 
       if (!over) {
         // Dropped outside — rollback
+        dropIntentRef.current = null;
         if (snapshotRef.current) {
           setTasksOptimistic(() => snapshotRef.current!);
           snapshotRef.current = null;
@@ -212,6 +310,8 @@ export function useKanbanDragDrop({
 
       const activeId = active.id as string;
       const overId = over.id as string;
+      const intent = dropIntentRef.current;
+      dropIntentRef.current = null;
 
       // Find the task from snapshot (has correct original version)
       const originalTask = snapshotRef.current?.find((t) => t.id === activeId);
@@ -223,75 +323,34 @@ export function useKanbanDragDrop({
       // Determine target column
       const targetColumn = findColumnForId(overId) ?? originalTask.status;
 
-      // Compute final order: get current tasks in the target column after optimistic updates
-      // Use the live tasks state (already optimistically updated in onDragOver)
+      // Live order in the target column, after any optimistic transfer from onDragOver
       const columnTasks = tasks
         .filter((t) => t.status === targetColumn)
         .sort((a, b) => a.columnOrder - b.columnOrder);
 
-      let targetIndex: number;
+      const targetIndex = resolveDropIndex({
+        activeId,
+        overId,
+        targetColumn,
+        columnTasks,
+        originalTask,
+        activeColumns,
+        intent,
+      });
 
-      if (activeId === overId) {
-        // Dropped on itself — find its current index in column
-        targetIndex = columnTasks.findIndex((t) => t.id === activeId);
-        if (targetIndex < 0) targetIndex = 0;
-      } else if (activeColumns.includes(overId)) {
-        // Dropped on empty column — append
-        targetIndex = columnTasks.filter((t) => t.id !== activeId).length;
-      } else {
-        // Dropped on another card — use that card's position
-        const overIndex = columnTasks.findIndex((t) => t.id === overId);
-        const activeIndex = columnTasks.findIndex((t) => t.id === activeId);
-
-        if (originalTask.status === targetColumn && activeIndex >= 0 && overIndex >= 0) {
-          // Same column reorder: use arrayMove index logic
-          const reordered = arrayMove(
-            columnTasks.map((t) => t.id),
-            activeIndex,
-            overIndex,
-          );
-          targetIndex = reordered.indexOf(activeId);
-        } else {
-          // Cross-column: insert at over position
-          targetIndex = overIndex >= 0 ? overIndex : columnTasks.length;
-        }
-      }
-
-      // If nothing actually changed, skip API call
-      if (
-        originalTask.status === targetColumn &&
-        targetIndex === columnTasks.findIndex((t) => t.id === activeId)
-      ) {
+      // Compare against the snapshot, not the optimistic state: a column drop
+      // may already have moved the card during onDragOver and still need an API call.
+      const originalIndex = (snapshotRef.current ?? [])
+        .filter((t) => t.status === originalTask.status)
+        .sort((a, b) => a.columnOrder - b.columnOrder)
+        .findIndex((t) => t.id === activeId);
+      if (originalTask.status === targetColumn && targetIndex === originalIndex) {
         snapshotRef.current = null;
         return;
       }
 
-      // Optimistic state is already applied from onDragOver / implicit ordering.
-      // Now apply the final correct ordering in local state.
-      setTasksOptimistic((prev) => {
-        const colTasks = prev
-          .filter((t) => t.status === targetColumn && t.id !== activeId)
-          .sort((a, b) => a.columnOrder - b.columnOrder);
-
-        const clamped = Math.max(0, Math.min(targetIndex, colTasks.length));
-        const ordered = [...colTasks];
-        const moved = prev.find((t) => t.id === activeId);
-        if (!moved) return prev;
-        ordered.splice(clamped, 0, moved);
-
-        const orderMap = new Map<string, number>();
-        ordered.forEach((t, i) => orderMap.set(t.id, i));
-
-        return prev.map((t) => {
-          if (t.id === activeId) {
-            return { ...t, status: targetColumn, columnOrder: clamped };
-          }
-          if (t.status === targetColumn && orderMap.has(t.id)) {
-            return { ...t, columnOrder: orderMap.get(t.id)! };
-          }
-          return t;
-        });
-      });
+      // Apply the final order in local state (idempotent if onDragOver already did it)
+      setTasksOptimistic((prev) => applyTaskMove(prev, activeId, targetColumn, targetIndex));
 
       // Call API — rollback on failure
       try {
@@ -314,6 +373,7 @@ export function useKanbanDragDrop({
   );
 
   const onDragCancel = useCallback(() => {
+    dropIntentRef.current = null;
     if (snapshotRef.current) {
       setTasksOptimistic(() => snapshotRef.current!);
     }

@@ -9,7 +9,7 @@
  */
 
 import { getSessionAgentId, getTopLevelAgentSessions, isPlaceholderIdentityName } from '@/features/sessions/sessionKeys';
-import { isGranularLive } from '@/lib/paneState';
+import { isGranularLive, isSessionRunning } from '@/lib/paneState';
 import { getSessionKey, type GranularAgentState, type Session } from '@/types';
 import { channelOf } from './sessionNames';
 import type { AttentionBrief, AttentionItem, OpenTarget } from './types';
@@ -40,6 +40,23 @@ export interface AgentsInput {
   busyState: Record<string, boolean>;
   agentNames: ReadonlyMap<string, string>;
   now: number;
+}
+
+/**
+ * A session is working as the rest of the app counts it (the top bar's fleet words): its live
+ * state when the gateway sent one, else the busy flag or the list's own run fields
+ * (`status: "running"`, `hasActiveRun`). A failed session never counts.
+ */
+export function isSessionWorking(
+  session: Session,
+  busyState: Record<string, boolean>,
+  agentStatus: Record<string, GranularAgentState>,
+): boolean {
+  const key = getSessionKey(session);
+  const granular = agentStatus[key];
+  if (granular?.status === 'ERROR') return false;
+  if (granular && isGranularLive(granular)) return true;
+  return isSessionRunning(session, Boolean(busyState[key])) || Boolean(session.hasActiveRun);
 }
 
 function capitalize(text: string): string {
@@ -126,13 +143,12 @@ export function buildAgents(input: AgentsInput): AgentLine[] {
       }
     }
     const granular = agentStatus[sessionKey];
-    const mainLive = granular ? isGranularLive(granular) : Boolean(busyState[sessionKey]);
-    if (mainLive) {
+    if (isSessionWorking(root, busyState, agentStatus)) {
       const channel = channelOf(root);
       activities.push({
         rank: 2,
         words: channel ? `replying on ${capitalize(channel)}` : 'in main chat',
-        since: granular?.since,
+        since: granular && isGranularLive(granular) ? granular.since : root.startedAt ?? granular?.since,
       });
     }
 

@@ -160,7 +160,8 @@ export function AttentionRow({
             <span className="flex min-w-0 items-center gap-2">
               <span
                 data-testid="attention-row-title"
-                className={cn('min-w-0 flex-1 truncate text-foreground', compact ? 'text-[1rem]' : 'text-[0.867rem]', item.kind === 'approval' && 'font-mono text-[0.8rem]')}
+                // Phones give the title two lines; the desk keeps one.
+                className={cn('min-w-0 flex-1 text-foreground', compact ? 'line-clamp-2 text-[1rem] leading-snug' : 'truncate text-[0.867rem]', item.kind === 'approval' && 'font-mono text-[0.8rem]')}
               >
                 {item.title}
               </span>
@@ -168,11 +169,14 @@ export function AttentionRow({
             </span>
             <MetaLine item={item} view={view} now={now} open={open} />
           </span>
-          <ChevronRight
-            size={16}
-            aria-hidden="true"
-            className={cn('shrink-0 text-muted-foreground transition-transform duration-[120ms]', open && 'rotate-90')}
-          />
+          {/* The whole row opens on a phone, so the chevron gives its width back to the title. */}
+          {!compact && (
+            <ChevronRight
+              size={16}
+              aria-hidden="true"
+              className={cn('shrink-0 text-muted-foreground transition-transform duration-[120ms]', open && 'rotate-90')}
+            />
+          )}
         </button>
         {primary && !confirmingStop && !open && !hidePrimary && (
           <ActionButton state={state} action={primary} variant="outline" compact={compact} />

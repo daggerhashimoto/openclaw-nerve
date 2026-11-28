@@ -341,6 +341,87 @@ describe('AttentionView', () => {
     expect(onOpen).toHaveBeenCalledWith({ type: 'session', key: 'agent:kim:main' });
   });
 
+  it('counts an agent working from the session list run fields, as the top bar does', () => {
+    sessionMock.mockReturnValue({
+      sessions: [
+        { key: 'agent:kim:main', identityName: 'Kim', label: 'Shaun (@shaunfi) id:42', lastChannel: 'telegram', status: 'running', hasActiveRun: true, startedAt: NOW - MINUTE },
+        { key: 'agent:linus:main', identityName: 'Linus', hasActiveRun: true },
+        { key: 'agent:tuna:main', identityName: 'Tuna', status: 'done' },
+      ],
+      sessionsLoading: false,
+      agentStatus: {},
+      busyState: {},
+    } as never);
+    setSources();
+    renderView();
+
+    const lines = screen.getAllByTestId('agent-line');
+    expect(lines.map((line) => line.getAttribute('data-state'))).toEqual(['working', 'working', 'idle']);
+    const kim = lines.find((line) => line.textContent?.startsWith('Kim'))!;
+    expect(kim).toHaveAttribute('data-state', 'working');
+    expect(kim).toHaveTextContent('replying on Telegram');
+    expect(kim).toHaveTextContent('1m');
+    expect(kim.textContent).not.toContain('Shaun');
+    expect(lines.find((line) => line.textContent?.startsWith('Linus'))).toHaveTextContent('in main chat');
+    expect(lines[2]).toHaveTextContent('Tuna');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('2 working');
+  });
+
+  it('a running channel chat counts from its list status too', () => {
+    sessionMock.mockReturnValue({
+      sessions: [
+        { key: 'agent:kim:main', identityName: 'Kim' },
+        { key: 'agent:kim:telegram:direct:9', channel: 'telegram', status: 'running' },
+      ],
+      sessionsLoading: false,
+      agentStatus: {},
+      busyState: {},
+    } as never);
+    setSources();
+    renderView();
+    expect(screen.getAllByTestId('agent-line')[0]).toHaveTextContent('replying on Telegram');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('1 working');
+  });
+
+  it('a review with no assignee is named after the agent whose session ran it', () => {
+    sessionMock.mockReturnValue({ sessions: [{ key: 'agent:linus:main', identityName: 'Linus' }], sessionsLoading: false, agentStatus: {}, busyState: {} } as never);
+    setSources({
+      tasks: [
+        task(),
+        task({
+          id: 't2',
+          title: 'Check the backup log',
+          assignee: undefined,
+          resultAt: NOW - HOUR,
+          run: { sessionKey: 'agent:linus:main', childSessionKey: 'agent:linus:subagent:bk', startedAt: NOW - 2 * HOUR, endedAt: NOW - HOUR, status: 'done' },
+        }),
+      ],
+    });
+    renderView();
+    expect(itemOf('Check the backup log')).toHaveTextContent('Linus · 1h · Review');
+  });
+
+  it('on phones the controls take one row and the counts their own line, with titles over two lines', () => {
+    setSources({ tasks: [task(), task({ id: 't2', title: 'A long review title that needs more than one line on a phone', resultAt: NOW - 20 * MINUTE })] });
+    const { unmount } = renderView({ compact: true });
+    const heading = screen.getByRole('heading', { level: 1 });
+    const tabs = screen.getByRole('group', { name: 'Attention view' });
+    const refresh = screen.getByRole('button', { name: 'Refresh' });
+    expect(tabs.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(refresh.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heading.parentElement).not.toBe(tabs.parentElement);
+    const title = within(itemOf('A long review title that needs more than one line on a phone')).getByTestId('attention-row-title');
+    expect(title.className).toContain('line-clamp-2');
+    expect(title.className).not.toContain('truncate');
+    expect(itemOf('A long review title that needs more than one line on a phone').querySelector('svg.lucide-chevron-right')).toBeNull();
+    unmount();
+
+    // The desk keeps the counts first on one row.
+    renderView();
+    const deskHeading = screen.getByRole('heading', { level: 1 });
+    expect(deskHeading.compareDocumentPosition(screen.getByRole('group', { name: 'Attention view' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('a quiet task run is marked on its agent and can be stopped with a confirm', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

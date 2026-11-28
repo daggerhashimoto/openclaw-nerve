@@ -576,6 +576,23 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   );
 
   const { parts, text: headlineText } = headline(brief, working);
+  const headlineEl = (
+    <h1
+      data-testid="attention-headline"
+      aria-label={headlineText}
+      className={cn('m-0 min-w-0 flex-1 font-semibold leading-tight text-foreground', compact ? 'text-[1.133rem]' : 'text-[1.2rem]')}
+    >
+      {parts.length > 0 ? parts.map((part, index) => (
+        <span key={part.word} className="whitespace-nowrap">
+          {index > 0 && <span aria-hidden="true" className="px-1.5 font-normal text-muted-foreground">·</span>}
+          <span className={cn('font-mono tabular', part.tone === 'error' ? 'text-destructive' : part.tone === 'operator' ? 'text-operator-text' : 'text-live-text')}>
+            {part.n}
+          </span>
+          {` ${part.word}`}
+        </span>
+      )) : headlineText}
+    </h1>
+  );
   // Loading is said in the sections it holds back; the heading line keeps the lasting gaps.
   const gaps = gapSentences(brief, { loading: false });
 
@@ -583,35 +600,26 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     <div className="attention-board h-full min-h-0 overflow-y-auto overscroll-contain bg-background" data-compact={compact}>
       <div className={cn('mx-auto flex min-h-full w-full max-w-[1320px] flex-col', !compact && 'px-7')}>
         <header className={cn('flex flex-col gap-1', compact ? 'px-4 pb-3 pt-3' : 'pb-5 pt-4')}>
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-            {showToday ? <span className="flex-1" /> : (
-              <h1
-                data-testid="attention-headline"
-                aria-label={headlineText}
-                className={cn('m-0 min-w-0 flex-1 font-semibold leading-tight text-foreground', compact ? 'text-[1.133rem]' : 'text-[1.2rem]')}
-              >
-                {parts.length > 0 ? parts.map((part, index) => (
-                  <span key={part.word} className="whitespace-nowrap">
-                    {index > 0 && <span aria-hidden="true" className="px-1.5 font-normal text-muted-foreground">·</span>}
-                    <span className={cn('font-mono tabular', part.tone === 'error' ? 'text-destructive' : part.tone === 'operator' ? 'text-operator-text' : 'text-live-text')}>
-                      {part.n}
-                    </span>
-                    {` ${part.word}`}
+          {/* Desk: counts, tabs, time and Refresh on one row. Phone: the controls on one row and
+              the counts on their own line under them, so nothing is cut at 390px. */}
+          <div className={cn('flex min-w-0 items-center gap-x-3', compact ? 'flex-col items-stretch gap-y-2' : 'flex-wrap gap-y-1.5')}>
+            {!showToday && !compact && headlineEl}
+            {showToday && !compact && <span className="flex-1" />}
+            <div className="flex min-w-0 items-center gap-x-3">
+              <SegmentTabs segment={segment} onChange={setSegment} compact={compact} />
+              {compact && <span className="flex-1" />}
+              {!showToday && (
+                <>
+                  <span className="font-mono text-[0.733rem] tabular text-muted-foreground" title={`Checked ${checkedClock}`}>
+                    {checkedClock}
                   </span>
-                )) : headlineText}
-              </h1>
-            )}
-            <SegmentTabs segment={segment} onChange={setSegment} compact={compact} />
-            {!showToday && (
-              <>
-                <span className="font-mono text-[0.733rem] tabular text-muted-foreground" title={`Checked ${checkedClock}`}>
-                  {checkedClock}
-                </span>
-                <button type="button" onClick={onRefresh} className={cn('shell-chip shrink-0', compact && 'min-h-11')}>
-                  Refresh
-                </button>
-              </>
-            )}
+                  <button type="button" onClick={onRefresh} className={cn('shell-chip shrink-0', compact && 'min-h-11')}>
+                    Refresh
+                  </button>
+                </>
+              )}
+            </div>
+            {!showToday && compact && headlineEl}
           </div>
           {!showToday && gaps.length > 0 && (
             <p className="m-0 max-w-[90ch] text-[0.8rem] leading-normal text-muted-foreground">{gaps.join(' ')}</p>

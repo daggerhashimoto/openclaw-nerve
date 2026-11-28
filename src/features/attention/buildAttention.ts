@@ -8,12 +8,12 @@ import type { KanbanProposal } from '@/features/kanban/hooks/useProposals';
 import type { CronJob } from '@/features/workspace/hooks/useCrons';
 import { isFailedCronStatus, isOkCronStatus } from '@/features/workspace/cronStatus';
 import { getSessionAgentId, isTopLevelAgentSessionKey } from '@/features/sessions/sessionKeys';
-import { isGranularLive } from '@/lib/paneState';
 import { getSessionKey, type Session } from '@/types';
 import type { CronRunEntry } from './today/buildDay';
 import { prMentions } from './today/buildDay';
 import type { ExecApproval } from './execApprovals';
 import { sessionDisplayName } from './sessionNames';
+import { isSessionWorking } from './buildAgents';
 import type {
   AttentionBrief,
   AttentionInput,
@@ -104,7 +104,8 @@ function taskItems(input: AttentionInput, sessionsByKey: Map<string, Session>): 
       source: 'tasks' as const,
       sourceId: task.id,
       title: task.title,
-      ownerId: agentIdOf(task.assignee),
+      // Without an assignee, the agent whose session ran it.
+      ownerId: agentIdOf(task.assignee) ?? (linkedKey ? getSessionAgentId(linkedKey) ?? undefined : undefined),
       deadline: task.dueAt,
       priority: task.priority,
       freshness,
@@ -326,13 +327,13 @@ function sessionItems(input: AttentionInput, linkedKeys: ReadonlySet<string>): A
         updatedAt: granular.since,
         detail: { sessionKey: key },
       });
-    } else if (input.busyState[key] || (granular && isGranularLive(granular))) {
+    } else if (isSessionWorking(session, input.busyState, input.agentStatus)) {
       items.push({
         ...base,
         key: `sessions:${key}:session-running`,
         kind: 'session-running',
         section: 'progress',
-        updatedAt: granular?.since ?? sessionActivity(session) ?? input.now,
+        updatedAt: granular?.since ?? session.startedAt ?? sessionActivity(session) ?? input.now,
         detail: { sessionKey: key },
       });
     }

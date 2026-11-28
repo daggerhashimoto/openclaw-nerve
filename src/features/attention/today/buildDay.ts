@@ -193,6 +193,18 @@ export function prMentions(text: string): PrMention[] {
  * `Merge watch: #458 merged as ...`); a full pull link in the task's own result counts too,
  * since the task was closed on it. Mentions without the word ("PR #456 awaiting approval") do not.
  */
+/**
+ * When a done task was finished. `updatedAt` is not used: reordering a column re-stamps every
+ * card in it, so an old card would look finished today. Cards from before `completedAt` existed
+ * fall back to their result time, then their newest note.
+ */
+export function doneTimeOf(task: KanbanTask): number | undefined {
+  if (task.completedAt !== undefined) return task.completedAt;
+  if (task.resultAt !== undefined) return task.resultAt;
+  const notes = (task.feedback ?? []).map((note) => note?.at).filter((at): at is number => typeof at === 'number');
+  return notes.length ? Math.max(...notes) : undefined;
+}
+
 export function mergedPrs(task: KanbanTask, doneAt: number): Array<PrMention & { at: number }> {
   const out = new Map<number, PrMention & { at: number }>();
   const add = (mention: PrMention, at: number) => {
@@ -374,8 +386,9 @@ export function buildDay(input: DayInput): Day {
   if (sourceOn('tasks')) {
     const prRows = new Map<number, DayRow>();
     for (const task of input.tasks) {
-      if (task.status !== 'done' || !today(task.updatedAt)) continue;
-      const at = task.updatedAt;
+      if (task.status !== 'done') continue;
+      const at = doneTimeOf(task);
+      if (at === undefined || !today(at)) continue;
       const run = task.run;
       const runKey = run ? run.childSessionKey ?? run.sessionKey : undefined;
       if (run?.sessionKey) linkedSessions.add(run.sessionKey);

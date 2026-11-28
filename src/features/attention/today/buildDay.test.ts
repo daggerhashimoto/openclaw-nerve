@@ -29,7 +29,7 @@ const HOUR = 3_600_000;
 const at = (h: number, m = 0) => new Date(2026, 10, 28, h, m).getTime();
 
 function task(overrides: Partial<KanbanTask> = {}): KanbanTask {
-  return {
+  const built: KanbanTask = {
     id: 't1',
     title: 'Fix the flaky retry test',
     status: 'done',
@@ -44,6 +44,9 @@ function task(overrides: Partial<KanbanTask> = {}): KanbanTask {
     feedback: [],
     ...overrides,
   };
+  // Fixtures pass their finish time as updatedAt; the store stamps completedAt on entering done.
+  if (built.status === 'done' && !('completedAt' in overrides)) built.completedAt = built.updatedAt;
+  return built;
 }
 
 function cron(overrides: Partial<CronJob> = {}): CronJob {
@@ -106,6 +109,15 @@ describe('day boundary', () => {
 });
 
 describe('done tasks', () => {
+  it('does not count an old done card that was only re-stamped today', () => {
+    // A reorder re-stamps updatedAt on every card in the column; the card finished yesterday.
+    const old = task({ id: 'old', updatedAt: at(10, 11), completedAt: undefined, feedback: [{ at: NOW - 20 * HOUR, by: 'agent:linus', note: 'Merged #452 as 68f8284' }] });
+    const fresh = task({ id: 'fresh', updatedAt: at(10, 11), completedAt: undefined, feedback: [{ at: at(9, 30), by: 'agent:linus', note: 'Shipped' }] });
+    const day = buildDay(input({ tasks: [old, fresh] }));
+    expect(day.done.filter((r) => r.kind === 'task').map((r) => r.taskId)).toEqual(['fresh']);
+    expect(day.done.some((r) => r.kind === 'pr')).toBe(false);
+  });
+
   it('lists tasks that reached done today with their result, else the newest note', () => {
     const day = buildDay(input({
       tasks: [

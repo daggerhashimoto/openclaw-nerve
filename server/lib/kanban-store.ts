@@ -98,6 +98,12 @@ export interface TaskRunLink {
   error?: string;
 }
 
+/** Keeps `completedAt` in step with a status change: stamped on entering done, dropped on leaving. */
+export function stampCompletion(task: { status: TaskStatus; completedAt?: number }, previous: TaskStatus, now: number): void {
+  if (task.status !== 'done') delete task.completedAt;
+  else if (previous !== 'done') task.completedAt = now;
+}
+
 export interface KanbanTask {
   id: string;
   title: string;
@@ -115,6 +121,8 @@ export interface KanbanTask {
   run?: TaskRunLink;
   result?: string;
   resultAt?: number;
+  /** When the task last moved into done; cleared when it leaves. Reorders do not touch it. */
+  completedAt?: number;
   model?: string;
   thinking?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'adaptive' | 'max' | 'ultra';
   dueAt?: number;
@@ -725,6 +733,7 @@ export class KanbanStore {
           .reduce((max, t) => Math.max(max, t.columnOrder), -1);
         updated.columnOrder = maxOrder + 1;
       }
+      stampCompletion(updated, task.status, now);
 
       data.tasks[idx] = updated;
       await this.writeRaw(data);
@@ -797,7 +806,9 @@ export class KanbanStore {
       }
 
       // Update the moved task
+      const previousStatus = task.status;
       task.status = targetStatus;
+      stampCompletion(task, previousStatus, now);
       task.columnOrder = clampedIndex;
       task.updatedAt = now;
       task.version += 1;
@@ -899,6 +910,7 @@ export class KanbanStore {
       const sessionKey = options?.sessionKey ?? uniqueRunSessionKey(id, now);
 
       task.status = 'in-progress';
+      delete task.completedAt;
       task.run = {
         sessionKey,
         startedAt: now,
@@ -984,6 +996,7 @@ export class KanbanStore {
 
       const now = Date.now();
       task.status = 'done';
+      task.completedAt = now;
 
       if (note) {
         task.feedback.push({
@@ -1389,6 +1402,7 @@ export class KanbanStore {
     }
 
     const updated: KanbanTask = { ...task, ...patch, updatedAt: now, version: task.version + 1 } as KanbanTask;
+    stampCompletion(updated, task.status, now);
     data.tasks[idx] = updated;
     return updated;
   }

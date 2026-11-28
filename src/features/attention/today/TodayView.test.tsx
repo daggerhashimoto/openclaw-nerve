@@ -61,7 +61,7 @@ vi.mock('@/contexts/GatewayContext', () => ({
 }));
 
 function task(overrides: Partial<KanbanTask> = {}): KanbanTask {
-  return {
+  const built: KanbanTask = {
     id: 't1',
     title: 'Fix the flaky retry test',
     status: 'done',
@@ -78,6 +78,9 @@ function task(overrides: Partial<KanbanTask> = {}): KanbanTask {
     run: { sessionKey: 'agent:forge:main', startedAt: at(13), endedAt: at(14), status: 'done' },
     ...overrides,
   };
+  // Fixtures pass their finish time as updatedAt; the store stamps completedAt on entering done.
+  if (built.status === 'done' && !('completedAt' in overrides)) built.completedAt = built.updatedAt;
+  return built;
 }
 
 function cron(overrides: Partial<CronJob> = {}): CronJob {

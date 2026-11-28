@@ -8,9 +8,9 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
  * Subagents and cron children take lighter shades of their parent's hue.
  *
  * Cantaloupe is the operator's light and never an agent's, so it is not in the
- * palette (the main agent included). Hues are assigned once per agent id on
- * first sight, least-used first, and remembered in localStorage so they never
- * shuffle. The operator can override any of them.
+ * palette (the main agent included). Each agent id has a preferred hue derived from
+ * the id itself, so every device agrees; a clash falls to the least-used hue. Picks are
+ * remembered in localStorage so they never shuffle. The operator can override any of them.
  */
 export const AGENT_HUES = [
   { hex: '#7CC99A', name: 'Mint' },
@@ -72,25 +72,38 @@ function getSnapshot(): Assignments {
   return assignments;
 }
 
+/** A stable palette slot for an agent id, the same on every device. */
+export function preferredHueIndex(id: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < id.length; i += 1) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % AGENT_HUES.length;
+}
+
 /**
  * Pure planner: extend `existing` with hues for every id in `ids` that lacks one.
- * Each takes the least-used hue, ties broken by palette order. Deterministic for a
- * given input order, so the first paint can show the same hue the store will remember.
+ * Each id first tries its own preferred hue (derived from the id, so a phone and a desk
+ * agree without sharing storage); if that hue is already used more than the least-used
+ * one, it takes the least-used hue instead, searching from its preferred slot. Ids are
+ * planned in sorted order, so the result does not depend on which view saw them first.
  */
 export function planAssignments(existing: Assignments, ids: readonly string[]): Assignments {
   const next: Record<string, string> = { ...existing };
   const counts = new Map<string, number>(AGENT_HUES.map((hue) => [hue.hex, 0]));
   for (const hex of Object.values(next)) counts.set(hex, (counts.get(hex) ?? 0) + 1);
 
-  for (const id of ids) {
+  for (const id of [...new Set(ids)].sort()) {
     if (next[id]) continue;
-    let pick: string = AGENT_HUES[0].hex;
-    let best = Number.POSITIVE_INFINITY;
-    for (const hue of AGENT_HUES) {
-      const used = counts.get(hue.hex) ?? 0;
-      if (used < best) {
-        best = used;
+    const least = Math.min(...AGENT_HUES.map((hue) => counts.get(hue.hex) ?? 0));
+    const start = preferredHueIndex(id);
+    let pick: string = AGENT_HUES[start].hex;
+    for (let step = 0; step < AGENT_HUES.length; step += 1) {
+      const hue = AGENT_HUES[(start + step) % AGENT_HUES.length];
+      if ((counts.get(hue.hex) ?? 0) === least) {
         pick = hue.hex;
+        break;
       }
     }
     next[id] = pick;

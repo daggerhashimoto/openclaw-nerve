@@ -1,13 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AGENT_HUES, planAssignments, shadeFor } from './agentColors';
+import { AGENT_HUES, planAssignments, preferredHueIndex, shadeFor } from './agentColors';
 
-const [mint, lilac, aqua] = AGENT_HUES.map((hue) => hue.hex);
+const [mint, lilac] = AGENT_HUES.map((hue) => hue.hex);
 const OPERATOR = '#FFA567';
 
 describe('planAssignments', () => {
-  it('hands hues out least-used first, main like any other agent', () => {
-    const plan = planAssignments({}, ['main', 'patch', 'review']);
-    expect(plan).toEqual({ main: mint, patch: lilac, review: aqua });
+  it('gives each agent its preferred hue when free, whatever order the views saw them in', () => {
+    const a = planAssignments({}, ['main', 'patch', 'review']);
+    const b = planAssignments({}, ['review', 'main', 'patch']);
+    expect(a).toEqual(b);
+    expect(new Set(Object.values(a)).size).toBe(3);
+    expect(a.main).toBe(AGENT_HUES[preferredHueIndex('main')].hex);
+  });
+
+  it('a second device with no storage plans the same hues', () => {
+    const ids = ['main', 'linus', 'lifestyle', 'designer'];
+    expect(planAssignments({}, ids)).toEqual(planAssignments({}, [...ids].reverse()));
   });
 
   it('never gives an agent the operator cantaloupe', () => {
@@ -20,13 +28,14 @@ describe('planAssignments', () => {
     const ids = ['main', 'a', 'b', 'c', 'd', 'e', 'f'];
     const plan = planAssignments({}, ids);
     expect(new Set(Object.values(plan)).size).toBe(AGENT_HUES.length);
-    expect(plan.f).toBe(mint);
+    const counts = Object.values(plan).reduce<Record<string, number>>((acc, hex) => ({ ...acc, [hex]: (acc[hex] ?? 0) + 1 }), {});
+    expect(Math.max(...Object.values(counts))).toBe(2);
   });
 
   it('never changes an existing assignment', () => {
     const plan = planAssignments({ main: lilac }, ['main', 'patch']);
     expect(plan.main).toBe(lilac);
-    expect(plan.patch).toBe(mint);
+    expect(plan.patch).not.toBe(lilac);
   });
 });
 

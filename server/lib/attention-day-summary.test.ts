@@ -136,6 +136,29 @@ describe('createDaySummary', () => {
     expect(await service.get(changed)).toMatchObject({ status: 'ready', text: 'Second text.' });
   });
 
+  it('rewrites at once inside the interval when what got done, merged or failed changes', async () => {
+    const { rpc, runs } = fakeGateway();
+    const service = createDaySummary({ rpc, now: () => clock });
+    await service.get(facts());
+    runs[0].resolve(ok('Two things done.'));
+    await service.whenIdle();
+
+    clock += 60_000;
+    const fewer = facts({ counts: { ...facts().counts, done: 0 } });
+    expect(await service.get(fewer)).toMatchObject({ status: 'pending', text: 'Two things done.' });
+    expect(runs).toHaveLength(2);
+    runs[1].resolve(ok('Nothing done yet.'));
+    await service.whenIdle();
+    expect(await service.get(fewer)).toMatchObject({ status: 'ready', text: 'Nothing done yet.' });
+
+    clock += 60_000;
+    const failed = facts({ counts: { ...facts().counts, done: 0, cronFailed: 1 } });
+    expect((await service.get(failed)).status).toBe('pending');
+    expect(runs).toHaveLength(3);
+    runs[2].resolve(ok('One cron failed.'));
+    await service.whenIdle();
+  });
+
   it('answers error after a failed run and does not retry until the back-off ends', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { rpc, runs } = fakeGateway();

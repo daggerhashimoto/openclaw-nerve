@@ -87,6 +87,17 @@ export function fingerprintFacts(facts: DayFacts): string {
   return createHash('sha256').update(JSON.stringify(facts)).digest('hex').slice(0, 32);
 }
 
+/**
+ * The facts a paragraph must never contradict: what got done, merged or failed, and which
+ * sources were unread. A change here rewrites the paragraph at once; anything else (cron run
+ * counts, chat times) waits for the minimum interval.
+ */
+export function majorFingerprintFacts(facts: DayFacts): string {
+  const { counts } = facts;
+  const major = { done: counts.done, merged: counts.merged, cronFailed: counts.cronFailed, missing: facts.missing };
+  return createHash('sha256').update(JSON.stringify(major)).digest('hex').slice(0, 32);
+}
+
 export function defaultDaySummaryPath(): string {
   const root = process.env.NERVE_DATA_DIR || path.join(os.homedir() || process.cwd(), '.nerve');
   return path.join(root, 'attention', 'day-summary.json');
@@ -94,6 +105,8 @@ export function defaultDaySummaryPath(): string {
 
 interface Entry {
   fingerprint: string;
+  /** Older cache files lack it; such an entry counts as a major change. */
+  major?: string;
   text: string;
   updatedAt: number;
 }
@@ -159,7 +172,7 @@ export function createDaySummary(options: DaySummaryOptions): DaySummary {
       what: 'Day summary',
     })
       .then((text) => {
-        cache.set(facts.day, { fingerprint, text, updatedAt: now() });
+        cache.set(facts.day, { fingerprint, major: majorFingerprintFacts(facts), text, updatedAt: now() });
         errors.delete(facts.day);
         persist();
       })
@@ -184,8 +197,10 @@ export function createDaySummary(options: DaySummaryOptions): DaySummary {
       if (running.has(facts.day)) return { status: 'pending', ...previous };
       const retryAt = errors.get(facts.day);
       if (retryAt !== undefined && now() < retryAt) return cached ? { status: 'ready', ...previous } : { status: 'error' };
-      // Too soon after the last text: keep it; an ask after the interval writes a new one.
-      if (cached && now() - cached.updatedAt < minIntervalMs) return { status: 'ready', ...previous };
+      // Too soon after the last text, and nothing it states has changed: keep it; an ask after
+      // the interval writes a new one. A change in what got done, merged or failed rewrites now.
+      const majorChanged = cached?.major !== majorFingerprintFacts(facts);
+      if (cached && !majorChanged && now() - cached.updatedAt < minIntervalMs) return { status: 'ready', ...previous };
 
       start(facts, fingerprint);
       return { status: 'pending', ...previous };

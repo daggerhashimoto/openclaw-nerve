@@ -44,7 +44,9 @@ const ok = (text: string) => ({ status: 'ok', result: { payloads: [{ text }] } }
 describe('buildDayPrompt', () => {
   it('lists the counts, the lines and what was not read, and forbids guessing', () => {
     const prompt = buildDayPrompt(facts({ missing: ['cron runs'] }));
-    expect(prompt).toContain('two or three plain sentences');
+    expect(prompt).toContain('at most three short plain sentences');
+    expect(prompt).toContain('failures first');
+    expect(prompt).toContain('do not say anything is open or waiting unless the facts show it');
     expect(prompt).toContain('Do not add names, numbers or events that are not listed');
     expect(prompt).toContain('No markdown');
     expect(prompt).toContain('3 sessions active, 2 things done, 1 pull requests merged, 4 cron runs ok, 0 cron runs failed');

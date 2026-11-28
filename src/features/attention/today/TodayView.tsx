@@ -381,13 +381,14 @@ export function TodayView({
 
       {compact ? (
         <div className="flex flex-col gap-2">
-          {doneSection}
           {chatsSection}
+          {doneSection}
         </div>
       ) : (
+        // Chats lead: the wide column is theirs, Done today sits beside them.
         <div className="flex flex-wrap items-start gap-6">
-          <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-6">{doneSection}</div>
-          <div className="flex min-w-0 flex-[1_1_360px] flex-col gap-6">{chatsSection}</div>
+          <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-6">{chatsSection}</div>
+          <div className="flex min-w-0 flex-[1_1_360px] flex-col gap-6">{doneSection}</div>
         </div>
       )}
     </div>

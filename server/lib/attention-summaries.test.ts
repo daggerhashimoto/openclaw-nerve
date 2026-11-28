@@ -60,7 +60,7 @@ describe('buildTranscript', () => {
       { role: 'custom', content: [{ type: 'text', text: 'internal' }] },
     ]);
     expect(transcript?.text).toBe('User: Fix the login bug\nAgent used tools: exec, read\nAgent: Fixed it and opened a PR.');
-    expect(transcript?.fingerprint).toBe('e:25');
+    expect(transcript?.fingerprint).toBe('v2:e:25');
   });
 
   it('does not change the fingerprint for tool-only activity after the last text', () => {
@@ -118,8 +118,16 @@ describe('readAgentOutput and cleanSummary', () => {
   it('strips markdown, labels and dashes, and caps the length', () => {
     expect(cleanSummary('**Summary:** The agent fixed it — tests pass.')).toBe('The agent fixed it, tests pass.');
     const capped = cleanSummary('word '.repeat(200));
-    expect(capped.length).toBeLessThanOrEqual(323);
+    expect(capped.length).toBeLessThanOrEqual(603);
     expect(capped.endsWith('...')).toBe(true);
+  });
+
+  it('ends an over-long summary on its last finished sentence', () => {
+    const sentence = 'The agent read the logs and fixed the retry. ';
+    const text = cleanSummary(sentence.repeat(20));
+    expect(text.length).toBeLessThanOrEqual(600);
+    expect(text.endsWith('retry.')).toBe(true);
+    expect(text).not.toContain('...');
   });
 });
 

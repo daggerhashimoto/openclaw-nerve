@@ -72,7 +72,7 @@ export function WhatHappened({ summary }: { summary?: ThreadSummary }) {
   if (!summary) return null;
   if (summary.text) {
     return (
-      <p className="m-0 line-clamp-3 text-[0.867rem] leading-relaxed text-muted-foreground">
+      <p className="m-0 text-[0.867rem] leading-relaxed text-muted-foreground">
         <span className="font-semibold text-foreground">What happened: </span>
         {summary.text}
       </p>

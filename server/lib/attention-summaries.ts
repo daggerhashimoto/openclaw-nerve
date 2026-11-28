@@ -61,7 +61,11 @@ export const SUMMARY_TIMEOUT_MS = 90_000;
 export const SUMMARY_RETRY_MS = 5 * 60_000;
 export const SUMMARY_MIN_INTERVAL_MS = 60_000;
 export const SUMMARY_CONCURRENCY = 2;
-export const SUMMARY_MAX_CHARS = 320;
+/** The length the model is asked to stay within, and the hard cap behind it. */
+export const SUMMARY_TARGET_CHARS = 450;
+export const SUMMARY_MAX_CHARS = 600;
+/** Bumped when the prompt changes, so summaries written under the old one are redone. */
+const SUMMARY_VERSION = 'v2';
 const HISTORY_TIMEOUT_MS = 10_000;
 const MESSAGE_MAX_CHARS = 500;
 const TRANSCRIPT_MAX_CHARS = 6_000;
@@ -166,7 +170,7 @@ export function buildTranscript(messages: unknown): Transcript | null {
     kept.unshift(line);
     size += line.length + 1;
   }
-  return { text: kept.join('\n'), fingerprint: `${newest.marker}:${newest.length}` };
+  return { text: kept.join('\n'), fingerprint: `${SUMMARY_VERSION}:${newest.marker}:${newest.length}` };
 }
 
 // ── Model run ────────────────────────────────────────────────────────
@@ -174,7 +178,8 @@ export function buildTranscript(messages: unknown): Transcript | null {
 export function buildPrompt(transcript: string): string {
   return [
     'You summarize an agent chat thread for its operator, who has not read it.',
-    'Write at most two short plain sentences: what was asked, what the agent did, and where it stands now, including anything waiting on the operator.',
+    `Write a complete summary in at most ${SUMMARY_TARGET_CHARS} characters, as two to four plain sentences: what was asked, what the agent did, and where it stands now, including anything waiting on the operator.`,
+    'Every sentence must be finished; fit the limit by choosing what matters, not by trailing off.',
     'No markdown, no lists, no preamble, and do not quote the transcript.',
     '',
     'Transcript, oldest first:',
@@ -250,9 +255,15 @@ export function cleanSummary(raw: string, maxChars = SUMMARY_MAX_CHARS): string 
     .replace(/\s+/g, ' ')
     .trim();
   if (text.length > maxChars) {
+    // Over the cap: end on the last finished sentence; cut mid-sentence only when there is none.
     const cut = text.slice(0, maxChars);
-    const space = cut.lastIndexOf(' ');
-    text = `${(space > maxChars / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, '')}...`;
+    const sentenceEnd = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+    if (sentenceEnd > maxChars / 2) {
+      text = cut.slice(0, sentenceEnd + 1);
+    } else {
+      const space = cut.lastIndexOf(' ');
+      text = `${(space > maxChars / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, '')}...`;
+    }
   }
   return text;
 }

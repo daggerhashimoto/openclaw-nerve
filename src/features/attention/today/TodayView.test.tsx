@@ -283,6 +283,8 @@ describe('Today', () => {
     setSources({ tasks: [task()] });
     const desktop = renderView();
     expect(within(section('Done today')).getAllByTestId('today-row')).toHaveLength(1);
+    // Chats today leads; Done today follows it.
+    expect(section('Chats today').compareDocumentPosition(section('Done today')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     desktop.unmount();
 
     renderView({ compact: true });

@@ -60,12 +60,43 @@ export function isHeaderHit(columnNode: HTMLElement | null, pointerY: number): b
   return pointerY <= header.getBoundingClientRect().bottom;
 }
 
+/** The card in `column` closest to the pointer, excluding the dragged card. */
+export function nearestCardInColumn(
+  tasks: KanbanTask[],
+  column: string,
+  droppableRects: ReadonlyMap<string | number, { top: number; bottom: number; left: number; right: number }>,
+  pointer: { x: number; y: number },
+  activeId: string,
+): string | null {
+  let bestId: string | null = null;
+  let bestDistance = Infinity;
+
+  for (const card of tasks) {
+    if (card.status !== column || card.id === activeId) continue;
+    const rect = droppableRects.get(card.id);
+    if (!rect) continue;
+
+    const dx = pointer.x < rect.left ? rect.left - pointer.x : pointer.x > rect.right ? pointer.x - rect.right : 0;
+    const dy = pointer.y < rect.top ? rect.top - pointer.y : pointer.y > rect.bottom ? pointer.y - rect.bottom : 0;
+    const distance = dx * dx + dy * dy;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestId = card.id;
+    }
+  }
+
+  return bestId;
+}
+
 /**
- * Read the collision list into a column intent. A card under the pointer wins
- * (it is first in `pointerWithin`'s corner-distance order), so only a bare
- * column collision — a gap, header, empty lane, or below the last card — gets
- * the pointer-derived slot. Keyboard drags have no pointer and keep the
- * closestCorners fallback.
+ * Resolve a bare column collision to a pointer intent and, when the lane has
+ * cards, put the nearest card first so dnd-kit's `over` node sits inside the
+ * scrolling list — the list is then one of its scroll ancestors and keeps
+ * auto-scrolling while the pointer is over a gap or the side padding. The
+ * intent, not the card id, decides the insertion index.
+ *
+ * A card under the pointer stays a plain card collision. Keyboard drags have
+ * no pointer and keep the closestCorners fallback.
  */
 export function resolveColumnIntent(
   collisions: Collision[],
@@ -88,6 +119,28 @@ export function resolveColumnIntent(
       String(args.active.id),
     ),
   };
+}
+
+export function resolvePointerCollisions(
+  collisions: Collision[],
+  args: Parameters<CollisionDetection>[0],
+  tasks: KanbanTask[],
+  columns: readonly string[],
+): { collisions: Collision[]; intent: ColumnDropIntent | null } {
+  const intent = resolveColumnIntent(collisions, args, tasks, columns);
+  const pointer = args.pointerCoordinates;
+  if (!intent || !pointer) return { collisions, intent };
+
+  const cardId = nearestCardInColumn(
+    tasks,
+    intent.column,
+    args.droppableRects,
+    pointer,
+    String(args.active.id),
+  );
+  if (!cardId) return { collisions, intent };
+
+  return { collisions: [{ id: cardId }, ...collisions], intent };
 }
 
 /** Move a task to `targetIndex` within `targetColumn` and renumber that column. */
@@ -137,17 +190,18 @@ export function resolveDropIndex(params: {
 }): number {
   const { activeId, overId, targetColumn, columnTasks, originalTask, activeColumns, intent } = params;
 
+  if (intent && intent.column === targetColumn) {
+    const otherCount = columnTasks.filter((t) => t.id !== activeId).length;
+    return Math.max(0, Math.min(intent.index, otherCount));
+  }
+
   if (activeId === overId) {
     const current = columnTasks.findIndex((t) => t.id === activeId);
     return current < 0 ? 0 : current;
   }
 
   if (activeColumns.includes(overId)) {
-    const otherCount = columnTasks.filter((t) => t.id !== activeId).length;
-    if (intent && intent.column === overId) {
-      return Math.max(0, Math.min(intent.index, otherCount));
-    }
-    return otherCount;
+    return columnTasks.filter((t) => t.id !== activeId).length;
   }
 
   const overIndex = columnTasks.findIndex((t) => t.id === overId);
@@ -218,9 +272,10 @@ export function useKanbanDragDrop({
     }
 
     const pointerCollisions = pointerWithin(args);
-    dropIntentRef.current = resolveColumnIntent(pointerCollisions, args, tasks, activeColumns);
-    if (pointerCollisions.length === 0) return closestCorners(args);
-    return pointerCollisions;
+    const resolved = resolvePointerCollisions(pointerCollisions, args, tasks, activeColumns);
+    dropIntentRef.current = resolved.intent;
+    if (resolved.collisions.length === 0) return closestCorners(args);
+    return resolved.collisions;
   }, [activeColumns, tasks]);
 
   /* ── Sensors ── */
@@ -279,15 +334,14 @@ export function useKanbanDragDrop({
           .filter((t) => t.status === toColumn && t.id !== activeId)
           .sort((a, b) => a.columnOrder - b.columnOrder);
 
-        // Find index to insert at: a pointer-resolved column slot, the index
-        // of an over card, or append when only the column is known (keyboard).
+        // Find index to insert at: a pointer-resolved slot (over may be the
+        // nearest card or the column itself), or the over card's index; append
+        // when only the column is known (keyboard).
         let newIndex = destTasks.length;
-        if (activeColumns.includes(overId)) {
-          const intent = dropIntentRef.current;
-          if (intent && intent.column === overId) {
-            newIndex = Math.max(0, Math.min(intent.index, destTasks.length));
-          }
-        } else {
+        const intent = dropIntentRef.current;
+        if (intent && intent.column === toColumn) {
+          newIndex = Math.max(0, Math.min(intent.index, destTasks.length));
+        } else if (!activeColumns.includes(overId)) {
           const overIndex = destTasks.findIndex((t) => t.id === overId);
           if (overIndex >= 0) newIndex = overIndex;
         }

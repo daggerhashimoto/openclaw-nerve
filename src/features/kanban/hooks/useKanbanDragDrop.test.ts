@@ -6,8 +6,10 @@ import {
   applyTaskMove,
   computeColumnInsertIndex,
   isHeaderHit,
+  nearestCardInColumn,
   resolveColumnIntent,
   resolveDropIndex,
+  resolvePointerCollisions,
 } from './useKanbanDragDrop';
 import type { ColumnDropIntent } from './useKanbanDragDrop';
 
@@ -282,6 +284,22 @@ describe('resolveDropIndex', () => {
     ).toBe(1);
   });
 
+  it('uses the pointer intent even when over is the nearest card', () => {
+    const columnTasks = [task('a', 'review', 0), task('b', 'review', 1), task('c', 'review', 2)];
+
+    expect(
+      resolveDropIndex({
+        activeId: 'c',
+        overId: 'a',
+        targetColumn: 'review',
+        columnTasks,
+        originalTask: originalC,
+        activeColumns: COLUMNS,
+        intent: { column: 'review', index: 1 },
+      }),
+    ).toBe(1);
+  });
+
   it('is idempotent across the drag-over transfer and the drop', () => {
     const tasks = [task('a', 'review', 0), task('b', 'review', 1), task('c', 'todo', 0)];
     const intent: ColumnDropIntent = { column: 'review', index: 1 };
@@ -435,5 +453,70 @@ describe('isHeaderHit', () => {
 
   it('is false without a column node', () => {
     expect(isHeaderHit(null, 10)).toBe(false);
+  });
+});
+
+function box(left: number, top: number, width = 300, height = 20) {
+  return { left, top, right: left + width, bottom: top + height };
+}
+
+describe('nearestCardInColumn', () => {
+  const tasks = [task('a', 'review', 0), task('b', 'review', 1), task('x', 'done', 0)];
+  const rects = new Map([
+    ['a', box(0, 0)],
+    ['b', box(0, 30)],
+    ['x', box(0, 0)],
+  ]);
+
+  it('picks the card nearest the pointer and ignores other lanes', () => {
+    expect(nearestCardInColumn(tasks, 'review', rects, { x: 100, y: 24 }, 'c')).toBe('a');
+    expect(nearestCardInColumn(tasks, 'review', rects, { x: 100, y: 100 }, 'c')).toBe('b');
+  });
+
+  it('excludes the dragged card', () => {
+    expect(nearestCardInColumn(tasks, 'review', rects, { x: 100, y: 10 }, 'a')).toBe('b');
+  });
+
+  it('returns null without measured cards', () => {
+    expect(nearestCardInColumn(tasks, 'review', new Map(), { x: 0, y: 0 }, 'c')).toBeNull();
+  });
+});
+
+describe('resolvePointerCollisions', () => {
+  it('puts the nearest card first for a gap hit so the list stays a scroll ancestor', () => {
+    const tasks = [task('a', 'review', 0), task('b', 'review', 1)];
+    const args = collisionArgs({ x: 100, y: 24 }, {
+      review: domRect(0, 0, 300, 400),
+      a: domRect(0, 0, 300, 20),
+      b: domRect(0, 30, 300, 20),
+    });
+
+    const resolved = resolvePointerCollisions(pointerWithin(args), args, tasks, COLUMNS);
+
+    expect(resolved.collisions.map((c) => c.id)).toEqual(['a', 'review']);
+    expect(resolved.intent).toEqual({ column: 'review', index: 1 });
+  });
+
+  it('keeps the column for an empty lane', () => {
+    const args = collisionArgs({ x: 100, y: 100 }, { review: domRect(0, 0, 300, 400) });
+
+    const resolved = resolvePointerCollisions(pointerWithin(args), args, [task('c', 'todo', 0)], COLUMNS);
+
+    expect(resolved.collisions.map((c) => c.id)).toEqual(['review']);
+    expect(resolved.intent).toEqual({ column: 'review', index: 0 });
+  });
+
+  it('leaves a card hit and its semantics alone', () => {
+    const tasks = [task('a', 'review', 0), task('b', 'review', 1)];
+    const args = collisionArgs({ x: 100, y: 10 }, {
+      review: domRect(0, 0, 300, 400),
+      a: domRect(0, 0, 300, 20),
+      b: domRect(0, 30, 300, 20),
+    });
+
+    const resolved = resolvePointerCollisions(pointerWithin(args), args, tasks, COLUMNS);
+
+    expect(resolved.collisions[0].id).toBe('a');
+    expect(resolved.intent).toBeNull();
   });
 });

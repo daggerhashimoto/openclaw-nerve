@@ -37,6 +37,7 @@ export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardCl
 
   return (
     <div
+      ref={setNodeRef}
       className={`nerve-board-column flex h-full min-w-[16rem] max-w-[26rem] flex-1 basis-[18rem] flex-col transition-colors duration-[120ms] ${
         isOverColumn ? 'is-over' : ''
       }`}
@@ -51,10 +52,7 @@ export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardCl
 
       {/* Scrollable card list: droppable and sortable context */}
       <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
-        <div
-          ref={setNodeRef}
-          className="flex min-h-[120px] flex-1 flex-col gap-1.5 overflow-y-auto p-2"
-        >
+        <div className="flex min-h-[120px] flex-1 flex-col gap-1.5 overflow-y-auto p-2">
           {tasks.length === 0 ? (
             <div className="flex flex-1 select-none items-center justify-center py-8 text-[0.8rem] text-muted-foreground">
               No tasks

@@ -62,7 +62,7 @@ describe('buildTranscript', () => {
       { role: 'custom', content: [{ type: 'text', text: 'internal' }] },
     ]);
     expect(transcript?.text).toBe('User: Fix the login bug\nAgent used tools: exec, read\nAgent: Fixed it and opened a PR.');
-    expect(transcript?.fingerprint).toBe('v3:e:25');
+    expect(transcript?.fingerprint).toBe('v4:e:25');
   });
 
   it('does not change the fingerprint for tool-only activity after the last text', () => {

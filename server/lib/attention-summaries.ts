@@ -74,7 +74,7 @@ export const SUMMARY_CONCURRENCY = 2;
 export const SUMMARY_TARGET_CHARS = 450;
 export const SUMMARY_MAX_CHARS = 600;
 /** Bumped when the prompt changes, so summaries written under the old one are redone. */
-const SUMMARY_VERSION = 'v3';
+const SUMMARY_VERSION = 'v4';
 const HISTORY_TIMEOUT_MS = 10_000;
 const MESSAGE_MAX_CHARS = 500;
 const TRANSCRIPT_MAX_CHARS = 6_000;
@@ -237,7 +237,8 @@ export function buildPrompt(transcript: string): string {
   return [
     'You summarize an agent chat thread for its operator, who has not read it.',
     `Write a complete summary in at most ${SUMMARY_TARGET_CHARS} characters, as two to four plain sentences: what was asked, what the agent did, and where it stands now, including anything waiting on the operator.`,
-    'The first sentence is shown alone in a list, so it must stand on its own: say what the thread is about and where it stands.',
+    'The first sentence is shown alone in a list, so it must stand on its own: say what happened and where it stands.',
+    'Lead with the substance. Never open with framing such as "The thread", "This thread", "The task was", "The conversation" or "The operator asked"; write like a colleague\'s status note (for example: "Opened a private repo for the reporter and closed the Kanban task.").',
     'Every sentence must be finished; fit the limit by choosing what matters, not by trailing off.',
     'No markdown, no lists, no preamble, and do not quote the transcript.',
     '',

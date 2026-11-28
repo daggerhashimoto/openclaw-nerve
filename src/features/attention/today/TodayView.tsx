@@ -21,6 +21,7 @@
  */
 
 import { useMemo, useState, useSyncExternalStore } from 'react';
+import { dayHeading } from './dayHeading';
 import { ChevronRight } from 'lucide-react';
 import { Pane } from '@/components/ui/Pane';
 import type { KanbanTask } from '@/features/kanban/types';
@@ -82,6 +83,8 @@ export type TodayFilter = 'done' | 'merged' | 'failing' | null;
 
 export interface TodayViewProps {
   active: boolean;
+  /** The board's header row already shows the date and Refresh; Today then skips its own. */
+  hideHeading?: boolean;
   compact: boolean;
   now: number;
   tasks: KanbanTask[];
@@ -109,12 +112,6 @@ function joinWords(words: string[]): string {
   return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
 }
 
-function dayHeading(now: number): string {
-  const date = new Date(now);
-  const weekday = date.toLocaleDateString('en-GB', { weekday: 'short' });
-  const month = date.toLocaleDateString('en-GB', { month: 'short' });
-  return `Today, ${weekday} ${date.getDate()} ${month}`;
-}
 
 function ago(ts: number, now: number): string {
   const age = timeAgo(ts, now);
@@ -143,6 +140,7 @@ function gapSentences(sources: Record<DaySource, SourceStatus>, hidden: (source:
 
 export function TodayView({
   active,
+  hideHeading = false,
   compact,
   now,
   tasks,
@@ -411,15 +409,17 @@ export function TodayView({
   return (
     <div className={cn('flex w-full flex-col', compact ? 'gap-4 pb-8' : 'gap-6 pb-6')}>
       <section aria-label="Today summary" className={cn('flex flex-col gap-1.5', compact && 'px-4')}>
-        <div className="flex items-start gap-3">
-          <h1 className={cn('m-0 font-semibold leading-tight text-foreground', compact ? 'text-[1.333rem]' : 'text-[1.2rem]')}>
-            {dayHeading(now)}
-          </h1>
-          <span className="flex-1" />
-          <button type="button" onClick={onRefresh} className={cn('shell-chip shrink-0', compact && 'min-h-11')}>
-            Refresh
-          </button>
-        </div>
+        {!hideHeading && (
+          <div className="flex items-start gap-3">
+            <h1 className={cn('m-0 font-semibold leading-tight text-foreground', compact ? 'text-[1.333rem]' : 'text-[1.2rem]')}>
+              {dayHeading(now)}
+            </h1>
+            <span className="flex-1" />
+            <button type="button" onClick={onRefresh} className={cn('shell-chip shrink-0', compact && 'min-h-11')}>
+              Refresh
+            </button>
+          </div>
+        )}
         <p data-testid="today-facts" className="m-0 flex flex-wrap items-center gap-x-1.5 text-[0.867rem] text-muted-foreground">
           {factItems.map((fact, index) => (
             <span key={fact.id} className="inline-flex items-center whitespace-nowrap">
@@ -1071,7 +1071,9 @@ function ChatRowView({
                   >
                     {row.title}
                   </span>
-                  {row.channel && <span className="text-[0.8rem] text-muted-foreground">{row.channel}</span>}
+                  {row.channel && !row.title.toLowerCase().includes(row.channel.toLowerCase()) && (
+                    <span className="text-[0.8rem] text-muted-foreground">{row.channel}</span>
+                  )}
                   {newKeys.has(row.key) && <NewTag />}
                 </span>
                 {turn && (

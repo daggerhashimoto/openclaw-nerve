@@ -63,6 +63,7 @@ import { useAttentionSegment, type AttentionSegment } from './attentionSegment';
 import { useExecApprovals } from './execApprovals';
 import { KIND_WORD } from './itemPresentation';
 import { TodayView } from './today/TodayView';
+import { dayHeading } from './today/dayHeading';
 import { useCronRuns } from './today/useCronRuns';
 import type { AttentionItem, AttentionSource, AttentionSources, OpenTarget, SourceStatus } from './types';
 
@@ -962,6 +963,13 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   // re-read, is not counted. Arrivals behind the pill are, since they are real.
   const counted = (items: AttentionItem[]) => items.filter((item) => !pendingOf(item) && !isHidden(item));
   const { parts, text: headlineText } = headline({ ...brief, decide: counted(brief.decide), blocked: counted(brief.blocked) }, working);
+  // Today shares the header row: its date takes the place of Now's counts.
+  const todayHeadlineEl = (
+    <h1 className={cn('m-0 min-w-0 flex-1 font-semibold leading-tight text-foreground', compact ? 'text-[1.133rem]' : 'text-[1.2rem]')}>
+      {dayHeading(now)}
+    </h1>
+  );
+
   const headlineEl = (
     <h1
       id="attention-headline"
@@ -1005,21 +1013,18 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
             {/* Desk: counts, tabs, time and Refresh on one row. Phone: the controls on one row and
                 the counts on their own line under them, so nothing is cut at 390px. */}
             <div className={cn('flex min-w-0 items-center gap-x-3', compact ? 'flex-col items-stretch gap-y-2' : 'flex-wrap gap-y-1.5')}>
-              {!showToday && !compact && headlineEl}
-              {showToday && !compact && <span className="flex-1" />}
+              {!compact && (showToday ? todayHeadlineEl : headlineEl)}
               <div className="flex min-w-0 items-center gap-x-3">
                 <SegmentTabs segment={segment} onChange={setSegment} compact={compact} />
                 {compact && <span className="flex-1" />}
                 {!showToday && (
-                  <>
-                    <span className="font-mono text-[0.733rem] tabular text-muted-foreground" title={`Checked ${checkedClock}`}>
-                      {checkedClock}
-                    </span>
-                    <button type="button" onClick={onRefresh} className={cn('shell-chip shrink-0', compact && 'min-h-11')}>
-                      Refresh
-                    </button>
-                  </>
+                  <span className="font-mono text-[0.733rem] tabular text-muted-foreground" title={`Checked ${checkedClock}`}>
+                    {checkedClock}
+                  </span>
                 )}
+                <button type="button" onClick={onRefresh} className={cn('shell-chip shrink-0', compact && 'min-h-11')}>
+                  Refresh
+                </button>
                 {!compact && (
                   <button
                     type="button"
@@ -1032,7 +1037,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
                   </button>
                 )}
               </div>
-              {!showToday && compact && headlineEl}
+              {compact && (showToday ? todayHeadlineEl : headlineEl)}
             </div>
             {!showToday && heldCount > 0 && (
               <button
@@ -1081,6 +1086,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
                 onRefresh={onRefresh}
                 refreshSignal={refreshSignal}
                 actions={todayActions}
+                hideHeading
               />
             </div>
           )}

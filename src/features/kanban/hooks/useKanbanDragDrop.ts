@@ -8,10 +8,56 @@ import {
   closestCorners,
   pointerWithin,
 } from '@dnd-kit/core';
-import type { CollisionDetection, DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
+import type { Collision, CollisionDetection, DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import type { KanbanTask, TaskStatus } from '../types';
 import { COLUMNS } from '../types';
+
+
+/**
+ * `pointerWithin` reports the column when the pointer sits in a gap between
+ * two cards, and a column drop appends. Resolve that case to the nearest card
+ * inside the same column so a gap keeps its insertion position instead of
+ * jumping the card to the end.
+ */
+export function refineColumnCollisions(
+  collisions: Collision[],
+  args: Parameters<CollisionDetection>[0],
+  columns: readonly string[],
+): Collision[] {
+  const columnIds = new Set(columns);
+  const pointer = args.pointerCoordinates;
+  if (!pointer) return collisions;
+
+  return collisions.map((collision) => {
+    const id = String(collision.id);
+    if (!columnIds.has(id)) return collision;
+
+    const columnRect = args.droppableRects.get(collision.id);
+    if (!columnRect) return collision;
+
+    let best: { container: (typeof args.droppableContainers)[number]; distance: number } | null = null;
+    for (const container of args.droppableContainers) {
+      if (columnIds.has(String(container.id))) continue;
+      const rect = args.droppableRects.get(container.id);
+      if (!rect) continue;
+      // Only cards that belong to this column: their rect sits inside it.
+      if (rect.top < columnRect.top || rect.bottom > columnRect.bottom) continue;
+      if (rect.left < columnRect.left - 1 || rect.right > columnRect.right + 1) continue;
+
+      const dx = Math.max(rect.left - pointer.x, 0, pointer.x - rect.right);
+      const dy = Math.max(rect.top - pointer.y, 0, pointer.y - rect.bottom);
+      const distance = dx * dx + dy * dy;
+      if (!best || distance < best.distance) best = { container, distance };
+    }
+
+    if (!best) return collision;
+    return {
+      id: best.container.id,
+      data: { droppableContainer: best.container, value: best.distance },
+    };
+  });
+}
 
 interface UseKanbanDragDropOptions {
   tasks: KanbanTask[];
@@ -46,9 +92,9 @@ export function useKanbanDragDrop({
    * empty Review column lost to the Done lane beside it. */
   const collisionDetection = useCallback<CollisionDetection>((args) => {
     const pointerCollisions = pointerWithin(args);
-    if (pointerCollisions.length > 0) return pointerCollisions;
-    return closestCorners(args);
-  }, []);
+    if (pointerCollisions.length === 0) return closestCorners(args);
+    return refineColumnCollisions(pointerCollisions, args, activeColumns);
+  }, [activeColumns]);
 
   /* ── Sensors ── */
   const pointerSensor = useSensor(PointerSensor, {

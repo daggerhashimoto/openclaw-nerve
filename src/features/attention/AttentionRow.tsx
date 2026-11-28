@@ -11,6 +11,9 @@ import { variantClass } from './actionStyles';
 import type { ReplyConfig } from './AttentionReply';
 import { useItemReply } from './useItemReply';
 import { useItemActions, type AttentionActionsConfig } from './useAttentionActions';
+import { runItemCommand } from './itemCommands';
+import { useHints, useItemCommands } from './triage';
+import { KeyHint } from './KeyHint';
 import { Clocked, NewTag } from './textBits';
 import type { AttentionItem, OpenTarget } from './types';
 import type { ThreadSummary } from './useAttentionSummaries';
@@ -28,12 +31,15 @@ export function MarkItemSeenButton({
   onMarkSeen,
   reveal = false,
   className,
+  hint = false,
 }: {
   item: AttentionItem;
   compact: boolean;
   onMarkSeen: (item: AttentionItem) => void;
   reveal?: boolean;
   className?: string;
+  /** Shows the e keycap. */
+  hint?: boolean;
 }) {
   return (
     <button
@@ -52,6 +58,7 @@ export function MarkItemSeenButton({
       )}
     >
       Mark seen
+      <KeyHint show={hint && !compact} k="e" />
     </button>
   );
 }
@@ -102,6 +109,8 @@ export interface AttentionRowProps {
   summary?: ThreadSummary;
   /** Finished history: the pane stays dark and the hue sits on the name. */
   history?: boolean;
+  /** The row takes part in the board's keyboard triage (Failing and Waiting on you). */
+  nav?: boolean;
 }
 
 /**
@@ -123,6 +132,7 @@ export function AttentionRow({
   replies,
   summary,
   history = false,
+  nav = false,
 }: AttentionRowProps) {
   const pane = paneFor(item.kind);
   const state = useItemActions(item, actions);
@@ -135,18 +145,42 @@ export function AttentionRow({
   const target = item.open;
   const detailId = `attention-row-${item.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 
+  const hints = useHints(nav ? item.key : undefined) && !compact;
+
+  useItemCommands(nav ? item.key : '', (command) => runItemCommand(command, {
+    state,
+    open,
+    toggle: () => onToggle(item),
+    openSource: target ? () => onOpen(target) : undefined,
+    markSeen: onMarkSeen ? () => onMarkSeen(item) : undefined,
+    reply,
+    hidePrimary,
+  }));
+
   const openButton = target && (
     <button type="button" onClick={() => onOpen(target)} className={variantClass('text', compact)}>
       {openLabel(item)}
+      <KeyHint show={hints} k="o" />
     </button>
   );
 
   return (
-    <div data-testid="attention-item" className={cn('group flex min-w-0 flex-col', compact && 'border-b border-border')}>
+    <div
+      data-testid="attention-item"
+      data-nav-key={nav ? item.key : undefined}
+      data-nav-current={hints || undefined}
+      className={cn(
+        'group flex min-w-0 flex-col',
+        compact && 'border-b border-border',
+        // The item the keys act on: a quiet ring around the whole row, under the toggle's own.
+        hints && 'rounded-[3px] outline-1 outline-offset-1 outline-border',
+      )}
+    >
       <div className={cn('flex min-w-0 items-center gap-2', compact ? 'pr-3' : 'pr-1')}>
         <button
           type="button"
           data-testid="attention-row"
+          data-nav-head=""
           aria-expanded={open}
           aria-controls={open ? detailId : undefined}
           onClick={() => onToggle(item)}
@@ -183,7 +217,7 @@ export function AttentionRow({
         )}
         {failing && !open && !compact && openButton}
         {onMarkSeen && markSeenPlacement === 'row' && !open && (
-          <MarkItemSeenButton item={item} compact={compact} onMarkSeen={onMarkSeen} reveal={!compact} />
+          <MarkItemSeenButton item={item} compact={compact} onMarkSeen={onMarkSeen} reveal={!compact && !hints} hint={hints} />
         )}
       </div>
 
@@ -197,21 +231,20 @@ export function AttentionRow({
           <ItemDetail item={item} full />
           <WhatHappened summary={summary} />
           <Evidence item={item} compact={compact} onOpen={onOpen} />
-          {reply.fieldOpen ? reply.field(compact) : (
-            <ActionStrip
-              state={state}
-              compact={compact}
-              extra={(
-                <>
-                  {reply.button(compact)}
-                  {openButton}
-                </>
-              )}
-              trailing={onMarkSeen && (
-                <MarkItemSeenButton item={item} compact={compact} onMarkSeen={onMarkSeen} />
-              )}
-            />
-          )}
+          <ActionStrip
+            state={state}
+            compact={compact}
+            extra={(
+              <>
+                {reply.button(compact, hints)}
+                {openButton}
+              </>
+            )}
+            trailing={onMarkSeen && (
+              <MarkItemSeenButton item={item} compact={compact} onMarkSeen={onMarkSeen} hint={hints} />
+            )}
+            field={reply.fieldOpen ? reply.field(compact) : undefined}
+          />
         </div>
       )}
 

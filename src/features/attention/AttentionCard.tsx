@@ -15,6 +15,9 @@ import { PRIMARY_BUTTON, TEXT_BUTTON, variantClass } from './actionStyles';
 import type { ReplyConfig } from './AttentionReply';
 import { useItemReply } from './useItemReply';
 import { useItemActions, type AttentionActionsConfig } from './useAttentionActions';
+import { runItemCommand } from './itemCommands';
+import { useHints, useItemCommands } from './triage';
+import { KeyHint } from './KeyHint';
 import type { AttentionItem, OpenTarget } from './types';
 import type { ThreadSummary } from './useAttentionSummaries';
 
@@ -160,11 +163,19 @@ export function StartHerePlate({ item, view, compact, onOpen, actions, replies, 
   const state = useItemActions(item, actions);
   const { primary, secondary, more = [] } = state.actions;
   const reply = useItemReply(item, view, replies, onOpen);
-  const replyButton = reply.button(compact);
+  const hints = useHints(item.key) && !compact;
+  const replyButton = reply.button(compact, hints);
   const open = item.open;
   const stale = freshnessNote(item);
   const pane = paneFor(item.kind);
   const confirmingStop = primary === 'stop' && state.confirming;
+
+  useItemCommands(item.key, (command) => runItemCommand(command, {
+    state,
+    open: true,
+    openSource: open ? () => onOpen(open) : undefined,
+    reply,
+  }));
 
   const openButton = open && (
     <button
@@ -173,13 +184,20 @@ export function StartHerePlate({ item, view, compact, onOpen, actions, replies, 
       className={primary ? variantClass('text', compact) : cn(PRIMARY_BUTTON, compact ? 'min-h-11 w-full' : 'min-h-8')}
     >
       {openLabel(item)}
+      <KeyHint show={hints} k="o" />
     </button>
   );
 
   return (
     <section
       aria-label="Start here"
-      className={cn('plate plate-operator flex min-w-0 flex-col gap-2.5 px-4 py-3.5', WRAP)}
+      data-nav-key={item.key}
+      data-nav-head=""
+      tabIndex={-1}
+      className={cn(
+        'plate plate-operator flex min-w-0 flex-col gap-2.5 px-4 py-3.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+        WRAP,
+      )}
     >
       <div className="flex min-w-0 items-start gap-3">
         <Pane state={pane.state} label={pane.label} className="mt-[0.3rem] shrink-0" />
@@ -209,11 +227,8 @@ export function StartHerePlate({ item, view, compact, onOpen, actions, replies, 
       <Evidence item={item} compact={compact} onOpen={onOpen} max={480} />
 
       <div className="mt-0.5 flex flex-col gap-2">
-        {state.noteOpen ? (
-          <ChangesNote state={state} submitVariant="primary" compact={compact} />
-        ) : reply.fieldOpen ? (
-          reply.field(compact)
-        ) : confirmingStop ? (
+        {/* The decision stays in sight while a note or reply is written under it. */}
+        {confirmingStop ? (
           <StopConfirm state={state} compact={compact} />
         ) : (
           <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-2', compact && 'flex-col items-stretch')}>
@@ -228,6 +243,11 @@ export function StartHerePlate({ item, view, compact, onOpen, actions, replies, 
             )}
           </div>
         )}
+        {state.noteOpen ? (
+          <ChangesNote state={state} submitVariant="outline" compact={compact} />
+        ) : reply.fieldOpen ? (
+          reply.field(compact)
+        ) : null}
         {state.error && <ActionError message={state.error} />}
         {reply.panel(compact)}
       </div>

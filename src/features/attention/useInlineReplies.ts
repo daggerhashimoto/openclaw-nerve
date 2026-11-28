@@ -61,6 +61,8 @@ interface Gateway {
 export interface InlineReplies {
   /** The latest reply for a session, until it is dismissed or replaced by the next send. */
   get: (sessionKey: string) => InlineReply | undefined;
+  /** The sessions that have a reply. */
+  keys: () => string[];
   /** A reply is in flight for the session; a second send is refused. */
   isBusy: (sessionKey: string) => boolean;
   /** Sends `text` into the session. Resolves false when nothing was sent (empty or busy). */
@@ -242,6 +244,7 @@ export function createInlineReplies(initialGateway: Gateway): InlineReplies {
 
   return {
     get: (sessionKey) => replies.get(sessionKey),
+    keys: () => [...replies.keys()],
     isBusy: (sessionKey) => runs.has(sessionKey),
     send,
     dismiss,

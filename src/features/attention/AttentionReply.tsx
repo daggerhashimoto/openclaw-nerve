@@ -3,7 +3,7 @@
  * field on items that have a session, and the reply shown with either while it streams.
  */
 
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Pane } from '@/components/ui/Pane';
 import { nameHueStyle } from '@/lib/agentColors';
 import { sanitizeHtml } from '@/lib/sanitize';
@@ -12,6 +12,7 @@ import { renderMarkdown } from '@/utils/helpers';
 import { formatClock } from './briefCopy';
 import { ActionError } from './AttentionActions';
 import { TEXT_BUTTON, variantClass } from './actionStyles';
+import { useEscapeWithin } from './triage';
 import {
   useInlineReply,
   useReplyBusy,
@@ -37,10 +38,17 @@ const FIELD_MAX_PX = 128;
 
 /**
  * A draft that sends on Enter and takes a newline on Shift+Enter, as the Chat input does
- * (Cmd or Ctrl+Enter also sends). The textarea grows with its text up to `maxPx`.
+ * (Cmd or Ctrl+Enter also sends). The textarea grows with its text up to `maxPx`. With
+ * `controlled` the draft lives with the caller (the board keeps drafts per item).
  */
-function useComposer(maxPx: number, onSubmit: (text: string) => boolean) {
-  const [draft, setDraft] = useState('');
+function useComposer(
+  maxPx: number,
+  onSubmit: (text: string) => boolean,
+  controlled?: { draft: string; setDraft: (text: string) => void },
+) {
+  const [ownDraft, setOwnDraft] = useState('');
+  const draft = controlled ? controlled.draft : ownDraft;
+  const setDraft = controlled ? controlled.setDraft : setOwnDraft;
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useLayoutEffect(() => {
@@ -148,6 +156,7 @@ export function AskBox({
             value={draft}
             placeholder={placeholder}
             aria-label={placeholder.slice(0, -3)}
+            data-ask-input=""
             maxLength={20000}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onKeyDown}
@@ -179,6 +188,8 @@ export function ReplyButton({
   compact,
   onClick,
   label = 'Reply',
+  expanded,
+  hint,
 }: {
   config: ReplyConfig;
   sessionKey: string;
@@ -186,12 +197,17 @@ export function ReplyButton({
   onClick: () => void;
   /** The Today digest says Nudge, or Ask <parent> for a finished subagent. */
   label?: string;
+  /** The field it opens is open (it then closes it). */
+  expanded?: boolean;
+  /** A keycap hint after the label. */
+  hint?: React.ReactNode;
 }) {
   const busy = useReplyBusy(config.store, sessionKey);
   return (
     <button
       type="button"
       disabled={busy}
+      aria-expanded={expanded}
       onClick={(event) => {
         event.stopPropagation();
         onClick();
@@ -199,11 +215,15 @@ export function ReplyButton({
       className={variantClass('text', compact)}
     >
       {label}
+      {hint}
     </button>
   );
 }
 
-/** The open Reply field on an item: sends into the item's own session, then closes. */
+/**
+ * The open Reply field on an item: sends into the item's own session, then closes. Escape and
+ * Cancel close it without sending and drop the draft.
+ */
 export function ReplyField({
   config,
   sessionKey,
@@ -213,6 +233,8 @@ export function ReplyField({
   context,
   verb = 'Reply to',
   onSent,
+  draft: draftProp,
+  onDraftChange,
 }: {
   config: ReplyConfig;
   sessionKey: string;
@@ -224,8 +246,13 @@ export function ReplyField({
   /** Placeholder verb: "Reply to", "Nudge", "Ask". */
   verb?: string;
   onSent?: () => void;
+  /** The draft, when the caller keeps it (with `onDraftChange`); otherwise the field keeps its own. */
+  draft?: string;
+  onDraftChange?: (text: string) => void;
 }) {
   const busy = useReplyBusy(config.store, sessionKey);
+  const formRef = useRef<HTMLFormElement>(null);
+  const controlled = draftProp !== undefined && onDraftChange ? { draft: draftProp, setDraft: onDraftChange } : undefined;
   const { draft, setDraft, inputRef, submit, onKeyDown } = useComposer(FIELD_MAX_PX, (text) => {
     const message = context && text.trim() ? `${context}\n\n${text.trim()}` : text;
     const sent = startSend(config, sessionKey, busy, message, 'item');
@@ -234,12 +261,18 @@ export function ReplyField({
       onClose();
     }
     return sent;
-  });
+  }, controlled);
   const ready = canSend(config, sessionKey, busy, draft);
   const placeholder = name ? `${verb} ${name}...` : `${verb} the agent...`;
+  const cancel = () => {
+    setDraft('');
+    onClose();
+  };
+  useEscapeWithin(formRef, cancel);
 
   return (
     <form
+      ref={formRef}
       className="relative z-10 flex w-full flex-col gap-2"
       onSubmit={(event) => {
         event.preventDefault();
@@ -255,13 +288,7 @@ export function ReplyField({
         aria-label={placeholder.slice(0, -3)}
         maxLength={20000}
         onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            onClose();
-            return;
-          }
-          onKeyDown(event);
-        }}
+        onKeyDown={onKeyDown}
         className={cn(
           'cockpit-input block resize-none py-1.5! leading-[1.55]',
           compact ? 'min-h-11!' : 'min-h-[2.133rem]',
@@ -271,7 +298,7 @@ export function ReplyField({
         <button type="submit" disabled={!ready} className={variantClass('outline', compact)}>
           Send
         </button>
-        <button type="button" onClick={onClose} className={variantClass('text', compact)}>
+        <button type="button" onClick={cancel} className={variantClass('text', compact)}>
           Cancel
         </button>
         {!config.connected && (
@@ -282,28 +309,79 @@ export function ReplyField({
   );
 }
 
-/** The reply body: the assistant's markdown, capped in height, following the end while it streams. */
-function ReplyBody({ text, working }: { text: string; working: boolean }) {
+/** A reply this long is cut on phones until Show all, instead of scrolling inside the page. */
+const LONG_REPLY_CHARS = 600;
+const LONG_REPLY_LINES = 10;
+
+function isLong(text: string): boolean {
+  return text.length > LONG_REPLY_CHARS || text.split('\n').length > LONG_REPLY_LINES;
+}
+
+/**
+ * The reply body: the assistant's markdown. At the desk it is capped in height and follows the
+ * end while it streams; on phones it grows with the page, and a long one is cut until Show all.
+ */
+function ReplyBody({ text, working, compact }: { text: string; working: boolean; compact: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   // Follows the end until the operator scrolls up to read.
   const stick = useRef(true);
+  const [showAll, setShowAll] = useState(false);
+  const long = compact && isLong(text);
 
   useLayoutEffect(() => {
     const el = ref.current;
-    if (el && working && stick.current) el.scrollTop = el.scrollHeight;
-  }, [text, working]);
+    if (!compact && el && working && stick.current) el.scrollTop = el.scrollHeight;
+  }, [text, working, compact]);
 
+  const html = { __html: sanitizeHtml(renderMarkdown(text)) };
+  if (compact) {
+    return (
+      <div className="flex min-w-0 flex-col gap-1">
+        <div
+          data-testid="inline-reply-body"
+          className={cn('msg-body text-[0.867rem]! leading-relaxed! text-foreground', long && !showAll && 'max-h-64 overflow-hidden')}
+          dangerouslySetInnerHTML={html}
+        />
+        {long && (
+          <button
+            type="button"
+            aria-expanded={showAll}
+            onClick={() => setShowAll((value) => !value)}
+            className={cn(TEXT_BUTTON, 'min-h-11 self-start text-[0.8rem]')}
+          >
+            {showAll ? 'Show less' : 'Show all'}
+          </button>
+        )}
+      </div>
+    );
+  }
   return (
     <div
       ref={ref}
+      data-testid="inline-reply-body"
       onScroll={(event) => {
         const el = event.currentTarget;
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
       }}
       className="msg-body max-h-72 overflow-y-auto text-[0.867rem]! leading-relaxed! text-foreground"
-      dangerouslySetInnerHTML={{ __html: sanitizeHtml(renderMarkdown(text)) }}
+      dangerouslySetInnerHTML={html}
     />
   );
+}
+
+/**
+ * A polite live region that is in the page before it speaks: it mounts empty and takes its text
+ * a moment later, so the first state is announced too, then follows every change.
+ */
+function LiveText({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      if (ref.current) ref.current.textContent = text;
+    }, 50);
+    return () => clearTimeout(id);
+  }, [text]);
+  return <span ref={ref} role="status" aria-live="polite" className="sr-only" />;
 }
 
 /** A reply under the box or an item: who, its state, what was asked, the text, and the way to Chat. */
@@ -345,10 +423,12 @@ export function ReplyPanel({
           {name ?? 'Agent'}
         </span>
         {stateWord && (
-          <span role="status" className={working ? 'text-live-text' : 'text-muted-foreground'}>
+          <span className={working ? 'text-live-text' : 'text-muted-foreground'}>
             {stateWord}
           </span>
         )}
+        {/* The finish is said by the board ("Kim replied"); this says the run while it lasts. */}
+        <LiveText text={working ? `${name ?? 'The agent'} is ${reply.text ? 'writing' : 'working'}` : reply.status === 'error' ? `${name ?? 'The agent'} could not reply` : ''} />
         <span className="flex-1" />
         <button type="button" onClick={() => onOpen({ type: 'session', key: reply.sessionKey })} className={linkClass}>
           Open in chat
@@ -362,7 +442,7 @@ export function ReplyPanel({
       <p className="m-0 truncate text-[0.8rem] text-muted-foreground" title={reply.prompt}>
         {`You: ${reply.prompt}`}
       </p>
-      {reply.text && <ReplyBody text={reply.text} working={working} />}
+      {reply.text && <ReplyBody text={reply.text} working={working} compact={compact} />}
       {reply.status === 'done' && !reply.text && (
         <p className="m-0 text-[0.867rem] text-muted-foreground">No reply text. Open in chat to see the session.</p>
       )}

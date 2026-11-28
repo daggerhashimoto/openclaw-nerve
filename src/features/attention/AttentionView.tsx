@@ -11,6 +11,15 @@
  * Prompts (the Ask box and Reply on items) send into sessions and show replies in place
  * (useInlineReplies). They never refresh the sources or touch the Chat view's session.
  *
+ * Actions apply at once and send when their undo window closes (deferredActions): the item
+ * turns into a one-line receipt in its own place, focus moves to the next item, and the request
+ * goes out after the window, or at once when the page is hidden. A sent item stays out of sight
+ * until its source has answered again; what was handled is listed at the bottom of Now.
+ *
+ * Triage by keyboard (useBoardKeys) moves over Failing, Waiting on you and the Agents strip in
+ * board order. Items that arrive mid-look wait behind a "2 new · Show" pill (arrivals), and only
+ * one note or reply field is open at a time (triage). Today stays mounted once shown.
+ *
  * Order is frozen per epoch (useStableOrder). An epoch starts once per activation or Refresh,
  * and only after every enabled source has answered since then, so a cold load ranks the real
  * data and a reopen does not baseline on the answers left over from the last look. Approvals
@@ -19,7 +28,7 @@
  * The Now | Today choice is remembered per browser (attentionSegment).
  */
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { getSessionAgentId, getTopLevelAgentSessions, isPlaceholderIdentityName, isTopLevelAgentSessionKey } from '@/features/sessions/sessionKeys';
@@ -29,18 +38,26 @@ import { getSessionKey } from '@/types';
 import { addSeen, readLastLook, readSeen, writeLastLook } from './attentionStorage';
 import { buildAttention, FIRST_RUN_WINDOW_MS } from './buildAttention';
 import { buildAgents } from './buildAgents';
-import { checkedAt as checkedAtOf, failingItems, formatClock, gapSentences, headline, NOT_CONNECTED, reasonFor } from './briefCopy';
+import { checkedAt as checkedAtOf, failingItems, formatClock, gapSentences, headline, kindWord, NOT_CONNECTED, reasonFor } from './briefCopy';
 import { StartHerePlate } from './AttentionCard';
 import { AttentionRow } from './AttentionRow';
 import { AgentsStrip } from './AgentsStrip';
+import { agentNavKey } from './itemCommands';
+import { placeArrivals } from './arrivals';
+import { receiptText, useDeferredActions, type ActionSender, type PendingAction } from './deferredActions';
+import { HandledList, ReceiptLine } from './Receipts';
+import { ShortcutsPanel } from './ShortcutsPanel';
+import { createComposer, findNavItem, focusNavItem, TriageProvider, type CommandHandler, type ItemCommand, type Triage } from './triage';
+import { KeyHint } from './KeyHint';
+import { useBoardKeys } from './useBoardKeys';
 import { Clocked } from './textBits';
 import { AskBox, type AskTarget, type ReplyConfig } from './AttentionReply';
 import { variantClass } from './actionStyles';
 import type { ItemView } from './itemPresentation';
 import { useAttentionSources } from './useAttentionSources';
 import { useStableOrder, type StableOrder } from './useStableOrder';
-import type { AttentionActionsConfig } from './useAttentionActions';
-import { useInlineReplies } from './useInlineReplies';
+import { postAction, type ActionId, type AttentionActionsConfig } from './useAttentionActions';
+import { useInlineReplies, type InlineReply } from './useInlineReplies';
 import { useAttentionSummaries } from './useAttentionSummaries';
 import { useAttentionSegment, type AttentionSegment } from './attentionSegment';
 import { useExecApprovals } from './execApprovals';
@@ -110,6 +127,27 @@ function hasAnswered(status: SourceStatus, before: SourceStatus | undefined): bo
   return status !== before;
 }
 
+/**
+ * The source has answered since `at`. A sent item stays out of sight until then, so it does not
+ * flash back before the refresh drops it, and an action that changed nothing shows it again.
+ */
+function answeredSince(status: SourceStatus, at: number): boolean {
+  if (status.state === 'loading') return false;
+  if (status.state !== 'live') return true;
+  return (status.checkedAt ?? 0) > at;
+}
+
+/** The board's item keys inside `selector`, in board order. */
+function navKeysIn(root: HTMLElement | null, selector: string): string[] {
+  if (!root) return [];
+  return [...root.querySelectorAll<HTMLElement>(`${selector} [data-nav-key]`)].map((el) => el.dataset.navKey ?? '');
+}
+
+/** Repeated words are told again: a trailing no-break space makes the region's text change. */
+function nextAnnouncement(previous: string, text: string): string {
+  return previous === text ? `${text}\u00a0` : text;
+}
+
 function joinWords(words: string[]): string {
   if (words.length <= 1) return words[0] ?? '';
   return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
@@ -122,12 +160,15 @@ function statusOf(sources: AttentionSources, source: AttentionSource): SourceSta
 /**
  * The plate's item for the epoch: the first decision when the epoch starts, kept while it is
  * still waiting, so a decision that arrives mid-look never swaps the warm button under the
- * pointer. When the plate's item leaves, the next decision takes it.
+ * pointer. When the plate's item leaves (or waits in its undo window), the next decision takes
+ * it; `prefer` gives it back to an item whose action was undone.
  */
-function usePlateKey(keys: string[], epoch: number | string): string | undefined {
+function usePlateKey(keys: string[], epoch: number | string, prefer: string | null): string | undefined {
   const [state, setState] = useState<{ epoch: number | string; key: string | undefined }>(() => ({ epoch, key: keys[0] }));
   let current = state;
-  if (state.epoch !== epoch || state.key === undefined || !keys.includes(state.key)) {
+  if (prefer !== null && state.key !== prefer && keys.includes(prefer)) {
+    current = { epoch, key: prefer };
+  } else if (state.epoch !== epoch || state.key === undefined || !keys.includes(state.key)) {
     current = { epoch, key: keys[0] };
   }
   if (current.epoch !== state.epoch || current.key !== state.key) setState(current);
@@ -272,11 +313,69 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   const decideEpoch = `${currentEpoch}:${approvalsSettled ? 'settled' : 'loading'}`;
   const approvalOrder = useStableOrder(approvalItems, decideEpoch);
   const decisionOrder = useStableOrder(otherDecisions, currentEpoch);
-  const decide = useMemo(() => [...approvalOrder.items, ...decisionOrder.items], [approvalOrder, decisionOrder]);
   const decideNew = useMemo(() => new Set([...approvalOrder.newKeys, ...decisionOrder.newKeys]), [approvalOrder, decisionOrder]);
   const blocked = useStableOrder(brief.blocked, currentEpoch);
   const finished = useStableOrder(brief.finished, currentEpoch);
-  const plateKey = usePlateKey(decide.map((item) => item.key), decideEpoch);
+
+  // Deferred sends. The sender always uses the current socket.
+  const rpc = gateway.rpc;
+  const sendAction = useCallback<ActionSender>(
+    (item, action, note, { keepalive }) => postAction(item, action, note, rpc, { keepalive }),
+    [rpc],
+  );
+  const deferred = useDeferredActions(sendAction);
+  useSyncExternalStore(deferred.subscribe, deferred.version);
+  const pendingOf = (item: AttentionItem) => deferred.pendingOf(item.key);
+
+  const statusFor = (source: AttentionSource): SourceStatus => (
+    source === 'approvals' ? approvals.status : source === 'sessions' ? SESSIONS_LIVE : polled[source]
+  );
+  // Sent items stay out of sight until their source answers again.
+  const isHidden = (item: AttentionItem) => {
+    const sent = deferred.sentOf(item.key);
+    return Boolean(sent) && !answeredSince(statusFor(item.source), sent!.at);
+  };
+
+  // New arrivals wait behind the pill until shown, except in a section with nothing else in it.
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set());
+  const holding = !hideNew;
+  const heldOf = (items: AttentionItem[], newKeys: ReadonlySet<string>) => (
+    holding ? items.filter((item) => newKeys.has(item.key) && !revealed.has(item.key) && !isHidden(item)).map((item) => item.key) : []
+  );
+  const settledCount = (items: AttentionItem[], newKeys: ReadonlySet<string>) => items.filter((item) => (
+    !(newKeys.has(item.key) && !revealed.has(item.key)) && !isHidden(item) && !pendingOf(item)
+  )).length;
+  const failingStable = failingItems(blocked.items);
+  const decideStable = [...approvalOrder.items, ...decisionOrder.items];
+  let heldFailing = heldOf(failingStable, blocked.newKeys);
+  let heldDecide = heldOf(decideStable, decideNew);
+  const autoReveal = [
+    ...(heldFailing.length > 0 && settledCount(failingStable, blocked.newKeys) === 0 ? heldFailing : []),
+    ...(heldDecide.length > 0 && settledCount(decideStable, decideNew) === 0 ? heldDecide : []),
+  ];
+  if (autoReveal.length > 0) {
+    const next = new Set([...revealed, ...autoReveal]);
+    setRevealed(next);
+    heldFailing = heldFailing.filter((key) => !next.has(key));
+    heldDecide = heldDecide.filter((key) => !next.has(key));
+  }
+  const held = new Set([...heldFailing, ...heldDecide]);
+  const heldCount = held.size;
+
+  const visible = (items: AttentionItem[]) => items.filter((item) => !isHidden(item));
+  // While the epoch still waits for its answers nothing is held, and the frozen order stands.
+  const place = (stable: AttentionItem[], ranked: AttentionItem[], newKeys: ReadonlySet<string>) => (
+    holding ? placeArrivals(stable, ranked, newKeys, held) : stable
+  );
+  const decide = visible([
+    ...place(approvalOrder.items, approvalItems, approvalOrder.newKeys),
+    ...place(decisionOrder.items, otherDecisions, decisionOrder.newKeys),
+  ]);
+  const failing = visible(failingItems(place(blocked.items, brief.blocked, blocked.newKeys)));
+  const finishedItems = visible(finished.items);
+  const actionable = (items: AttentionItem[]) => items.filter((item) => !pendingOf(item));
+  const [preferPlate, setPreferPlate] = useState<string | null>(null);
+  const plateKey = usePlateKey(actionable(decide).map((item) => item.key), decideEpoch, preferPlate);
 
   // Owners: agent ids, named by their main session's identity when it has one.
   const agentNames = useMemo(() => {
@@ -333,42 +432,144 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     };
   };
 
-  // After an action the sources are fetched again without a new epoch, so the rest of the
-  // board keeps its order and only the acted-on item moves or leaves.
+  // The one polite live region: what an action did and what is next, a reply that came in.
+  const [announcement, setAnnouncement] = useState('');
+  const announce = useCallback((text: string) => setAnnouncement((prev) => nextAnnouncement(prev, text)), []);
+
+  // Focus moves after the render that changed the board: to an item by key, else a heading.
+  const rootRef = useRef<HTMLDivElement>(null);
+  // `leaving`: the item that is going; the one after it (in the last render's order) takes focus.
+  const focusRequest = useRef<{ key?: string; leaving?: string; fallback: string[] } | null>(null);
+  const renderedWork = useRef<string[]>([]);
+  const lastNav = useRef<{ key: string; index: number } | null>(null);
+  // Items whose action was taken from the plate: their receipt sits above it, and Undo gives it back.
+  const [plateCommitted, setPlateCommitted] = useState<ReadonlySet<string>>(() => new Set());
+  const dropPlateCommit = useCallback((key: string) => {
+    setPlateCommitted((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
+  // After a send the sources are fetched again without a new epoch, so the rest of the board
+  // keeps its order and only the acted-on item moves or leaves. An answered approval goes at once.
   const reloadApprovals = approvals.reload;
-  const actions = useMemo<AttentionActionsConfig>(() => ({
+  const forgetApproval = approvals.forget;
+  useEffect(() => {
+    deferred.setEvents({
+      onSent: (entry) => {
+        dropPlateCommit(entry.key);
+        if (entry.item.kind === 'approval') {
+          forgetApproval(entry.item.sourceId);
+          reloadApprovals();
+        } else {
+          refresh();
+        }
+      },
+      onFailed: (entry, error) => {
+        dropPlateCommit(entry.key);
+        announce(`${error.replace(/^(Could not [^:]+):/, `$1 ‘${entry.item.title}’:`)}`);
+      },
+    });
+  }, [deferred, forgetApproval, reloadApprovals, refresh, announce, dropPlateCommit]);
+
+  // Board order for the keys: Failing, then Waiting on you, then the Agents strip.
+  const workItems = [...actionable(failing), ...actionable(decide)];
+
+  // An action entered its undo window: focus goes to the next item and the region says so.
+  const commitNow = (item: AttentionItem, action: ActionId) => {
+    const root = rootRef.current;
+    const current = document.activeElement instanceof Element ? document.activeElement.closest<HTMLElement>('[data-nav-key]') : null;
+    if (plateKey === item.key) setPlateCommitted((prev) => new Set([...prev, item.key]));
+    // An earlier Undo's claim on the plate ends with the next action.
+    setPreferPlate(null);
+    // An agent line stays when its run is stopped; focus stays on it.
+    if (current && current.dataset.navKey !== item.key && current.dataset.navKey?.startsWith('agent:')) {
+      focusRequest.current = { key: current.dataset.navKey, fallback: [] };
+      announce(`${receiptText(action, item.title)}. Undo with u.`);
+      return;
+    }
+    const keys = navKeysIn(root, '[data-nav-group="work"]');
+    const index = keys.indexOf(item.key);
+    const nextKey = index >= 0 ? keys.slice(index + 1)[0] : undefined;
+    const section = item.section === 'blocked' ? 'attention-failing' : 'attention-decide';
+    focusRequest.current = { key: nextKey, fallback: [section, 'attention-headline'] };
+    const left = workItems.filter((other) => other.key !== item.key);
+    const next = nextKey ? left.find((other) => other.key === nextKey) : left[0];
+    const rest = next
+      ? `${left.length} left, next: ${kindWord(next)}, ${next.title}.`
+      : 'Nothing else waiting.';
+    announce(`${receiptText(action, item.title)}. ${rest}`);
+  };
+  // Not memoized: every item re-renders with the board anyway, and the handlers read the latest board.
+  const actions: AttentionActionsConfig = {
     kanbanEnabled,
     rpc: gateway.rpc,
     connected,
+    deferred,
+    onCommit: commitNow,
     onDone: (item) => {
       if (item.kind === 'approval') reloadApprovals();
       else refresh();
     },
-  }), [kanbanEnabled, refresh, reloadApprovals, gateway.rpc, connected]);
+  };
+
+  // Today's rows stay in place during the window (their button gives way to Undo), so its
+  // actions only say what happened; focus stays where it is.
+  const todayActions: AttentionActionsConfig = {
+    ...actions,
+    onCommit: (item, action) => announce(`${receiptText(action, item.title)}. Undo with u.`),
+  };
 
   const replyStore = useInlineReplies();
   const connecting = connectionState === 'connecting' || connectionState === 'reconnecting';
+  const nameOfSession = useCallback((key: string) => {
+    const id = getSessionAgentId(key);
+    const name = id ? agentNames.get(id) : undefined;
+    return name && !isPlaceholderIdentityName(name) ? name : id ?? undefined;
+  }, [agentNames]);
   const replies = useMemo<ReplyConfig>(
     () => ({
       store: replyStore,
       connected,
       connecting,
-      nameOf: (key: string) => {
-        const id = getSessionAgentId(key);
-        const name = id ? agentNames.get(id) : undefined;
-        return name && !isPlaceholderIdentityName(name) ? name : id ?? undefined;
-      },
+      nameOf: nameOfSession,
     }),
-    [replyStore, connected, connecting, agentNames],
+    [replyStore, connected, connecting, nameOfSession],
   );
   const askTarget: AskTarget | null = mainKey
     ? { sessionKey: mainKey, name: mainName, hue: mainId ? hueFor(mainId) : undefined }
     : null;
 
+  // "Kim replied": a reply that finishes is told once, wherever it was asked from.
+  const replyNames = useRef({ nameOf: nameOfSession, mainKey, mainName });
+  useEffect(() => {
+    replyNames.current = { nameOf: nameOfSession, mainKey, mainName };
+  });
+  useEffect(() => {
+    const statuses = new Map<string, InlineReply['status']>();
+    return replyStore.subscribe(() => {
+      const keys = replyStore.keys();
+      for (const key of [...statuses.keys()]) if (!keys.includes(key)) statuses.delete(key);
+      for (const key of keys) {
+        const status = replyStore.get(key)?.status;
+        const before = statuses.get(key);
+        if (!status || status === before) continue;
+        statuses.set(key, status);
+        if (before === 'working' && status === 'done') {
+          const names = replyNames.current;
+          const name = key === names.mainKey ? names.mainName : names.nameOf(key);
+          announce(`${name ?? 'The agent'} replied`);
+        }
+      }
+    });
+  }, [replyStore, announce]);
+
   const markSeen = useCallback((items: AttentionItem[]) => {
     setSeen(addSeen(items.map((item) => item.key)));
   }, []);
-  const markOneSeen = (item: AttentionItem) => markSeen([item]);
 
   const toggle = useCallback((item: AttentionItem) => {
     setExpanded((prev) => {
@@ -402,13 +603,19 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
 
   const plate = allClear ? undefined : decide.find((item) => item.key === plateKey);
   const rows = decide.filter((item) => item !== plate);
-  const failing = failingItems(blocked.items);
   const seenFailing = failingItems(brief.seen.blocked);
+
+  // Mark seen is immediate; focus goes on to the next item as with an action.
+  const markSeenItem = useCallback((item: AttentionItem) => markSeen([item]), [markSeen]);
+  const markOneSeen = (item: AttentionItem) => {
+    focusRequest.current = { leaving: item.key, fallback: ['attention-failing', 'attention-headline'] };
+    markSeen([item]);
+  };
 
   // Summaries for the plate and every open row, read lazily. Asked again on Refresh, when an
   // item's event changes, and when a reply in one of the sessions finishes.
   const summaryEntries: string[] = [];
-  for (const item of [plate, ...[...failing, ...rows, ...finished.items, ...brief.seen.finished, ...seenFailing].filter((entry) => expanded.has(entry.key))]) {
+  for (const item of [plate, ...[...failing, ...rows, ...finishedItems, ...brief.seen.finished, ...seenFailing].filter((entry) => expanded.has(entry.key))]) {
     if (item?.detail.sessionKey) summaryEntries.push(`${item.detail.sessionKey}@${item.updatedAt}`);
   }
   const summaryId = [...new Set(summaryEntries)].slice(0, MAX_SUMMARY_KEYS).join('\n');
@@ -427,30 +634,190 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   });
   const summaryOf = (item: AttentionItem) => (item.detail.sessionKey ? summaries[item.detail.sessionKey] : undefined);
 
+  // Keyboard: which item the keys act on, and whether its keycaps show.
+  const [navKey, setNavKey] = useState<string | null>(null);
+  const [keyboardMode, setKeyboardMode] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const hintKey = keyboardMode && !compact ? navKey : null;
+  const registry = useRef(new Map<string, CommandHandler>());
+  const register = useCallback((key: string, handler: CommandHandler) => {
+    registry.current.set(key, handler);
+    return () => {
+      if (registry.current.get(key) === handler) registry.current.delete(key);
+    };
+  }, []);
+  const [composer] = useState(() => createComposer((key) => { focusNavItem(document, key); }));
+
+  const undo = (key?: string) => {
+    const entry: PendingAction | null = deferred.undo(key);
+    if (!entry) {
+      if (key === undefined) announce('Nothing to undo.');
+      return;
+    }
+    if (plateCommitted.has(entry.key)) {
+      dropPlateCommit(entry.key);
+      setPreferPlate(entry.key);
+    }
+    if (entry.action === 'request-changes' && entry.note) composer.setDraft(entry.key, 'note', entry.note);
+    const line = agents.find((candidate) => candidate.stopItem?.key === entry.key);
+    focusRequest.current = { key: line ? agentNavKey(line) : entry.key, fallback: [] };
+    announce(`Undone. ‘${entry.item.title}’ is back.`);
+  };
+
+  const triage: Triage = { composer, register, hintKey, undo };
+
+  const showNew = () => {
+    if (heldCount === 0) return;
+    setRevealed((prev) => new Set([...prev, ...held]));
+    announce(heldCount === 1 ? 'Showing 1 new item.' : `Showing ${heldCount} new items.`);
+  };
+
+  useBoardKeys({
+    active,
+    nowShown: !showToday,
+    rootRef,
+    handlers: {
+      move: (delta) => {
+        const root = rootRef.current;
+        if (!root) return;
+        const items = [...root.querySelectorAll<HTMLElement>('[data-nav-key]')];
+        if (items.length === 0) return;
+        const current = document.activeElement instanceof Element ? document.activeElement.closest<HTMLElement>('[data-nav-key]') : null;
+        const index = current ? items.indexOf(current) : -1;
+        const next = index === -1
+          ? (delta === 1 ? items[0] : items[items.length - 1])
+          : items[Math.min(items.length - 1, Math.max(0, index + delta))];
+        const key = next.dataset.navKey;
+        if (key && focusNavItem(root, key)) {
+          next.scrollIntoView?.({ block: 'nearest' });
+        }
+      },
+      command: (command: ItemCommand) => {
+        const current = document.activeElement instanceof Element ? document.activeElement.closest<HTMLElement>('[data-nav-key]') : null;
+        const key = current?.dataset.navKey;
+        if (!key) return false;
+        return registry.current.get(key)?.(command) ?? false;
+      },
+      undo: () => undo(),
+      showNew,
+      focusAsk: () => rootRef.current?.querySelector<HTMLElement>('[data-ask-input]')?.focus(),
+      toggleHelp: () => setHelpOpen((value) => !value),
+      closeHelp: () => {
+        if (!helpOpen) return false;
+        setHelpOpen(false);
+        return true;
+      },
+      switchTo: (next) => setSegment(next),
+      usedKeyboard: () => setKeyboardMode(true),
+    },
+  });
+
+  // Apply a focus move once the board has rendered it; when the focused item left on its own
+  // (a refresh dropped it), the item now in its place takes focus.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const before = renderedWork.current;
+    renderedWork.current = navKeysIn(root, '[data-nav-group="work"]');
+    const request = focusRequest.current;
+    if (request) {
+      focusRequest.current = null;
+      if (request.key && focusNavItem(root, request.key)) return;
+      if (request.leaving) {
+        const after = before.slice(before.indexOf(request.leaving) + 1);
+        const next = after.find((key) => renderedWork.current.includes(key));
+        if (next && focusNavItem(root, next)) return;
+      }
+      for (const id of request.fallback) {
+        const el = document.getElementById(id);
+        if (el && root.contains(el)) {
+          el.focus();
+          if (document.activeElement === el) return;
+        }
+      }
+      return;
+    }
+    const last = lastNav.current;
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (last && lost && !findNavItem(root, last.key)) {
+      const items = [...root.querySelectorAll<HTMLElement>('[data-nav-group="work"] [data-nav-key]')];
+      const next = items[Math.min(last.index, items.length - 1)];
+      lastNav.current = null;
+      if (next?.dataset.navKey) focusNavItem(root, next.dataset.navKey);
+    }
+  });
+
+  // Which item has focus, for the keys and the keycap hints; cleared when focus leaves the board.
+  useEffect(() => {
+    const onFocusIn = (event: FocusEvent) => {
+      const root = rootRef.current;
+      const target = event.target instanceof Element ? event.target : null;
+      if (!root || !target || !root.contains(target)) {
+        lastNav.current = null;
+        setNavKey(null);
+        return;
+      }
+      const item = target.closest<HTMLElement>('[data-nav-key]');
+      const key = item?.dataset.navKey ?? null;
+      setNavKey(key);
+      if (item && key) {
+        const work = [...root.querySelectorAll<HTMLElement>('[data-nav-group="work"] [data-nav-key]')];
+        lastNav.current = { key, index: Math.max(0, work.indexOf(item)) };
+      } else {
+        lastNav.current = null;
+      }
+    };
+    document.addEventListener('focusin', onFocusIn);
+    return () => document.removeEventListener('focusin', onFocusIn);
+  }, []);
+
+  // Today mounts on its first showing and then stays, so its open rows and drafts survive a
+  // switch; each half keeps its own scroll place in the shared scroller.
+  const [todayMounted, setTodayMounted] = useState(showToday);
+  if (showToday && !todayMounted) setTodayMounted(true);
+  const scrollBySegment = useRef<Record<AttentionSegment, number>>({ now: 0, today: 0 });
+  const segmentRef = useRef(segment);
+  useLayoutEffect(() => {
+    if (segmentRef.current === segment) return;
+    segmentRef.current = segment;
+    const root = rootRef.current;
+    if (root) root.scrollTop = scrollBySegment.current[segment];
+  }, [segment]);
+
+  const receiptFor = (entry: PendingAction, className?: string) => (
+    <ReceiptLine key={`receipt:${entry.key}`} entry={entry} compact={compact} onUndo={undo} hints={keyboardMode && !compact} className={className} />
+  );
+
   const renderRows = (
     items: AttentionItem[],
     order: StableOrder | { newKeys: ReadonlySet<string> } | undefined,
-    options: { onMarkSeen?: (item: AttentionItem) => void; placement?: 'row' | 'detail'; history?: boolean } = {},
+    // `seen`: per-row Mark seen; on board items it also moves focus on.
+    options: { seen?: boolean; placement?: 'row' | 'detail'; history?: boolean; nav?: boolean } = {},
   ) => (
     <div className={compact ? 'flex flex-col' : 'flex flex-col gap-0.5'}>
-      {items.map((item) => (
-        <AttentionRow
-          key={item.key}
-          item={item}
-          view={viewOf(item, order?.newKeys)}
-          now={now}
-          compact={compact}
-          open={expanded.has(item.key)}
-          onToggle={toggle}
-          onOpen={onOpen}
-          onMarkSeen={options.onMarkSeen}
-          markSeenPlacement={options.placement}
-          actions={actions}
-          replies={replies}
-          summary={expanded.has(item.key) ? summaryOf(item) : undefined}
-          history={options.history}
-        />
-      ))}
+      {items.map((item) => {
+        const entry = options.nav ? pendingOf(item) : undefined;
+        if (entry) return receiptFor(entry);
+        return (
+          <AttentionRow
+            key={item.key}
+            item={item}
+            view={viewOf(item, order?.newKeys)}
+            now={now}
+            compact={compact}
+            open={expanded.has(item.key)}
+            onToggle={toggle}
+            onOpen={onOpen}
+            onMarkSeen={options.seen ? (options.nav ? markOneSeen : markSeenItem) : undefined}
+            markSeenPlacement={options.placement}
+            actions={actions}
+            replies={replies}
+            summary={expanded.has(item.key) ? summaryOf(item) : undefined}
+            history={options.history}
+            nav={options.nav}
+          />
+        );
+      })}
     </div>
   );
 
@@ -464,48 +831,64 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
     />
   );
 
+  const failingLive = actionable(failing);
   const failingSection = (failing.length > 0 || seenFailing.length > 0 || hasNotes(effectiveSources, 'failing')) && (
     <Section
       id="attention-failing"
       title="Failing"
-      count={failing.length}
+      count={failingLive.length}
       compact={compact}
-      aside={failing.length > 1 ? (
-        <button type="button" onClick={() => markSeen(failing)} className={cn(variantClass('text', compact), 'text-[0.8rem]')}>
+      aside={failingLive.length > 1 ? (
+        <button type="button" onClick={() => markSeen(failingLive)} className={cn(variantClass('text', compact), 'text-[0.8rem]')}>
           Mark all seen
         </button>
       ) : undefined}
     >
       {notes('failing')}
-      {failing.length > 0 && renderRows(failing, blocked, { onMarkSeen: markOneSeen, placement: compact ? 'detail' : 'row' })}
+      {failing.length > 0 && (
+        <div data-nav-group="work">
+          {renderRows(failing, blocked, { seen: true, placement: compact ? 'detail' : 'row', nav: true })}
+        </div>
+      )}
       <SeenLine items={seenFailing} compact={compact} render={(items) => renderRows(items, undefined)} />
     </Section>
   );
 
+  // A receipt for the plate's item sits above the plate that moved on; the rest keep their place.
+  const plateReceipts = rows.filter((item) => pendingOf(item) && plateCommitted.has(item.key));
+  const rowItems = rows.filter((item) => !plateReceipts.includes(item));
+  const decideLive = actionable(decide);
   const decideSection = (
     <Section
       id="attention-decide"
       title="Waiting on you"
-      count={decide.length}
+      count={decideLive.length}
       countTitle={RANKED}
       compact={compact}
     >
       {notes('decide')}
-      {plate && (
-        <div className={compact ? 'px-3' : undefined}>
-          <StartHerePlate
-            key={plate.key}
-            item={plate}
-            view={viewOf(plate, decideNew)}
-            compact={compact}
-            onOpen={onOpen}
-            actions={actions}
-            replies={replies}
-            summary={summaryOf(plate)}
-          />
-        </div>
-      )}
-      {rows.length > 0 && renderRows(rows, { newKeys: decideNew })}
+      <div data-nav-group="work" className="flex flex-col gap-2">
+        {plateReceipts.length > 0 && (
+          <div className="flex flex-col">
+            {plateReceipts.map((item) => receiptFor(pendingOf(item)!))}
+          </div>
+        )}
+        {plate && (
+          <div className={compact ? 'px-3' : undefined}>
+            <StartHerePlate
+              key={plate.key}
+              item={plate}
+              view={viewOf(plate, decideNew)}
+              compact={compact}
+              onOpen={onOpen}
+              actions={actions}
+              replies={replies}
+              summary={summaryOf(plate)}
+            />
+          </div>
+        )}
+        {rowItems.length > 0 && renderRows(rowItems, { newKeys: decideNew }, { nav: true })}
+      </div>
       {decide.length === 0 && (
         <EmptyLine compact={compact} hidden={hasNotes(effectiveSources, 'decide')}>Nothing to decide.</EmptyLine>
       )}
@@ -534,7 +917,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   );
 
   const sinceClock = formatClock(brief.since);
-  const finishedCount = finished.items.length;
+  const finishedCount = finishedItems.length;
   const sinceSection = (
     <section aria-labelledby="attention-since" className="flex min-w-0 flex-col gap-2">
       <div className={cn('flex flex-wrap items-center gap-x-3 border-b border-border', compact ? 'min-h-11 px-4' : 'min-h-7')}>
@@ -560,7 +943,7 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
         )}
         <span className="flex-1" />
         {finishedCount > 0 && (
-          <button type="button" onClick={() => markSeen(finished.items)} className={cn(variantClass('text', compact), 'text-[0.8rem]')}>
+          <button type="button" onClick={() => markSeen(finishedItems)} className={cn(variantClass('text', compact), 'text-[0.8rem]')}>
             Mark all seen
           </button>
         )}
@@ -568,19 +951,24 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
       {notes('finished')}
       {sinceOpen && finishedCount > 0 && (
         <div id="attention-since-list">
-          {renderRows(finished.items, finished, { onMarkSeen: markOneSeen, placement: 'row', history: true })}
+          {renderRows(finishedItems, finished, { seen: true, placement: 'row', history: true })}
         </div>
       )}
       <SeenLine items={brief.seen.finished} compact={compact} render={(items) => renderRows(items, undefined, { history: true })} />
     </section>
   );
 
-  const { parts, text: headlineText } = headline(brief, working);
+  // The heading counts what still waits: an item in its undo window, or sent and not yet
+  // re-read, is not counted. Arrivals behind the pill are, since they are real.
+  const counted = (items: AttentionItem[]) => items.filter((item) => !pendingOf(item) && !isHidden(item));
+  const { parts, text: headlineText } = headline({ ...brief, decide: counted(brief.decide), blocked: counted(brief.blocked) }, working);
   const headlineEl = (
     <h1
+      id="attention-headline"
       data-testid="attention-headline"
+      tabIndex={-1}
       aria-label={headlineText}
-      className={cn('m-0 min-w-0 flex-1 font-semibold leading-tight text-foreground', compact ? 'text-[1.133rem]' : 'text-[1.2rem]')}
+      className={cn('m-0 min-w-0 flex-1 font-semibold leading-tight text-foreground outline-none', compact ? 'text-[1.133rem]' : 'text-[1.2rem]')}
     >
       {parts.length > 0 ? parts.map((part, index) => (
         <span key={part.word} className="whitespace-nowrap">
@@ -595,63 +983,108 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
   );
   // Loading is said in the sections it holds back; the heading line keeps the lasting gaps.
   const gaps = gapSentences(brief, { loading: false });
+  const handled = deferred.handled();
 
   return (
-    <div className="attention-board h-full min-h-0 overflow-y-auto overscroll-contain bg-background" data-compact={compact}>
-      <div className={cn('mx-auto flex min-h-full w-full max-w-[1320px] flex-col', !compact && 'px-7')}>
-        <header className={cn('flex flex-col gap-1', compact ? 'px-4 pb-3 pt-3' : 'pb-5 pt-4')}>
-          {/* Desk: counts, tabs, time and Refresh on one row. Phone: the controls on one row and
-              the counts on their own line under them, so nothing is cut at 390px. */}
-          <div className={cn('flex min-w-0 items-center gap-x-3', compact ? 'flex-col items-stretch gap-y-2' : 'flex-wrap gap-y-1.5')}>
-            {!showToday && !compact && headlineEl}
-            {showToday && !compact && <span className="flex-1" />}
-            <div className="flex min-w-0 items-center gap-x-3">
-              <SegmentTabs segment={segment} onChange={setSegment} compact={compact} />
-              {compact && <span className="flex-1" />}
-              {!showToday && (
-                <>
-                  <span className="font-mono text-[0.733rem] tabular text-muted-foreground" title={`Checked ${checkedClock}`}>
-                    {checkedClock}
-                  </span>
-                  <button type="button" onClick={onRefresh} className={cn('shell-chip shrink-0', compact && 'min-h-11')}>
-                    Refresh
+    <div
+      ref={rootRef}
+      className="attention-board h-full min-h-0 overflow-y-auto overscroll-contain bg-background"
+      data-compact={compact}
+      onScroll={(event) => {
+        scrollBySegment.current[segment] = event.currentTarget.scrollTop;
+      }}
+      onPointerDown={() => {
+        // A click elsewhere ends keyboard triage; focus moves made by the pointer are its own.
+        lastNav.current = null;
+        if (keyboardMode) setKeyboardMode(false);
+      }}
+    >
+      <TriageProvider value={triage}>
+        <div className={cn('mx-auto flex min-h-full w-full max-w-[1320px] flex-col', !compact && 'px-7')}>
+          <header className={cn('flex flex-col gap-1', compact ? 'px-4 pb-3 pt-3' : 'pb-5 pt-4')}>
+            {/* Desk: counts, tabs, time and Refresh on one row. Phone: the controls on one row and
+                the counts on their own line under them, so nothing is cut at 390px. */}
+            <div className={cn('flex min-w-0 items-center gap-x-3', compact ? 'flex-col items-stretch gap-y-2' : 'flex-wrap gap-y-1.5')}>
+              {!showToday && !compact && headlineEl}
+              {showToday && !compact && <span className="flex-1" />}
+              <div className="flex min-w-0 items-center gap-x-3">
+                <SegmentTabs segment={segment} onChange={setSegment} compact={compact} />
+                {compact && <span className="flex-1" />}
+                {!showToday && (
+                  <>
+                    <span className="font-mono text-[0.733rem] tabular text-muted-foreground" title={`Checked ${checkedClock}`}>
+                      {checkedClock}
+                    </span>
+                    <button type="button" onClick={onRefresh} className={cn('shell-chip shrink-0', compact && 'min-h-11')}>
+                      Refresh
+                    </button>
+                  </>
+                )}
+                {!compact && (
+                  <button
+                    type="button"
+                    aria-label="Keyboard shortcuts"
+                    aria-expanded={helpOpen}
+                    onClick={() => setHelpOpen((value) => !value)}
+                    className="shell-chip shrink-0 px-1.5!"
+                  >
+                    <kbd className="cockpit-kbd">?</kbd>
                   </button>
-                </>
-              )}
+                )}
+              </div>
+              {!showToday && compact && headlineEl}
             </div>
-            {!showToday && compact && headlineEl}
-          </div>
-          {!showToday && gaps.length > 0 && (
-            <p className="m-0 max-w-[90ch] text-[0.8rem] leading-normal text-muted-foreground">{gaps.join(' ')}</p>
-          )}
-          {disconnectedSince !== null && (
-            <p className="cockpit-note m-0 mt-1" role="status">
-              <Clocked text={`Not connected since ${formatClock(disconnectedSince)}. Showing the last known state.`} />
-            </p>
-          )}
-        </header>
+            {!showToday && heldCount > 0 && (
+              <button
+                type="button"
+                data-testid="attention-new-pill"
+                onClick={showNew}
+                className={cn('shell-chip mt-1 self-start', compact && 'min-h-11')}
+              >
+                <span className="font-mono tabular text-foreground">{heldCount}</span>
+                {' new · Show'}
+                <KeyHint show={keyboardMode && !compact} k="n" />
+              </button>
+            )}
+            {!showToday && gaps.length > 0 && (
+              <p className="m-0 max-w-[90ch] text-[0.8rem] leading-normal text-muted-foreground">{gaps.join(' ')}</p>
+            )}
+            {disconnectedSince !== null && (
+              <p className="cockpit-note m-0 mt-1" role="status">
+                <Clocked text={`Not connected since ${formatClock(disconnectedSince)}. Showing the last known state.`} />
+              </p>
+            )}
+            {helpOpen && (
+              <div className="mt-2">
+                <ShortcutsPanel compact={compact} onClose={() => setHelpOpen(false)} />
+              </div>
+            )}
+          </header>
 
-        {showToday ? (
-          <TodayView
-            active={active}
-            compact={compact}
-            now={now}
-            tasks={tasks}
-            crons={crons}
-            sources={effectiveSources}
-            sessions={sessions}
-            agentStatus={agentStatus}
-            busyState={busyState}
-            needsReply={needsReply}
-            agentNames={agentNames}
-            replies={replies}
-            disconnectedSince={disconnectedSince}
-            onOpen={onOpen}
-            onRefresh={onRefresh}
-            refreshSignal={refreshSignal}
-          />
-        ) : (
-          <>
+          {todayMounted && (
+            <div data-testid="attention-today-pane" className={cn('flex flex-1 flex-col', !showToday && 'hidden')}>
+              <TodayView
+                active={active && showToday}
+                compact={compact}
+                now={now}
+                tasks={tasks}
+                crons={crons}
+                sources={effectiveSources}
+                sessions={sessions}
+                agentStatus={agentStatus}
+                busyState={busyState}
+                needsReply={needsReply}
+                agentNames={agentNames}
+                replies={replies}
+                disconnectedSince={disconnectedSince}
+                onOpen={onOpen}
+                onRefresh={onRefresh}
+                refreshSignal={refreshSignal}
+                actions={todayActions}
+              />
+            </div>
+          )}
+          <div data-testid="attention-now-pane" className={cn('flex flex-1 flex-col', showToday && 'hidden')}>
             <div className={cn('attention-grid flex-1 items-start', compact ? 'pb-4' : 'pb-6')}>
               <div className={cn('flex min-w-0 flex-col', compact ? 'gap-5' : 'gap-7')}>
                 {allClear ? allClearBlock : (
@@ -666,6 +1099,11 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
                 {sinceSection}
               </div>
             </div>
+            {handled.length > 0 && (
+              <div className={cn('attention-grid', compact ? 'pb-4' : 'pb-6')}>
+                <HandledList receipts={handled} compact={compact} />
+              </div>
+            )}
             {/* The Ask box docks at the bottom of the work column, like the chat composer. */}
             <div className="attention-grid pointer-events-none sticky bottom-0 z-20">
               <div className={cn('pointer-events-auto bg-background', compact ? 'px-3 pb-3 pt-2' : 'pb-4 pt-2')}>
@@ -678,9 +1116,12 @@ export function AttentionView({ active, compact, kanbanEnabled, onOpen }: Attent
                 />
               </div>
             </div>
-          </>
-        )}
-      </div>
+          </div>
+          <div role="status" aria-live="polite" aria-atomic="true" data-testid="attention-announcer" className="sr-only">
+            {announcement}
+          </div>
+        </div>
+      </TriageProvider>
     </div>
   );
 }
@@ -737,7 +1178,8 @@ function Section({
   return (
     <section aria-labelledby={id} className="flex min-w-0 flex-col gap-2">
       <div className={cn('flex flex-wrap items-center gap-x-2 border-b border-border', compact ? 'min-h-11 px-4' : 'min-h-7')}>
-        <h2 id={id} className="m-0 text-[0.867rem] font-semibold text-foreground">{title}</h2>
+        {/* Focus lands here when the last item of the section leaves. */}
+        <h2 id={id} tabIndex={-1} className="m-0 text-[0.867rem] font-semibold text-foreground outline-none">{title}</h2>
         {count !== undefined && (
           <span data-testid={`${id}-count`} title={countTitle} className="font-mono text-[0.8rem] tabular text-muted-foreground">
             {countLabel ? `${count} ${countLabel}` : count}

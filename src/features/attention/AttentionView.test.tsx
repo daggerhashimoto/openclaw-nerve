@@ -8,6 +8,7 @@ import { formatClock } from './briefCopy';
 import type { OpenTarget, SourceStatus } from './types';
 import type { ThreadSummary } from './useAttentionSummaries';
 import { AttentionView } from './AttentionView';
+import { UNDO_WINDOW_MS } from './deferredActions';
 
 const NOW = Date.UTC(2026, 10, 27, 8, 22);
 const MINUTE = 60_000;
@@ -122,6 +123,25 @@ function renderView(props: Partial<Parameters<typeof AttentionView>[0]> = {}) {
     onOpen,
     rerenderWith: (next: Partial<typeof all>) => utils.rerender(<AttentionView {...all} {...next} />),
   };
+}
+
+/** Fakes timers as well as the clock, for the undo window. */
+function fakeTimers() {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  vi.setSystemTime(NOW);
+}
+
+/** Lets `ms` pass (all of the undo window by default) and settles what it started. */
+async function pass(ms = UNDO_WINDOW_MS) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+
+/** A fresh live answer from every polled source, checked now. */
+function answered(): Record<Polled, SourceStatus> {
+  const at = Date.now();
+  return { tasks: { state: 'live', checkedAt: at }, proposals: { state: 'live', checkedAt: at }, crons: { state: 'live', checkedAt: at } };
 }
 
 /** Matches the innermost element whose whole text is `text`, across monospace clock spans. */
@@ -423,6 +443,7 @@ describe('AttentionView', () => {
   });
 
   it('a quiet task run is marked on its agent and can be stopped with a confirm', async () => {
+    fakeTimers();
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     sessionMock.mockReturnValue({ sessions: FLEET, sessionsLoading: false, agentStatus: {}, busyState: {} } as never);
@@ -440,8 +461,12 @@ describe('AttentionView', () => {
     fireEvent.click(within(line).getByRole('button', { name: 'Stop' }));
     expect(fetchMock).not.toHaveBeenCalled();
     fireEvent.click(within(line).getByRole('button', { name: 'Confirm' }));
-    await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
-    expect(fetchMock.mock.calls.map(([url]) => url)).toContain('/api/kanban/tasks/r1/abort');
+    // The line says what will happen and offers Undo until the window closes.
+    expect(within(line).getByTestId('attention-receipt')).toHaveTextContent('Stopped ‘Index the archive’');
+    expect(fetchMock).not.toHaveBeenCalled();
+    await pass();
+    expect(value.refresh).toHaveBeenCalledTimes(1);
+    expect((fetchMock.mock.calls as unknown as [string][]).map(([url]) => url)).toContain('/api/kanban/tasks/r1/abort');
     expect(onOpen).not.toHaveBeenCalled();
   });
 
@@ -734,6 +759,7 @@ describe('AttentionView', () => {
     // The baseline now holds the board, so a later arrival is the only New item.
     setSources({ tasks: [task(), task({ id: 't9', title: 'Later review', resultAt: NOW - MINUTE })] });
     rerenderWith({});
+    fireEvent.click(screen.getByTestId('attention-new-pill'));
     expect(screen.getAllByText('New')).toHaveLength(1);
   });
 
@@ -831,7 +857,7 @@ describe('AttentionView', () => {
     expect(screen.queryByText('New')).not.toBeInTheDocument();
   });
 
-  it('tags items that arrive while the board is open as New, at the end, and keeps the plate', () => {
+  it('holds items that arrive while the board is open behind a pill, then shows them as New and keeps the plate', () => {
     const first = task({ id: 't1', title: 'First review', resultAt: NOW - HOUR });
     setSources({ tasks: [first] });
     const { rerenderWith } = renderView();
@@ -839,8 +865,15 @@ describe('AttentionView', () => {
     const earlier = task({ id: 't3', title: 'Earlier review', resultAt: NOW - 3 * HOUR });
     setSources({ tasks: [first, earlier] });
     rerenderWith({});
+    expect(decideTitles()).toEqual(['First review']);
+    expect(screen.getByTestId('attention-new-pill')).toHaveTextContent('1 new · Show');
+    // The heading counts it: it is real, only held back.
+    expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('2 to decide');
+
+    fireEvent.click(screen.getByTestId('attention-new-pill'));
     expect(decideTitles()).toEqual(['First review', 'Earlier review']);
     expect(screen.getByText('New')).toBeInTheDocument();
+    expect(screen.queryByTestId('attention-new-pill')).toBeNull();
   });
 
   it('Refresh re-ranks once the sources answer', () => {
@@ -911,6 +944,7 @@ describe('AttentionView', () => {
     }
 
     beforeEach(() => {
+      fakeTimers();
       fetchMock.mockReset();
       fetchMock.mockImplementation(async () => respond(200, { ok: true }));
       vi.stubGlobal('fetch', fetchMock);
@@ -926,42 +960,56 @@ describe('AttentionView', () => {
         }));
     }
 
-    it('Approve on Start here posts the approval, shows progress and refreshes without opening', async () => {
-      let release: (value: Response) => void = () => {};
-      fetchMock.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    it('Approve on Start here applies at once as a receipt and is sent when the undo window closes', async () => {
       const value = setSources({ tasks: [task()] });
       const { onOpen } = renderView();
 
       const start = screen.getByRole('region', { name: 'Start here' });
       fireEvent.click(within(start).getByRole('button', { name: 'Approve' }));
 
-      const pending = within(start).getByRole('button', { name: 'Approving...' });
-      expect(pending).toBeDisabled();
-      expect(within(start).getByRole('button', { name: 'Request changes' })).toBeDisabled();
+      expect(screen.queryByRole('region', { name: 'Start here' })).toBeNull();
+      const receipt = screen.getByTestId('attention-receipt');
+      expect(receipt).toHaveTextContent('Approved \u2018Fix the flaky retry test\u2019');
+      expect(within(receipt).getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+      expect(within(receipt).getByTestId('receipt-countdown')).toHaveTextContent('6s');
+      expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('Nothing to show');
+
+      await pass(UNDO_WINDOW_MS - 1000);
+      expect(within(screen.getByTestId('attention-receipt')).getByTestId('receipt-countdown')).toHaveTextContent('1s');
+      expect(calls()).toEqual([]);
       expect(value.refresh).not.toHaveBeenCalled();
 
-      release(respond(200, { id: 't1' }));
-      expect(await within(start).findByRole('button', { name: 'Approved' })).toBeDisabled();
-      expect(value.refresh).toHaveBeenCalledTimes(1);
+      await pass(1000);
       expect(calls()).toEqual([{ url: '/api/kanban/tasks/t1/approve', method: 'POST', body: {} }]);
+      expect(value.refresh).toHaveBeenCalledTimes(1);
+      // Sent: out of sight until the source answers again, and listed as handled.
+      expect(screen.queryByTestId('attention-receipt')).toBeNull();
+      expect(screen.queryByText('Fix the flaky retry test')).toBeNull();
+      expect(screen.getByRole('button', { name: /Handled this visit/ })).toHaveTextContent('Handled this visit (1)');
       expect(onOpen).not.toHaveBeenCalled();
     });
 
-    it('Request changes opens a note, needs text, and sends it as the rejection note', async () => {
+    it('Request changes opens a note, needs text, and sends it as the rejection note after the window', async () => {
       const value = setSources({ tasks: [task()] });
       const { onOpen } = renderView();
       const start = screen.getByRole('region', { name: 'Start here' });
 
       fireEvent.click(within(start).getByRole('button', { name: 'Request changes' }));
       const field = within(start).getByRole('textbox', { name: 'What needs to change' });
-      const send = within(start).getByRole('button', { name: 'Request changes' });
+      // The decision stays in sight above the note.
+      expect(within(start).getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+      expect(within(start).getByRole('button', { name: 'Request changes' })).toHaveAttribute('aria-expanded', 'true');
+      const send = within(start).getByRole('button', { name: 'Send' });
       expect(send).toBeDisabled();
       expect(calls()).toEqual([]);
 
       fireEvent.change(field, { target: { value: 'Cover the timeout path' } });
       fireEvent.click(send);
+      expect(screen.getByTestId('attention-receipt')).toHaveTextContent('Asked for changes on \u2018Fix the flaky retry test\u2019');
+      expect(calls()).toEqual([]);
 
-      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
+      await pass();
+      expect(value.refresh).toHaveBeenCalledTimes(1);
       expect(calls()).toEqual([
         { url: '/api/kanban/tasks/t1/reject', method: 'POST', body: { note: 'Cover the timeout path' } },
       ]);
@@ -981,18 +1029,23 @@ describe('AttentionView', () => {
       expect(calls()).toEqual([]);
     });
 
-    it('a failed action shows the server error on the plate and re-enables the buttons', async () => {
+    it('a failed send brings the item back with the server error and the buttons enabled', async () => {
       fetchMock.mockImplementationOnce(async () => respond(400, { error: 'invalid_transition', details: 'Task is not in review' }));
       const value = setSources({ tasks: [task()] });
       renderView();
+
+      fireEvent.click(within(screen.getByRole('region', { name: 'Start here' })).getByRole('button', { name: 'Approve' }));
+      await pass();
+
       const start = screen.getByRole('region', { name: 'Start here' });
-
-      fireEvent.click(within(start).getByRole('button', { name: 'Approve' }));
-
-      expect(await within(start).findByRole('alert')).toHaveTextContent('Could not approve: Task is not in review');
+      expect(within(start).getByRole('alert')).toHaveTextContent('Could not approve: Task is not in review');
       expect(within(start).getByRole('button', { name: 'Approve' })).toBeEnabled();
       expect(within(start).getByRole('button', { name: 'Request changes' })).toBeEnabled();
       expect(value.refresh).not.toHaveBeenCalled();
+      expect(screen.getByTestId('attention-announcer')).toHaveTextContent('Could not approve \u2018Fix the flaky retry test\u2019: Task is not in review');
+
+      fireEvent.click(screen.getByRole('button', { name: /Handled this visit/ }));
+      expect(screen.getByTestId('handled-receipt')).toHaveTextContent('Could not approve \u2018Fix the flaky retry test\u2019');
     });
 
     it('a pending proposal can be approved from its row, or rejected once opened', async () => {
@@ -1003,11 +1056,13 @@ describe('AttentionView', () => {
       const { onOpen } = renderView();
 
       fireEvent.click(within(itemOf('Write release notes')).getByRole('button', { name: 'Approve' }));
-      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
+      await pass();
+      expect(value.refresh).toHaveBeenCalledTimes(1);
 
       fireEvent.click(toggleOf('Prune old branches'));
       fireEvent.click(within(itemOf('Prune old branches')).getByRole('button', { name: 'Reject' }));
-      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(2));
+      await pass();
+      expect(value.refresh).toHaveBeenCalledTimes(2);
 
       expect(calls()).toEqual([
         { url: '/api/kanban/proposals/p1/approve', method: 'POST', body: undefined },
@@ -1021,10 +1076,12 @@ describe('AttentionView', () => {
       const { onOpen } = renderView();
 
       fireEvent.click(within(itemOf('Rebuild the index')).getByRole('button', { name: 'Retry' }));
+      expect(screen.getByTestId('attention-receipt')).toHaveTextContent('Retried \u2018Rebuild the index\u2019');
+      await pass();
 
-      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
+      expect(value.refresh).toHaveBeenCalledTimes(1);
       expect(calls()).toEqual([{ url: '/api/kanban/tasks/f1/execute', method: 'POST', body: {} }]);
-      expect(within(itemOf('Rebuild the index')).getByRole('button', { name: 'Started' })).toBeDisabled();
+      expect(screen.queryAllByTestId('attention-row-title')).toHaveLength(0);
       expect(onOpen).not.toHaveBeenCalled();
     });
 
@@ -1038,11 +1095,13 @@ describe('AttentionView', () => {
       expect(itemOf('Nightly backup')).toHaveTextContent('AccessDenied');
 
       fireEvent.click(within(itemOf('Nightly backup')).getByRole('button', { name: 'Run now' }));
-      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(1));
+      await pass();
+      expect(value.refresh).toHaveBeenCalledTimes(1);
 
       fireEvent.click(toggleOf('Weekly digest'));
       fireEvent.click(within(itemOf('Weekly digest')).getByRole('button', { name: 'Pause' }));
-      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(2));
+      await pass();
+      expect(value.refresh).toHaveBeenCalledTimes(2);
 
       expect(calls()).toEqual([
         { url: '/api/crons/c2/run', method: 'POST', body: undefined },
@@ -1051,18 +1110,26 @@ describe('AttentionView', () => {
       expect(onOpen).not.toHaveBeenCalled();
     });
 
-    it('after Run now the cron row stays and Pause still works', async () => {
-      const value = setSources({ crons: [cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error' })] });
-      renderView();
+    it('after Run now the cron row comes back once the source answers, with Run now locked and Pause working', async () => {
+      const crons = [cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error' })];
+      const value = setSources({ crons });
+      const { rerenderWith } = renderView();
 
       fireEvent.click(within(itemOf('Nightly backup')).getByRole('button', { name: 'Run now' }));
-      expect(await within(itemOf('Nightly backup')).findByRole('button', { name: 'Started' })).toBeDisabled();
+      await pass();
+      expect(screen.queryAllByTestId('attention-row-title')).toHaveLength(0);
+
+      // The re-read, a moment later, still lists the cron as failed until its run reports.
+      await pass(500);
+      setSources({ crons, sources: answered(), refresh: value.refresh });
+      rerenderWith({});
+      expect(within(itemOf('Nightly backup')).getByRole('button', { name: 'Started' })).toBeDisabled();
       fireEvent.click(toggleOf('Nightly backup'));
       expect(within(itemOf('Nightly backup')).getByRole('button', { name: 'Pause' })).toBeEnabled();
 
       fireEvent.click(within(itemOf('Nightly backup')).getByRole('button', { name: 'Pause' }));
-      await waitFor(() => expect(value.refresh).toHaveBeenCalledTimes(2));
-      expect(within(itemOf('Nightly backup')).getByRole('button', { name: 'Paused' })).toBeDisabled();
+      await pass();
+      expect(value.refresh).toHaveBeenCalledTimes(2);
       expect(calls().map((call) => call.url)).toEqual(['/api/crons/c2/run', '/api/crons/c2/toggle']);
     });
 
@@ -1074,10 +1141,60 @@ describe('AttentionView', () => {
       renderView();
 
       fireEvent.click(within(itemOf('Nightly backup')).getByRole('button', { name: 'Run now' }));
+      await pass();
 
-      expect(await within(itemOf('Nightly backup')).findByRole('alert')).toHaveTextContent('Could not run: gateway down');
+      expect(within(itemOf('Nightly backup')).getByRole('alert')).toHaveTextContent('Could not run: gateway down');
       expect(within(itemOf('Nightly backup')).getByRole('button', { name: 'Run now' })).toBeEnabled();
       expect(value.refresh).not.toHaveBeenCalled();
+    });
+
+    it('a review that comes back after Request changes starts clean', async () => {
+      const value = setSources({ tasks: [task()] });
+      const { rerenderWith } = renderView();
+      fireEvent.click(within(screen.getByRole('region', { name: 'Start here' })).getByRole('button', { name: 'Request changes' }));
+      fireEvent.change(screen.getByRole('textbox', { name: 'What needs to change' }), { target: { value: 'Add a test' } });
+      fireEvent.click(within(screen.getByRole('region', { name: 'Start here' })).getByRole('button', { name: 'Send' }));
+      await pass();
+
+      await pass(500);
+      setSources({ tasks: [task({ status: 'in-progress' })], sources: answered(), refresh: value.refresh });
+      rerenderWith({});
+      await pass(500);
+      setSources({ tasks: [task()], sources: answered(), refresh: value.refresh });
+      rerenderWith({});
+      const start = screen.getByRole('region', { name: 'Start here' });
+      expect(within(start).getByRole('button', { name: 'Approve' })).toBeEnabled();
+      expect(within(start).getByRole('button', { name: 'Request changes' })).toBeEnabled();
+    });
+
+    it('Today rows take the same deferred actions, with Undo in place of the button', async () => {
+      fetchMock.mockImplementation(async (url: string) => {
+        if (/\/api\/crons\/c2\/runs$/.test(url)) {
+          return respond(200, { ok: true, result: { entries: [{ ts: NOW - HOUR, status: 'error', error: 'AccessDenied' }] } });
+        }
+        return respond(200, { ok: true });
+      });
+      localStorage.setItem('nerve:attention:segment', 'today');
+      const value = setSources({ crons: [cron({ id: 'c2', name: 'Nightly backup', lastStatus: 'error', lastError: 'AccessDenied' })] });
+      renderView();
+      await pass(0);
+
+      const runs = () => calls().filter((call) => call.url === '/api/crons/c2/run');
+      const failing = screen.getByTestId('today-failing');
+      fireEvent.click(within(failing).getByRole('button', { name: 'Run now' }));
+      expect(within(failing).getByTestId('inline-undo')).toHaveTextContent('Started');
+      expect(runs()).toEqual([]);
+      expect(screen.getByTestId('attention-announcer')).toHaveTextContent('Started \u2018Nightly backup\u2019. Undo with u.');
+
+      fireEvent.click(within(failing).getByRole('button', { name: 'Undo' }));
+      expect(within(failing).getByRole('button', { name: 'Run now' })).toBeEnabled();
+      await pass();
+      expect(runs()).toEqual([]);
+
+      fireEvent.click(within(failing).getByRole('button', { name: 'Run now' }));
+      await pass();
+      expect(runs()).toEqual([{ url: '/api/crons/c2/run', method: 'POST', body: undefined }]);
+      expect(value.refresh).toHaveBeenCalledTimes(1);
     });
 
     it('offers no task or proposal actions with kanban off', () => {
@@ -1159,20 +1276,26 @@ describe('AttentionView', () => {
       expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('2 to decide');
     });
 
-    it('Allow and Deny resolve with the right decision over the socket', async () => {
+    it('Allow and Deny resolve with the right decision over the socket once the window closes', async () => {
+      fakeTimers();
       const rpc = vi.fn(async (method: string) => (method === 'exec.approval.list' ? [APPROVAL, { ...APPROVAL, id: 'ap_2', createdAtMs: NOW - MINUTE, request: { ...APPROVAL.request, command: 'git push --force' } }] : {}));
       gatewayWith(rpc);
       setSources();
       renderView();
+      await pass(0);
 
-      await waitFor(() => expect(within(screen.getByRole('region', { name: 'Start here' })).getByRole('heading', { level: 3 })).toHaveTextContent('rm -rf build'));
-      const start = screen.getByRole('region', { name: 'Start here' });
-      fireEvent.click(within(start).getByRole('button', { name: 'Allow' }));
-      await waitFor(() => expect(rpc).toHaveBeenCalledWith('exec.approval.resolve', { id: 'ap_1', decision: 'allow-once' }));
+      const plateTitle = () => within(screen.getByRole('region', { name: 'Start here' })).getByRole('heading', { level: 3 });
+      expect(plateTitle()).toHaveTextContent('rm -rf build');
+      fireEvent.click(within(screen.getByRole('region', { name: 'Start here' })).getByRole('button', { name: 'Allow' }));
+      expect(rpc).not.toHaveBeenCalledWith('exec.approval.resolve', expect.anything());
+      // The board moves on: the next approval takes the plate.
+      expect(plateTitle()).toHaveTextContent('git push --force');
+      await pass();
+      expect(rpc).toHaveBeenCalledWith('exec.approval.resolve', { id: 'ap_1', decision: 'allow-once' });
 
-      fireEvent.click(toggleOf('git push --force'));
-      fireEvent.click(within(itemOf('git push --force')).getByRole('button', { name: 'Deny' }));
-      await waitFor(() => expect(rpc).toHaveBeenCalledWith('exec.approval.resolve', { id: 'ap_2', decision: 'deny' }));
+      fireEvent.click(within(screen.getByRole('region', { name: 'Start here' })).getByRole('button', { name: 'Deny' }));
+      await pass();
+      expect(rpc).toHaveBeenCalledWith('exec.approval.resolve', { id: 'ap_2', decision: 'deny' });
     });
 
     it('a request event adds an approval and a resolved event reads the list again', async () => {
@@ -1196,7 +1319,7 @@ describe('AttentionView', () => {
       await waitFor(() => expect(screen.queryByRole('region', { name: 'Start here' })).toBeNull());
     });
 
-    it('an approval that arrives mid-look leads the rows under the plate, tagged New, without taking the plate', async () => {
+    it('an approval that arrives mid-look waits behind the pill, then leads the rows under the plate, tagged New', async () => {
       const rpc = vi.fn(async (method: string) => (method === 'exec.approval.list' ? [] : {}));
       gatewayWith(rpc);
       setSources({ tasks: [task(), task({ id: 't2', title: 'Second review', resultAt: NOW - 20 * MINUTE })] });
@@ -1207,6 +1330,8 @@ describe('AttentionView', () => {
       act(() => {
         for (const handler of [...handlers]) handler({ type: 'event', event: 'exec.approval.requested', payload: APPROVAL });
       });
+      expect(decideTitles()).toEqual(['Fix the flaky retry test', 'Second review']);
+      fireEvent.click(screen.getByTestId('attention-new-pill'));
       expect(decideTitles()).toEqual(['Fix the flaky retry test', 'rm -rf build', 'Second review']);
       expect(within(itemOf('rm -rf build')).getByText('New')).toBeInTheDocument();
       expect(within(itemOf('rm -rf build')).getByRole('button', { name: 'Allow' }).className).toContain('border-input');
@@ -1223,6 +1348,7 @@ describe('AttentionView', () => {
       act(() => {
         for (const handler of [...handlers]) handler({ type: 'event', event: 'exec.approval.requested', payload: long });
       });
+      fireEvent.click(screen.getByTestId('attention-new-pill'));
       expect(within(itemOf('rm -rf build')).queryByRole('button', { name: 'Allow' })).toBeNull();
       fireEvent.click(toggleOf('rm -rf build'));
       expect(within(itemOf('rm -rf build')).getByText('rm -rf /srv/app/build /srv/app/cache')).toBeInTheDocument();

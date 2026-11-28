@@ -375,6 +375,15 @@ export function applyTheme(themeName: ThemeName): void {
   if (theme.world === 'workbench') loadWorkbenchFonts();
   root.style.colorScheme = theme.scheme;
 
+  // The browser and installed-app bar takes the same ground as the top bar
+  let bar = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (!bar) {
+    bar = document.createElement('meta');
+    bar.name = 'theme-color';
+    document.head.appendChild(bar);
+  }
+  bar.content = theme.colors['--color-background'];
+
   // Apply highlight.js theme (vendored locally to avoid CDN dependency)
   const existingLink = document.getElementById('hljs-theme') as HTMLLinkElement | null;
   const hljsHref = `/hljs/${theme.name}.min.css`;

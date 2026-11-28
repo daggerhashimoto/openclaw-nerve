@@ -33,7 +33,10 @@ function resetRoot() {
   delete root.dataset.world;
   document.getElementById('hljs-theme')?.remove();
   document.querySelectorAll('link[href*="IBM+Plex"]').forEach((link) => link.remove());
+  document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.remove());
 }
+
+const themeColor = () => document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content;
 
 describe('resolveThemeName', () => {
   it.each(LEGACY_DARK_NAMES)('maps the stored legacy theme "%s" to the default, Workbench Night', (saved) => {
@@ -171,6 +174,15 @@ describe('applyTheme', () => {
     expect(document.documentElement.dataset.world).toBe('workbench');
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(document.getElementById('hljs-theme')?.getAttribute('href')).toBe('/hljs/workbench-paper.min.css');
+  });
+
+  it("colors the browser and installed-app bar with the theme's ground, keeping one tag", () => {
+    applyTheme('workbench-night');
+    expect(themeColor()).toBe(themes['workbench-night'].colors['--color-background']);
+
+    applyTheme('workbench-paper');
+    expect(themeColor()).toBe(themes['workbench-paper'].colors['--color-background']);
+    expect(document.querySelectorAll('meta[name="theme-color"]')).toHaveLength(1);
   });
 
   it("loads Workbench's Google faces only for a Workbench theme, and once", async () => {

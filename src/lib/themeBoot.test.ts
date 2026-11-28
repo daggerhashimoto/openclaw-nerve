@@ -6,7 +6,14 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { THEME_DEFAULT_MIGRATION, THEME_DEFAULT_MIGRATION_KEY, THEME_STORAGE_KEY, themeNames, themes } from './themes';
+import {
+  DEFAULT_THEME,
+  THEME_DEFAULT_MIGRATION,
+  THEME_DEFAULT_MIGRATION_KEY,
+  THEME_STORAGE_KEY,
+  themeNames,
+  themes,
+} from './themes';
 
 const script = readFileSync(resolve(__dirname, '../../public/theme-boot.js'), 'utf8');
 
@@ -59,5 +66,34 @@ describe('theme boot script', () => {
 
     localStorage.setItem(THEME_STORAGE_KEY, 'dracula');
     expectTheme(boot(), 'workbench-night');
+  });
+
+  it("colors the browser and installed-app bar with the stored theme's ground", () => {
+    // index.html places the theme-color tag before this script
+    const bar = document.createElement('meta');
+    bar.name = 'theme-color';
+    bar.content = themes['workbench-night'].colors['--color-background'];
+    document.head.appendChild(bar);
+    localStorage.setItem(THEME_STORAGE_KEY, 'workbench-paper');
+
+    boot();
+
+    expect(bar.content).toBe(themes['workbench-paper'].colors['--color-background']);
+    bar.remove();
+  });
+});
+
+describe('installed app colors', () => {
+  // The manifest and index.html carry their own copies of the default ground,
+  // shown on the launch screen and the bar before any script runs
+  const ground = themes[DEFAULT_THEME].colors['--color-background'];
+
+  it("match the default theme's ground", () => {
+    const manifest = JSON.parse(readFileSync(resolve(__dirname, '../../public/manifest.webmanifest'), 'utf8'));
+    const html = readFileSync(resolve(__dirname, '../../index.html'), 'utf8');
+
+    expect(manifest.background_color).toBe(ground);
+    expect(manifest.theme_color).toBe(ground);
+    expect(html.match(/<meta name="theme-color" content="([^"]+)"/)?.[1]).toBe(ground);
   });
 });

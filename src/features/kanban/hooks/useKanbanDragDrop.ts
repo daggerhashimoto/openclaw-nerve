@@ -8,7 +8,7 @@ import {
   closestCorners,
   pointerWithin,
 } from '@dnd-kit/core';
-import type { CollisionDetection, DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
+import type { Collision, CollisionDetection, DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import type { KanbanTask, TaskStatus } from '../types';
 import { COLUMNS } from '../types';
@@ -47,6 +47,36 @@ export function computeColumnInsertIndex(
   }
 
   return index;
+}
+
+/**
+ * Read the collision list into a column intent. A card under the pointer wins
+ * (it is first in `pointerWithin`'s corner-distance order), so only a bare
+ * column collision — a gap, header, empty lane, or below the last card — gets
+ * the pointer-derived slot. Keyboard drags have no pointer and keep the
+ * closestCorners fallback.
+ */
+export function resolveColumnIntent(
+  collisions: Collision[],
+  args: Parameters<CollisionDetection>[0],
+  tasks: KanbanTask[],
+  columns: readonly string[],
+): ColumnDropIntent | null {
+  if (collisions.length === 0) return null;
+  const firstId = String(collisions[0].id);
+  const pointer = args.pointerCoordinates;
+  if (!pointer || !columns.includes(firstId)) return null;
+
+  return {
+    column: firstId,
+    index: computeColumnInsertIndex(
+      tasks,
+      firstId,
+      args.droppableRects,
+      pointer.y,
+      String(args.active.id),
+    ),
+  };
 }
 
 /** Move a task to `targetIndex` within `targetColumn` and renumber that column. */
@@ -160,29 +190,8 @@ export function useKanbanDragDrop({
    * empty Review column lost to the Done lane beside it. */
   const collisionDetection = useCallback<CollisionDetection>((args) => {
     const pointerCollisions = pointerWithin(args);
-    if (pointerCollisions.length === 0) {
-      dropIntentRef.current = null;
-      return closestCorners(args);
-    }
-
-    const firstId = String(pointerCollisions[0].id);
-    const pointer = args.pointerCoordinates;
-    if (pointer && activeColumns.includes(firstId)) {
-      // A column under the pointer: remember the exact slot for drag over/end.
-      dropIntentRef.current = {
-        column: firstId,
-        index: computeColumnInsertIndex(
-          tasks,
-          firstId,
-          args.droppableRects,
-          pointer.y,
-          String(args.active.id),
-        ),
-      };
-    } else {
-      dropIntentRef.current = null;
-    }
-
+    dropIntentRef.current = resolveColumnIntent(pointerCollisions, args, tasks, activeColumns);
+    if (pointerCollisions.length === 0) return closestCorners(args);
     return pointerCollisions;
   }, [activeColumns, tasks]);
 

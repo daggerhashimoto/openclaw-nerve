@@ -31,4 +31,7 @@
   root.style.colorScheme = theme[0];
   root.style.setProperty('--color-background', theme[2]);
   root.style.setProperty('--background', theme[2]);
+  // The browser and installed-app bar takes the same ground as the top bar
+  var bar = document.querySelector('meta[name="theme-color"]');
+  if (bar) bar.setAttribute('content', theme[2]);
 })();

@@ -6,8 +6,9 @@ import {
   useSensors,
   defaultKeyboardCoordinateGetter,
   closestCorners,
+  pointerWithin,
 } from '@dnd-kit/core';
-import type { DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
+import type { CollisionDetection, DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import type { KanbanTask, TaskStatus } from '../types';
 import { COLUMNS } from '../types';
@@ -37,6 +38,17 @@ export function useKanbanDragDrop({
 
   // Snapshot of tasks before a drag starts — used for rollback on error
   const snapshotRef = useRef<KanbanTask[] | null>(null);
+
+  /* ── Collision detection ──
+   * Pointer-first: a drop belongs to the column under the cursor. Corner
+   * distance is only a fallback (keyboard drags, or a pointer outside every
+   * column), where it used to let a tall neighbouring lane win the drop — an
+   * empty Review column lost to the Done lane beside it. */
+  const collisionDetection = useCallback<CollisionDetection>((args) => {
+    const pointerCollisions = pointerWithin(args);
+    if (pointerCollisions.length > 0) return pointerCollisions;
+    return closestCorners(args);
+  }, []);
 
   /* ── Sensors ── */
   const pointerSensor = useSensor(PointerSensor, {
@@ -265,7 +277,7 @@ export function useKanbanDragDrop({
 
   return {
     sensors,
-    collisionDetection: closestCorners,
+    collisionDetection,
     activeTask,
     onDragStart,
     onDragOver,

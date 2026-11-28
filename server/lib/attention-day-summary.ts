@@ -70,8 +70,10 @@ export function buildDayPrompt(facts: DayFacts): string {
   const { counts } = facts;
   const lines = [
     'You write a short note for the operator of a team of AI agents about their day so far.',
-    'Write two or three plain sentences: what got done today and what is still open or waiting on the operator.',
-    'Use only the facts below. Do not add names, numbers or events that are not listed. If a source was not read, do not guess about it.',
+    'Write at most three short plain sentences, under 60 words in all.',
+    'Lead with what needs the operator (failures first), then what got done. Mention routine cron runs only as a count, never one by one.',
+    'Leave out anything that is zero; do not say that nothing was done or merged.',
+    'Use only the facts below. Do not add names, numbers or events that are not listed, and do not say anything is open or waiting unless the facts show it. If a source was not read, do not guess about it.',
     'No markdown, no lists, no headings and no preamble.',
     '',
     `Day: ${facts.day}`,
